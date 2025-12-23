@@ -1,5 +1,5 @@
 // ===============================
-// 🗂️ Planes.jsx — Catálogo de Planes (PRODUCCIÓN)
+// 🗂️ Planes.jsx — Catálogo de Planes (PRODUCCIÓN, layout ordenado v6.3 - FIX visual tabla editor + FIX parser error + FIX acciones visibles)
 // ===============================
 // Características:
 // - Busca/filtra por categoría y por código/nombre.
@@ -12,8 +12,7 @@
 // - Guarda renglones del plan en: planes/{planId}/planes_items
 // - Descuento % y $ con topes; total calculado.
 // - Botón "Diagnóstico" para verificar fuentes y conteos.
-//
-// Si tus colecciones tienen otros nombres, AJÚSTALAS AQUÍ:
+
 const COLLECTIONS = {
   listas_precios: "listas_precios",
   listas_precios_productos: "listas_precios_productos",
@@ -21,12 +20,9 @@ const COLLECTIONS = {
   catalogo_categorias: "catalogo_categorias",
 };
 
-// Si tus campos de precio o nombre usan otros alias, agrega aquí:
 const FIELD_ALIASES = {
-  // ✅ añadidos: precioCompra / precioVenta por compat
   precio: ["precio", "valor", "price", "monto", "precioCompra", "precio_venta", "precioVenta"],
   nombre: ["nombre", "descripcion", "descripción", "name"],
-  // ✅ añadido: referencia
   codigo: ["codigo", "código", "code", "referencia"],
   categoria: ["categoria", "categoriaNombre", "grupo", "area"],
   max_desc_pct: ["max_desc_pct", "max_descuento_pct"],
@@ -47,33 +43,22 @@ import {
 /* ===================== utilidades ===================== */
 const COP = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 const normalize = (s) =>
-  (s || "")
-    .toString()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  (s || "").toString().toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
 const clamp = (n, min, max) => Math.min(max, Math.max(min, Number.isFinite(+n) ? +n : min));
-
-// ⚠️ robusto: limpia $, puntos y comas
 const toNumber = (v, def = 0) => {
   const n = Number(String(v ?? "").replace(/[^\d-]+/g, ""));
   return Number.isFinite(n) ? n : def;
 };
-
-// parsea entradas COP como "150.000" / "$ 150,000"
 const parseCOP = (v) => {
   if (typeof v === "number") return v;
   return Number(String(v ?? "").replace(/[^\d-]+/g, "")) || 0;
 };
-
 const sameCat = (a, b) => {
   const na = normalize(a), nb = normalize(b);
   if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
 };
-
 function pick(obj, keys, def = undefined) {
   for (const k of keys) {
     if (obj?.[k] !== undefined && obj[k] !== null) return obj[k];
@@ -81,23 +66,40 @@ function pick(obj, keys, def = undefined) {
   return def;
 }
 
-/* ===================== estilos inyectados ===================== */
+/* ===================== estilos inyectados (layout ordenado v6.3 — FIX editor interno) ===================== */
 function usePlanesStyles() {
   useEffect(() => {
-    const id = "oc-planes-styles-v4";
+    const id = "oc-planes-styles-v6-3-acciones-fix"; // 🔄 id nuevo para forzar recarga
     if (document.getElementById(id)) return;
+
     const css = `
       :root{
         --oc-primary:#3b82f6; --oc-primary-600:#2563eb;
         --oc-green:#22c55e; --oc-green-600:#16a34a;
         --oc-red:#ef4444; --oc-red-600:#dc2626;
-        --oc-gray:#e5e7eb; --oc-muted:#64748b;
+        --oc-gray:#e6e9ef; --oc-muted:#64748b;
       }
-      .oc-muted{color:var(--oc-muted)} .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
-      .oc-input,.oc-select{height:34px;border:1px solid #d6dbe6;border-radius:8px;background:#fff;padding:0 10px;font-size:14px}
-      .oc-input:focus,.oc-select:focus{outline:none;border-color:#60a5fa;box-shadow:0 0 0 2px rgba(96,165,250,.15)}
-      .oc-btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--oc-gray);background:#fff;color:#0f172a;font-weight:700;font-size:12px;cursor:pointer;transition:.15s}
-      .oc-btn:hover{background:#f8fafc} .oc-btn.small{height:26px;padding:0 8px}
+      .oc-muted{color:var(--oc-muted)}
+      .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,"Liberation Mono",monospace}
+
+      .oc-input,.oc-select{
+        height:34px;border:1px solid #d6dbe6;border-radius:8px;background:#fff;
+        padding:0 10px;font-size:14px
+      }
+      .oc-input:focus,.oc-select:focus{
+        outline:none;border-color:#60a5fa;
+        box-shadow:0 0 0 2px rgba(96,165,250,.15)
+      }
+      .oc-input.num{text-align:right}
+
+      .oc-btn{
+        display:inline-flex;align-items:center;justify-content:center;
+        height:30px;padding:0 10px;border-radius:8px;
+        border:1px solid var(--oc-gray);background:#fff;color:#0f172a;
+        font-weight:700;font-size:12px;cursor:pointer;transition:.15s
+      }
+      .oc-btn:hover{background:#f8fafc}
+      .oc-btn.small{height:26px;padding:0 8px}
       .oc-btn.primary{background:var(--oc-primary);border-color:var(--oc-primary-600);color:#fff}
       .oc-btn.primary:hover{background:var(--oc-primary-600)}
       .oc-btn.success{background:var(--oc-green);border-color:var(--oc-green-600);color:#fff}
@@ -106,19 +108,84 @@ function usePlanesStyles() {
       .oc-btn.danger:hover{background:var(--oc-red-600)}
       .oc-btn.outline{background:#fff;color:var(--oc-primary);border-color:var(--oc-primary)}
       .oc-btn.outline:hover{background:#eff6ff}
-      .oc-tbl{width:100%;border-collapse:separate;border-spacing:0;border:1px solid #e6e9ef;border-radius:10px;overflow:hidden}
-      .oc-tbl thead th{background:#f8fafc;text-align:left;padding:8px 10px;border-bottom:1px solid #e6e9ef;font-weight:700}
-      .oc-tbl tbody td{padding:8px 10px;border-bottom:1px solid #f0f3f8}
+
+      /* ===== Tabla general ===== */
+      .oc-scroll-x{overflow:auto}
+      .oc-tbl{
+        width:100%;
+        border-collapse:separate;
+        border-spacing:0;
+        border:1px solid #e6e9ef;
+        border-radius:10px;
+        overflow:hidden;
+        table-layout:auto;
+      }
+      .oc-tbl.sticky thead th{
+        position:sticky; top:0; z-index:1; background:#f8fafc;
+      }
+      .oc-tbl thead th{
+        white-space:nowrap; word-break:normal; overflow-wrap:normal;
+        height:auto; line-height:1.25; text-align:left;
+        padding:8px 10px; border-bottom:1px solid #e6e9ef; font-weight:700;
+      }
+      .oc-tbl tbody td{
+        white-space:nowrap; overflow-wrap:normal; vertical-align:middle;
+        height:44px; padding:6px 10px; border-bottom:1px solid #f0f3f8;
+      }
+      .oc-tbl tbody tr:nth-child(odd){background:#fcfdff}
       .oc-tbl tbody tr:last-child td{border-bottom:0}
-      .oc-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999999;display:flex;align-items:center;justify-content:center}
-      .oc-modal{width:min(1200px,96vw);max-height:92vh;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 22px 60px rgba(0,0,0,.28);display:flex;flex-direction:column}
-      .oc-modal-h,.oc-modal-f{padding:10px 12px;border-bottom:1px solid #eef2f7;display:flex;align-items:center;justify-content:space-between}
-      .oc-modal-f{border-top:1px solid #eef2f7;border-bottom:0;gap:8;justify-content:flex-end}
-      .oc-modal-t{padding:10px 12px;border-bottom:1px solid #eef2f7;display:grid;grid-template-columns:minmax(180px,260px) 1fr minmax(120px,160px) auto;gap:8px;align-items:center}
+      .oc-code{font-variant-numeric:tabular-nums}
+      .oc-num{text-align:right}
+      .oc-name{overflow:hidden;text-overflow:ellipsis}
+
+      /* ===== SOLO tabla interna del editor de plan ===== */
+      .oc-tbl.plan-editor{
+        table-layout:fixed; width:100%; font-size:12.5px;
+      }
+      .oc-tbl.plan-editor thead th,
+      .oc-tbl.plan-editor tbody td { padding:6px 8px; }
+
+      /* Distribución proporcional por columnas */
+      .oc-tbl.plan-editor th:nth-child(1), .oc-tbl.plan-editor td:nth-child(1){ width:9%;  text-align:left; }
+      .oc-tbl.plan-editor th:nth-child(2), .oc-tbl.plan-editor td:nth-child(2){ width:38%; text-align:left; }
+      .oc-tbl.plan-editor th:nth-child(3), .oc-tbl.plan-editor td:nth-child(3){ width:9%;  text-align:right;}
+      .oc-tbl.plan-editor th:nth-child(4), .oc-tbl.plan-editor td:nth-child(4){ width:6%;  text-align:center;}
+      .oc-tbl.plan-editor th:nth-child(5), .oc-tbl.plan-editor td:nth-child(5){ width:6%;  text-align:center;}
+      .oc-tbl.plan-editor th:nth-child(6), .oc-tbl.plan-editor td:nth-child(6){ width:7%;  text-align:right;}
+      .oc-tbl.plan-editor th:nth-child(7), .oc-tbl.plan-editor td:nth-child(7){ width:10%; text-align:left; }
+      .oc-tbl.plan-editor th:nth-child(8), .oc-tbl.plan-editor td:nth-child(8){ width:7%;  text-align:right;}
+      .oc-tbl.plan-editor th:nth-child(9), .oc-tbl.plan-editor td:nth-child(9){ width:16%; text-align:center;}
+
+      /* Nombre: visible sin recorte */
+      .oc-tbl.plan-editor tbody td:nth-child(2){
+        overflow:visible; text-overflow:clip; white-space:nowrap; font-size:12px;
+      }
+
+      /* ✅ Acciones: permitir wrap dentro de la celda (FIX) */
+      .oc-tbl.plan-editor tbody td:nth-child(9){
+        white-space:normal; /* ← esto habilita que los botones salten de línea si no caben */
+      }
+
+      /* Inputs dentro de la tabla */
+      .oc-tbl.plan-editor input.oc-input{
+        width:100%; height:30px; padding:0 8px; font-size:12px;
+      }
+
+      /* Acciones con wrap */
+      .oc-actions{display:flex; gap:6px; flex-wrap:wrap; justify-content:center}
+      .oc-actions .oc-btn{height:26px; padding:0 8px; font-size:11.5px}
+
+      /* ===== Modal y sugerencias (faltaban estilos base) ===== */
+      .oc-mask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:50}
+      .oc-modal{width:min(1100px,96vw);max-height:90vh;background:#fff;border:1px solid #e6e9ef;border-radius:12px;display:flex;flex-direction:column}
+      .oc-modal-h{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #edf0f6}
+      .oc-modal-t{display:grid;grid-template-columns:220px 1fr auto auto;gap:10px;align-items:center;padding:12px;border-bottom:1px solid #edf0f6}
       .oc-modal-b{padding:12px;overflow:auto}
-      .oc-sug{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e5e7eb;border-radius:10px;margin-top:4px;max-height:260px;overflow:auto;box-shadow:0 12px 28px rgba(0,0,0,.15);z-index:99}
-      .oc-sug-item{padding:8px 10px;display:flex;justify-content:space-between;gap:10px;cursor:pointer}
-      .oc-sug-item:hover,.oc-sug-item.is-active{background:#eff6ff}
+      .oc-modal-f{display:flex;justify-content:flex-end;gap:8px;padding:12px;border-top:1px solid #edf0f6}
+      .oc-sug{position:absolute;left:0;right:0;top:36px;background:#fff;border:1px solid #e6e9ef;border-radius:8px;box-shadow:0 6px 18px rgba(15,23,42,.08);max-height:280px;overflow:auto;z-index:60}
+      .oc-sug-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;cursor:pointer}
+      .oc-sug-item:hover{background:#f8fafc}
+      .table-wrap{width:100%;overflow:auto}
     `;
     const tag = document.createElement("style");
     tag.id = id;
@@ -127,48 +194,13 @@ function usePlanesStyles() {
   }, []);
 }
 
-/* ===================== heurísticas de categoría (fallback) ===================== */
-const KEYWORDS_BY_CAT = {
-  "Cirugía Oral": ["cirugia","quirurg","exodon","alveolo","fenestr","colgajo","apicect"],
-  "Endodoncia": ["endodon","conducto","pulpar","apex","biopul","necros"],
-  "Implantología": ["implante","implanto","pilar","injerto","osteointeg"],
-  "Odontología General": ["profilaxis","resina","amalgama","sellante","consulta","control"],
-  "Ortodoncia": ["ortodon","bracket","alinead","arco","retencion"],
-  "Periodoncia": ["periodon","curet","raspaje","aliser","flap"],
-  "Psicología": ["psicol","terap","sesion"],
-  "Radiología": ["radio","rx","radiogr","periap","panoram","cefalo"],
-  "Rehabilitación Oral": ["rehabil","corona","puente","carilla","incrusta","protes"]
-};
-const tok = (s) => normalize(s).replace(/[^a-z0-9ñ ]/gi, " ").split(/\s+/).filter(Boolean);
-const deriveCategoriaByKeywords = (nombre = "", catName = "", kwMap = KEYWORDS_BY_CAT) => {
-  const k = kwMap[catName] || []; if (!k.length) return "";
-  const words = tok(nombre);
-  return k.some((kw) => words.some((w) => w.includes(kw))) ? catName : "";
-};
-const deriveCategoria = (codigo = "", nombre = "", catName = "", catMap = []) => {
-  const code = (codigo || "").toString();
-  if (catMap && catMap.length && catName) {
-    const ent = catMap.find((c) => sameCat(c.nombre, catName));
-    if (ent && Array.isArray(ent.prefijos)) {
-      if (ent.prefijos.some((p) => p && code.startsWith((p || "").replace(/\./g, "")))) return ent.nombre;
-    }
-  }
-  const kwCat = deriveCategoriaByKeywords(nombre, catName);
-  if (kwCat) return kwCat;
-  return "";
-};
-
 /* ===================== util Firestore ===================== */
 function mapItem(d, x, catNameFromParent = "") {
   const codigo = (pick(x, FIELD_ALIASES.codigo, d.id) || "").toString().trim();
   const nombre = (pick(x, FIELD_ALIASES.nombre, codigo) || "").toString().trim();
-
-  // ✅ precio robusto (acepta string con símbolos)
   const precio = parseCOP(pick(x, FIELD_ALIASES.precio, 0));
-
   let categoria = (pick(x, FIELD_ALIASES.categoria, catNameFromParent) || "").toString().trim();
   if (!categoria) categoria = "Sin categoría";
-
   return {
     id: d.id,
     codigo,
@@ -181,11 +213,34 @@ function mapItem(d, x, catNameFromParent = "") {
     genera_rips: !!pick(x, FIELD_ALIASES.genera_rips, false),
     es_consulta: !!pick(x, FIELD_ALIASES.es_consulta, false),
     ver_en_agenda: !!pick(x, FIELD_ALIASES.ver_en_agenda, false),
-    _norm: normalize(`${codigo} ${nombre} ${categoria}`)
+    _norm: normalize(`${codigo} ${nombre} ${categoria}`) // ✅ corregido sin escape
   };
 }
 
-// 1) listas_precios/{listaId}/categorias/*/items  (también intenta /procedimientos)
+/* ====== helper que faltaba: inferir categoría por prefijos ====== */
+function deriveCategoria(codigo = "", nombre = "", selectedCat = "", catMap = []) {
+  const txt = normalize(`${codigo} ${nombre}`);
+  // 1) si hay un mapa con prefijos para la categoría seleccionada, úsalo
+  if (selectedCat && selectedCat !== "*") {
+    const m = catMap.find((c) => sameCat(c.nombre, selectedCat));
+    if (m?.prefijos?.length) {
+      for (const p of m.prefijos) {
+        const pref = normalize(String(p || ""));
+        if (pref && (txt.startsWith(pref) || txt.includes(` ${pref}`))) return m.nombre;
+      }
+    }
+  }
+  // 2) o el primer match de cualquier categoría por prefijo
+  for (const m of catMap) {
+    for (const p of (m.prefijos || [])) {
+      const pref = normalize(String(p || ""));
+      if (pref && (txt.startsWith(pref) || txt.includes(` ${pref}`))) return m.nombre;
+    }
+  }
+  return "";
+}
+
+// 1) listas_precios/{listaId}/categorias/*/items (o /procedimientos)
 async function fetchItemsFromNestedCategories(listaId) {
   try {
     const catsSnap = await getDocs(collection(db, COLLECTIONS.listas_precios, listaId, "categorias")).catch(() => null);
@@ -193,19 +248,14 @@ async function fetchItemsFromNestedCategories(listaId) {
     const out = [];
     for (const catDoc of catsSnap.docs) {
       const catName = (catDoc.data()?.nombre || "").toString().trim();
-
-      // intenta /items
       let itemsSnap = await getDocs(
         collection(db, COLLECTIONS.listas_precios, listaId, "categorias", catDoc.id, "items")
       ).catch(() => null);
-
-      // si no, intenta /procedimientos
       if (!itemsSnap || itemsSnap.empty) {
         itemsSnap = await getDocs(
           collection(db, COLLECTIONS.listas_precios, listaId, "categorias", catDoc.id, "procedimientos")
         ).catch(() => null);
       }
-
       if (!itemsSnap || itemsSnap.empty) continue;
       itemsSnap.forEach((d) => out.push(mapItem(d, d.data() || {}, catName)));
     }
@@ -221,10 +271,8 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
   const [cat, setCat] = useState("*");
   const [term, setTerm] = useState("");
   const [qty, setQty] = useState(1);
-
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-
   const [openSug, setOpenSug] = useState(false);
   const inputRef = useRef(null);
   const [bag, setBag] = useState([]);
@@ -363,13 +411,13 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
       try {
         let merged = [];
 
-        // 1) anidado (items/procedimientos)
+        // 1) anidado
         if (listaId) {
           const nested = await fetchItemsFromNestedCategories(listaId);
           if (nested.length) merged = nested;
         }
 
-        // 1b) subcol items
+        // 1b) subcolección items
         if (!merged.length && listaId) {
           const subItems = await getDocs(collection(db, COLLECTIONS.listas_precios, listaId, "items")).catch(() => null);
           if (subItems && !subItems.empty) {
@@ -377,14 +425,14 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
           }
         }
 
-        // 2) espejo
+        // 2) espejo por listaId
         if (!merged.length && listaId) {
           const qLP = query(collection(db, COLLECTIONS.listas_precios_productos), where("listaId", "==", listaId));
           const snapLP = await getDocs(qLP).catch(() => null);
           merged = (snapLP?.docs || []).map((d) => mapItem(d, d.data() || {}));
         }
 
-        // 3) fallback catálogo (¡siempre muestra algo!)
+        // 3) fallback catálogo
         if (!merged.length) {
           const catSnap = await getDocs(collection(db, COLLECTIONS.catalogo_procedimientos)).catch(() => null);
           catSnap?.forEach((d) => merged.push(mapItem(d, d.data() || {})));
@@ -453,7 +501,7 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
       }
       const baseAmt = base.precio * cantidad;
       const total = Math.max(0, baseAmt);
-      return [...prev, { ...base, total }];
+      return [...prev, { ...base, total } ];
     });
   };
 
@@ -492,17 +540,10 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
         total: Number(r.precio || 0) * cantidad,
       }));
       onLoadLines(all);
-      setTerm("");
-      setOpenSug(false);
-      if (inputRef.current) inputRef.current.blur();
-      onClose();
-      return;
+      setTerm(""); setOpenSug(false); if (inputRef.current) inputRef.current.blur(); onClose(); return;
     }
     if (bag.length) onLoadLines(bag);
-    setTerm("");
-    setOpenSug(false);
-    if (inputRef.current) inputRef.current.blur();
-    onClose();
+    setTerm(""); setOpenSug(false); if (inputRef.current) inputRef.current.blur(); onClose();
   };
 
   const visibleSug = openSug && (loading || rows.length > 0);
@@ -547,8 +588,7 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
                     onMouseDown={(e) => {
                       e.preventDefault();
                       addFromRow(r);
-                      setTerm("");
-                      setOpenSug(false);
+                      setTerm(""); setOpenSug(false);
                       if (inputRef.current) inputRef.current.blur();
                     }}
                   >
@@ -582,7 +622,7 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
                   <tr>
                     <th style={{ width:110 }}>Código</th>
                     <th>Nombre</th>
-                    <th style={{ width:140 }}>Valor unit.</th>
+                    <th style={{ width:140 }} className="oc-num">Valor<br/>unit.</th>
                     <th style={{ width:160 }}>Categoría</th>
                     <th style={{ width:120 }}>Acciones</th>
                   </tr>
@@ -590,17 +630,16 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
                 <tbody>
                   {rows.map((r) => (
                     <tr key={`${r.id}-${r.codigo}`}>
-                      <td className="mono">{r.codigo}</td>
-                      <td>{r.nombre}</td>
-                      <td className="mono">{COP.format(r.precio || 0)}</td>
+                      <td className="mono oc-code">{r.codigo}</td>
+                      <td className="oc-name" title={r.nombre}>{r.nombre}</td>
+                      <td className="mono oc-num">{COP.format(r.precio || 0)}</td>
                       <td>{r.categoria || "—"}</td>
                       <td>
                         <button
                           className="oc-btn success small"
                           onClick={() => {
                             addFromRow(r);
-                            setTerm("");
-                            setOpenSug(false);
+                            setTerm(""); setOpenSug(false);
                             if (inputRef.current) inputRef.current.blur();
                           }}
                         >
@@ -622,28 +661,28 @@ function AgregarProductosModal({ listaId, onClose, onLoadLines }) {
                   <tr>
                     <th style={{ width:110 }}>Código</th>
                     <th>Nombre</th>
-                    <th style={{ width:120 }}>Valor unit.</th>
-                    <th style={{ width:80 }}>Cant.</th>
-                    <th style={{ width:90 }}>Desc. %</th>
-                    <th style={{ width:110 }}>Desc. $</th>
+                    <th style={{ width:120 }} className="oc-num">Valor<br/>unit.</th>
+                    <th style={{ width:80 }} className="oc-num">Cant.</th>
+                    <th style={{ width:90 }} className="oc-num">Desc.<br/>%</th>
+                    <th style={{ width:110 }} className="oc-num">Desc.<br/>$</th>
                     <th>Observaciones</th>
-                    <th style={{ width:120 }}>Total</th>
+                    <th style={{ width:120 }} className="oc-num">Total</th>
                     <th style={{ width:140 }}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bag.map((it, i) => (
                     <tr key={i}>
-                      <td className="mono">{it.codigo}</td>
-                      <td>{it.nombre}</td>
-                      <td><input type="number" min={0} value={Number.isFinite(it.precio)?it.precio:0} onChange={(e)=>updateBag(i,{precio:e.target.value})} className="oc-input" style={{ width:110 }} /></td>
-                      <td><input type="number" min={1} value={it.cantidad} onChange={(e)=>updateBag(i,{cantidad:e.target.value})} className="oc-input" style={{ width:80 }} /></td>
-                      <td><input type="number" min={0} max={100} value={it.descuentoPct} onChange={(e)=>updateBag(i,{descuentoPct:e.target.value})} className="oc-input" style={{ width:80 }} /></td>
-                      <td><input type="number" min={0} value={it.descuentoValor||0} onChange={(e)=>updateBag(i,{descuentoValor:e.target.value})} className="oc-input" style={{ width:110 }} /></td>
+                      <td className="mono oc-code">{it.codigo}</td>
+                      <td className="oc-name" title={it.nombre}>{it.nombre}</td>
+                      <td><input type="number" min={0} value={Number.isFinite(it.precio)?it.precio:0} onChange={(e)=>updateBag(i,{precio:e.target.value})} className="oc-input num" /></td>
+                      <td><input type="number" min={1} value={it.cantidad} onChange={(e)=>updateBag(i,{cantidad:e.target.value})} className="oc-input num" /></td>
+                      <td><input type="number" min={0} max={100} value={it.descuentoPct} onChange={(e)=>updateBag(i,{descuentoPct:e.target.value})} className="oc-input num" /></td>
+                      <td><input type="number" min={0} value={it.descuentoValor||0} onChange={(e)=>updateBag(i,{descuentoValor:e.target.value})} className="oc-input num" /></td>
                       <td><input value={it.observaciones||""} onChange={(e)=>updateBag(i,{observaciones:e.target.value})} className="oc-input" /></td>
-                      <td className="mono">{COP.format(it.total || 0)}</td>
+                      <td className="mono oc-num">{COP.format(it.total || 0)}</td>
                       <td>
-                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        <div className="oc-actions">
                           <button className="oc-btn success small" onClick={()=>removeBag(i)}>Quitar</button>
                         </div>
                       </td>
@@ -751,6 +790,8 @@ function PlanEditor({ planId, onBack }) {
     setLines((p) => id ? p.filter((x) => x.id !== id) : p.filter((_, i) => i !== idx));
   };
 
+  // 👇 añadimos editar para que el botón funcione y no falle
+  const editar = (ln) => { alert(`(Demo) Editar: ${ln.codigo} — ${ln.nombre}`); };
   const agendar = (ln) => { alert(`(Demo) Agendar: ${ln.codigo} — ${ln.nombre}`); };
   const facturar = (ln) => { alert(`(Demo) Facturar: ${ln.codigo} — ${ln.nombre}`); };
 
@@ -798,6 +839,9 @@ function PlanEditor({ planId, onBack }) {
 
   if (!plan) return <div className="oc-muted">Cargando plan…</div>;
 
+  const totalPlan = lines.reduce((acc, ln) =>
+    acc + (Number.isFinite(ln.total) ? ln.total : toNumber(ln.precio,0)*toNumber(ln.cantidad,1)), 0);
+
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
@@ -822,37 +866,84 @@ function PlanEditor({ planId, onBack }) {
         <button className="oc-btn outline small" onClick={() => setOpenModal(true)}>+ Productos</button>
       </div>
 
-      <div className="table-wrap">
-        <table className="oc-tbl">
+      {/* ===== Tabla interna del editor (solo cambios visuales) ===== */}
+      <div className="table-wrap oc-scroll-x">
+        <table className="oc-tbl sticky plan-editor">
           <thead>
             <tr>
-              <th style={{ width:110 }}>Código</th>
+              <th>Código</th>
               <th>Nombre</th>
-              <th style={{ width:120 }}>Valor unit.</th>
-              <th style={{ width:80 }}>Cant.</th>
-              <th style={{ width:90 }}>Desc. %</th>
-              <th style={{ width:110 }}>Desc. $</th>
+              <th className="oc-num">Valor<br/>unit.</th>
+              <th className="oc-num">Cant.</th>
+              <th className="oc-num">Desc.<br/>%</th>
+              <th className="oc-num">Desc.<br/>$</th>
               <th>Observaciones</th>
-              <th style={{ width:120 }}>Total</th>
-              <th style={{ width:220 }}>Acciones</th>
+              <th className="oc-num">Total</th>
+              <th>Acciones</th>
             </tr>
           </thead>
+
           <tbody>
             {lines.length === 0 ? (
               <tr><td colSpan={9} className="oc-muted">Sin productos en el plan.</td></tr>
             ) : lines.map((ln, i) => (
               <tr key={ln.id || `new-${i}`}>
-                <td className="mono">{ln.codigo}</td>
-                <td>{ln.nombre}</td>
-                <td><input type="number" min={0} value={Number.isFinite(ln.precio)?ln.precio:0} onChange={(e)=>updateLine(i,{precio:e.target.value})} className="oc-input" style={{ width:110 }} /></td>
-                <td><input type="number" min={1} value={ln.cantidad||1} onChange={(e)=>updateLine(i,{cantidad:e.target.value})} className="oc-input" style={{ width:80 }} /></td>
-                <td><input type="number" min={0} max={100} value={ln.descuentoPct||0} onChange={(e)=>updateLine(i,{descuentoPct:e.target.value})} className="oc-input" style={{ width:80 }} /></td>
-                <td><input type="number" min={0} value={ln.descuentoValor||0} onChange={(e)=>updateLine(i,{descuentoValor:e.target.value})} className="oc-input" style={{ width:110 }} /></td>
-                <td><input className="oc-input" value={ln.observaciones||""} onChange={(e)=>updateLine(i,{observaciones:e.target.value})} /></td>
-                <td className="mono">{COP.format(toNumber(ln.total, (toNumber(ln.precio,0)*toNumber(ln.cantidad,1))))}</td>
+                <td className="mono oc-code">{ln.codigo}</td>
+                <td title={ln.nombre}>{ln.nombre}</td>
+
                 <td>
-                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                    <button className="oc-btn outline small" onClick={()=>agendar(ln)}>Agendar</button>
+                  <input
+                    type="number" min={0}
+                    value={Number.isFinite(ln.precio)?ln.precio:0}
+                    onChange={(e)=>updateLine(i,{precio:e.target.value})}
+                    className="oc-input num"
+                  />
+                </td>
+
+                <td>
+                  <input
+                    type="number" min={1}
+                    value={ln.cantidad||1}
+                    onChange={(e)=>updateLine(i,{cantidad:e.target.value})}
+                    className="oc-input num"
+                  />
+                </td>
+
+                <td>
+                  <input
+                    type="number" min={0} max={100}
+                    value={ln.descuentoPct||0}
+                    onChange={(e)=>updateLine(i,{descuentoPct:e.target.value})}
+                    className="oc-input num"
+                  />
+                </td>
+
+                <td>
+                  <input
+                    type="number" min={0}
+                    value={ln.descuentoValor||0}
+                    onChange={(e)=>updateLine(i,{descuentoValor:e.target.value})}
+                    className="oc-input num"
+                  />
+                </td>
+
+                <td>
+                  <input
+                    className="oc-input" value={ln.observaciones||""}
+                    onChange={(e)=>updateLine(i,{observaciones:e.target.value})}
+                  />
+                </td>
+
+                <td className="mono oc-num">
+                  {COP.format(
+                    (Number.isFinite(ln.total) ? ln.total :
+                      (toNumber(ln.precio,0)*toNumber(ln.cantidad,1)))
+                  )}
+                </td>
+
+                <td>
+                  <div className="oc-actions">
+                    <button className="oc-btn outline small" onClick={()=>editar(ln)}>Editar</button>
                     <button className="oc-btn outline small" onClick={()=>facturar(ln)}>Facturar</button>
                     <button className="oc-btn danger small" onClick={()=>removeLine(ln.id, i)}>Eliminar</button>
                   </div>
@@ -861,6 +952,12 @@ function PlanEditor({ planId, onBack }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Total del plan */}
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:8,fontWeight:700}}>
+        <span style={{marginRight:8}}>Total del plan:</span>
+        <span className="mono">{COP.format(totalPlan)}</span>
       </div>
 
       {openModal && (
@@ -879,7 +976,7 @@ export default function Planes({ mode, planId }) {
   usePlanesStyles();
 
   const [localMode, setLocalMode] = useState(mode || "list");
-  the [editId, setEditId] = useState(planId || null);
+  const [editId, setEditId] = useState(planId || null);
 
   const [term, setTerm] = useState("");
   const [rows, setRows] = useState([]);
@@ -990,8 +1087,8 @@ export default function Planes({ mode, planId }) {
         ) : filtered.length === 0 ? (
           <div className="oc-muted">Sin planes.</div>
         ) : (
-          <div className="table-wrap">
-            <table className="oc-tbl">
+          <div className="table-wrap oc-scroll-x">
+            <table className="oc-tbl sticky">
               <thead>
                 <tr>
                   <th>Nombre</th>
@@ -1002,8 +1099,8 @@ export default function Planes({ mode, planId }) {
               <tbody>
                 {filtered.map((r) => (
                   <tr key={r.id}>
-                    <td>{r.nombre}</td>
-                    <td>{r.listaNombre || r.listaId || "—"}</td>
+                    <td className="oc-name" title={r.nombre}>{r.nombre}</td>
+                    <td className="oc-name" title={r.listaNombre || r.listaId || "—"}>{r.listaNombre || r.listaId || "—"}</td>
                     <td>
                       <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                         <button className="oc-btn outline small" onClick={()=>{ setEditId(r.id); setLocalMode("edit"); }}>Editar</button>

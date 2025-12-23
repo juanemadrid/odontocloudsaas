@@ -9,6 +9,9 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 
+// 🧩 API para sincronizar con listas_precios (categorías/items + espejos)
+import { saveItemEnLista } from "../../utils/listaPreciosApi";
+
 // ---------- helpers ----------
 function getDashBase(pathname = "") {
   const segs = pathname.split("/").filter(Boolean);
@@ -437,15 +440,41 @@ function ListaProductosInline() {
   // Guardar nuevo
   const guardarProducto = async () => {
     if (!f.nombre.trim()) return alert("El nombre es obligatorio.");
+
+    // 1) Guarda en tu colección actual de productos (como ya hacías)
     const payload = {
       ...f,
       precioCompra: toNumber(f.precioCompra),
       creado: new Date().toISOString(),
       imgPreview: imgPreview || null,
-      // 🆕 clave para que Planes encuentre el precio por lista
+      // clave para que Planes encuentre en el espejo 'listas_precios_productos'
       listaId: listaIdEnUso || null,
     };
     const ref = await addDoc(collection(db, "listas_precios_productos"), payload);
+
+    // 2) 🆕 Si hay lista 'en uso', reflejar también en listas_precios/{listaId}/items
+    if (!listaIdEnUso) {
+      alert("Guardado. Nota: selecciona una 'Lista de precios clínicos' EN USO para que Planes tome precio automáticamente.");
+    } else {
+      try {
+        await saveItemEnLista({
+          listaId: listaIdEnUso,
+          categoriaNombre: f.categoria || "Productos",
+          dataRaw: {
+            codigo: f.referencia,             // ← código / referencia
+            nombre: f.nombre,
+            precio: toNumber(f.precioCompra),
+            permite_desc: true,
+            max_desc_pct: 0,
+            max_desc_valor: 0,
+            comentario: f.descripcion || "",
+          },
+        });
+      } catch (e) {
+        console.error("No se pudo reflejar en listas_precios:", e);
+      }
+    }
+
     setRows((prev) => [{ id: ref.id, ...payload }, ...prev]);
     setF(init); setImgPreview(null); setModo("list");
     alert("Producto guardado.");
@@ -492,15 +521,40 @@ function ListaProductosInline() {
   const actualizarProducto = async () => {
     if (!editId) return;
     if (!f.nombre.trim()) return alert("El nombre es obligatorio.");
+
+    // 1) Actualiza tu colección de productos
     const payload = {
       ...f,
       precioCompra: toNumber(f.precioCompra),
       actualizado: new Date().toISOString(),
       imgPreview: imgPreview || null,
-      // 🆕 asegurar que queda ligado a la lista “en uso”
       listaId: listaIdEnUso || null,
     };
     await updateDoc(doc(db, "listas_precios_productos", editId), payload);
+
+    // 2) 🆕 Reflejar también en la lista 'en uso'
+    if (!listaIdEnUso) {
+      alert("Actualizado. Nota: selecciona una 'Lista de precios clínicos' EN USO para que Planes tome precio automáticamente.");
+    } else {
+      try {
+        await saveItemEnLista({
+          listaId: listaIdEnUso,
+          categoriaNombre: f.categoria || "Productos",
+          dataRaw: {
+            codigo: f.referencia,
+            nombre: f.nombre,
+            precio: toNumber(f.precioCompra),
+            permite_desc: true,
+            max_desc_pct: 0,
+            max_desc_valor: 0,
+            comentario: f.descripcion || "",
+          },
+        });
+      } catch (e) {
+        console.error("No se pudo reflejar en listas_precios:", e);
+      }
+    }
+
     setRows((prev) => prev.map(r => r.id === editId ? { id: editId, ...payload } : r));
     setEditId(null); setF(init); setImgPreview(null); setModo("list");
     alert("Producto actualizado.");
@@ -595,8 +649,8 @@ function ListaProductosInline() {
                 <input className="np-input" value={f.nombre} onChange={e=>setF({...f,nombre:e.target.value})} placeholder="Nombre del concepto" />
               </div>
               <div className="np-field">
-                <label className="np-label">Referencia</label>
-                <input className="np-input" value={f.referencia} onChange={e=>setF({...f,referencia:e.target.value})} placeholder="Referencia del concepto" />
+                <label className="np-label">Referencia (código)*</label>
+                <input className="np-input" value={f.referencia} onChange={e=>setF({...f,referencia:e.target.value})} placeholder="Código / referencia" />
               </div>
             </div>
 
