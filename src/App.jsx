@@ -1,95 +1,109 @@
-// ===============================
-// 🚀 App.jsx - Enrutador Principal OdontoCloud (fix subrutas)
-// ===============================
-import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import React, { Suspense } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
+import { useAuth } from "./context/AuthContext";
 
+// Components
+import PremiumLoading from "./components/PremiumLoading";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+// Static Imports for Critical Path
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
+import ModernLanding from "./pages/ModernLanding";
+import ModernLayout from "./layout/ModernLayout";
+import { ServicesPage, PricingPage, FAQPage } from "./pages/SectionPages";
 
-// Recuperar sesión offline del Login.jsx
-const getOfflineSession = () => {
-  try {
-    const data = JSON.parse(localStorage.getItem("odc_session"));
-    if (data && Date.now() - data.timestamp < 1000 * 60 * 60 * 24) {
-      return data; // { email, rol, timestamp }
-    }
-    return null;
-  } catch {
-    return null;
+// Lazy Imports
+const Dashboard = React.lazy(() => import("./pages/Dashboard"));
+const SuperAdminDashboard = React.lazy(() => import("./pages/SuperAdminPanel"));
+const UnauthorizedPage = React.lazy(() => import("./pages/UnauthorizedPage"));
+
+// 🚀 Role Bridge: Automatic redirection to the correct portal
+function RoleBridge() {
+  const { userProfile, loading } = useAuth();
+  if (loading) return <PremiumLoading />;
+
+  const role = userProfile?.rol?.trim().toLowerCase() || "";
+  console.log("RoleBridge - Evaluando rol para redirección:", {
+    role,
+    rawRole: userProfile?.rol,
+    email: userProfile?.email
+  });
+
+  if (role === "superadmin") {
+    return <Navigate to="/superadmin" replace />;
   }
-};
-
-// manda al dashboard correcto según rol
-const homeByRole = (rol) => {
-  const r = (rol || "").toLowerCase();
-  if (r === "administrador") return "/dashboard_admin";
-  if (r === "doctor")        return "/dashboard_doctor";
-  if (r === "recepcionista") return "/dashboard_recepcion";
-  return "/";
-};
-
-// 🔐 Componente para proteger rutas según rol
-function RequireRole({ allowedRoles, children }) {
-  const session = getOfflineSession();
-
-  if (!session) return <Navigate to="/" replace />;
-
-  const rol = session.rol?.toLowerCase();
-  if (!allowedRoles.map((r) => r.toLowerCase()).includes(rol)) {
-    return <Navigate to={homeByRole(session.rol)} replace />;
-  }
-
-  return children;
+  return <Navigate to="/dashboard" replace />;
 }
 
 export default function App() {
-  const session = getOfflineSession();
+  const { user, userProfile, loading } = useAuth();
+  const location = useLocation();
+
+  // 🛡️ Debug Log
+  console.log("App Render - User:", user?.email, "Loading:", loading, "Role:", userProfile?.rol);
+
+  if (loading) {
+    return <PremiumLoading />;
+  }
 
   return (
-    <Routes>
-      {/* LOGIN */}
-      <Route
-        path="/"
-        element={
-          session
-            ? <Navigate to={homeByRole(session.rol)} replace />
-            : <Login />
-        }
-      />
+    <Suspense fallback={<PremiumLoading />}>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          {/* Public Routes */}
+          <Route path="/login" element={
+            user ? <RoleBridge /> : <Login />
+          } />
 
-      {/* ADMIN (permite subrutas con /*) */}
-      <Route
-        path="/dashboard_admin/*"
-        element={
-          <RequireRole allowedRoles={["administrador"]}>
-            <Dashboard />
-          </RequireRole>
-        }
-      />
+          <Route element={<ModernLayout />}>
+            <Route path="/" element={<ModernLanding isMaster={true} />} />
+            <Route path="/servicios" element={<ServicesPage />} />
+            <Route path="/planes" element={<PricingPage />} />
+            <Route path="/faq" element={<FAQPage />} />
+          </Route>
 
-      {/* DOCTOR */}
-      <Route
-        path="/dashboard_doctor/*"
-        element={
-          <RequireRole allowedRoles={["doctor"]}>
-            <Dashboard />
-          </RequireRole>
-        }
-      />
+          {/* Private Routes */}
+          <Route path="/home" element={
+            <ProtectedRoute>
+              <RoleBridge />
+            </ProtectedRoute>
+          } />
 
-      {/* RECEPCIONISTA */}
-      <Route
-        path="/dashboard_recepcion/*"
-        element={
-          <RequireRole allowedRoles={["recepcionista"]}>
-            <Dashboard />
-          </RequireRole>
-        }
-      />
+          <Route path="/dashboard/*" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
 
-      {/* fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          {/* Master Platform Route */}
+          <Route path="/superadmin/*" element={
+            <ProtectedRoute>
+              <SuperAdminDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* Compatibility Routes for specific roles */}
+          <Route path="/dashboard_admin/*" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/dashboard_doctor/*" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/dashboard_recepcion/*" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="*" element={<Navigate to="/home" replace />} />
+        </Routes>
+      </AnimatePresence>
+    </Suspense>
   );
 }

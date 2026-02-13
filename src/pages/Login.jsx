@@ -3,7 +3,7 @@
 // ===============================
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { auth, db } from "../firebase"; // deja tu ruta como la tienes
+import { auth, db } from "../firebase";
 import {
   signInWithEmailAndPassword,
   onAuthStateChanged,
@@ -24,7 +24,7 @@ const saveSessionOffline = (email, rol) => {
 const getOfflineSession = () => {
   try {
     const data = JSON.parse(localStorage.getItem("odc_session"));
-    // válido 24h (ajusta si quieres más)
+
     if (data && Date.now() - data.timestamp < 1000 * 60 * 60 * 24) {
       return data;
     }
@@ -42,7 +42,6 @@ const Login = () => {
   const [error, setError] = useState("");
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // 🌐 Detecta cambios de conexión
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -54,23 +53,47 @@ const Login = () => {
     };
   }, []);
 
-  // 🚦 Redirección por rol
   const redirectByRole = (rol) => {
     const r = (rol || "").toLowerCase();
-    if (r === "administrador") {
-      navigate("/dashboard_admin", { replace: true });
-    } else if (r === "doctor") {
-      navigate("/dashboard_doctor", { replace: true });
-    } else if (r === "recepcionista") {
-      navigate("/dashboard_recepcion", { replace: true });
-    } else {
-      setError("Rol no reconocido. Contacte al administrador.");
+
+    // 1. Superadmin -> Panel de Superadmin
+    if (r === "superadmin" || r.includes("superadmin")) {
+      navigate("/superadmin", { replace: true });
+      return;
     }
+
+    // 2. Administrador -> Dashboard Admin
+    if (r === "administrador" || r.includes("administrador") || r.includes("soporte")) {
+      navigate("/dashboard_admin", { replace: true });
+      return;
+    }
+
+    // 3. Doctor -> Dashboard Doctor
+    if (r === "doctor" || r.includes("doctor") || r.includes("odontologo") || r.includes("especialista")) {
+      navigate("/dashboard_doctor", { replace: true });
+      return;
+    }
+
+    // 4. Recepción / Auxiliar -> Dashboard Recepción
+    if (
+      r === "recepcionista" ||
+      r.includes("recepcion") ||
+      r.includes("auxiliar") ||
+      r.includes("caja") ||
+      r === "sin_rol"
+    ) {
+      navigate("/dashboard_recepcion", { replace: true });
+      return;
+    }
+
+    // 5. Fallback Default
+    // Si no coincide con nada, mandar al dashboard de recepción o mostrar error si es muy estricto.
+    // Usaremos recepción como fallback seguro para evitar "limbo".
+    console.warn(`Rol desconocido: "${rol}". Redirigiendo a recepción.`);
+    navigate("/dashboard_recepcion", { replace: true });
   };
 
-  // 🟢 Al montar: si hay sesión en Firebase o en local, redirige sin pedir login
   useEffect(() => {
-    // 1) Si estás OFFLINE y ya hay sesión en local → entrar directo
     if (!navigator.onLine) {
       const s = getOfflineSession();
       if (s?.rol) {
@@ -81,30 +104,40 @@ const Login = () => {
       return;
     }
 
-    // 2) Si estás ONLINE y Firebase ya tiene usuario activo → tomar rol y entrar
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // intenta usar el rol guardado
         const s = getOfflineSession();
         if (s?.rol) {
           redirectByRole(s.rol);
           return;
         }
-        // si no hay rol guardado, buscarlo en Firestore (estás online)
+
         try {
           const qUsers = query(
-            collection(db, "users"),
-            where("correo", "==", user.email || "")
+            collection(db, "usuarios"),
+            where("email", "==", user.email || "")
           );
           const snap = await getDocs(qUsers);
           if (!snap.empty) {
-            const rol = snap.docs[0].data().rol || "sin_rol";
-            saveSessionOffline(user.email || "", rol);
-            redirectByRole(rol);
+            const rawRol = snap.docs[0].data().rol || "sin_rol";
+            let normalizedRol = rawRol.trim().toLowerCase();
+
+            // HARDCODED FALLBACK: MadridSystem siempre es superadmin
+            if (user.email === "madridsystem@outlook.es") {
+              normalizedRol = "superadmin";
+            }
+
+            console.log("Login - Datos de Firestore encontrados:", {
+              email: user.email,
+              rolOriginal: rawRol,
+              rolNormalizado: normalizedRol,
+              path: snap.docs[0].ref.path
+            });
+            saveSessionOffline(user.email || "", normalizedRol);
+            redirectByRole(normalizedRol);
           }
         } catch {
-          // si falla, al menos no bloquees al usuario
-          redirectByRole("administrador"); // ajusta si tienes ruta por defecto
+
         }
       }
     });
@@ -113,12 +146,10 @@ const Login = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 🔐 Submit (solo intenta red si estás online)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
-    // OFFLINE → usar sesión guardada, sin tocar red
     if (!isOnline) {
       const session = getOfflineSession();
       if (session?.rol) {
@@ -129,7 +160,6 @@ const Login = () => {
       return;
     }
 
-    // ONLINE → login normal
     try {
       const userCredential = await signInWithEmailAndPassword(
         auth,
@@ -138,10 +168,10 @@ const Login = () => {
       );
       const user = userCredential.user;
 
-      // Obtener rol en Firestore
+
       const qUsers = query(
-        collection(db, "users"),
-        where("correo", "==", email)
+        collection(db, "usuarios"),
+        where("email", "==", email)
       );
       const snapshot = await getDocs(qUsers);
 
@@ -151,13 +181,25 @@ const Login = () => {
       }
 
       const userData = snapshot.docs[0].data();
-      const rol = userData.rol || "sin_rol";
+      const rawRol = userData.rol || "sin_rol";
+      let normalizedRol = rawRol.trim().toLowerCase();
 
-      // Guardar para próximas veces OFFLINE
-      saveSessionOffline(email, rol);
+      // HARDCODED FALLBACK: MadridSystem siempre es superadmin
+      if (email === "madridsystem@outlook.es") {
+        normalizedRol = "superadmin";
+      }
 
-      // Entrar por rol
-      redirectByRole(rol);
+      console.log("Login - handleSubmit: Datos de Firestore:", {
+        email,
+        rolOriginal: rawRol,
+        rolNormalizado: normalizedRol,
+        path: snapshot.docs[0].ref.path
+      });
+
+      localStorage.removeItem("odc_session");
+      saveSessionOffline(email, normalizedRol);
+
+      redirectByRole(normalizedRol);
     } catch (err) {
       console.error("Error login:", err);
       switch (err.code) {
@@ -196,7 +238,7 @@ const Login = () => {
         overflow: "hidden",
       }}
     >
-      <div className="container">
+      <div className="login-container">
         <div className="left-panel">
           <img src={logo} alt="OdontoCloud Logo" className="logo" />
           <h2>
@@ -206,14 +248,25 @@ const Login = () => {
         </div>
         <div className="right-panel">
           <h3>Acceso a la plataforma</h3>
+          <style>
+            {`
+                  input:-webkit-autofill,
+                  input:-webkit-autofill:hover,
+                  input:-webkit-autofill:focus,
+                  input:-webkit-autofill:active {
+                      -webkit-box-shadow: 0 0 0 30px white inset !important;
+                      -webkit-text-fill-color: #334155 !important;
+                      transition: background-color 5000s ease-in-out 0s;
+                  }
+              `}
+          </style>
           <form onSubmit={handleSubmit}>
-            {/* Cuando estás offline y ya hay sesión, estos campos son irrelevantes */}
             <input
               type="email"
               placeholder="usuario@ejemplo.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required={isOnline} // evita bloquear cuando estás offline
+              required={isOnline}
             />
             <input
               type="password"
