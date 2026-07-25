@@ -19,7 +19,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.2/firebas
 
 // ⚙️ Configuración de tu proyecto Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyC70mGCRrjE8iOap8iTHuid8HEuyadue8Y",
+  apiKey: "",
   authDomain: "odontocloud-d92ac.firebaseapp.com",
   projectId: "odontocloud-d92ac",
   storageBucket: "odontocloud-d92ac.firebasestorage.app",

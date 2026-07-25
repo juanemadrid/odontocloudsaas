@@ -59,6 +59,29 @@ export default defineConfig({
     strictPort: true,
     open: '/OdontoCloud/',
   },
+  build: {
+    chunkSizeWarningLimit: 1600,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf-utils';
+            if (id.includes('recharts')) return 'charts-vendor';
+            if (id.includes('firebase')) return 'firebase-vendor';
+            if (id.includes('@supabase')) return 'supabase-vendor';
+            if (id.includes('react-icons')) return 'icons-vendor';
+            if (id.includes('xlsx')) return 'xlsx-vendor';
+            return 'vendor';
+          }
+          if (id.includes('src/modules/odontograma')) return 'module-odontograma';
+          if (id.includes('src/modules/pacientes')) return 'module-pacientes';
+          if (id.includes('src/modules/agenda')) return 'module-agenda';
+          if (id.includes('src/modules/financiero') || id.includes('src/modules/caja')) return 'module-financiero';
+          if (id.includes('src/modules/administracion') || id.includes('src/modules/config') || id.includes('src/modules/superadmin')) return 'module-admin';
+        }
+      }
+    }
+  },
   optimizeDeps: {
     entries: ['./index.html'],
   },

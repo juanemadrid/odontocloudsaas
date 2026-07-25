@@ -6,7 +6,7 @@ import { getStorage } from "firebase/storage";
 import { getAnalytics } from "firebase/analytics";
 
 const fallbackFirebaseConfig = {
-  apiKey: "AIzaSyC70mGCRrjE8iOap8iTHuid8HEuyadue8Y",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
   authDomain: "odontocloud-d92ac.firebaseapp.com",
   projectId: "odontocloud-d92ac",
   storageBucket: "odontocloud-d92ac.firebasestorage.app",
