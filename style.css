@@ -1,0 +1,336 @@
+/* === GENERAL === */
+* { margin:0; padding:0; box-sizing:border-box; font-family:"Poppins",sans-serif; }
+
+/* ===================== LOGIN ===================== */
+body {
+  background: url("assets/fondo.png") no-repeat center center fixed;
+  background-size: cover;
+  min-height: 100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
+/* === CONTENEDOR LOGIN === */
+.container {
+  display:flex;
+  flex-direction:row;
+  background:rgba(255,255,255,0.98);
+  border-radius:15px;
+  box-shadow:0 8px 25px rgba(0,0,0,0.15);
+  overflow:hidden;
+  width:85%;
+  max-width:900px;
+  min-height:450px;
+}
+
+/* === LEFT PANEL (LOGIN) === */
+.left-panel {
+  flex:1;
+  background:#fff;
+  text-align:center;
+  padding:60px 40px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  border-right:1px solid #f0f0f0;
+}
+
+/* Logo in login */
+.logo {
+  width:240px;
+  max-width:95%;
+  height:auto;
+  margin:0 auto 30px;
+  transition:transform 0.3s ease, filter 0.3s ease;
+  image-rendering:-webkit-optimize-contrast;
+}
+.logo:hover { transform:scale(1.05); filter:drop-shadow(0 0 12px rgba(0,174,255,0.5)); }
+
+/* TEXTS */
+.left-panel h2 { font-size:30px; color:#222; font-weight:700; }
+.left-panel p { font-size:16px; color:#555; margin-top:10px; }
+
+.right-panel { flex:1; padding:60px 40px; display:flex; flex-direction:column; justify-content:center; }
+.right-panel h3 { font-size:22px; color:#222; font-weight:600; margin-bottom:25px; }
+
+form { display:flex; flex-direction:column; }
+input { border:1px solid #ddd; border-radius:6px; padding:12px 15px; margin-bottom:15px; font-size:15px; outline:none; transition:border 0.3s; }
+input:focus { border-color:#1fb6ff; }
+
+.forgot { font-size:14px; color:#007bff; text-decoration:none; text-align:center; margin-bottom:20px; display:block; }
+
+button { background-color:#2bb673; color:white; border:none; border-radius:6px; padding:12px; font-size:16px; font-weight:600; cursor:pointer; transition:background 0.3s; }
+button:hover { background-color:#25a566; }
+
+/* ===================== DASHBOARD (CLARO) ===================== */
+body.dashboard { background:#f5f8fb; display:flex; flex-direction:column; min-height:100vh; color:#14242d; }
+
+/* Top thin bar */
+.topbar-top { background:#f8f9fb; border-bottom:1px solid rgba(0,0,0,0.05); padding:6px 0; position:fixed; top:0; left:0; right:0; z-index:1100; }
+.topbar-top .top-inner { max-width:1400px; margin:0 auto; padding:0 20px; display:flex; justify-content:space-between; align-items:center; font-size:13px; color:#2d3e50; }
+.site-pill { background:#8bd14a; color:#08321a; padding:6px 10px; border-radius:20px; font-weight:700; font-size:12px; }
+
+/* Main topbar (blue) */
+.topbar-main { position:fixed; top:36px; left:0; right:0; z-index:1050; background:linear-gradient(90deg,#007bff,#00b4d8); box-shadow:0 2px 8px rgba(0,0,0,0.08); backdrop-filter: blur(6px); }
+.topbar-main .top-main-inner { max-width:1400px; margin:0 auto; padding:10px 20px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+
+.logo-section { display:flex; align-items:center; gap:10px; }
+.logo-top { height:80px; width:auto; object-fit:contain; filter:drop-shadow(0 0 6px rgba(0,174,255,0.25)); }
+.brand-text { color:#fff; font-weight:700; font-size:1.1rem; }
+
+.menu-main { display:flex; gap:18px; justify-content:center; flex:1; }
+.menu-main a { color:#eaf6ff; font-weight:600; font-size:14px; padding:6px 8px; transition:opacity 0.2s; }
+.menu-main a:hover { opacity:0.9; }
+
+.controls-right { display:flex; align-items:center; gap:10px; }
+.search-wrap { display:flex; align-items:center; background:rgba(255,255,255,0.18); padding:6px 10px; border-radius:20px; }
+.search-icon { color:white; margin-right:8px; opacity:0.9; }
+.search-input { background:transparent; border:0; color:white; outline:none; width:180px; font-weight:600; }
+
+.icon-btn { background:transparent; border:0; color:#fff; font-size:16px; cursor:pointer; padding:6px; border-radius:8px; transition:transform 0.18s, background 0.2s; }
+.icon-btn:hover { transform:scale(1.12); background:rgba(255,255,255,0.08); }
+.user-badge { color:#fff; font-weight:700; padding:6px 10px; background:rgba(255,255,255,0.1); border-radius:8px; }
+
+/* Content */
+.content { margin-top:110px; padding:40px 30px; flex:1; width:100%; max-width:1200px; margin-left:auto; margin-right:auto; box-sizing:border-box; }
+.content h2 { font-size:1.9rem; color:#0077b6; margin-bottom:25px; text-align:center; font-weight:600; }
+
+/* Carousel */
+.carousel { position:relative; background:#fff; border-radius:12px; padding:30px; box-shadow:0 4px 14px rgba(0,0,0,0.08); text-align:center; margin-bottom:35px; overflow:hidden; transition:all 0.3s ease; }
+.carousel-track { position:relative; }
+.carousel-item { display:none; animation:fade 0.45s ease-in-out; max-width:900px; margin:0 auto; color:#123; }
+.carousel-item.active { display:block; }
+@keyframes fade { from{opacity:0} to{opacity:1} }
+
+/* Flechas estilo circular */
+.carousel-btn { position:absolute; top:50%; transform:translateY(-50%); background:#fff; color:#0077b6; width:40px; height:40px; border-radius:50%; display:grid; place-items:center; font-size:20px; border:0; box-shadow:0 6px 20px rgba(0,0,0,0.12); cursor:pointer; }
+.carousel-btn.prev { left:12px; } .carousel-btn.next { right:12px; }
+.carousel-btn:hover { transform:translateY(-50%) scale(1.05); }
+
+/* Dots */
+.carousel-dots { display:flex; justify-content:center; gap:10px; margin-top:16px; }
+.dot { width:10px; height:10px; background:#c0c0c0; border-radius:50%; border:0; cursor:pointer; transition:background 0.25s; }
+.dot.active { background:#007bff; }
+
+/* Cards */
+.cards { display:grid; gap:28px; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); max-width:1200px; margin:0 auto; }
+.card { background:#fff; padding:26px; border-radius:12px; box-shadow:0 8px 24px rgba(18,35,45,0.06); transition:transform 0.26s ease, box-shadow 0.26s ease; display:flex; flex-direction:column; justify-content:space-between; text-align:left; }
+.card:hover { transform:translateY(-4px); box-shadow:0 10px 30px rgba(18,35,45,0.1); }
+.card h3 { font-size:1.12rem; color:#044a85; margin-bottom:8px; }
+.card p { font-size:0.95rem; color:#586672; margin-bottom:12px; flex:1; }
+.card button { padding:8px 14px; border-radius:8px; background:#00b4d8; border:0; color:#fff; cursor:pointer; font-weight:600; }
+.card button:hover { background:#007bff; }
+
+/* Footer */
+.footer { text-align:center; padding:20px; background:#fff; border-top:1px solid #eee; color:#666; font-size:0.9rem; margin-top:40px; }
+
+/* ===================== MODO OSCURO ===================== */
+body.dark {
+  background:#0f1720;
+  color:#cbd5e1;
+}
+body.dark .topbar-top { background:#071624; border-bottom-color: rgba(255,255,255,0.04); }
+body.dark .site-pill { background:#6fbf3f; color:#06200a; }
+body.dark .topbar-main { background: linear-gradient(90deg,#064aa6,#007a9b); box-shadow:0 4px 18px rgba(0,0,0,0.5); }
+body.dark .menu-main a { color: rgba(230,245,255,0.9); }
+body.dark .search-wrap { background: rgba(255,255,255,0.06); }
+body.dark .search-input { color: #eaf6ff; }
+body.dark .user-badge { background: rgba(255,255,255,0.03); color:#fff; }
+
+body.dark .carousel { background:#071020; box-shadow: 0 6px 24px rgba(0,0,0,0.6); }
+body.dark .carousel-item { color:#dbeafe; }
+body.dark .carousel-btn { background:#0b2230; color:#aee8ff; box-shadow: 0 8px 28px rgba(0,0,0,0.6); }
+body.dark .dot { background:#2f4b66; }
+body.dark .dot.active { background:#60a5fa; }
+
+body.dark .card { background:#071020; box-shadow: 0 8px 26px rgba(0,0,0,0.6); color:#dbeafe; }
+body.dark .card h3 { color:#9fc6ee; }
+body.dark .card p { color:#cbd5e1; }
+body.dark .card button { background:#06b6d4; color:#022; }
+body.dark .card button:hover { background:#0284c7; color:#fff; }
+
+body.dark .footer { background:#071020; color:#9aa6b2; border-top-color: rgba(255,255,255,0.03); }
+
+/* ========= RESPONSIVE PROFESIONAL ========= */
+@media (max-width:1100px) {
+  .cards { grid-template-columns:repeat(2,1fr); }
+  .search-input { width:140px; }
+}
+@media (max-width:900px) {
+  .container { flex-direction:column; width:95%; min-height:auto; }
+  .left-panel, .right-panel { border:none; padding:40px 25px; }
+  .left-panel h2 { font-size:24px; }
+  .left-panel p { font-size:15px; }
+  .right-panel h3 { font-size:20px; text-align:center; }
+}
+@media (max-width:768px) {
+  .topbar-main .top-main-inner { padding:12px 16px; gap:10px; flex-wrap:wrap; }
+  .menu-main { display:none; }
+  .search-input { width:120px; }
+  .content { padding:24px; margin-top:120px; }
+  .cards { grid-template-columns:1fr; gap:18px; }
+  .carousel { padding:22px; }
+  .carousel-btn { width:34px; height:34px; font-size:18px; }
+  .carousel-item { font-size:0.95rem; }
+}
+@media (max-width:600px) {
+  .topbar-top .top-inner { flex-direction:column; gap:4px; font-size:12px; }
+  .brand-text { font-size:1rem; }
+  .content h2 { font-size:1.5rem; }
+  .card { padding:18px; }
+  .card h3 { font-size:1rem; }
+  .card p { font-size:0.9rem; }
+  .footer { font-size:0.8rem; padding:15px; }
+}
+@media (max-width:480px) {
+  .logo-top { height:34px; }
+  .content h2 { font-size:1.2rem; }
+  .search-input { width:90px; }
+  .carousel { padding:16px; }
+  .carousel-btn { width:30px; height:30px; font-size:16px; }
+  button, .card button { font-size:14px; padding:10px; }
+  input { font-size:14px; padding:10px 12px; }
+}
+
+/* ==========================================================
+   📱 BLOQUE UNIVERSAL RESPONSIVE EXTRA (AJUSTE TOTAL)
+   - Mejora visibilidad en móviles sin tocar diseño
+========================================================== */
+@media (max-width:768px) {
+  html, body {
+    overflow-x:hidden;
+  }
+
+  .content, .container, .right-panel, .left-panel {
+    width:100% !important;
+    padding-left:10px !important;
+    padding-right:10px !important;
+  }
+
+  .carousel, .card, .footer {
+    margin-left:auto;
+    margin-right:auto;
+    width:100%;
+  }
+
+  img, video {
+    max-width:100%;
+    height:auto;
+  }
+
+  .menu-main {
+    display:none !important;
+  }
+}
+
+@media (max-width:480px) {
+  h1,h2,h3 { line-height:1.2; }
+  input, button, select, textarea { width:100%; }
+  .card, .carousel, .footer { padding:12px; }
+}
+/* ======================================================
+   🔧 BLOQUE FINAL RESPONSIVE TOTAL (NO CAMBIA DISEÑO)
+   Mejora compatibilidad visual en teléfonos
+====================================================== */
+
+@media (max-width:768px) {
+
+  /* Hace visible el menú principal y botones */
+  .menu-main {
+    display: flex !important;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .menu-main a {
+    font-size: 13px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 6px;
+  }
+
+  /* Ajusta logo y barra superior */
+  .logo-top {
+    height: 50px;
+  }
+
+  .topbar-main .top-main-inner {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+
+  /* Asegura que los cards y botones sean legibles */
+  .cards {
+    grid-template-columns: 1fr !important;
+    gap: 20px;
+  }
+
+  .card {
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  /* Evita recortes laterales */
+  body, html {
+    overflow-x: hidden;
+  }
+
+  .content {
+    padding: 20px 12px;
+    margin-top: 130px;
+  }
+
+  /* Ajusta el logo y texto del topbar */
+  .logo-section {
+    flex-direction: column;
+  }
+
+  .brand-text {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width:480px) {
+  .menu-main a {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+  .topbar-main {
+    padding: 4px 0;
+  }
+  .logo-top {
+    height: 42px;
+  }
+}
+/* =======================================
+   🦷 FIX FINAL DEFINITIVO
+   Evita que el contenido (Agenda, etc.)
+   quede oculto debajo de la barra azul
+======================================= */
+body.dashboard main.content {
+  position: relative;
+  z-index: 1;
+  margin-top: 170px !important; /* 🔹 sube si ves mucho espacio; baja si falta */
+  padding-top: 20px !important;
+}
+
+/* Ajuste especial en móvil (las barras son más altas) */
+@media (max-width: 768px) {
+  body.dashboard main.content {
+    margin-top: 190px !important;
+  }
+}
+/* ===============================
+   FIX VISUAL PARA AGENDA EN DASHBOARD
+   =============================== */
+main.content {
+  position: relative;
+  z-index: 1;
+  padding-top: 130px; /* 🔹 Ajusta espacio para que la agenda no quede tapada */
+  min-height: calc(100vh - 200px); /* 🔹 Asegura altura visible */
+  background: var(--bg-light, #f5f5f5);
+  overflow-y: auto;
+}

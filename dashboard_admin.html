@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard Admin - OdontoCloud</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Librería FULLCALENDAR -->
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+</head>
+
+<body class="dashboard">
+  <!-- ======= TOPBAR ======= -->
+  <header class="topbar-top">
+    <div class="top-inner">
+      <div class="site-pill" id="nombreEmpresa">Cargando empresa...</div>
+      <div class="top-right">
+        <a href="#" class="top-link">Ayuda</a>
+        <span class="top-user" id="nombreUsuario">Cargando usuario...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======= NAV BAR ======= -->
+  <header class="topbar-main">
+    <div class="top-main-inner">
+      <div class="logo-section">
+        <img src="assets/logo.png" alt="OdontoCloud" class="logo-top">
+        <span class="brand-text">OdontoCloud</span>
+      </div>
+
+      <nav class="menu-main">
+        <a href="#" data-module="agenda">Agenda</a>
+        <a href="#" data-module="pacientes">Pacientes</a>
+        <a href="#" data-module="caja">Caja</a>
+        <a href="#" data-module="administracion">Administración</a>
+        <a href="#" data-module="reportes">Reportes</a>
+      </nav>
+
+      <div class="controls-right">
+        <div class="search-wrap">
+          <input class="search-input" placeholder="Buscar..." aria-label="Buscar" />
+        </div>
+        <button class="icon-btn" title="Notificaciones">🔔</button>
+        <button id="btnConfiguracion" class="icon-btn" title="Configuración">⚙️</button>
+        <button id="darkToggle" class="icon-btn" title="Modo oscuro">🌓</button>
+        <div class="user-badge">Admin</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======= CONTENIDO PRINCIPAL ======= -->
+  <main class="content">
+    <h2>🦷 Bienvenido a OdontoCloud</h2>
+    <p>Selecciona un módulo del menú superior para comenzar.</p>
+  </main>
+
+  <footer class="footer">© 2025 OdontoCloud Software | Desarrollado por ingeniero juan madrid</footer>
+
+  <!-- ======= JS GENERAL ======= -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyC70mGCRrjE8iOap8iTHuid8HEuyadue8Y",
+      authDomain: "odontocloud-d92ac.firebaseapp.com",
+      projectId: "odontocloud-d92ac",
+      storageBucket: "odontocloud-d92ac.appspot.com",
+      messagingSenderId: "267020714981",
+      appId: "1:267020714981:web:a44416ea83aa1d1172650c",
+      measurementId: "G-ZMCC5CFY0C"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const nombreEmpresa = document.getElementById("nombreEmpresa");
+    const nombreUsuario = document.getElementById("nombreUsuario");
+    const mainEl = document.querySelector("main.content");
+
+    // ======= DATOS DEL USUARIO =======
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        window.location.href = "index.html";
+        return;
+      }
+      nombreUsuario.textContent = user.displayName || user.email || "Usuario";
+      const ref = doc(db, "empresas", user.uid);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        nombreEmpresa.textContent = snap.data().nombre || "Sin nombre";
+      } else {
+        nombreEmpresa.textContent = "Empresa no registrada";
+      }
+    });
+
+    // ======= MODO OSCURO =======
+    const darkToggle = document.getElementById("darkToggle");
+    const LS_KEY = "odonto_dark_mode";
+    if (localStorage.getItem(LS_KEY) === "1") document.body.classList.add("dark");
+    darkToggle.addEventListener("click", () => {
+      const now = document.body.classList.toggle("dark");
+      localStorage.setItem(LS_KEY, now ? "1" : "0");
+    });
+
+    // ======= NAVEGACIÓN ENTRE MÓDULOS =======
+    document.querySelectorAll(".menu-main a[data-module]").forEach(link => {
+      link.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const module = link.dataset.module;
+
+        mainEl.innerHTML = "<p>Cargando módulo...</p>";
+
+        switch (module) {
+          case "agenda":
+            await showAgenda();
+            break;
+
+          case "pacientes":
+            try {
+              const res = await fetch("modules/pacientes.html");
+              if (!res.ok) throw new Error("Error al cargar el módulo Pacientes.");
+              const html = await res.text();
+              mainEl.innerHTML = html;
+
+              // ⚙️ Eliminar cualquier script previo de pacientes
+              document.querySelectorAll("script[data-module='pacientes']").forEach(s => s.remove());
+
+              // ⚙️ Carga dinámica del JS de pacientes
+              const script = document.createElement("script");
+              script.type = "module";
+              script.dataset.module = "pacientes";
+              script.src = "modules/pacientes.js";
+
+              // ✅ Esperar a que el script se cargue y ejecutar función init si existe
+              script.onload = () => {
+                if (typeof window.initPacientes === "function") {
+                  window.initPacientes(db, auth);
+                } else {
+                  console.warn("⚠️ No se encontró la función initPacientes en pacientes.js");
+                }
+              };
+
+              document.body.appendChild(script);
+            } catch (err) {
+              console.error(err);
+              mainEl.innerHTML = "<p style='color:red'>Error al cargar el módulo Pacientes.</p>";
+            }
+            break;
+
+          case "caja":
+            mainEl.innerHTML = "<h2>💰 Caja</h2><p>Módulo en desarrollo.</p>";
+            break;
+
+          case "administracion":
+            mainEl.innerHTML = "<h2>⚙️ Administración</h2><p>Módulo en desarrollo.</p>";
+            break;
+
+          case "reportes":
+            mainEl.innerHTML = "<h2>📊 Reportes</h2><p>Módulo en desarrollo.</p>";
+            break;
+        }
+      });
+    });
+
+    // ======= CARGAR AGENDA (HTML + CSS + SCRIPT) =======
+async function showAgenda() {
+  try {
+    const res = await fetch("modules/agenda.html");
+    if (!res.ok) throw new Error("Error al cargar modules/agenda.html");
+    const html = await res.text();
+    mainEl.innerHTML = html;
+
+    // ✅ Cargar el CSS de la agenda (si no existe)
+    const existingLink = document.querySelector("link[data-module='agenda']");
+    if (!existingLink) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "modules/agenda.css?v=" + Date.now(); // cache-busting
+      link.dataset.module = "agenda";
+      document.head.appendChild(link);
+    }
+
+    // ⚙️ Eliminar scripts previos de agenda si los hubiera
+    document.querySelectorAll("script[data-module='agenda']").forEach(s => s.remove());
+
+    // ✅ Cargar el JS de la agenda
+    const script = document.createElement("script");
+    script.type = "module";
+    script.dataset.module = "agenda";
+    script.src = "modules/agenda.js?v=" + Date.now(); // evitar caché
+    script.onload = () => {
+      if (typeof window.initAgendaCalendar === "function") {
+        window.initAgendaCalendar(db, auth);
+      } else {
+        console.warn("⚠️ No se encontró la función initAgendaCalendar en modules/agenda.js");
+      }
+    };
+    document.body.appendChild(script);
+  } catch (err) {
+    console.error("Error cargando agenda:", err);
+    mainEl.innerHTML = "<p style='color:red'>Error al cargar la agenda.</p>";
+  }
+}
+
+  </script>
+</body>
+</html>

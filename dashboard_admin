@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel - OdontoCloud</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body style="display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column; background: #f0f8ff;">
+  <h1>Bienvenido a OdontoCloud</h1>
+  <p>Has iniciado sesión correctamente.</p>
+  <button onclick="cerrarSesion()">Cerrar sesión</button>
+
+  <script>
+    // Verificar si hay sesión activa
+    const usuario = localStorage.getItem("usuario");
+    if (!usuario) {
+      window.location.href = "index.html"; // Redirige si no hay sesión
+    }
+
+    function cerrarSesion() {
+      localStorage.removeItem("usuario");
+      window.location.href = "index.html";
+    }
+  </script>
+</body>
+</html>

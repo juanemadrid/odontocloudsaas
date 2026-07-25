@@ -1,0 +1,129 @@
+<!-- modules/agenda.html -->
+
+<!-- 🔹 Franja verde -->
+<div class="odc-topbar-green"></div>
+
+<!-- 🔹 Franja azul con título -->
+<div class="odc-topbar-blue">Agenda</div>
+
+<!-- 🔹 Contenedor principal -->
+<section class="odc-agenda-root">
+  <div class="odc-agenda-inner">
+
+    <!-- LEFT: Mini calendario y filtros -->
+    <aside class="odc-left" aria-label="Panel izquierdo - calendario y filtros">
+      <!-- Mini calendario -->
+      <div class="odc-mini-calendar-card" role="region" aria-label="Mini calendario">
+        <div class="mini-cal-header">
+          <button class="cal-arrow" id="miniCalPrev" aria-label="Mes anterior">‹</button>
+          <div id="miniCalMonthYear" aria-live="polite">Cargando...</div>
+          <button class="cal-arrow" id="miniCalNext" aria-label="Mes siguiente">›</button>
+        </div>
+
+        <table class="mini-month-table" aria-hidden="false">
+          <thead>
+            <tr>
+              <th>Lu</th><th>Ma</th><th>Mi</th><th>Ju</th><th>Vi</th><th>Sa</th><th>Do</th>
+            </tr>
+          </thead>
+          <tbody id="miniCalendar"></tbody>
+        </table>
+      </div>
+
+      <!-- Filtros -->
+      <div class="odc-filters-card" aria-label="Filtros de agenda">
+        <label for="filterSucursal">Sucursal</label>
+        <select id="filterSucursal" aria-controls="citasTbody">
+          <option value="">— Todas —</option>
+        </select>
+
+        <label for="filterDoctor">Doctores</label>
+        <select id="filterDoctor" aria-controls="citasTbody">
+          <option value="">— Todos —</option>
+        </select>
+      </div>
+    </aside>
+
+    <!-- RIGHT: Encabezado y contenido -->
+    <main class="odc-right" aria-label="Panel principal - agenda">
+
+      <!-- Header -->
+      <div class="odc-header-bar" role="region" aria-label="Controles de la agenda">
+        <div class="odc-header-left">
+          <h3 class="odc-title">Agenda</h3>
+          <div class="view-buttons" role="tablist" aria-label="Vistas">
+            <button class="btn view active" data-view="day" role="tab" aria-selected="true">Día</button>
+            <button class="btn view" data-view="week" role="tab" aria-selected="false">Semana</button>
+            <button class="btn view" data-view="detail" role="tab" aria-selected="false">Detalle</button>
+          </div>
+        </div>
+
+        <div class="odc-header-right">
+          <div class="date-nav">
+            <button class="btn icon" id="btnPrev" aria-label="Día anterior">‹</button>
+            <button class="btn icon" id="btnNext" aria-label="Día siguiente">›</button>
+            <span id="currentDateDisplay" class="current-date" aria-live="polite">Cargando...</span>
+            <button id="btnHoy" class="btn small">Hoy</button>
+          </div>
+
+          <div class="right-actions">
+            <input id="searchCitas" placeholder="Buscar..." class="search-input" aria-label="Buscar citas" />
+            
+            <button id="btnNuevaCita" class="btn green" aria-label="Nueva cita">+ Nueva cita</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contenido principal -->
+      <div class="odc-content-card" role="region" aria-label="Contenido agenda">
+        <div class="tools-row">
+          <div class="tools-left">
+            <div id="ocupacionInfo" class="ocupacion-info">Ocupación: —</div>
+          </div>
+          <!-- 🔧 BLOQUE ACTUALIZADO DE BOTONES DE HERRAMIENTAS -->
+<div class="tools-right">
+
+  <!-- ✅ Botón 1: Imprimir agenda (ya funcional) -->
+  <button id="btnPrint" class="btn" title="Imprimir agenda">🖨️ Imprimir</button>
+
+  <!-- ✅ Botón 2: Confirmar citas vía Gmail -->
+  <button id="btnConfirmar" class="btn blue" title="Confirmar citas">📧 Confirmar</button>
+  <!-- 🔹 Clase .blue la puedes definir igual que la .green o .btn normal, solo para diferenciar -->
+
+  <!-- ✅ Botón 3: Mostrar citas de hoy -->
+  <button id="btnHoyCitas" class="btn" title="Ver citas de hoy">📅 Hoy</button>
+
+  <!-- ✅ Botón 4 (opcional): Exportar citas -->
+  <button id="btnExportar" class="btn" title="Exportar citas a CSV">📤 Exportar</button>
+
+</div>
+
+        </div>
+
+        <!-- Tabla de citas -->
+        <div class="table-wrap" role="region" aria-label="Lista de citas">
+          <table class="appointments-table" aria-live="polite">
+            <thead>
+              <tr>
+                <th style="width:110px">Hora</th>
+                <th>Paciente</th>
+                <th>Doctor</th>
+                <th>Espacio físico</th>
+                <th>Comentario</th>
+                <th style="width:120px">Estado</th> 
+                <th>Recordatorio</th>
+              </tr>
+            </thead>
+            <tbody id="citasTbody">
+              <tr>
+                <td colspan="6" class="no-data">Cargando...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</section>
+
+<link rel="stylesheet" href="modules/agenda.css">
