@@ -159,9 +159,30 @@ export const createTenant = async (tenantData) => {
 
         if (upsertErr) throw upsertErr;
 
-        // Nota: La creación de usuario en Supabase Auth se hace manualmente
-        // desde el dashboard o via Edge Function para evitar rate-limit 429.
-        // Toda la persistencia se maneja en website_config JSONB.
+        // 2. Registrar el usuario administrador en Supabase Auth para que pueda iniciar sesión
+        const targetEmail = (tenantData.adminEmail || tenantData.contactEmail || "").trim();
+        const targetPassword = tenantData.adminPassword || "@OdontoCloud2026";
+
+        if (targetEmail) {
+            try {
+                const { error: signUpError } = await supabase.auth.signUp({
+                    email: targetEmail,
+                    password: targetPassword,
+                    options: {
+                        data: {
+                            full_name: tenantData.name || tenantData.adminName || "Admin Clínica",
+                            tenant_id: tenantId,
+                            role: "administrador"
+                        }
+                    }
+                });
+                if (signUpError && !signUpError.message?.includes("already registered")) {
+                    console.warn("Aviso al crear usuario en Supabase Auth:", signUpError.message);
+                }
+            } catch (authErr) {
+                console.warn("Excepción al crear usuario Auth para la clínica:", authErr);
+            }
+        }
 
         return payload;
     } catch (error) {

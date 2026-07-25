@@ -56,7 +56,41 @@ export const AuthProvider = ({ children }) => {
         return fullProfile;
       }
 
-      // Profile fallback en caso de ser usuario recién registrado / superadmin
+      // 2. Profile fallback: Buscar si el usuario pertenece a una clínica registrada en website_config JSONB
+      try {
+        const { data: webConfig } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
+          .maybeSingle();
+
+        const registeredTenants = webConfig?.config?.registered_tenants || [];
+        const userEmail = (authUser.email || "").toLowerCase();
+        const matchingTenant = registeredTenants.find(t => 
+          (t.adminEmail && t.adminEmail.toLowerCase() === userEmail) ||
+          (t.contactEmail && t.contactEmail.toLowerCase() === userEmail)
+        );
+
+        if (matchingTenant) {
+          return {
+            uid: authUser.id,
+            email: authUser.email,
+            rol: "administrador",
+            inquilino: matchingTenant.id,
+            nombre: matchingTenant.nombre || matchingTenant.name || authUser.email.split("@")[0],
+            tenant: {
+              id: matchingTenant.id,
+              nombre: matchingTenant.nombre || matchingTenant.name,
+              direccion: matchingTenant.direccion || matchingTenant.address || "---",
+              telefono: matchingTenant.telefono || "---"
+            }
+          };
+        }
+      } catch (tErr) {
+        console.warn("AuthContext - Error buscando tenant en website_config:", tErr);
+      }
+
+      // Profile fallback por defecto
       return {
         uid: authUser.id,
         email: authUser.email,
