@@ -2,14 +2,14 @@
   "name": "odontocloud-react",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://juanemadrid.github.io/odontocloud-react",
+  "homepage": "https://juanemadrid.github.io/OdontoCloud",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "echo \"Add linter\"",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist --repo https://github.com/juanemadrid/odontocloud-react.git"
+    "deploy": "gh-pages -d dist --repo https://github.com/juanemadrid/OdontoCloud.git"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -25,7 +25,6 @@
     "framer-motion": "^10.16.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.1.0",
-    "playwright": "^1.58.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-helmet-async": "^2.0.5",
@@ -46,6 +45,7 @@
     "gh-pages": "^6.3.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.1",
+    "playwright": "^1.58.2",
     "vite": "^5.0.0"
   }
 }
