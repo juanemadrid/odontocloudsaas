@@ -13,14 +13,14 @@ export default defineConfig({
         server.middlewares.use(async (req, res, next) => {
           const cleanUrl = req.url.split('?')[0].split('#')[0];
           
-          if (cleanUrl === '/OdontoCloud') {
+          if (cleanUrl === '/odontocloudsaas' || cleanUrl === '/OdontoCloud') {
             const query = req.url.slice(cleanUrl.length);
-            res.writeHead(301, { Location: `/OdontoCloud/${query}` });
+            res.writeHead(301, { Location: `/odontocloudsaas/${query}` });
             res.end();
             return;
           }
 
-          if (cleanUrl === '/OdontoCloud/api/proxy-logo') {
+          if (cleanUrl.includes('/api/proxy-logo')) {
             try {
               const queryParams = new URL(req.url, `http://${req.headers.host}`).searchParams;
               const targetUrl = queryParams.get('url');
@@ -53,11 +53,11 @@ export default defineConfig({
       }
     }
   ],
-  base: '/OdontoCloud/',
+  base: '/odontocloudsaas/',
   server: {
     port: 3000,
     strictPort: true,
-    open: '/OdontoCloud/',
+    open: '/odontocloudsaas/',
   },
   build: {
     chunkSizeWarningLimit: 1600,
