@@ -14,7 +14,7 @@ createRoot(document.getElementById('root')).render(
     <HelmetProvider>
         <AuthProvider>
             <ToastProvider>
-                <BrowserRouter basename="/odontocloud-react">
+                <BrowserRouter basename="/OdontoCloud">
                     <App />
                 </BrowserRouter>
             </ToastProvider>
@@ -34,7 +34,7 @@ if ('serviceWorker' in navigator) {
         });
     } else {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/odontocloud-react/sw.js')
+            navigator.serviceWorker.register('/OdontoCloud/sw.js')
                 .then((reg) => console.log('Service Worker registrado con éxito:', reg.scope))
                 .catch((err) => console.error('Error al registrar el Service Worker:', err));
         });
