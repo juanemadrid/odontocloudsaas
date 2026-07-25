@@ -1,2101 +1,277 @@
-// src/modules/pacientes/Pacientes.jsx
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
+import { useAuth } from "../../context/AuthContext";
+import { useToast } from "../../context/ToastContext";
+import { updateDoc, doc } from "firebase/firestore";
+import { useSearchParams, useLocation } from "react-router-dom";
 import "./pacientes.css";
-import { useNavigate, useLocation } from "react-router-dom";
+
+// 🔹 Slender Pro Components
+import PatientList from "./components/PatientList";
+import PatientDetails from "./components/PatientDetails";
+import PatientForm from "./components/PatientForm";
 
 import { db } from "../../firebase/firebaseConfig";
 import {
-  collection,
-  getDocs,
-  setDoc,
-  getDoc,
-  deleteDoc,
-  doc,
-  query,
-  orderBy,
-  serverTimestamp,
-  limit,
-  startAfter,
-  onSnapshot,
-  updateDoc,
-  where,
-  addDoc,
-} from "firebase/firestore";
+  createOrUpdatePatient,
+  deletePatient,
+  searchPatients,
+  getPatientById
+} from "../../services/patientService";
+import { useAudit } from "../../hooks/useAudit";
+import ImportadorPacientes from "./components/ImportadorPacientes";
 
-import {
-  getStorage,
-  ref,
-  uploadBytes,
-  getDownloadURL,
-  listAll,
-  deleteObject,
-} from "firebase/storage";
-
-/* =====================================================================
-   Config de rutas (ajústalas si en tu app son diferentes)
-   ===================================================================== */
-const ROUTES = {
-  caja: "caja",
-  pagos: "facturacion/pagos",
-  facturas: "facturacion/facturas",
-};
-
-/* =====================================================================
-   Utilidades
-   ===================================================================== */
-const browserLocale =
-  typeof navigator !== "undefined" && navigator.language?.startsWith("es")
-    ? "es-ES"
-    : "en-US";
-
-const COUNTRIES = [
-  "Colombia","Argentina","Bolivia","Chile","Costa Rica","Cuba","Ecuador","El Salvador",
-  "España","Guatemala","Honduras","México","Nicaragua","Panamá","Paraguay","Perú",
-  "Puerto Rico","República Dominicana","Uruguay","Venezuela","Estados Unidos","Canadá"
-];
-
-const CITIES_BY_COUNTRY = {
-  Colombia: ["Bogotá","Medellín","Cali","Barranquilla","Cartagena","Cúcuta","Bucaramanga","Pereira","Santa Marta","Ibagué"],
-  México: ["Ciudad de México","Guadalajara","Monterrey","Puebla","Querétaro","Tijuana","Mérida","León"],
-  Perú: ["Lima","Arequipa","Trujillo","Chiclayo","Cusco","Piura"],
-  Chile: ["Santiago","Valparaíso","Concepción","La Serena","Antofagasta"],
-  Argentina: ["Buenos Aires","Córdoba","Rosario","Mendoza","La Plata"],
-  España: ["Madrid","Barcelona","Valencia","Sevilla","Zaragoza","Bilbao"],
-  "Estados Unidos": ["Miami","New York","Los Ángeles","Houston","Chicago"],
-  Ecuador: ["Quito","Guayaquil","Cuenca","Manta"],
-  Venezuela: ["Caracas","Maracaibo","Valencia","Barquisimeto","Maracay"],
-};
-
-const calcAge = (yyyyMmDd) => {
-  if (!yyyyMmDd) return "";
-  const [y, m, d] = yyyyMmDd.split("-").map((x) => parseInt(x, 10));
-  const birth = new Date(y, (m || 1) - 1, d || 1);
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const mo = today.getMonth() - birth.getMonth();
-  if (mo < 0 || (mo === 0 && today.getDate() < birth.getDate())) age--;
-  return isNaN(age) ? "" : String(age);
-};
-
-async function compressImage(file, { maxW = 900, maxH = 900, quality = 0.82 } = {}) {
-  if (!file || !file.type?.startsWith("image/")) return file;
-  const img = await new Promise((res, rej) => {
-    const i = new Image();
-    i.onload = () => res(i);
-    i.onerror = rej;
-    i.src = URL.createObjectURL(file);
-  });
-
-  let { width, height } = img;
-  const ratio = Math.min(maxW / width, maxH / height, 1);
-  width = Math.round(width * ratio);
-  height = Math.round(height * ratio);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, width, height);
-
-  const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
-  const outFile = new File([blob], (file.name || "foto.jpg").replace(/\.[^.]+$/, ".jpg"), {
-    type: "image/jpeg",
-    lastModified: Date.now(),
-  });
-
-  URL.revokeObjectURL(img.src);
-  return outFile;
-}
-
-/* ===== Normalización / índice de búsqueda ===== */
-const normalize = (s) =>
-  (s || "")
-    .toString()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const makeSearchIndex = (f) =>
-  normalize(
-    [
-      f.nombres,
-      f.apellidos,
-      f.nombreCompleto,
-      f.nroDocumento,
-      f.celular,
-      f.email,
-    ].filter(Boolean).join(" ")
-  );
-
-/* ===== NUEVO: helpers de fecha para RX ===== */
-const isoToInputLocal = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`; // para <input type="datetime-local">
-};
-
-const fmtDateTimeNice = (iso) => {
-  try {
-    return new Date(iso).toLocaleString(browserLocale, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch { return ""; }
-};
-
-/* =====================================================================
-   Estado inicial
-   ===================================================================== */
-const INITIAL_FORM = {
-  // Identificación
-  tipoDocumento: "",
-  nroDocumento: "",
-  nroHistoria: "",
-  nombres: "",
-  apellidos: "",
-  nombreCompleto: "",
-  sexo: "",
-  estadoCivil: "",
-  paisNacimiento: "",
-  ciudadNacimiento: "",
-  fechaIngreso: "",
-  fechaNacimiento: "",
-  edad: "",
-  paisDomicilio: "",
-  ciudadDomicilio: "",
-  barrio: "",
-  lugarResidencia: "",
-  estrato: "",
-  zonaResidencial: "",
-  esExtranjero: false,
-  permitePublicidad: false,
-
-  // Contacto
-  celular: "",
-  telDomicilio: "",
-  telOficina: "",
-  extension: "",
-  email: "",
-  ocupacion: "",
-
-  // Facturación / Responsable
-  nombreResponsable: "",
-  parentesco: "",
-  celularResponsable: "",
-  telefonoResponsable: "",
-  emailResponsable: "",
-
-  // Acompañante
-  nombreAcompanante: "",
-  telefonoAcompanante: "",
-
-  // Mercadeo
-  convenioBeneficio: "",
-  comoConocio: "",
-  campania: "",
-  remitidoPor: "",
-  asesorComercial: "",
-
-  // EPS
-  tipoVinculacion: "",
-  nombreEps: "",
-
-  polizaSalud: "",
-
-  // Doctor
-  doctor: "",
-
-  // Notas
-  notas: "",
-
-  // Multimedia / Clínico / CRM / Facturación
-  rxImagenes: [],
-  historiaClinica: {
-    antecedentes: "",
-    alergias: "",
-    medicamentos: "",
-    motivoConsulta: "",
-    notas: "",
-  },
-  odontograma: [],
-  periodontograma: [],
-  presupuestos: [],
-  evoluciones: [],
-  facturacion: { saldoFavor: 0, saldoCredito: 0 },
-
-  // Foto
-  fotoUrl: "",
-  // Estado
-  activo: true,
-};
-
-const PAGE_SIZE = 20;
-
-/* =====================================================================
-   Hooks auxiliares (finanzas y citas)
-   ===================================================================== */
-
-// Suma números seguros
-const s = (n) => Number(n || 0);
-
-// Devuelve { facturas[], pagos[], totales }
-function useFinancials(patientId) {
-  const [loading, setLoading] = useState(false);
-  const [facturas, setFacturas] = useState([]);
-  const [pagos, setPagos] = useState([]);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    const run = async () => {
-      if (!patientId) { setFacturas([]); setPagos([]); return; }
-      setLoading(true); setError("");
-      try {
-        // FACTURAS
-        let qF = query(
-          collection(db, "facturas"),
-          where("patientId", "==", patientId),
-          orderBy("fechaISO", "desc")
-        );
-        const snapF = await getDocs(qF);
-        const rowsF = snapF.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const normF = rowsF.map((f) => ({
-          ...f,
-          total: s(f.total ?? f.valor ?? f.montoTotal),
-          estado: (f.estado || "pendiente").toLowerCase(),
-          fechaISO: f.fechaISO || f.fecha || null,
-        }));
-        // PAGOS
-        let qP = query(
-          collection(db, "pagos"),
-          where("patientId", "==", patientId),
-          orderBy("fechaISO", "desc")
-        );
-        const snapP = await getDocs(qP);
-        const rowsP = snapP.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const normP = rowsP.map((p) => ({
-          ...p,
-          monto: s(p.monto ?? p.valor ?? p.total),
-          fechaISO: p.fechaISO || p.fecha || null,
-          medio: p.medio || p.metodo || "—",
-        }));
-
-        if (!alive) return;
-        setFacturas(normF);
-        setPagos(normP);
-      } catch (e) {
-        console.warn("Finanzas: no se pudo leer colecciones. Continúo solo con saldos del paciente.", e);
-        if (alive) setError("No se pudieron leer facturas/pagos.");
-      } finally {
-        alive && setLoading(false);
-      }
-    };
-    run();
-    return () => { alive = false; };
-  }, [patientId]);
-
-  const totalFacturado = facturas.reduce((acc, f) => acc + s(f.total), 0);
-  const totalPagado = pagos.reduce((acc, p) => acc + s(p.monto), 0);
-
-  const facturasPagadas = facturas.filter((f) => ["pagada","pagado","paid"].includes((f.estado||"").toLowerCase()));
-  const facturasPendientes = facturas.filter((f) => ["pendiente","abierta","open","deuda"].includes((f.estado||"").toLowerCase()));
-
-  const totalFacturasPagadas = facturasPagadas.reduce((acc, f) => acc + s(f.total), 0);
-  const totalFacturasPendientes = facturasPendientes.reduce((acc, f) => acc + s(f.total), 0);
-
-  const result = {
-    loading, error,
-    facturas, pagos,
-    totalFacturado, totalPagado, totalFacturasPendientes, totalFacturasPagadas
-  };
-  return result;
-}
-
-/* ==================== Citas en tiempo real (compatible con Agenda) ==================== */
-function useAppointments(patientId) {
-  const [loading, setLoading] = useState(false);
-  const [citas, setCitas] = useState([]);
-
-  useEffect(() => {
-    if (!patientId) { setCitas([]); return; }
-    setLoading(true);
-
-    const col = collection(db, "citas");
-
-    const mapCita = (d) => {
-      const x = d.data() || {};
-      const fechaStr = typeof x.fecha === "string" ? x.fecha : "";           // "YYYY-MM-DD"
-      const horaStr = (x.horaInicio || x.hora || "00:00").slice(0, 5);       // "HH:mm"
-      let fechaISO = null;
-      if (fechaStr) {
-        const [y, m, day] = fechaStr.split("-").map((n) => parseInt(n, 10));
-        const [hh, mm] = horaStr.split(":").map((n) => parseInt(n, 10) || 0);
-        const dt = new Date(y, (m || 1) - 1, day || 1, hh, mm, 0, 0);
-        fechaISO = dt.toISOString();
-      }
-      return {
-        id: d.id,
-        ...x,
-        fechaISO,
-        motivo: x.motivo || x.comentario || "",
-        profesional: x.doctor || x.doctorNombre || "—",
-        fechaYYYYMMDD: fechaStr, // ✅ para navegar a Agenda sin UTC
-      };
-    };
-
-    let cache = new Map();
-
-    const apply = () => {
-      const rows = Array.from(cache.values());
-      rows.sort((a, b) => {
-        const aa = a.fechaISO || "";
-        const bb = b.fechaISO || "";
-        if (aa < bb) return 1;
-        if (aa > bb) return -1;
-        const ca = a.creado || "";
-        const cb = b.creado || "";
-        return ca < cb ? 1 : ca > cb ? -1 : 0;
-      });
-      setCitas(rows);
-      setLoading(false);
-    };
-
-    const qA = query(col, where("pacienteId", "==", patientId));
-    const qB = query(col, where("patientId", "==", patientId));
-
-    const unsubA = onSnapshot(qA, (snap) => {
-      snap.docChanges().forEach((ch) => {
-        if (ch.type === "removed") cache.delete(ch.doc.id);
-        else cache.set(ch.doc.id, mapCita(ch.doc));
-      });
-      apply();
-    }, () => setLoading(false));
-
-    const unsubB = onSnapshot(qB, (snap) => {
-      snap.docChanges().forEach((ch) => {
-        if (ch.type === "removed") cache.delete(ch.doc.id);
-        else cache.set(ch.doc.id, mapCita(ch.doc));
-      });
-      apply();
-    }, () => setLoading(false));
-
-    return () => { try { unsubA(); } catch {} try { unsubB(); } catch {}; };
-  }, [patientId]);
-
-  return { loading, citas };
-}
-
-/* =====================================================================
-   Componente principal
-   ===================================================================== */
 export default function Pacientes() {
-  const nav = useNavigate();
+  const { userProfile } = useAuth();
+  const toast = useToast();
+  const { logAction } = useAudit();
+  const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
 
-  // === Base de la app
-  const appBase = React.useMemo(() => {
-    const segs = location.pathname.split("/").filter(Boolean);
-    const cutAt = segs.findIndex((s) =>
-      ["pacientes", "agenda", "caja", "facturacion", "config", "reportes", "software"].includes(s)
-    );
-    const baseSegs = segs.slice(0, cutAt >= 0 ? cutAt : segs.length);
-    const base = "/" + baseSegs.join("/");
-    return base === "/" ? "" : base;
-  }, [location.pathname]);
-
-  /** Navegación ABSOLUTA segura */
-  const navAbs = (subpath) => {
-    const clean = String(subpath || "").replace(/^\//, "");
-    const prefix = appBase ? `${appBase}/` : "/";
-    nav(`${prefix}${clean}`);
-  };
-
-  /** Construye ruta + querystring */
-  const buildUrl = (path, params) => {
-    const clean = String(path || "").replace(/^\//, "");
-    const qs = params ? new URLSearchParams(params).toString() : "";
-    const prefix = appBase ? `${appBase}/` : "/";
-    return `${prefix}${clean}${qs ? `?${qs}` : ""}`;
-  };
-
-  /** ✅ Helper robusto para abrir Agenda posicionada en un día */
-  const goAgendaForDay = (yyyyMmDd, pid) => {
-    const day = String(yyyyMmDd || "").slice(0, 10); // "YYYY-MM-DD"
-    if (!day) return navAbs("agenda");
-    try { sessionStorage.setItem("agenda.targetDate", day); } catch {}
-    const params = new URLSearchParams({
-      date: day, day, d: day, fecha: day, selectedDate: day,
-      ts: String(new Date(day + "T00:00:00").getTime()),
-      patientId: pid || "",
-    }).toString();
-    navAbs(`agenda?${params}`);
-  };
-
-  const [loading, setLoading] = useState(true);
+  // listado & búsqueda (0 lecturas al cargar la página)
+  const [loading, setLoading] = useState(false);
   const [pacientes, setPacientes] = useState([]);
   const [term, setTerm] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [showImporter, setShowImporter] = useState(false);
 
-  const [lastDocSnap, setLastDocSnap] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
-
+  // modal control
   const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editData, setEditData] = useState(null);
+  const [selectedPatient, setSelectedPatient] = useState(null);
 
-  // Ficha
-  const [viewing, setViewing] = useState(null);   // snapshot live
-  const unsubRef = useRef(null);
-  const [activeTab, setActiveTab] = useState("datos"); // tabs en ficha
-
-  // Form
-  const [form, setForm] = useState(INITIAL_FORM);
-  const [fotoFile, setFotoFile] = useState(null);
-  const [fotoPreview, setFotoPreview] = useState("");
-
-  const [epsList, setEpsList] = useState([]);
-
-  // RX upload state + input ref
-  const [rxUploading, setRxUploading] = useState(false);
-  const rxInputRef = useRef(null);
-
-  // === NUEVO: preferencias de vista Rx ===
-  const rxDensity = "comfy"; // fija, no se puede cambiar
-  const [rxFilter, setRxFilter] = useState("");
-
-  const densityCfg = useMemo(() => {
-    switch (rxDensity) {
-      case "comfy": return { thumbW: 220, thumbH: 165, colMin: 240 };
-      case "cozy":  return { thumbW: 160, thumbH: 120, colMin: 180 };
-      default:      return { thumbW: 120, thumbH: 90,  colMin: 140 }; // compact
-    }
-  }, [rxDensity]);
-
-  const isImage = (it) => {
-    if (it?.type?.startsWith?.("image/")) return true;
-    const n = (it?.name || it?.title || "").toLowerCase();
-    return /\.(png|jpe?g|gif|bmp|webp|tiff?)$/.test(n);
-  };
-
-  const filteredRx = useMemo(() => {
-    const q = rxFilter.trim().toLowerCase();
-    const items = Array.isArray(viewing?.rxImagenes) ? viewing.rxImagenes : [];
-    let out = items;
-
-    if (q) {
-      out = items.filter((it) => {
-        const blob = `${it.name || ""} ${it.title || ""} ${it.desc || ""}`.toLowerCase();
-        return blob.includes(q);
-      });
-    } else {
-      out = items.slice();
-    }
-
-    // === NUEVO: ordenar por fecha de subida (desc)
-    out.sort((a, b) => {
-      const aa = (a.uploadedAtMS ?? a.created ?? 0);
-      const bb = (b.uploadedAtMS ?? b.created ?? 0);
-      return bb - aa;
-    });
-
-    return out;
-  }, [viewing?.rxImagenes, rxFilter]);
-
-  // === NUEVO: edición de metadatos RX (guardado por item)
-  const updateRxItem = async (idx, patch) => {
-    if (!viewing?.id) return;
-    const items = Array.isArray(viewing.rxImagenes) ? [...viewing.rxImagenes] : [];
-    items[idx] = { ...(items[idx] || {}), ...patch };
-    await updatePatientField({ rxImagenes: items });
-  };
-
-  // === NUEVO: creación rápida de Citas en la ficha
-  const todayIso = () => {
-    const t = new Date();
-    const y = t.getFullYear();
-    const m = String(t.getMonth() + 1).padStart(2, "0");
-    const d = String(t.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  };
-  const [ncFecha, setNcFecha] = useState(todayIso());
-  const [ncHora, setNcHora] = useState("");
-  const [ncDoctor, setNcDoctor] = useState("");
-  const [ncEspacio, setNcEspacio] = useState("");
-  const [ncComentario, setNcComentario] = useState("");
+  /* ======= Búsqueda Debounced ======= */
   useEffect(() => {
-    // si el paciente tiene doctor cargado, sugerirlo
-    setNcDoctor(viewing?.doctor || "");
-  }, [viewing?.doctor, viewing?.id]);
-
-  const handleCrearCita = async () => {
-    if (!viewing?.id) return alert("Paciente no cargado.");
-    if (!ncFecha) return alert("Selecciona la fecha.");
-    if (!ncHora) return alert("Selecciona la hora.");
-    if (!ncDoctor.trim()) return alert("Indica el doctor.");
-
-    const nombrePaciente = viewing.nombreCompleto || viewing.paciente || "Paciente";
-    const cel = viewing.celular || viewing.celularPaciente || "";
-    const tel = viewing.telDomicilio || viewing.telefonoPaciente || "";
-    if (!cel && !tel) {
-      return alert("Este paciente no tiene teléfono registrado (celular o fijo). Agrega uno antes de crear la cita.");
+    const rawTerm = term.trim();
+    if (!rawTerm) {
+      setIsSearching(false);
+      setPacientes([]);
+      setLoading(false);
+      return;
     }
 
-    try {
-      const nuevaCita = {
-        paciente: nombrePaciente,
-        pacienteId: viewing.id,
-        doctor: ncDoctor.trim(),
-        fecha: ncFecha,              // "YYYY-MM-DD" para Agenda.jsx
-        horaInicio: ncHora,          // "HH:mm"
-        espacio: ncEspacio || "",
-        comentario: ncComentario || "",
-        estado: "En espera",
-        creado: new Date().toISOString(),
-        celularPaciente: cel,
-        telefonoPaciente: tel,
-      };
-      await addDoc(collection(db, "citas"), nuevaCita);
-      // limpiar
-      setNcHora("");
-      setNcEspacio("");
-      setNcComentario("");
-      alert("✅ Cita creada. Ya aparece en la lista y en Agenda.");
-    } catch (e) {
-      console.error("Error creando cita:", e);
-      alert("No se pudo crear la cita.");
-    }
-  };
+    setIsSearching(true);
+    setLoading(true);
 
-  const ciudadesDisponibles = useMemo(
-    () => CITIES_BY_COUNTRY[form.paisNacimiento] || [],
-    [form.paisNacimiento]
-  );
-
-  /* =================== Boot =================== */
-  useEffect(() => {
-    const boot = async () => {
-      setLoading(true);
+    const timer = setTimeout(async () => {
       try {
-        const snapEps = await getDocs(collection(db, "eps"));
-        const eps = snapEps.docs.map((d) => d.data()?.nombre).filter(Boolean);
-        const uniqueByLower = Array.from(
-          new Map(eps.map((n) => [String(n).toLowerCase(), n])).values()
-        ).sort((a, b) => a.localeCompare(b, "es"));
-        setEpsList(uniqueByLower);
-        await fetchPage(true);
-      } catch (e) {
-        console.error(e);
-        alert("No se pudieron cargar pacientes/EPS.");
+        const results = await searchPatients(userProfile?.inquilino, rawTerm, 30);
+        setPacientes(results);
+      } catch (err) {
+        console.error("Error al realizar búsqueda de pacientes:", err);
       } finally {
         setLoading(false);
       }
-    };
-    boot();
-    return () => {
-      if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
-    };
-  }, []);
+    }, 350);
 
-  /* =================== Sync derivados =================== */
-  useEffect(() => {
-    setForm((f) => ({ ...f, nombreCompleto: `${f.nombres} ${f.apellidos}`.trim() }));
-  }, [form.nombres, form.apellidos]);
+    return () => clearTimeout(timer);
+  }, [term, userProfile?.inquilino]);
 
-  useEffect(() => {
-    setForm((f) => ({ ...f, nroHistoria: f.nroDocumento }));
-  }, [form.nroDocumento]);
-
-  useEffect(() => {
-    setForm((f) => ({ ...f, edad: calcAge(f.fechaNacimiento) }));
-  }, [form.fechaNacimiento]);
-
-  useEffect(() => {
-    const now = new Date();
-    const fmt =
-      now.toLocaleDateString(browserLocale) +
-      " - " +
-      now.toLocaleTimeString(browserLocale, { hour: "2-digit", minute: "2-digit", hour12: true });
-    setForm((f) => ({ ...f, fechaIngreso: fmt }));
-  }, []);
-
-  const handleChange = (key, val) => setForm((f) => ({ ...f, [key]: val }));
-
-  const clearForm = () => {
-    setForm(INITIAL_FORM);
-    const now = new Date();
-    const fmt =
-      now.toLocaleDateString(browserLocale) +
-      " - " +
-      now.toLocaleTimeString(browserLocale, { hour: "2-digit", minute: "2-digit", hour12: true });
-    setForm((f) => ({ ...f, fechaIngreso: fmt }));
-    setFotoFile(null);
-    setFotoPreview("");
-    setEditingId(null);
-  };
-
-  const onFotoChange = async (file) => {
-    if (!file) { setFotoFile(null); setFotoPreview(""); return; }
-    try {
-      const compressed = await compressImage(file, { maxW: 900, maxH: 900, quality: 0.82 });
-      setFotoFile(compressed);
-      const reader = new FileReader();
-      reader.onload = (ev) => setFotoPreview(ev.target.result);
-      reader.readAsDataURL(compressed);
-    } catch {
-      setFotoFile(file);
-      const reader = new FileReader();
-      reader.onload = (ev) => setFotoPreview(ev.target.result);
-      reader.readAsDataURL(file);
+  const reloadData = async () => {
+    if (term.trim()) {
+      setLoading(true);
+      try {
+        const results = await searchPatients(userProfile?.inquilino, term.trim(), 30);
+        setPacientes(results);
+      } catch (e) {
+        console.error("Error al recargar búsqueda de pacientes:", e);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
-  /* =================== Paginación =================== */
-  const fetchPage = async (first = false) => {
-    setLoading(true);
-    try {
-      let qPac;
-      if (first || !lastDocSnap) {
-        qPac = query(collection(db, "pacientes"), orderBy("creado", "desc"), limit(PAGE_SIZE));
+  /* ======= Pre-selección por URL ======= */
+  useEffect(() => {
+    const checkTargetPatient = async () => {
+      const pathParts = location.pathname.split("/pacientes/");
+      const idFromPath = pathParts[1] ? pathParts[1].split("/")[0] : null;
+      const targetId = idFromPath || searchParams.get("id");
+
+      if (targetId) {
+        const found = pacientes.find(
+          (p) =>
+            p.id.toLowerCase() === targetId.toLowerCase() ||
+            p.nroDocumento?.toLowerCase() === targetId.toLowerCase()
+        );
+
+        if (found) {
+          setSelectedPatient(found);
+        } else {
+          try {
+            const fetched = await getPatientById(targetId);
+            if (fetched) setSelectedPatient(fetched);
+          } catch (e) {
+            console.error("Error obteniendo paciente por ID:", e);
+          }
+        }
       } else {
-        qPac = query(
-          collection(db, "pacientes"),
-          orderBy("creado", "desc"),
-          startAfter(lastDocSnap),
-          limit(PAGE_SIZE)
-        );
+        setSelectedPatient(null);
       }
-      const snap = await getDocs(qPac);
-      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (first) setPacientes(rows);
-      else setPacientes((prev) => [...prev, ...rows]);
-      setLastDocSnap(snap.docs[snap.docs.length - 1] || null);
-      setHasMore(snap.size === PAGE_SIZE);
-    } catch (e) {
-      console.error(e);
-      alert("No se pudo cargar pacientes.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  /* =================== Guardar (crear/editar) =================== */
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.nroDocumento.trim()) return alert("El número de documento es obligatorio.");
-    if (!form.nombres.trim()) return alert("Los nombres son obligatorios.");
-    if (!form.apellidos.trim()) return alert("Los apellidos son obligatorios.");
-    if (!form.sexo.trim()) return alert("El sexo es obligatorio.");
-    if (!form.fechaNacimiento.trim()) return alert("La fecha de nacimiento es obligatoria.");
-    if (!form.celular.trim()) return alert("El celular es obligatorio.");
-    if (!form.email.trim()) return alert("El correo electrónico es obligatorio.");
-    if (!form.tipoVinculacion.trim()) return alert("El tipo de vinculación es obligatorio.");
-    if (!form.nombreEps.trim()) return alert("El nombre de la EPS es obligatorio.");
+    checkTargetPatient();
+  }, [searchParams, location.pathname, pacientes]);
 
-    try {
-      const id = form.nroDocumento.trim();
-
-      if (!editingId) {
-        const exists = await getDoc(doc(db, "pacientes", id));
-        if (exists.exists()) return alert("Ya existe un paciente con ese número de documento.");
-      }
-
-      // EPS nueva
-      const epsName = (form.nombreEps || "").trim();
-      const existsCI = epsList.map((x) => x.toLowerCase()).includes(epsName.toLowerCase());
-      if (epsName && !existsCI) {
-        const addIt = window.confirm(
-          `La EPS "${epsName}" no existe. ¿Deseas guardarla para futuras selecciones?`
-        );
-        if (addIt) {
-          const idEps = epsName.toLowerCase().replace(/\s+/g, "_");
-          await setDoc(
-            doc(db, "eps", idEps),
-            { nombre: epsName, nombreLower: epsName.toLowerCase(), creado: serverTimestamp() },
-            { merge: true }
-          );
-        }
-      }
-
-      // Foto
-      let fotoUrlSubida = form.fotoUrl || "";
-      let uploadedPath = "";
-      if (fotoFile) {
-        try {
-          const storage = getStorage();
-          const safeName = (fotoFile.name || "foto.jpg").replace(/\s+/g, "_");
-          uploadedPath = `pacientes/${id}/${Date.now()}_${safeName}`;
-          const storageRef = ref(storage, uploadedPath);
-          const metadata = { contentType: fotoFile.type || "image/jpeg", cacheControl: "public, max-age=86400" };
-          await uploadBytes(storageRef, fotoFile, metadata);
-          fotoUrlSubida = await getDownloadURL(storageRef);
-        } catch (stgErr) {
-          console.error("Foto (warning):", stgErr);
-        }
-      }
-
-      // Índices y timestamps
-      const creadoPrev = form.creado || null;
-      const createdStamp = editingId ? (creadoPrev || serverTimestamp()) : serverTimestamp();
-
-      const payload = {
-        ...form,
-        fotoUrl: fotoUrlSubida,
-
-        // índices y normalizados
-        nombre_busqueda: makeSearchIndex({ ...form, fotoUrl: fotoUrlSubida }),
-        nombresLower: normalize(form.nombres),
-        apellidosLower: normalize(form.apellidos),
-        documentoLower: normalize(form.nroDocumento),
-        emailLower: normalize(form.email),
-
-        // timestamps
-        creado: createdStamp,
-        createdAt: createdStamp,
-        actualizado: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-
-        // alias/compatibilidad
-        activo: form.activo ?? true,
-        celularPaciente: form.celular,
-        telefonoPaciente: form.telDomicilio || "",
-        documento: form.nroDocumento,
-        paciente: form.nombreCompleto,
-      };
-
-      await setDoc(doc(db, "pacientes", id), payload, { merge: true });
-
-      // Limpieza fotos viejas
-      if (uploadedPath) {
-        try {
-          const storage = getStorage();
-          const folderRef = ref(storage, `pacientes/${id}`);
-          const listing = await listAll(folderRef);
-          const keep = uploadedPath;
-          const deletions = listing.items
-            .filter((it) => it.fullPath !== keep)
-            .map((it) => deleteObject(it).catch(() => null));
-          await Promise.allSettled(deletions);
-        } catch (cleanErr) {
-          console.warn("No se pudo limpiar fotos antiguas:", cleanErr);
-        }
-      }
-
-      alert(editingId ? "✅ Paciente actualizado." : "✅ Paciente guardado.");
-      setPacientes((prev) => {
-        const without = prev.filter((p) => p.id !== id);
-        return [{ id, ...payload }, ...without];
-      });
+  // Escuchar el evento de reset desde el sidebar
+  useEffect(() => {
+    const handleReset = () => {
+      setSelectedPatient(null);
       setOpen(false);
-      setEditingId(null);
-      clearForm();
-    } catch (err) {
-      console.error("Error guardando paciente:", err);
-      alert("No se pudo guardar el paciente.\n\n" + (err?.message || err));
+      setShowImporter(false);
+      setSearchParams({});
+    };
+    window.addEventListener("reset-module-pacientes", handleReset);
+    return () => {
+      window.removeEventListener("reset-module-pacientes", handleReset);
+    };
+  }, [setSearchParams]);
+
+  // Handle action=new query parameter
+  useEffect(() => {
+    const action = searchParams.get("action");
+    if (action === "new") {
+      handleOpenNew();
+      const timer = setTimeout(() => {
+        const currentParams = new URLSearchParams(window.location.search);
+        if (currentParams.get("action") === "new") {
+          currentParams.delete("action");
+          setSearchParams(currentParams, { replace: true });
+        }
+      }, 300);
+      return () => clearTimeout(timer);
     }
-  };
+  }, [searchParams, setSearchParams]);
 
-  /* =================== Acciones listado =================== */
-  const openNew = () => { clearForm(); setOpen(true); };
-
-  const openEditFromViewing = () => {
-    if (!viewing) return;
-    setForm({ ...INITIAL_FORM, ...viewing, fotoUrl: viewing.fotoUrl || "" });
-    setFotoFile(null);
-    setFotoPreview(viewing.fotoUrl || "");
-    setEditingId(viewing.id);
-    stopViewing();
+  /* ======= Acciones de Edición / Borrado ======= */
+  const handleOpenNew = () => {
+    setEditData(null);
     setOpen(true);
   };
 
-  const handleDelete = async (p) => {
-    if (!window.confirm(`¿Eliminar al paciente "${p.nombreCompleto}"?`)) return;
+  const handleOpenEdit = (p) => {
+    setEditData(p);
+    setOpen(true);
+  };
+
+  const handleSubmit = async (formData, fotoFile) => {
+    if (!userProfile?.inquilino) return;
     try {
-      await deleteDoc(doc(db, "pacientes", p.id));
-      setPacientes((prev) => prev.filter((x) => x.id !== p.id));
-      try {
-        const storage = getStorage();
-        const folderRef = ref(storage, `pacientes/${p.id}`);
-        const listing = await listAll(folderRef);
-        const deletions = listing.items.map((it) => deleteObject(it).catch(() => null));
-        await Promise.allSettled(deletions);
-      } catch (e) {
-        console.warn("No se pudo borrar la carpeta de fotos:", e);
-      }
-    } catch (e) {
-      console.error(e);
-      alert("No se pudo eliminar.");
-    }
-  };
+      const isNew = !editData;
+      const saved = await createOrUpdatePatient(
+        userProfile.inquilino,
+        formData,
+        isNew,
+        fotoFile
+      );
 
-  /* =================== Filtro en memoria =================== */
-  const filtered = useMemo(() => {
-    const t = term.trim().toLowerCase();
-    if (!t) return pacientes;
-    return pacientes.filter((p) => {
-      const blob = `${p.nombreCompleto || p.paciente || ""} ${p.nroDocumento || ""} ${
-        p.celular || p.celularPaciente || ""
-      } ${p.email || ""}`.toLowerCase();
-      return blob.includes(t);
-    });
-  }, [pacientes, term]);
-
-  /* =================== Ficha: live subscribe =================== */
-  const startViewing = (row) => {
-    stopViewing();
-    const dref = doc(db, "pacientes", row.id);
-    const unsub = onSnapshot(dref, (snap) => {
-      if (snap.exists()) {
-        setViewing({ id: snap.id, ...mergeWithDefaults(snap.data()) });
-      } else {
-        setViewing(null);
-      }
-    });
-    unsubRef.current = unsub;
-    setActiveTab("datos");
-  };
-
-  const stopViewing = () => {
-    if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
-    setViewing(null);
-  };
-
-  const mergeWithDefaults = (data) => {
-    return {
-      ...INITIAL_FORM,
-      ...data,
-      historiaClinica: { ...INITIAL_FORM.historiaClinica, ...(data.historiaClinica || {}) },
-      facturacion: { ...INITIAL_FORM.facturacion, ...(data.facturacion || {}) },
-      rxImagenes: Array.isArray(data.rxImagenes) ? data.rxImagenes : [],
-      odontograma: Array.isArray(data.odontograma) ? data.odontograma : [],
-      periodontograma: Array.isArray(data.periodontograma) ? data.periodontograma : [],
-      presupuestos: Array.isArray(data.presupuestos) ? data.presupuestos : [],
-      evoluciones: Array.isArray(data.evoluciones) ? data.evoluciones : [],
-    };
-  };
-
-  const updatePatientField = async (patch) => {
-    if (!viewing?.id) return;
-    try {
-      await updateDoc(doc(db, "pacientes", viewing.id), { ...patch, actualizado: serverTimestamp(), updatedAt: serverTimestamp() });
-    } catch (e) {
-      console.error(e);
-      alert("No se pudo actualizar.");
-    }
-  };
-
-  /* =================== Rx/Imágenes: subir/borrar =================== */
-  const handleRxUpload = async (files) => {
-    if (!viewing?.id || !files?.length) return;
-    const storage = getStorage();
-
-    try {
-      setRxUploading(true);
-      const uploads = [];
-
-      for (const file of files) {
-        // Intento de compresión si es imagen (opcional)
-        let fileToSend = file;
-        if (file.type?.startsWith("image/")) {
-          try {
-            fileToSend = await compressImage(file, { maxW: 1600, maxH: 1600, quality: 0.85 });
-          } catch {
-            fileToSend = file;
-          }
+      await logAction(
+        saved.id,
+        isNew ? "CREATE_PATIENT" : "UPDATE_PATIENT",
+        {
+          nombre: saved.nombreCompleto || `${saved.nombres} ${saved.apellidos}`,
+          documento: saved.nroDocumento
         }
+      );
 
-        const safe = (fileToSend.name || "archivo").replace(/\s+/g, "_");
-        const path = `pacientes/${viewing.id}/rx/${Date.now()}_${safe}`;
-        const sref = ref(storage, path);
-
-        const meta = {
-          contentType: fileToSend.type || "application/octet-stream",
-          cacheControl: "public, max-age=31536000",
-        };
-
-        await uploadBytes(sref, fileToSend, meta);
-        const url = await getDownloadURL(sref);
-
-        const nowISO = new Date().toISOString();
-        const nowMS  = Date.now();
-
-        uploads.push({
-          url,
-          name: file.name,          // nombre original
-          title: file.name.replace(/\.[^.]+$/, ""), // título para mostrar (editable)
-          desc: "",                 // descripción editable
-          type: file.type,
-          size: file.size || 0,
-          created: nowMS,                    // legado
-          uploadedAtMS: nowMS,               // ✅ nuevo
-          uploadedAtISO: nowISO,             // ✅ nuevo
-          path,
-        });
-      }
-
-      await updatePatientField({ rxImagenes: [...(viewing.rxImagenes || []), ...uploads] });
-    } catch (e) {
-      console.error("RX upload error:", e);
-      const msg =
-        "No se pudo subir el/los archivo(s).\n" +
-        "• Verifica que el usuario esté autenticado.\n" +
-        "• Revisa reglas de Storage para permitir escribir en 'pacientes/{id}/**'.\n" +
-        "• Si usas Emulador, confirma que el bucket coincida.\n\n" +
-        (e?.message || "");
-      alert(msg);
-    } finally {
-      setRxUploading(false);
-      try {
-        if (rxInputRef.current) rxInputRef.current.value = "";
-      } catch {}
+      toast.success(editData ? "Ficha actualizada" : "Paciente registrado");
+      setOpen(false);
+      reloadData();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || "Error al guardar");
     }
   };
 
-  const removeRxItem = async (idx) => {
-    if (!viewing?.id) return;
-    const item = viewing.rxImagenes[idx];
-    const next = viewing.rxImagenes.filter((_, i) => i !== idx);
-    await updatePatientField({ rxImagenes: next });
+  const handleDelete = async (patient) => {
     try {
-      if (item?.path) {
-        const storage = getStorage();
-        await deleteObject(ref(storage, item.path));
+      await deletePatient(patient.id);
+
+      await logAction(
+        patient.id,
+        "DELETE_PATIENT",
+        {
+          nombre: patient.nombreCompleto || patient.paciente,
+          documento: patient.nroDocumento || patient.documento
+        }
+      );
+
+      toast.success("Paciente eliminado correctamente");
+      reloadData();
+    } catch (err) {
+      console.error("Error eliminando paciente:", err?.code, err?.message, err);
+      if (err?.code === "permission-denied") {
+        toast.error("No tienes permisos para eliminar pacientes. Verifica las reglas de Firestore.");
+      } else {
+        toast.error(`Error al eliminar el paciente: ${err?.message || "Error desconocido"}`);
       }
-    } catch (e) {
-      console.warn("No se pudo borrar del Storage:", e);
     }
   };
 
-  /* =================== Historia clínica / odontograma / etc =================== */
-  const setHistoria = (key, val) => {
-    const next = { ...(viewing.historiaClinica || {}), [key]: val };
-    updatePatientField({ historiaClinica: next });
-  };
-
-  const addPresupuesto = (p) => {
-    const next = [...(viewing.presupuestos || []), { id: String(Date.now()), ...p }];
-    updatePatientField({ presupuestos: next });
-  };
-
-  const removePresupuesto = (id) => {
-    updatePatientField({ presupuestos: (viewing.presupuestos || []).filter((x) => x.id !== id) });
-  };
-
-  const addEvolucion = (nota) => {
-    const next = [
-      ...(viewing.evoluciones || []),
-      { id: String(Date.now()), fechaISO: new Date().toISOString(), nota }
-    ];
-    updatePatientField({ evoluciones: next });
-  };
-
-  const removeEvolucion = (id) => {
-    updatePatientField({ evoluciones: (viewing.evoluciones || []).filter((x) => x.id !== id) });
-  };
-
-  // Odontograma/Periodontograma placeholders simples
-  const togglePieza = (campo, pieza) => {
-    const arr = Array.isArray(viewing[campo]) ? viewing[campo] : [];
-    const exists = arr.find((p) => p.pieza === pieza);
-    let next;
-    if (exists) next = arr.filter((p) => p.pieza !== pieza);
-    else next = [...arr, { pieza, estado: "marcada" }];
-    updatePatientField({ [campo]: next });
-  };
-
-  /* =================== Hooks: Finanzas & Citas =================== */
-  const patientId = viewing?.id || null;
-  const fin = useFinancials(patientId);
-  const { loading: loadingCitas, citas } = useAppointments(patientId);
-
-  /* =================== UI =================== */
   return (
-    <div className="odc-container">
-      <div className="odc-topbar-green" />
-      <div className="odc-topbar-blue">
-        <div className="odc-top-inner">
-          <div className="odc-breadcrumbs">Pacientes</div>
-        </div>
-      </div>
+    <div className="relative w-full min-h-[calc(100vh-64px)] overflow-y-auto custom-scrollbar flex flex-col bg-slate-50/50">
+      {!selectedPatient ? (
+        <PatientList
+          pacientes={pacientes}
+          loading={loading}
+          isSearching={isSearching}
+          onSelect={(patient) => {
+            setSelectedPatient(patient);
+            setSearchParams({ id: patient.id, tab: "datos" });
+          }}
+          searchTerm={term}
+          onSearchChange={setTerm}
+          onCreateNew={handleOpenNew}
+          onImportClick={() => setShowImporter(true)}
+          onDelete={handleDelete}
+          onEdit={handleOpenEdit}
+          onToggleStatus={async (p) => {
+            const isCurrentlyActive = p.activo !== false;
+            try {
+              await updateDoc(doc(db, "pacientes", p.id), { activo: !isCurrentlyActive });
+              reloadData();
+            } catch (e) { toast.error("Error al cambiar estado"); }
+          }}
+        />
+      ) : (
+        <PatientDetails
+          initialData={selectedPatient}
+          onClose={() => {
+            setSelectedPatient(null);
+            setSearchParams({});
+          }}
+          onEdit={(p) => {
+            handleOpenEdit(p);
+            setSelectedPatient(null);
+            setSearchParams({});
+          }}
+          onDelete={(p) => {
+            handleDelete(p);
+            setSelectedPatient(null);
+            setSearchParams({});
+          }}
+        />
+      )}
 
-      {/* Card principal */}
-      <div className="odc-card">
-        <div className="odc-card-header">
-          <h3 className="odc-title">Pacientes</h3>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              className="search-input"
-              style={{ minWidth: 280 }}
-              placeholder="Buscar por nombre, documento o teléfono…"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-            />
-            <button type="button" className="btn green" onClick={openNew}>+ Nuevo paciente</button>
-          </div>
-        </div>
-
-        <div className="table-wrap">
-          <table className="appointments-table">
-            <thead>
-              <tr>
-                <th>Foto</th>
-                <th>Nombre</th>
-                <th>Documento</th>
-                <th>Celular</th>
-                <th>Correo</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && pacientes.length === 0 ? (
-                <tr><td className="no-data" colSpan={6}>Cargando…</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td className="no-data" colSpan={6}>No hay pacientes o no coinciden con la búsqueda.</td></tr>
-              ) : (
-                filtered.map((p) => (
-                  <tr key={p.id} className="row-click" onClick={() => startViewing(p)}>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      {p.fotoUrl ? (
-                        <img src={p.fotoUrl} alt="Foto" style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover" }} />
-                      ) : (
-                        <div className="avatar-fallback">{(p.nombreCompleto || "P")[0]}</div>
-                      )}
-                    </td>
-                    <td>{p.nombreCompleto || p.paciente || "—"}</td>
-                    <td>{p.nroDocumento || p.documento || "—"}</td>
-                    <td>{p.celular || p.celularPaciente || "—"}</td>
-                    <td>{p.email || "—"}</td>
-                    <td><span className="pill pill-ok">{p.activo ? "Activo" : "Inactivo"}</span></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="footer-actions">
-          <button type="button" className="btn" disabled={loading || !hasMore} onClick={() => fetchPage(false)}>
-            {hasMore ? "Cargar más" : "No hay más"}
-          </button>
-          <div className="hint">{pacientes.length} registros cargados</div>
-        </div>
-      </div>
-
-      {/* ========= MODAL CREAR/EDITAR ========= */}
       {open && (
-        <div className="odc-modal" role="dialog" aria-modal="true">
-          <div className="odc-modal-backdrop" onClick={() => setOpen(false)} />
-          <div className="odc-card" style={{ width: 1000, maxWidth: "95%", maxHeight: "92vh", overflowY: "auto" }}>
-            <div className="odc-card-header">
-              <h3 className="odc-title">{editingId ? "Editar paciente" : "Nuevo paciente"}</h3>
-              <button type="button" className="btn" onClick={() => setOpen(false)}>✕</button>
-            </div>
-
-            <form onSubmit={handleSubmit}>
-              {/* FOTO */}
-              <div className="form-section-title">Foto del paciente</div>
-              <div className="foto-row">
-                <label className="foto-drop">
-                  <input type="file" accept="image/*" onChange={(e) => onFotoChange(e.target.files?.[0] || null)} style={{ display: "none" }} />
-                  {fotoPreview ? (
-                    <img src={fotoPreview} alt="Preview" className="foto-preview" />
-                  ) : (
-                    <div className="foto-empty">Arrastra o haz clic para cargar</div>
-                  )}
-                </label>
-                {fotoPreview && (
-                  <button type="button" className="btn" onClick={() => onFotoChange(null)}>Quitar foto</button>
-                )}
-              </div>
-
-              {/* Identificación */}
-              <div className="form-section-title">Datos de identificación</div>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">Tipo de documento *</label>
-                  <select className="form-input" value={form.tipoDocumento} onChange={(e) => handleChange("tipoDocumento", e.target.value)}>
-                    <option value="">Seleccione…</option>
-                    <option value="CC">Cédula</option>
-                    <option value="TI">Tarjeta de identidad</option>
-                    <option value="PA">Pasaporte</option>
-                    <option value="OTRO">Otro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Nro. de documento *</label>
-                  <input className="form-input" value={form.nroDocumento} onChange={(e) => handleChange("nroDocumento", e.target.value)} placeholder="Número de documento" required />
-                </div>
-                <div>
-                  <label className="form-label">Número de Historia</label>
-                  <input className="form-input" value={form.nroHistoria} readOnly />
-                </div>
-                <div>
-                  <label className="form-label">Nombres *</label>
-                  <input className="form-input" value={form.nombres} onChange={(e) => handleChange("nombres", e.target.value)} required />
-                </div>
-                <div>
-                  <label className="form-label">Apellidos *</label>
-                  <input className="form-input" value={form.apellidos} onChange={(e) => handleChange("apellidos", e.target.value)} required />
-                </div>
-                <div>
-                  <label className="form-label">Nombre completo</label>
-                  <input className="form-input" value={form.nombreCompleto} readOnly />
-                </div>
-                <div>
-                  <label className="form-label">Sexo *</label>
-                  <select className="form-input" value={form.sexo} onChange={(e) => handleChange("sexo", e.target.value)} required>
-                    <option value="">Seleccione…</option>
-                    <option>Masculino</option>
-                    <option>Femenino</option>
-                    <option>Otro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Estado civil *</label>
-                  <select className="form-input" value={form.estadoCivil} onChange={(e) => handleChange("estadoCivil", e.target.value)} required>
-                    <option value="">Seleccione…</option>
-                    <option>Soltero</option>
-                    <option>Casado</option>
-                    <option>Unión libre</option>
-                    <option>Divorciado</option>
-                    <option>Viudo</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">País de nacimiento *</label>
-                  <input className="form-input" list="listCountries" value={form.paisNacimiento} onChange={(e) => handleChange("paisNacimiento", e.target.value)} placeholder="Escribe y elige…" required />
-                  <datalist id="listCountries">
-                    {COUNTRIES.map((c) => (<option key={c} value={c} />))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="form-label">Ciudad de nacimiento</label>
-                  <input className="form-input" list="listCitiesBirth" value={form.ciudadNacimiento} onChange={(e) => handleChange("ciudadNacimiento", e.target.value)} placeholder="Escribe y elige…" />
-                  <datalist id="listCitiesBirth">
-                    { (CITIES_BY_COUNTRY[form.paisNacimiento] || []).map((c) => (<option key={c} value={c} />)) }
-                  </datalist>
-                </div>
-                <div>
-                  <label className="form-label">Fecha de ingreso</label>
-                  <input className="form-input" value={form.fechaIngreso} readOnly />
-                </div>
-                <div>
-                  <label className="form-label">Fecha de nacimiento *</label>
-                  <input type="date" className="form-input" value={form.fechaNacimiento} onChange={(e) => handleChange("fechaNacimiento", e.target.value)} required />
-                </div>
-                <div>
-                  <label className="form-label">Edad</label>
-                  <input className="form-input" value={form.edad} readOnly />
-                </div>
-                <div>
-                  <label className="form-label">País de domicilio *</label>
-                  <input className="form-input" list="listCountries" value={form.paisDomicilio} onChange={(e) => handleChange("paisDomicilio", e.target.value)} required />
-                </div>
-                <div>
-                  <label className="form-label">Ciudad de domicilio *</label>
-                  <input className="form-input" list="listCitiesHome" value={form.ciudadDomicilio} onChange={(e) => handleChange("ciudadDomicilio", e.target.value)} required />
-                  <datalist id="listCitiesHome">
-                    {(CITIES_BY_COUNTRY[form.paisDomicilio] || []).map((c) => (<option key={c} value={c} />))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="form-label">Barrio *</label>
-                  <input className="form-input" value={form.barrio} onChange={(e) => handleChange("barrio", e.target.value)} required placeholder="Barrio" />
-                </div>
-                <div>
-                  <label className="form-label">Lugar de residencia *</label>
-                  <input className="form-input" value={form.lugarResidencia} onChange={(e) => handleChange("lugarResidencia", e.target.value)} required />
-                </div>
-                <div>
-                  <label className="form-label">Estrato</label>
-                  <select className="form-input" value={form.estrato} onChange={(e) => handleChange("estrato", e.target.value)}>
-                    <option value="">Seleccione…</option>
-                    <option>1</option><option>2</option><option>3</option>
-                    <option>4</option><option>5</option><option>6</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Zona residencial *</label>
-                  <select className="form-input" value={form.zonaResidencial} onChange={(e) => handleChange("zonaResidencial", e.target.value)} required>
-                    <option value="">Seleccione…</option>
-                    <option>Urbana</option>
-                    <option>Rural</option>
-                  </select>
-                </div>
-                <div className="checkbox-cell">
-                  <label className="form-label">¿Es extranjero?</label>
-                  <input type="checkbox" checked={form.esExtranjero} onChange={(e) => handleChange("esExtranjero", e.target.checked)} />
-                </div>
-                <div className="checkbox-cell">
-                  <label className="form-label">¿Permite publicidad?</label>
-                  <input type="checkbox" checked={form.permitePublicidad} onChange={(e) => handleChange("permitePublicidad", e.target.checked)} />
-                </div>
-              </div>
-
-              {/* Contacto */}
-              <div className="form-section-title">Contacto</div>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">Celular *</label>
-                  <input className="form-input" value={form.celular} onChange={(e) => handleChange("celular", e.target.value)} required placeholder="Celular del paciente" />
-                </div>
-                <div>
-                  <label className="form-label">Teléfono de domicilio</label>
-                  <input className="form-input" value={form.telDomicilio} onChange={(e) => handleChange("telDomicilio", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Teléfono de oficina</label>
-                  <input className="form-input" value={form.telOficina} onChange={(e) => handleChange("telOficina", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Extensión</label>
-                  <input className="form-input" value={form.extension} onChange={(e) => handleChange("extension", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Correo electrónico *</label>
-                  <input type="email" className="form-input" value={form.email} onChange={(e) => handleChange("email", e.target.value)} required placeholder="correo@dominio.com" />
-                </div>
-                <div>
-                  <label className="form-label">Ocupación *</label>
-                  <input className="form-input" value={form.ocupacion} onChange={(e) => handleChange("ocupacion", e.target.value)} required />
-                </div>
-              </div>
-
-              {/* Facturación */}
-              <div className="form-section-title">Datos de facturación</div>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">Responsable</label>
-                  <input className="form-input" value={form.nombreResponsable} onChange={(e) => handleChange("nombreResponsable", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Parentesco</label>
-                  <select className="form-input" value={form.parentesco} onChange={(e) => handleChange("parentesco", e.target.value)}>
-                    <option value="">Seleccione…</option>
-                    <option>Padre/Madre</option><option>Hermano</option>
-                    <option>Esposo/a</option><option>Otro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Celular</label>
-                  <input className="form-input" value={form.celularResponsable} onChange={(e) => handleChange("celularResponsable", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Teléfono</label>
-                  <input className="form-input" value={form.telefonoResponsable} onChange={(e) => handleChange("telefonoResponsable", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Correo electrónico</label>
-                  <input type="email" className="form-input" value={form.emailResponsable} onChange={(e) => handleChange("emailResponsable", e.target.value)} />
-                </div>
-              </div>
-
-              {/* Acompañante */}
-              <div className="form-section-title">Acompañante</div>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">Nombre</label>
-                  <input className="form-input" value={form.nombreAcompanante} onChange={(e) => handleChange("nombreAcompanante", e.target.value)} placeholder="Nombre acompañante" />
-                </div>
-                <div>
-                  <label className="form-label">Teléfono</label>
-                  <input className="form-input" value={form.telefonoAcompanante} onChange={(e) => handleChange("telefonoAcompanante", e.target.value)} placeholder="Teléfono acompañante" />
-                </div>
-              </div>
-
-              {/* Marketing */}
-              <div className="form-section-title">Mercadeo</div>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">Convenio beneficio</label>
-                  <input className="form-input" value={form.convenioBeneficio} onChange={(e) => handleChange("convenioBeneficio", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">¿Cómo nos conoció?</label>
-                  <select className="form-input" value={form.comoConocio} onChange={(e) => handleChange("comoConocio", e.target.value)}>
-                    <option value="">Seleccione…</option>
-                    <option>Redes sociales</option>
-                    <option>Publicidad</option>
-                    <option>Recomendación</option>
-                    <option>Otro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Campaña</label>
-                  <input className="form-input" value={form.campania} onChange={(e) => handleChange("campania", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Remitido por</label>
-                  <input className="form-input" value={form.remitidoPor} onChange={(e) => handleChange("remitidoPor", e.target.value)} />
-                </div>
-                <div>
-                  <label className="form-label">Asesor comercial</label>
-                  <input className="form-input" value={form.asesorComercial} onChange={(e) => handleChange("asesorComercial", e.target.value)} />
-                </div>
-              </div>
-
-              {/* EPS */}
-              <div className="form-section-title">EPS</div>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">Tipo de vinculación *</label>
-                  <select className="form-input" value={form.tipoVinculacion} onChange={(e) => handleChange("tipoVinculacion", e.target.value)} required>
-                    <option value="">Seleccione…</option>
-                    <option>Contributivo</option>
-                    <option>Subsidiado</option>
-                    <option>Particular</option>
-                    <option>Otro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Nombre de la EPS *</label>
-                  <input className="form-input" list="listEps" value={form.nombreEps} onChange={(e) => handleChange("nombreEps", e.target.value)} placeholder="Escribe y selecciona…" required />
-                  <datalist id="listEps">
-                    {epsList.map((e) => (<option key={e} value={e} />))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="form-label">Póliza de salud</label>
-                  <input className="form-input" value={form.polizaSalud} onChange={(e) => handleChange("polizaSalud", e.target.value)} />
-                </div>
-              </div>
-
-              {/* Doctor */}
-              <div className="form-section-title">Doctor</div>
-              <div className="form-grid">
-                <div>
-                  <label className="form-label">Doctor</label>
-                  <input className="form-input" value={form.doctor} onChange={(e) => handleChange("doctor", e.target.value)} placeholder="Usuario / Libre" />
-                </div>
-              </div>
-
-              {/* Notas */}
-              <div className="form-section-title">Alertas y Notas</div>
-              <div className="form-grid">
-                <textarea className="form-input" rows={3} value={form.notas} onChange={(e) => handleChange("notas", e.target.value)} placeholder="Notas del paciente…" />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 12 }}>
-                {editingId ? (
-                  <button type="button" className="btn" onClick={() => handleDelete({ id: editingId, nombreCompleto: form.nombreCompleto })}>Eliminar</button>
-                ) : <div />}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="btn" onClick={() => setOpen(false)}>Cancelar</button>
-                  <button type="submit" className="btn blue">{editingId ? "Actualizar" : "Guardar paciente"}</button>
-                </div>
-              </div>
-            </form>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-10 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full h-full md:max-w-6xl md:max-h-[90vh] overflow-hidden">
+            <PatientForm
+              initialData={editData}
+              onSubmit={handleSubmit}
+              onCancel={() => setOpen(false)}
+              onDelete={handleDelete}
+            />
           </div>
         </div>
       )}
 
-      {/* ========= MODAL FICHA COMPLETA ========= */}
-      {viewing && (
-        <div className="odc-modal" role="dialog" aria-modal="true">
-          <div className="odc-modal-backdrop" onClick={stopViewing} />
-          <div className="odc-card ficha-card">
-            {/* Header */}
-            <div className="ficha-header">
-              <div className="ficha-header-left">
-                {viewing.fotoUrl ? (
-                  <img src={viewing.fotoUrl} alt="Foto" className="ficha-avatar" />
-                ) : (
-                  <div className="avatar-fallback ficha-avatar-fallback">
-                    {(viewing.nombreCompleto || "P")[0]}
-                  </div>
-                )}
-                <div>
-                  <div className="ficha-nombre">{viewing.nombreCompleto || "—"}</div>
-                  <div className="ficha-doc">{viewing.tipoDocumento || "—"} {viewing.nroDocumento || "—"}</div>
-                  <div className="ficha-badges">
-                    <span className="ficha-badge blue">En valoración</span>
-                    <span className="ficha-badge green">Sin deuda</span>
-                  </div>
-                </div>
-              </div>
-              <div className="ficha-header-right">
-                <div className="ficha-actions">
-                  <button type="button" className="btn" onClick={stopViewing}>Cerrar</button>
-                  <button type="button" className="btn blue" onClick={openEditFromViewing}>Editar</button>
-                  <button
-                    type="button"
-                    className="btn green"
-                    onClick={() => nav(buildUrl(ROUTES.caja, { cobro: 1, patientId: viewing.id }))}
-                    title="Ir a Caja para cobrar a este paciente"
-                  >
-                    Cobrar
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="ficha-body">
-              {/* Sidebar */}
-              <aside className="ficha-sidebar">
-                <div className="ficha-sidebar-title">Información general</div>
-                <button type="button" className={`ficha-link ${activeTab==="datos"?"active":""}`} onClick={() => setActiveTab("datos")}>Datos personales</button>
-                <button type="button" className={`ficha-link ${activeTab==="marketing"?"active":""}`} onClick={() => setActiveTab("marketing")}>Marketing</button>
-                <button type="button" className={`ficha-link ${activeTab==="eps"?"active":""}`} onClick={() => setActiveTab("eps")}>EPS</button>
-                <button type="button" className={`ficha-link ${activeTab==="prof"?"active":""}`} onClick={() => setActiveTab("prof")}>Profesionales</button>
-                <button type="button" className={`ficha-link ${activeTab==="rx"?"active":""}`} onClick={() => setActiveTab("rx")}>Rx/Imágenes/Doc</button>
-                <button type="button" className={`ficha-link ${activeTab==="citas"?"active":""}`} onClick={() => setActiveTab("citas")}>Citas</button>
-                <button type="button" className={`ficha-link ${activeTab==="crm"?"active":""}`} onClick={() => setActiveTab("crm")}>CRM</button>
-
-                <div className="ficha-sidebar-title mt">Historia clínica</div>
-                <button type="button" className={`ficha-link ${activeTab==="doc"?"active":""}`} onClick={() => setActiveTab("doc")}>Doc. Clínicos</button>
-                <button type="button" className={`ficha-link ${activeTab==="odonto"?"active":""}`} onClick={() => setActiveTab("odonto")}>Odontogramas</button>
-                <button type="button" className={`ficha-link ${activeTab==="perio"?"active":""}`} onClick={() => setActiveTab("perio")}>Periodontogramas</button>
-                <button type="button" className={`ficha-link ${activeTab==="presu"?"active":""}`} onClick={() => setActiveTab("presu")}>Presupuestos</button>
-                <button type="button" className={`ficha-link ${activeTab==="evo"?"active":""}`} onClick={() => setActiveTab("evo")}>Evoluciones</button>
-
-                <div className="ficha-sidebar-title mt">Facturación</div>
-                <button
-                  type="button"
-                  className={`ficha-link ${activeTab==="fact"?"active":""}`}
-                  onClick={() => setActiveTab("fact")}
-                >
-                  Resumen
-                </button>
-
-                {/* Acciones rápidas de Facturación */}
-                <div className="ficha-sidebar-actions" style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                  <button
-                    type="button"
-                    className="btn pay"
-                    onClick={() => nav(buildUrl(ROUTES.caja, { cobro: 1, patientId: viewing.id }))}
-                    title="Cobrar a este paciente"
-                  >
-                    Realizar pago
-                  </button>
-                  <button
-                    type="button"
-                    className="btn history"
-                    onClick={() => navAbs(`${ROUTES.pagos}?patientId=${encodeURIComponent(viewing.id)}`)}
-                    title="Ver histórico de pagos"
-                  >
-                    Histórico de pagos
-                  </button>
-                  <button
-                    type="button"
-                    className="btn history"
-                    onClick={() => navAbs(`${ROUTES.facturas}?patientId=${encodeURIComponent(viewing.id)}`)}
-                    title="Ver histórico de facturación"
-                  >
-                    Histórico de facturación
-                  </button>
-                </div>
-              </aside>
-
-              {/* Content */}
-              <main className="ficha-content">
-                {/* Tabs */}
-                {activeTab === "datos" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Datos personales</h4>
-                    <div className="ficha-grid">
-                      {[
-                        ["Tipo de documento", viewing.tipoDocumento],
-                        ["Nro. de documento", viewing.nroDocumento],
-                        ["Número de Historia", viewing.nroHistoria],
-                        ["Fecha de ingreso", viewing.fechaIngreso],
-                        ["Nombres", viewing.nombres],
-                        ["Apellidos", viewing.apellidos],
-                        ["Nombre completo", viewing.nombreCompleto],
-                        ["Sexo", viewing.sexo],
-                        ["Estado civil", viewing.estadoCivil],
-                        ["País de nacimiento", viewing.paisNacimiento],
-                        ["Ciudad de nacimiento", viewing.ciudadNacimiento],
-                        ["Fecha de nacimiento", viewing.fechaNacimiento],
-                        ["Edad", viewing.edad],
-                        ["País de domicilio", viewing.paisDomicilio],
-                        ["Ciudad de domicilio", viewing.ciudadDomicilio],
-                        ["Barrio", viewing.barrio],
-                        ["Lugar de residencia", viewing.lugarResidencia],
-                        ["Estrato", viewing.estrato],
-                        ["Zona residencial", viewing.zonaResidencial],
-                        ["Extranjero", viewing.esExtranjero ? "Sí" : "No"],
-                        ["Permite publicidad", viewing.permitePublicidad ? "Sí" : "No"],
-                        ["Celular", viewing.celular || viewing.celularPaciente],
-                        ["Teléfono domicilio", viewing.telDomicilio || viewing.telefonoPaciente],
-                        ["Teléfono oficina", viewing.telOficina],
-                        ["Extensión", viewing.extension],
-                        ["Correo electrónico", viewing.email],
-                        ["Ocupación", viewing.ocupacion],
-                        ["Responsable", viewing.nombreResponsable],
-                        ["Parentesco", viewing.parentesco],
-                        ["Cel. responsable", viewing.celularResponsable],
-                        ["Tel. responsable", viewing.telefonoResponsable],
-                        ["Email responsable", viewing.emailResponsable],
-                        ["Acompañante", viewing.nombreAcompanante],
-                        ["Tel. acompañante", viewing.telefonoAcompanante],
-                      ].map(([k, v]) => (
-                        <div className="field" key={k}>
-                          <label>{k}</label>
-                          <input className="form-input" value={v || ""} readOnly />
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "marketing" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Marketing</h4>
-                    <div className="ficha-grid">
-                      {[
-                        ["Convenio beneficio", viewing.convenioBeneficio],
-                        ["¿Cómo nos conoció?", viewing.comoConocio],
-                        ["Campaña", viewing.campania],
-                        ["Remitido por", viewing.remitidoPor],
-                        ["Asesor comercial", viewing.asesorComercial],
-                      ].map(([k, v]) => (
-                        <div className="field" key={k}>
-                          <label>{k}</label>
-                          <input className="form-input" value={v || ""} readOnly />
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "eps" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">EPS</h4>
-                    <div className="ficha-grid">
-                      {[
-                        ["Tipo de vinculación", viewing.tipoVinculacion],
-                        ["Nombre EPS", viewing.nombreEps],
-                        ["Póliza de salud", viewing.polizaSalud],
-                      ].map(([k, v]) => (
-                        <div className="field" key={k}>
-                          <label>{k}</label>
-                          <input className="form-input" value={v || ""} readOnly />
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "prof" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Profesionales</h4>
-                    <div className="ficha-grid">
-                      <div className="field">
-                        <label>Doctor</label>
-                        <input className="form-input" value={viewing.doctor || ""} readOnly />
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {/* ==================== RX / IMÁGENES / DOC — NUEVO LAYOUT ==================== */}
-                {activeTab === "rx" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Rx / Imágenes / Documentos</h4>
-
-                    {/* Barra de acciones y preferencias */}
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <label className="btn blue">
-                        Subir archivos
-                        <input
-                          ref={rxInputRef}
-                          type="file"
-                          multiple
-                          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-                          style={{ display: "none" }}
-                          onChange={(e) => handleRxUpload([...(e.target.files || [])])}
-                        />
-                      </label>
-                      {rxUploading && <span className="hint">Subiendo…</span>}
-
-                      <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-                        <input
-                          className="form-input"
-                          style={{ width: 200 }}
-                          placeholder="Buscar en Rx…"
-                          value={rxFilter}
-                          onChange={(e) => setRxFilter(e.target.value)}
-                          title="Filtra por nombre, título o descripción"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="hint" style={{ marginTop: 6 }}>
-                      {filteredRx.length} elemento(s){rxFilter ? " · filtrado(s)" : ""}.
-                    </div>
-
-                    {/* Cuadrícula responsiva con mini-thumbnails */}
-                    <div
-                      className="rx-grid"
-                      style={{
-                        display: "grid",
-                        gap: 10,
-                        marginTop: 12,
-                        gridTemplateColumns: `repeat(auto-fill, minmax(${densityCfg.colMin}px, 1fr))`,
-                        alignItems: "start",
-                      }}
-                    >
-                      {filteredRx.length === 0 && (
-                        <div className="no-data" style={{ gridColumn: "1 / -1" }}>
-                          {rxFilter ? "Sin coincidencias." : "Sin archivos aún."}
-                        </div>
-                      )}
-
-                      {filteredRx.map((it, i) => {
-                        const img = isImage(it);
-                        const title = it.title || it.name || `archivo-${i}`;
-                        const ext = (it.name || "").split(".").pop()?.toUpperCase() || (it.type || "").split("/").pop()?.toUpperCase() || "";
-
-                        // === NUEVO: fecha efectiva del item
-                        const uploadedAtISO =
-                          it.uploadedAtISO || (it.created ? new Date(it.created).toISOString() : null);
-
-                        return (
-                          <div
-                            key={`${it.url}-${i}`}
-                            className="rx-item mini-card"
-                            style={{ padding: 8, display: "grid", gap: 8 }}
-                            title={title}
-                          >
-                            {/* Thumb */}
-                            <a
-                              href={it.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{
-                                width: "100%",
-                                height: densityCfg.thumbH,
-                                borderRadius: 8,
-                                overflow: "hidden",
-                                border: "1px solid #e5e7eb",
-                                display: "grid",
-                                placeItems: "center",
-                                background: "#fafafa",
-                              }}
-                            >
-                              {img ? (
-                                <img
-                                  src={it.url}
-                                  alt={title}
-                                  style={{
-                                    width: densityCfg.thumbW,
-                                    height: densityCfg.thumbH,
-                                    objectFit: "contain",
-                                    display: "block",
-                                  }}
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div style={{ textAlign: "center", padding: 10 }}>
-                                  <div style={{ fontSize: 24, fontWeight: 700 }}>{ext || "DOC"}</div>
-                                  <div style={{ fontSize: 12, opacity: 0.7 }}>Ver / descargar</div>
-                                </div>
-                              )}
-                            </a>
-
-                            {/* Nombre resumido */}
-                            <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.2 }}>
-                              {title.length > 40 ? title.slice(0, 37) + "…" : title}
-                            </div>
-
-                            {/* Panel plegable para edición de metadatos */}
-                            <details>
-                              <summary style={{ cursor: "pointer", fontSize: 12, color: "#2563eb" }}>
-                                Editar nombre y descripción
-                              </summary>
-                              <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
-                                <label className="form-label" style={{ marginTop: 4 }}>Nombre para mostrar</label>
-                                <input
-                                  id={`rx-title-${i}`}
-                                  className="form-input"
-                                  defaultValue={it.title || it.name || ""}
-                                  placeholder="Ej. Rx aleta derecha 2025-11-29"
-                                />
-                                <label className="form-label">Descripción</label>
-                                <textarea
-                                  id={`rx-desc-${i}`}
-                                  className="form-input"
-                                  rows={2}
-                                  defaultValue={it.desc || ""}
-                                  placeholder="Observaciones, región, técnica, etc."
-                                />
-
-                                {/* === NUEVO: Fecha de subida editable === */}
-                                <label className="form-label">Fecha de subida</label>
-                                <input
-                                  id={`rx-date-${i}`}
-                                  type="datetime-local"
-                                  className="form-input"
-                                  defaultValue={isoToInputLocal(uploadedAtISO)}
-                                />
-
-                                <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
-                                  <button
-                                    type="button"
-                                    className="btn blue"
-                                    onClick={() => {
-                                      const titleV = document.getElementById(`rx-title-${i}`)?.value || "";
-                                      const descV  = document.getElementById(`rx-desc-${i}`)?.value || "";
-                                      const dateV  = document.getElementById(`rx-date-${i}`)?.value || ""; // "YYYY-MM-DDTHH:mm"
-                                      let dateISO = uploadedAtISO;
-                                      let dateMS  = it.uploadedAtMS || it.created || null;
-                                      if (dateV) {
-                                        const dt = new Date(dateV);
-                                        if (!isNaN(dt.getTime())) {
-                                          dateISO = dt.toISOString();
-                                          dateMS  = dt.getTime();
-                                        }
-                                      }
-                                      updateRxItem(i, {
-                                        title: titleV,
-                                        name: titleV || it.name,
-                                        desc: descV,
-                                        uploadedAtISO: dateISO,
-                                        uploadedAtMS: dateMS,
-                                      });
-                                    }}
-                                  >
-                                    Guardar
-                                  </button>
-                                  <button type="button" className="btn" onClick={() => removeRxItem(i)}>Eliminar</button>
-                                </div>
-                                <div className="hint" style={{ fontSize: 11 }}>
-                                  Tipo: {it.type || "—"} · Tamaño: {(it.size || 0).toLocaleString()} bytes
-                                  {uploadedAtISO ? ` · Subido: ${fmtDateTimeNice(uploadedAtISO)}` : ""}
-                                </div>
-                              </div>
-                            </details>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "doc" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Doc. Clínicos</h4>
-                    <div className="ficha-grid">
-                      <div className="field">
-                        <label>Motivo de consulta</label>
-                        <textarea className="form-input" rows={3}
-                          value={viewing.historiaClinica?.motivoConsulta || ""}
-                          onChange={(e) => setHistoria("motivoConsulta", e.target.value)} />
-                      </div>
-                      <div className="field">
-                        <label>Antecedentes</label>
-                        <textarea className="form-input" rows={3}
-                          value={viewing.historiaClinica?.antecedentes || ""}
-                          onChange={(e) => setHistoria("antecedentes", e.target.value)} />
-                      </div>
-                      <div className="field">
-                        <label>Alergias</label>
-                        <textarea className="form-input" rows={2}
-                          value={viewing.historiaClinica?.alergias || ""}
-                          onChange={(e) => setHistoria("alergias", e.target.value)} />
-                      </div>
-                      <div className="field">
-                        <label>Medicamentos</label>
-                        <textarea className="form-input" rows={2}
-                          value={viewing.historiaClinica?.medicamentos || ""}
-                          onChange={(e) => setHistoria("medicamentos", e.target.value)} />
-                      </div>
-                      <div className="field">
-                        <label>Notas</label>
-                        <textarea className="form-input" rows={3}
-                          value={viewing.historiaClinica?.notas || ""}
-                          onChange={(e) => setHistoria("notas", e.target.value)} />
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "odonto" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Odontograma (placeholder)</h4>
-                    <div className="odont-grid">
-                      {Array.from({ length: 32 }, (_, i) => i + 1).map((pieza) => {
-                        const marcada = (viewing.odontograma || []).some((p) => p.pieza === pieza);
-                        return (
-                          <button
-                            type="button"
-                            key={pieza}
-                            className={`tooth ${marcada ? "on" : ""}`}
-                            onClick={() => togglePieza("odontograma", pieza)}
-                            title={`Pieza ${pieza}`}
-                          >
-                            {pieza}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "perio" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Periodontograma (placeholder)</h4>
-                    <div className="odont-grid">
-                      {Array.from({ length: 32 }, (_, i) => i + 1).map((pieza) => {
-                        const marcada = (viewing.periodontograma || []).some((p) => p.pieza === pieza);
-                        return (
-                          <button
-                            type="button"
-                            key={pieza}
-                            className={`tooth ${marcada ? "on" : ""}`}
-                            onClick={() => togglePieza("periodontograma", pieza)}
-                            title={`Pieza ${pieza}`}
-                          >
-                            {pieza}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "presu" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Presupuestos & planes</h4>
-                    <PresupuestoForm onAdd={addPresupuesto} />
-                    <div className="presu-list">
-                      {(viewing.presupuestos || []).map((it) => (
-                        <div className="presu-item" key={it.id}>
-                          <div>
-                            <div className="presu-title">{it.titulo}</div>
-                            <div className="presu-meta">Costo: ${it.costo || 0} · Estado: {it.estado || "Pendiente"}</div>
-                          </div>
-                          <button type="button" className="btn small" onClick={() => removePresupuesto(it.id)}>Eliminar</button>
-                        </div>
-                      ))}
-                      {(!viewing.presupuestos || viewing.presupuestos.length === 0) && (
-                        <div className="no-data">Sin presupuestos aún.</div>
-                      )}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "evo" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Evoluciones & Remisiones</h4>
-                    <EvolucionForm onAdd={addEvolucion} />
-                    <div className="evo-list">
-                      {(viewing.evoluciones || []).map((ev) => (
-                        <div className="evo-item" key={ev.id}>
-                          <div className="evo-date">{new Date(ev.fechaISO).toLocaleString()}</div>
-                          <div className="evo-note">{ev.nota}</div>
-                          <button type="button" className="btn small" onClick={() => removeEvolucion(ev.id)}>Eliminar</button>
-                        </div>
-                      ))}
-                      {(!viewing.evoluciones || viewing.evoluciones.length === 0) && (
-                        <div className="no-data">Sin evoluciones aún.</div>
-                      )}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "fact" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Facturación</h4>
-
-                    {/* Tarjetas resumen */}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 12 }}>
-                      <Kpi title="Total facturado" value={`$ ${fin.totalFacturado.toLocaleString()}`} />
-                      <Kpi title="Total pagado" value={`$ ${fin.totalPagado.toLocaleString()}`} />
-                      <Kpi title="Facturas pendientes" value={`$ ${fin.totalFacturasPendientes.toLocaleString()}`} />
-                      <Kpi title="Saldo pendiente (facturas - pagos)" value={`$ ${(fin.totalFacturado - fin.totalPagado).toLocaleString()}`} />
-                      <Kpi title="Saldo a favor" value={`$ ${(viewing.facturacion?.saldoFavor ?? 0).toLocaleString()}`} />
-                      <Kpi title="Saldo crédito" value={`$ ${(viewing.facturacion?.saldoCredito ?? 0).toLocaleString()}`} />
-                    </div>
-
-                    {fin.error && <div className="hint" style={{ marginTop: 6 }}>⚠️ {fin.error}</div>}
-
-                    {/* Editables de saldos rápidos */}
-                    <div className="ficha-grid" style={{ marginTop: 12 }}>
-                      <div className="field">
-                        <label>Saldo a favor</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          value={viewing.facturacion?.saldoFavor ?? 0}
-                          onChange={(e) =>
-                            updatePatientField({ facturacion: { ...(viewing.facturacion || {}), saldoFavor: Number(e.target.value || 0) }})
-                          }
-                        />
-                      </div>
-                      <div className="field">
-                        <label>Saldo crédito</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          value={viewing.facturacion?.saldoCredito ?? 0}
-                          onChange={(e) =>
-                            updatePatientField({ facturacion: { ...(viewing.facturacion || {}), saldoCredito: Number(e.target.value || 0) }})
-                          }
-                        />
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {/* Citas (lectura + crear + abrir Agenda) */}
-                {activeTab === "citas" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">Citas</h4>
-
-                    {/* NUEVO: formulario rápido de creación */}
-                    <div className="mini-card" style={{ marginBottom: 12 }}>
-                      <div className="mini-card-title">Crear cita para este paciente</div>
-                      <div className="ficha-grid" style={{ marginTop: 8 }}>
-                        <div className="field">
-                          <label>Fecha</label>
-                          <input type="date" className="form-input" value={ncFecha} onChange={(e) => setNcFecha(e.target.value)} />
-                        </div>
-                        <div className="field">
-                          <label>Hora</label>
-                          <input type="time" className="form-input" value={ncHora} onChange={(e) => setNcHora(e.target.value)} />
-                        </div>
-                        <div className="field">
-                          <label>Doctor</label>
-                          <input className="form-input" value={ncDoctor} onChange={(e) => setNcDoctor(e.target.value)} placeholder="Doctor asignado" />
-                        </div>
-                        <div className="field">
-                          <label>Espacio / Sala</label>
-                          <input className="form-input" value={ncEspacio} onChange={(e) => setNcEspacio(e.target.value)} placeholder="Consultorio / Silla" />
-                        </div>
-                        <div className="field" style={{ gridColumn: "1 / -1" }}>
-                          <label>Comentario</label>
-                          <textarea className="form-input" rows={2} value={ncComentario} onChange={(e) => setNcComentario(e.target.value)} placeholder="Motivo / notas de la cita" />
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button type="button" className="btn blue" onClick={handleCrearCita}>Guardar cita</button>
-                        {ncFecha && (
-                          <button type="button" className="btn" onClick={() => goAgendaForDay(ncFecha, viewing.id)}>
-                            Ver ese día en Agenda
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="table-wrap">
-                      <table className="appointments-table">
-                        <thead>
-                          <tr>
-                            <th>Fecha</th>
-                            <th>Estado</th>
-                            <th>Motivo</th>
-                            <th>Profesional / Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {loadingCitas ? (
-                            <tr><td className="no-data" colSpan={4}>Cargando…</td></tr>
-                          ) : citas.length === 0 ? (
-                            <tr><td className="no-data" colSpan={4}>Sin citas registradas.</td></tr>
-                          ) : (
-                            citas.map((c) => (
-                              <tr key={c.id}>
-                                <td>{c.fechaISO ? new Date(c.fechaISO).toLocaleString() : (c.fechaYYYYMMDD || "—")}</td>
-                                <td>{(c.estado || "—")}</td>
-                                <td>{c.motivo || "—"}</td>
-                                <td>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span>{c.profesional || "—"}</span>
-                                    <button
-                                      type="button"
-                                      className="btn small"
-                                      onClick={() => {
-                                        const day =
-                                          c.fechaYYYYMMDD ||
-                                          c.fecha ||
-                                          (c.fechaISO ? new Date(c.fechaISO).toISOString().slice(0,10) : "");
-                                        goAgendaForDay(day, viewing.id);
-                                      }}
-                                      title="Abrir en Agenda"
-                                    >
-                                      Ver en Agenda
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "crm" && (
-                  <section className="ficha-section">
-                    <h4 className="ficha-section-title">CRM</h4>
-                    <div className="no-data">Notas / recordatorios comerciales del paciente.</div>
-                  </section>
-                )}
-
-                {/* Footer ficha */}
-                <div className="ficha-footer"></div>
-              </main>
-            </div>
-          </div>
-        </div>
+      {showImporter && (
+        <ImportadorPacientes
+          onComplete={() => reloadData()}
+          onClose={() => setShowImporter(false)}
+        />
       )}
     </div>
   );
 }
 
-/* ========================== Subcomponentes simples ========================== */
-function Kpi({ title, value }) {
-  return (
-    <div className="mini-card">
-      <div className="mini-card-title">{title}</div>
-      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>{value}</div>
-    </div>
-  );
-}
-
-function PresupuestoForm({ onAdd }) {
-  const [titulo, setTitulo] = useState("");
-  const [costo, setCosto] = useState("");
-  const [estado, setEstado] = useState("Pendiente");
-  return (
-    <div className="presu-form">
-      <input className="form-input" placeholder="Procedimiento / plan" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-      <input type="number" className="form-input" placeholder="Costo" value={costo} onChange={(e) => setCosto(e.target.value)} />
-      <select className="form-input" value={estado} onChange={(e) => setEstado(e.target.value)}>
-        <option>Pendiente</option>
-        <option>Aprobado</option>
-        <option>Rechazado</option>
-      </select>
-      <button
-        type="button"
-        className="btn blue"
-        onClick={() => {
-          if (!titulo) return alert("Título requerido");
-          onAdd({ titulo, costo: Number(costo || 0), estado });
-          setTitulo(""); setCosto(""); setEstado("Pendiente");
-        }}
-      >
-        Agregar
-      </button>
-    </div>
-  );
-}
-
-function EvolucionForm({ onAdd }) {
-  const [nota, setNota] = useState("");
-  return (
-    <div className="evo-form">
-      <textarea className="form-input" rows={2} placeholder="Escribe la evolución / remisión…" value={nota} onChange={(e) => setNota(e.target.value)} />
-      <button type="button" className="btn blue" onClick={() => { if (!nota.trim()) return; onAdd(nota.trim()); setNota(""); }}>
-        Guardar evolución
-      </button>
-    </div>
-  );
-}

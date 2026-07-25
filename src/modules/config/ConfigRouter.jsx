@@ -1,218 +1,152 @@
-// ===============================
-// ⚙️ ConfigRouter.jsx
-// ===============================
-import React, { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import React from "react";
+import { useParams, useLocation } from "react-router-dom";
 
-import EmpresaDatosBasicos from "./EmpresaDatosBasicos";
-import EmpresaLogo from "./EmpresaLogo";
-import ListaPrecios from "./ListaPrecios";
-import ListaPreciosEditar from "./ListaPreciosEditar";
-import ListaPreciosProductos from "./ListaPreciosProductos";
-import ImportarProcedimientos from "./ImportarProcedimientos";
+import ConfigMenu from "./ConfigMenu";
 
-// 👇 OJO: mismo directorio
-import Planes from "./Planes.jsx";
+// Importar componentes de configuración
+import ConfigParametros from "./ConfigParametros";
+import ConfigAssistant from "./ConfigAssistant"; // NEW COMPONENT
+import ConfigEmpresa from "./ConfigEmpresa"; // NEW COMPONENT
+import ConfigUsuarios from "./ConfigUsuarios";
+import ConfigPerfiles from "./ConfigPerfiles"; // ADDED
+import ConfigSuscripcion from "./ConfigSuscripcion";
+import EmpresaSucursales from "./EmpresaSucursales";
+import EmpresaEspecialidades from "./EmpresaEspecialidades";
+import EmpresaListaPrecios from "./EmpresaListaPrecios";
+import EmpresaMetodosPago from "./EmpresaMetodosPago";
+import EmpresaAlmacenes from "./EmpresaAlmacenes";
+import ConfigConsecutivos from "./ConfigConsecutivos";
+import EmpresaPlanes from "./EmpresaPlanes";
+import EmpresaUsuarios from "./EmpresaUsuarios";
+import EmpresaCategorias from "./EmpresaCategorias"; // NEW COMPONENT
+import WebsiteEditor from "../cms/WebsiteEditor";
+import ConfigCondicionesPago from "./ConfigCondicionesPago";
+import ConfigPlantillas from "./ConfigPlantillas";
+import ConfigPestanasMedicas from "./ConfigPestanasMedicas";
+import EmpresaBancos from "./EmpresaBancos";
+import ConfigRecursosFisicos from "./ConfigRecursosFisicos";
+import EmpresaFormularioPacientes from "./EmpresaFormularioPacientes";
+import ConfigConsentimientos from "./ConfigConsentimientos";
+import ConfigCargas from "./ConfigCargas";
+import ConfigImpuestos from "./ConfigImpuestos";
+import ConfigCatalogoCuentas from "./ConfigCatalogoCuentas";
+import ConfigFacturacionElectronica from "./ConfigFacturacionElectronica";
 
-
-import Consecutivos from "./Consecutivos";
-import Sucursales from "./Sucursales";
-import Especialidades from "./Especialidades";
-import Consultorios from "./Consultorios";
-import Profesionales from "./Profesionales";
-
-const SCREENS = {
-  "datos-basicos": EmpresaDatosBasicos,
-  "logo": EmpresaLogo,
-  "lista-de-precios": ListaPrecios,
-
-  "planes": Planes,
-  "consecutivos": Consecutivos,
-  "almacenes": undefined,
-  "categorias-inventario": undefined,
-  "sucursales": Sucursales,
-  "metodos-de-pago": undefined,
-  "bancos": undefined,
-  "formulario-de-pacientes": undefined,
-  "especialidades": Especialidades,
-  "perfiles": undefined,
-  "usuarios": undefined,
-  "condiciones-de-pago": undefined,
-  "parametros": undefined,
-  "recursos-fisicos": undefined,
-  "plantillas-doc-clinicos": undefined,
-  "pestanas-consulta-med": undefined,
-  "cargos": undefined,
-  "impuestos": undefined,
-  "catalogo-de-cuentas": undefined,
-  "suscripcion": undefined,
-
-  "consultorios": Consultorios,
-  "profesionales": Profesionales,
-
-  "importar-procedimientos": ImportarProcedimientos,
-};
-
-function getConfigSegs(pathname = "") {
-  const idx = pathname.toLowerCase().indexOf("/config/");
-  if (idx === -1) return [];
-  const rest = pathname.slice(idx + "/config/".length);
-  return rest.split("/").filter(Boolean);
-}
-function getDashBase(pathname = "") {
-  const segs = pathname.split("/").filter(Boolean);
-  const i = segs.findIndex((s) => s.startsWith("dashboard_"));
-  return i >= 0 ? `/${segs.slice(0, i + 1).join("/")}` : "";
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) { return { hasError: true, error }; }
+    componentDidCatch(error, errorInfo) { console.error("Config Error:", error, errorInfo); }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="p-8 text-red-600 bg-red-50 m-4 rounded-xl border border-red-200">
+                    <h2 className="font-bold text-lg mb-2">Error al cargar Configuración</h2>
+                    <pre className="text-xs font-mono whitespace-pre-wrap">{this.state.error?.toString()}</pre>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
 }
 
-function LeftMenu({ current, onNav }) {
-  const items = [
-    { slug: "datos-basicos", label: "Datos básicos" },
-    { slug: "logo", label: "Logo" },
-    { slug: "lista-de-precios", label: "Lista de precios" },
-    { slug: "planes", label: "Planes" },
-    { slug: "consecutivos", label: "Consecutivos" },
-    { slug: "almacenes", label: "Almacenes", soon: true },
-    { slug: "categorias-inventario", label: "Categorías inventario", soon: true },
-    { slug: "sucursales", label: "Sucursales" },
-    { slug: "metodos-de-pago", label: "Métodos de pago", soon: true },
-    { slug: "bancos", label: "Bancos", soon: true },
-    { slug: "formulario-de-pacientes", label: "Formulario de pacientes", soon: true },
-    { slug: "especialidades", label: "Especialidades" },
-    { slug: "perfiles", label: "Perfiles", soon: true },
-    { slug: "usuarios", label: "Usuarios", soon: true },
-    { slug: "condiciones-de-pago", label: "Condiciones de pago", soon: true },
-    { slug: "parametros", label: "Parámetros", soon: true },
-    { slug: "recursos-fisicos", label: "Recursos físicos", soon: true },
-    { slug: "plantillas-doc-clinicos", label: "Plantillas Doc. Clínicos", soon: true },
-    { slug: "pestanas-consulta-med", label: "Pestañas Consulta Med.", soon: true },
-    { slug: "cargos", label: "Cargos", soon: true },
-    { slug: "impuestos", label: "Impuestos", soon: true },
-    { slug: "catalogo-de-cuentas", label: "Catálogo de cuentas", soon: true },
-    { slug: "suscripcion", label: "Suscripción", soon: true },
-    { slug: "consultorios", label: "Consultorios" },
-    { slug: "profesionales", label: "Profesionales" },
-  ];
 
-  return (
-    <aside
-      style={{
-        width: 300,
-        flex: "0 0 300px",
-        background: "#fff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 12,
-        padding: 12,
-        position: "sticky",
-        top: 12,
-        alignSelf: "flex-start",
-        maxHeight: "calc(100vh - 24px)",
-        overflow: "auto",
-      }}
-      aria-label="Información general"
-    >
-      <h4 style={{ margin: "4px 0 10px", color: "#64748b" }}>Información general</h4>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {items.map((it) => {
-          const active = it.slug === current;
-          return (
-            <button
-              key={it.slug}
-              type="button"
-              onClick={() => !it.soon && onNav(it.slug)}
-              title={it.soon ? "Próximamente" : it.label}
-              style={{
-                textAlign: "left",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid " + (active ? "#60a5fa" : "#e5e7eb"),
-                background: active ? "#eff6ff" : "#f9fafb",
-                fontWeight: 600,
-                cursor: it.soon ? "not-allowed" : "pointer",
-                color: it.soon ? "#94a3b8" : "#0f172a",
-              }}
-              disabled={!!it.soon}
-            >
-              {it.label} {it.soon ? " · próximamente" : ""}
-            </button>
-          );
-        })}
-      </div>
-    </aside>
-  );
-}
-
-function RightPlaceholder() {
-  return (
-    <div className="card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
-      <h3 style={{ marginTop: 0 }}>Configuración</h3>
-      <p className="oc-muted" style={{ margin: 0 }}>
-        Selecciona una sección del menú de la izquierda para empezar (por ejemplo, <b>Datos básicos</b>).
-      </p>
-    </div>
-  );
-}
+// Importar Layout
+import ConfigLayout from "./ConfigLayout";
 
 export default function ConfigRouter() {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
+    const params = useParams();
+    const location = useLocation();
 
-  const segs = getConfigSegs(pathname);
-  const slug = segs[0] || "";
-  const sub = segs[1] || "";
-  const base = getDashBase(pathname);
+    // ⬇️ Fallback: si no viene en params, buscarlo en la URL manualmente
+    // Default to "datos-basicos" directly
+    const slug = params.slug || location.pathname.split("/config/")[1]?.split("/")[0] || "datos-basicos";
 
-  const isListaPreciosRoot = slug === "lista-de-precios" && !sub;
-  const isListaPreciosProductos = slug === "lista-de-precios" && sub === "productos";
-  const isListaPreciosEditar = slug === "lista-de-precios" && sub === "editar";
+    const renderModule = () => {
+        switch (slug) {
+            case "asistente":
+                return <ConfigAssistant />;
+            case "menu":
+                // Redirect or show menu if strictly requested, but we prefer datos-basicos default
+                return <ConfigEmpresa />;
+            case "datos-basicos":
+                return <ConfigEmpresa />;
+            case "logo":
+                return <div className="p-10 text-slate-400 font-bold">Módulo Logo: Usar Datos Básicos por ahora</div>;
+            case "listas-precios":
+                return <EmpresaListaPrecios />;
+            case "planes":
+                return <EmpresaPlanes />;
+            case "consecutivos":
+                return <ConfigConsecutivos />;
+            case "editor-web": // New Route
+                return <WebsiteEditor />;
+            case "almacenes":
+                return <EmpresaAlmacenes />;
+            case "categorias-inventario":
+                return <EmpresaCategorias />;
+            case "sucursales":
+                return <EmpresaSucursales />;
+            case "metodos-pago":
+                return <EmpresaMetodosPago />;
+            case "bancos":
+                return <EmpresaBancos />;
+            case "formulario-pacientes":
+                return <EmpresaFormularioPacientes />;
+            case "especialidades":
+                return <EmpresaEspecialidades />;
+            case "perfiles":
+                return <ConfigPerfiles />;
+            case "usuarios":
+                return <EmpresaUsuarios />;
+            case "condiciones-pago":
+                return <ConfigCondicionesPago />;
+            case "parametros":
+                return <ConfigParametros />;
+            case "recursos-fisicos":
+                return <ConfigRecursosFisicos />;
+            case "plantillas-clinicas":
+                return <ConfigPlantillas />;
+            case "pestanas-consulta":
+                return <ConfigPestanasMedicas />;
+            case "consentimientos":
+                return <ConfigConsentimientos />;
+            case "cargas":
+                return <ConfigCargas />;
+            case "impuestos":
+                return <ConfigImpuestos />;
+            case "catalogo-cuentas":
+                return <ConfigCatalogoCuentas />;
+            case "facturacion-electronica":
+                return <ConfigFacturacionElectronica />;
+            case "suscripcion":
+                return <ConfigSuscripcion />;
+            default:
+                // If unknown slug, go back to menu or map to basicos? 
+                // Let's go to ConfigParametros to be safe, OR menu.
+                return <ConfigParametros />;
+        }
+    };
 
-  const isPlanesRoot = slug === "planes" && !sub;
-  const isPlanesNuevo = slug === "planes" && sub === "nuevo";
-  const isPlanesEditar = slug === "planes" && sub === "editar";
-
-  let Screen = SCREENS[slug] || RightPlaceholder;
-  let screenProps = {};
-
-  if (isListaPreciosEditar) {
-    const listaId = segs[2] || null;
-    Screen = ListaPreciosEditar;
-    screenProps = { listaId, key: `lpedit-${listaId || "none"}` };
-  } else if (isListaPreciosProductos) {
-    Screen = ListaPreciosProductos;
-  } else if (isListaPreciosRoot) {
-    Screen = ListaPrecios;
-  }
-
-  if (slug === "planes") {
-    if (isPlanesNuevo) {
-      Screen = Planes;
-      screenProps = { mode: "new" };
-    } else if (isPlanesEditar) {
-      const planId = segs[2] || null;
-      Screen = Planes;
-      screenProps = { mode: "edit", planId, key: `pl-edit-${planId || "none"}` };
-    } else if (isPlanesRoot) {
-      Screen = Planes;
-      screenProps = { mode: "list" };
+    if (slug === "editor-web") {
+        return (
+            <React.Suspense fallback={<div className="p-10">Cargando módulo...</div>}>
+                <ErrorBoundary>
+                    {renderModule()}
+                </ErrorBoundary>
+            </React.Suspense>
+        );
     }
-  }
 
-  const go = (s) => navigate(`${base}/config/${s}`);
-
-  useEffect(() => {
-    const lower = pathname.toLowerCase();
-    const isConfigRoot = lower.endsWith("/config") || lower.endsWith("/config/");
-    if (isConfigRoot && !slug) {
-      navigate(`${base}/config/datos-basicos`, { replace: true });
-    }
-  }, [pathname, slug, base, navigate]);
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, background: "#f8fafc", padding: 16, borderRadius: 12 }}>
-      <LeftMenu current={slug} onNav={go} />
-      <div style={{ minWidth: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
-        {!slug ? <RightPlaceholder /> : <Screen {...screenProps} />}
-      </div>
-    </div>
-  );
+    return (
+        <ConfigLayout>
+            <React.Suspense fallback={<div className="p-10">Cargando módulo...</div>}>
+                <ErrorBoundary>
+                    {renderModule()}
+                </ErrorBoundary>
+            </React.Suspense>
+        </ConfigLayout>
+    );
 }

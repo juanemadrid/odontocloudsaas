@@ -1,286 +1,141 @@
 // src/modules/pacientes/PacienteForm.jsx
-// 🧾 Crear/editar paciente (prefill con datos capturados desde “Nueva cita”)
-
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { db } from "../../firebase/firebaseConfig";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "../../context/AuthContext";
+import { buildDashboardPath } from "../../utils/dashboardBasePath";
+import { useToast } from "../../context/ToastContext";
+import { getPatientById, createOrUpdatePatient, deletePatient } from "../../services/patientService";
+import { useAudit } from "../../hooks/useAudit";
 
-const emptyPatient = {
-  nombre: "",
-  apellido: "",
-  tipoDocumento: "",
-  documento: "",
-  correo: "",
-  indicativo: "+57",
-  celular: "",
-  telefono: "",
-  nacimiento: "",
-  sexo: "",
-  direccion: "",
-  ciudad: "",
-  ocupacion: "",
-  eps: "",
-  fotoUrl: "",
-  antecedentes: "",
-  alergias: "",
-  comentario: "",
-  activo: true,
-};
+// UI Component
+import PatientForm from "./components/PatientForm";
 
 export default function PacienteForm() {
-  const { pacienteId } = useParams(); // "nuevo" o id real
+  const { pacienteId } = useParams(); // "nuevo" or real ID (doc number)
   const navigate = useNavigate();
+  const { userProfile } = useAuth();
+  const toast = useToast();
+  const { logAction } = useAudit();
+
   const isNew = !pacienteId || pacienteId === "nuevo";
-
   const [loading, setLoading] = useState(!isNew);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(emptyPatient);
+  const [initialData, setInitialData] = useState(null);
 
-  // Cargar si es edición
+  // 1. Load data if editing
   useEffect(() => {
-    (async () => {
-      if (isNew) {
-        setLoading(false);
-        return;
-      }
+    if (isNew) {
+      setLoading(false);
+      return;
+    }
+
+    const load = async () => {
       try {
-        const ref = doc(db, "pacientes", pacienteId);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          setForm({ ...emptyPatient, ...snap.data() });
+        const data = await getPatientById(pacienteId);
+        if (data) {
+          setInitialData(data);
         } else {
-          setForm(emptyPatient);
+          toast.error("El paciente no existe o el ID es inválido.");
+          navigate(buildDashboardPath("pacientes"));
         }
-      } catch (e) {
-        console.error("Error cargando paciente:", e);
-        setForm(emptyPatient);
+      } catch (err) {
+        console.error("Error loading patient:", err);
+        toast.error("Error al cargar los datos del paciente.");
       } finally {
         setLoading(false);
       }
-    })();
-  }, [isNew, pacienteId]);
+    };
+    load();
+  }, [isNew, pacienteId, navigate, toast]);
 
-  const title = useMemo(
-    () => (isNew ? "Registrar Paciente" : "Editar Paciente"),
-    [isNew]
-  );
-
-  const onChange = (e) => {
-    const { name, value } = e.target;
-    setForm((f) => ({ ...f, [name]: value }));
-  };
-
-  const onToggleActivo = () => {
-    setForm((f) => ({ ...f, activo: !f.activo }));
-  };
-
-  const onSave = async (e) => {
-    e.preventDefault();
-
-    const nombreOk = (form.nombre || "").trim();
-    const telefonoOk = (form.celular || form.telefono || "").trim();
-
-    if (!nombreOk) {
-      alert("⚠️ El nombre del paciente es obligatorio.");
-      return;
-    }
-    if (!telefonoOk) {
-      alert("⚠️ Debes registrar al menos un número de teléfono.");
+  // 2. Handle Save
+  const handleSubmit = async (formData, fotoFile) => {
+    if (!userProfile?.inquilino) {
+      toast.error("Sesión no válida. Por favor recarga.");
       return;
     }
 
     try {
-      setSaving(true);
-
-      let id = pacienteId;
-      if (isNew) {
-        id =
-          (form.documento || `${form.nombre} ${form.apellido}`)
-            .toLowerCase()
-            .replace(/\s+/g, "_")
-            .replace(/[^a-z0-9_]/g, "") || `p_${Date.now()}`;
-      }
-
-      await setDoc(
-        doc(db, "pacientes", id),
-        {
-          ...form,
-          nombre: (form.nombre || "").trim(),
-          apellido: (form.apellido || "").trim(),
-          documento: (form.documento || "").trim(),
-          correo: (form.correo || "").trim().toLowerCase(),
-          celular: (form.celular || "").trim(),
-          telefono: (form.telefono || "").trim(),
-          updatedAt: serverTimestamp(),
-          createdAt: isNew ? serverTimestamp() : undefined,
-        },
-        { merge: true }
+      const saved = await createOrUpdatePatient(
+        userProfile.inquilino,
+        formData,
+        isNew,
+        fotoFile
       );
 
-      alert("✅ Paciente guardado correctamente.");
-      navigate(`/pacientes/${id}`);
-    } catch (e) {
-      console.error("Error guardando paciente:", e);
-      alert("❌ No se pudo guardar el paciente.");
-    } finally {
-      setSaving(false);
+      // Audit log
+      await logAction(
+        saved.id,
+        isNew ? "CREATE_PATIENT" : "UPDATE_PATIENT",
+        {
+          nombre: saved.nombreCompleto || `${saved.nombres} ${saved.apellidos}`,
+          documento: saved.nroDocumento
+        }
+      );
+
+      toast.success(isNew ? "¡Paciente registrado con éxito!" : "Ficha de paciente actualizada.");
+
+      // Redirect to the newly created/updated patient details
+      navigate(buildDashboardPath("pacientes"));
+    } catch (err) {
+      console.error("Error saving patient:", err);
+      toast.error(err.message || "No se pudo guardar la información.");
     }
+  };
+
+  // 3. Handle Delete
+  const handleDelete = async (patient) => {
+    if (!window.confirm(`¿Realmente desea eliminar a ${patient.nombreCompleto}? Esta acción es irreversible.`)) {
+      return;
+    }
+
+    try {
+      await deletePatient(patient.id);
+
+      // Audit log
+      await logAction(
+        patient.id,
+        "DELETE_PATIENT",
+        {
+          nombre: patient.nombreCompleto,
+          documento: patient.nroDocumento
+        }
+      );
+
+      toast.success("Paciente eliminado correctamente.");
+      navigate(buildDashboardPath("pacientes"));
+    } catch (err) {
+      console.error("Error deleting patient:", err);
+      toast.error("No se pudo eliminar el registro.");
+    }
+  };
+
+  const handleCancel = () => {
+    navigate(-1);
   };
 
   if (loading) {
     return (
-      <div className="odc-content-card" style={{ padding: 20 }}>
-        Cargando ficha del paciente...
+      <div className="flex-1 flex items-center justify-center p-20 bg-slate-50/50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            Protocolizando Acceso a Ficha...
+          </span>
+        </div>
       </div>
     );
   }
 
   return (
-    <>
-      <div className="odc-topbar-blue">{title}</div>
-      <section className="odc-agenda-root" style={{ padding: 16 }}>
-        <div className="odc-agenda-inner" style={{ maxWidth: 900, margin: "0 auto" }}>
-          <form
-            className="odc-content-card"
-            style={{ display: "grid", gap: 12, padding: 16 }}
-            onSubmit={onSave}
-          >
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <input
-                name="nombre"
-                placeholder="Nombre *"
-                value={form.nombre}
-                onChange={onChange}
-              />
-              <input
-                name="apellido"
-                placeholder="Apellido"
-                value={form.apellido}
-                onChange={onChange}
-              />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <select name="tipoDocumento" value={form.tipoDocumento} onChange={onChange}>
-                <option value="">Tipo de documento</option>
-                <option value="CC">Cédula de Ciudadanía</option>
-                <option value="CE">Cédula de Extranjería</option>
-                <option value="TI">Tarjeta de Identidad</option>
-                <option value="PA">Pasaporte</option>
-                <option value="DI">Documento Internacional</option>
-                <option value="OTRO">Otro</option>
-              </select>
-              <input
-                name="documento"
-                placeholder="Número de documento"
-                value={form.documento}
-                onChange={onChange}
-              />
-              <input
-                type="email"
-                name="correo"
-                placeholder="Correo electrónico"
-                value={form.correo}
-                onChange={onChange}
-              />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "130px 1fr 1fr", gap: 10 }}>
-              <select name="indicativo" value={form.indicativo} onChange={onChange}>
-                <option value="+57">🇨🇴 +57</option>
-                <option value="+1">🇺🇸 +1</option>
-                <option value="+34">🇪🇸 +34</option>
-                <option value="+52">🇲🇽 +52</option>
-                <option value="+54">🇦🇷 +54</option>
-                <option value="+593">🇪🇨 +593</option>
-                <option value="+56">🇨🇱 +56</option>
-                <option value="+58">🇻🇪 +58</option>
-              </select>
-              <input
-                name="celular"
-                placeholder="Celular (obligatorio)"
-                value={form.celular}
-                onChange={onChange}
-              />
-              <input
-                name="telefono"
-                placeholder="Teléfono fijo (opcional)"
-                value={form.telefono}
-                onChange={onChange}
-              />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <input
-                type="date"
-                name="nacimiento"
-                placeholder="Fecha de nacimiento"
-                value={form.nacimiento}
-                onChange={onChange}
-              />
-              <select name="sexo" value={form.sexo} onChange={onChange}>
-                <option value="">Sexo</option>
-                <option value="Masculino">Masculino</option>
-                <option value="Femenino">Femenino</option>
-                <option value="Otro">Otro</option>
-              </select>
-              <input
-                name="fotoUrl"
-                placeholder="URL foto (opcional)"
-                value={form.fotoUrl}
-                onChange={onChange}
-              />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <input name="direccion" placeholder="Dirección" value={form.direccion} onChange={onChange} />
-              <input name="ciudad" placeholder="Ciudad" value={form.ciudad} onChange={onChange} />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <input name="ocupacion" placeholder="Ocupación" value={form.ocupacion} onChange={onChange} />
-              <input name="eps" placeholder="EPS / Aseguradora" value={form.eps} onChange={onChange} />
-            </div>
-
-            <textarea
-              name="antecedentes"
-              placeholder="Antecedentes / Historia clínica"
-              value={form.antecedentes}
-              onChange={onChange}
-              rows={3}
-            />
-            <textarea
-              name="alergias"
-              placeholder="Alergias"
-              value={form.alergias}
-              onChange={onChange}
-              rows={2}
-            />
-            <textarea
-              name="comentario"
-              placeholder="Notas / Observaciones"
-              value={form.comentario}
-              onChange={onChange}
-              rows={2}
-            />
-
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" checked={!!form.activo} onChange={onToggleActivo} />
-              Activo
-            </label>
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
-              <button type="button" className="btn" onClick={() => navigate(-1)} disabled={saving}>
-                Cancelar
-              </button>
-              <button type="submit" className="btn blue" disabled={saving}>
-                {saving ? "Guardando..." : "Guardar"}
-              </button>
-            </div>
-          </form>
-        </div>
-      </section>
-    </>
+    <div className="p-4 md:p-8 lg:p-12 bg-slate-50/30 min-h-screen animate-fadeIn">
+      <div className="max-w-[1200px] mx-auto">
+        <PatientForm
+          initialData={initialData}
+          onSubmit={handleSubmit}
+          onCancel={handleCancel}
+          onDelete={handleDelete}
+        />
+      </div>
+    </div>
   );
 }

@@ -1,4 +1,6 @@
 /* ===================== RESET & FUENTE ===================== */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
 * {
   margin: 0;
   padding: 0;
@@ -6,19 +8,11 @@
   font-family: "Poppins", sans-serif;
 }
 
-/* Eliminamos el fondo del body, el fondo se maneja desde el JSX */
-html,
-body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden; /* ✅ Bloquea scroll vertical */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+/* Global reset for the login page context only if needed, 
+   but we avoid html/body to prevent bleeding into the rest of the app */
 
 /* === CONTENEDOR LOGIN === */
-.container {
+.login-container {
   display: flex;
   flex-direction: row;
   background: rgba(255, 255, 255, 0.96);
@@ -30,7 +24,8 @@ body {
   min-height: 480px;
   z-index: 2;
   position: relative;
-  backdrop-filter: blur(6px); /* ✨ efecto vidrio elegante */
+  backdrop-filter: blur(6px);
+  /* ✨ efecto vidrio elegante */
 }
 
 /* === PANEL IZQUIERDO === */
@@ -49,7 +44,7 @@ body {
   width: 240px;
   max-width: 95%;
   height: auto;
-  margin: 0 auto 30px;
+  margin: 0 auto -60px;
   transition: transform 0.3s ease, filter 0.3s ease;
 }
 
@@ -62,6 +57,7 @@ body {
   font-size: 30px;
   color: #222;
   font-weight: 700;
+  margin-top: 0;
 }
 
 .left-panel p {
@@ -93,18 +89,33 @@ form {
   flex-direction: column;
 }
 
-input {
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 12px 15px;
-  margin-bottom: 15px;
-  font-size: 15px;
+.right-panel form input {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px 20px;
+  min-height: 52px;
+  margin-bottom: 12px !important;
+  font-size: 16px;
+  color: #334155;
   outline: none;
-  transition: border 0.3s;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+input::placeholder {
+  color: #94a3b8;
+  /* Slate 400 */
+  font-weight: 400;
 }
 
 input:focus {
-  border-color: #1fb6ff;
+  background-color: #ffffff;
+  border-color: #2bb673;
+  /* Match button green */
+  box-shadow: 0 0 0 4px rgba(43, 182, 115, 0.1);
+  /* Subtle green glow */
 }
 
 .forgot {
@@ -116,7 +127,7 @@ input:focus {
   display: block;
 }
 
-button {
+.right-panel form button {
   background-color: #2bb673;
   color: white;
   border: none;
@@ -128,13 +139,13 @@ button {
   transition: background 0.3s;
 }
 
-button:hover {
+.right-panel form button:hover {
   background-color: #25a566;
 }
 
 /* ===================== RESPONSIVE ===================== */
 @media (max-width: 900px) {
-  .container {
+  .login-container {
     flex-direction: column;
     width: 95%;
     min-height: auto;
@@ -167,13 +178,13 @@ button:hover {
     margin-bottom: 20px;
   }
 
-  .container {
+  .login-container {
     width: 90%;
     border-radius: 10px;
   }
 
   input,
-  button {
+  .right-panel form button {
     font-size: 14px;
     padding: 10px;
   }
@@ -184,7 +195,8 @@ button:hover {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  background-attachment: fixed; /* ✅ Fijo en monitores */
+  background-attachment: fixed;
+  /* ✅ Fijo en monitores */
   width: 100vw;
   height: 100vh;
   display: flex;
@@ -194,7 +206,8 @@ button:hover {
 
 @media (max-width: 768px) {
   .login-root {
-    background-attachment: scroll; /* ✅ Evita recortes en móviles */
+    background-attachment: scroll;
+    /* ✅ Evita recortes en móviles */
     background-size: cover;
   }
-}
+}

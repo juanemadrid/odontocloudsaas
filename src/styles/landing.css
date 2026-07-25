@@ -1,0 +1,418 @@
+/* =========================================
+   OdontoCloud Light Theme (Planes Style)
+   Theme: "Vibrant & Professional"
+   =========================================*/
+
+/* --- 0. VARIABLES & BASICS --- */
+:root {
+    --bg-light: #f8fafc;
+    /* Slate 50 */
+    --bg-white: #ffffff;
+
+    --primary: #00aeef;
+    /* OdontoCloud Cyan */
+    --primary-dark: #007bb5;
+    --secondary: #022a63;
+    /* Navy Blue (Hero) */
+
+    --text-main: #1e293b;
+    /* Slate 800 */
+    --text-muted: #64748b;
+    /* Slate 500 */
+
+    --card-shadow: 0 20px 40px -5px rgba(0, 0, 0, 0.05);
+    --card-hover: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+
+    --radius-lg: 2.5rem;
+    /* Matching Pricing Cards */
+}
+
+.viva-root {
+    margin: 0;
+    font-family: 'Poppins', sans-serif;
+    color: var(--text-main);
+    background-color: var(--bg-light);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+.viva-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+/* --- 1. HERO SECTION (Dark Blue, Matching Pricing Page) --- */
+.viva-hero {
+    position: relative;
+    height: 80vh;
+    min-height: 600px;
+    background-color: var(--secondary);
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+}
+
+/* Pattern Overlay (Match Pricing Page) */
+.viva-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('https://www.transparenttextures.com/patterns/carbon-fibre.png');
+    opacity: 0.1;
+    z-index: 1;
+}
+
+/* Blue Orb Glow (Match Pricing Page) */
+.viva-hero::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 600px;
+    height: 600px;
+    background: rgba(59, 130, 246, 0.15);
+    /* blue-500/15 */
+    border-radius: 50%;
+    filter: blur(120px);
+    transform: translate(30%, -30%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.viva-slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 1s ease-in-out;
+    z-index: 2;
+}
+
+.viva-slide.active {
+    opacity: 1;
+    z-index: 3;
+}
+
+.viva-slide-bg {
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    opacity: 0.1;
+    /* Subtle blend */
+    mix-blend-mode: overlay;
+}
+
+.viva-slide-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to right,
+            rgba(2, 42, 99, 1) 10%,
+            rgba(2, 42, 99, 0.8) 50%,
+            rgba(2, 42, 99, 0.4) 100%);
+}
+
+.viva-slide-container {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    z-index: 10;
+}
+
+.viva-slide-content {
+    max-width: 750px;
+}
+
+/* Hero Typography */
+.viva-pill-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 8px 24px;
+    border-radius: 99px;
+    margin-bottom: 32px;
+}
+
+.viva-pill-tag::before {
+    content: '';
+    display: block;
+    width: 8px;
+    height: 8px;
+    background: #fbbf24;
+    /* Amber 400 */
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(251, 191, 36, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+    }
+}
+
+.viva-pill-tag span {
+    color: #dbeafe;
+    /* Blue 100 */
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.viva-slide-content h1 {
+    font-size: 72px;
+    font-weight: 800;
+    color: white;
+    line-height: 1.1;
+    margin-bottom: 24px;
+}
+
+.viva-slide-content p {
+    font-size: 22px;
+    color: #dbeafe;
+    /* Blue 100 */
+    margin-bottom: 48px;
+    line-height: 1.6;
+    max-width: 650px;
+    font-weight: 300;
+}
+
+.viva-btn-hero {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 20px 52px;
+    border-radius: 99px;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    box-shadow: 0 10px 25px -5px rgba(0, 174, 239, 0.4);
+    transition: all 0.3s ease;
+}
+
+.viva-btn-hero:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 20px 30px -5px rgba(0, 174, 239, 0.5);
+}
+
+
+/* --- 2. QUICK ACCESS CARDS (The Floating White Cards) --- */
+.viva-quick-access {
+    margin-top: -80px;
+    /* Stronger overlap */
+    position: relative;
+    z-index: 20;
+    padding-bottom: 60px;
+}
+
+.viva-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 30px;
+}
+
+.viva-quick-item {
+    background: var(--bg-white);
+    padding: 40px 24px;
+    border-radius: 2.5rem;
+    /* Match Pricing Radius */
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: var(--card-shadow);
+    border: 1px solid #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.viva-quick-item:hover {
+    transform: translateY(-12px);
+    box-shadow: var(--card-hover);
+    border-color: #e2e8f0;
+}
+
+.viva-quick-circle {
+    width: 72px;
+    height: 72px;
+    border-radius: 20px;
+    background: #f0f9ff;
+    /* Sky 50 */
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+    transition: all 0.3s;
+}
+
+.viva-quick-item:hover .viva-quick-circle {
+    background: var(--primary);
+    color: white;
+    transform: scale(1.1) rotate(5deg);
+    box-shadow: 0 10px 20px rgba(0, 174, 239, 0.3);
+}
+
+.viva-quick-circle svg {
+    width: 36px;
+    height: 36px;
+}
+
+.viva-quick-item span {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+
+/* --- 3. SERVICES (White Cards, Clean Grid) --- */
+.viva-programs {
+    padding: 80px 0 120px;
+    background-color: var(--bg-light);
+}
+
+.ocp-service-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 40px;
+}
+
+.ocp-service-card {
+    background: var(--bg-white);
+    border-radius: var(--radius-lg);
+    /* 2.5rem */
+    padding: 48px 40px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f1f5f9;
+    transition: all 0.4s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.ocp-service-card:hover {
+    transform: translateY(-12px);
+    box-shadow: var(--card-hover);
+}
+
+.ocp-icon-box {
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
+    background: #eff6ff;
+    /* Blue 50 */
+    color: #2563eb;
+    /* Blue 600 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 32px;
+    transition: all 0.3s;
+}
+
+.ocp-service-card:hover .ocp-icon-box {
+    background: #2563eb;
+    color: white;
+    box-shadow: 0 10px 25px rgba(37, 99, 235, 0.3);
+    transform: scale(1.1);
+}
+
+.ocp-service-card h3 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 16px;
+}
+
+.ocp-service-card p {
+    font-size: 16px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: 32px;
+    flex-grow: 1;
+    /* Pushes link to bottom */
+}
+
+.ocp-link {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: gap 0.3s;
+}
+
+.ocp-link:hover {
+    gap: 12px;
+    color: var(--primary-dark);
+}
+
+.ocp-link::after {
+    content: '→';
+}
+
+
+/* --- MOBILE ADAPTATIONS --- */
+@media (max-width: 768px) {
+    .viva-hero {
+        height: auto;
+        padding: 140px 0 100px;
+    }
+
+    .viva-slide-content h1 {
+        font-size: 42px;
+    }
+
+    .viva-quick-access {
+        margin-top: -60px;
+    }
+
+    .viva-quick-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    .ocp-service-card {
+        padding: 32px 24px;
+        border-radius: 2rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .viva-quick-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* --- UTILITIES --- */
+/* Simple Scrollbar */
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 5px;
+}

@@ -1,0 +1,86 @@
+[
+    {
+        "code": "K020",
+        "name": "Caries limitada al esmalte"
+    },
+    {
+        "code": "K021",
+        "name": "Caries de la dentina"
+    },
+    {
+        "code": "K022",
+        "name": "Caries del cemento"
+    },
+    {
+        "code": "K029",
+        "name": "Caries dental, no especificada"
+    },
+    {
+        "code": "K036",
+        "name": "Depósitos [acre] en los dientes"
+    },
+    {
+        "code": "K040",
+        "name": "Pulpitis"
+    },
+    {
+        "code": "K041",
+        "name": "Necrosis de la pulpa"
+    },
+    {
+        "code": "K044",
+        "name": "Periodontitis apical aguda originada en la pulpa"
+    },
+    {
+        "code": "K045",
+        "name": "Periodontitis apical crónica"
+    },
+    {
+        "code": "K046",
+        "name": "Absceso periapical con fístula"
+    },
+    {
+        "code": "K050",
+        "name": "Gingivitis aguda"
+    },
+    {
+        "code": "K051",
+        "name": "Gingivitis crónica"
+    },
+    {
+        "code": "K052",
+        "name": "Periodontitis aguda"
+    },
+    {
+        "code": "K053",
+        "name": "Periodontitis crónica"
+    },
+    {
+        "code": "K081",
+        "name": "Pérdida de dientes debida a accidente, extracción o enfermedad periodontal local"
+    },
+    {
+        "code": "K000",
+        "name": "Anodoncia"
+    },
+    {
+        "code": "K001",
+        "name": "Dientes supernumerarios"
+    },
+    {
+        "code": "K003",
+        "name": "Dientes moteados"
+    },
+    {
+        "code": "K006",
+        "name": "Alteraciones en la erupción dentaria"
+    },
+    {
+        "code": "K076",
+        "name": "Trastornos de la articulación temporomandibular"
+    },
+    {
+        "code": "Z012",
+        "name": "Examen odontológico"
+    }
+]

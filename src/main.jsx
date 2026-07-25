@@ -1,30 +1,43 @@
-// src/main.jsx
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import App from './App.jsx'
+import { AuthProvider } from './context/AuthContext'
+import { HelmetProvider } from 'react-helmet-async';
+import App from './App'
+import './index.css'
+import './styles/theme.css'
+import './styles/global.css'
 
-// Base del proyecto (coincide con vite.config.mjs)
-const BASE_PATH = '/odontocloud-react/'
-
-// 🧩 Inicializa Firebase con sesión persistente + modo offline
-import { initFirebase } from './firebaseClient.js'
-initFirebase()
-
-// 🧠 Registro del Service Worker (PWA)
-import { registerSW } from 'virtual:pwa-register'
-registerSW({ immediate: true })
-
-// 🖼️ Provider de branding (logo/nombre clínica) + estilos de impresión
-import { BrandingProvider } from './context/BrandingContext.jsx'
-import './styles/print.css'
+import { ToastProvider } from './context/ToastContext'
 
 createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrandingProvider>
-      <BrowserRouter basename={BASE_PATH}>
-        <App />
-      </BrowserRouter>
-    </BrandingProvider>
-  </React.StrictMode>
+    <HelmetProvider>
+        <AuthProvider>
+            <ToastProvider>
+                <BrowserRouter basename="/odontocloud-react">
+                    <App />
+                </BrowserRouter>
+            </ToastProvider>
+        </AuthProvider>
+    </HelmetProvider>
 )
+
+// Register Service Worker for PWA
+if ('serviceWorker' in navigator) {
+    if (import.meta.env.DEV) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (let registration of registrations) {
+                registration.unregister().then(() => {
+                    console.log('Service Worker removido para evitar caché en desarrollo.');
+                });
+            }
+        });
+    } else {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/odontocloud-react/sw.js')
+                .then((reg) => console.log('Service Worker registrado con éxito:', reg.scope))
+                .catch((err) => console.error('Error al registrar el Service Worker:', err));
+        });
+    }
+}
+

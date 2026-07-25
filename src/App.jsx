@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
+// import { AnimatePresence } from "framer-motion"; // REMOVED to fix crash
 import { useAuth } from "./context/AuthContext";
 
 // Components
@@ -11,7 +11,12 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import ModernLanding from "./pages/ModernLanding";
 import ModernLayout from "./layout/ModernLayout";
-import { ServicesPage, PricingPage, FAQPage } from "./pages/SectionPages";
+import Servicios from "./pages/Servicios"; // Restored dedicated page
+import Planes from "./pages/Planes"; // Restored dedicated page
+import { FAQPage } from "./pages/SectionPages";
+import PatientPortal from "./modules/portal/PatientPortal";
+import CmsPreview from "./pages/CmsPreview";
+import ResetPassword from "./pages/ResetPassword";
 
 // Lazy Imports
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
@@ -36,6 +41,8 @@ function RoleBridge() {
   return <Navigate to="/dashboard" replace />;
 }
 
+import ScrollToTop from "./components/ScrollToTop";
+
 export default function App() {
   const { user, userProfile, loading } = useAuth();
   const location = useLocation();
@@ -49,61 +56,73 @@ export default function App() {
 
   return (
     <Suspense fallback={<PremiumLoading />}>
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
-          {/* Public Routes */}
-          <Route path="/login" element={
-            user ? <RoleBridge /> : <Login />
-          } />
+      <ScrollToTop />
+      <Routes>
+        {/* Public Routes with Isolated Layout */}
+        <Route path="/login" element={
+          user ? <RoleBridge /> : <Login />
+        } />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-          <Route element={<ModernLayout />}>
-            <Route path="/" element={<ModernLanding isMaster={true} />} />
-            <Route path="/servicios" element={<ServicesPage />} />
-            <Route path="/planes" element={<PricingPage />} />
-            <Route path="/faq" element={<FAQPage />} />
-          </Route>
+        {/* Portal Page - Standalone */}
+        <Route path="/c/:clinicSlug/portal" element={<PatientPortal />} />
 
-          {/* Private Routes */}
-          <Route path="/home" element={
-            <ProtectedRoute>
-              <RoleBridge />
-            </ProtectedRoute>
-          } />
+        {/* CMS Preview Standalone Route */}
+        <Route path="/preview" element={<CmsPreview />} />
 
-          <Route path="/dashboard/*" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
+        {/* Modern Landing Layout */}
+        <Route element={<ModernLayout />}>
+          <Route path="/" element={<ModernLanding isMaster={true} />} />
+          <Route path="/c/:clinicSlug" element={<ModernLanding />} />
+          <Route path="/c/:clinicSlug/nosotros" element={<ModernLanding section="nosotros" />} />
+          <Route path="/c/:clinicSlug/servicios" element={<ModernLanding section="servicios" />} />
+          <Route path="/c/:clinicSlug/sedes" element={<ModernLanding section="sedes" />} />
 
-          {/* Master Platform Route */}
-          <Route path="/superadmin/*" element={
-            <ProtectedRoute>
-              <SuperAdminDashboard />
-            </ProtectedRoute>
-          } />
+          <Route path="/servicios" element={<Servicios />} />
+          <Route path="/planes" element={<Planes />} />
+          <Route path="/faq" element={<FAQPage />} />
+        </Route>
 
-          {/* Compatibility Routes for specific roles */}
-          <Route path="/dashboard_admin/*" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/dashboard_doctor/*" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/dashboard_recepcion/*" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
+        {/* Private Routes */}
+        <Route path="/home" element={
+          <ProtectedRoute>
+            <RoleBridge />
+          </ProtectedRoute>
+        } />
 
-          <Route path="/unauthorized" element={<UnauthorizedPage />} />
-          <Route path="*" element={<Navigate to="/home" replace />} />
-        </Routes>
-      </AnimatePresence>
+        <Route path="/dashboard/*" element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+
+        {/* Master Platform Route */}
+        <Route path="/superadmin/*" element={
+          <ProtectedRoute allowedRoles={["superadmin"]}>
+            <SuperAdminDashboard />
+          </ProtectedRoute>
+        } />
+
+        {/* Compatibility Routes for specific roles */}
+        <Route path="/dashboard_admin/*" element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard_doctor/*" element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard_recepcion/*" element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/unauthorized" element={<UnauthorizedPage />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
+      </Routes>
     </Suspense>
   );
 }

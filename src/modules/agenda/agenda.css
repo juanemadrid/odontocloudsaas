@@ -1,1367 +1,758 @@
-/* =============================== 
-   AGENDA (Versión con Fondo Gris + Recuadro Flotante Mejorado)
-   =============================== */
-
+/* =============================== AGENDA (Versión con Fondo Gris + Recuadro Flotante Mejorado) =============================== */
 :root {
-    --primary: #2b6cb0;
-    --primary-light: #e6f0ff;
-    --primary-dark: #1e4e8c;
-    --accent-green: #38a169;
-    --bg-light: #dfe2e6;
-    --bg-panel: #f1f3f6;
-    --border: #d0d6dc;
-    --text: #1f2937;
-    --muted: #6b7280;
-    --radius: 10px;
-    --shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  --primary: #2b6cb0;
+  --primary-light: #e6f0ff;
+  --primary-dark: #1e4e8c;
+  --accent-green: #38a169;
+  --bg-light: #dfe2e6;
+  --bg-panel: #f1f3f6;
+  --border: #d0d6dc;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --radius: 10px;
+  --shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
 }
 
-/* ===============================
-   ROOT LAYOUT
-   =============================== */
-
+/* ----------- ROOT LAYOUT ----------- */
 .odc-agenda-root {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    background: var(--bg-light);
-    font-family: "Inter", "Segoe UI", sans-serif;
-    color: var(--text);
-    box-sizing: border-box;
-    margin-top: 25px;
-    position: relative;
-    z-index: 1;
-    max-width: 100vw;
-    overflow-x: hidden;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  background: var(--bg-light);
+  font-family: "Inter", "Segoe UI", sans-serif;
+  color: var(--text);
+  box-sizing: border-box;
+  margin-top: 25px;
+  position: relative;
+  z-index: 1;
 }
 
 .odc-agenda-inner {
-    display: flex;
-    flex: 1;
-    padding: 20px;
-    gap: 20px;
-    box-sizing: border-box;
+  display: flex;
+  flex: 1;
+  padding: 20px;
+  gap: 20px;
+  box-sizing: border-box;
 }
 
-/* ===============================
-   LEFT PANEL
-   =============================== */
-
+/* ----------- LEFT PANEL ----------- */
 .odc-left {
-    width: 260px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    box-sizing: border-box;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
 }
 
 .odc-mini-calendar-card,
 .odc-filters-card {
-    background: #fff;
-    border-radius: var(--radius);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-    padding: 16px;
-    box-sizing: border-box;
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  padding: 16px;
+  box-sizing: border-box;
 }
 
-/* ===============================
-   MINI CALENDARIO
-   =============================== */
-
+/* ----------- MINI CALENDARIO ----------- */
 .mini-cal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-weight: 600;
-    color: var(--primary-dark);
-    margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  color: var(--primary-dark);
+  margin-bottom: 10px;
 }
 
 .cal-arrow {
-    background: none;
-    border: none;
-    font-size: 18px;
-    cursor: pointer;
-    color: var(--primary-dark);
-    transition: transform .2s ease, color .2s ease;
-    padding: 4px 8px;
-    border-radius: 6px;
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--primary-dark);
+  transition: transform 0.2s ease, color 0.2s ease;
+  padding: 4px 8px;
+  border-radius: 6px;
 }
 
 .cal-arrow:hover {
-    transform: scale(1.2);
-    color: var(--primary);
-    background: var(--primary-light);
+  transform: scale(1.2);
+  color: var(--primary);
+  background: var(--primary-light);
 }
 
 .mini-month-table {
-    width: 100%;
-    border-collapse: collapse;
-    text-align: center;
-    font-size: 13px;
-    color: var(--muted);
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .mini-month-table thead th {
-    padding-bottom: 6px;
-    color: var(--primary-dark);
-    font-weight: 600;
-    font-size: 12px;
+  padding-bottom: 6px;
+  color: var(--primary-dark);
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .mini-month-table td {
-    padding: 8px 6px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background .12s ease;
-    vertical-align: middle;
+  padding: 8px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  vertical-align: middle;
 }
 
 .mini-month-table td.empty {
-    background: transparent;
-    cursor: default;
+  background: transparent;
+  cursor: default;
 }
 
 .mini-month-table td.today {
-    box-shadow: inset 0 0 0 1px rgba(43,108,176,0.12);
-    font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(43, 108, 176, 0.12);
+  font-weight: 600;
 }
 
 .mini-month-table td.selected {
-    background: var(--primary);
-    color: #fff;
-    font-weight: 700;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
 }
 
-/* ===============================
-   FILTROS
-   =============================== */
-
+/* ----------- FILTROS ----------- */
 .odc-filters-card {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .odc-filters-card label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .odc-filters-card select {
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 14px;
-    outline: none;
-    transition: border-color .16s ease, box-shadow .16s ease;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .odc-filters-card select:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(43,108,176,0.06);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.06);
 }
 
-/* ===============================
-   RIGHT PANEL
-   =============================== */
-
+/* ----------- RIGHT PANEL ----------- */
 .odc-right {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    min-width: 0;
-    background: var(--bg-panel);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 20px;
-    box-sizing: border-box;
-    border: 1px solid var(--border);
-    transition: all .3s ease;
-    position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  background: var(--bg-panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  transition: all 0.3s ease;
+  position: relative;
 }
 
 .odc-right::before {
-    content: "";
-    position: absolute;
-    top: 6px;
-    left: 6px;
-    right: 6px;
-    bottom: 6px;
-    background: rgba(255,255,255,0.4);
-    filter: blur(10px);
-    z-index: -1;
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  background: rgba(255, 255, 255, 0.4);
+  filter: blur(10px);
+  z-index: -1;
 }
 
 .odc-right:hover {
-    box-shadow: 0 14px 32px rgba(0,0,0,0.25);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.25);
 }
 
-/* ===============================
-   HEADER BAR
-   =============================== */
-
+/* ----------- HEADER BAR ----------- */
 .odc-header-bar {
-    background: #fff;
-    border-radius: var(--radius);
-    box-shadow: 0 3px 8px rgba(0,0,0,0.07);
-    padding: 12px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    box-sizing: border-box;
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.07);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  box-sizing: border-box;
 }
 
 .odc-header-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .odc-title {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--primary-dark);
-    margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin: 0;
 }
 
 .view-buttons {
-    display: flex;
-    gap: 6px;
+  display: flex;
+  gap: 6px;
 }
 
 .view-buttons .btn.view {
-    background: var(--primary-light);
-    color: var(--primary-dark);
-    border: none;
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all .16s ease;
-    box-shadow: none;
-    white-space: nowrap;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.16s ease;
+  box-shadow: none;
+  white-space: nowrap;
 }
 
 .view-buttons .btn.view.active {
-    background: var(--primary-dark);
-    color: #fff;
-    box-shadow: 0 2px 8px rgba(30,78,140,0.08);
+  background: var(--primary-dark);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(30, 78, 140, 0.08);
 }
 
 .view-buttons .btn.view:hover:not(.active) {
-    background: var(--primary);
-    color: #fff;
+  background: var(--primary);
+  color: #fff;
 }
 
-/* ===============================
-   HEADER RIGHT
-   =============================== */
-
+/* ----------- HEADER RIGHT ----------- */
 .odc-header-right {
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
 .date-nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .current-date {
-    font-weight: 600;
-    color: var(--text);
-    font-size: 14px;
-    min-width: 160px;
-    text-align: center;
+  font-weight: 600;
+  color: var(--text);
+  font-size: 14px;
+  min-width: 160px;
+  text-align: center;
 }
 
 .btn.icon {
-    background: var(--primary-light);
-    border: none;
-    color: var(--primary-dark);
-    padding: 5px 9px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 16px;
-    transition: background .12s ease;
+  background: var(--primary-light);
+  border: none;
+  color: var(--primary-dark);
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.12s ease;
 }
 
 .btn.icon:hover {
-    background: var(--primary);
-    color: #fff;
+  background: var(--primary);
+  color: #fff;
 }
 
 #btnHoy {
-    background: var(--primary);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: background .12s ease;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
 
 #btnHoy:hover {
-    background: var(--primary-dark);
+  background: var(--primary-dark);
 }
 
-/* ===============================
-   BUSCAR Y NUEVA CITA
-   =============================== */
-
+/* ----------- BUSCAR Y NUEVA CITA (ALINEADO) ----------- */
 .right-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-left: auto;
-    justify-content: flex-end;
-    position: static;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  justify-content: flex-end;
+  position: static; /* sin desplazamientos raros */
 }
 
 .search-input {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 14px;
-    transition: border-color .12s ease, box-shadow .12s ease;
-    min-width: 200px;
-    position: static;
-    margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 14px;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  min-width: 200px;
+  position: static; margin-top: 16px;   /* ⬅️ SOLO BAJA EL INPUT */
 }
 
 .search-input:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(43,108,176,0.06);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.06);
 }
 
 #btnNuevaCita {
-    margin-left: 6px;
-    align-self: center;
-    position: static;
+  margin-left: 6px;
+  align-self: center;
+  position: static;
 }
 
-/* ===============================
-   BOTONES BASE
-   =============================== */
-
+/* ----------- BOTONES ----------- */
 .btn {
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 10px;
-    cursor: pointer;
-    transition: all .12s ease;
-    font-size: 14px;
-    white-space: nowrap;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-size: 14px;
+  white-space: nowrap; /* evita que "Nueva cita" se parta en dos líneas */
 }
 
 .btn:hover {
-    background: var(--primary-light);
+  background: var(--primary-light);
 }
 
 .btn.green {
-    background: var(--accent-green);
-    color: #fff;
-    border: none;
+  background: var(--accent-green);
+  color: #fff;
+  border: none;
 }
 
 .btn.green:hover {
-    background: #2f855a;
+  background: #2f855a;
 }
 
-/* ===============================
-   CONTENT CARD
-   =============================== */
-
+/* ----------- CONTENT CARD ----------- */
 .odc-content-card {
-    background: #fff;
-    border-radius: var(--radius);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-sizing: border-box;
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .tools-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ocupacion-info {
-    font-size: 13px;
-    color: var(--muted);
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .tools-right {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-    align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .tools-right .btn {
-    background-color: var(--primary, #3b82f6);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 6px 12px;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: background-color .2s ease, transform .1s ease;
+  background-color: var(--primary, #3b82f6);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background-color 0.2s ease, transform 0.1s ease;
 }
 
 .tools-right .btn:hover {
-    background-color: #2563eb;
-    transform: translateY(-1px);
+  background-color: #2563eb;
+  transform: translateY(-1px);
 }
 
 .tools-right .btn:active {
-    transform: scale(0.98);
+  transform: scale(0.98);
 }
 
 .tools-right .btn.blue {
-    background-color: #007bff;
+  background-color: #007bff;
 }
 
 .tools-right .btn.blue:hover {
-    background-color: #0062cc;
+  background-color: #0062cc;
 }
 
 #btnPrint:hover {
-    background: #38a169;
-    color: #fff;
-    border-color: #2f855a;
-    box-shadow: 0 6px 15px rgba(56,161,105,0.3);
-    transform: translateY(-2px);
+  background: #38a169;
+  color: #fff;
+  border-color: #2f855a;
+  box-shadow: 0 6px 15px rgba(56, 161, 105, 0.3);
+  transform: translateY(-2px);
 }
 
-/* ===============================
-   TABLA
-   =============================== */
-
+/* ----------- TABLE ----------- */
 .table-wrap {
-    overflow-y: auto;
-    max-height: calc(100vh - 280px);
-    padding: 12px;
-    box-sizing: border-box;
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+  padding: 12px;
+  box-sizing: border-box;
 }
 
 .appointments-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-    text-align: left;
-    min-width: 720px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  text-align: left;
+  min-width: 720px;
 }
 
 .appointments-table thead th {
-    background: var(--primary-light);
-    color: var(--primary-dark);
-    font-weight: 600;
-    padding: 10px;
-    border-bottom: 1px solid var(--border);
-    text-align: left;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-weight: 600;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
 }
 
 .appointments-table tbody td {
-    padding: 12px 10px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: middle;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
 }
 
 .appointments-table tr:hover td {
-    background: var(--primary-light);
+  background: var(--primary-light);
 }
 
 .estado {
-    display: inline-block;
-    padding: 6px 8px;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 600;
-    background: rgba(56,161,105,0.12);
-    color: var(--accent-green);
+  display: inline-block;
+  padding: 6px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(56, 161, 105, 0.12);
+  color: var(--accent-green);
 }
 
 .estado.sin-deuda {
-    background: rgba(255,229,100,0.12);
-    color: #b7791f;
+  background: rgba(255, 229, 100, 0.12);
+  color: #b7791f;
 }
 
 .no-data {
-    text-align: center;
-    color: var(--muted);
-    padding: 20px;
-    font-style: italic;
+  text-align: center;
+  color: var(--muted);
+  padding: 20px;
+  font-style: italic;
 }
 
 .fade-in-row {
-    animation: fadeIn 240ms ease;
+  animation: fadeIn 240ms ease;
 }
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(4px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* ===============================
-   TOPBARS
-   =============================== */
-
+/* ----------- TOPBARS ----------- */
 .odc-topbar-green {
-    height: 6px;
-    background: #009688;
-    border-radius: var(--radius) var(--radius) 0 0;
-    width: 100%;
-    position: relative;
-    z-index: 5;
+  height: 6px;
+  background: #009688;
+  border-radius: var(--radius) var(--radius) 0 0;
+  width: 100%;
+  position: relative;
+  z-index: 5;
 }
 
 .odc-topbar-blue {
-    background: linear-gradient(90deg, #1976d2 0%, #0d47a1 100%);
-    color: #fff;
-    font-weight: 600;
-    font-size: 18px;
-    padding: 12px 24px;
-    border-radius: 0 0 var(--radius) var(--radius);
-    box-shadow: 0 3px 8px rgba(0,0,0,0.12);
-    position: relative;
-    z-index: 5;
+  background: linear-gradient(90deg, #1976d2 0%, #0d47a1 100%);
+  color: #fff;
+  font-weight: 600;
+  font-size: 18px;
+  padding: 12px 24px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+  position: relative;
+  z-index: 5;
 }
 
-/* ===============================
-   RESPONSIVE (Dashboard)
-   =============================== */
-
-@media (max-width: 1100px) {
-    .odc-agenda-inner {
-        flex-direction: column;
-    }
-
-    .odc-left {
-        width: 100%;
-        flex-direction: row;
-        gap: 12px;
-        align-items: flex-start;
-    }
-
-    .odc-filters-card,
-    .odc-mini-calendar-card {
-        flex: 1;
-    }
-
-    .appointments-table {
-        min-width: 100%;
-    }
+/* ====================================================== 🔧 BLOQUE FINAL RESPONSIVE AVANZADO (TUYO ORIGINAL) ====================================================== */
+@media (max-width: 1000px) {
+  .odc-agenda-inner {
+    flex-direction: column;
+  }
+  .odc-left {
+    width: 100%;
+    flex-direction: row;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .odc-filters-card,
+  .odc-mini-calendar-card {
+    flex: 1;
+  }
+  .appointments-table {
+    min-width: 100%;
+  }
 }
 
 @media (max-width: 700px) {
-    .odc-header-bar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .odc-header-right {
-        justify-content: center;
-    }
-
-    .odc-left {
-        flex-direction: column;
-        width: 100%;
-    }
-
-    .current-date {
-        min-width: auto;
-        text-align: left;
-    }
-
-    .search-input {
-        min-width: 120px;
-    }
+  .odc-header-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .odc-header-right {
+    justify-content: center;
+  }
+  .odc-left {
+    flex-direction: column;
+    width: 100%;
+  }
+  .current-date {
+    min-width: auto;
+    text-align: left;
+  }
+  .search-input {
+    min-width: 120px;
+  }
 }
-
-/* ===============================
-   768px (principal)
-   =============================== */
 
 @media (max-width: 768px) {
-
-    .odc-agenda-root {
-        margin-top: 135px !important;
-    }
-
-    .odc-right::before {
-        display: none !important;
-    }
-
-    .odc-right {
-        background: #fff;
-    }
-
-    .odc-agenda-inner {
-        flex-direction: row !important;
-        flex-wrap: wrap;
-        gap: 10px;
-        padding: 12px;
-    }
-
-    .odc-left {
-        width: 42% !important;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .odc-right {
-        width: 58% !important;
-        padding: 14px;
-        box-shadow: none;
-    }
-
-    .odc-header-bar {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 12px;
-    }
-
-    .odc-header-left,
-    .odc-header-right {
-        flex-direction: column;
-        align-items: stretch;
-        width: 100%;
-    }
-
-    .odc-title {
-        font-size: 18px;
-        text-align: center;
-    }
-
-    .right-actions {
-        justify-content: center;
-        margin-top: 6px;
-    }
-
-    .search-input {
-        width: 100%;
-        min-width: 0;
-    }
-
-    #btnNuevaCita {
-        width: 100%;
-        margin: 6px 0 0 0;
-    }
-
-    .appointments-table {
-        min-width: 100%;
-        font-size: 13px;
-    }
-
-    .table-wrap {
-        max-height: none;
-        overflow-x: auto;
-    }
-
-    .mini-month-table {
-        font-size: 12px;
-    }
-
-    .odc-mini-calendar-card,
-    .odc-filters-card {
-        padding: 12px;
-    }
-
-    .tools-right {
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-
-    .tools-right .btn {
-        width: 100%;
-        justify-content: center;
-    }
-
-    .current-date {
-        font-size: 13px;
-        text-align: center;
-    }
-}
-
-/* ===============================
-   520px o menos
-   =============================== */
-
-@media (max-width: 520px) {
-    .odc-title {
-        font-size: 16px;
-    }
-
-    .btn,
-    .search-input {
-        font-size: 12px;
-        padding: 6px 8px;
-    }
-
-    .odc-header-bar {
-        padding: 10px;
-    }
-
-    .odc-filters-card label {
-        font-size: 12px;
-    }
-
-    .appointments-table th,
-    .appointments-table td {
-        padding: 8px 6px;
-    }
-}
-
-/* ===============================
-   450px EXTRA PEQUEÑAS
-   =============================== */
-
-@media (max-width: 450px) {
-    .odc-left {
-        width: 100% !important;
-        flex-direction: row;
-    }
-
-    .odc-mini-calendar-card,
-    .odc-filters-card {
-        flex: 1;
-    }
-
-    .odc-right {
-        width: 100% !important;
-    }
-}
-
-/* ===============================
-   PRINT MODE
-   =============================== */
-
-@media print {
-
-    .odc-topbar-green,
-    .odc-topbar-blue,
-    .odc-left,
-    .tools-right,
-    .view-buttons,
-    #btnHoy,
-    .right-actions {
-        display: none !important;
-    }
-
-    .odc-agenda-root {
-        margin-top: 0 !important;
-        background: #fff !important;
-    }
-
-    .odc-agenda-inner {
-        padding: 0 !important;
-    }
-
-    .odc-right {
-        box-shadow: none !important;
-        border: none !important;
-        padding: 0 !important;
-    }
-
-    .odc-header-bar {
-        box-shadow: none !important;
-        border: none !important;
-        padding: 0 0 8px 0 !important;
-    }
-
-    .current-date {
-        text-align: left !important;
-    }
-
-    .table-wrap {
-        max-height: none !important;
-        padding: 0 !important;
-    }
-
-    .appointments-table {
-        min-width: 100% !important;
-        font-size: 12px !important;
-    }
-
-    .appointments-table thead th,
-    .appointments-table tbody td {
-        border-color: #ddd !important;
-    }
-}
-
-/* ===============================
-   DESKTOP FIX: Alineación Día/Buscar/Nueva Cita
-   =============================== */
-
-@media (min-width: 769px) {
-    .odc-header-bar {
-        flex-wrap: nowrap;
-        gap: 12px;
-    }
-
-    .odc-header-left {
-        flex: 0 0 auto;
-    }
-
-    .odc-header-right {
-        flex-wrap: nowrap;
-        gap: 12px;
-        min-width: 0;
-    }
-
-    .date-nav {
-        flex: 1 1 auto;
-        min-width: 0;
-    }
-
-    .current-date {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        text-align: center;
-    }
-
-    .right-actions {
-        flex: 0 0 auto;
-    }
-
-    .search-input {
-        margin-top: 5px;
-        min-width: 140px;
-        max-width: 220px;
-        flex: 0 1 180px;
-    }
-}
-
-/* ===============================
-   SELECT DE ESTADO (tabla)
-   =============================== */
-
-.estado-select {
+  .odc-agenda-inner {
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+  .odc-left {
     width: 100%;
-    padding: 4px 6px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
+    flex-direction: column;
+    gap: 12px;
+  }
+  .odc-right {
+    width: 100%;
+    padding: 14px;
+    box-shadow: none;
+  }
+  .odc-header-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .odc-header-left,
+  .odc-header-right {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .odc-title {
+    font-size: 18px;
+    text-align: center;
+  }
+  .right-actions {
+    justify-content: center;
+    margin-top: 6px;
+  }
+  .search-input {
+    width: 100%;
+    min-width: 0;
+  }
+  #btnNuevaCita {
+    width: 100%;
+    margin: 6px 0 0 0;
+  }
+  .appointments-table {
+    min-width: 100%;
     font-size: 13px;
-    background: #fff;
+  }
+  .table-wrap {
+    max-height: none;
+    overflow-x: auto;
+  }
+  .mini-month-table {
+    font-size: 12px;
+  }
+  .odc-mini-calendar-card,
+  .odc-filters-card {
+    padding: 12px;
+  }
+  .tools-right {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .tools-right .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .current-date {
+    font-size: 13px;
+    text-align: center;
+  }
+  .odc-agenda-root {
+    margin-top: 120px;
+  }
 }
 
-@media (min-width: 769px) {
-    .appointments-table td .estado-select {
-        min-width: 140px;
-    }
+@media (max-width: 480px) {
+  .odc-title {
+    font-size: 16px;
+  }
+  .btn,
+  .search-input {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+  .odc-header-bar {
+    padding: 10px;
+  }
+  .odc-filters-card label {
+    font-size: 12px;
+  }
+  .appointments-table th,
+  .appointments-table td {
+    padding: 8px 6px;
+  }
 }
 
-/* ===============================
-   BOTÓN WHATSAPP
-   =============================== */
+/* ====================================================== ✅ MOBILE FIX REAL — NO TOQUES PC, SOLO MÓVIL ====================================================== */
+@media (max-width: 768px) {
+  /* Mostrar completamente barra azul + verde */
+  .odc-agenda-root {
+    margin-top: 135px !important;
+  }
 
+  /* Layout móvil: dos columnas */
+  .odc-agenda-inner {
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .odc-left {
+    width: 42% !important;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .odc-right {
+    width: 58% !important;
+  }
+
+  /* Mini calendario compactado */
+  .odc-mini-calendar-card {
+    padding: 2px !important;
+  }
+
+  /* Filtros compactados */
+  .odc-filters-card {
+    padding: 2px !important;
+  }
+}
+
+/* ✅ Ajuste extra para pantallas muy pequeñas */
+@media (max-width: 450px) {
+  .odc-left {
+    width: 100% !important;
+    flex-direction: row;
+  }
+  .odc-mini-calendar-card,
+  .odc-filters-card {
+    flex: 1;
+  }
+  .odc-right {
+    width: 100% !important;
+  }
+}
+/* Select de estado dentro de la tabla */
+.estado-select {
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  background: #fff;
+}
+
+/* Botón WhatsApp en la tabla */
 .btn-whatsapp {
-    background: #25d366;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 13px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    transition: background .15s ease, transform .1s ease;
+  background: #25d366;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s ease, transform 0.1s ease;
 }
 
 .btn-whatsapp:hover {
-    background: #1ebe5d;
-    transform: translateY(-1px);
+  background: #1ebe5d;
+  transform: translateY(-1px);
 }
-
-/* ===============================
-   CELDA DE ACCIONES
-   =============================== */
-
+/* Celda de acciones (WhatsApp + Eliminar) */
 .acciones-cell {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    justify-content: flex-end;
-    flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-start;
 }
 
-@media (max-width: 768px) {
-    .acciones-cell {
-        justify-content: flex-start;
-    }
-}
-
+/* Texto pequeño dentro de acciones (Sin celular / recordatorio) */
 .acciones-texto {
-    font-size: 12px;
-    color: #777;
+  font-size: 12px;
+  color: #777;
 }
 
-/* Botón eliminar */
-
+/* Botón Eliminar compacto y rojo */
 .btn-delete {
-    padding: 4px 10px;
-    border-radius: 999px;
-    border: 1px solid #e57373;
-    background: #fff5f5;
-    color: #c62828;
-    font-size: 12px;
-    line-height: 1.2;
-    cursor: pointer;
-    white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid #e57373;
+  background: #fff5f5;
+  color: #c62828;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .btn-delete:hover {
-    background: #ffcdd2;
-    border-color: #c62828;
-}
-
-/* ===============================
-   MODAL “NUEVA CITA” (unificado pacientes)
-   =============================== */
-
-body.modal-open::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background:
-        radial-gradient(1200px 800px at 50% 20%, rgba(25,118,210,0.45), rgba(13,71,161,0.45)),
-        rgba(10,25,41,0.55);
-    backdrop-filter: blur(12px) saturate(130%);
-    -webkit-backdrop-filter: blur(12px) saturate(130%);
-    z-index: 1040;
-    pointer-events: none;
-    opacity: 1;
-}
-
-body.modal-open .modal-backdrop,
-.modal-backdrop.show {
-    background:
-        radial-gradient(1200px 800px at 50% 20%, rgba(25,118,210,0.45), rgba(13,71,161,0.45)),
-        rgba(10,25,41,0.55) !important;
-    backdrop-filter: blur(12px) saturate(130%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(130%) !important;
-    opacity: 1 !important;
-}
-
-.modal-dialog {
-    max-width: 860px !important;
-    margin: 2rem auto !important;
-    transition: transform .25s ease, opacity .25s ease;
-}
-
-@media (max-width: 920px) {
-    .modal-dialog {
-        max-width: 92% !important;
-    }
-}
-
-.modal.fade .modal-dialog {
-    transform: translateY(12px) scale(.97);
-    opacity: .98;
-}
-
-.modal.show .modal-dialog {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-}
-
-.modal-content {
-    border-radius: 18px !important;
-    border: 1px solid rgba(13,71,161,0.12) !important;
-    background: #ffffff !important;
-    box-shadow: 0 25px 60px rgba(0,0,0,0.35) !important;
-    overflow: hidden;
-}
-
-.modal-header {
-    border-bottom: 0 !important;
-    padding: 20px 26px 10px !important;
-    background: linear-gradient(90deg, #1976d2, #0d47a1) !important;
-    color: #fff !important;
-    font-weight: 600 !important;
-}
-
-.modal-title {
-    font-weight: 700 !important;
-    font-size: 18px !important;
-    letter-spacing: .3px !important;
-}
-
-.modal-body {
-    padding: 16px 26px 20px !important;
-}
-
-.modal-footer {
-    border-top: 0 !important;
-    padding: 14px 26px 22px !important;
-    background: #f9fafb !important;
-}
-
-.modal-content input,
-.modal-content select,
-.modal-content textarea {
-    border-radius: 8px !important;
-    border: 1px solid #d0d6dc !important;
-    background-color: #fff !important;
-    box-shadow: none !important;
-    transition: all .15s ease;
-}
-
-.modal-content input:focus,
-.modal-content select:focus,
-.modal-content textarea:focus {
-    border-color: #2b6cb0 !important;
-    box-shadow: 0 0 0 3px rgba(43,108,176,0.15) !important;
-    outline: none !important;
-}
-
-.modal-content .btn-primary,
-.modal-content .btn.blue {
-    background: linear-gradient(90deg, #1976d2, #0d47a1) !important;
-    border: none !important;
-    color: #fff !important;
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    transition: transform .15s ease, background .25s ease;
-}
-
-.modal-content .btn-primary:hover,
-.modal-content .btn.blue:hover {
-    background: linear-gradient(90deg, #1565c0, #0b3c91) !important;
-    transform: translateY(-1px);
-}
-
-.modal-content .btn-secondary,
-.modal-content .btn {
-    border-radius: 8px !important;
-}
-
-/* ===============================
-   FICHA PACIENTE
-   =============================== */
-
-.ficha-card {
-    border-radius: 14px;
-    box-shadow: 0 22px 60px rgba(0,0,0,.28);
-    overflow: hidden;
-}
-
-.ficha-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    padding: 14px 18px;
-    border-bottom: 1px solid #e9eef4;
-    background: #fff;
-}
-
-.ficha-header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.ficha-avatar,
-.ficha-avatar-fallback {
-    width: 64px;
-    height: 64px;
-    border-radius: 12px;
-    object-fit: cover;
-}
-
-.ficha-avatar-fallback {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-    font-weight: 700;
-    color: #334155;
-    background: #e2e8f0;
-}
-
-.ficha-nombre {
-    font-size: 18px;
-    font-weight: 700;
-    color: #0f3453;
-}
-
-.ficha-doc {
-    font-size: 13px;
-    color: #6b7a8c;
-}
-
-.ficha-header-right {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.ficha-badge {
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.ficha-badge.blue {
-    background: #e7f1ff;
-    color: #0a57b7;
-}
-
-.ficha-badge.green {
-    background: #e6f8ee;
-    color: #1a7547;
-}
-
-.ficha-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.ficha-body {
-    display: grid;
-    grid-template-columns: 230px 1fr;
-    height: calc(94vh - 64px);
-    background: #f6f9fc;
-}
-
-.ficha-sidebar {
-    background: #fff;
-    border-right: 1px solid #e9eef4;
-    padding: 14px;
-    overflow: auto;
-}
-
-.ficha-sidebar-title {
-    font-size: 12px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: .6px;
-    color: #6b7a8c;
-    margin: 12px 0 8px;
-}
-
-.ficha-sidebar-title.mt {
-    margin-top: 18px;
-}
-
-.ficha-link {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    background: #fff;
-    color: #1f2d3d;
-    font-size: 14px;
-    cursor: pointer;
-    margin-bottom: 6px;
-    transition: .15s ease;
-}
-
-.ficha-link:hover {
-    background: #f1f5f9;
-    border-color: #e5effb;
-}
-
-.ficha-content {
-    position: relative;
-    overflow: auto;
-    padding: 16px;
-    display: grid;
-    grid-template-columns: 300px 1fr;
-    gap: 16px;
-}
-
-.ficha-photo-panel {
-    background: #fff;
-    border: 1px solid #e9eef4;
-    border-radius: 12px;
-    padding: 14px;
-    height: max-content;
-}
-
-.ficha-photo,
-.ficha-photo-fallback {
-    width: 100%;
-    height: 220px;
-    border-radius: 10px;
-    object-fit: cover;
-}
-
-.ficha-photo-fallback {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #e2e8f0;
-    font-size: 54px;
-    font-weight: 800;
-    color: #334155;
-}
-
-.ficha-photo-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-}
-
-.info-pill {
-    display: inline-block;
-    padding: 6px 10px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    margin-top: 8px;
-}
-
-.info-pill.blue {
-    background: #eef6ff;
-    color: #0b63c4;
-}
-
-.info-pill.gray {
-    background: #f3f4f6;
-    color: #4b5563;
-}
-
-.ficha-section {
-    background: #fff;
-    border: 1px solid #e9eef4;
-    border-radius: 12px;
-    padding: 14px;
-}
-
-.ficha-section-title {
-    margin: 0 0 10px;
-    font-size: 16px;
-    color: #114b79;
-    border-left: 4px solid #0a86d8;
-    padding-left: 8px;
-    font-weight: 700;
-}
-
-.ficha-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
-    gap: 10px 12px;
-}
-
-.field label {
-    display: block;
-    font-weight: 700;
-    font-size: 12px;
-    color: #5b7189;
-}
-
-.ficha-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 12px 0;
-}
-
-@media (max-width: 1100px) {
-    .ficha-content {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 720px) {
-    .ficha-body {
-        grid-template-columns: 1fr;
-    }
-
-    .ficha-sidebar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-
-    .ficha-link {
-        width: auto;
-    }
-}
-
-/* ===============================
-   AUTOCOMPLETAR (Nueva Cita)
-   =============================== */
-
-#acResultados {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: calc(100% + 6px);
-    z-index: 10000;
-    display: none;
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 22px rgba(0,0,0,.12);
-    max-height: 240px;
-    overflow: auto;
-}
-
-#acResultados .ac-item {
-    padding: 8px 10px;
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-    cursor: pointer;
-    transition: background .15s ease;
-}
-
-#acResultados .ac-item:hover,
-#acResultados .ac-item.active {
-    background: #f5f7fb;
-}
-
-#acResultados .ac-name {
-    font-weight: 600;
-    color: var(--text);
-}
-
-#acResultados .ac-doc {
-    color: #64748b;
-    font-size: 12px;
-}
-
-#acResultados .ac-tel {
-    margin-left: auto;
-    font-size: 12px;
-    color: #0f172a;
-}
-
-#acResultados .ac-empty {
-    padding: 10px;
-    color: #9aa4b2;
-    font-size: 13px;
+  background: #ffcdd2;
+  border-color: #c62828;
 }

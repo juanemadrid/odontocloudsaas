@@ -6,50 +6,34 @@ import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
 // import "../styles/dashboard.css"; // REMOVED: Migrated to index.css
 
 import Agenda from "../modules/agenda/Agenda";
-import Facturacion from "../modules/facturacion/Facturacion";
-import Inventario from "../modules/inventario/Inventario";
-import Odontograma from "../modules/odontograma/Odontograma";
 import Pacientes from "../modules/pacientes/Pacientes";
+import Odontograma from "../modules/odontograma/Odontograma";
 import Reportes from "../modules/reportes/Reportes";
-// ⬇️ NUEVO
-import ConfigGear from "../components/ConfigGear";
-import ConfigSection from "../components/ConfigSection";
-// ⬇️ NUEVO (router para /config/:slug)
+import AdministracionRouter from "../modules/administracion/AdministracionRouter";
 import ConfigRouter from "../modules/config/ConfigRouter";
-// ⬇️ NUEVO (router para Financiero)
 import FinancieroRouter from "../modules/financiero/FinancieroRouter";
-
-// 👉 Caja real
 import Caja from "../modules/caja/Caja";
 
 import DashboardLayout from "../layout/DashboardLayout";
+import ErrorBoundary from "../components/shared/ErrorBoundary";
 import StatCard from "../components/shared/StatCard";
 import DashboardCharts from "../components/dashboard/DashboardCharts";
-import { FiUsers, FiCalendar, FiDollarSign, FiClock, FiActivity } from "react-icons/fi";
+import {
+    FiHome, FiCalendar, FiUsers, FiFileText, FiBox,
+    FiActivity, FiSettings, FiLogOut, FiMenu, FiX, FiClock, FiCheckCircle, FiLayout, FiPieChart, FiGrid, FiDollarSign, FiZap, FiMic
+} from "react-icons/fi";
 
 import RecentActivity from "../components/RecentActivity";
-import N8nStatus from "../components/N8nStatus";
 import SmartAlerts from "../components/dashboard/SmartAlerts";
+import SetupWizardWidget from "../components/dashboard/SetupWizardWidget";
 
-import { auth, db } from "../firebase/firebaseConfig";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  getCountFromServer,
-  query,
-  where,
-  orderBy,
-  limit,
-  Timestamp,
-  onSnapshot,
-} from "firebase/firestore";
+import supabase from "../lib/supabaseClient";
 
 
 
 import { useAuth } from "../context/AuthContext";
+import { usePermissions } from "../hooks/usePermissions";
+import { OFFLINE_SESSION_ENABLED } from "../config/runtimeFlags";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import logo from "/assets/logo.png";
 
@@ -77,7 +61,6 @@ const MESSAGES = {
     stats_revenueToday: "Facturación hoy",
     stats_waiting: "En espera",
     stats_currency: "COP",
-    n8n_title: "Automatizaciones (n8n)",
     recent_title: "Actividad reciente",
     recent_empty: "Sin actividad registrada.",
     loading: "Cargando...",
@@ -110,7 +93,6 @@ const MESSAGES = {
     stats_revenueToday: "Revenue today",
     stats_waiting: "In waiting room",
     stats_currency: "COP",
-    n8n_title: "Automations (n8n)",
     recent_title: "Recent activity",
     recent_empty: "No activity yet.",
     loading: "Loading...",
@@ -130,6 +112,8 @@ const detectLocale = () => {
 
 /* ================== sesión offline + fechas ================== */
 const getOfflineSession = () => {
+  if (!OFFLINE_SESSION_ENABLED) return null;
+
   try {
     const data = JSON.parse(localStorage.getItem("odc_session"));
     if (data && Date.now() - data.timestamp < 1000 * 60 * 60 * 24) return data;
@@ -643,20 +627,15 @@ function AdminMegaMenu({
   );
 }
 
-/* =============== NUEVO: Placeholder temporal para Planes =============== */
-function PlanesPlaceholder() {
-  return (
-    <div className="oc-main-content">
-      <div className="card">
-        <h3>Planes</h3>
-        <p className="oc-muted">
-          Vista de Planes integrada. En el siguiente paso reemplazamos este placeholder por el módulo real
-          (<code>modules/planes/Planes.jsx</code>) con creación/edición, estados y vínculo a facturación.
-        </p>
-      </div>
-    </div>
-  );
-}
+const getStatusLabel = (est) => {
+  const clean = (est || "").toLowerCase().trim();
+  if (clean === "attended" || clean === "atendido" || clean === "atendida") return "ATENDIDO";
+  if (clean === "waiting" || clean === "en espera") return "EN ESPERA";
+  if (clean === "confirmed" || clean === "confirmada" || clean === "confirmado") return "CONFIRMADA";
+  if (clean === "pending" || clean === "sin confirmar") return "SIN CONFIRMAR";
+  if (clean === "cancelled" || clean === "cancelado" || clean === "cancelada") return "CANCELADO";
+  return String(est).toUpperCase();
+};
 
 /* =============== Componente de portada (Inicio) =============== */
 function Overview({
@@ -664,74 +643,359 @@ function Overview({
   weeklySeries, weekRangeLabel,
   todaysAppointments, todaysLoading,
   metrics, metricsLoading,
-  n8nState, n8nLoading, recent, recentLoading,
+  recent, recentLoading,
   onGoAgenda,
+  softwareLogo, // NEW PROP
+  isDoc,
+  currentDoctorId,
+  basePath // NEW PROP
 }) {
+  const navigate = useNavigate();
+
+  if (isDoc) {
+    // Filter appointments for this doctor
+    const docAppointments = todaysAppointments.filter(
+      (c) => c.doctorId === currentDoctorId
+    );
+
+    const completedCount = docAppointments.filter(
+      (c) => {
+        const est = (c.estado || "").toLowerCase().trim();
+        return ["completada", "completado", "atendido", "atendida", "atendiendo", "completed", "attended"].includes(est);
+      }
+    ).length;
+
+    const enEsperaCount = docAppointments.filter(
+      (c) => {
+        const est = (c.estado || "").toLowerCase().trim();
+        return ["en espera", "waiting"].includes(est);
+      }
+    ).length;
+
+    const pendienteCount = docAppointments.filter(
+      (c) => {
+        const est = (c.estado || "").toLowerCase().trim();
+        return ["pendiente", "programada", "confirmada", "sin confirmar", "pending", "confirmed", "sin-confirmar", "confirmado"].includes(est);
+      }
+    ).length;
+
+    return (
+      <div className="space-y-6 w-full animate-in fade-in slide-in-from-bottom-4 duration-700">
+        {/* Custom Welcome Banner for Doctor */}
+        <div className="bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 rounded-[24px] md:rounded-[32px] p-6 md:p-10 relative overflow-hidden group shadow-[0_20px_60px_-10px_rgba(0,0,0,0.3)] border border-white/5">
+          {/* Animated Background */}
+          <div className="absolute inset-0 opacity-40 pointer-events-none">
+            <div className="absolute top-[-40%] left-[-20%] w-[800px] h-[800px] bg-blue-500/30 rounded-full blur-[140px] animate-pulse" style={{animationDuration: '8s'}} />
+            <div className="absolute bottom-[-30%] right-[-10%] w-[600px] h-[600px] bg-indigo-400/20 rounded-full blur-[120px] animate-pulse" style={{animationDuration: '12s', animationDelay: '2s'}} />
+          </div>
+          
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="flex items-center gap-6">
+              <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-md border border-white/25 p-3 shadow-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                <span className="text-4xl">🦷</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" />
+                  <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Portal Odontológico Activo</span>
+                </div>
+                <h1 className="text-2xl md:text-4xl font-extrabold text-white tracking-tight">
+                  Dr. {userName}
+                </h1>
+                <p className="text-slate-300 text-sm font-medium">
+                  {companyName} • {new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+            </div>
+            
+            {/* Quick Stats in Banner */}
+            <div className="flex gap-4">
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 min-w-[100px]">
+                <div className="text-3xl font-black text-white">{todaysLoading ? "..." : docAppointments.length}</div>
+                <div className="text-[10px] font-bold text-slate-300 uppercase tracking-wider mt-1">Citas Hoy</div>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 min-w-[100px]">
+                <div className="text-3xl font-black text-emerald-400">{todaysLoading ? "..." : completedCount}</div>
+                <div className="text-[10px] font-bold text-slate-300 uppercase tracking-wider mt-1">Atendidos</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Doctor Stats Cards - Mejorado con más detalle */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl border-2 border-blue-100 p-5 shadow-sm hover:shadow-md transition-all">
+            <div className="flex items-center justify-between mb-3">
+              <FiCalendar className="text-blue-600" size={24} />
+              <span className="text-xs font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-full uppercase tracking-wider">Hoy</span>
+            </div>
+            <div className="text-3xl font-black text-slate-800">{todaysLoading ? "..." : docAppointments.length}</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Total Citas</div>
+          </div>
+
+          <div className="bg-white rounded-2xl border-2 border-emerald-100 p-5 shadow-sm hover:shadow-md transition-all">
+            <div className="flex items-center justify-between mb-3">
+              <FiCheckCircle className="text-emerald-600" size={24} />
+              <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full uppercase tracking-wider">✓</span>
+            </div>
+            <div className="text-3xl font-black text-emerald-600">{todaysLoading ? "..." : completedCount}</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Atendidos</div>
+            {docAppointments.length > 0 && (
+              <div className="text-[10px] text-slate-400 mt-1">
+                {Math.round((completedCount / docAppointments.length) * 100)}% completado
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border-2 border-amber-100 p-5 shadow-sm hover:shadow-md transition-all">
+            <div className="flex items-center justify-between mb-3">
+              <FiClock className="text-amber-600" size={24} />
+              <span className="text-xs font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-full uppercase tracking-wider">⏳</span>
+            </div>
+            <div className="text-3xl font-black text-amber-600">{todaysLoading ? "..." : enEsperaCount}</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">En Espera</div>
+          </div>
+
+          <div className="bg-white rounded-2xl border-2 border-indigo-100 p-5 shadow-sm hover:shadow-md transition-all">
+            <div className="flex items-center justify-between mb-3">
+              <FiActivity className="text-indigo-600" size={24} />
+              <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full uppercase tracking-wider">→</span>
+            </div>
+            <div className="text-3xl font-black text-indigo-600">{todaysLoading ? "..." : pendienteCount}</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">Pendientes</div>
+          </div>
+        </div>
+
+        {/* Doctor Main Dashboard Columns */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Timeline / Clinical Agenda */}
+          <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col min-h-[400px]">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-extrabold text-slate-800 tracking-tight text-lg uppercase flex items-center gap-2">
+                <span className="w-1.5 h-5 bg-blue-600 rounded-full" />
+                Mi Agenda Clínica
+              </h3>
+              <button 
+                onClick={onGoAgenda} 
+                className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+              >
+                <FiCalendar size={14} />
+                Ver Completa
+              </button>
+            </div>
+
+            {todaysLoading ? (
+              <div className="flex items-center justify-center flex-1 text-slate-400 text-sm">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <span>Cargando agenda clínica...</span>
+                </div>
+              </div>
+            ) : docAppointments.length === 0 ? (
+              <div className="text-slate-500 text-sm bg-slate-50 p-8 rounded-xl flex flex-col items-center justify-center text-center flex-1 border border-dashed border-slate-200">
+                <span className="text-6xl mb-4">📅</span>
+                <p className="font-black text-slate-700 text-lg">No tienes citas programadas para hoy</p>
+                <p className="text-sm text-slate-400 mt-2 max-w-md">Disfruta de tu día libre o aprovecha para revisar expedientes pendientes.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 overflow-y-auto max-h-[500px] pr-2 custom-scrollbar">
+                {docAppointments.map((c) => {
+                  const isCompleted = ["completada", "completado", "atendido", "atendida", "atendiendo", "completed", "attended"].includes((c.estado || "").toLowerCase().trim());
+                  const isWaiting = ["en espera", "waiting"].includes((c.estado || "").toLowerCase().trim());
+                  return (
+                    <div key={c.id} className="p-4 hover:bg-slate-50 border-2 border-slate-100 hover:border-blue-200 rounded-xl transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-sm font-black bg-blue-600 text-white px-3 py-1.5 rounded-lg tracking-wider shadow-sm">
+                            {c.fecha.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className={`text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-wider border-2
+                            ${isWaiting ? "bg-amber-50 text-amber-700 border-amber-200" :
+                              isCompleted ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                              "bg-blue-50 text-blue-700 border-blue-200"}
+                          `}>
+                            {getStatusLabel(c.estado)}
+                          </span>
+                          {c.consultorio && (
+                            <span className="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider bg-slate-100 text-slate-600">
+                              📍 {c.consultorio}
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-black text-slate-800 text-base">{c.pacienteNombre}</div>
+                        {c.motivo && <div className="text-xs text-slate-500 flex items-start gap-2"><span>💬</span><span className="italic">{c.motivo}</span></div>}
+                      </div>
+
+                      {/* Quick Access to Clinical Actions */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => navigate(`${basePath}/pacientes?id=${c.pacienteId}&tab=anamnesis`)}
+                          className="text-[10px] font-black uppercase tracking-wider bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg transition-all"
+                          title="Ver Historia Clínica"
+                        >
+                          📋 Historia
+                        </button>
+                        <button
+                          onClick={() => navigate(`${basePath}/pacientes?id=${c.pacienteId}&tab=odonto`)}
+                          className="text-[10px] font-black uppercase tracking-wider bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-2 rounded-lg transition-all"
+                          title="Ver Odontograma"
+                        >
+                          🦷 Odontograma
+                        </button>
+                        <button
+                          onClick={() => navigate(`${basePath}/pacientes?id=${c.pacienteId}&tab=evo`)}
+                          className={`text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-lg transition-all shadow-sm
+                            ${isCompleted 
+                              ? 'bg-emerald-50 text-emerald-700 border-2 border-emerald-200/50 hover:bg-emerald-100/70' 
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            }`}
+                          title={isCompleted ? "Ver Evolución" : "Registrar Evolución"}
+                        >
+                          {isCompleted ? "✓ Atendido" : "✍️ Evolución"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Actions Panel */}
+          <div className="space-y-4">
+            {/* Quick Links */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+              <h4 className="font-black text-slate-800 text-sm uppercase tracking-wider mb-4 flex items-center gap-2">
+                <FiZap className="text-blue-600" size={16} />
+                Accesos Rápidos
+              </h4>
+              <div className="space-y-2">
+                <button 
+                  onClick={() => navigate(`${basePath}/pacientes`)}
+                  className="w-full text-left px-4 py-3 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-blue-300 transition-all flex items-center justify-between group"
+                >
+                  <span className="text-sm font-bold text-slate-700">Buscar Paciente</span>
+                  <FiUsers className="text-slate-400 group-hover:text-blue-600 transition-colors" size={18} />
+                </button>
+                <button 
+                  onClick={() => navigate(`${basePath}/agenda`)}
+                  className="w-full text-left px-4 py-3 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-blue-300 transition-all flex items-center justify-between group"
+                >
+                  <span className="text-sm font-bold text-slate-700">Mi Agenda Completa</span>
+                  <FiCalendar className="text-slate-400 group-hover:text-blue-600 transition-colors" size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Tips Card */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
+              <h4 className="font-black text-slate-800 text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+                💡 Tip del Día
+              </h4>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Usa el <strong>Portal del Paciente</strong> para que tus pacientes vean sus citas, planes y pagos desde casa. Reduce llamadas y mejora la experiencia.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Additional Row: Recent Activity for Doctor */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <h3 className="font-extrabold text-slate-800 tracking-tight text-lg uppercase flex items-center gap-2 mb-6">
+            <span className="w-1.5 h-5 bg-emerald-600 rounded-full" />
+            Actividad Reciente
+          </h3>
+          {recentLoading ? (
+            <div className="text-center py-8 text-slate-400">Cargando...</div>
+          ) : recent.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">
+              <span className="text-4xl mb-3 block">📝</span>
+              <p>No hay actividad registrada aún</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {recent.slice(0, 5).map((act, idx) => (
+                <div key={idx} className="flex items-center gap-4 p-3 rounded-lg hover:bg-slate-50 transition-all border border-transparent hover:border-slate-200">
+                  <div className={`w-2 h-2 rounded-full ${
+                    act.type === 'appointment' ? 'bg-blue-500' :
+                    act.type === 'evolution' ? 'bg-emerald-500' :
+                    'bg-slate-400'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 truncate">{act.description}</p>
+                    <p className="text-xs text-slate-400">{act.timestamp}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 w-full animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Slender Pro v2.0 Welcome HUD */}
-      <div className="bg-slate-900 rounded-[40px] p-10 relative overflow-hidden group shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white/5">
-        {/* Complex Mesh Gradient Background */}
-        <div className="absolute inset-0 opacity-40 pointer-events-none">
-          <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-blue-600 rounded-full blur-[120px] animate-pulse duration-[8s]" />
-          <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-indigo-600 rounded-full blur-[100px] animate-pulse duration-[6s] delay-1000" />
-          <div className="absolute top-[20%] right-[20%] w-[400px] h-[400px] bg-cyan-500 rounded-full blur-[140px] opacity-30" />
+      {/* Slender Pro v3.0 Compact Mesh HUD */}
+      <div className="bg-[#020617] rounded-[24px] md:rounded-[32px] p-6 md:p-10 relative overflow-hidden group shadow-[0_20px_60px_-10px_rgba(0,0,0,0.3)] border border-white/5">
+        {/* Hyperspace Mesh Gradient */}
+        <div className="absolute inset-0 opacity-60 pointer-events-none">
+          <div className="absolute top-[-40%] left-[-20%] w-[800px] h-[800px] bg-blue-600/30 rounded-full blur-[140px] animate-pulse duration-[12s]" />
+          <div className="absolute bottom-[-30%] right-[-10%] w-[600px] h-[600px] bg-indigo-500/20 rounded-full blur-[120px]" />
+          <div className="absolute top-[20%] right-[20%] w-[400px] h-[400px] bg-cyan-400/10 rounded-full blur-[100px] animate-bounce duration-[15s]" />
+          <div className="absolute inset-0 bg-[url('/odontocloud-react/noise.svg')] opacity-20 mix-blend-overlay"></div>
         </div>
 
         {/* Grid Pattern Overlay */}
         <div className="absolute inset-0 opacity-[0.05] pointer-events-none"
           style={{ backgroundImage: `radial-gradient(white 1px, transparent 1px)`, backgroundSize: '32px 32px' }} />
 
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-10">
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-end justify-between gap-10">
           <div className="flex flex-col lg:flex-row lg:items-center gap-8">
-            {/* Clinic Logo in Banner */}
-            {companyLogo && (
-              <div className="w-24 h-24 rounded-3xl bg-white/10 backdrop-blur-2xl border border-white/20 p-4 shadow-2xl flex items-center justify-center group-hover:scale-105 transition-transform duration-700">
-                <img src={companyLogo} alt="Clinic Logo" className="max-h-full max-w-full object-contain filter brightness-0 invert opacity-90" />
-              </div>
-            )}
+            {/* SOFTWARE LOGO (OdontoCloud) - LARGE IN BANNER */}
+            <div className="w-20 h-20 rounded-2xl bg-white border border-white/20 p-3 shadow-2xl flex items-center justify-center group-hover:scale-105 transition-transform duration-700">
+              <img src={softwareLogo} alt="OdontoCloud Logo" className="max-h-full max-w-full object-contain" />
+            </div>
 
-            <div className="space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="relative flex items-center justify-center">
-                  <div className="absolute inset-0 bg-blue-500 rounded-full blur-md animate-ping opacity-20" />
-                  <div className="w-2.5 h-2.5 bg-blue-400 rounded-full shadow-[0_0_15px_rgba(96,165,250,0.8)]" />
-                </div>
-                <span className="text-[10px] font-black text-blue-300 uppercase tracking-[0.4em] drop-shadow-sm">Estado del sistema: Activo</span>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)] animate-pulse" />
+                <span className="text-[10px] font-bold text-blue-300/80 uppercase tracking-[0.2em]">Master Terminal Activa</span>
               </div>
 
-              <div className="space-y-2">
-                <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tighter leading-[0.9] uppercase italic italic-none">
+              <div className="space-y-1">
+                <h1 className="text-3xl md:text-5xl font-bold text-white tracking-tight uppercase">
                   {role === "superadmin"
-                    ? "Control Maestro OdontoCloud"
-                    : t("welcomeTitle").replace("{tenant}", companyName)}
+                    ? "Panel de Control"
+                    : "BIENVENIDO A ODONTOCLOUD"}
                 </h1>
-                <p className="text-blue-100/60 text-[13px] font-bold max-w-xl leading-relaxed uppercase tracking-[0.05em]">
+                <p className="text-blue-100/40 text-xs font-medium max-w-lg tracking-wide uppercase">
                   {t("welcomeSubtitle")}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 shrink-0 flex-wrap sm:flex-nowrap">
-            {/* HUD Badge: User */}
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 px-7 py-5 rounded-[28px] flex flex-col items-end shadow-2xl relative group/hud transition-all duration-500 hover:bg-white/10 hover:border-white/20">
-              <div className="absolute top-0 right-10 w-10 h-[1px] bg-blue-400/50" />
-              <span className="text-[9px] font-black text-blue-300/60 uppercase tracking-[0.25em] leading-none mb-2.5">ID Operador</span>
-              <span className="text-[15px] font-black text-white uppercase tracking-tight flex items-center gap-2">
-                {userName}
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]" />
-              </span>
-            </div>
-
-            {/* HUD Badge: Role */}
-            <div className="bg-blue-600/20 backdrop-blur-xl border border-blue-400/20 px-7 py-5 rounded-[28px] flex flex-col items-end shadow-2xl relative group/hud transition-all duration-500 hover:bg-blue-600/30 hover:border-blue-400/40">
-              <div className="absolute bottom-0 right-10 w-10 h-[1px] bg-blue-400/50" />
-              <span className="text-[9px] font-black text-blue-200 uppercase tracking-[0.25em] leading-none mb-2.5">Nivel de Acceso</span>
-              <span className="text-[15px] font-black text-blue-400 uppercase tracking-tight">
-                {role || "Administrador"}
-              </span>
-            </div>
+          <div className="flex items-center gap-3">
+            <button 
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("open-user-profile"))}
+              title="Click para ver/editar Perfil de usuario y Firma Electrónica"
+              className="bg-white/5 hover:bg-white/15 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl flex items-center gap-4 transition-all active:scale-95 text-left group"
+            >
+              <div className="flex flex-col">
+                <span className="text-[8px] font-bold text-blue-300/50 uppercase tracking-widest group-hover:text-blue-300">Usuario</span>
+                <span className="text-xs font-bold text-white uppercase tracking-tight flex items-center gap-1.5">
+                  {userName}
+                </span>
+              </div>
+              <div className="w-px h-6 bg-white/10" />
+              <div className="flex flex-col">
+                <span className="text-[8px] font-bold text-blue-300/50 uppercase tracking-widest group-hover:text-blue-300">Perfil / Firma</span>
+                <span className="text-xs font-bold text-blue-400 uppercase tracking-tight">{role || "Admin"}</span>
+              </div>
+            </button>
           </div>
         </div>
 
@@ -741,8 +1005,11 @@ function Overview({
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Setup Assistant - High Priority Onboarding */}
+      <SetupWizardWidget />
+
+      {/* Stats Grid - Slender Pro v3.0 Adaptive */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         <StatCard
           title={t("stats_patientsToday")}
           value={metricsLoading ? "..." : metrics?.pacientesHoy || 0}
@@ -771,9 +1038,9 @@ function Overview({
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Main Chart */}
-        <div className="lg:col-span-2 h-80">
+        <div className="xl:col-span-2 h-[400px]">
           <DashboardCharts
             data={weeklySeries}
             title="Pacientes registrados"
@@ -782,7 +1049,7 @@ function Overview({
         </div>
 
         {/* Side Panel */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
           <SmartAlerts />
 
           {/* Citas Hoy */}
@@ -800,25 +1067,29 @@ function Overview({
               </div>
             ) : (
               <div className="space-y-3 overflow-y-auto max-h-[300px]">
-                {todaysAppointments.slice(0, 5).map((c) => (
-                  <div key={c.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
-                    <div>
-                      <div className="font-semibold text-slate-800 text-sm">{c.pacienteNombre}</div>
-                      <div className="text-xs text-slate-500 flex items-center gap-1">
-                        <FiClock size={10} />
-                        {fmtTime(c.fecha, detectLocale())}
+                {todaysAppointments.slice(0, 5).map((c) => {
+                  const isCompleted = ["completada", "completado", "atendido", "atendida", "atendiendo", "completed", "attended"].includes((c.estado || "").toLowerCase().trim());
+                  const isWaiting = ["en espera", "waiting"].includes((c.estado || "").toLowerCase().trim());
+                  return (
+                    <div key={c.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
+                      <div>
+                        <div className="font-semibold text-slate-800 text-sm">{c.pacienteNombre}</div>
+                        <div className="text-xs text-slate-500 flex items-center gap-1">
+                          <FiClock size={10} />
+                          {fmtTime(c.fecha, detectLocale())}
+                        </div>
                       </div>
+                      <span className={`
+                            text-xs px-2.5 py-1 rounded-full font-black uppercase tracking-wider border
+                            ${isWaiting ? "bg-amber-100 text-amber-700 border-amber-200" :
+                          isCompleted ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+                            "bg-blue-100 text-blue-700 border-blue-200"}
+                         `}>
+                        {getStatusLabel(c.estado)}
+                      </span>
                     </div>
-                    <span className={`
-                          text-xs px-2 py-1 rounded-full font-medium capitalize
-                          ${(c.estado || "").toLowerCase() === "en espera" ? "bg-amber-100 text-amber-700" :
-                        (c.estado || "").toLowerCase() === "completada" ? "bg-emerald-100 text-emerald-700" :
-                          "bg-blue-100 text-blue-700"}
-                       `}>
-                      {c.estado}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -826,11 +1097,11 @@ function Overview({
       </div>
 
       {/* Activity and Integrations - Slender Pro v3.0 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* Recent Activity Card */}
         <div className="bg-gradient-to-br from-white to-slate-50/50 rounded-[32px] border border-white shadow-[0_15px_60px_-15px_rgba(0,0,0,0.05)] p-8 transition-all duration-700 hover:shadow-[0_25px_80px_-20px_rgba(0,0,0,0.08)] group relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50/20 rounded-bl-[80px] -mr-12 -mt-12 group-hover:scale-110 transition-transform duration-700" />
-          <div className="flex items-center gap-3 mb-8">
+          <div className="flex items-center gap-3 mb-6">
             <div className="w-1.5 h-4 bg-blue-600 rounded-full" />
             <h3 className="text-[11px] font-black text-slate-800 uppercase tracking-[0.25em]">{t("recent_title")}</h3>
           </div>
@@ -843,23 +1114,7 @@ function Overview({
           )}
         </div>
 
-        {/* Automation Card */}
-        <div className="bg-gradient-to-br from-white to-slate-50/50 rounded-[32px] border border-white shadow-[0_15px_60px_-15px_rgba(0,0,0,0.05)] p-8 transition-all duration-700 hover:shadow-[0_25px_80px_-20px_rgba(0,0,0,0.08)] group relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50/20 rounded-bl-[80px] -mr-12 -mt-12 group-hover:scale-110 transition-transform duration-700" />
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-1.5 h-4 bg-indigo-600 rounded-full" />
-            <h3 className="text-[11px] font-black text-slate-800 uppercase tracking-[0.25em]">{t("n8n_title")}</h3>
-          </div>
-          {n8nLoading ? (
-            <div className="flex items-center justify-center p-12">
-              <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <div className="relative z-10">
-              <N8nStatus status={n8nState} />
-            </div>
-          )}
-        </div>
+        {/* Automation Card - Removed n8n integration */}
       </div>
 
     </div >
@@ -875,12 +1130,13 @@ export default function Dashboard() {
 
   const t = (key) => MESSAGES[locale][key] || key;
   const { user, userProfile } = useAuth();
+  const { can } = usePermissions();
 
   const hasAccess = (feature) => {
     // 1. Super Admin always has access
     if (userProfile?.rol === "superadmin") return true;
     // 2. No tenant = Legacy/Standalone => Allow all (or default behavior)
-    if (!userProfile?.tenantId) return true;
+    if (!userProfile?.inquilino) return true;
     // 3. Check Plan Features
     // If no features defined in plan, maybe allow all? Or block? 
     // Let's assume block if plan exists but feature not listed.
@@ -904,7 +1160,7 @@ export default function Dashboard() {
   }, [darkMode]);
 
   const [session] = useState(() => getOfflineSession());
-  const role = userProfile?.rol || session?.rol || "";
+  const role = userProfile?.profileName || userProfile?.rol || session?.rol || "Administrador";
   const [sessionEmail] = useState(session?.email || "");
   const [loadingUser, setLoadingUser] = useState(false);
 
@@ -912,7 +1168,31 @@ export default function Dashboard() {
   const isSuperAdmin = userProfile?.rol === "superadmin";
   const companyName = isSuperAdmin ? "OdontoCloud Central" : (userProfile?.tenant?.name || "OdontoCloud");
   const companyLogo = isSuperAdmin ? null : (userProfile?.tenant?.logo || logo);
-  const userName = userProfile?.nombre || user?.displayName || user?.email || "Usuario";
+  const userName = userProfile?.nombreCompleto || userProfile?.nombre || user?.displayName || user?.email || "Usuario";
+
+  const isDoc = userProfile?.esDoctor || userProfile?.rol === "doctor" || userProfile?.rol === "odontologo";
+  const [currentDoctorId, setCurrentDoctorId] = useState(userProfile?.uid || null);
+
+  useEffect(() => {
+    const fetchDoctorId = async () => {
+      if (isDoc && userProfile?.inquilino && userProfile?.email) {
+        try {
+          const q = query(
+            collection(db, "profesionales"),
+            where("inquilino", "==", userProfile.inquilino),
+            where("correo", "==", userProfile.email)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            setCurrentDoctorId(snap.docs[0].id);
+          }
+        } catch (e) {
+          console.warn("Error al buscar doctor por email:", e);
+        }
+      }
+    };
+    fetchDoctorId();
+  }, [isDoc, userProfile]);
 
   useEffect(() => {
     // Legacy cleanup - We now use AuthContext userProfile
@@ -928,6 +1208,9 @@ export default function Dashboard() {
   const [weeklySeries, setWeeklySeries] = useState([]);
   const [todaysAppointments, setTodaysAppointments] = useState([]);
   const [todaysLoading, setTodaysLoading] = useState(true);
+  const [cacheLoaded, setCacheLoaded] = useState(false);
+  const [recent, setRecent] = useState([]);
+  const [recentLoading, setRecentLoading] = useState(true);
 
   const { startToday, endToday, startTodayJS } = useTodayRange();
   const todayIso = useMemo(() => toIsoDate(startTodayJS), [startTodayJS]);
@@ -946,6 +1229,56 @@ export default function Dashboard() {
     return `${fmt(start)} – ${fmt(end)}`;
   }, [locale]);
 
+  // ── Dashboard Caching Logic (sessionStorage 3-minute TTL) ──
+  useEffect(() => {
+    if (!userProfile?.inquilino) return;
+
+    const cachedData = sessionStorage.getItem(`odc_dash_cache_${userProfile.inquilino}`);
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        if (Date.now() - parsed.timestamp < 3 * 60 * 1000) {
+          setMetrics(parsed.metrics);
+          setWeeklySeries(parsed.weeklySeries);
+          const appts = (parsed.todaysAppointments || []).map(c => ({
+            ...c,
+            fecha: c.fecha ? new Date(c.fecha) : new Date()
+          }));
+          setTodaysAppointments(appts);
+          setRecent(parsed.recent || []);
+
+          setMetricsLoading(false);
+          setTodaysLoading(false);
+          setRecentLoading(false);
+          setCacheLoaded(true);
+          console.log("⚡ Dashboard loaded from sessionStorage cache.");
+          return;
+        }
+      } catch (e) {
+        console.warn("Failed to load dashboard cache:", e);
+      }
+    }
+    setCacheLoaded(false);
+  }, [userProfile?.inquilino]);
+
+  useEffect(() => {
+    if (cacheLoaded || !userProfile?.inquilino || metricsLoading || todaysLoading || recentLoading) return;
+
+    try {
+      const cacheData = {
+        timestamp: Date.now(),
+        metrics,
+        weeklySeries,
+        todaysAppointments,
+        recent
+      };
+      sessionStorage.setItem(`odc_dash_cache_${userProfile.inquilino}`, JSON.stringify(cacheData));
+      console.log("💾 Dashboard cache saved to sessionStorage.");
+    } catch (e) {
+      console.error("Error saving dashboard cache:", e);
+    }
+  }, [cacheLoaded, userProfile?.inquilino, metrics, weeklySeries, todaysAppointments, recent, metricsLoading, todaysLoading, recentLoading]);
+
   const normalizeCita = (docSnap) => {
     const data = docSnap.data() || {};
     let fechaDate;
@@ -963,7 +1296,7 @@ export default function Dashboard() {
       fechaDate = new Date();
     }
     const pacienteNombre = data.pacienteNombre || data.paciente || "Paciente";
-    const estado = (data.estado && String(data.estado)) || "programada";
+    const estado = (data.estado && String(data.estado)) || (data.status && String(data.status)) || "programada";
     return {
       id: docSnap.id,
       fecha: fechaDate,
@@ -971,78 +1304,64 @@ export default function Dashboard() {
       pacienteNombre,
       estado,
       motivo: data.motivo || "",
+      doctorId: data.doctorId || "",
     };
   };
 
   useEffect(() => {
-    if (!userProfile?.tenantId) return;
+    if (!userProfile?.inquilino) return;
+    if (cacheLoaded) return;
 
-    const qTodayTs = query(
-      collection(db, "citas"),
-      where("tenantId", "==", userProfile.tenantId),
-      where("fecha", ">=", startToday),
-      where("fecha", "<", endToday),
-      orderBy("fecha", "asc")
-    );
     const qTodayStr = query(
       collection(db, "citas"),
-      where("tenantId", "==", userProfile?.tenantId || "nop"),
+      where("inquilino", "==", userProfile?.inquilino || "nop"),
       where("fecha", "==", todayIso)
     );
     let cacheMap = new Map();
-    let gotTs = false;
-    let gotStr = false;
     const commit = () => {
       const rows = Array.from(cacheMap.values()).sort(
         (a, b) => a.fecha.getTime() - b.fecha.getTime()
       );
       const enEsperaCount = rows.filter(
-        (r) => String(r.estado).toLowerCase().trim() === "en espera"
+        (r) => {
+          const est = String(r.estado).toLowerCase().trim();
+          return est === "en espera" || est === "waiting";
+        }
       ).length;
       setTodaysAppointments(rows);
       setMetrics((m) => ({ ...m, citasHoy: rows.length, enEspera: enEsperaCount }));
-      if (gotTs && gotStr) setTodaysLoading(false);
+      setTodaysLoading(false);
     };
-    const unsubTs = onSnapshot(
-      qTodayTs,
-      (snap) => {
-        gotTs = true;
-        const temp = new Map(cacheMap);
-        snap.docs.forEach((d) => temp.set(d.id, normalizeCita(d)));
-        cacheMap = temp;
-        commit();
-      },
-      (err) => {
-        console.error("Realtime citas hoy (TS):", err);
-        gotTs = true;
-        commit();
-      }
-    );
+
     const unsubStr = onSnapshot(
       qTodayStr,
       (snap) => {
-        gotStr = true;
-        const temp = new Map(cacheMap);
+        const temp = new Map();
         snap.docs.forEach((d) => temp.set(d.id, normalizeCita(d)));
         cacheMap = temp;
         commit();
       },
       (err) => {
         console.error("Realtime citas hoy (STR):", err);
-        gotStr = true;
+        setTodaysLoading(false);
         commit();
       }
     );
     return () => {
-      try { unsubTs(); unsubStr(); } catch { }
+      try { unsubStr(); } catch { }
     };
-  }, [startToday, endToday, todayIso]);
+  }, [todayIso, userProfile?.inquilino, cacheLoaded]);
 
   useEffect(() => {
+    if (cacheLoaded) return;
     const loadMetricsBase = async () => {
       try {
         const pacientesCountSnap = await getCountFromServer(
-          query(collection(db, "pacientes"), where("tenantId", "==", userProfile?.tenantId || "nop"))
+          query(
+            collection(db, "pacientes"), 
+            where("inquilino", "==", userProfile?.inquilino || "nop"),
+            where("activo", "==", true)
+          )
         );
         const pacientesTotal = pacientesCountSnap.data().count || 0;
 
@@ -1050,7 +1369,7 @@ export default function Dashboard() {
         try {
           const qFact = query(
             collection(db, "facturas_venta"),
-            where("tenantId", "==", userProfile?.tenantId || "nop"),
+            where("inquilino", "==", userProfile?.inquilino || "nop"),
             where("fecha", "==", todayIso)
           );
           const factSnap = await getDocs(qFact);
@@ -1060,7 +1379,6 @@ export default function Dashboard() {
           });
         } catch (e) {
           console.error("Error calc facturacion:", e);
-          facturacionHoy = 0;
         }
 
         setMetrics((m) => ({ ...m, pacientesHoy: pacientesTotal, facturacionHoy }));
@@ -1072,9 +1390,10 @@ export default function Dashboard() {
       }
     };
     loadMetricsBase();
-  }, [todayIso]);
+  }, [todayIso, userProfile?.inquilino, cacheLoaded]);
 
   useEffect(() => {
+    if (cacheLoaded) return;
     const today = new Date();
     const startWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
     const endWeekJs = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -1102,7 +1421,7 @@ export default function Dashboard() {
 
     const qWeekPatients = query(
       collection(db, "pacientes"),
-      where("tenantId", "==", userProfile?.tenantId || "nop"),
+      where("inquilino", "==", userProfile?.inquilino || "nop"),
       where("createdAt", ">=", Timestamp.fromDate(startWeek)),
       where("createdAt", "<", Timestamp.fromDate(endWeekJs))
     );
@@ -1149,16 +1468,15 @@ export default function Dashboard() {
     return () => {
       try { unsub(); } catch { }
     };
-  }, [locale]);
+  }, [locale, cacheLoaded]);
 
-  const [recent, setRecent] = useState([]);
-  const [recentLoading, setRecentLoading] = useState(true);
   useEffect(() => {
+    if (cacheLoaded) return;
     const loadRecent = async () => {
       try {
         const qAct = query(
           collection(db, "actividad"),
-          where("tenantId", "==", userProfile?.tenantId || "nop"),
+          where("inquilino", "==", userProfile?.inquilino || "nop"),
           orderBy("fecha", "desc"),
           limit(5)
         );
@@ -1178,42 +1496,12 @@ export default function Dashboard() {
       }
     };
     loadRecent();
-  }, []);
-
-  const [n8nState, setN8nState] = useState(null);
-  const [n8nLoading, setN8nLoading] = useState(true);
-  useEffect(() => {
-    const loadN8n = async () => {
-      try {
-        const ref = doc(db, "integraciones", "n8n");
-        const snap = await getDoc(ref);
-        setN8nState(
-          snap.exists()
-            ? {
-              connected: !!snap.data().connected,
-              flowsRunning: snap.data().flowsRunning || 0,
-              lastError: snap.data().lastError || null,
-            }
-            : { connected: false, flowsRunning: 0, lastError: null }
-        );
-      } catch (e) {
-        console.error("Error cargando estado n8n:", e);
-        setN8nState({
-          connected: false,
-          flowsRunning: 0,
-          lastError: "No se pudo leer el estado desde Firebase.",
-        });
-      } finally {
-        setN8nLoading(false);
-      }
-    };
-    loadN8n();
-  }, []);
+  }, [userProfile?.inquilino, cacheLoaded]);
 
   // Effect to re-run queries when userProfile loaded
   useEffect(() => {
-    // Trigger re-fetch if tenantId changes or loads
-  }, [userProfile?.tenantId]);
+    // Trigger re-fetch if inquilino changes or loads
+  }, [userProfile?.inquilino]);
 
   const handleLogout = async () => {
     try { localStorage.removeItem("odc_session"); } catch { }
@@ -1245,14 +1533,14 @@ export default function Dashboard() {
     const path = location.pathname.toLowerCase();
 
     // ✅ 1) Prioridad absoluta: todo lo que sea /config/* lo maneja ConfigRouter
-    if (path.includes("/config/")) {
+    if (path.includes("/config")) {
       setActiveModule("Config");
       return;
     }
 
     // 2) Detecciones por módulos
     const isPacPlanes = /\/pacientes\/[^/]+\/planes(\/|$)/.test(path); // SOLO planes dentro de pacientes
-    const isPac = path.includes("/pacientes") && !isPacPlanes;
+    const isPac = path.includes("/pacientes") || isPacPlanes;
     const isCaja = path.includes("/caja");
     const isAg = path.includes("/agenda");
     const isFact = path.includes("/facturacion");
@@ -1260,10 +1548,11 @@ export default function Dashboard() {
     const isOdo = path.includes("/odontograma");
     const isRep = path.includes("/reportes");
     const isFin = path.includes("/financiero"); // NUEVO
+    const isAdm = path.includes("/administracion"); // NUEVO
 
-    if (isPacPlanes) setActiveModule("Planes");
-    else if (isPac) setActiveModule("Pacientes");
+    if (isPac) setActiveModule("Pacientes");
     else if (isFin) setActiveModule("Financiero");
+    else if (isAdm) setActiveModule("Administración");
     else if (isCaja) setActiveModule("Caja");
     else if (isAg) setActiveModule("Agenda");
     else if (isInv) setActiveModule("Inventario");
@@ -1288,16 +1577,6 @@ export default function Dashboard() {
     }
   }, [location.pathname]);
 
-  // 🛡️ SECURITY GUARD: KICK SUPERADMIN OUT OF CLINICAL DASHBOARD
-  useEffect(() => {
-    const currentRol = (userProfile?.rol || "").trim().toLowerCase();
-    if (currentRol === "superadmin") {
-      console.warn("Dashboard - Superadmin detectado en zona clínica. Redirigiendo a /superadmin.");
-      navigate("/superadmin", { replace: true });
-    }
-  }, [userProfile?.rol, navigate]);
-
-
   /* =================== ✅ Rutas absolutas y helper go =================== */
   const basePath = useMemo(() => {
     const segs = location.pathname.split("/").filter(Boolean);
@@ -1315,6 +1594,39 @@ export default function Dashboard() {
     navigate(target, { replace: same });
   };
 
+  // 🛡️ SECURITY GUARD: KICK SUPERADMIN OUT OF CLINICAL DASHBOARD
+  useEffect(() => {
+    const currentRol = (userProfile?.rol || "").trim().toLowerCase();
+    if (currentRol === "superadmin") {
+      console.warn("Dashboard - Superadmin detectado en zona clínica. Redirigiendo a /superadmin.");
+      navigate("/superadmin", { replace: true });
+    }
+  }, [userProfile?.rol, navigate]);
+
+  // 🛡️ SECURITY GUARD: PREVENT USERS FROM ACCESSING RESTRICTED MODULES
+  useEffect(() => {
+    const path = location.pathname.toLowerCase();
+    if (path.includes("/agenda") && !can("Agenda", "Agenda", "consultar")) {
+      console.warn("Dashboard - Acceso denegado a Agenda. Redirigiendo...");
+      navigate(basePath || "/dashboard", { replace: true });
+    } else if (path.includes("/pacientes") && !can("Pacientes", "Paciente", "consultar")) {
+      console.warn("Dashboard - Acceso denegado a Pacientes. Redirigiendo...");
+      navigate(basePath || "/dashboard", { replace: true });
+    } else if (path.includes("/caja") && !can("Caja", "Caja", "consultar")) {
+      console.warn("Dashboard - Acceso denegado a Caja. Redirigiendo...");
+      navigate(basePath || "/dashboard", { replace: true });
+    } else if (path.includes("/administracion") && !can("Administración", "Gestion Administración", "consultar")) {
+      console.warn("Dashboard - Acceso denegado a Administración. Redirigiendo...");
+      navigate(basePath || "/dashboard", { replace: true });
+    } else if (path.includes("/reportes") && !can("Reportes", "Gestion Reportes", "consultar")) {
+      console.warn("Dashboard - Acceso denegado a Reportes. Redirigiendo...");
+      navigate(basePath || "/dashboard", { replace: true });
+    } else if (path.includes("/config") && !can("Configuración", "Gestion Configuración", "consultar")) {
+      console.warn("Dashboard - Acceso denegado a Configuración. Redirigiendo...");
+      navigate(basePath || "/dashboard", { replace: true });
+    }
+  }, [userProfile, location.pathname, navigate, basePath, can]);
+
   /* ===== Contenido por módulo (controlado por activeModule) ===== */
   const renderModuleContent = () => {
     switch (activeModule) {
@@ -1326,12 +1638,12 @@ export default function Dashboard() {
             <Pacientes />
           </Suspense>
         );
+      case "Administración":
+      case "Administracion":
+        return <AdministracionRouter />;
       case "Facturación":
-        return <Facturacion view={factView} />;
       case "Financiero":
         return <FinancieroRouter />;
-      case "Inventario":
-        return <Inventario />;
       case "Odontograma":
         return <Odontograma />;
       case "Reportes":
@@ -1343,10 +1655,6 @@ export default function Dashboard() {
       case "Configuracion":
         // ⬇️ Si la URL es /config/:slug usamos el router; si no, la portada de config
         return <ConfigRouter />;
-
-      // ⬇️ NUEVO: ruta de Planes
-      case "Planes":
-        return <PlanesPlaceholder />;
 
       case "Inicio":
       default:
@@ -1361,33 +1669,36 @@ export default function Dashboard() {
       {/* Si NO es Inicio, renderiza el módulo */}
       {activeModule !== "Inicio" && (
         <div className="h-full w-full">
-          {renderModuleContent()}
+          <ErrorBoundary>
+            {renderModuleContent()}
+          </ErrorBoundary>
         </div>
       )}
 
       {/* Inicio (portada) */}
       {activeModule === "Inicio" && (
-        <Overview
-          key={`overview-${location.pathname}-${Date.now()}`} // FORCE REMOUNT
-          t={t}
-          companyName={companyName}
-          companyLogo={companyLogo}
-          userName={userName}
-          role={role}
-          darkMode={darkMode}
-          weeklySeries={weeklySeries}
-          weekRangeLabel={weekRangeLabel}
-          todaysAppointments={todaysAppointments}
-          todaysLoading={todaysLoading}
-          metrics={metrics}
-          metricsLoading={metricsLoading}
-          n8nState={n8nState}
-          n8nLoading={n8nLoading}
-          recent={recent}
-          recentLoading={recentLoading}
-          onGoAgenda={() => go("agenda")}
-        />
-      )}
+          <Overview
+            t={t}
+            companyName={companyName}
+            companyLogo={companyLogo}
+            softwareLogo={logo} // PASSING SOFTWARE LOGO
+            userName={userName}
+            role={role}
+            darkMode={darkMode}
+            weeklySeries={weeklySeries}
+            weekRangeLabel={weekRangeLabel}
+            todaysAppointments={todaysAppointments}
+            todaysLoading={todaysLoading}
+            metrics={metrics}
+            metricsLoading={metricsLoading}
+            recent={recent}
+            recentLoading={recentLoading}
+            onGoAgenda={() => setActiveModule("Agenda")}
+            isDoc={isDoc}
+            currentDoctorId={currentDoctorId}
+            basePath={basePath}
+          />
+        )}
     </DashboardLayout>
   );
 }

@@ -1,0 +1,195 @@
+// src/services/appointmentService.js
+import supabase from "../lib/supabaseClient";
+
+/**
+ * Subscribe to appointments for a given date or range using Supabase Realtime & Queries
+ */
+export const subscribeToAppointments = (tenantId, date, viewType, callback) => {
+    if (!tenantId) {
+        callback([]);
+        return () => {};
+    }
+
+    const d = new Date(date);
+    let start, end;
+
+    if (viewType === 'month') {
+        start = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0).toISOString();
+        end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+    } else {
+        const s = new Date(d);
+        s.setHours(0, 0, 0, 0);
+        const e = new Date(d);
+        e.setHours(23, 59, 59, 999);
+        start = s.toISOString();
+        end = e.toISOString();
+    }
+
+    // Fetch initial appointments
+    const fetchAppointments = async () => {
+        try {
+            const { data, error } = await supabase
+                .from("citas")
+                .select("*, paciente:pacientes(nombres, apellidos, documento, telefono)")
+                .eq("tenant_id", tenantId)
+                .gte("fecha_inicio", start)
+                .lte("fecha_inicio", end);
+
+            if (error) throw error;
+
+            const appointments = (data || []).map(c => ({
+                id: c.id,
+                ...c,
+                doctorId: c.profesional_id,
+                patientId: c.paciente_id,
+                paciente: c.paciente ? `${c.paciente.nombres} ${c.paciente.apellidos}` : c.motivo,
+                celular: c.paciente?.telefono || "",
+                start: new Date(c.fecha_inicio),
+                end: new Date(c.fecha_fin),
+                status: c.estado
+            }));
+
+            callback(appointments);
+        } catch (err) {
+            console.error("Error al obtener citas de Supabase:", err);
+            callback([]);
+        }
+    };
+
+    fetchAppointments();
+
+    // Supabase Realtime Subscription
+    const channel = supabase
+        .channel(`citas-realtime-${tenantId}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'citas', filter: `tenant_id=eq.${tenantId}` },
+            () => {
+                fetchAppointments();
+            }
+        )
+        .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
+};
+
+export const checkConflict = async (tenantId, doctorId, start, end, excludeId = null) => {
+    if (!tenantId || !doctorId) return false;
+
+    const dayStart = new Date(start);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(start);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    try {
+        let query = supabase
+            .from("citas")
+            .select("id, fecha_inicio, fecha_fin")
+            .eq("tenant_id", tenantId)
+            .eq("profesional_id", doctorId)
+            .gte("fecha_inicio", dayStart.toISOString())
+            .lte("fecha_inicio", dayEnd.toISOString());
+
+        if (excludeId) {
+            query = query.neq("id", excludeId);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const newStart = new Date(start).getTime();
+        const newEnd = new Date(end).getTime();
+
+        return (data || []).some(c => {
+            const existingStart = new Date(c.fecha_inicio).getTime();
+            const existingEnd = new Date(c.fecha_fin).getTime();
+            return newStart < existingEnd && newEnd > existingStart;
+        });
+    } catch (e) {
+        console.error("Error en checkConflict:", e);
+        return false;
+    }
+};
+
+export const createAppointment = async (tenantId, appointmentData) => {
+    if (!tenantId) throw new Error("Tenant ID requerido");
+    const { doctorId, pacienteId, start, end, motivo, notas } = appointmentData;
+
+    if (!start || !end) throw new Error("Horario de inicio y fin requeridos");
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    if (startDate >= endDate) throw new Error("La hora de inicio debe ser anterior a la de fin");
+
+    if (doctorId) {
+        const isConflict = await checkConflict(tenantId, doctorId, startDate, endDate);
+        if (isConflict) throw new Error("El profesional ya tiene una cita asignada en ese horario.");
+    }
+
+    const payload = {
+        tenant_id: tenantId,
+        paciente_id: pacienteId || null,
+        profesional_id: doctorId || null,
+        fecha_inicio: startDate.toISOString(),
+        fecha_fin: endDate.toISOString(),
+        estado: appointmentData.status || "programada",
+        motivo: motivo || "Consulta odontológica",
+        notas: notas || ""
+    };
+
+    const { data, error } = await supabase
+        .from("citas")
+        .insert([payload])
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    return {
+        id: data.id,
+        ...data,
+        start: new Date(data.fecha_inicio),
+        end: new Date(data.fecha_fin)
+    };
+};
+
+export const updateAppointment = async (tenantId, id, appointmentData) => {
+    if (!tenantId || !id) throw new Error("Tenant ID e ID de cita requeridos");
+
+    const payload = {};
+    if (appointmentData.doctorId !== undefined) payload.profesional_id = appointmentData.doctorId;
+    if (appointmentData.pacienteId !== undefined) payload.paciente_id = appointmentData.pacienteId;
+    if (appointmentData.start) payload.fecha_inicio = new Date(appointmentData.start).toISOString();
+    if (appointmentData.end) payload.fecha_fin = new Date(appointmentData.end).toISOString();
+    if (appointmentData.status || appointmentData.estado) payload.estado = appointmentData.status || appointmentData.estado;
+    if (appointmentData.motivo !== undefined) payload.motivo = appointmentData.motivo;
+    if (appointmentData.notas !== undefined) payload.notas = appointmentData.notas;
+
+    const { data, error } = await supabase
+        .from("citas")
+        .update(payload)
+        .eq("id", id)
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    return {
+        id: data.id,
+        ...data,
+        start: new Date(data.fecha_inicio),
+        end: new Date(data.fecha_fin)
+    };
+};
+
+export const deleteAppointment = async (id) => {
+    if (!id) throw new Error("ID de cita inválido");
+    const { error } = await supabase
+        .from("citas")
+        .delete()
+        .eq("id", id);
+
+    if (error) throw error;
+};

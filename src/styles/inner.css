@@ -1,0 +1,145 @@
+/* --- INNER PAGES STYLES --- */
+
+/* Inner Hero Container */
+.viva-inner-hero {
+    position: relative;
+    width: 100%;
+    height: 480px;
+    /* Shorter than Home Hero (600px+) */
+    background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
+    /* Pale Green to White */
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 80px;
+    /* Offset for Header */
+}
+
+/* Background Decoration (Optional bubbles or pattern) */
+.viva-inner-hero::before {
+    content: "";
+    position: absolute;
+    top: -50px;
+    right: -50px;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(140, 198, 63, 0.1) 0%, rgba(255, 255, 255, 0) 70%);
+    border-radius: 50%;
+    z-index: 1;
+}
+
+.viva-inner-content {
+    position: relative;
+    z-index: 5;
+    padding: 0 5%;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    max-width: 1300px;
+    margin: 0 auto;
+}
+
+.viva-inner-text {
+    flex: 1;
+    max-width: 600px;
+}
+
+.viva-inner-text h1 {
+    font-size: 52px;
+    color: var(--viva-blue);
+    font-weight: 800;
+    margin-bottom: 20px;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.viva-inner-text p {
+    font-size: 18px;
+    color: #666;
+    line-height: 1.6;
+}
+
+.viva-inner-visual {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.viva-circle-img {
+    width: 380px;
+    height: 380px;
+    border-radius: 50%;
+    background-color: #eee;
+    background-size: cover;
+    background-position: center;
+    border: 8px solid white;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    position: relative;
+}
+
+/* Shield Icon Decoration (Simulated) */
+.viva-shield-icon {
+    position: absolute;
+    bottom: 20px;
+    left: -20px;
+    width: 80px;
+    height: 80px;
+    background: var(--viva-blue);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Page Content Sections */
+.viva-inner-section {
+    padding: 80px 0;
+    text-align: center;
+}
+
+.viva-inner-section.alt {
+    background-color: #f9f9f9;
+}
+
+.viva-section-header h2 {
+    color: var(--viva-blue);
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 20px;
+}
+
+.viva-section-header p {
+    color: #555;
+    max-width: 700px;
+    margin: 0 auto 50px auto;
+}
+
+@media(max-width: 900px) {
+    .viva-inner-hero {
+        height: auto;
+        padding-bottom: 80px;
+        text-align: center;
+    }
+
+    .viva-inner-content {
+        flex-direction: column-reverse;
+        /* Text bottom, Img top */
+        padding-top: 40px;
+        gap: 40px;
+    }
+
+    .viva-inner-visual {
+        justify-content: center;
+    }
+
+    .viva-circle-img {
+        width: 280px;
+        height: 280px;
+    }
+
+    .viva-inner-text h1 {
+        font-size: 36px;
+    }
+}

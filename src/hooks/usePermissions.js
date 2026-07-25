@@ -1,4 +1,5 @@
 import { useAuth } from "../context/AuthContext";
+import { isSubscriptionExpired } from "../utils/subscriptionHelper";
 
 /**
  * Hook to check if the current user has permission for a specific feature and action.
@@ -17,7 +18,7 @@ export function usePermissions() {
         if (rolActual === "superadmin") return true;
 
         // 2. Subscription Check
-        if (userProfile?.subscriptionStatus === "expired") return false;
+        if (isSubscriptionExpired(userProfile?.tenant)) return false;
 
         // 3. Special "Editor Web" Plan Check
         // CMS access is restricted to Premium/Corporativo plans or specific feature enablement.
@@ -52,30 +53,48 @@ export function usePermissions() {
             if (softwareFeatures.includes(featureName) || moduleName === "Configuración") return true;
         }
 
-        // 5. Check if user has a loaded profile with permissions
-        if (!userProfile?.permisos) return false;
+        // 5. Normalization helper for key comparisons
+        const normalizeKey = (str) => {
+            return (str || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .trim();
+        };
 
-        const featurePerms = userProfile.permisos[featureName];
+        const queryKey = normalizeKey(featureName);
+
+        // 6. Find and load permissions for this feature if profile is loaded
+        const featurePerms = (() => {
+            if (!userProfile?.permisos) return null;
+            const realKey = Object.keys(userProfile.permisos).find(
+                k => normalizeKey(k) === queryKey
+            );
+            return realKey ? userProfile.permisos[realKey] : null;
+        })();
+
+        // 7. Fallback to Legacy/Role-based access if no custom profile permissions found
         if (!featurePerms) {
-            // FALLBACK FOR LEGACY ROLES (if no specific profile connected)
             const rol = rolActual;
 
             if (rol === "administrador") return true;
 
             if (rol === "doctor" || rol === "odontologo") {
                 const allowed = ["Agenda", "Pacientes", "Odontograma", "Documentos clínicos", "Historia clínica"];
-                if (allowed.includes(featureName) && action === "consultar") return true;
+                const normAllowed = allowed.map(normalizeKey);
+                if (normAllowed.includes(queryKey) && action === "consultar") return true;
                 if (moduleName === "Agenda" && action === "consultar") return true;
                 if (moduleName === "Pacientes" && action === "consultar") return true;
             }
 
             if (rol === "recepcionista" || rol === "auxiliar") {
                 const allowed = ["Agenda", "Pacientes", "Gestion Facturas", "Gestion Reportes"];
-                if (allowed.includes(featureName) && action === "consultar") return true;
+                const normAllowed = allowed.map(normalizeKey);
+                if (normAllowed.includes(queryKey) && action === "consultar") return true;
                 if (moduleName === "Configuración") return true;
                 if (moduleName === "Agenda" && action === "consultar") return true;
                 if (moduleName === "Pacientes" && action === "consultar") return true;
-                if (moduleName === "Administración" && featureName === "Gestion Facturas") return true;
+                if (moduleName === "Administración" && queryKey === normalizeKey("Gestion Facturas")) return true;
             }
 
             return false;
