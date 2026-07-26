@@ -515,7 +515,7 @@ export default function EmpresaUsuarios() {
 
                         {/* Modal Body: Two-Column Side-by-Side Scrolling Sections */}
                         <div className="flex-1 overflow-hidden relative bg-[#F8FAFC]">
-                            <form onSubmit={handleSubmitForm} className="h-full overflow-y-auto custom-scrollbar p-6 pb-32 space-y-6">
+                            <form onSubmit={handleSave} className="h-full overflow-y-auto custom-scrollbar p-6 pb-32 space-y-6">
                                 {/* BLOQUE 1: INFORMACIÓN BÁSICA */}
                                 <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6 relative">
                                     <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500" />
