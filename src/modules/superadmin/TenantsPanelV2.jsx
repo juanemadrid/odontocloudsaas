@@ -680,135 +680,136 @@ export default function TenantsPanelV2() {
             {/* ── Edit Clinic Modal ── */}
             {showEditTenant && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
-                        <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 shrink-0">
                             <div>
                                 <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Editar Datos de Clínica</h3>
                                 <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider">{showEditTenant.name}</p>
                             </div>
                             <button onClick={() => setShowEditTenant(null)} className="w-8 h-8 rounded-full bg-slate-200/60 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition-all">&times;</button>
                         </div>
-                        <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nombre de la Clínica *</label>
-                                <input
-                                    type="text"
-                                    className={inp}
-                                    required
-                                    value={editForm.name}
-                                    onChange={e=>setEditForm({...editForm, name: e.target.value})}
-                                    placeholder="Ej: Clínica Dental San José"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">NIT / Documento</label>
-                                <input
-                                    type="text"
-                                    className={inp}
-                                    placeholder="Ej: 900123456-7"
-                                    value={editForm.nit}
-                                    onChange={e=>setEditForm({...editForm, nit: e.target.value})}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Correo de Contacto</label>
-                                <input
-                                    type="email"
-                                    className={inp}
-                                    placeholder="contacto@clinica.com"
-                                    value={editForm.contactEmail}
-                                    onChange={e=>setEditForm({...editForm, contactEmail: e.target.value})}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Dirección Física</label>
-                                <input
-                                    type="text"
-                                    className={inp}
-                                    placeholder="Ej: Calle 45 # 12-34"
-                                    value={editForm.address}
-                                    onChange={e=>setEditForm({...editForm, address: e.target.value})}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Teléfono</label>
-                                <input
-                                    type="text"
-                                    className={inp}
-                                    placeholder="Ej: +57 300 123 4567"
-                                    value={editForm.telefono}
-                                    onChange={e=>setEditForm({...editForm, telefono: e.target.value})}
-                                />
-                            </div>
-
-                            {/* ── Acceso del Administrador ── */}
-                            <div className="border-t border-slate-100 pt-4 space-y-3">
-                                <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-1.5">
-                                    <FiKey size={11}/> Acceso del Administrador
-                                </p>
+                        <form onSubmit={handleSaveEdit} className="flex flex-col flex-1 overflow-hidden">
+                            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nombre de la Clínica *</label>
+                                    <input
+                                        type="text"
+                                        className={inp}
+                                        required
+                                        value={editForm.name}
+                                        onChange={e=>setEditForm({...editForm, name: e.target.value})}
+                                        placeholder="Ej: Clínica Dental San José"
+                                    />
+                                </div>
 
                                 <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email de Acceso (usuario)</label>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">NIT / Documento</label>
+                                    <input
+                                        type="text"
+                                        className={inp}
+                                        placeholder="Ej: 900123456-7"
+                                        value={editForm.nit}
+                                        onChange={e=>setEditForm({...editForm, nit: e.target.value})}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Correo de Contacto</label>
                                     <input
                                         type="email"
                                         className={inp}
-                                        placeholder="admin@clinica.com"
-                                        value={editForm.adminEmail}
-                                        onChange={e=>setEditForm({...editForm, adminEmail: e.target.value})}
+                                        placeholder="contacto@clinica.com"
+                                        value={editForm.contactEmail}
+                                        onChange={e=>setEditForm({...editForm, contactEmail: e.target.value})}
                                     />
-                                    <p className="text-[10px] text-slate-400 mt-1">Correo con el que el administrador inicia sesión en OdontoCloud.</p>
                                 </div>
 
-                                <div className="pt-1">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                                        Asignar Nueva Contraseña Directamente (Opcional)
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type={editForm.showPwd ? "text" : "password"}
-                                            className={inp + " pr-10"}
-                                            placeholder="Escribe la nueva contraseña (mínimo 6 caracteres)"
-                                            value={editForm.newPassword || ""}
-                                            onChange={e=>setEditForm({...editForm, newPassword: e.target.value})}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setEditForm({...editForm, showPwd: !editForm.showPwd})}
-                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                        >
-                                            {editForm.showPwd ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-                                        </button>
-                                    </div>
-                                    <p className="text-[10px] text-emerald-600 font-semibold mt-1">
-                                        ⚡ Si escribes una clave aquí y le das a Guardar, se actualizará al instante en Supabase sin esperar correos.
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Dirección Física</label>
+                                    <input
+                                        type="text"
+                                        className={inp}
+                                        placeholder="Ej: Calle 45 # 12-34"
+                                        value={editForm.address}
+                                        onChange={e=>setEditForm({...editForm, address: e.target.value})}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Teléfono</label>
+                                    <input
+                                        type="text"
+                                        className={inp}
+                                        placeholder="Ej: +57 300 123 4567"
+                                        value={editForm.telefono}
+                                        onChange={e=>setEditForm({...editForm, telefono: e.target.value})}
+                                    />
+                                </div>
+
+                                {/* ── Acceso del Administrador ── */}
+                                <div className="border-t border-slate-100 pt-4 space-y-3">
+                                    <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-1.5">
+                                        <FiKey size={11}/> Acceso del Administrador
                                     </p>
-                                </div>
 
-                                <div className="bg-amber-50/80 border border-amber-200/60 rounded-2xl p-3.5 space-y-2">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-800">¿Olvidó su contraseña?</p>
-                                            <p className="text-[11px] text-slate-500">Envía un enlace seguro al correo del admin para crear una nueva clave.</p>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email de Acceso (usuario)</label>
+                                        <input
+                                            type="email"
+                                            className={inp}
+                                            placeholder="admin@clinica.com"
+                                            value={editForm.adminEmail}
+                                            onChange={e=>setEditForm({...editForm, adminEmail: e.target.value})}
+                                        />
+                                        <p className="text-[10px] text-slate-400 mt-1">Correo con el que el administrador inicia sesión en OdontoCloud.</p>
+                                    </div>
+
+                                    <div className="pt-1">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                            Asignar Nueva Contraseña Directamente (Opcional)
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type={editForm.showPwd ? "text" : "password"}
+                                                className={inp + " pr-10"}
+                                                placeholder="Escribe la nueva contraseña (mínimo 6 caracteres)"
+                                                value={editForm.newPassword || ""}
+                                                onChange={e=>setEditForm({...editForm, newPassword: e.target.value})}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditForm({...editForm, showPwd: !editForm.showPwd})}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                            >
+                                                {editForm.showPwd ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                                            </button>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleResetPassword(editForm.adminEmail)}
-                                            disabled={sendingReset || !editForm.adminEmail}
-                                            className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm shadow-amber-200 transition-all disabled:opacity-50 flex items-center gap-1.5"
-                                        >
-                                            <FiKey size={13}/>
-                                            {sendingReset ? "Enviando..." : "Enviar enlace"}
-                                        </button>
+                                        <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+                                            ⚡ Si escribes una clave aquí y le das a Guardar, se actualizará al instante en Supabase sin esperar correos.
+                                        </p>
+                                    </div>
+
+                                    <div className="bg-amber-50/80 border border-amber-200/60 rounded-2xl p-3.5 space-y-2">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-800">¿Olvidó su contraseña?</p>
+                                                <p className="text-[11px] text-slate-500">Envía un enlace seguro al correo del admin para crear una nueva clave.</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleResetPassword(editForm.adminEmail)}
+                                                disabled={sendingReset || !editForm.adminEmail}
+                                                className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm shadow-amber-200 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                            >
+                                                <FiKey size={13}/>
+                                                {sendingReset ? "Enviando..." : "Enviar enlace"}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-
-                            <div className="pt-4 flex gap-3 border-t border-slate-100">
+                            <div className="p-4 bg-white border-t border-slate-100 flex gap-3 shrink-0">
                                 <button
                                     type="button"
                                     onClick={() => setShowEditTenant(null)}
