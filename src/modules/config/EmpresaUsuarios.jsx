@@ -230,13 +230,6 @@ export default function EmpresaUsuarios() {
         }));
     };
 
-    const handleSubmitForm = async (e) => {
-        e.preventDefault();
-        const isEditingAdmin = editId && users.find(u => u.id === editId)?.rol === "administrador";
-        if (!formData.email || !formData.nombre || (!formData.profileId && !isEditingAdmin)) {
-            return toast.warning("Complete los campos obligatorios");
-        }
-        if (!editId && !formData.password) {
     const handleSave = async (e) => {
         if (e) e.preventDefault();
         if (!formData.nombre.trim()) return toast.error("El nombre es obligatorio");
