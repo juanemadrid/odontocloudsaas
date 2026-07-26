@@ -1,19 +1,15 @@
+// src/modules/config/ConfigCondicionesPago.jsx
 import React, { useState, useEffect } from "react";
-import {
-    FiPlus, FiSearch, FiEdit2, FiTrash2, FiSave, FiCreditCard, FiX, FiCheck
-} from "react-icons/fi";
-import {
-    collection, doc, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
-} from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiSave, FiCreditCard, FiX, FiCheck } from "react-icons/fi";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-
-const COLLECTION_NAME = "condiciones_pago";
+import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
 
 export default function ConfigCondicionesPago() {
     const { userProfile } = useAuth();
     const toast = useToast();
+    const inquilino = userProfile?.inquilino;
+
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -23,19 +19,14 @@ export default function ConfigCondicionesPago() {
 
     useEffect(() => {
         fetchItems();
-    }, [userProfile]);
+    }, [inquilino]);
 
     const fetchItems = async () => {
-        if (!userProfile?.inquilino) return;
+        if (!inquilino) return;
         setLoading(true);
         try {
-            const q = query(
-                collection(db, "tenants", userProfile.inquilino, COLLECTION_NAME),
-                orderBy("nombre", "asc")
-            );
-            const snap = await getDocs(q);
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setItems(list);
+            const data = await getConfigItems(inquilino, "condiciones_pago", "condiciones_pago");
+            setItems(data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         } catch (error) {
             console.error("Error fetching payment conditions:", error);
             if (toast?.error) toast.error("Error al cargar condiciones de pago");
@@ -54,14 +45,15 @@ export default function ConfigCondicionesPago() {
     };
 
     const handleDelete = async (item) => {
-        if (window.confirm(`¿Estás seguro de eliminar la condición "${item.nombre}"?`)) {
+        if (window.confirm(`⚠️ ¿Estás seguro de eliminar la condición "${item.nombre}"?`)) {
             try {
-                await deleteDoc(doc(db, "tenants", userProfile.inquilino, COLLECTION_NAME, item.id));
-                if (toast?.success) toast.success("Eliminado correctamente");
-                fetchItems();
+                await deleteConfigItem(inquilino, "condiciones_pago", "condiciones_pago", item.id);
+                setItems(prev => prev.filter(i => i.id !== item.id));
+                if (toast?.success) toast.success("Eliminado correctamente de Supabase");
+                else alert("✅ Condición de pago eliminada correctamente");
             } catch (error) {
                 console.error("Error deleting:", error);
-                if (toast?.error) toast.error("Error al eliminar");
+                alert("❌ Error al eliminar condición de pago: " + error.message);
             }
         }
     };
@@ -74,131 +66,116 @@ export default function ConfigCondicionesPago() {
         }
         setSaving(true);
         try {
-            const payload = {
+            await saveConfigItem(inquilino, "condiciones_pago", "condiciones_pago", {
+                ...(currentItem.id ? { id: currentItem.id } : {}),
                 nombre: currentItem.nombre.trim(),
-                admiteCredito: !!currentItem.admiteCredito,
-                updatedAt: serverTimestamp()
-            };
+                admiteCredito: !!currentItem.admiteCredito
+            });
 
-            if (currentItem.id) {
-                await updateDoc(doc(db, "tenants", userProfile.inquilino, COLLECTION_NAME, currentItem.id), payload);
-                if (toast?.success) toast.success("Actualizado correctamente");
-            } else {
-                payload.createdAt = serverTimestamp();
-                await addDoc(collection(db, "tenants", userProfile.inquilino, COLLECTION_NAME), payload);
-                if (toast?.success) toast.success("Creado correctamente");
-            }
+            if (toast?.success) toast.success("Guardado correctamente en Supabase");
             setModalOpen(false);
             fetchItems();
         } catch (error) {
             console.error("Error saving:", error);
-            if (toast?.error) toast.error("Error al guardar");
+            if (toast?.error) toast.error("Error al guardar condición");
         } finally {
             setSaving(false);
         }
     };
 
-    const filteredItems = items.filter(i =>
-        i.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredItems = items.filter(item =>
+        (item.nombre || "").toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-4">
-            {/* Header / Search Toolbar */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-3">
-                <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                        <FiCreditCard size={18} />
+        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                        <FiCreditCard size={20} />
                     </div>
                     <div>
-                        <h1 className="text-[16px] font-bold text-slate-800 tracking-tight">Condiciones de Pago</h1>
-                        <p className="text-[11px] text-slate-500 font-medium">Políticas de cobro, plazos y admisión de crédito para pacientes</p>
+                        <h1 className="text-base font-black text-slate-800 uppercase tracking-tight">Condiciones de Pago</h1>
+                        <p className="text-xs font-medium text-slate-500">Términos de crédito y plazos comerciales</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 w-full md:w-auto">
-                    <div className="relative flex-1 md:w-64">
+                <div className="flex items-center gap-3">
+                    <div className="relative flex-1 sm:flex-none">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
-                            placeholder="Buscar política de pago..."
+                            placeholder="Buscar condición..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:bg-white focus:border-blue-500 transition-colors"
+                            className="w-full sm:w-48 h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 transition-colors"
                         />
                     </div>
 
                     <button
                         onClick={() => handleOpenModal()}
-                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2 cursor-pointer border-0 shrink-0"
                     >
                         <FiPlus size={16} />
-                        <span>Nueva Política</span>
+                        <span>Nueva Condición</span>
                     </button>
                 </div>
             </div>
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left border-collapse">
                     <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
-                            <th className="py-2.5 px-4">Nombre de la Condición</th>
-                            <th className="py-2.5 px-4 text-center">Admisión de Crédito</th>
-                            <th className="py-2.5 px-4 text-right">Operaciones</th>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider">
+                            <th className="py-3 px-4">Nombre de la Condición</th>
+                            <th className="py-3 px-4 text-center">Permite Crédito</th>
+                            <th className="py-3 px-4 text-right">Acciones</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-[12px] text-slate-700">
-                        {loading ? (
+                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                        {loading && items.length === 0 ? (
                             <tr>
                                 <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
                                     <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
-                                    Sincronizando políticas de pago...
+                                    Cargando condiciones de pago...
                                 </td>
                             </tr>
                         ) : filteredItems.length === 0 ? (
                             <tr>
                                 <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
-                                    No se encontraron condiciones de pago registradas
+                                    No hay condiciones de pago registradas
                                 </td>
                             </tr>
                         ) : (
                             filteredItems.map((item) => (
                                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="py-2.5 px-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
-                                                💳
+                                    <td className="py-3 px-4">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                                                <FiCreditCard size={15} />
                                             </div>
-                                            <span className="font-bold text-slate-800">{item.nombre}</span>
+                                            <span className="font-bold text-slate-800 uppercase">{item.nombre}</span>
                                         </div>
                                     </td>
-                                    <td className="py-2.5 px-4 text-center">
-                                        {item.admiteCredito ? (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                                <FiCheck size={10} /> Admite Crédito
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500">
-                                                Sólo Contado
-                                            </span>
-                                        )}
+                                    <td className="py-3 px-4 text-center">
+                                        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold ${item.admiteCredito ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-slate-100 text-slate-500"}`}>
+                                            {item.admiteCredito ? "Sí" : "No (Contado)"}
+                                        </span>
                                     </td>
-                                    <td className="py-2.5 px-4 text-right">
+                                    <td className="py-3 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5">
                                             <button
                                                 onClick={() => handleOpenModal(item)}
-                                                className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                title="Editar Condición"
+                                                className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
+                                                title="Editar"
                                             >
-                                                <FiEdit2 size={13} />
+                                                <FiEdit2 size={14} />
                                             </button>
                                             <button
                                                 onClick={() => handleDelete(item)}
-                                                className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                title="Eliminar Condición"
+                                                className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
+                                                title="Eliminar"
                                             >
-                                                <FiTrash2 size={13} />
+                                                <FiTrash2 size={14} />
                                             </button>
                                         </div>
                                     </td>
@@ -209,73 +186,66 @@ export default function ConfigCondicionesPago() {
                 </table>
             </div>
 
-            {/* Modal Form */}
+            {/* Modal */}
             {modalOpen && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-md overflow-hidden">
-                        <div className="px-5 py-3 border-b border-slate-200 bg-slate-50/70 flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                                    <FiCreditCard size={15} />
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                                    <FiCreditCard size={18} />
                                 </div>
-                                <h3 className="text-[14px] font-bold text-slate-800">
-                                    {currentItem?.id ? "Editar Política de Pago" : "Nueva Política de Pago"}
+                                <h3 className="text-base font-black text-slate-800 uppercase">
+                                    {currentItem?.id ? "Editar Condición" : "Nueva Condición de Pago"}
                                 </h3>
                             </div>
-                            <button
-                                onClick={() => setModalOpen(false)}
-                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors border-0 cursor-pointer bg-transparent"
-                            >
-                                <FiX size={16} />
-                            </button>
+                            <button onClick={() => setModalOpen(false)} className="w-8 h-8 rounded-full bg-slate-200/60 flex items-center justify-center text-slate-500 font-bold">&times;</button>
                         </div>
 
-                        <form onSubmit={handleSave} className="p-5 space-y-4">
+                        <form onSubmit={handleSave} className="p-6 space-y-4">
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-slate-600">Nombre de la Condición *</label>
                                 <input
-                                    type="text"
                                     required
-                                    placeholder="Ej. Contado 100%, Crédito 30 días, 50% Anticipo"
+                                    className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                     value={currentItem?.nombre || ""}
-                                    onChange={(e) => setCurrentItem({ ...currentItem, nombre: e.target.value })}
-                                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    onChange={e => setCurrentItem({ ...currentItem, nombre: e.target.value })}
+                                    placeholder="Ej. Contado, Crédito a 30 días"
                                     autoFocus
                                 />
                             </div>
 
-                            <div className="flex items-center gap-2 pt-1">
-                                <input
-                                    type="checkbox"
-                                    id="admiteCredito"
-                                    checked={!!currentItem?.admiteCredito}
-                                    onChange={(e) => setCurrentItem({ ...currentItem, admiteCredito: e.target.checked })}
-                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
-                                />
-                                <label htmlFor="admiteCredito" className="text-[12px] font-semibold text-slate-700 cursor-pointer">
-                                    Admite venta a crédito / pago diferido
+                            <div className="flex items-center justify-between py-3 px-4 bg-slate-50 rounded-xl border border-slate-200">
+                                <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-slate-700">Permite Venta a Crédito</span>
+                                    <span className="text-[10px] font-medium text-slate-500">Habilita cuenta por cobrar para la venta</span>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={!!currentItem?.admiteCredito}
+                                        onChange={e => setCurrentItem({ ...currentItem, admiteCredito: e.target.checked })}
+                                    />
+                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
                                 </label>
                             </div>
 
-                            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2.5">
+                            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
                                 <button
                                     type="button"
                                     onClick={() => setModalOpen(false)}
-                                    className="px-4 py-1.5 rounded-lg text-slate-600 font-semibold hover:bg-slate-100 transition-colors text-[12px] border border-slate-200 bg-white cursor-pointer"
+                                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 bg-white"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer border-0"
+                                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md shadow-blue-200 flex items-center gap-2 border-0 disabled:opacity-50"
                                 >
-                                    {saving ? (
-                                        <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                                    ) : (
-                                        <FiSave size={15} />
-                                    )}
-                                    <span>{saving ? "Guardando..." : "Guardar Política"}</span>
+                                    <FiSave size={15} />
+                                    <span>{saving ? "Guardando..." : "Guardar Condición"}</span>
                                 </button>
                             </div>
                         </form>

@@ -1,17 +1,14 @@
+// src/modules/config/ConfigRecursosFisicos.jsx
 import React, { useState, useEffect } from "react";
-import {
-    FiPlus, FiSearch, FiEdit2, FiTrash2, FiSave, FiX, FiBox
-} from "react-icons/fi";
-import {
-    collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy, serverTimestamp
-} from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiSave, FiX, FiBox } from "react-icons/fi";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
 
 export default function ConfigRecursosFisicos() {
     const { userProfile } = useAuth();
     const toast = useToast();
+    const inquilino = userProfile?.inquilino;
 
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -26,24 +23,16 @@ export default function ConfigRecursosFisicos() {
     });
 
     useEffect(() => {
-        if (userProfile?.inquilino) {
+        if (inquilino) {
             loadItems();
         }
-    }, [userProfile]);
+    }, [inquilino]);
 
     const loadItems = async () => {
         setLoading(true);
         try {
-            const q = query(
-                collection(db, "tenants", userProfile.inquilino, "recursos_fisicos"),
-                orderBy("nombre", "asc")
-            );
-            const querySnapshot = await getDocs(q);
-            const docs = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setItems(docs);
+            const data = await getConfigItems(inquilino, "recursos_fisicos", "recursos_fisicos");
+            setItems(data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         } catch (error) {
             console.error("Error loading resources:", error);
             if (toast?.error) toast.error("Error al cargar recursos físicos");
@@ -56,11 +45,11 @@ export default function ConfigRecursosFisicos() {
         if (item) {
             setCurrentItem(item);
             setFormData({
-                nombre: item.nombre,
+                nombre: item.nombre || "",
                 descripcion: item.descripcion || ""
             });
         } else {
-            setCurrentItem({ id: null });
+            setCurrentItem(null);
             setFormData({ nombre: "", descripcion: "" });
         }
         setModalOpen(true);
@@ -81,84 +70,73 @@ export default function ConfigRecursosFisicos() {
 
         setSaving(true);
         try {
-            const collectionRef = collection(db, "tenants", userProfile.inquilino, "recursos_fisicos");
+            await saveConfigItem(inquilino, "recursos_fisicos", "recursos_fisicos", {
+                ...(currentItem || {}),
+                nombre: formData.nombre.trim(),
+                descripcion: formData.descripcion.trim()
+            });
 
-            if (currentItem?.id) {
-                await updateDoc(doc(collectionRef, currentItem.id), {
-                    ...formData,
-                    updatedAt: serverTimestamp()
-                });
-                if (toast?.success) toast.success("Recurso actualizado");
-            } else {
-                await addDoc(collectionRef, {
-                    ...formData,
-                    active: true,
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp()
-                });
-                if (toast?.success) toast.success("Recurso creado");
-            }
-
+            if (toast?.success) toast.success("Recurso guardado en Supabase");
             handleCloseModal();
             loadItems();
         } catch (error) {
             console.error("Error saving resource:", error);
-            if (toast?.error) toast.error("Error al guardar");
+            if (toast?.error) toast.error("Error al guardar recurso");
         } finally {
             setSaving(false);
         }
     };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm("¿Está seguro de eliminar este recurso?")) return;
+    const handleDelete = async (item) => {
+        if (!window.confirm(`⚠️ ¿Seguro que deseas eliminar el recurso "${item.nombre}"?`)) return;
 
         setLoading(true);
         try {
-            await deleteDoc(doc(db, "tenants", userProfile.inquilino, "recursos_fisicos", id));
-            if (toast?.success) toast.success("Recurso eliminado");
-            loadItems();
+            await deleteConfigItem(inquilino, "recursos_fisicos", "recursos_fisicos", item.id);
+            setItems(prev => prev.filter(i => i.id !== item.id));
+            if (toast?.success) toast.success("Recurso eliminado correctamente de Supabase");
+            else alert("✅ Recurso eliminado correctamente");
         } catch (error) {
             console.error("Error deleting resource:", error);
-            if (toast?.error) toast.error("Error al eliminar");
+            alert("❌ Error al eliminar recurso: " + error.message);
         } finally {
             setLoading(false);
         }
     };
 
     const filteredItems = items.filter(item =>
-        item.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-4">
-            {/* Header Toolbar */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-3">
-                <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                        <FiBox size={18} />
+        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                        <FiBox size={20} />
                     </div>
                     <div>
-                        <h1 className="text-[16px] font-bold text-slate-800 tracking-tight">Recursos Físicos</h1>
-                        <p className="text-[11px] text-slate-500 font-medium">Gestión de consultorios, sillas odontológicas y equipos de la clínica</p>
+                        <h1 className="text-base font-black text-slate-800 uppercase tracking-tight">Recursos Físicos y Consultorios</h1>
+                        <p className="text-xs font-medium text-slate-500">Sillones odontológicos y espacios de atención</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 w-full md:w-auto">
-                    <div className="relative flex-1 md:w-64">
+                <div className="flex items-center gap-3">
+                    <div className="relative flex-1 sm:flex-none">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
-                            placeholder="Buscar recurso o consultorio..."
+                            placeholder="Buscar recurso..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:bg-white focus:border-blue-500 transition-colors"
+                            className="w-full sm:w-48 h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 transition-colors"
                         />
                     </div>
 
                     <button
                         onClick={() => handleOpenModal()}
-                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2 cursor-pointer border-0 shrink-0"
                     >
                         <FiPlus size={16} />
                         <span>Nuevo Recurso</span>
@@ -166,17 +144,16 @@ export default function ConfigRecursosFisicos() {
                 </div>
             </div>
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left border-collapse">
                     <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
-                            <th className="py-2.5 px-4">Recurso / Consultorio</th>
-                            <th className="py-2.5 px-4">Descripción / Observaciones</th>
-                            <th className="py-2.5 px-4 text-right">Operaciones</th>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider">
+                            <th className="py-3 px-4">Nombre del Recurso</th>
+                            <th className="py-3 px-4">Descripción</th>
+                            <th className="py-3 px-4 text-right">Acciones</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-[12px] text-slate-700">
+                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                         {loading && items.length === 0 ? (
                             <tr>
                                 <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
@@ -184,83 +161,75 @@ export default function ConfigRecursosFisicos() {
                                     Cargando recursos físicos...
                                 </td>
                             </tr>
-                        ) : filteredItems.length > 0 ? (
+                        ) : filteredItems.length === 0 ? (
+                            <tr>
+                                <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
+                                    No hay recursos físicos registrados
+                                </td>
+                            </tr>
+                        ) : (
                             filteredItems.map((item) => (
                                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="py-2.5 px-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
-                                                📦
+                                    <td className="py-3 px-4">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                                                💺
                                             </div>
                                             <span className="font-bold text-slate-800 uppercase">{item.nombre}</span>
                                         </div>
                                     </td>
-                                    <td className="py-2.5 px-4">
-                                        <span className="text-slate-500">{item.descripcion || "Sin descripción"}</span>
-                                    </td>
-                                    <td className="py-2.5 px-4 text-right">
+                                    <td className="py-3 px-4 text-slate-500 font-medium">{item.descripcion || "-"}</td>
+                                    <td className="py-3 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5">
                                             <button
                                                 onClick={() => handleOpenModal(item)}
-                                                className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                title="Editar Recurso"
+                                                className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
+                                                title="Editar"
                                             >
-                                                <FiEdit2 size={13} />
+                                                <FiEdit2 size={14} />
                                             </button>
                                             <button
-                                                onClick={() => handleDelete(item.id)}
-                                                className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                title="Eliminar Recurso"
+                                                onClick={() => handleDelete(item)}
+                                                className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
+                                                title="Eliminar"
                                             >
-                                                <FiTrash2 size={13} />
+                                                <FiTrash2 size={14} />
                                             </button>
                                         </div>
                                     </td>
                                 </tr>
                             ))
-                        ) : (
-                            <tr>
-                                <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
-                                    No se encontraron recursos físicos registrados
-                                </td>
-                            </tr>
                         )}
                     </tbody>
                 </table>
             </div>
 
-            {/* Modal */}
-            {modalOpen && currentItem && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-md overflow-hidden">
-                        <div className="px-5 py-3 border-b border-slate-200 bg-slate-50/70 flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                                    <FiBox size={15} />
+            {/* Modal Form */}
+            {modalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                                    <FiBox size={18} />
                                 </div>
-                                <h3 className="text-[14px] font-bold text-slate-800">
-                                    {currentItem?.id ? "Editar Recurso Físico" : "Nuevo Recurso Físico"}
+                                <h3 className="text-base font-black text-slate-800 uppercase">
+                                    {currentItem?.id ? "Editar Recurso" : "Nuevo Recurso Físico"}
                                 </h3>
                             </div>
-                            <button
-                                onClick={handleCloseModal}
-                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors border-0 cursor-pointer bg-transparent"
-                            >
-                                <FiX size={16} />
-                            </button>
+                            <button onClick={handleCloseModal} className="w-8 h-8 rounded-full bg-slate-200/60 flex items-center justify-center text-slate-500 font-bold">&times;</button>
                         </div>
 
-                        <form onSubmit={handleSave} className="p-5 space-y-4">
+                        <form onSubmit={handleSave} className="p-6 space-y-4">
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-slate-600">Nombre del Recurso *</label>
+                                <label className="text-[11px] font-bold text-slate-600">Nombre del Sillón / Espacio *</label>
                                 <input
-                                    type="text"
                                     required
-                                    autoFocus
-                                    placeholder="Ej. CONSULTORIO 1, UNIDAD DENTAL 2, EQUIPO RX"
+                                    className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                     value={formData.nombre}
-                                    onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors uppercase"
+                                    onChange={e => setFormData({ ...formData, nombre: e.target.value })}
+                                    placeholder="Ej. Sillón 1, Consultorio Principal"
+                                    autoFocus
                                 />
                             </div>
 
@@ -268,31 +237,27 @@ export default function ConfigRecursosFisicos() {
                                 <label className="text-[11px] font-bold text-slate-600">Descripción / Ubicación</label>
                                 <textarea
                                     rows={3}
-                                    placeholder="Detalles sobre la ubicación, especificaciones o estado..."
+                                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors resize-none"
                                     value={formData.descripcion}
-                                    onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-                                    className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors resize-none"
+                                    onChange={e => setFormData({ ...formData, descripcion: e.target.value })}
+                                    placeholder="Ubicación o notas técnicas..."
                                 />
                             </div>
 
-                            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2.5">
+                            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
                                 <button
                                     type="button"
                                     onClick={handleCloseModal}
-                                    className="px-4 py-1.5 rounded-lg text-slate-600 font-semibold hover:bg-slate-100 transition-colors text-[12px] border border-slate-200 bg-white cursor-pointer"
+                                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 bg-white"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer border-0"
+                                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md shadow-blue-200 flex items-center gap-2 border-0 disabled:opacity-50"
                                 >
-                                    {saving ? (
-                                        <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                                    ) : (
-                                        <FiSave size={15} />
-                                    )}
+                                    <FiSave size={15} />
                                     <span>{saving ? "Guardando..." : "Guardar Recurso"}</span>
                                 </button>
                             </div>
