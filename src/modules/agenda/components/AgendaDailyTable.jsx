@@ -142,42 +142,45 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                 <div className="w-full h-full flex flex-col">
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
                         {hydratedAppointments.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center min-h-[300px] opacity-40">
-                                <FiCalendar className="text-slate-300 text-2xl mb-2" />
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sin citas registradas</span>
+                            <div className="flex flex-col items-center justify-center min-h-[340px] m-6 bg-slate-50/80 rounded-3xl border-2 border-dashed border-slate-300 p-8 shadow-xs">
+                                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mb-3">
+                                    <FiCalendar className="text-blue-600 text-2xl" />
+                                </div>
+                                <span className="text-[12px] font-black text-slate-700 uppercase tracking-widest">Sin citas registradas</span>
+                                <p className="text-[10px] text-slate-500 font-bold mt-1">Selecciona otra fecha o crea una nueva cita</p>
                             </div>
                         ) : (
                             <div className="flex flex-col h-full">
                                 <table className="w-full border-separate border-spacing-0">
-                                    <thead className="bg-slate-50/50 sticky top-0 z-30">
-                                        <tr className={`font-black text-slate-400 uppercase tracking-[0.15em] border-b border-slate-100 transition-all ${sidebarVisible ? 'text-[9px]' : 'text-[11px]'}`}>
-                                            <th className="py-4 px-4 text-left">Hora</th>
-                                            <th className="py-4 px-2 text-left">Paciente</th>
-                                            <th className="py-4 px-2 text-left">Doctor</th>
-                                            <th className="py-4 px-2 text-left no-print">Sede</th>
-                                            <th className="py-4 px-2 text-left">Espacio</th>
-                                            <th className="py-4 px-2 text-left">Comentario</th>
-                                            <th className="py-4 px-2 text-center">Estado</th>
-                                            <th className="py-4 px-2 text-center no-print">Actual</th>
-                                            <th className="py-4 px-6 text-right no-print">ACCIONES</th>
+                                    <thead className="bg-slate-100/90 border-b-2 border-slate-200 sticky top-0 z-30 shadow-xs">
+                                        <tr className={`font-black text-slate-700 uppercase tracking-[0.15em] border-b-2 border-slate-200 transition-all ${sidebarVisible ? 'text-[9.5px]' : 'text-[11.5px]'}`}>
+                                            <th className="py-3.5 px-4 text-left">Hora</th>
+                                            <th className="py-3.5 px-2 text-left">Paciente</th>
+                                            <th className="py-3.5 px-2 text-left">Doctor</th>
+                                            <th className="py-3.5 px-2 text-left no-print">Sede</th>
+                                            <th className="py-3.5 px-2 text-left">Espacio</th>
+                                            <th className="py-3.5 px-2 text-left">Comentario</th>
+                                            <th className="py-3.5 px-2 text-center">Estado</th>
+                                            <th className="py-3.5 px-2 text-center no-print">Actual</th>
+                                            <th className="py-3.5 px-6 text-right no-print">ACCIONES</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-50">
+                                    <tbody className="divide-y divide-slate-200/80">
                                         {hydratedAppointments.map((apt) => (
                                             <tr
                                                 key={apt.id}
-                                                className="hover:bg-blue-50/10 transition-all border-l-[3px] border-l-transparent hover:border-l-blue-600 group"
+                                                className="hover:bg-blue-50/20 transition-all border-l-[3px] border-l-transparent hover:border-l-blue-600 group"
                                             >
                                                 <td className="py-3 px-4 whitespace-nowrap">
                                                     <div className="flex flex-col">
                                                         <span className={`font-black text-slate-800 transition-all print:text-blue-600 ${sidebarVisible ? 'text-[10px]' : 'text-[13px]'}`}>{formatTime(apt.start)}</span>
-                                                        <span className={`text-slate-400 font-bold uppercase transition-all ${sidebarVisible ? 'text-[8px]' : 'text-[10px]'}`}>{formatTime(apt.end)}</span>
+                                                        <span className={`text-slate-500 font-bold uppercase transition-all ${sidebarVisible ? 'text-[8.5px]' : 'text-[10.5px]'}`}>{formatTime(apt.end)}</span>
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-2">
                                                     <div className="flex flex-col min-w-[150px]">
                                                         <p 
-                                                            className={`font-black text-blue-600 hover:underline cursor-pointer uppercase transition-all print:text-slate-800 print:whitespace-normal ${sidebarVisible ? 'text-[10px] truncate max-w-[150px]' : 'text-[13px] truncate max-w-[250px]'}`} 
+                                                            className={`font-black text-blue-700 hover:underline cursor-pointer uppercase transition-all print:text-slate-800 print:whitespace-normal ${sidebarVisible ? 'text-[10px] truncate max-w-[150px]' : 'text-[13px] truncate max-w-[250px]'}`} 
                                                             onClick={() => {
                                                                 const patientId = apt.pacienteId || apt.patientId;
                                                                 if (patientId) {
@@ -190,20 +193,20 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                         >
                                                             {apt.paciente || apt.pacienteNombre || "S/N"}
                                                         </p>
-                                                        <p className={`text-slate-400 font-bold tracking-tight truncate transition-all ${sidebarVisible ? 'text-[8px]' : 'text-[10px]'}`} title={apt.celular || apt.documento}>{apt.celular || apt.documento || "ID PENDIENTE"}</p>
+                                                        <p className={`text-slate-500 font-bold tracking-tight truncate transition-all ${sidebarVisible ? 'text-[8.5px]' : 'text-[10.5px]'}`} title={apt.celular || apt.documento}>{apt.celular || apt.documento || "ID PENDIENTE"}</p>
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-2">
-                                                    <span className={`font-black text-slate-600 uppercase transition-all block print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[80px]' : 'text-[12px] truncate max-w-[120px]'}`} title={apt.doctorDisplayName}>{apt.doctorDisplayName}</span>
+                                                    <span className={`font-black text-slate-800 uppercase block truncate transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9.5px] max-w-[100px]' : 'text-[12.5px] max-w-[200px]'}`} title={apt.doctorDisplayName}>{apt.doctorDisplayName}</span>
                                                 </td>
                                                 <td className="py-3 px-2 no-print">
-                                                    <span className={`font-black text-slate-500 uppercase truncate block max-w-[70px] transition-all ${sidebarVisible ? 'text-[9px]' : 'text-[12px]'}`} title={apt.sucursalDisplayName}>{apt.sucursalDisplayName}</span>
+                                                    <span className={`font-black text-slate-700 uppercase truncate block max-w-[70px] transition-all ${sidebarVisible ? 'text-[9.5px]' : 'text-[12.5px]'}`} title={apt.sucursalDisplayName}>{apt.sucursalDisplayName}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
-                                                    <span className={`font-black text-slate-500 uppercase block bg-slate-50/50 px-2 py-0.5 rounded border border-slate-100/50 w-fit transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[80px]' : 'text-[12px] truncate max-w-[120px]'}`} title={apt.chairDisplayName}>{apt.chairDisplayName}</span>
+                                                    <span className={`font-black text-slate-700 uppercase block bg-slate-100 px-2 py-0.5 rounded border border-slate-200 w-fit transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[80px]' : 'text-[12px] truncate max-w-[120px]'}`} title={apt.chairDisplayName}>{apt.chairDisplayName}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
-                                                    <span className={`text-slate-400 font-bold italic block uppercase transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[100px]' : 'text-[12px] truncate max-w-[200px]'}`} title={apt.comentario}>{apt.comentario || "-"}</span>
+                                                    <span className={`text-slate-600 font-bold italic block uppercase transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[100px]' : 'text-[12px] truncate max-w-[200px]'}`} title={apt.comentario}>{apt.comentario || "-"}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
                                                     <div className={`flex justify-center transition-all ${sidebarVisible ? 'scale-90' : 'scale-110'} origin-center no-print`}>
@@ -219,7 +222,7 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-2 text-center no-print">
-                                                    <span className={`px-2 py-0.5 rounded-md font-black tracking-tight border uppercase transition-all ${sidebarVisible ? 'text-[8px]' : 'text-[11px]'} ${apt.pagoPendiente > 0 ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                                                    <span className={`px-2 py-0.5 rounded-md font-black tracking-tight border uppercase transition-all ${sidebarVisible ? 'text-[8.5px]' : 'text-[11px]'} ${apt.pagoPendiente > 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                                                         {apt.pagoPendiente > 0 ? `Deuda: $${apt.pagoPendiente.toLocaleString('es-CO')}` : 'Al día'}
                                                     </span>
                                                 </td>
@@ -258,7 +261,7 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             onClick={(e) => e.stopPropagation()}
-                                                            className="text-emerald-500 hover:text-emerald-600 transition-all hover:scale-110 p-1 flex items-center justify-center"
+                                                            className="text-emerald-600 hover:text-emerald-700 transition-all hover:scale-110 p-1 flex items-center justify-center"
                                                             title="Enviar recordatorio por WhatsApp"
                                                         >
                                                             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -268,7 +271,7 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                         </a>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); onEventClick(apt); }}
-                                                            className="text-blue-500 hover:text-blue-600 transition-all hover:scale-110 p-1"
+                                                            className="text-blue-600 hover:text-blue-700 transition-all hover:scale-110 p-1"
                                                             title="Editar"
                                                         >
                                                             <FiEdit2 size={16} />
@@ -281,21 +284,21 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                 </table>
 
                                 {/* Footer info - Hide in print */}
-                                <div className="mt-auto p-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between no-print">
+                                <div className="mt-auto p-3.5 bg-slate-100/90 border-t-2 border-slate-200 flex items-center justify-between no-print">
                                     <div className="flex items-center gap-6">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Registros:</span>
-                                            <span className="text-[11px] font-black text-blue-600">{hydratedAppointments.length}</span>
+                                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Registros:</span>
+                                            <span className="text-[11px] font-black text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200/80">{hydratedAppointments.length}</span>
                                         </div>
-                                        <div className="flex items-center gap-4 text-[8px] font-black text-slate-400 uppercase tracking-[0.1em]">
-                                            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-slate-200" /> Sin confirmar</div>
-                                            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500" /> Confirmada</div>
-                                            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Atendido</div>
-                                            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-rose-500" /> Urgencia</div>
+                                        <div className="flex items-center gap-4 text-[9px] font-black text-slate-700 uppercase tracking-[0.1em]">
+                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400 border border-slate-500" /> Sin confirmar</div>
+                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-600 border border-blue-700" /> Confirmada</div>
+                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-600 border border-emerald-700" /> Atendido</div>
+                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-600 border border-orange-700" /> Urgencia</div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 text-[8px] font-black text-blue-600/40 uppercase tracking-[0.2em]">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                                    <div className="flex items-center gap-2 text-[9px] font-black text-blue-700 uppercase tracking-[0.2em] bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
+                                        <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
                                         OdontoCloud Live
                                     </div>
                                 </div>
@@ -306,23 +309,23 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
             </div>
 
             {/* Footer Summary Bar */}
-            <div className="bg-slate-50 border-t border-slate-100 px-8 py-3 flex items-center justify-between">
+            <div className="bg-slate-100/90 border-t-2 border-slate-200 px-6 py-2.5 flex items-center justify-between shadow-xs">
                 <div className="flex items-center gap-6">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Registros: <span className="text-blue-600">{appointments.length}</span>
+                    <span className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
+                        Registros: <span className="text-blue-700 font-black">{appointments.length}</span>
                     </span>
                     <div className="flex items-center gap-4 ml-4">
                         {APPOINTMENT_STATUSES.slice(0, 4).map(s => (
                             <div key={s.id} className="flex items-center gap-1.5">
-                                <div className={`w-2 h-2 rounded-full ${s.color.split(' ')[0]}`} />
-                                <span className="text-[9px] font-bold text-slate-400 uppercase">{s.label}</span>
+                                <div className={`w-2.5 h-2.5 rounded-full ${s.color.split(' ')[0]} border border-slate-300`} />
+                                <span className="text-[9.5px] font-black text-slate-700 uppercase">{s.label}</span>
                             </div>
                         ))}
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-                    <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">OdontoCloud Live</span>
+                <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-xs">
+                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                    <span className="text-[10px] font-black text-blue-700 tracking-wider uppercase">OdontoCloud Live</span>
                 </div>
             </div>
         </div>

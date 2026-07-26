@@ -556,46 +556,46 @@ export default function Agenda() {
                 {/* 2. MAIN CONTENT */}
                 <div className="flex-1 flex flex-col h-full min-w-0 gap-4">
                     {/* Toolbar */}
-                    <div className="flex items-center justify-between bg-white p-2 rounded-[22px] shadow-sm border border-slate-100 shrink-0 no-print">
+                    <div className="flex items-center justify-between bg-white p-2.5 rounded-[22px] shadow-md shadow-slate-200/60 border border-slate-200 shrink-0 no-print">
                         <div className="flex items-center gap-2 pl-2">
                             {/* Hamburger Button */}
                             <button 
                                 onClick={() => setSidebarVisible(!sidebarVisible)}
                                 className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-90 mr-2
                                     ${sidebarVisible 
-                                        ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' 
+                                        ? 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200' 
                                         : 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700'}`}
                                 title={sidebarVisible ? "Ocultar calendario" : "Mostrar calendario"}
                             >
                                 {sidebarVisible ? <FiX size={18} /> : <FiMenu size={18} />}
                             </button>
 
-                            <button onClick={() => changeDate(-1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all active:scale-90">◀</button>
-                            <div className="min-w-[220px] text-center font-black text-slate-700 text-[12px] uppercase tracking-[0.1em]">
+                            <button onClick={() => changeDate(-1)} className="w-9 h-9 flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all active:scale-90 border border-transparent hover:border-blue-100">◀</button>
+                            <div className="min-w-[220px] text-center font-black text-slate-800 text-[12.5px] uppercase tracking-[0.1em]">
                                 {selectedDate.toLocaleDateString("es-CO", { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                             </div>
-                            <button onClick={() => changeDate(1)} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all active:scale-90">▶</button>
+                            <button onClick={() => changeDate(1)} className="w-9 h-9 flex items-center justify-center text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all active:scale-90 border border-transparent hover:border-blue-100">▶</button>
                             <button onClick={() => setSelectedDate(new Date())} className="ml-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-md shadow-blue-200 active:scale-95">
                                 Hoy
                             </button>
                         </div>
 
-                        <div className="flex bg-slate-100/50 p-1 rounded-[14px] border border-slate-100">
+                        <div className="flex bg-slate-100 p-1 rounded-[14px] border border-slate-200">
                             <button
                                 onClick={() => setViewMode('day')}
-                                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'day' ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'day' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                             >
                                 <FiList size={14} /> Día
                             </button>
                             <button
                                 onClick={() => setViewMode('week')}
-                                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'week' ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'week' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                             >
                                 <FiGrid size={14} /> Semana
                             </button>
                             <button
                                 onClick={() => setViewMode('detail')}
-                                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'detail' ? 'bg-white text-blue-600 shadow-sm border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${viewMode === 'detail' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                             >
                                 <FiSettings size={14} /> Detalle
                             </button>
@@ -603,7 +603,7 @@ export default function Agenda() {
                     </div>
 
                     {/* VIEW AREA */}
-                    <div className="flex-1 bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden relative">
+                    <div className="flex-1 bg-white rounded-[28px] border-2 border-slate-200 shadow-lg shadow-slate-200/50 overflow-hidden relative">
                         {viewMode === 'day' && (
                             <AgendaDailyTable
                                 appointments={appointments}

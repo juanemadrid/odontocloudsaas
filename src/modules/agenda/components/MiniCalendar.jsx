@@ -37,32 +37,34 @@ export default function MiniCalendar({ selectedDate, onDateChange }) {
     };
 
     return (
-        <div className="bg-white p-2 w-full select-none rounded-xl">
+        <div className="bg-white p-3 w-full select-none rounded-2xl border border-slate-200/90 shadow-sm">
             {/* Header */}
-            <div className="flex justify-between items-center mb-4 px-1">
-                <div className="text-[12px] font-black text-slate-800 uppercase tracking-[0.1em]">
-                    {MONTHS[month]} <span className="text-sky-500 font-black">{year}</span>
+            <div className="flex justify-between items-center mb-3 px-1">
+                <div className="text-[12px] font-black text-slate-900 uppercase tracking-[0.1em]">
+                    {MONTHS[month]} <span className="text-blue-600 font-black">{year}</span>
                 </div>
                 <div className="flex gap-1.5">
                     <button
                         onClick={handlePrevMonth}
-                        className="text-slate-400 hover:text-sky-600 p-1.5 rounded-lg hover:bg-sky-50 transition-all border border-transparent hover:border-sky-100"
+                        className="text-slate-500 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition-all border border-slate-200/70 hover:border-blue-200"
+                        title="Mes anterior"
                     >
                         <FiChevronLeft size={16} />
                     </button>
                     <button
                         onClick={handleNextMonth}
-                        className="text-slate-400 hover:text-sky-600 p-1.5 rounded-lg hover:bg-sky-50 transition-all border border-transparent hover:border-sky-100"
+                        className="text-slate-500 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition-all border border-slate-200/70 hover:border-blue-200"
+                        title="Mes siguiente"
                     >
                         <FiChevronRight size={16} />
                     </button>
                 </div>
             </div>
 
-            {/* Week Days */}
-            <div className="grid grid-cols-7 mb-3">
+            {/* Week Days Header */}
+            <div className="grid grid-cols-7 mb-2 bg-slate-100/70 py-1.5 rounded-lg border border-slate-200/60">
                 {DAYS_SHORT.map(d => (
-                    <div key={d} className="text-center text-[9px] font-black text-slate-400 uppercase tracking-widest pb-2">
+                    <div key={d} className="text-center text-[9.5px] font-black text-slate-700 uppercase tracking-wider">
                         {d}
                     </div>
                 ))}
@@ -71,7 +73,7 @@ export default function MiniCalendar({ selectedDate, onDateChange }) {
             {/* Days Grid */}
             <div className="grid grid-cols-7 gap-1">
                 {prevMonthDays.map((d, i) => (
-                    <div key={`prev-${i}`} className="text-center text-[10px] py-2.5 text-slate-200 font-bold opacity-50">
+                    <div key={`prev-${i}`} className="text-center text-[10px] py-1.5 text-slate-300 font-bold opacity-60">
                         {d}
                     </div>
                 ))}
@@ -88,15 +90,15 @@ export default function MiniCalendar({ selectedDate, onDateChange }) {
                             className={`
                                 text-center text-[11px] py-1.5 rounded-xl cursor-pointer transition-all font-black flex items-center justify-center relative
                                 ${isSelected
-                                    ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30 ring-4 ring-sky-600/10'
+                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-2 ring-blue-600/20'
                                     : isToday
-                                        ? 'text-sky-600 bg-sky-50 border border-sky-100'
-                                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}
+                                        ? 'text-blue-700 bg-blue-50 border-2 border-blue-300 font-black'
+                                        : 'text-slate-800 hover:bg-slate-100 hover:text-slate-900 border border-transparent hover:border-slate-200'}
                             `}
                         >
                             {day}
                             {isToday && !isSelected && (
-                                <div className="absolute bottom-1 w-1 h-1 rounded-full bg-sky-600" />
+                                <div className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-blue-600" />
                             )}
                         </div>
                     );

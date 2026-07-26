@@ -4,25 +4,25 @@ import MiniCalendar from './MiniCalendar';
 
 // Acordeón colapsable - cerrado por defecto
 const FilterAccordion = ({ title, icon: Icon, isOpen, onToggle, count, children }) => (
-    <div className="border-b border-slate-100 last:border-0">
+    <div className="border-b border-slate-200/90 last:border-0">
         <button
             onClick={onToggle}
-            className="w-full flex justify-between items-center py-3 px-3 hover:bg-slate-50/80 rounded-xl transition-all duration-200 group"
+            className="w-full flex justify-between items-center py-3 px-3 hover:bg-slate-100/70 rounded-xl transition-all duration-200 group"
         >
             <div className="flex items-center gap-2">
-                <Icon size={14} className={`transition-colors ${isOpen ? 'text-blue-500' : 'text-slate-400 group-hover:text-blue-400'}`} />
-                <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${isOpen ? 'text-blue-600' : 'text-slate-500 group-hover:text-slate-700'}`}>
+                <Icon size={14} className={`transition-colors ${isOpen ? 'text-blue-600' : 'text-slate-600 group-hover:text-blue-600'}`} />
+                <span className={`text-[10.5px] font-black uppercase tracking-wider transition-colors ${isOpen ? 'text-blue-700' : 'text-slate-700 group-hover:text-slate-900'}`}>
                     {title}
                 </span>
                 {count > 0 && (
-                    <span className="bg-blue-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full min-w-[16px] text-center">
+                    <span className="bg-blue-600 text-white text-[8.5px] font-black px-2 py-0.5 rounded-full min-w-[18px] text-center shadow-xs">
                         {count}
                     </span>
                 )}
             </div>
             <FiChevronDown
                 size={14}
-                className={`text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180 text-blue-500' : ''}`}
+                className={`text-slate-500 transition-transform duration-300 ${isOpen ? 'rotate-180 text-blue-600' : ''}`}
             />
         </button>
         <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}>
@@ -103,16 +103,16 @@ export default function AgendaSidebar({
     return (
         <div className="w-full h-full flex flex-col gap-3">
             {/* Calendar Card */}
-            <div className="bg-white rounded-[24px] shadow-sm border border-slate-100 p-2 shrink-0">
+            <div className="bg-white rounded-[24px] shadow-md shadow-slate-200/50 border border-slate-200 p-2 shrink-0">
                 <MiniCalendar selectedDate={selectedDate} onDateChange={onDateChange} />
             </div>
 
             {/* Filters Card */}
-            <div className="bg-white rounded-[24px] shadow-sm border border-slate-100 flex-1 overflow-hidden flex flex-col">
+            <div className="bg-white rounded-[24px] shadow-md shadow-slate-200/50 border border-slate-200 flex-1 overflow-hidden flex flex-col">
                 {/* Header */}
-                <div className="px-4 py-3 border-b border-slate-50 bg-slate-50/30 shrink-0">
-                    <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-                        <FiFilter className="text-blue-600" size={12} />
+                <div className="px-4 py-3 border-b border-slate-200 bg-slate-100/70 shrink-0">
+                    <div className="flex items-center gap-2 text-[10.5px] font-black text-slate-700 uppercase tracking-[0.18em]">
+                        <FiFilter className="text-blue-600" size={13} />
                         <span>Filtros de Agenda</span>
                     </div>
                 </div>
