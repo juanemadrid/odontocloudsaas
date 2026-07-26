@@ -125,8 +125,12 @@ export default function TenantsPanelV2() {
 
         setChangingPwd(true);
         try {
-            await adminChangePassword(adminEmail, newPassword);
-            alert(`✅ Contraseña cambiada exitosamente.\n\nEl administrador de "${showChangePwd.name}" ya puede iniciar sesión con la nueva contraseña.`);
+            const res = await adminChangePassword(adminEmail, newPassword);
+            if (res?.message) {
+                alert(`ℹ️ ${res.message}`);
+            } else {
+                alert(`✅ Contraseña cambiada exitosamente.\n\nEl administrador de "${showChangePwd.name}" ya puede iniciar sesión con la nueva contraseña.`);
+            }
             setShowChangePwd(null);
             setPwdForm({ newPassword: "", confirm: "", show: false });
         } catch (err) {
@@ -172,8 +176,12 @@ export default function TenantsPanelV2() {
             if (editForm.newPassword && editForm.newPassword.trim().length >= 6) {
                 const adminEmail = editForm.adminEmail || showEditTenant.adminEmail || showEditTenant.contactEmail;
                 if (adminEmail) {
-                    await adminChangePassword(adminEmail, editForm.newPassword.trim());
-                    msg += `\n\n🔑 Nueva contraseña establecida para ${adminEmail}: ${editForm.newPassword.trim()}`;
+                    const res = await adminChangePassword(adminEmail, editForm.newPassword.trim());
+                    if (res?.message) {
+                        msg += `\n\nℹ️ ${res.message}`;
+                    } else {
+                        msg += `\n\n🔑 Nueva contraseña establecida para ${adminEmail}: ${editForm.newPassword.trim()}`;
+                    }
                 }
             } else if (editForm.newPassword && editForm.newPassword.trim().length < 6) {
                 alert("⚠️ La contraseña debe tener al menos 6 caracteres. No se cambió la contraseña.");
