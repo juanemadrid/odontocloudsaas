@@ -51,6 +51,8 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
     const [rejectReason, setRejectReason] = useState("");
     const inquilino = userProfile?.inquilino;
 
+    const [clinicConfig, setClinicConfig] = useState(null);
+
     useEffect(() => {
         if (!inquilino) return;
         const q = query(
@@ -63,8 +65,22 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
         const unsub = onSnapshot(q, snap => {
             setNotificaciones(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
-        return () => unsub();
+
+        const unsubTenant = onSnapshot(doc(db, "tenants", inquilino), snap => {
+            if (snap.exists()) {
+                setClinicConfig(snap.data());
+            }
+        });
+
+        return () => {
+            unsub();
+            unsubTenant();
+        };
     }, [inquilino]);
+
+    const displayLogo = clinicConfig?.logoUrl || clinicConfig?.logo || userProfile?.tenant?.logo || userProfile?.tenant?.logo_url || "";
+    const displayName = clinicConfig?.nombreComercial || clinicConfig?.name || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "OdontoCloud";
+    const displayNit = clinicConfig?.nit || userProfile?.tenant?.nit || "";
 
 
 
@@ -273,22 +289,22 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                             <div className={`${collapsedDesktop ? 'w-10 h-10 rounded-lg' : 'w-20 h-20 rounded-2xl'} bg-white border border-slate-100 shadow-xl flex items-center justify-center overflow-hidden group-hover:scale-105 group-hover:rotate-1 transition-all duration-500 shrink-0`}>
                                 {userProfile?.rol === 'superadmin' ? (
                                     <div className="w-full h-full bg-slate-900 flex items-center justify-center text-white font-black text-xl lg:text-3xl italic tracking-tighter">M</div>
-                                ) : userProfile?.tenant?.logo ? (
-                                    <img src={userProfile.tenant.logo} alt="Logo" className="max-h-full max-w-full object-contain p-1 lg:p-2" />
+                                ) : displayLogo ? (
+                                    <img src={displayLogo} alt="Logo" className="max-h-full max-w-full object-contain p-1 lg:p-2" />
                                 ) : (
-                                    <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-black text-xl lg:text-2xl italic tracking-tighter">
-                                        {(userProfile?.tenant?.nombreComercial || "O").substring(0, 1).toUpperCase()}
+                                    <div className="w-full h-full bg-blue-600 flex items-center justify-center text-white font-black text-xl lg:text-2xl italic tracking-tighter uppercase">
+                                        {(displayName || "O").substring(0, 1).toUpperCase()}
                                     </div>
                                 )}
                             </div>
                             <div className={`flex flex-col items-center text-center overflow-hidden transition-all duration-500 ${collapsedDesktop ? 'w-0 opacity-0 h-0 hidden' : 'w-auto opacity-100 h-auto'}`}>
-                                <h1 className="text-xl font-black text-slate-800 tracking-tighter leading-none uppercase truncate max-w-[200px]">
+                                <h1 className="text-sm font-black text-slate-800 tracking-tighter leading-snug uppercase truncate max-w-[200px]" title={displayName}>
                                     {userProfile?.rol === 'superadmin' 
                                         ? "OdontoCloud Central" 
-                                        : (userProfile?.tenant?.nombreComercial || "ODONTOCLOUD")}
+                                        : displayName}
                                 </h1>
-                                {userProfile?.tenant?.nit && (
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200/50">NIT: {userProfile.tenant.nit}</span>
+                                {displayNit && (
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1.5 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200/50">NIT: {displayNit}</span>
                                 )}
                             </div>
                         </div>
