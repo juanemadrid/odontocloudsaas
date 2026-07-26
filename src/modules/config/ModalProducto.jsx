@@ -361,7 +361,7 @@ export default function ModalProducto({ item = null, categoria = "", onClose, on
                     )}
 
                     {activeSection === "tecnico" && (
-                        <div className="space-y-3 animate-fade-in grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-slate-600">Registro Invima</label>
                                 <input 
