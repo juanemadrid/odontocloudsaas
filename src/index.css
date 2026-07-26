@@ -49,6 +49,14 @@
     caret-color: #000000 !important;
   }
 
+  /* Ocultar ojito nativo del navegador (Microsoft Edge / IE) */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
   /* Refuerzo para bordes de tarjetas y contenedores */
   .border-slate-100, .border-slate-50 {
     @apply border-slate-200;
