@@ -16,7 +16,44 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(false);  const [forgotModal, setForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotMsg, setForgotMsg] = useState({ type: "", text: "" });
+  const [sendingReset, setSendingReset] = useState(false);
+
+  const handleSendResetEmail = async (e) => {
+    e.preventDefault();
+    const targetEmail = (forgotEmail || email).trim();
+
+    if (!targetEmail) {
+      setForgotMsg({ type: "error", text: "Por favor ingresa tu correo electrónico." });
+      return;
+    }
+
+    setSendingReset(true);
+    setForgotMsg({ type: "", text: "" });
+
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}reset-password`
+      });
+
+      if (resetErr) throw resetErr;
+
+      setForgotMsg({
+        type: "success",
+        text: `¡Enlace enviado! Revisa la bandeja de entrada (y spam) de ${targetEmail}.`
+      });
+    } catch (err) {
+      console.error("Error enviando recuperación:", err);
+      setForgotMsg({
+        type: "error",
+        text: err.message || "Error al enviar el enlace de recuperación."
+      });
+    } finally {
+      setSendingReset(false);
+    }
+  };
 
   const redirectByRole = (rol) => {
     const r = (rol || "").toLowerCase();
@@ -182,6 +219,20 @@ const Login = () => {
                 )}
               </button>
             </div>
+
+            <a
+              href="#forgot"
+              onClick={(e) => {
+                e.preventDefault();
+                setForgotEmail(email);
+                setForgotMsg({ type: "", text: "" });
+                setForgotModal(true);
+              }}
+              className="forgot"
+            >
+              ¿Olvidaste tu contraseña?
+            </a>
+
             <button type="submit" disabled={loadingStatus}>
               {loadingStatus ? "Iniciando..." : "Iniciar sesión"}
             </button>
@@ -190,6 +241,77 @@ const Login = () => {
           </form>
         </div>
       </div>
+
+      {/* Modal Olvidé mi Contraseña */}
+      {forgotModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff', borderRadius: '1.25rem', width: '100%', maxWidth: '420px',
+            padding: '2rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            position: 'relative'
+          }}>
+            <button
+              type="button"
+              onClick={() => setForgotModal(false)}
+              style={{
+                position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none',
+                fontSize: '1.25rem', cursor: 'pointer', color: '#94a3b8'
+              }}
+            >
+              ✕
+            </button>
+
+            <h4 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.5rem', textAlign: 'center' }}>
+              Recuperar Contraseña
+            </h4>
+            <p style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '1.25rem', textAlign: 'center' }}>
+              Ingresa tu correo electrónico registrado y te enviaremos un enlace seguro para crear una nueva clave.
+            </p>
+
+            {forgotMsg.text && (
+              <div style={{
+                padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.8125rem', fontWeight: 600,
+                backgroundColor: forgotMsg.type === 'success' ? '#f0fdf4' : '#fef2f2',
+                color: forgotMsg.type === 'success' ? '#166534' : '#991b1b',
+                border: `1px solid ${forgotMsg.type === 'success' ? '#bbf7d0' : '#fecaca'}`
+              }}>
+                {forgotMsg.text}
+              </div>
+            )}
+
+            <form onSubmit={handleSendResetEmail}>
+              <input
+                type="email"
+                placeholder="tu-correo@ejemplo.com"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                required
+                style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', marginBottom: '1rem' }}
+              />
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setForgotModal(false)}
+                  style={{ padding: '0.625rem 1.25rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', background: '#ffffff', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingReset}
+                  style={{ padding: '0.625rem 1.25rem', borderRadius: '0.5rem', border: 'none', background: '#2bb673', color: '#ffffff', fontWeight: 600, cursor: 'pointer', opacity: sendingReset ? 0.6 : 1 }}
+                >
+                  {sendingReset ? "Enviando..." : "Enviar Enlace"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
