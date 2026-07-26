@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FiSearch, FiEdit2, FiEye, FiTrash2, FiDollarSign, FiUploadCloud, FiBox, FiAlertTriangle, FiCheck } from "react-icons/fi";
+import { FiSearch, FiEdit2, FiEye, FiTrash2, FiDollarSign, FiUploadCloud, FiBox, FiAlertTriangle, FiCheck, FiCheckSquare, FiSquare } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
@@ -28,6 +28,9 @@ export default function EmpresaListaPrecios() {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
 
+    // Selection state for bulk operations
+    const [selectedIds, setSelectedIds] = useState(new Set());
+
     // View State: 'list' or 'editor'
     const [view, setView] = useState("list");
     const [selectedList, setSelectedList] = useState(null);
@@ -38,8 +41,12 @@ export default function EmpresaListaPrecios() {
     const [editItem, setEditItem] = useState(null); 
     const [formData, setFormData] = useState({ nombre: "" });
     const [showImporter, setShowImporter] = useState(false);
-    const [deleteTarget, setDeleteTarget] = useState(null); // Custom delete confirm modal
+
+    // Deletion Modal States
+    const [deleteTarget, setDeleteTarget] = useState(null); // Single delete target
     const [deleting, setDeleting] = useState(false);
+    const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false); // Bulk delete modal
+    const [bulkDeleting, setBulkDeleting] = useState(false);
 
     const TABS = [
         { id: "clinicos", label: "Lista de precios clínicos" },
@@ -91,7 +98,29 @@ export default function EmpresaListaPrecios() {
     useEffect(() => {
         fetchData();
         setSearchTerm("");
+        setSelectedIds(new Set());
     }, [activeTab, inquilino]);
+
+    const filteredRows = rows.filter(r => (r.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()));
+
+    // Bulk selection handlers
+    const allVisibleIds = filteredRows.map(r => r.id);
+    const isAllSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedIds.has(id));
+
+    const toggleSelectAll = () => {
+        if (isAllSelected) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(allVisibleIds));
+        }
+    };
+
+    const toggleSelectOne = (id) => {
+        const next = new Set(selectedIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setSelectedIds(next);
+    };
 
     const handleSaveList = async () => {
         if (!formData.nombre.trim()) return alert("El nombre es obligatorio");
@@ -164,7 +193,7 @@ export default function EmpresaListaPrecios() {
         }
     };
 
-    // ── CONFIRMAR Y ELIMINAR REGISTRO O LISTA DE PRECIOS ──
+    // Single item deletion
     const confirmDelete = async () => {
         if (!deleteTarget) return;
         setDeleting(true);
@@ -179,8 +208,10 @@ export default function EmpresaListaPrecios() {
 
             if (error) throw error;
 
-            // Remove from local state immediately
             setRows(prev => prev.filter(r => String(r.id) !== String(targetId)));
+            const nextSel = new Set(selectedIds);
+            nextSel.delete(targetId);
+            setSelectedIds(nextSel);
 
             if (toast?.success) toast.success("Registro eliminado correctamente de Supabase");
             else alert("✅ Registro eliminado correctamente.");
@@ -192,6 +223,38 @@ export default function EmpresaListaPrecios() {
             alert("❌ Error al eliminar el registro: " + (e.message || "Error de permisos"));
         } finally {
             setDeleting(false);
+        }
+    };
+
+    // Bulk deletion
+    const confirmBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        setBulkDeleting(true);
+        try {
+            const targetIds = Array.from(selectedIds);
+            const targetTable = (activeTab === "productos" || activeTab === "servicios") ? "inventario" : "listas_precios";
+
+            const { error } = await supabase
+                .from(targetTable)
+                .delete()
+                .in("id", targetIds);
+
+            if (error) throw error;
+
+            const targetSet = new Set(targetIds.map(String));
+            setRows(prev => prev.filter(r => !targetSet.has(String(r.id))));
+            setSelectedIds(new Set());
+
+            if (toast?.success) toast.success(`✅ ${targetIds.length} registros eliminados correctamente.`);
+            else alert(`✅ ${targetIds.length} registros eliminados correctamente.`);
+
+            setShowBulkDeleteModal(false);
+            fetchData();
+        } catch (e) {
+            console.error("Error al eliminar masivamente:", e);
+            alert("❌ Error al eliminar registros: " + (e.message || "Error de permisos"));
+        } finally {
+            setBulkDeleting(false);
         }
     };
 
@@ -233,8 +296,6 @@ export default function EmpresaListaPrecios() {
         );
     }
 
-    const filteredRows = rows.filter(r => (r.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()));
-
     return (
         <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
             {/* Top Toolbar */}
@@ -257,7 +318,18 @@ export default function EmpresaListaPrecios() {
                 </div>
 
                 {/* Right Actions */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                    {/* Botón de eliminación masiva cuando hay seleccionados */}
+                    {selectedIds.size > 0 && (
+                        <button
+                            onClick={() => setShowBulkDeleteModal(true)}
+                            className="h-8 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3 rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 animate-fade-in shrink-0"
+                        >
+                            <FiTrash2 size={13} />
+                            <span>Eliminar ({selectedIds.size})</span>
+                        </button>
+                    )}
+
                     <div className="relative">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
@@ -302,13 +374,31 @@ export default function EmpresaListaPrecios() {
                             <p className="text-[11px] font-medium text-slate-500">Gestión de tarifarios institucionales y catálogo</p>
                         </div>
                     </div>
-                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{filteredRows.length} Registros</span>
+
+                    <div className="flex items-center gap-3">
+                        {selectedIds.size > 0 && (
+                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
+                                {selectedIds.size} seleccionados
+                            </span>
+                        )}
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{filteredRows.length} Registros</span>
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider">
+                                {/* Checkbox Select All */}
+                                <th className="py-3 px-3 w-10 text-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={isAllSelected}
+                                        onChange={toggleSelectAll}
+                                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                                        title="Seleccionar todos"
+                                    />
+                                </th>
                                 <th className="py-3 px-4">Nombre</th>
                                 {activeTab === "productos" || activeTab === "servicios" ? (
                                     <>
@@ -329,95 +419,117 @@ export default function EmpresaListaPrecios() {
                         <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={5} className="py-12 text-center text-slate-400 font-medium">
+                                    <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
                                         <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
                                         Cargando datos...
                                     </td>
                                 </tr>
                             ) : filteredRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="py-12 text-center text-slate-400 font-medium">
+                                    <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
                                         No se encontraron listas o productos registrados
                                     </td>
                                 </tr>
                             ) : activeTab === "productos" || activeTab === "servicios" ? (
                                 // TABLA DE PRODUCTOS / SERVICIOS
-                                filteredRows.map((row) => (
-                                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                                        <td className="py-3 px-4 font-bold text-slate-800 uppercase">{row.nombre}</td>
-                                        <td className="py-3 px-4 font-mono text-slate-500">{row.codigo || "-"}</td>
-                                        <td className="py-3 px-4">
-                                            <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md font-bold text-[10px] uppercase">
-                                                {row.categoria || "GENERAL"}
-                                            </span>
-                                        </td>
-                                        <td className="py-3 px-4 text-right font-black text-slate-800">
-                                            ${Number(row.precio || 0).toLocaleString("es-CO")}
-                                        </td>
-                                        <td className="py-3 px-4 text-right">
-                                            <div className="flex items-center justify-end gap-1.5">
-                                                <button
-                                                    onClick={() => handleEdit(row)}
-                                                    className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
-                                                    title="Editar"
-                                                >
-                                                    <FiEdit2 size={14} />
-                                                </button>
-                                                <button
-                                                    onClick={() => setDeleteTarget(row)}
-                                                    className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
-                                                    title="Eliminar"
-                                                >
-                                                    <FiTrash2 size={14} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                filteredRows.map((row) => {
+                                    const isSelected = selectedIds.has(row.id);
+                                    return (
+                                        <tr key={row.id} className={`transition-colors ${isSelected ? "bg-blue-50/50" : "hover:bg-slate-50/80"}`}>
+                                            <td className="py-3 px-3 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleSelectOne(row.id)}
+                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                                                />
+                                            </td>
+                                            <td className="py-3 px-4 font-bold text-slate-800 uppercase">{row.nombre}</td>
+                                            <td className="py-3 px-4 font-mono text-slate-500">{row.codigo || "-"}</td>
+                                            <td className="py-3 px-4">
+                                                <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md font-bold text-[10px] uppercase">
+                                                    {row.categoria || "GENERAL"}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-4 text-right font-black text-slate-800">
+                                                ${Number(row.precio || 0).toLocaleString("es-CO")}
+                                            </td>
+                                            <td className="py-3 px-4 text-right">
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button
+                                                        onClick={() => handleEdit(row)}
+                                                        className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
+                                                        title="Editar"
+                                                    >
+                                                        <FiEdit2 size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setDeleteTarget(row)}
+                                                        className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
+                                                        title="Eliminar"
+                                                    >
+                                                        <FiTrash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             ) : (
                                 // TABLA DE LISTAS
-                                filteredRows.map((row) => (
-                                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                                        <td className="py-3 px-4">
-                                            <div className="flex flex-col">
-                                                <span className="font-black text-slate-800 uppercase tracking-tight">{row.nombre}</span>
-                                                <span className="text-[10px] font-mono text-slate-400">ID: {row.id ? String(row.id).substring(0, 8) : '-'}</span>
-                                            </div>
-                                        </td>
-                                        <td className="py-3 px-4 font-mono text-slate-500">{formatDate(row.creado || row.created_at)}</td>
-                                        <td className="py-3 px-4 font-mono text-slate-500">{formatDate(row.actualizado || row.updated_at)}</td>
-                                        <td className="py-3 px-4">
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activa
-                                            </span>
-                                        </td>
-                                        <td className="py-3 px-4 text-right">
-                                            <div className="flex items-center justify-end gap-1.5">
-                                                <button
-                                                    onClick={() => handleEditor(row)}
-                                                    className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
-                                                    title="Ver / Configurar Ítems"
-                                                >
-                                                    <FiEye size={14} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleEdit(row)}
-                                                    className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
-                                                    title="Editar nombre"
-                                                >
-                                                    <FiEdit2 size={14} />
-                                                </button>
-                                                <button
-                                                    onClick={() => setDeleteTarget(row)}
-                                                    className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
-                                                    title="Eliminar Lista"
-                                                >
-                                                    <FiTrash2 size={14} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
+                                filteredRows.map((row) => {
+                                    const isSelected = selectedIds.has(row.id);
+                                    return (
+                                        <tr key={row.id} className={`transition-colors ${isSelected ? "bg-blue-50/50" : "hover:bg-slate-50/80"}`}>
+                                            <td className="py-3 px-3 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleSelectOne(row.id)}
+                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                                                />
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <div className="flex flex-col">
+                                                    <span className="font-black text-slate-800 uppercase tracking-tight">{row.nombre}</span>
+                                                    <span className="text-[10px] font-mono text-slate-400">ID: {row.id ? String(row.id).substring(0, 8) : '-'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-3 px-4 font-mono text-slate-500">{formatDate(row.creado || row.created_at)}</td>
+                                            <td className="py-3 px-4 font-mono text-slate-500">{formatDate(row.actualizado || row.updated_at)}</td>
+                                            <td className="py-3 px-4">
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activa
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-4 text-right">
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button
+                                                        onClick={() => handleEditor(row)}
+                                                        className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
+                                                        title="Ver / Configurar Ítems"
+                                                    >
+                                                        <FiEye size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleEdit(row)}
+                                                        className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
+                                                        title="Editar nombre"
+                                                    >
+                                                        <FiEdit2 size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setDeleteTarget(row)}
+                                                        className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
+                                                        title="Eliminar Lista"
+                                                    >
+                                                        <FiTrash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
@@ -492,7 +604,7 @@ export default function EmpresaListaPrecios() {
                 />
             )}
 
-            {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN MODERNO Y 100% FIABLE */}
+            {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN INDIVIDUAL */}
             {deleteTarget && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[10000] p-4 animate-fade-in">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-rose-100 p-6 space-y-5">
@@ -531,6 +643,53 @@ export default function EmpresaListaPrecios() {
                                     <FiTrash2 size={16} />
                                 )}
                                 <span>{deleting ? "Eliminando..." : "Sí, Eliminar Ahora"}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN MASIVA */}
+            {showBulkDeleteModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[10000] p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-rose-100 p-6 space-y-5">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center shrink-0">
+                                <FiAlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">
+                                    ¿Eliminar {selectedIds.size} Registros?
+                                </h3>
+                                <p className="text-xs font-bold text-rose-600 uppercase tracking-wider">Eliminación múltiple masiva en Supabase</p>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                            <p className="text-xs font-bold text-slate-700">
+                                Vas a eliminar permanentemente <span className="text-rose-600 font-black">{selectedIds.size} elementos</span> seleccionados de la lista. Esta acción no se puede deshacer.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                onClick={() => setShowBulkDeleteModal(false)}
+                                disabled={bulkDeleting}
+                                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 bg-white"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={confirmBulkDelete}
+                                disabled={bulkDeleting}
+                                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-rose-200 flex items-center gap-2 border-0 disabled:opacity-50"
+                            >
+                                {bulkDeleting ? (
+                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                    <FiTrash2 size={16} />
+                                )}
+                                <span>{bulkDeleting ? "Eliminando..." : `Sí, Eliminar (${selectedIds.size})`}</span>
                             </button>
                         </div>
                     </div>
