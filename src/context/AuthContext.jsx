@@ -16,13 +16,21 @@ export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserProfile = async (authUser) => {
+  const fetchUserProfile = async (authUser, forceRefresh = false) => {
     if (!authUser) return null;
+    const cacheKey = `oc_user_profile_${authUser.id}`;
+    if (!forceRefresh) {
+      try {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch (e) {}
+    }
+
     try {
-      // Consultar perfil de usuario e información del tenant en Supabase
+      // Consultar perfil e información mínima necesaria del tenant en Supabase
       const { data: profile, error } = await supabase
         .from("profiles")
-        .select("*, tenant:tenants(*)")
+        .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit)")
         .eq("id", authUser.id)
         .maybeSingle();
 
@@ -54,6 +62,7 @@ export const AuthProvider = ({ children }) => {
           fullProfile.rol = "superadmin";
         }
 
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(fullProfile)); } catch (e) {}
         return fullProfile;
       }
 
@@ -147,7 +156,7 @@ export const AuthProvider = ({ children }) => {
     const handleTenantUpdated = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user && isMounted) {
-        const prof = await fetchUserProfile(session.user);
+        const prof = await fetchUserProfile(session.user, true);
         if (isMounted) setUserProfile(prof);
       }
     };
@@ -170,6 +179,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    try {
+      sessionStorage.clear();
+    } catch (e) {}
     try {
       await supabase.auth.signOut();
     } catch (e) {
