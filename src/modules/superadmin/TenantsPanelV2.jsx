@@ -163,35 +163,9 @@ export default function TenantsPanelV2() {
 
         setProcessing(true);
         try {
-            // 1. Guardar datos de la clínica
+            // Guardar datos de la clínica
             await updateTenantDetails(showEditTenant.id, editForm);
-
-            let pwdMsg = "";
-            // 2. Si el SuperAdmin escribió una nueva contraseña directamente
-            if (editForm.newPassword) {
-                if (editForm.newPassword.length < 6) {
-                    alert("❌ La contraseña debe tener al menos 6 caracteres.");
-                    setProcessing(false);
-                    return;
-                }
-                await adminChangePassword(editForm.adminEmail, editForm.newPassword);
-                pwdMsg = "\n🔑 Contraseña actualizada directamente en Supabase.";
-            }
-
-            // 3. Si se solicitó enviar correo de restablecimiento
-            if (editForm.sendResetEmail && editForm.adminEmail) {
-                const { error } = await supabase.auth.resetPasswordForEmail(editForm.adminEmail, {
-                    redirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}reset-password`
-                });
-                if (error) {
-                    alert(`✅ Datos de clínica guardados.${pwdMsg}\n⚠️ Nota sobre correo: ${error.message}`);
-                } else {
-                    alert(`✅ Datos guardados, contraseña actualizada y correo enviado exitosamente a:\n${editForm.adminEmail}`);
-                }
-            } else {
-                alert(`✅ Datos de la clínica actualizados exitosamente.${pwdMsg}`);
-            }
-
+            alert("✅ Datos de la clínica actualizados exitosamente.");
             setShowEditTenant(null);
             loadData();
         } catch (err) {
@@ -764,42 +738,17 @@ export default function TenantsPanelV2() {
                                         <p className="text-[10px] text-slate-400 mt-1">Correo con el que el administrador inicia sesión en OdontoCloud.</p>
                                     </div>
 
-                                    <div className="pt-1">
-                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                                            Asignar Nueva Contraseña Directamente (Opcional)
-                                        </label>
-                                        <div className="relative">
-                                            <input
-                                                type={editForm.showPwd ? "text" : "password"}
-                                                className={inp + " pr-10"}
-                                                placeholder="Escribe la nueva contraseña (mínimo 6 caracteres)"
-                                                value={editForm.newPassword || ""}
-                                                onChange={e=>setEditForm({...editForm, newPassword: e.target.value})}
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditForm({...editForm, showPwd: !editForm.showPwd})}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                                            >
-                                                {editForm.showPwd ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-                                            </button>
-                                        </div>
-                                        <p className="text-[10px] text-emerald-600 font-semibold mt-1">
-                                            ⚡ Si escribes una clave aquí y le das a Guardar, se actualizará al instante en Supabase sin esperar correos.
-                                        </p>
-                                    </div>
-
-                                    <div className="bg-amber-50/80 border border-amber-200/60 rounded-2xl p-3.5 space-y-2">
-                                        <div className="flex items-center justify-between gap-2">
+                                    <div className="bg-amber-50/80 border border-amber-200/60 rounded-2xl p-4 space-y-2 mt-3">
+                                        <div className="flex items-center justify-between gap-3">
                                             <div>
-                                                <p className="text-xs font-bold text-slate-800">¿Olvidó su contraseña?</p>
-                                                <p className="text-[11px] text-slate-500">Envía un enlace seguro al correo del admin para crear una nueva clave.</p>
+                                                <p className="text-xs font-bold text-slate-800">¿Restablecer Contraseña del Admin?</p>
+                                                <p className="text-[11px] text-slate-500 mt-0.5">Envía un enlace seguro al correo de acceso para que el administrador cree una nueva contraseña.</p>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={() => handleResetPassword(editForm.adminEmail)}
                                                 disabled={sendingReset || !editForm.adminEmail}
-                                                className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm shadow-amber-200 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                                className="shrink-0 px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm shadow-amber-200 transition-all disabled:opacity-50 flex items-center gap-1.5"
                                             >
                                                 <FiKey size={13}/>
                                                 {sendingReset ? "Enviando..." : "Enviar enlace"}
