@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validImageOrPdf() {
+      return request.resource == null
+        || request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf';
+    }
+
+    function underTenMb() {
+      return request.resource == null || request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /website_uploads/{fileName} {
+      allow read: if true;
+      allow write: if signedIn() && validImageOrPdf() && underTenMb();
+    }
+
+    match /inventario/{fileName} {
+      allow read, write: if signedIn() && validImageOrPdf() && underTenMb();
+    }
+
+    match /productos/{fileName} {
+      allow read: if true;
+      allow write: if signedIn() && validImageOrPdf() && underTenMb();
+    }
+
+    match /pacientes/{patientId}/{fileName} {
+      allow read, write: if signedIn() && validImageOrPdf() && underTenMb();
+    }
+
+    match /rx/{patientId}/{fileName} {
+      allow read, write: if signedIn() && validImageOrPdf() && underTenMb();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -944,7 +944,7 @@ function Overview({
           <div className="absolute top-[-40%] left-[-20%] w-[800px] h-[800px] bg-blue-600/30 rounded-full blur-[140px] animate-pulse duration-[12s]" />
           <div className="absolute bottom-[-30%] right-[-10%] w-[600px] h-[600px] bg-indigo-500/20 rounded-full blur-[120px]" />
           <div className="absolute top-[20%] right-[20%] w-[400px] h-[400px] bg-cyan-400/10 rounded-full blur-[100px] animate-bounce duration-[15s]" />
-          <div className="absolute inset-0 bg-[url('/odontocloud-react/noise.svg')] opacity-20 mix-blend-overlay"></div>
+          <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-20 mix-blend-overlay"></div>
         </div>
 
         {/* Grid Pattern Overlay */}

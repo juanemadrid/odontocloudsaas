@@ -8,7 +8,7 @@ import "../styles/login.css";
 import fondo from "/assets/fondo.png";
 import logo from "/assets/logo.png";
 
-const BASE_PATH = import.meta.env.BASE_URL || "/odontocloud-react/";
+const BASE_PATH = import.meta.env.BASE_URL || "/odontocloudsaas/";
 
 const Login = () => {
   const navigate = useNavigate();

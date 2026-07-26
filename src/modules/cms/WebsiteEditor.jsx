@@ -926,7 +926,7 @@ export default function WebCms() {
                             {/* Responsive Live Iframe */}
                             <div className="flex-1 bg-white relative overflow-hidden">
                                 <iframe
-                                    src={`${import.meta.env.BASE_URL || "/odontocloud-react/"}preview`}
+                                    src={`${import.meta.env.BASE_URL || "/odontocloudsaas/"}preview`}
                                     className="w-full h-full border-none"
                                     style={{ overflowY: "auto" }}
                                     scrolling="yes"
@@ -960,7 +960,7 @@ export default function WebCms() {
                             {/* Mobile Live Iframe */}
                             <div className="flex-1 bg-white relative overflow-hidden">
                                 <iframe
-                                    src={`${import.meta.env.BASE_URL || "/odontocloud-react/"}preview`}
+                                    src={`${import.meta.env.BASE_URL || "/odontocloudsaas/"}preview`}
                                     className="w-full h-full border-none"
                                     style={{ overflowY: "auto" }}
                                     scrolling="yes"

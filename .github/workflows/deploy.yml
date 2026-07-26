@@ -35,6 +35,11 @@ jobs:
       - name: Build project
         run: npm run build
 
+      - name: Prepare SPA fallback & NoJekyll
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 

@@ -200,7 +200,7 @@ export default function Agenda() {
             const rawLogoUrl = userProfile?.tenant?.logo || "";
             const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
             const logoUrl = (isLocalDev && rawLogoUrl && rawLogoUrl.includes('firebasestorage.googleapis.com'))
-                ? `/odontocloud-react/api/proxy-logo?url=${encodeURIComponent(rawLogoUrl)}`
+                ? `${import.meta.env.BASE_URL || '/odontocloudsaas/'}api/proxy-logo?url=${encodeURIComponent(rawLogoUrl)}`
                 : rawLogoUrl;
 
             // 2. Build a CUSTOM professional header for the PDF (Matching Budget/Receipt premium style)

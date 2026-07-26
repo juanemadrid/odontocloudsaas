@@ -27,7 +27,7 @@ export default function Servicios() {
                     <div className="absolute top-[-30%] left-[-10%] w-[600px] h-[600px] bg-blue-600/20 rounded-full blur-[120px] animate-pulse duration-[10s]" />
                     <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-indigo-500/15 rounded-full blur-[100px]" />
                 </div>
-                <div className="absolute inset-0 bg-[url('/odontocloud-react/noise.svg')] opacity-10 mix-blend-overlay"></div>
+                <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-10 mix-blend-overlay"></div>
 
                 <div className="container mx-auto max-w-7xl relative z-10 text-center">
                     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-sky-500/30 bg-sky-500/10 backdrop-blur-md mb-6">

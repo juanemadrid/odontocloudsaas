@@ -90,7 +90,7 @@ export default function TenantsPanelV2() {
         setResetSent(false);
         try {
             const { error } = await supabase.auth.resetPasswordForEmail(adminEmail, {
-                redirectTo: `${window.location.origin}/odontocloud-react/reset-password`
+                redirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}reset-password`
             });
             if (error) throw error;
             setResetSent(true);
@@ -168,7 +168,7 @@ export default function TenantsPanelV2() {
             // 2. Si se solicitó enviar correo de restablecimiento
             if (editForm.sendResetEmail && editForm.adminEmail) {
                 const { error } = await supabase.auth.resetPasswordForEmail(editForm.adminEmail, {
-                    redirectTo: `${window.location.origin}/odontocloud-react/reset-password`
+                    redirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}reset-password`
                 });
                 if (error) {
                     alert(`✅ Datos de clínica guardados.\n⚠️ Nota sobre contraseña: ${error.message}`);

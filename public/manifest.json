@@ -5,8 +5,8 @@
     "theme_color": "#2563eb",
     "background_color": "#ffffff",
     "display": "standalone",
-    "start_url": "/odontocloud-react/",
-    "scope": "/odontocloud-react/",
+    "start_url": "/odontocloudsaas/",
+    "scope": "/odontocloudsaas/",
     "icons": [
         {
             "src": "pwa-192x192.png",

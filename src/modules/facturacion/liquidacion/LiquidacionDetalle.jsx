@@ -465,7 +465,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                                         <td className="py-3.5 px-4 text-right font-black text-purple-600">{fmt(Math.round(p.valorRecaudado * comisionPct / 100))}</td>
                                         <td className="py-3.5 px-4 text-center">
                                             <a 
-                                                href={`/odontocloud-react/dashboard/pacientes`}
+                                                href={`${import.meta.env.BASE_URL || '/odontocloudsaas/'}dashboard/pacientes`}
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 className="h-7 px-3 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-100 hover:border-slate-200 rounded-lg inline-flex items-center justify-center font-bold"
