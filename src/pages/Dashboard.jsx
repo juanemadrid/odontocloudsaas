@@ -2,8 +2,7 @@
 // 🦷 Dashboard.jsx - Panel principal OdontoCloud (enrutado interno por URL)
 // ===============================
 import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
-import { collection, query, where, onSnapshot, getCountFromServer, getDocs, orderBy, limit, Timestamp } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
+
 
 // import "../styles/dashboard.css"; // REMOVED: Migrated to index.css
 
@@ -140,8 +139,8 @@ const useTodayRange = () =>
       0, 0, 0, 0
     );
     return {
-      startToday: Timestamp.fromDate(startToday),
-      endToday: Timestamp.fromDate(endToday),
+      startToday: startToday.toISOString(),
+      endToday: endToday.toISOString(),
       startTodayJS: startToday,
     };
   }, []);
@@ -1179,15 +1178,14 @@ export default function Dashboard() {
     const fetchDoctorId = async () => {
       if (isDoc && userProfile?.inquilino && userProfile?.email) {
         try {
-          const q = query(
-            collection(db, "profesionales"),
-            where("inquilino", "==", userProfile.inquilino),
-            where("correo", "==", userProfile.email)
-          );
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            setCurrentDoctorId(snap.docs[0].id);
-          }
+          // Buscar doctor por email en Supabase
+          const { data } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("tenant_id", userProfile.inquilino)
+            .eq("email", userProfile.email)
+            .single();
+          if (data?.id) setCurrentDoctorId(data.id);
         } catch (e) {
           console.warn("Error al buscar doctor por email:", e);
         }
@@ -1314,79 +1312,75 @@ export default function Dashboard() {
     if (!userProfile?.inquilino) return;
     if (cacheLoaded) return;
 
-    const qTodayStr = query(
-      collection(db, "citas"),
-      where("inquilino", "==", userProfile?.inquilino || "nop"),
-      where("fecha", "==", todayIso)
-    );
-    let cacheMap = new Map();
-    const commit = () => {
-      const rows = Array.from(cacheMap.values()).sort(
-        (a, b) => a.fecha.getTime() - b.fecha.getTime()
-      );
-      const enEsperaCount = rows.filter(
-        (r) => {
+    const loadTodaysAppointments = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("citas")
+          .select("*")
+          .eq("tenant_id", userProfile.inquilino)
+          .eq("fecha", todayIso);
+
+        if (error) throw error;
+
+        const rows = (data || []).map(d => {
+          const fechaDate = new Date(`${d.fecha}T${d.hora || '00:00'}`);
+          return {
+            id: d.id,
+            fecha: fechaDate,
+            pacienteId: d.paciente_id || "",
+            pacienteNombre: d.paciente_nombre || d.paciente || "Paciente",
+            estado: String(d.estado || d.status || "programada"),
+            motivo: d.motivo || "",
+            doctorId: d.doctor_id || "",
+          };
+        }).sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+
+        const enEsperaCount = rows.filter(r => {
           const est = String(r.estado).toLowerCase().trim();
           return est === "en espera" || est === "waiting";
-        }
-      ).length;
-      setTodaysAppointments(rows);
-      setMetrics((m) => ({ ...m, citasHoy: rows.length, enEspera: enEsperaCount }));
-      setTodaysLoading(false);
+        }).length;
+
+        setTodaysAppointments(rows);
+        setMetrics(m => ({ ...m, citasHoy: rows.length, enEspera: enEsperaCount }));
+      } catch (e) {
+        console.error("Error cargando citas del día desde Supabase:", e);
+      } finally {
+        setTodaysLoading(false);
+      }
     };
 
-    const unsubStr = onSnapshot(
-      qTodayStr,
-      (snap) => {
-        const temp = new Map();
-        snap.docs.forEach((d) => temp.set(d.id, normalizeCita(d)));
-        cacheMap = temp;
-        commit();
-      },
-      (err) => {
-        console.error("Realtime citas hoy (STR):", err);
-        setTodaysLoading(false);
-        commit();
-      }
-    );
-    return () => {
-      try { unsubStr(); } catch { }
-    };
+    loadTodaysAppointments();
   }, [todayIso, userProfile?.inquilino, cacheLoaded]);
 
   useEffect(() => {
     if (cacheLoaded) return;
     const loadMetricsBase = async () => {
       try {
-        const pacientesCountSnap = await getCountFromServer(
-          query(
-            collection(db, "pacientes"), 
-            where("inquilino", "==", userProfile?.inquilino || "nop"),
-            where("activo", "==", true)
-          )
-        );
-        const pacientesTotal = pacientesCountSnap.data().count || 0;
+        // Contar pacientes activos en Supabase
+        const { count: pacientesTotal } = await supabase
+          .from("pacientes")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", userProfile?.inquilino || "nop")
+          .eq("activo", true);
 
         let facturacionHoy = 0;
         try {
-          const qFact = query(
-            collection(db, "facturas_venta"),
-            where("inquilino", "==", userProfile?.inquilino || "nop"),
-            where("fecha", "==", todayIso)
-          );
-          const factSnap = await getDocs(qFact);
-          factSnap.forEach((docu) => {
-            const d = docu.data();
-            if (typeof d.total === "number") facturacionHoy += d.total;
+          const { data: facturas } = await supabase
+            .from("facturas_venta")
+            .select("total")
+            .eq("tenant_id", userProfile?.inquilino || "nop")
+            .eq("fecha", todayIso);
+          (facturas || []).forEach(f => {
+            if (typeof f.total === "number") facturacionHoy += f.total;
           });
         } catch (e) {
           console.error("Error calc facturacion:", e);
         }
 
-        setMetrics((m) => ({ ...m, pacientesHoy: pacientesTotal, facturacionHoy }));
+        setMetrics(m => ({ ...m, pacientesHoy: pacientesTotal || 0, facturacionHoy }));
       } catch (e) {
         console.error("Error cargando métricas:", e);
-        setMetrics((m) => ({ ...m, pacientesHoy: 0, facturacionHoy: 0 }));
+        setMetrics(m => ({ ...m, pacientesHoy: 0, facturacionHoy: 0 }));
       } finally {
         setMetricsLoading(false);
       }
@@ -1407,8 +1401,6 @@ export default function Dashboard() {
         today.getMonth(),
         today.getDate() - (7 - i)
       );
-      // Fixed loop logic in restored version?
-      // Just dumping what the user gave me.
       const key = d.toISOString().slice(0, 10);
       const label = d.toLocaleDateString(locale === "es" ? "es-ES" : "en-US");
       const shortLabel = d
@@ -1419,75 +1411,63 @@ export default function Dashboard() {
         .replace(".", "");
       base.set(key, { label, shortLabel, value: 0 });
     }
-    // ... wait, I must trust the file content provided by the user.
 
-    const qWeekPatients = query(
-      collection(db, "pacientes"),
-      where("inquilino", "==", userProfile?.inquilino || "nop"),
-      where("createdAt", ">=", Timestamp.fromDate(startWeek)),
-      where("createdAt", "<", Timestamp.fromDate(endWeekJs))
-    );
+    // Usar Supabase para la serie semanal de pacientes
+    const loadWeeklySeries = async () => {
+      try {
+        const { data } = await supabase
+          .from("pacientes")
+          .select("created_at")
+          .eq("tenant_id", userProfile?.inquilino || "nop")
+          .gte("created_at", startWeek.toISOString())
+          .lt("created_at", endWeekJs.toISOString());
 
-    const unsub = onSnapshot(
-      qWeekPatients,
-      (snap) => {
         const counts = new Map(base);
-        snap.docs.forEach((d) => {
-          const data = d.data();
-          if (data.createdAt && data.createdAt.toDate) {
-            const dateStr = data.createdAt.toDate().toISOString().slice(0, 10);
-            if (counts.has(dateStr)) {
-              const entry = counts.get(dateStr);
-              entry.value += 1;
-              counts.set(dateStr, entry);
-            }
+        (data || []).forEach((row) => {
+          const dateStr = (row.created_at || "").slice(0, 10);
+          if (counts.has(dateStr)) {
+            const entry = counts.get(dateStr);
+            entry.value += 1;
+            counts.set(dateStr, entry);
           }
         });
 
-        // Convert Map to sorted array
-        const sorted = Array.from(counts.values()).reverse(); // The loop was backwards (7 to 1), so dates are newest to oldest?
-        // Actually base loop was 7 days ago to yesterday?
-        // Let's check the loop: 7 days ago is index 7. today is index 0.
-        // base loop: i=7 downto 1. d = today - (7-i). 
-        // if i=7 -> today - 0 = today. 
-        // if i=1 -> today - 6.
-        // So map keys are ordered today -> past.
-        // We usually want chart left-to-right (Past -> Today).
-        // Let's just sort by date.
-
         const sortedSeries = Array.from(counts.entries())
-          .sort((a, b) => a[0].localeCompare(b[0])) // Sort by YYYY-MM-DD asc
+          .sort((a, b) => a[0].localeCompare(b[0]))
           .map(([k, v]) => ({ label: v.shortLabel, value: v.value }));
 
         setWeeklySeries(sortedSeries);
-      },
-      (e) => {
-        console.error("Error realtime serie semanal (pacientes):", e);
+      } catch (e) {
+        console.error("Error cargando serie semanal (Supabase):", e);
+        // Fallback: empty series
+        const emptySeries = Array.from(base.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([k, v]) => ({ label: v.shortLabel, value: 0 }));
+        setWeeklySeries(emptySeries);
       }
-    );
-
-
-    return () => {
-      try { unsub(); } catch { }
     };
+
+    loadWeeklySeries();
+
+    return () => {};
   }, [locale, cacheLoaded]);
 
   useEffect(() => {
     if (cacheLoaded) return;
     const loadRecent = async () => {
       try {
-        const qAct = query(
-          collection(db, "actividad"),
-          where("inquilino", "==", userProfile?.inquilino || "nop"),
-          orderBy("fecha", "desc"),
-          limit(5)
-        );
-        const snap = await getDocs(qAct);
+        // Actividad reciente desde Supabase
+        const { data } = await supabase
+          .from("actividad")
+          .select("id, descripcion, titulo, created_at")
+          .eq("tenant_id", userProfile?.inquilino || "nop")
+          .order("created_at", { ascending: false })
+          .limit(5);
         setRecent(
-          snap.docs.map((d) => ({
+          (data || []).map(d => ({
             id: d.id,
-            title: d.data().descripcion || d.data().titulo || "Actividad",
-            time: d.data().resumenTiempo || "",
+            title: d.descripcion || d.titulo || "Actividad",
+            time: d.created_at ? new Date(d.created_at).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }) : "",
           }))
         );
       } catch (e) {
