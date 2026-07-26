@@ -130,13 +130,18 @@ function SucursalEditor({ item, onBack, inquilino }) {
 
         setIsSaving(true);
         try {
+            const fullDireccion = form.direccion
+                ? `${form.direccion}${form.ciudad ? ` (${form.ciudad})` : ''}`
+                : (form.ciudad || "");
+
+            const fullTelefono = form.telefono
+                ? `${form.telefono}${form.celular ? ` / ${form.celular}` : ''}`
+                : (form.celular || "");
+
             const payload = {
                 nombre: form.nombre.trim(),
-                ciudad: form.ciudad,
-                direccion: form.direccion,
-                telefono: form.telefono,
-                celular: form.celular,
-                email: form.email,
+                direccion: fullDireccion,
+                telefono: fullTelefono,
                 tenant_id: inquilino,
             };
 
