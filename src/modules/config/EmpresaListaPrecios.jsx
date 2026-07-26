@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FiSearch, FiEdit2, FiEye, FiTrash2, FiDollarSign, FiUploadCloud, FiBox } from "react-icons/fi";
+import { FiSearch, FiEdit2, FiEye, FiTrash2, FiDollarSign, FiUploadCloud, FiBox, FiAlertTriangle, FiCheck } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
@@ -38,6 +38,8 @@ export default function EmpresaListaPrecios() {
     const [editItem, setEditItem] = useState(null); 
     const [formData, setFormData] = useState({ nombre: "" });
     const [showImporter, setShowImporter] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null); // Custom delete confirm modal
+    const [deleting, setDeleting] = useState(false);
 
     const TABS = [
         { id: "clinicos", label: "Lista de precios clínicos" },
@@ -75,7 +77,7 @@ export default function EmpresaListaPrecios() {
                     .eq("tenant_id", inquilino);
 
                 if (error) throw error;
-                const sorted = (data || []).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                const sorted = (data || []).sort((a, b) => new Date(b.created_at || b.creado || 0) - new Date(a.created_at || a.creado || 0));
                 setRows(sorted);
             }
         } catch (error) {
@@ -99,7 +101,7 @@ export default function EmpresaListaPrecios() {
             if (editItem) {
                 const { error } = await supabase
                     .from("listas_precios")
-                    .update({ nombre: formData.nombre })
+                    .update({ nombre: formData.nombre.trim() })
                     .eq("id", editItem.id);
                 if (error) throw error;
                 if (toast?.success) toast.success("Lista actualizada correctamente");
@@ -107,7 +109,7 @@ export default function EmpresaListaPrecios() {
                 const { error } = await supabase
                     .from("listas_precios")
                     .insert([{
-                        nombre: formData.nombre,
+                        nombre: formData.nombre.trim(),
                         tenant_id: inquilino,
                         descripcion: "[]",
                         activa: true
@@ -162,43 +164,34 @@ export default function EmpresaListaPrecios() {
         }
     };
 
-    const handleDelete = async (row) => {
-        if (activeTab === "productos" || activeTab === "servicios") {
-            if (!window.confirm(`¿Seguro que deseas eliminar "${row.nombre}"?`)) return;
-            setLoading(true);
-            try {
-                const { error } = await supabase
-                    .from("inventario")
-                    .delete()
-                    .eq("id", row.id);
+    // ── CONFIRMAR Y ELIMINAR REGISTRO O LISTA DE PRECIOS ──
+    const confirmDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            const targetId = deleteTarget.id;
+            const targetTable = (activeTab === "productos" || activeTab === "servicios") ? "inventario" : "listas_precios";
 
-                if (error) throw error;
-                setRows(prev => prev.filter(r => r.id !== row.id));
-                if (toast?.success) toast.success("Registro eliminado correctamente");
-            } catch (e) {
-                console.error("Error al eliminar producto/servicio:", e);
-                if (toast?.error) toast.error("Error al eliminar el registro");
-            } finally {
-                setLoading(false);
-            }
-        } else {
-            if (!window.confirm(`¿Seguro que deseas eliminar la lista de precios "${row.nombre}"?`)) return;
-            setLoading(true);
-            try {
-                const { error } = await supabase
-                    .from("listas_precios")
-                    .delete()
-                    .eq("id", row.id);
+            const { error } = await supabase
+                .from(targetTable)
+                .delete()
+                .eq("id", targetId);
 
-                if (error) throw error;
-                setRows(prev => prev.filter(r => r.id !== row.id));
-                if (toast?.success) toast.success("Lista de precios eliminada correctamente");
-            } catch (e) {
-                console.error("Error al eliminar lista de precios:", e);
-                if (toast?.error) toast.error("Error al eliminar la lista de precios");
-            } finally {
-                setLoading(false);
-            }
+            if (error) throw error;
+
+            // Remove from local state immediately
+            setRows(prev => prev.filter(r => String(r.id) !== String(targetId)));
+
+            if (toast?.success) toast.success("Registro eliminado correctamente de Supabase");
+            else alert("✅ Registro eliminado correctamente.");
+
+            setDeleteTarget(null);
+            fetchData();
+        } catch (e) {
+            console.error("Error al eliminar:", e);
+            alert("❌ Error al eliminar el registro: " + (e.message || "Error de permisos"));
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -218,190 +211,161 @@ export default function EmpresaListaPrecios() {
     };
 
     const handleNew = () => {
+        setEditItem(null);
         if (activeTab === "productos" || activeTab === "servicios") {
-            setEditItem({ es_servicio: activeTab === "servicios" });
             setShowProductModal(true);
         } else {
-            setEditItem(null);
             setFormData({ nombre: "" });
             setShowModal(true);
         }
     };
 
-    const filteredRows = rows.filter(r =>
-        (r.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (r.codigo || "").toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
     if (view === "editor" && selectedList) {
-        return <ListaPreciosEditar listaId={selectedList.id} onBack={() => { setView("list"); setSelectedList(null); }} />;
+        return (
+            <ListaPreciosEditar 
+                listaId={selectedList.id} 
+                onBack={() => {
+                    setView("list");
+                    setSelectedList(null);
+                    fetchData();
+                }} 
+            />
+        );
     }
+
+    const filteredRows = rows.filter(r => (r.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
         <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
-            {loading && (
-                <div className="absolute top-4 right-4 z-50">
-                    <div className="w-4 h-4 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
-                </div>
-            )}
-
-            {/* Header Toolbar */}
-            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            {/* Top Toolbar */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 {/* Tabs */}
-                <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200/80">
-                    {TABS.map((tab) => (
+                <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                    {TABS.map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`px-4 py-1.5 text-[12px] font-bold rounded-md transition-all cursor-pointer border-0 ${activeTab === tab.id
-                                ? "bg-white text-blue-600 shadow-sm"
-                                : "text-slate-500 hover:text-slate-700 bg-transparent"
-                                }`}
+                            className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer border-0 ${
+                                activeTab === tab.id
+                                    ? "bg-white text-blue-600 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-800"
+                            }`}
                         >
-                            {tab.id === "clinicos" ? "Clínicos" : tab.id === "productos" ? "Productos" : "Servicios"}
+                            {tab.label.replace("Lista de precios ", "")}
                         </button>
                     ))}
                 </div>
 
-                <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
-                    <div className="relative flex-1 md:w-48">
+                {/* Right Actions */}
+                <div className="flex items-center gap-2.5">
+                    <div className="relative">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
-                            placeholder={(activeTab === "productos" || activeTab === "servicios") ? "Buscar..." : "Buscar lista..."}
+                            placeholder="Buscar lista..."
+                            className="pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 transition-colors w-48 sm:w-60"
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full h-9 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-700 outline-none focus:border-blue-500 transition-colors"
+                            onChange={e => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    
-                    {/* Botón de importación */}
+
                     <button
-                        type="button"
-                        className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 text-[12px] cursor-pointer"
                         onClick={() => setShowImporter(true)}
+                        className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Importar desde Excel"
                     >
-                        <FiUploadCloud size={15} /> <span>Importar Excel</span>
+                        <FiUploadCloud size={16} className="text-blue-600" />
+                        <span className="hidden sm:inline">Importar Excel</span>
                     </button>
 
-                    {/* Botón Nuevo */}
                     <button
-                        type="button"
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition-colors shadow-sm flex items-center gap-1.5 text-[12px] cursor-pointer border-0"
                         onClick={handleNew}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider px-4 py-2 rounded-xl shadow-md shadow-blue-200 flex items-center gap-1.5 transition-all cursor-pointer border-0"
                     >
-                        <span>
-                            {activeTab === "productos" ? "+ Nuevo Producto" : activeTab === "servicios" ? "+ Nuevo Servicio" : "+ Nueva Lista"}
-                        </span>
+                        <span className="text-base leading-none">+</span>
+                        <span>Nueva Lista</span>
                     </button>
                 </div>
             </div>
 
-            {/* Container Seccional */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+            {/* Table Area */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                            {(activeTab === "productos" || activeTab === "servicios") ? <FiBox size={16} /> : <FiDollarSign size={16} />}
+                        <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                            {activeTab === "productos" ? <FiBox size={16} /> : <FiDollarSign size={16} />}
                         </div>
                         <div>
-                            <h3 className="text-[14px] font-bold text-slate-800">
-                                {activeTab === "productos" ? "Catálogo Maestro de Productos" : activeTab === "servicios" ? "Catálogo de Servicios" : TABS.find(t => t.id === activeTab)?.label}
-                            </h3>
-                            <p className="text-[11px] text-slate-500">
-                                {activeTab === "productos" ? "Gestión global del inventario" : activeTab === "servicios" ? "Gestión global de servicios" : "Gestión de tarifarios institucionales"}
-                            </p>
+                            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                                {TABS.find(t => t.id === activeTab)?.label}
+                            </h2>
+                            <p className="text-[11px] font-medium text-slate-500">Gestión de tarifarios institucionales y catálogo</p>
                         </div>
                     </div>
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{filteredRows.length} Registros</span>
                 </div>
 
-                {/* Table Area */}
                 <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-[12px]">
+                    <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50/70">
-                                {(activeTab === "productos" || activeTab === "servicios") ? (
+                            <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider">
+                                <th className="py-3 px-4">Nombre</th>
+                                {activeTab === "productos" || activeTab === "servicios" ? (
                                     <>
-                                        <th className="py-2.5 px-4 text-left font-bold text-slate-600">Cód / Ref</th>
-                                        <th className="py-2.5 px-4 text-left font-bold text-slate-600">Producto</th>
-                                        <th className="py-2.5 px-4 text-left font-bold text-slate-600">Categoría</th>
-                                        <th className="py-2.5 px-4 text-right font-bold text-slate-600">Precio Venta</th>
-                                        <th className="py-2.5 px-4 text-right font-bold text-slate-600">Acciones</th>
+                                        <th className="py-3 px-4">Código</th>
+                                        <th className="py-3 px-4">Categoría</th>
+                                        <th className="py-3 px-4 text-right">Precio Venta</th>
                                     </>
                                 ) : (
                                     <>
-                                        <th className="py-2.5 px-4 text-left font-bold text-slate-600">Nombre</th>
-                                        <th className="py-2.5 px-4 text-left font-bold text-slate-600">Creación</th>
-                                        <th className="py-2.5 px-4 text-left font-bold text-slate-600">Actualización</th>
-                                        <th className="py-2.5 px-4 text-left font-bold text-slate-600">Estado</th>
-                                        <th className="py-2.5 px-4 text-right font-bold text-slate-600">Acciones</th>
+                                        <th className="py-3 px-4">Creación</th>
+                                        <th className="py-3 px-4">Actualización</th>
+                                        <th className="py-3 px-4">Estado</th>
                                     </>
                                 )}
+                                <th className="py-3 px-4 text-right">Acciones</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {loading && filteredRows.length === 0 ? (
-                                [1, 2, 3].map((n) => (
-                                    <tr key={n} className="animate-pulse">
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <div className="h-4 bg-slate-100 rounded w-20" />
-                                        </td>
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <div className="h-4 bg-slate-100 rounded w-40" />
-                                        </td>
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <div className="h-4 bg-slate-100 rounded w-24" />
-                                        </td>
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <div className="h-4 bg-slate-100 rounded w-16" />
-                                        </td>
-                                        <td className="px-8 py-4 border-b border-slate-50 text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <div className="w-9 h-9 bg-slate-100 rounded-xl" />
-                                                <div className="w-9 h-9 bg-slate-100 rounded-xl" />
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            ) : filteredRows.length === 0 ? (
+                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                            {loading ? (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-20 text-center">
-                                        <div className="flex flex-col items-center gap-3 opacity-40">
-                                            {(activeTab === "productos" || activeTab === "servicios") ? <FiBox size={40} className="text-slate-400" /> : <FiDollarSign size={40} className="text-slate-400" />}
-                                            <p className="text-sm font-bold text-slate-400">No hay registros disponibles</p>
-                                        </div>
+                                    <td colSpan={5} className="py-12 text-center text-slate-400 font-medium">
+                                        <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
+                                        Cargando datos...
                                     </td>
                                 </tr>
-                            ) : (activeTab === "productos" || activeTab === "servicios") ? (
+                            ) : filteredRows.length === 0 ? (
+                                <tr>
+                                    <td colSpan={5} className="py-12 text-center text-slate-400 font-medium">
+                                        No se encontraron listas o productos registrados
+                                    </td>
+                                </tr>
+                            ) : activeTab === "productos" || activeTab === "servicios" ? (
                                 // TABLA DE PRODUCTOS / SERVICIOS
                                 filteredRows.map((row) => (
-                                    <tr key={row.id} className="group/row hover:bg-slate-50/50 transition-all duration-300">
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <span className="text-[12px] font-black text-slate-400 uppercase tracking-widest">{row.codigo || row.referencia || "-"}</span>
-                                        </td>
-                                        <td className="px-8 py-4 border-b border-slate-50 transition-all group-hover/row:translate-x-1">
-                                            <span className="text-[14px] font-black text-slate-700 uppercase tracking-tight">{row.nombre}</span>
-                                        </td>
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-50 text-blue-500">
-                                                {row.categoria || 'GENERAL'}
+                                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="py-3 px-4 font-bold text-slate-800 uppercase">{row.nombre}</td>
+                                        <td className="py-3 px-4 font-mono text-slate-500">{row.codigo || "-"}</td>
+                                        <td className="py-3 px-4">
+                                            <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md font-bold text-[10px] uppercase">
+                                                {row.categoria || "GENERAL"}
                                             </span>
                                         </td>
-                                        <td className="px-8 py-4 border-b border-slate-50 text-right">
-                                            <span className="text-[14px] font-black text-emerald-600">${Number(row.precio || 0).toLocaleString('es-CO')}</span>
+                                        <td className="py-3 px-4 text-right font-black text-slate-800">
+                                            ${Number(row.precio || 0).toLocaleString("es-CO")}
                                         </td>
-                                        <td className="px-8 py-4 border-b border-slate-50 text-right">
+                                        <td className="py-3 px-4 text-right">
                                             <div className="flex items-center justify-end gap-1.5">
                                                 <button
                                                     onClick={() => handleEdit(row)}
-                                                    className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer border-0 bg-transparent"
-                                                    title="Editar Producto"
+                                                    className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
+                                                    title="Editar"
                                                 >
                                                     <FiEdit2 size={14} />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(row)}
-                                                    className="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer border-0 bg-transparent"
+                                                    onClick={() => setDeleteTarget(row)}
+                                                    className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
                                                     title="Eliminar"
                                                 >
                                                     <FiTrash2 size={14} />
@@ -413,52 +377,40 @@ export default function EmpresaListaPrecios() {
                             ) : (
                                 // TABLA DE LISTAS
                                 filteredRows.map((row) => (
-                                    <tr key={row.id} className="group/row hover:bg-slate-50/50 transition-all duration-300">
-                                        <td className="px-8 py-4 border-b border-slate-50 transition-all group-hover/row:translate-x-1">
+                                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="py-3 px-4">
                                             <div className="flex flex-col">
-                                                <span className="text-[14px] font-black text-slate-700 group-hover/row:text-blue-600 transition-colors uppercase tracking-tight">{row.nombre}</span>
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">ID: {row.id ? String(row.id).substring(0, 8) : '-'}</span>
+                                                <span className="font-black text-slate-800 uppercase tracking-tight">{row.nombre}</span>
+                                                <span className="text-[10px] font-mono text-slate-400">ID: {row.id ? String(row.id).substring(0, 8) : '-'}</span>
                                             </div>
                                         </td>
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <span className="text-[12px] font-bold text-slate-600">{formatDate(row.creado)}</span>
+                                        <td className="py-3 px-4 font-mono text-slate-500">{formatDate(row.creado || row.created_at)}</td>
+                                        <td className="py-3 px-4 font-mono text-slate-500">{formatDate(row.actualizado || row.updated_at)}</td>
+                                        <td className="py-3 px-4">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Activa
+                                            </span>
                                         </td>
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            <span className="text-[12px] font-bold text-slate-600">{formatDate(row.actualizado)}</span>
-                                        </td>
-                                        <td className="px-8 py-4 border-b border-slate-50">
-                                            {row.en_uso ? (
-                                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-tighter">En uso</span>
-                                                </div>
-                                            ) : (
-                                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 border border-slate-200">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Borrador</span>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="py-2.5 px-4 text-right">
-                                            <div className="flex items-center justify-end gap-1">
+                                        <td className="py-3 px-4 text-right">
+                                            <div className="flex items-center justify-end gap-1.5">
                                                 <button
                                                     onClick={() => handleEditor(row)}
-                                                    className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer border-0 bg-transparent"
+                                                    className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
                                                     title="Ver / Configurar Ítems"
                                                 >
                                                     <FiEye size={14} />
                                                 </button>
                                                 <button
                                                     onClick={() => handleEdit(row)}
-                                                    className="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer border-0 bg-transparent"
+                                                    className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
                                                     title="Editar nombre"
                                                 >
                                                     <FiEdit2 size={14} />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(row)}
-                                                    className="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer border-0 bg-transparent"
-                                                    title="Eliminar"
+                                                    onClick={() => setDeleteTarget(row)}
+                                                    className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors border-0 cursor-pointer"
+                                                    title="Eliminar Lista"
                                                 >
                                                     <FiTrash2 size={14} />
                                                 </button>
@@ -472,24 +424,25 @@ export default function EmpresaListaPrecios() {
                 </div>
             </div>
 
-            {/* Modal CRUD - Para Listas (Clínicos, Servicios) */}
+            {/* Modal CRUD - Para Listas */}
             {showModal && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[999] p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
-                        <div className="bg-slate-50/70 px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                                    <FiDollarSign size={16} />
+                                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                                    <FiDollarSign size={18} />
                                 </div>
-                                <h3 className="text-[15px] font-bold text-slate-800">{editItem ? "Editar Lista de Precios" : "Nueva Lista de Precios"}</h3>
+                                <h3 className="text-base font-black text-slate-800 uppercase">{editItem ? "Editar Lista de Precios" : "Nueva Lista de Precios"}</h3>
                             </div>
+                            <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-slate-200/60 flex items-center justify-center text-slate-500 font-bold">&times;</button>
                         </div>
 
-                        <div className="p-5 space-y-4">
+                        <div className="p-6 space-y-4">
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-slate-600">Nombre Descriptivo *</label>
                                 <input
-                                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                     value={formData.nombre}
                                     onChange={e => setFormData({ ...formData, nombre: e.target.value })}
                                     placeholder="Ej. Tarifas Preferenciales 2026"
@@ -497,16 +450,16 @@ export default function EmpresaListaPrecios() {
                                 />
                             </div>
 
-                            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                                 <button
                                     onClick={() => setShowModal(false)}
-                                    className="px-4 py-2 rounded-lg text-[12px] font-semibold text-slate-600 hover:bg-slate-100 transition-colors border border-slate-200 bg-white cursor-pointer"
+                                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 bg-white cursor-pointer"
                                 >
                                     Descartar
                                 </button>
                                 <button
                                     onClick={handleSaveList}
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer border-0"
+                                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md shadow-blue-200 flex items-center gap-1.5 cursor-pointer border-0"
                                 >
                                     {editItem ? "Actualizar" : "Crear Lista"}
                                 </button>
@@ -516,7 +469,7 @@ export default function EmpresaListaPrecios() {
                 </div>
             )}
 
-            {/* Modal Producto - Global */}
+            {/* Modal Producto */}
             {showProductModal && (
                 <ModalProducto 
                     item={editItem}
@@ -527,7 +480,7 @@ export default function EmpresaListaPrecios() {
                 />
             )}
 
-            {/* Importer Modal */}
+            {/* Modal Importer */}
             {showImporter && (
                 <ImportadorListaPrecios 
                     activeTab={activeTab}
@@ -537,6 +490,51 @@ export default function EmpresaListaPrecios() {
                         setShowImporter(false);
                     }}
                 />
+            )}
+
+            {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN MODERNO Y 100% FIABLE */}
+            {deleteTarget && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[10000] p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-rose-100 p-6 space-y-5">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center shrink-0">
+                                <FiAlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">¿Eliminar Registro?</h3>
+                                <p className="text-xs font-bold text-rose-600 uppercase tracking-wider">Esta acción borrará el ítem de Supabase</p>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                            <p className="text-xs font-bold text-slate-700 uppercase">
+                                Estás a punto de eliminar: <span className="text-blue-600 font-black">{deleteTarget.nombre}</span>
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                onClick={() => setDeleteTarget(null)}
+                                disabled={deleting}
+                                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 bg-white"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                disabled={deleting}
+                                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg shadow-rose-200 flex items-center gap-2 border-0 disabled:opacity-50"
+                            >
+                                {deleting ? (
+                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                    <FiTrash2 size={16} />
+                                )}
+                                <span>{deleting ? "Eliminando..." : "Sí, Eliminar Ahora"}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
