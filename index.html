@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OdontoCloud</title>
+    <link rel="icon" type="image/png" href="/odontocloudsaas/assets/logo-IRis7jby.png" />
+    <link rel="manifest" href="manifest.json" />
+    <!-- SPA redirect fix for GitHub Pages - evita 404 al recargar -->
+    <script>
+      (function(l) {
+        if (l.search[1] === '/' ) {
+          var decoded = l.search.slice(1).split('&').map(function(s) { 
+            return s.replace(/~and~/g, '&')
+          }).join('?');
+          window.history.replaceState(null, null,
+            l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
+      }(window.location))
+    </script>
+    <script type="module" crossorigin src="/odontocloudsaas/assets/index-eN-Ek81m.js"></script>
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/vendor-4foCZWy0.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/icons-vendor-CFjkKfLY.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/firebase-vendor-gB1gGoJy.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/supabase-vendor-RUktRwHp.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/pdf-utils-kdeBq5B8.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/module-agenda-CoXt7S15.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/module-odontograma-CeCAbLES.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/module-pacientes-DzZ2QRoC.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/module-financiero-CKSdU7Oa.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/charts-vendor-Cr06V5wt.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/xlsx-vendor-CKN5doRT.js">
+    <link rel="modulepreload" crossorigin href="/odontocloudsaas/assets/module-admin-DOzpossI.js">
+    <link rel="stylesheet" crossorigin href="/odontocloudsaas/assets/module-agenda-DDsqy84i.css">
+    <link rel="stylesheet" crossorigin href="/odontocloudsaas/assets/module-admin--w-iWXF5.css">
+    <link rel="stylesheet" crossorigin href="/odontocloudsaas/assets/module-pacientes-Bb-cgz5h.css">
+    <link rel="stylesheet" crossorigin href="/odontocloudsaas/assets/index-DCfLbYf_.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
