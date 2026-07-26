@@ -143,8 +143,8 @@ export default function ImportadorListaPrecios({ onComplete, onClose, activeTab 
                     codigo: item.codigo || "",
                     categoria: item.categoria || "GENERAL",
                     precio_venta: item.precio || 0,
-                    costo: 0,
-                    stock: 0,
+                    precio_costo: 0,
+                    cantidad: 0,
                     es_servicio: activeTab === "servicios"
                 }));
 
