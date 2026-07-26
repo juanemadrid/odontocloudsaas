@@ -318,18 +318,7 @@ export default function EmpresaListaPrecios() {
                 </div>
 
                 {/* Right Actions */}
-                <div className="flex items-center gap-2 flex-wrap">
-                    {/* Botón de eliminación masiva cuando hay seleccionados */}
-                    {selectedIds.size > 0 && (
-                        <button
-                            onClick={() => setShowBulkDeleteModal(true)}
-                            className="h-8 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3 rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 animate-fade-in shrink-0"
-                        >
-                            <FiTrash2 size={13} />
-                            <span>Eliminar ({selectedIds.size})</span>
-                        </button>
-                    )}
-
+                <div className="flex items-center gap-2">
                     <div className="relative">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
@@ -362,7 +351,7 @@ export default function EmpresaListaPrecios() {
 
             {/* Table Area */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                             {activeTab === "productos" ? <FiBox size={16} /> : <FiDollarSign size={16} />}
@@ -375,11 +364,20 @@ export default function EmpresaListaPrecios() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5">
                         {selectedIds.size > 0 && (
-                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
-                                {selectedIds.size} seleccionados
-                            </span>
+                            <div className="flex items-center gap-2 animate-fade-in">
+                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+                                    {selectedIds.size} seleccionados
+                                </span>
+                                <button
+                                    onClick={() => setShowBulkDeleteModal(true)}
+                                    className="h-8 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3 rounded-xl shadow-md shadow-rose-200 flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                                >
+                                    <FiTrash2 size={13} />
+                                    <span>Eliminar seleccionados ({selectedIds.size})</span>
+                                </button>
+                            </div>
                         )}
                         <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{filteredRows.length} Registros</span>
                     </div>
