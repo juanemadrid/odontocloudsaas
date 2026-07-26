@@ -238,16 +238,16 @@ export default function EmpresaListaPrecios() {
     return (
         <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
             {/* Top Toolbar */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 {/* Tabs */}
-                <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
+                <div className="flex bg-slate-100 p-1 rounded-xl gap-1 shrink-0">
                     {TABS.map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer border-0 ${
+                            className={`h-8 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer border-0 capitalize ${
                                 activeTab === tab.id
-                                    ? "bg-white text-blue-600 shadow-sm"
+                                    ? "bg-white text-blue-600 shadow-xs"
                                     : "text-slate-500 hover:text-slate-800"
                             }`}
                         >
@@ -257,13 +257,13 @@ export default function EmpresaListaPrecios() {
                 </div>
 
                 {/* Right Actions */}
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                     <div className="relative">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
                             placeholder="Buscar lista..."
-                            className="pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 transition-colors w-48 sm:w-60"
+                            className="h-8 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:border-blue-500 transition-colors w-40 sm:w-52"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
@@ -271,19 +271,19 @@ export default function EmpresaListaPrecios() {
 
                     <button
                         onClick={() => setShowImporter(true)}
-                        className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="h-8 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold px-3 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                         title="Importar desde Excel"
                     >
-                        <FiUploadCloud size={16} className="text-blue-600" />
+                        <FiUploadCloud size={14} className="text-blue-600" />
                         <span className="hidden sm:inline">Importar Excel</span>
                     </button>
 
                     <button
                         onClick={handleNew}
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider px-4 py-2 rounded-xl shadow-md shadow-blue-200 flex items-center gap-1.5 transition-all cursor-pointer border-0"
+                        className="h-8 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 rounded-lg shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
                     >
-                        <span className="text-base leading-none">+</span>
-                        <span>Nueva Lista</span>
+                        <span className="text-sm leading-none">+</span>
+                        <span>Nueva lista</span>
                     </button>
                 </div>
             </div>
