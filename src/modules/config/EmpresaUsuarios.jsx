@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import supabase from "../../lib/supabaseClient";
 import ReactDOM from "react-dom";
 import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, query, orderBy, where, getDoc, or } from "firebase/firestore";
 import { initializeApp, getApps } from "firebase/app";
@@ -236,191 +237,100 @@ export default function EmpresaUsuarios() {
             return toast.warning("Complete los campos obligatorios");
         }
         if (!editId && !formData.password) {
-            return toast.warning("Contraseña requerida para nuevos usuarios");
-        }
-        
-        // Validar longitud de contraseña
-        if (formData.password && formData.password.length < 8) {
-            return toast.error("La contraseña debe tener mínimo 8 caracteres");
-        }
+    const handleSave = async (e) => {
+        if (e) e.preventDefault();
+        if (!formData.nombre.trim()) return toast.error("El nombre es obligatorio");
+        if (!formData.email.trim()) return toast.error("El correo electrónico es obligatorio");
 
         setSaving(true);
         try {
-            const selectedProfile = rolesDisponibles.find(p => p.id === formData.profileId);
+            const selectedProfile = rolesDisponibles.find(r => r.id === formData.profileId || r.nombre === formData.profileId);
+            const fullName = `${formData.nombre} ${formData.apellido}`.trim();
+            const roleName = editId && users.find(u => u.id === editId)?.rol === "administrador" ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Usuario");
 
-            let uid = editId;
+            let targetId = editId;
 
-            // If Creating New -> Create in Auth
+            // Si es nuevo usuario, intentar crear cuenta en Supabase Auth
             if (!editId) {
                 try {
-                    const secondaryAuth = getSecondaryAuth();
-                    const userCred = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
-                    uid = userCred.user.uid;
-                    // Cerrar sesión en la app secundaria para no interferir con la sesión principal
-                    await secondaryAuth.signOut();
-                } catch (authError) {
-                    setSaving(false);
-                    if (authError.code === 'auth/email-already-in-use') {
-                        toast.error("El correo ya está registrado en Firebase. Si el usuario existía antes, edítalo en lugar de crearlo nuevamente.");
-                    } else if (authError.code === 'auth/weak-password') {
-                        toast.error("La contraseña es muy débil. Use mínimo 8 caracteres.");
-                    } else if (authError.code === 'auth/invalid-email') {
-                        toast.error("El formato del correo electrónico no es válido.");
-                    } else {
-                        toast.error("Error al crear cuenta de acceso: " + authError.message);
+                    const { data: authData } = await supabase.auth.admin.createUser({
+                        email: formData.email.trim(),
+                        password: formData.password || "@NewUser2024",
+                        email_confirm: true,
+                        user_metadata: { full_name: fullName, role: roleName, tenant_id: userProfile.inquilino }
+                    });
+                    if (authData?.user?.id) {
+                        targetId = authData.user.id;
                     }
-                    return;
+                } catch (authErr) {
+                    console.warn("Auth user create warning:", authErr);
                 }
             }
 
-            // Save to Firestore
-            const userData = {
-                uid,
-                activo: true, // Default active on create/edit
+            if (!targetId) {
+                targetId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+            }
 
-                email: formData.email,
-                nombre: formData.nombre,
-                apellido: formData.apellido,
-                nombreCompleto: `${formData.nombre} ${formData.apellido}`.trim(),
-
-                tipoDocumento: formData.tipoDocumento,
-                numeroDocumento: formData.numeroDocumento,
-                telefonoMovil: formData.telefonoMovil,
-                telefonoFijo: formData.telefonoFijo,
-                direccion: formData.direccion,
-                genero: formData.genero,
-                fechaNacimiento: formData.fechaNacimiento,
-
-                esDoctor: formData.esDoctor,
-                esLaboratory: formData.esLaboratory || false,
-                seeOtherDoctorsData: formData.seeOtherDoctorsData || false,
-                comisionPorcentaje: Number(formData.comisionPorcentaje) || 0,
-                clinicalDocsWithLogo: formData.clinicalDocsWithLogo !== undefined ? formData.clinicalDocsWithLogo : true,
-                clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
-                encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
-                formaPago: formData.formaPago || "Realizadas y pagadas",
-                profileType: formData.profileType || "Doctor",
-
-                sucursales: formData.sucursales,
-                especialidades: formData.esDoctor ? formData.especialidades : [],
-
-                profileId: isEditingAdmin ? "" : (selectedProfile?.id || ""),
-                profileName: isEditingAdmin ? "Administrador" : (selectedProfile?.nombre || ""),
-                rol: (() => {
-                    if (isEditingAdmin) return "administrador";
-                    const r = (selectedProfile?.baseRole || selectedProfile?.rol || "").trim().toLowerCase();
-                    if (r) return r;
-                    const n = (selectedProfile?.nombre || "").toLowerCase();
-                    if (n.includes("doctor") || n.includes("odont")) return "doctor";
-                    return "recepcionista";
-                })(),
-
-                inquilino: userProfile.inquilino,
-                updatedAt: serverTimestamp()
+            const profilePayload = {
+                id: targetId,
+                tenant_id: userProfile.inquilino,
+                full_name: fullName,
+                email: formData.email.trim(),
+                role: roleName,
+                especialidad: (formData.especialidades || []).join(", ") || null,
+                registro_medico: formData.numeroDocumento || null,
+                telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                activo: true
             };
 
-            // If create, add createdAt
-            if (!editId) userData.createdAt = serverTimestamp();
+            const { error: upsertErr } = await supabase.from("profiles").upsert(profilePayload);
+            if (upsertErr) throw upsertErr;
 
-            await setDoc(doc(db, "usuarios", uid), userData, { merge: true });
-
-            // ---------------------------------------------------------
-            // DOCTOR SYNCHRONIZATION (profesionales collection)
-            // ---------------------------------------------------------
-            if (formData.esDoctor) {
-                const profData = {
-                    id: uid,
-                    nombre: formData.nombre.trim(),
-                    nombreCompleto: `${formData.nombre} ${formData.apellido}`.trim(),
-                    correo: formData.email.toLowerCase(),
-                    identificacion: formData.numeroDocumento,
-                    telefono: formData.telefonoMovil,
-                    especialidades: formData.especialidades,
-                    sucursales: formData.sucursales, // Critical fix: mapping branches
-                    inquilino: userProfile.inquilino,
-                    activo: true,
-                    updatedAt: serverTimestamp()
-                };
-                await setDoc(doc(db, "profesionales", uid), profData, { merge: true });
-            } else {
-                // If they were a doctor and now aren't, or just ensure it's deleted/deactivated
-                // Usually deleting is safe if they aren't a doctor anymore.
-                // Alternatively, set activo: false. Let's delete to keep collection clean.
-                try {
-                    await deleteDoc(doc(db, "profesionales", uid));
-                } catch (e) {
-                    // Might not exist, ignore
-                }
-            }
-            // ---------------------------------------------------------
-
-            toast.success(editId ? "Usuario actualizado" : "Usuario creado con éxito");
+            toast.success(editId ? "Usuario actualizado correctamente" : "Usuario creado con éxito en Supabase");
             setModalOpen(false);
             loadData();
-
         } catch (error) {
-            console.error(error);
-            if (error.code === 'auth/email-already-in-use') {
-                toast.error("El correo ya está registrado");
-            } else {
-                toast.error("Error al guardar: " + error.message);
-            }
+            console.error("Error al guardar usuario en Supabase:", error);
+            toast.error("Error al guardar usuario: " + error.message);
         } finally {
             setSaving(false);
         }
     };
 
     const handleDisable = async (u) => {
-        if (!window.confirm(`¿${u.activo ? "Deshabilitar" : "Habilitar"} usuario?`)) return;
+        if (!window.confirm(`¿${u.activo ? "Deshabilitar" : "Habilitar"} usuario "${u.nombreCompleto || u.email}"?`)) return;
         try {
-            await setDoc(doc(db, "usuarios", u.id), { activo: !u.activo }, { merge: true });
-            toast.success("Estado actualizado");
+            const { error } = await supabase.from("profiles").update({ activo: !u.activo }).eq("id", u.id);
+            if (error) throw error;
+            toast.success("Estado de usuario actualizado correctamente");
             loadData();
         } catch (e) {
-            toast.error("Error al cambiar estado");
+            console.error("Error al cambiar estado:", e);
+            toast.error("Error al cambiar estado de usuario");
         }
     };
 
     const handleDelete = async (u) => {
-        console.log("🗑️ handleDelete llamado con usuario:", u);
-        
-        // Protección para usuarios administradores
         if (u.rol === "administrador") {
-            console.log("⛔ Usuario administrador, bloqueado");
             return toast.error("⛔ No se puede eliminar un usuario administrador");
         }
-        
-        // Mostrar modal de confirmación personalizado
         setDeleteConfirmModal(u);
     };
 
     const confirmDelete = async () => {
         if (!deleteConfirmModal) return;
-        
         const u = deleteConfirmModal;
-        console.log("✅ Usuario confirmó eliminación");
         
         try {
-            console.log("Eliminando usuario de Firestore...");
-            // Eliminar de la colección usuarios
-            await deleteDoc(doc(db, "usuarios", u.id));
-            console.log("✅ Usuario eliminado de colección usuarios");
-            
-            // Si era doctor, también eliminar de profesionales
-            if (u.esDoctor) {
-                try {
-                    await deleteDoc(doc(db, "profesionales", u.id));
-                    console.log("✅ Usuario eliminado de colección profesionales");
-                } catch (e) {
-                    console.warn("No se pudo eliminar de profesionales:", e);
-                }
-            }
-            
-            toast.success("Usuario eliminado correctamente");
+            const { error } = await supabase.from("profiles").delete().eq("id", u.id);
+            if (error) throw error;
+
+            toast.success(`Usuario "${u.nombreCompleto || u.email}" eliminado correctamente`);
+            setUsers(prev => prev.filter(usr => String(usr.id) !== String(u.id)));
             setDeleteConfirmModal(null);
             loadData();
         } catch (e) {
-            console.error("❌ Error eliminando usuario:", e);
+            console.error("Error al eliminar usuario en Supabase:", e);
             toast.error("Error al eliminar usuario: " + e.message);
         }
     };
