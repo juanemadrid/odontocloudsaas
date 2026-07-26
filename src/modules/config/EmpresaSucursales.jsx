@@ -136,17 +136,20 @@ function SucursalEditor({ item, onBack, inquilino }) {
 
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Ciudad *</label>
-                        <select
+                        <input
                             required
+                            list="ciudades-colombia-list"
+                            type="text"
                             className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                             value={form.ciudad}
                             onChange={e => handleChange("ciudad", e.target.value)}
-                        >
-                            <option value="">Seleccione una ciudad...</option>
+                            placeholder="Escribe o busca la ciudad (Ej. Bogotá, Medellín)..."
+                        />
+                        <datalist id="ciudades-colombia-list">
                             {CIUDADES_COLOMBIA.map(c => (
-                                <option key={c} value={c}>{c}</option>
+                                <option key={c} value={c} />
                             ))}
-                        </select>
+                        </datalist>
                     </div>
 
                     <div className="space-y-1">
