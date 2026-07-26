@@ -46,9 +46,20 @@ const Login = () => {
       });
     } catch (err) {
       console.error("Error enviando recuperación:", err);
+      const msg = (err.message || "").toLowerCase();
+      let spanishErr = "Error al enviar el enlace de recuperación. Por favor intente más tarde.";
+
+      if (msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("exceeded")) {
+        spanishErr = "Has realizado demasiados intentos en muy poco tiempo. Por favor, espera 1 o 2 minutos antes de solicitar un nuevo enlace.";
+      } else if (msg.includes("user not found") || msg.includes("not found")) {
+        spanishErr = "No existe ninguna cuenta registrada con este correo electrónico.";
+      } else if (msg.includes("invalid email")) {
+        spanishErr = "El correo electrónico ingresado no es válido.";
+      }
+
       setForgotMsg({
         type: "error",
-        text: err.message || "Error al enviar el enlace de recuperación."
+        text: spanishErr
       });
     } finally {
       setSendingReset(false);
@@ -117,13 +128,15 @@ const Login = () => {
       setLoadingStatus(false);
       console.error("Error login Supabase:", err);
 
-      const msg = err.message || "";
-      if (msg.includes("Invalid login credentials")) {
+      const msg = (err.message || "").toLowerCase();
+      if (msg.includes("invalid login credentials")) {
         setError("Correo o contraseña incorrectos.");
-      } else if (msg.includes("Email not confirmed")) {
+      } else if (msg.includes("email not confirmed")) {
         setError("Correo no verificado. Revisa tu bandeja de entrada.");
+      } else if (msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("exceeded")) {
+        setError("Has realizado demasiados intentos de inicio de sesión. Por favor espera un minuto.");
       } else {
-        setError("Error al iniciar sesión: " + msg);
+        setError("Error al iniciar sesión. Por favor verifica tus datos e intenta nuevamente.");
       }
     } finally {
       setLoadingStatus(false);
