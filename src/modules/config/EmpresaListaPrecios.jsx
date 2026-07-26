@@ -4,6 +4,7 @@ import { FiSearch, FiEdit2, FiEye, FiTrash2, FiDollarSign, FiUploadCloud, FiBox 
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
 import { useAuth } from "../../context/AuthContext";
+import { useToast } from "../../context/ToastContext";
 import ListaPreciosEditar from "./ListaPreciosEditar";
 import ImportadorListaPrecios from "./ImportadorListaPrecios";
 import ModalProducto from "./ModalProducto";
@@ -22,6 +23,7 @@ const formatDate = (isoString) => {
 // MAIN COMPONENT
 export default function EmpresaListaPrecios() {
     const { userProfile } = useAuth();
+    const toast = useToast();
     const inquilino = userProfile?.inquilino;
 
     const [activeTab, setActiveTab] = useState("clinicos"); // clinicos, productos, servicios
@@ -155,20 +157,40 @@ export default function EmpresaListaPrecios() {
 
     const handleDelete = async (row) => {
         if (activeTab === "productos" || activeTab === "servicios") {
-            if (!window.confirm(`¿Seguro eliminar el registro "${row.nombre}"?`)) return;
+            if (!window.confirm(`¿Seguro que deseas eliminar "${row.nombre}"?`)) return;
+            setLoading(true);
             try {
                 await deleteDoc(doc(db, "productos", row.id));
-                fetchData();
+                setRows(prev => prev.filter(r => r.id !== row.id));
+                if (toast?.success) toast.success("Registro eliminado correctamente");
+                else alert("Registro eliminado correctamente");
             } catch (e) {
-                alert("Error al eliminar");
+                console.error("Error al eliminar producto/servicio:", e);
+                if (toast?.error) toast.error("Error al eliminar el registro");
+                else alert("Error al eliminar: " + e.message);
+            } finally {
+                setLoading(false);
             }
         } else {
-            if (!window.confirm(`¿Seguro eliminar lista "${row.nombre}"?`)) return;
+            if (!window.confirm(`¿Seguro que deseas eliminar la lista de precios "${row.nombre}"?`)) return;
+            setLoading(true);
             try {
+                // Eliminar ítems internos primero
+                const itemsSnap = await getDocs(collection(db, "listas_precios", row.id, "items"));
+                const deletePromises = itemsSnap.docs.map(d => deleteDoc(doc(db, "listas_precios", row.id, "items", d.id)));
+                await Promise.all(deletePromises);
+
+                // Eliminar lista principal
                 await deleteDoc(doc(db, "listas_precios", row.id));
-                fetchData();
+                setRows(prev => prev.filter(r => r.id !== row.id));
+                if (toast?.success) toast.success("Lista de precios eliminada correctamente");
+                else alert("Lista de precios eliminada correctamente");
             } catch (e) {
-                alert("Error al eliminar lista");
+                console.error("Error al eliminar lista de precios:", e);
+                if (toast?.error) toast.error("Error al eliminar la lista de precios");
+                else alert("Error al eliminar lista: " + e.message);
+            } finally {
+                setLoading(false);
             }
         }
     };

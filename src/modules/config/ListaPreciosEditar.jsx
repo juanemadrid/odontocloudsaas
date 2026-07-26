@@ -249,11 +249,17 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
     };
 
     const handleDeleteItem = async (itemId) => {
-        if (!window.confirm("¿Eliminar este ítem?")) return;
+        if (!window.confirm("¿Seguro que deseas eliminar este ítem de la lista?")) return;
+        setLoading(true);
         try {
             await deleteDoc(doc(db, "listas_precios", listaId, "items", itemId));
-            fetchItems();
-        } catch (e) { console.error(e); }
+            setItems(prev => prev.filter(item => item.id !== itemId));
+        } catch (e) { 
+            console.error("Error al eliminar ítem:", e); 
+            alert("Error al eliminar el ítem: " + (e.message || "Error desconocido"));
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleExportExcel = async () => {
