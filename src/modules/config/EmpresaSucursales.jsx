@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FiSearch, FiEdit2, FiTrash2, FiPlus, FiArrowLeft, FiMapPin, FiCheckCircle, FiSave, FiPhoneCall } from "react-icons/fi";
+import { FiSearch, FiEdit2, FiTrash2, FiPlus, FiArrowLeft, FiMapPin, FiCheckCircle, FiSave, FiPhoneCall, FiCheck } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
@@ -19,6 +19,70 @@ const CIUDADES_COLOMBIA = [
     "Sopó", "Tibú", "Tierralta", "Tuluá", "Tumaco", "Tunja", "Turbaco", "Turbo", "Valledupar", "Villa del Rosario", "Villavicencio",
     "Villeta", "Yopal", "Yumbo", "Zipaquirá"
 ].sort();
+
+// Componente Personalizado para Selección / Autocompletado Elegante de Ciudades
+function CitySelect({ value, onChange }) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState(value || "");
+
+    useEffect(() => {
+        setQuery(value || "");
+    }, [value]);
+
+    const filtered = CIUDADES_COLOMBIA.filter(c =>
+        c.toLowerCase().includes((query || "").toLowerCase())
+    );
+
+    return (
+        <div className="relative">
+            <div className="relative flex items-center">
+                <FiMapPin className="absolute left-3 text-slate-400" size={15} />
+                <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    className="w-full h-10 pl-9 pr-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                    placeholder="Escribe o busca la ciudad (Ej. Bogotá)..."
+                    value={query}
+                    onChange={(e) => {
+                        setQuery(e.target.value);
+                        onChange(e.target.value);
+                        setOpen(true);
+                    }}
+                    onFocus={() => setOpen(true)}
+                    onBlur={() => setTimeout(() => setOpen(false), 200)}
+                />
+            </div>
+
+            {open && (
+                <div className="absolute left-0 right-0 top-11 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[9999] max-h-56 overflow-y-auto custom-scrollbar p-1.5 space-y-0.5 animate-fade-in">
+                    {filtered.length === 0 ? (
+                        <div className="px-3 py-2 text-xs font-semibold text-slate-500">
+                            Usar ciudad personalizada: "<span className="text-blue-600 font-bold">{query}</span>"
+                        </div>
+                    ) : (
+                        filtered.map((c) => (
+                            <div
+                                key={c}
+                                onMouseDown={() => {
+                                    setQuery(c);
+                                    onChange(c);
+                                    setOpen(false);
+                                }}
+                                className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-between ${
+                                    value === c ? "bg-blue-50 text-blue-600" : "text-slate-700 hover:bg-slate-50"
+                                }`}
+                            >
+                                <span>{c}</span>
+                                {value === c && <FiCheck className="text-blue-600" size={14} />}
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
 
 // Editor Component for Sucursal
 function SucursalEditor({ item, onBack, inquilino }) {
@@ -136,20 +200,10 @@ function SucursalEditor({ item, onBack, inquilino }) {
 
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Ciudad *</label>
-                        <input
-                            required
-                            list="ciudades-colombia-list"
-                            type="text"
-                            className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                        <CitySelect
                             value={form.ciudad}
-                            onChange={e => handleChange("ciudad", e.target.value)}
-                            placeholder="Escribe o busca la ciudad (Ej. Bogotá, Medellín)..."
+                            onChange={val => handleChange("ciudad", val)}
                         />
-                        <datalist id="ciudades-colombia-list">
-                            {CIUDADES_COLOMBIA.map(c => (
-                                <option key={c} value={c} />
-                            ))}
-                        </datalist>
                     </div>
 
                     <div className="space-y-1">
@@ -221,7 +275,7 @@ function SucursalEditor({ item, onBack, inquilino }) {
     );
 }
 
-// Main Component
+// MAIN SUCURSALES COMPONENT
 export default function EmpresaSucursales() {
     const { userProfile } = useAuth();
     const toast = useToast();
@@ -230,6 +284,8 @@ export default function EmpresaSucursales() {
     const [searchTerm, setSearchTerm] = useState("");
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    // View: 'list' or 'editor'
     const [view, setView] = useState("list");
     const [editingItem, setEditingItem] = useState(null);
 
@@ -243,7 +299,8 @@ export default function EmpresaSucursales() {
                 .eq("tenant_id", inquilino);
 
             if (error) throw error;
-            setRows((data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
+            const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+            setRows(sorted);
         } catch (error) {
             console.error("Error fetching sucursales:", error);
             setRows([]);
@@ -252,82 +309,100 @@ export default function EmpresaSucursales() {
         }
     };
 
-    useEffect(() => { fetchData(); }, [inquilino]);
+    useEffect(() => {
+        fetchData();
+    }, [inquilino]);
 
-    const handleDelete = async (id, nombre) => {
-        if (!window.confirm(`⚠️ ¿Seguro que deseas eliminar la sucursal "${nombre || ''}"? Esta acción no se puede deshacer.`)) return;
+    const openNew = () => {
+        setEditingItem(null);
+        setView("editor");
+    };
+
+    const openEdit = (row) => {
+        setEditingItem(row);
+        setView("editor");
+    };
+
+    const handleDelete = async (row) => {
+        if (!window.confirm(`⚠️ ¿Seguro que deseas eliminar la sucursal "${row.nombre}"?`)) return;
+
         setLoading(true);
         try {
             const { error } = await supabase
                 .from("sucursales")
                 .delete()
-                .eq("id", id);
+                .eq("id", row.id);
 
             if (error) throw error;
-
-            setRows(prev => prev.filter(r => r.id !== id));
-            if (toast?.success) toast.success("Sucursal eliminada correctamente");
+            setRows(prev => prev.filter(r => String(r.id) !== String(row.id)));
+            if (toast?.success) toast.success("Sucursal eliminada correctamente de Supabase");
             else alert("✅ Sucursal eliminada correctamente");
         } catch (e) {
             console.error("Error al eliminar sucursal:", e);
-            alert("❌ Error al eliminar la sucursal: " + e.message);
+            alert("❌ Error al eliminar sucursal: " + e.message);
         } finally {
             setLoading(false);
         }
     };
 
-    if (view === "editor") return <SucursalEditor item={editingItem} onBack={() => { setView("list"); fetchData(); }} inquilino={inquilino} />;
+    if (view === "editor") {
+        return <SucursalEditor item={editingItem} onBack={() => { setView("list"); fetchData(); }} inquilino={inquilino} />;
+    }
 
-    const filteredRows = rows.filter(r => (r.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()));
+    const filteredRows = rows.filter(r =>
+        (r.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (r.ciudad || "").toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-4">
-            {/* Header / Search Toolbar */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-3">
+        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+            {/* Header Toolbar */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
                         <FiMapPin size={20} />
                     </div>
                     <div>
-                        <h1 className="text-base font-black text-slate-800 uppercase tracking-tight">Sucursales / Sedes</h1>
-                        <p className="text-xs font-medium text-slate-500">Puntos de atención registrados para la clínica</p>
+                        <h1 className="text-base font-black text-slate-800 uppercase tracking-tight">Sucursales y Sedes</h1>
+                        <p className="text-xs font-medium text-slate-500">Gestión de sedes físicas y contacto de la clínica</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    <div className="relative flex-1 md:w-64">
+                <div className="flex items-center gap-3">
+                    <div className="relative flex-1 sm:flex-none">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
-                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 transition-colors"
                             placeholder="Buscar sede..."
                             value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full sm:w-48 h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 transition-colors"
                         />
                     </div>
+
                     <button
-                        onClick={() => { setEditingItem(null); setView("editor"); }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider shadow-md shadow-blue-200 flex items-center gap-2 transition-all cursor-pointer border-0 shrink-0"
+                        onClick={openNew}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2 cursor-pointer border-0 shrink-0"
                     >
                         <FiPlus size={16} />
-                        <span>Nueva Sede</span>
+                        <span>Nueva Sucursal</span>
                     </button>
                 </div>
             </div>
 
-            {/* Table */}
+            {/* Table Area */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left border-collapse">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider">
-                            <th className="py-3 px-4">Nombre de Sede</th>
-                            <th className="py-3 px-4">Ubicación y Contacto</th>
-                            <th className="py-3 px-4">Estado</th>
-                            <th className="py-3 px-4 text-right">Operaciones</th>
+                            <th className="py-3 px-4">Sede / Clínica</th>
+                            <th className="py-3 px-4">Ciudad</th>
+                            <th className="py-3 px-4">Dirección</th>
+                            <th className="py-3 px-4 text-right">Acciones</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                        {loading ? (
+                        {loading && rows.length === 0 ? (
                             <tr>
                                 <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
                                     <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
@@ -337,53 +412,35 @@ export default function EmpresaSucursales() {
                         ) : filteredRows.length === 0 ? (
                             <tr>
                                 <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
-                                    No se encontraron sucursales registradas
+                                    No hay sucursales registradas
                                 </td>
                             </tr>
                         ) : (
-                            filteredRows.map(row => (
+                            filteredRows.map((row) => (
                                 <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
                                     <td className="py-3 px-4">
                                         <div className="flex items-center gap-2.5">
-                                            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
-                                                🏢
+                                            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                                                <FiMapPin size={15} />
                                             </div>
-                                            <div className="flex flex-col">
-                                                <span className="font-bold text-slate-800">{row.nombre}</span>
-                                                <span className="text-[10px] font-medium text-slate-400">{row.ciudad}</span>
-                                            </div>
+                                            <span className="font-bold text-slate-800 uppercase">{row.nombre}</span>
                                         </div>
                                     </td>
-                                    <td className="py-3 px-4">
-                                        <div className="space-y-0.5">
-                                            <div className="font-semibold text-slate-700 text-[11px] flex items-center gap-1.5">
-                                                <FiPhoneCall size={12} className="text-slate-400" />
-                                                {row.celular || row.telefono || "Sin contacto"}
-                                            </div>
-                                            <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
-                                                <FiMapPin size={11} className="text-slate-400" />
-                                                {row.direccion || "Sin dirección"}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="py-3 px-4">
-                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                            <FiCheckCircle size={11} /> Activa
-                                        </span>
-                                    </td>
+                                    <td className="py-3 px-4 font-bold text-slate-700">{row.ciudad}</td>
+                                    <td className="py-3 px-4 font-medium text-slate-500">{row.direccion || "-"}</td>
                                     <td className="py-3 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5">
                                             <button
-                                                onClick={() => { setEditingItem(row); setView("editor"); }}
+                                                onClick={() => openEdit(row)}
                                                 className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
-                                                title="Editar Sede"
+                                                title="Editar"
                                             >
                                                 <FiEdit2 size={14} />
                                             </button>
                                             <button
-                                                onClick={() => handleDelete(row.id, row.nombre)}
+                                                onClick={() => handleDelete(row)}
                                                 className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
-                                                title="Eliminar Sede"
+                                                title="Eliminar"
                                             >
                                                 <FiTrash2 size={14} />
                                             </button>
