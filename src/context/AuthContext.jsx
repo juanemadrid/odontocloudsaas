@@ -41,11 +41,12 @@ export const AuthProvider = ({ children }) => {
           nombreCompleto: profile.full_name,
           tenant: {
             id: tenantData.id || profile.tenant_id,
-            nombre: tenantData.nombre || "Clínica Dental",
-            nombreComercial: tenantData.nombre || "Clínica Dental",
-            direccion: tenantData.direccion || "No configurada",
-            telefono: tenantData.telefono || "---",
-            logo: tenantData.logo_url || ""
+            nombre: tenantData.nombre || tenantData.name || tenantData.nombreComercial || "Clínica Dental",
+            nombreComercial: tenantData.nombreComercial || tenantData.nombre || tenantData.name || "Clínica Dental",
+            direccion: tenantData.direccion || tenantData.address || "No configurada",
+            telefono: tenantData.telefono || tenantData.phone || "---",
+            logo: tenantData.logo_url || tenantData.logoUrl || tenantData.logo || "",
+            nit: tenantData.nit || ""
           }
         };
 
@@ -81,8 +82,11 @@ export const AuthProvider = ({ children }) => {
             tenant: {
               id: matchingTenant.id,
               nombre: matchingTenant.nombre || matchingTenant.name,
+              nombreComercial: matchingTenant.nombre || matchingTenant.name,
               direccion: matchingTenant.direccion || matchingTenant.address || "---",
-              telefono: matchingTenant.telefono || "---"
+              telefono: matchingTenant.telefono || "---",
+              logo: matchingTenant.logo_url || matchingTenant.logoUrl || matchingTenant.logo || "",
+              nit: matchingTenant.nit || ""
             }
           };
         }
@@ -140,9 +144,19 @@ export const AuthProvider = ({ children }) => {
       if (isMounted) setLoading(false);
     });
 
+    const handleTenantUpdated = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user && isMounted) {
+        const prof = await fetchUserProfile(session.user);
+        if (isMounted) setUserProfile(prof);
+      }
+    };
+    window.addEventListener("tenant-updated", handleTenantUpdated);
+
     return () => {
       isMounted = false;
       subscription?.unsubscribe();
+      window.removeEventListener("tenant-updated", handleTenantUpdated);
     };
   }, []);
 

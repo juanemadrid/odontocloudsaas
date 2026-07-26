@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { FiSave, FiUpload, FiImage, FiMapPin, FiPhone, FiMail, FiBriefcase, FiFileText } from "react-icons/fi";
@@ -100,13 +101,30 @@ export default function ConfigEmpresa() {
             await setDoc(docRef, {
                 ...formData,
                 name: formData.nombreComercial,
+                nombreComercial: formData.nombreComercial,
                 address: formData.direccion,
                 phone: formData.telefono,
                 logo: formData.logoUrl,
+                logo_url: formData.logoUrl,
                 updatedAt: serverTimestamp(),
                 updatedBy: userProfile.uid
             }, { merge: true });
 
+            try {
+                await supabase.from("tenants").upsert({
+                    id: userProfile.inquilino,
+                    nombre: formData.nombreComercial,
+                    nit: formData.nit,
+                    telefono: formData.telefono,
+                    direccion: formData.direccion,
+                    logo_url: formData.logoUrl,
+                    ciudad: formData.ciudad
+                });
+            } catch (sErr) {
+                console.warn("Aviso al guardar tenant en Supabase:", sErr);
+            }
+
+            window.dispatchEvent(new CustomEvent("tenant-updated"));
             toast.success("Información guardada correctamente");
         } catch (error) {
             console.error("Error guardando empresa:", error);
