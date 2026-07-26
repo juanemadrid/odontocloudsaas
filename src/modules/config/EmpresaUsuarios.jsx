@@ -96,51 +96,41 @@ export default function EmpresaUsuarios() {
         if (!userProfile?.inquilino) return;
         setLoading(true);
         try {
-            // Usuarios (sin orderBy email para evitar error de índice si hay filtros de tenant)
-            // Usuarios (Buscando tanto por 'inquilino' como por 'tenantId' para máxima compatibilidad)
-            const usersQ = query(
-                collection(db, "usuarios"),
-                or(
-                    where("inquilino", "==", userProfile.inquilino),
-                    where("tenantId", "==", userProfile.inquilino)
-                )
-            );
-            const uSnap = await getDocs(usersQ);
-
-            // Otros recursos (sin orderBy para evitar errores de índice si no existen)
-            // Ordenaremos del lado del cliente para mayor robustez
-            const [pSnap, sSnap, espSnap] = await Promise.all([
-                getDocs(query(collection(db, "perfiles"), where("inquilino", "==", userProfile.inquilino))),
-                getDocs(query(collection(db, "sucursales"), where("inquilino", "==", userProfile.inquilino))),
-                getDocs(query(collection(db, "especialidades"), where("inquilino", "==", userProfile.inquilino)))
+            const [uRes, sRes, cRes] = await Promise.all([
+                supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
+                supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino),
+                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle()
             ]);
 
-            const sortedProfiles = pSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-            const sortedBranches = sSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-            const sortedSpecialties = espSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+            const profilesList = (uRes.data || []).map(u => ({
+                id: u.id,
+                nombre: (u.full_name || "").split(" ")[0] || "",
+                apellido: (u.full_name || "").split(" ").slice(1).join(" ") || "",
+                nombreCompleto: u.full_name,
+                email: u.email,
+                rol: u.role,
+                profileId: u.role,
+                especialidad: u.especialidad,
+                registroMedico: u.registro_medico,
+                telefonoMovil: u.telefono,
+                activo: u.activo !== false
+            }));
 
-            const normalizedUsers = uSnap.docs.map(d => {
-                const data = d.data();
-                return {
-                    id: d.id,
-                    ...data,
-                    // Normalización de campos de asociación
-                    inquilino: data.inquilino || data.tenantId || userProfile.inquilino,
-                    tenantId: data.tenantId || data.inquilino || userProfile.inquilino
-                };
-            });
+            const rolesList = (cRes.data?.config?.perfiles || []).map(p => ({
+                id: p.nombre || p.id,
+                nombre: p.nombre
+            }));
 
-            setUsers(normalizedUsers);
-            setRolesDisponibles(sortedProfiles);
-            setSucursales(sortedBranches);
-            setSpecialties(sortedSpecialties);
-
+            setUsers(profilesList);
+            setRolesDisponibles(rolesList.length > 0 ? rolesList : [
+                { id: "Administrativo / Recepción", nombre: "Administrativo / Recepción" },
+                { id: "Odontólogo / Doctor", nombre: "Odontólogo / Doctor" },
+                { id: "Auxiliar de Odontología", nombre: "Auxiliar de Odontología" }
+            ]);
+            setSucursales(sRes.data || []);
         } catch (e) {
-            console.error(e);
-            toast.error("Error cargando usuarios");
+            console.error("Error al cargar usuarios desde Supabase:", e);
+            if (toast?.error) toast.error("Error cargando usuarios");
         } finally {
             setLoading(false);
         }
