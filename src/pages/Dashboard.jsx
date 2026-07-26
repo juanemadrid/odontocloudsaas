@@ -3,9 +3,6 @@
 // ===============================
 import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
 
-
-// import "../styles/dashboard.css"; // REMOVED: Migrated to index.css
-
 import Agenda from "../modules/agenda/Agenda";
 import Pacientes from "../modules/pacientes/Pacientes";
 import Odontograma from "../modules/odontograma/Odontograma";
@@ -17,18 +14,14 @@ import Caja from "../modules/caja/Caja";
 
 import DashboardLayout from "../layout/DashboardLayout";
 import ErrorBoundary from "../components/shared/ErrorBoundary";
-import StatCard from "../components/shared/StatCard";
-import DashboardCharts from "../components/dashboard/DashboardCharts";
+import DashboardHome from "../components/dashboard/DashboardHome";
 import {
     FiHome, FiCalendar, FiUsers, FiFileText, FiBox,
     FiActivity, FiSettings, FiLogOut, FiMenu, FiX, FiClock, FiCheckCircle, FiLayout, FiPieChart, FiGrid, FiDollarSign, FiZap, FiMic
 } from "react-icons/fi";
 
-import RecentActivity from "../components/RecentActivity";
-import SmartAlerts from "../components/dashboard/SmartAlerts";
-import SetupWizardWidget from "../components/dashboard/SetupWizardWidget";
-
 import supabase from "../lib/supabaseClient";
+
 
 
 
@@ -1659,28 +1652,12 @@ export default function Dashboard() {
 
       {/* Inicio (portada) */}
       {activeModule === "Inicio" && (
-          <Overview
-            t={t}
-            companyName={companyName}
-            companyLogo={companyLogo}
-            softwareLogo={logo} // PASSING SOFTWARE LOGO
-            userName={userName}
-            role={role}
-            darkMode={darkMode}
-            weeklySeries={weeklySeries}
-            weekRangeLabel={weekRangeLabel}
-            todaysAppointments={todaysAppointments}
-            todaysLoading={todaysLoading}
-            metrics={metrics}
-            metricsLoading={metricsLoading}
-            recent={recent}
-            recentLoading={recentLoading}
-            onGoAgenda={() => setActiveModule("Agenda")}
-            isDoc={isDoc}
-            currentDoctorId={currentDoctorId}
-            basePath={basePath}
-          />
-        )}
+        <DashboardHome
+          onGoModule={setActiveModule}
+          userName={userName}
+          companyName={companyName}
+        />
+      )}
     </DashboardLayout>
   );
 }

@@ -3,10 +3,11 @@ import TenantsPanelV2 from "../modules/superadmin/TenantsPanelV2";
 import PlanManagement from "../modules/superadmin/PlanManagement";
 import PaymentManagement from "../modules/superadmin/PaymentManagement";
 import FacturasQuotaPanel from "../modules/superadmin/FacturasQuotaPanel";
+import NovedadesAdmin from "../modules/superadmin/NovedadesAdmin";
 import WebCms from "../modules/cms/WebsiteEditor";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText } from "react-icons/fi";
+import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell } from "react-icons/fi";
 import "../styles/modern.css";
 import "../styles/utilities.css";
 import "../styles/theme.css";
@@ -119,7 +120,18 @@ export default function SuperAdminPanel() {
                     </button>
 
                     <div className="pt-4 mt-4 border-t border-slate-100">
-                        <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Configuración</p>
+                        <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Comunicaciones</p>
+                        <button
+                            onClick={() => setActiveTab("novedades")}
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "novedades"
+                                ? "bg-slate-100 text-slate-900 border border-slate-200"
+                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                        >
+                            <FiBell className={`w-4 h-4 ${activeTab === "novedades" ? "text-blue-700" : "text-slate-400"}`} />
+                            <span>Novedades del Sistema</span>
+                        </button>
+                        <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Configuración</p>
                         <button
                             onClick={() => setActiveTab("facturacion")}
                             className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "facturacion"
@@ -174,18 +186,25 @@ export default function SuperAdminPanel() {
                     {activeTab !== 'site' && (
                         <header className="mb-6 pb-6 border-b border-slate-200">
                             <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
-                                {activeTab === "clinics" ? "Control de Clínicas" : activeTab === "plans" ? "Gestión de Planes" : activeTab === "payments" ? "Motor de Recaudo" : activeTab === "facturacion" ? "Facturación Electrónica" : "Editor Sitio Oficial"}
+                            {activeTab === "clinics" ? "Control de Clínicas"
+                                : activeTab === "plans" ? "Gestión de Planes"
+                                : activeTab === "payments" ? "Motor de Recaudo"
+                                : activeTab === "facturacion" ? "Facturación Electrónica"
+                                : activeTab === "novedades" ? "Novedades del Sistema"
+                                : "Editor Sitio Oficial"}
                             </h2>
                             <p className="text-slate-500 font-medium text-xs mt-2">
                                 {activeTab === "clinics"
                                     ? "Supervisión global de infraestructura operativa de OdontoCloud."
                                     : activeTab === "plans"
                                         ? "Configuración estratégica de niveles de suscripción."
-                                        : activeTab === "payments"
-                                            ? "Administración de cuentas bancarias y contacto de soporte."
-                                            : activeTab === "facturacion"
-                                                ? "Credenciales Factus centralizadas y cuotas de facturación por clínica."
-                                                : "Personalización avanzada de la landing page corporativa de OdontoCloud."}
+                                    : activeTab === "payments"
+                                    ? "Administración de cuentas bancarias y contacto de soporte."
+                                    : activeTab === "facturacion"
+                                        ? "Credenciales Factus centralizadas y cuotas de facturación por clínica."
+                                        : activeTab === "novedades"
+                                            ? "Publica actualizaciones, alertas y comunicados que verán todos los usuarios en su panel de inicio."
+                                            : "Personalización avanzada de la landing page corporativa de OdontoCloud."}}
                             </p>
                         </header>
                     )}
@@ -196,6 +215,7 @@ export default function SuperAdminPanel() {
                         {activeTab === "plans" && <PlanManagement />}
                         {activeTab === "payments" && <PaymentManagement />}
                         {activeTab === "facturacion" && <FacturasQuotaPanel />}
+                        {activeTab === "novedades" && <NovedadesAdmin />}
                         {activeTab === "site" && <WebCms />}
                     </section>
                 </main>

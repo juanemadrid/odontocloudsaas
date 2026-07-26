@@ -165,7 +165,21 @@ export default function TenantsPanelV2() {
         try {
             // Guardar datos de la clínica
             await updateTenantDetails(showEditTenant.id, editForm);
-            alert("✅ Datos de la clínica actualizados exitosamente.");
+
+            let msg = "✅ Datos de la clínica actualizados exitosamente.";
+
+            // Si además se escribió una nueva contraseña para el administrador
+            if (editForm.newPassword && editForm.newPassword.trim().length >= 6) {
+                const adminEmail = editForm.adminEmail || showEditTenant.adminEmail || showEditTenant.contactEmail;
+                if (adminEmail) {
+                    await adminChangePassword(adminEmail, editForm.newPassword.trim());
+                    msg += `\n\n🔑 Nueva contraseña establecida para ${adminEmail}: ${editForm.newPassword.trim()}`;
+                }
+            } else if (editForm.newPassword && editForm.newPassword.trim().length < 6) {
+                alert("⚠️ La contraseña debe tener al menos 6 caracteres. No se cambió la contraseña.");
+            }
+
+            alert(msg);
             setShowEditTenant(null);
             loadData();
         } catch (err) {
@@ -353,6 +367,14 @@ export default function TenantsPanelV2() {
                                                         <FiEdit3 size={13}/>
                                                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                                                             Editar Clínica
+                                                        </span>
+                                                    </button>
+                                                    <button onClick={()=>{ setShowChangePwd(t); setPwdForm({ newPassword: "", confirm: "", show: false }); }}
+                                                        title="Cambiar contraseña del administrador directamente"
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-all group relative">
+                                                        <FiKey size={13}/>
+                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                                            Cambiar Contraseña
                                                         </span>
                                                     </button>
                                                     <button onClick={()=>{setSelectedTenant(t);setNewPlanId(t.planId);setNewDuration(t.planDuration||"monthly");setShowPlan(true);}}
@@ -738,11 +760,34 @@ export default function TenantsPanelV2() {
                                         <p className="text-[10px] text-slate-400 mt-1">Correo con el que el administrador inicia sesión en OdontoCloud.</p>
                                     </div>
 
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Cambiar Contraseña Directamente</label>
+                                        <div className="relative">
+                                            <input
+                                                type={editForm.showPwd ? "text" : "password"}
+                                                className={inp}
+                                                placeholder="Ingresa una nueva contraseña (mín. 6 caract.)"
+                                                value={editForm.newPassword || ""}
+                                                onChange={e=>setEditForm({...editForm, newPassword: e.target.value})}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditForm(f => ({ ...f, showPwd: !f.showPwd }))}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                            >
+                                                {editForm.showPwd ? <FiEyeOff size={16}/> : <FiEye size={16}/>}
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-1">
+                                            🔒 Por privacidad y encriptación de Supabase/PostgreSQL, las contraseñas guardadas no pueden verse en texto plano. Escribe una nueva aquí para cambiarla directamente.
+                                        </p>
+                                    </div>
+
                                     <div className="bg-amber-50/80 border border-amber-200/60 rounded-2xl p-4 space-y-2 mt-3">
                                         <div className="flex items-center justify-between gap-3">
                                             <div>
-                                                <p className="text-xs font-bold text-slate-800">¿Restablecer Contraseña del Admin?</p>
-                                                <p className="text-[11px] text-slate-500 mt-0.5">Envía un enlace seguro al correo de acceso para que el administrador cree una nueva contraseña.</p>
+                                                <p className="text-xs font-bold text-slate-800">¿Restablecer mediante Email?</p>
+                                                <p className="text-[11px] text-slate-500 mt-0.5">Envía un enlace seguro al correo para que el admin elija su propia clave.</p>
                                             </div>
                                             <button
                                                 type="button"
@@ -750,7 +795,7 @@ export default function TenantsPanelV2() {
                                                 disabled={sendingReset || !editForm.adminEmail}
                                                 className="shrink-0 px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm shadow-amber-200 transition-all disabled:opacity-50 flex items-center gap-1.5"
                                             >
-                                                <FiKey size={13}/>
+                                                <FiMail size={13}/>
                                                 {sendingReset ? "Enviando..." : "Enviar enlace"}
                                             </button>
                                         </div>
@@ -772,6 +817,86 @@ export default function TenantsPanelV2() {
                                     className="flex-1 py-3 bg-blue-600 text-white rounded-2xl text-xs font-black uppercase tracking-wider hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 disabled:opacity-50"
                                 >
                                     {processing ? "Guardando..." : "Guardar Cambios"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Direct Change Password Modal ── */}
+            {showChangePwd && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-amber-50/80">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                                    <FiKey size={16}/>
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-black text-slate-800">Cambiar Contraseña Directa</h3>
+                                    <p className="text-xs font-semibold text-amber-700">{showChangePwd.name}</p>
+                                </div>
+                            </div>
+                            <button onClick={()=>setShowChangePwd(null)} className="w-8 h-8 rounded-full bg-slate-200/60 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition-all">&times;</button>
+                        </div>
+
+                        <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs text-slate-600">
+                                <p className="font-bold text-slate-700">Administrador de la clínica:</p>
+                                <p className="font-mono text-blue-600 font-bold mt-0.5">{showChangePwd.adminEmail || showChangePwd.contactEmail || "Sin email registrado"}</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nueva Contraseña *</label>
+                                <div className="relative">
+                                    <input
+                                        type={pwdForm.show ? "text" : "password"}
+                                        required
+                                        minLength={6}
+                                        className={inp}
+                                        placeholder="Mínimo 6 caracteres"
+                                        value={pwdForm.newPassword}
+                                        onChange={e=>setPwdForm({...pwdForm, newPassword: e.target.value})}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={()=>setPwdForm(f=>({...f, show:!f.show}))}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                    >
+                                        {pwdForm.show ? <FiEyeOff size={16}/> : <FiEye size={16}/>}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Confirmar Contraseña *</label>
+                                <input
+                                    type={pwdForm.show ? "text" : "password"}
+                                    required
+                                    minLength={6}
+                                    className={inp}
+                                    placeholder="Repite la nueva contraseña"
+                                    value={pwdForm.confirm}
+                                    onChange={e=>setPwdForm({...pwdForm, confirm: e.target.value})}
+                                />
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={()=>setShowChangePwd(null)}
+                                    className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl text-xs font-black uppercase tracking-wider hover:bg-slate-200 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={changingPwd}
+                                    className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-colors shadow-lg shadow-amber-200 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                >
+                                    <FiKey size={14}/>
+                                    {changingPwd ? "Actualizando..." : "Guardar Contraseña"}
                                 </button>
                             </div>
                         </form>
