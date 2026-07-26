@@ -2,6 +2,7 @@
 // 🦷 Dashboard.jsx - Panel principal OdontoCloud (enrutado interno por URL)
 // ===============================
 import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { Timestamp } from "firebase/firestore";
 
 // import "../styles/dashboard.css"; // REMOVED: Migrated to index.css
 
