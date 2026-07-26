@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { FiSave, FiSettings, FiFileText, FiActivity, FiBox, FiUser, FiZap } from "react-icons/fi";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+
 
 // Compact Switch Component
 const CompactSwitch = ({ checked, onChange, label, subtitle }) => (
@@ -111,10 +111,17 @@ export default function ConfigParametros() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const docRef = doc(db, "tenants", userProfile.inquilino, "config", "parameters");
-            const snap = await getDoc(docRef);
-            if (snap.exists()) {
-                const saved = snap.data();
+            const { data: tenant, error } = await supabase
+                .from("tenants")
+                .select("parametros")
+                .eq("id", userProfile.inquilino)
+                .single();
+            
+            if (error) throw error;
+            if (tenant?.parametros) {
+                const saved = typeof tenant.parametros === "string" 
+                    ? JSON.parse(tenant.parametros) 
+                    : tenant.parametros;
                 setData(prev => ({
                     ...prev,
                     facturacion: { ...prev.facturacion, ...(saved.facturacion || {}) },
@@ -125,7 +132,7 @@ export default function ConfigParametros() {
                 }));
             }
         } catch (error) {
-            console.error("Error loading parameters:", error);
+            console.error("Error loading parameters from Supabase:", error);
             if (toast?.error) toast.error("Error al cargar parámetros");
         } finally {
             setLoading(false);
@@ -145,15 +152,14 @@ export default function ConfigParametros() {
     const handleSave = async () => {
         setSaving(true);
         try {
-            const docRef = doc(db, "tenants", userProfile.inquilino, "config", "parameters");
-            await setDoc(docRef, {
-                ...data,
-                updatedAt: serverTimestamp(),
-                updatedBy: userProfile.uid
-            });
+            const { error } = await supabase
+                .from("tenants")
+                .update({ parametros: data })
+                .eq("id", userProfile.inquilino);
+            if (error) throw error;
             if (toast?.success) toast.success("Parámetros guardados correctamente");
         } catch (error) {
-            console.error("Error saving parameters:", error);
+            console.error("Error saving parameters to Supabase:", error);
             if (toast?.error) toast.error("Error al guardar");
         } finally {
             setSaving(false);

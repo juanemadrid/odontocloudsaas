@@ -1,42 +1,38 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../../firebase/firebaseConfig";
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
 import { FiCheckCircle, FiArrowRight, FiSettings, FiUsers, FiAlertCircle } from "react-icons/fi";
 
 const CHECKS = [
-    { id: "tenant", label: "Datos Clínica", check: async (db, inq) => {
-        const docRef = doc(db, "tenants", inq);
-        const snap = await getDoc(docRef);
-        if (!snap.exists()) return false;
-        const data = snap.data();
-        return !!(data.nit && (data.nombreComercial || data.name) && (data.telefono || data.phone));
+    { id: "tenant", label: "Datos Clínica", check: async (inq) => {
+        const { data } = await supabase.from("tenants").select("nit, nombre_comercial, telefono").eq("id", inq).single();
+        return !!(data?.nit && data?.nombre_comercial && data?.telefono);
     }},
-    { id: "sucursales", label: "Sedes", check: async (db, inq) => {
-        const snap = await getDocs(query(collection(db, "sucursales"), where("inquilino", "==", inq)));
-        return !snap.empty;
+    { id: "sucursales", label: "Sedes", check: async (inq) => {
+        const { count } = await supabase.from("sucursales").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
+        return (count || 0) > 0;
     }},
-    { id: "recursos-fisicos", label: "Consultorios", check: async (db, inq) => {
-        const snap = await getDocs(collection(db, "tenants", inq, "recursos_fisicos"));
-        return !snap.empty;
+    { id: "recursos-fisicos", label: "Consultorios", check: async (inq) => {
+        const { count } = await supabase.from("recursos_fisicos").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
+        return (count || 0) > 0;
     }},
-    { id: "especialidades", label: "Especialidades", check: async (db, inq) => {
-        const snap = await getDocs(query(collection(db, "especialidades"), where("inquilino", "==", inq)));
-        return !snap.empty;
+    { id: "especialidades", label: "Especialidades", check: async (inq) => {
+        const { count } = await supabase.from("especialidades").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
+        return (count || 0) > 0;
     }},
-    { id: "usuarios", label: "Doctores", check: async (db, inq) => {
-        const snap = await getDocs(query(collection(db, "usuarios"), where("inquilino", "==", inq)));
-        return snap.size > 1;
+    { id: "usuarios", label: "Doctores", check: async (inq) => {
+        const { count } = await supabase.from("profiles").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
+        return (count || 0) > 1;
     }},
-    { id: "listas-precios", label: "Lista Precios", check: async (db, inq) => {
-        const snap = await getDocs(query(collection(db, "listas_precios"), where("inquilino", "==", inq)));
-        return !snap.empty;
+    { id: "listas-precios", label: "Lista Precios", check: async (inq) => {
+        const { count } = await supabase.from("listas_precios").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
+        return (count || 0) > 0;
     }},
-    { id: "consecutivos", label: "Facturación", check: async (db, inq) => {
-        const snap = await getDocs(query(collection(db, "consecutivos"), where("inquilino", "==", inq)));
-        return !snap.empty;
+    { id: "consecutivos", label: "Facturación", check: async (inq) => {
+        const { count } = await supabase.from("consecutivos").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
+        return (count || 0) > 0;
     }}
 ];
 
@@ -54,7 +50,7 @@ export default function SetupWizardWidget() {
         }
 
         const runChecks = async () => {
-            const results = await Promise.all(CHECKS.map(c => c.check(db, userProfile.inquilino)));
+            const results = await Promise.all(CHECKS.map(c => c.check(userProfile.inquilino)));
             const completed = results.filter(r => r).length;
             const perc = Math.round((completed / CHECKS.length) * 100);
             setProgress(perc);
@@ -64,6 +60,7 @@ export default function SetupWizardWidget() {
 
         runChecks();
     }, [userProfile]);
+
 
     if (loading || !visible) return null;
 
