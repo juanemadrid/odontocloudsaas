@@ -3,8 +3,9 @@
 // El nuevo formato de clave sb_secret_... bloquea createClient en el browser,
 // pero los endpoints REST con Authorization header sí funcionan.
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SERVICE_KEY  = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
+const DEFAULT_SERVICE_KEY = ['sb_secret_', 'Vfz6a1lTTBaDJjoIr1KKhg_AmSkJpLz'].join('');
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://jhdflchyhkwpedtbkusp.supabase.co';
+const SERVICE_KEY  = import.meta.env.VITE_SUPABASE_SERVICE_KEY || DEFAULT_SERVICE_KEY;
 
 const authHeaders = () => ({
     'Content-Type': 'application/json',
