@@ -26,7 +26,7 @@ export default function EmpresaListaPrecios() {
     const [activeTab, setActiveTab] = useState("clinicos"); // clinicos, productos, servicios
     const [searchTerm, setSearchTerm] = useState("");
     const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
 
     // View State: 'list' or 'editor'
     const [view, setView] = useState("list");
@@ -47,7 +47,10 @@ export default function EmpresaListaPrecios() {
 
     // Fetch data on tab change
     const fetchData = async () => {
-        if (!inquilino) return;
+        if (!inquilino) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             if (activeTab === "productos" || activeTab === "servicios") {
@@ -77,6 +80,7 @@ export default function EmpresaListaPrecios() {
             }
         } catch (error) {
             console.error("Error fetching data from Supabase:", error);
+            setRows([]);
         } finally {
             setLoading(false);
         }
@@ -413,7 +417,7 @@ export default function EmpresaListaPrecios() {
                                         <td className="px-8 py-4 border-b border-slate-50 transition-all group-hover/row:translate-x-1">
                                             <div className="flex flex-col">
                                                 <span className="text-[14px] font-black text-slate-700 group-hover/row:text-blue-600 transition-colors uppercase tracking-tight">{row.nombre}</span>
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">ID: {row.id.substring(0, 8)}</span>
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">ID: {row.id ? String(row.id).substring(0, 8) : '-'}</span>
                                             </div>
                                         </td>
                                         <td className="px-8 py-4 border-b border-slate-50">

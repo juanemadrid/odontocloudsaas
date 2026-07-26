@@ -8,8 +8,8 @@ import {
     FiClipboard, FiUploadCloud, FiPercent, FiBook, FiStar, FiGlobe
 } from "react-icons/fi";
 import { useAuth } from "../../context/AuthContext";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
+
 
 const MENU_ITEMS = [
     { label: "Datos Básicos", slug: "datos-basicos", icon: FiSettings },
@@ -47,21 +47,20 @@ export default function ConfigLayout({ children }) {
         const checkPlan = async () => {
             if (userProfile?.inquilino) {
                 try {
-                    const docRef = doc(db, "tenants", userProfile.inquilino);
-                    const snap = await getDoc(docRef);
-                    if (snap.exists()) {
-                        const data = snap.data();
-                        // Check if tenant has website feature enabled (simulated logic)
-                        // In a real app, this might come from 'plan.features.website'
-                        // For now, we check a specific flag 'hasWebsite' or if they are in 'Premium' plan
-                        // Let's assume 'hasWebsite' boolean field or 'planType' === 'PREMIUM'
-                        // SIMULATION: Always true for now
-                        setHasWebsiteAccess(true);
-                        // setHasWebsiteAccess(data.hasWebsite === true || data.planType === "PREMIUM" || data.planType === "WEBSITE_INCLUDED"); 
-                    }
+                    const { data } = await supabase
+                        .from("tenants")
+                        .select("plan_tipo, has_website")
+                        .eq("id", userProfile.inquilino)
+                        .single();
+                    // Activar acceso a Editor Web según plan
+                    setHasWebsiteAccess(
+                        data?.has_website === true ||
+                        data?.plan_tipo === "PREMIUM" ||
+                        true // Por ahora siempre true para demo
+                    );
                 } catch (e) {
                     console.error("Error checking website plan:", e);
-                    setHasWebsiteAccess(true); // Fallback for demo
+                    setHasWebsiteAccess(true); // Fallback para demo
                 }
             }
         };
