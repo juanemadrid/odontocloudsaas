@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
-// 
 import { FiSearch, FiEdit2, FiEye, FiTrash2, FiDollarSign, FiUploadCloud, FiBox } from "react-icons/fi";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import ListaPreciosEditar from "./ListaPreciosEditar";
@@ -13,7 +11,6 @@ import ModalProducto from "./ModalProducto";
 const formatDate = (isoString) => {
     if (!isoString) return "-";
     try {
-        if (isoString.seconds) return new Date(isoString.seconds * 1000).toLocaleString("es-CO");
         return new Date(isoString).toLocaleString("es-CO");
     } catch (e) {
         return isoString;
@@ -54,36 +51,32 @@ export default function EmpresaListaPrecios() {
         setLoading(true);
         try {
             if (activeTab === "productos" || activeTab === "servicios") {
-                let q = query(
-                    collection(db, "productos"),
-                    where("inquilino", "==", inquilino)
-                );
-                const snap = await getDocs(q);
-                let data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                
-                // Filtrar según pestaña actual
-                data = data.filter(d => activeTab === "servicios" ? d.es_servicio === true : d.es_servicio !== true);
-                
-                data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-                setRows(data);
+                const { data, error } = await supabase
+                    .from("inventario")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+
+                if (error) throw error;
+                let filtered = (data || []).map(d => ({
+                    ...d,
+                    precio: d.precio_venta || d.precio || 0
+                }));
+
+                filtered = filtered.filter(d => activeTab === "servicios" ? d.es_servicio === true : !d.es_servicio);
+                filtered.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+                setRows(filtered);
             } else {
-                let q = query(
-                    collection(db, "listas_precios"),
-                    where("tipo", "==", activeTab),
-                    where("inquilino", "==", inquilino)
-                );
-                const snap = await getDocs(q);
-                const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // Sort locally
-                data.sort((a, b) => {
-                    const da = a.creado?.seconds || 0;
-                    const db = b.creado?.seconds || 0;
-                    return db - da; // Descending
-                });
-                setRows(data);
+                const { data, error } = await supabase
+                    .from("listas_precios")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+
+                if (error) throw error;
+                const sorted = (data || []).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                setRows(sorted);
             }
         } catch (error) {
-            console.error("Error fetching data:", error);
+            console.error("Error fetching data from Supabase:", error);
         } finally {
             setLoading(false);
         }
@@ -92,7 +85,7 @@ export default function EmpresaListaPrecios() {
     useEffect(() => {
         fetchData();
         setSearchTerm("");
-    }, [activeTab]);
+    }, [activeTab, inquilino]);
 
     const handleSaveList = async () => {
         if (!formData.nombre.trim()) return alert("El nombre es obligatorio");
@@ -100,31 +93,32 @@ export default function EmpresaListaPrecios() {
 
         try {
             if (editItem) {
-                // Update
-                await updateDoc(doc(db, "listas_precios", editItem.id), {
-                    nombre: formData.nombre,
-                    actualizado: new Date()
-                });
-                alert("Lista actualizada");
+                const { error } = await supabase
+                    .from("listas_precios")
+                    .update({ nombre: formData.nombre })
+                    .eq("id", editItem.id);
+                if (error) throw error;
+                if (toast?.success) toast.success("Lista actualizada correctamente");
             } else {
-                // Create
-                await addDoc(collection(db, "listas_precios"), {
-                    nombre: formData.nombre,
-                    tipo: activeTab,
-                    inquilino,
-                    creado: new Date(),
-                    actualizado: new Date(),
-                    en_uso: false
-                });
-                alert("Lista creada");
+                const { error } = await supabase
+                    .from("listas_precios")
+                    .insert([{
+                        nombre: formData.nombre,
+                        tenant_id: inquilino,
+                        descripcion: "[]",
+                        activa: true
+                    }]);
+                if (error) throw error;
+                if (toast?.success) toast.success("Lista de precios creada correctamente");
             }
             setShowModal(false);
             setFormData({ nombre: "" });
             setEditItem(null);
             fetchData();
         } catch (e) {
-            console.error(e);
-            alert("Error al guardar: " + e.message);
+            console.error("Error al guardar lista:", e);
+            if (toast?.error) toast.error("Error al guardar: " + e.message);
+            else alert("Error al guardar: " + e.message);
         }
     };
 
@@ -132,24 +126,33 @@ export default function EmpresaListaPrecios() {
         setLoading(true);
         try {
             const dataToSave = {
-                ...productData,
-                inquilino,
-                actualizado: new Date()
+                nombre: productData.nombre,
+                codigo: productData.codigo || "",
+                categoria: productData.categoria || "GENERAL",
+                precio_venta: Number(productData.precio) || 0,
+                es_servicio: activeTab === "servicios",
+                tenant_id: inquilino
             };
-            if (editItem) {
-                await updateDoc(doc(db, "productos", editItem.id), dataToSave);
+
+            if (editItem?.id) {
+                const { error } = await supabase
+                    .from("inventario")
+                    .update(dataToSave)
+                    .eq("id", editItem.id);
+                if (error) throw error;
             } else {
-                await addDoc(collection(db, "productos"), {
-                    ...dataToSave,
-                    creado: new Date()
-                });
+                const { error } = await supabase
+                    .from("inventario")
+                    .insert([dataToSave]);
+                if (error) throw error;
             }
             setShowProductModal(false);
             setEditItem(null);
+            if (toast?.success) toast.success("Registro guardado en Supabase");
             fetchData();
         } catch (e) {
-            console.error(e);
-            alert("Error al guardar producto: " + e.message);
+            console.error("Error al guardar producto:", e);
+            if (toast?.error) toast.error("Error al guardar producto: " + e.message);
         } finally {
             setLoading(false);
         }
@@ -160,14 +163,17 @@ export default function EmpresaListaPrecios() {
             if (!window.confirm(`¿Seguro que deseas eliminar "${row.nombre}"?`)) return;
             setLoading(true);
             try {
-                await deleteDoc(doc(db, "productos", row.id));
+                const { error } = await supabase
+                    .from("inventario")
+                    .delete()
+                    .eq("id", row.id);
+
+                if (error) throw error;
                 setRows(prev => prev.filter(r => r.id !== row.id));
                 if (toast?.success) toast.success("Registro eliminado correctamente");
-                else alert("Registro eliminado correctamente");
             } catch (e) {
                 console.error("Error al eliminar producto/servicio:", e);
                 if (toast?.error) toast.error("Error al eliminar el registro");
-                else alert("Error al eliminar: " + e.message);
             } finally {
                 setLoading(false);
             }
@@ -175,20 +181,17 @@ export default function EmpresaListaPrecios() {
             if (!window.confirm(`¿Seguro que deseas eliminar la lista de precios "${row.nombre}"?`)) return;
             setLoading(true);
             try {
-                // Eliminar ítems internos primero
-                const itemsSnap = await getDocs(collection(db, "listas_precios", row.id, "items"));
-                const deletePromises = itemsSnap.docs.map(d => deleteDoc(doc(db, "listas_precios", row.id, "items", d.id)));
-                await Promise.all(deletePromises);
+                const { error } = await supabase
+                    .from("listas_precios")
+                    .delete()
+                    .eq("id", row.id);
 
-                // Eliminar lista principal
-                await deleteDoc(doc(db, "listas_precios", row.id));
+                if (error) throw error;
                 setRows(prev => prev.filter(r => r.id !== row.id));
                 if (toast?.success) toast.success("Lista de precios eliminada correctamente");
-                else alert("Lista de precios eliminada correctamente");
             } catch (e) {
                 console.error("Error al eliminar lista de precios:", e);
                 if (toast?.error) toast.error("Error al eliminar la lista de precios");
-                else alert("Error al eliminar lista: " + e.message);
             } finally {
                 setLoading(false);
             }

@@ -5,14 +5,21 @@ import {
     FiArrowLeft, FiPlus, FiTrash2, FiEdit3, FiSave, FiX, FiSearch, FiCheck, 
     FiChevronDown, FiChevronRight, FiPercent, FiPlusCircle, FiDownload 
 } from "react-icons/fi";
-import { 
-    collection, getDocs, doc, addDoc, updateDoc, deleteDoc, query, 
-    orderBy, serverTimestamp, getDoc 
-} from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { CUPS_DENTAL_CODES } from "../../data/cupsCodes";
 import ModalProducto from "./ModalProducto";
+
+// Helper: parse items stored as JSON string in descripcion field
+const parseItems = (descripcion) => {
+    try {
+        const parsed = typeof descripcion === "string" ? JSON.parse(descripcion) : descripcion;
+        return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+};
+
+// Helper: generate a simple UUID for new items
+const genId = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
 
 export default function ListaPreciosEditar({ listaId, onBack }) {
     const { userProfile } = useAuth();
@@ -69,42 +76,47 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
     }, [cupsQuery]);
 
     const fetchListInfo = async () => {
-        const docSnap = await getDoc(doc(db, "listas_precios", listaId));
-        if (docSnap.exists()) {
-            setListData({ id: docSnap.id, ...docSnap.data() });
-            setTempName(docSnap.data().nombre);
+        const { data, error } = await supabase
+            .from("listas_precios")
+            .select("*")
+            .eq("id", listaId)
+            .single();
+        if (!error && data) {
+            setListData(data);
+            setTempName(data.nombre);
+            // Load items from JSON stored in descripcion
+            const parsedItems = parseItems(data.descripcion);
+            const sorted = parsedItems.sort((a, b) => {
+                const catA = (a.categoria || "GENERAL").toUpperCase();
+                const catB = (b.categoria || "GENERAL").toUpperCase();
+                if (catA < catB) return -1;
+                if (catA > catB) return 1;
+                return (a.nombre || "").localeCompare(b.nombre || "");
+            });
+            setItems(sorted);
+            if (sorted.length > 0) {
+                setExpandedCats(new Set([sorted[0].categoria || "GENERAL"]));
+            }
+        } else if (error) {
+            console.error("Error fetching lista:", error);
         }
+    };
+
+    // Save all items back to Supabase as JSON in descripcion field
+    const saveItemsToSupabase = async (updatedItems) => {
+        const { error } = await supabase
+            .from("listas_precios")
+            .update({ descripcion: JSON.stringify(updatedItems) })
+            .eq("id", listaId);
+        if (error) throw error;
+        setItems(updatedItems);
     };
 
     const fetchItems = async () => {
         if (!listaId) return;
         setLoading(true);
         try {
-            const q = query(
-                collection(db, "listas_precios", listaId, "items")
-            );
-            const snap = await getDocs(q);
-            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            
-            // Sort in memory to avoid Firebase Composite Index requirement
-            data.sort((a, b) => {
-                const catA = (a.categoria || "GENERAL").toUpperCase();
-                const catB = (b.categoria || "GENERAL").toUpperCase();
-                if (catA < catB) return -1;
-                if (catA > catB) return 1;
-                
-                const nomA = (a.nombre || "").toUpperCase();
-                const nomB = (b.nombre || "").toUpperCase();
-                return nomA.localeCompare(nomB);
-            });
-
-            setItems(data);
-            
-            // Auto-expand first category if there's only one or just for convenience
-            if (data.length > 0) {
-                const firstCat = data[0].categoria || "GENERAL";
-                setExpandedCats(new Set([firstCat]));
-            }
+            await fetchListInfo();
         } catch (e) {
             console.error("Error fetching items:", e);
         } finally {
@@ -114,7 +126,6 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
 
     useEffect(() => {
         fetchListInfo();
-        fetchItems();
     }, [listaId]);
 
     // Group items by category
@@ -140,13 +151,14 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
     const handleUpdateListName = async () => {
         if (!tempName.trim()) return;
         try {
-            await updateDoc(doc(db, "listas_precios", listaId), {
-                nombre: tempName.toUpperCase(),
-                actualizado: serverTimestamp()
-            });
+            const { error } = await supabase
+                .from("listas_precios")
+                .update({ nombre: tempName.toUpperCase() })
+                .eq("id", listaId);
+            if (error) throw error;
             setIsEditingName(false);
-            fetchListInfo();
-        } catch (e) { console.error(e); }
+            setListData(prev => ({ ...prev, nombre: tempName.toUpperCase() }));
+        } catch (e) { console.error("Error actualizando nombre:", e); }
     };
 
     const handleOpenModal = (cat, item = null) => {
@@ -189,31 +201,29 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         try {
             const itemData = {
                 ...formData,
-                categoria: targetCat,
+                categoria: targetCat || "GENERAL",
                 precio: Number(formData.precio) || 0,
                 pago_fijo_doctor: Number(formData.pago_fijo_doctor) || 0,
                 max_descuento_porcentaje: Number(formData.max_descuento_porcentaje) || 0,
                 max_descuento_valor: Number(formData.max_descuento_valor) || 0,
-                inquilino,
                 search_name: formData.nombre.toLowerCase(),
-                actualizado: serverTimestamp()
+                actualizado: new Date().toISOString()
             };
 
+            let updatedItems;
             if (currentItem) {
-                // UPDATE
-                await updateDoc(doc(db, "listas_precios", listaId, "items", currentItem.id), itemData);
+                // UPDATE: replace item by id
+                updatedItems = items.map(it => it.id === currentItem.id ? { ...it, ...itemData } : it);
             } else {
-                // CREATE
-                await addDoc(collection(db, "listas_precios", listaId, "items"), {
-                    ...itemData,
-                    creado: serverTimestamp()
-                });
+                // CREATE: add new item with generated id
+                const newItem = { ...itemData, id: genId(), creado: new Date().toISOString() };
+                updatedItems = [...items, newItem];
             }
-            
+
+            await saveItemsToSupabase(updatedItems);
             setShowModal(false);
-            fetchItems();
         } catch (e) { 
-            console.error(e); 
+            console.error("Error al guardar ítem:", e); 
             alert("Error al guardar: " + e.message);
         } finally {
             setLoading(false);
@@ -225,23 +235,21 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         try {
             const itemData = {
                 ...productData,
-                inquilino,
-                actualizado: serverTimestamp()
+                categoria: targetCat || "GENERAL",
+                actualizado: new Date().toISOString()
             };
 
+            let updatedItems;
             if (currentItem) {
-                await updateDoc(doc(db, "listas_precios", listaId, "items", currentItem.id), itemData);
+                updatedItems = items.map(it => it.id === currentItem.id ? { ...it, ...itemData } : it);
             } else {
-                await addDoc(collection(db, "listas_precios", listaId, "items"), {
-                    ...itemData,
-                    creado: serverTimestamp()
-                });
+                updatedItems = [...items, { ...itemData, id: genId(), creado: new Date().toISOString() }];
             }
-            
+
+            await saveItemsToSupabase(updatedItems);
             setShowModal(false);
-            fetchItems();
         } catch (e) { 
-            console.error(e); 
+            console.error("Error al guardar producto:", e); 
             alert("Error al guardar producto: " + e.message);
         } finally {
             setLoading(false);
@@ -252,8 +260,8 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         if (!window.confirm("¿Seguro que deseas eliminar este ítem de la lista?")) return;
         setLoading(true);
         try {
-            await deleteDoc(doc(db, "listas_precios", listaId, "items", itemId));
-            setItems(prev => prev.filter(item => item.id !== itemId));
+            const updatedItems = items.filter(item => item.id !== itemId);
+            await saveItemsToSupabase(updatedItems);
         } catch (e) { 
             console.error("Error al eliminar ítem:", e); 
             alert("Error al eliminar el ítem: " + (e.message || "Error desconocido"));
