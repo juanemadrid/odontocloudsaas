@@ -404,9 +404,18 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                             >
                                                 <FiPlus size={14} />
                                             </button>
-                                            <button className="w-7 h-7 rounded-md bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" title="Ajuste porcentual"><FiPercent size={13} /></button>
-                                            <button className="w-7 h-7 rounded-md bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" title="Editar categoría"><FiEdit3 size={13} /></button>
-                                            <button className="w-7 h-7 rounded-md bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" title="Eliminar categoría"><FiTrash2 size={13} /></button>
+                                            <button 
+                                                onClick={() => {
+                                                    if (window.confirm(`¿Seguro que deseas eliminar la categoría "${cat}" y todos sus ítems de esta lista?`)) {
+                                                        const updatedItems = items.filter(item => (item.categoria || "GENERAL") !== cat);
+                                                        saveItemsToSupabase(updatedItems);
+                                                    }
+                                                }} 
+                                                className="w-7 h-7 rounded-md bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" 
+                                                title="Eliminar categoría"
+                                            >
+                                                <FiTrash2 size={13} />
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
