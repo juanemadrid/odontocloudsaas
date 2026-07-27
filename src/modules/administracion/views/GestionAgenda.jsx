@@ -159,21 +159,15 @@ export default function GestionAgenda() {
     if (!inquilino) return;
 
     setLoadingProfs(true);
-    supabase.from("profiles").select("*").eq("tenant_id", inquilino)
+    supabase.from("profiles").select("*").eq("tenant_id", inquilino).eq("activo", true)
       .then(({ data }) => {
         const docs = data || [];
+        // Filter only doctors/odontologists based on role field
         const filtered = docs.filter(u => {
-          const rolLower = (u.rol || u.role || "").toLowerCase();
-          return u.esDoctor === true || 
-                 u.esOdontologo === true ||
-                 rolLower === 'doctor' || 
-                 rolLower === 'odontologo' || 
-                 rolLower === 'odontólogo / doctor' ||
-                 rolLower === 'odontóloga' ||
-                 rolLower === 'doctores' ||
-                 rolLower === 'especialista' ||
-                 rolLower.includes('doctor') ||
-                 rolLower.includes('odont');
+          const roleLower = (u.role || "").toLowerCase();
+          return roleLower.includes('odontologo') || 
+                 roleLower.includes('doctor') || 
+                 roleLower.includes('admin');  // Admins también pueden gestionar agenda
         });
         setProfessionals(filtered);
         setLoadingProfs(false);
