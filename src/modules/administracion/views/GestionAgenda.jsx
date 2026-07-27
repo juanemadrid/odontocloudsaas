@@ -154,7 +154,7 @@ export default function GestionAgenda() {
     return `${d}/${m}/${y}`;
   };
 
-  // Fetch Professionals (Doctors only) - Using profiles table from Supabase
+  // Fetch Professionals (Doctors/Odontologists only) - Using profiles table from Supabase
   useEffect(() => {
     if (!inquilino) return;
 
@@ -162,13 +162,13 @@ export default function GestionAgenda() {
     supabase.from("profiles").select("*").eq("tenant_id", inquilino).eq("activo", true)
       .then(({ data }) => {
         const docs = data || [];
-        // Filter only doctors/odontologists based on role field
+        // Filter ONLY doctors/odontologists (exclude admins and receptionists)
         const filtered = docs.filter(u => {
           const roleLower = (u.role || "").toLowerCase();
           return roleLower.includes('odontologo') || 
-                 roleLower.includes('doctor') || 
-                 roleLower.includes('admin');  // Admins también pueden gestionar agenda
+                 roleLower.includes('doctor');
         });
+        console.log('🔍 Profesionales filtrados (solo doctores):', filtered);
         setProfessionals(filtered);
         setLoadingProfs(false);
       }).catch(err => {
