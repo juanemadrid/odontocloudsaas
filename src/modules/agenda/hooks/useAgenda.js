@@ -142,13 +142,16 @@ export function useAgenda() {
                     supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
                 ]);
 
-                // Doctors — from profiles table
+                // Doctors — from profiles table (only doctors/odontologists, exclude admins)
                 const docsList = (profRes.data || [])
                     .filter(u => u.activo !== false)
-                    .filter(u =>
-                        (typeof u.role === 'string' && ['doctor', 'odontologo', 'especialista', 'administrador'].includes(u.role.toLowerCase())) ||
-                        !!u.especialidad
-                    )
+                    .filter(u => {
+                        const roleLower = (u.role || '').toLowerCase();
+                        return roleLower === 'doctor' || 
+                               roleLower === 'odontologo' || 
+                               roleLower === 'especialista' ||
+                               !!u.especialidad; // Include if they have a medical specialty
+                    })
                     .map(u => ({
                         id: u.id,
                         nombre: (u.full_name || '').split(' ')[0] || '',
