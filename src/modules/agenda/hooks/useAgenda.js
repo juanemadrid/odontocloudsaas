@@ -1,9 +1,29 @@
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, orderBy, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, arrayUnion, setDoc, or } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
 import { useAuth } from "../../../context/AuthContext";
 import { createOrUpdatePatient } from "../../../services/patientService";
 import { useAudit } from "../../../hooks/useAudit";
+import supabase from "../../../lib/supabaseClient";
+
+const DEFAULT_SPECIALTIES = [
+    { id: "Ortodoncia", nombre: "Ortodoncia" },
+    { id: "Endodoncia", nombre: "Endodoncia" },
+    { id: "Periodoncia", nombre: "Periodoncia" },
+    { id: "Odontopediatría", nombre: "Odontopediatría" },
+    { id: "Cirugía Oral", nombre: "Cirugía Oral" },
+    { id: "Estética Dental", nombre: "Estética Dental" },
+    { id: "Odontología General", nombre: "Odontología General" },
+    { id: "Implantología", nombre: "Implantología" },
+    { id: "Rehabilitación Oral", nombre: "Rehabilitación Oral" }
+];
+
+const DEFAULT_BRANCHES = [
+    { id: "principal", nombre: "Sede Principal" }
+];
+
+const DEFAULT_CHAIRS = [
+    { id: "consultorio-1", nombre: "Consultorio 1" },
+    { id: "consultorio-2", nombre: "Consultorio 2" }
+];
 
 // Utils
 const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
@@ -111,68 +131,81 @@ export function useAgenda() {
     useEffect(() => {
         if (!inquilino) return;
 
-        // Fetch doctors: We query all users for the tenant and filter client-side.
-        // This ensures we catch anyone marked as doctor (esDoctor == true OR by role/profile) 
-        // even if the exact boolean field is missing in older records.
-        const unsubDocs = onSnapshot(query(
-            collection(db, "usuarios"), 
-            or(
-                where("inquilino", "==", inquilino),
-                where("tenantId", "==", inquilino)
-            )
-        ), snap => {
-            setDoctors(
-                snap.docs
-                    .map(d => {
-                        const data = d.data();
-                        return { 
-                            id: d.id, 
-                            ...data 
-                        };
-                    })
-                    .filter(u => u.activo !== false) // Active users only
-                    .filter(u => 
-                        u.esDoctor === true || 
-                        (typeof u.rol === 'string' && ['doctor', 'odontologo', 'especialista'].includes(u.rol.toLowerCase())) ||
-                        (typeof u.profileName === 'string' && u.profileName.toLowerCase().includes('octor'))
+        const loadCatalogs = async () => {
+            try {
+                const [profRes, sucRes, conRes, entRes, pacRes, cfgRes] = await Promise.all([
+                    supabase.from("profiles").select("*").eq("tenant_id", inquilino),
+                    supabase.from("sucursales").select("*").eq("tenant_id", inquilino),
+                    supabase.from("consultorios").select("*").eq("tenant_id", inquilino),
+                    supabase.from("entidades").select("*").eq("tenant_id", inquilino),
+                    supabase.from("pacientes").select("id,documento,nombres,apellidos,telefono").eq("tenant_id", inquilino),
+                    supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
+                ]);
+
+                // Doctors — from profiles table
+                const docsList = (profRes.data || [])
+                    .filter(u => u.activo !== false)
+                    .filter(u =>
+                        (typeof u.role === 'string' && ['doctor', 'odontologo', 'especialista', 'administrador'].includes(u.role.toLowerCase())) ||
+                        !!u.especialidad
                     )
-            );
-        });
-        const unsubChairs = onSnapshot(query(collection(db, "tenants", inquilino, "recursos_fisicos"), orderBy("nombre", "asc")), snap => {
-            setChairs(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.active !== false));
-        });
-        const unsubBranches = onSnapshot(query(collection(db, "sucursales"), where("inquilino", "==", inquilino)), snap => {
-            setBranches(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => b.activo !== false));
-        });
-        const unsubSpecs = onSnapshot(query(collection(db, "especialidades"), where("inquilino", "==", inquilino)), snap => {
-            setSpecialties(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-        const unsubEntities = onSnapshot(query(collection(db, "entidades"), where("inquilino", "==", inquilino)), snap => {
-            setEntities(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-        const unsubPrices = onSnapshot(query(collection(db, "precios"), where("inquilino", "==", inquilino)), snap => {
-            setPriceList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
+                    .map(u => ({
+                        id: u.id,
+                        nombre: (u.full_name || '').split(' ')[0] || '',
+                        apellido: (u.full_name || '').split(' ').slice(1).join(' ') || '',
+                        nombreCompleto: u.full_name || '',
+                        email: u.email,
+                        rol: u.role,
+                        especialidad: u.especialidad || '',
+                        activo: u.activo !== false
+                    }));
+                if (docsList.length > 0) setDoctors(docsList);
 
-        const unsubPatients = onSnapshot(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)), snap => {
-            const map = {};
-            snap.docs.forEach(d => {
-                const data = d.data();
-                const pObj = { id: d.id, ...data };
-                map[d.id] = pObj;
-                if (data.nroDocumento) map[String(data.nroDocumento).trim()] = pObj;
-                if (data.documento) map[String(data.documento).trim()] = pObj;
-                if (data.id) map[String(data.id).trim()] = pObj;
-                const nameKey = (data.nombreCompleto || data.paciente || `${data.nombres || ''} ${data.apellidos || ''}`).trim().toLowerCase();
-                if (nameKey) map[nameKey] = pObj;
-            });
-            setPatientsMap(map);
-        });
+                // Branches — sucursales table
+                const supSuc = (sucRes.data || []);
+                if (supSuc.length > 0) setBranches(supSuc);
+                else setBranches(DEFAULT_BRANCHES);
 
-        return () => {
-            unsubDocs(); unsubChairs(); unsubBranches();
-            unsubSpecs(); unsubEntities(); unsubPrices(); unsubPatients();
+                // Chairs — consultorios table
+                const supChairs = (conRes.data || []);
+                if (supChairs.length > 0) setChairs(supChairs);
+                else setChairs(DEFAULT_CHAIRS);
+
+                // Specialties — from website_config or defaults
+                const rawCfgSpecs = cfgRes.data?.config?.especialidades || [];
+                const cfgSpecs = rawCfgSpecs
+                    .map(e => typeof e === 'string' ? { id: e, nombre: e } : { id: e.id || e.nombre, nombre: e.nombre || e.id })
+                    .filter(e => e.id && e.nombre);
+                if (cfgSpecs.length > 0) setSpecialties(cfgSpecs);
+                else setSpecialties(DEFAULT_SPECIALTIES);
+
+                // Entities
+                setEntities(entRes.data || []);
+
+                // Patients map
+                const map = {};
+                (pacRes.data || []).forEach(p => {
+                    map[p.id] = p;
+                    if (p.documento) map[String(p.documento).trim()] = p;
+                    const nameKey = `${p.nombres || ''} ${p.apellidos || ''}`.trim().toLowerCase();
+                    if (nameKey) map[nameKey] = p;
+                });
+                setPatientsMap(map);
+
+            } catch (err) {
+                console.error("Error cargando catálogos en useAgenda:", err);
+            }
         };
+
+        loadCatalogs();
+
+        // Real-time subscription for patients
+        const channel = supabase
+            .channel(`agenda-patients-${inquilino}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'pacientes', filter: `tenant_id=eq.${inquilino}` }, loadCatalogs)
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }, [inquilino]);
 
     // === Load Appointments ===
@@ -194,118 +227,100 @@ export function useAgenda() {
         }
 
         console.log("useAgenda - Fetching appointments for range:", { start, end, inquilino });
-
-        const q = query(
-            collection(db, "citas"),
-            where("inquilino", "==", inquilino)
-        );
-
         let isCurrent = true;
 
-        const unsub = onSnapshot(q, (snap) => {
-            console.log("useAgenda - Snapshot received. docs:", snap.docs.length);
-            const raw = snap.docs.map(d => {
-                const data = d.data();
-                let dateObj = null;
-                if (data.fecha?.toDate) dateObj = data.fecha.toDate();
-                else if (typeof data.fecha === 'string') {
-                    const [y, m, d] = data.fecha.split("-").map(Number);
-                    const [hh, mm] = (data.horaInicio || data.hora || "00:00").split(":").map(Number);
-                    dateObj = new Date(y, m - 1, d, hh, mm);
-                }
+        let supabaseRaw = [];
 
-                return {
-                    id: d.id,
-                    ...data,
-                    pacienteId: data.pacienteId || data.patientId || null,
-                    start: dateObj,
-                    end: new Date((dateObj?.getTime() || 0) + ((data.duracion || 30) * 60000)),
-                    resourceId: data.doctorId
-                };
-            });
+        const updateCombinedAppointments = () => {
+            if (!isCurrent) return;
 
-            const visible = raw.filter(ev => {
+            const visible = supabaseRaw.filter(ev => {
                 const inRange = ev.start >= start && ev.start <= end;
                 const activeDocFilter = isDoctorOnly ? loggedInDoctorId : filterDocId;
-                const matchDoc = !activeDocFilter || ev.doctorId === activeDocFilter;
-                const matchBranch = !filterBranchId || ev.sucursalId === filterBranchId;
+                const matchDoc = !activeDocFilter || ev.doctorId === activeDocFilter || ev.resourceId === activeDocFilter || ev.profesional_id === activeDocFilter;
+                const matchBranch = !filterBranchId || ev.sucursalId === filterBranchId || ev.sucursal_id === filterBranchId;
                 return inRange && matchDoc && matchBranch;
             }).sort((a, b) => (a.start || 0) - (b.start || 0));
 
-            console.log("useAgenda - Visible appointments:", visible.length);
+            console.log("useAgenda - Combined visible appointments:", visible.length);
             setAppointments(visible);
             setLoading(false);
+        };
 
-            // Fetch patient debts asynchronously
-            const uniquePatientIds = [...new Set(visible.map(a => a.pacienteId).filter(Boolean))];
-            if (uniquePatientIds.length > 0) {
-                const fetchDebts = async () => {
-                    try {
-                        const debtMap = {};
-                        await Promise.all(uniquePatientIds.map(async (pid) => {
-                            const [snapPlans, snapPagos, snapEvos] = await Promise.all([
-                                getDocs(query(collection(db, "treatment_plans"), where("patientId", "==", pid))),
-                                getDocs(query(collection(db, "pagos"), where("patientId", "==", pid))),
-                                getDocs(query(collection(db, "clinical_evolutions"), where("patientId", "==", pid)))
-                            ]);
+        // 1. Fetch & Subscribe to Supabase Appointments
+        const fetchSupabaseCitas = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("citas")
+                    .select("*, paciente:pacientes(nombres, apellidos, documento, telefono)")
+                    .eq("tenant_id", inquilino);
 
-                            const plans = snapPlans.docs.map(d => ({ id: d.id, ...d.data() }));
-                            const payments = snapPagos.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.estado !== 'Anulado');
-                            const evos = snapEvos.docs.map(d => ({ id: d.id, ...d.data() }));
+                if (error) throw error;
 
-                            let totalDebt = 0;
-                            plans.forEach(plan => {
-                                const planPayments = payments.filter(p => p.planId === plan.id);
-                                const planEvos = evos.filter(e => e.planId === plan.id);
-                                const paidMap = {};
-                                (plan.items || []).forEach(it => { paidMap[it.id] = 0; });
-                                planPayments.forEach(p => {
-                                    if (p.itemPayments && p.itemPayments.length > 0) {
-                                        p.itemPayments.forEach(ip => { 
-                                            if (paidMap[ip.itemId] !== undefined) paidMap[ip.itemId] += Number(ip.monto || 0); 
-                                        });
-                                    }
-                                });
-                                (plan.items || []).forEach(item => {
-                                    // Compatibilidad: registros nuevos usan `realizado`, antiguos usaban `checked`
-                                    const realized = planEvos.some(e =>
-                                        e.plantillaItems?.[item.id]?.realizado === true ||
-                                        (e.plantillaItems?.[item.id]?.realizado === undefined && e.plantillaItems?.[item.id]?.checked === true)
-                                    );
-                                    if (!realized) return;
-                                    const cost = (Number(item.amount || 0) * Number(item.qty || 1)) - Number(item.descuento || 0);
-                                    const paid = paidMap[item.id] || 0;
-                                    const debt = Math.max(0, cost - paid);
-                                    totalDebt += debt;
-                                });
-                            });
-                            debtMap[pid] = totalDebt;
-                        }));
+                supabaseRaw = (data || []).map(c => {
+                    const startObj = c.fecha_inicio ? new Date(c.fecha_inicio) : new Date();
+                    const endObj = c.fecha_fin ? new Date(c.fecha_fin) : new Date(startObj.getTime() + (c.duracion || 30) * 60000);
+                    const statusMap = {
+                        'pending': 'SIN CONFIRMAR',
+                        'confirmed': 'CONFIRMADA',
+                        'attended': 'ATENDIDO',
+                        'urgencia': 'URGENCIA',
+                        'sin-cont-web': 'SIN CONT. WEB',
+                        'no-show': 'NO ASISTE',
+                        'cancelled': 'CANCELADO',
+                        'waiting': 'EN ESPERA'
+                    };
+                    const normStatus = (c.estado || "").toLowerCase().includes("cancel") ? "cancelled" : (statusMap[c.estado] ? c.estado : "confirmed");
 
-                        if (!isCurrent) return;
+                    return {
+                        id: c.id,
+                        inquilino: c.tenant_id,
+                        pacienteId: c.paciente_id,
+                        doctorId: c.profesional_id,
+                        resourceId: c.profesional_id,
+                        consultorioId: c.consultorio_id,
+                        sucursalId: c.sucursal_id || "",
+                        fecha: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : "",
+                        horaInicio: c.fecha_inicio ? new Date(c.fecha_inicio).toTimeString().substring(0, 5) : "",
+                        horaFin: c.fecha_fin ? new Date(c.fecha_fin).toTimeString().substring(0, 5) : "",
+                        start: startObj,
+                        end: endObj,
+                        duracion: Math.max(5, Math.round((endObj.getTime() - startObj.getTime()) / 60000)),
+                        status: normStatus,
+                        estado: c.estado || "CONFIRMADA",
+                        comentario: c.notas || c.motivo || "",
+                        motivo: c.motivo || "",
+                        paciente: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
+                        pacienteNombre: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
+                        celular: c.paciente?.telefono || "",
+                        nroDocumento: c.paciente?.documento || ""
+                    };
+                });
 
-                        setAppointments(prev => prev.map(apt => {
-                            if (debtMap[apt.pacienteId] !== undefined) {
-                                return { ...apt, pagoPendiente: debtMap[apt.pacienteId] };
-                            }
-                            return apt;
-                        }));
-                    } catch (e) {
-                        console.error("Error fetching patient debts for agenda:", e);
-                    }
-                };
-                fetchDebts();
+                updateCombinedAppointments();
+            } catch (err) {
+                console.error("Error al obtener citas de Supabase en useAgenda:", err);
             }
-        }, (err) => {
-            console.error("useAgenda - Snapshot error:", err);
-            setLoading(false);
-        });
+        };
+
+        fetchSupabaseCitas();
+
+        const channel = supabase
+            .channel(`citas-agenda-${inquilino}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'citas', filter: `tenant_id=eq.${inquilino}` },
+                () => {
+                    fetchSupabaseCitas();
+                }
+            )
+            .subscribe();
 
         return () => {
             isCurrent = false;
-            unsub();
+            supabase.removeChannel(channel);
         };
-    }, [selectedDate, viewMode, inquilino, filterDocId, filterBranchId]);
+    }, [inquilino, selectedDate, viewMode, filterDocId, filterBranchId, isDoctorOnly, loggedInDoctorId]);
 
     // Actions
     const createAppointment = async (data) => {
@@ -354,51 +369,47 @@ export function useAgenda() {
         }
 
         const rawPayload = {
-            ...data,
-            inquilino,
-            pacienteId, // Usamos el ID nuevo o el existente
-            fecha: `${y}-${m}-${d}`,
-            horaInicio: `${hh}:${mm}`,
-            creado: new Date().toISOString()
+            tenant_id: inquilino,
+            paciente_id: pacienteId || null,
+            profesional_id: data.doctorId || null,
+            consultorio_id: data.consultorioId || null,
+            sucursal_id: data.sucursalId || null,
+            fecha_inicio: (data.start || new Date()).toISOString(),
+            fecha_fin: (data.end || new Date((data.start || new Date()).getTime() + (data.duracion || 30) * 60000)).toISOString(),
+            estado: data.estado || "CONFIRMADA",
+            motivo: data.comentario || data.motivo || "Consulta odontológica",
+            notas: data.comentario || ""
         };
 
-        const payload = Object.fromEntries(
-            Object.entries(rawPayload).filter(([_, v]) => v !== undefined)
-        );
-
-        const ref = await addDoc(collection(db, "citas"), payload);
+        const { data: inserted, error: insertErr } = await supabase.from("citas").insert([rawPayload]).select().single();
+        if (insertErr) throw insertErr;
+        const newId = inserted?.id;
 
         // Audit log
-        await logAction(payload.pacienteId || "unknown", "CREATE_APPOINTMENT", {
-            fecha: payload.fecha,
-            horaInicio: payload.horaInicio || payload.hora || "",
-            doctor: doctors.find(d => d.id === payload.doctorId)?.nombreCompleto || payload.doctorId || "No asignado",
-            citaId: ref.id
+        await logAction(pacienteId || "unknown", "CREATE_APPOINTMENT", {
+            fecha: `${y}-${m}-${d}`,
+            horaInicio: `${hh}:${mm}`,
+            doctor: doctors.find(d => d.id === data.doctorId)?.nombreCompleto || data.doctorId || "No asignado",
+            citaId: newId
         });
 
         if (pacienteId) {
             try {
-                await setDoc(doc(db, "pacientes", pacienteId), {
-                    citas: arrayUnion(ref.id),
-                    inquilino
-                }, { merge: true });
-
-                // Notify Patient in real-time
-                await addDoc(collection(db, "notificaciones"), {
-                    inquilino,
+                // Notify Patient via Supabase
+                await supabase.from("notificaciones").insert([{
+                    tenant_id: inquilino,
                     target: "patient",
+                    paciente_id: pacienteId,
                     title: "Nueva Cita Agendada 📅",
-                    message: `Tu cita ha sido programada para el ${payload.fecha} a las ${payload.horaInicio || payload.hora || ""}.`,
+                    message: `Tu cita ha sido programada para el ${y}-${m}-${d} a las ${hh}:${mm}.`,
                     type: "appointment_scheduled",
-                    pacienteId,
-                    read: false,
-                    createdAt: new Date().toISOString()
-                });
-            } catch (pErr) {
-                console.warn("Could not associate appointment to patient document:", pErr);
+                    read: false
+                }]);
+            } catch (nErr) {
+                console.warn("Could not send notification:", nErr);
             }
         }
-        return ref.id;
+        return newId;
     };
 
     const updateAppointment = async (id, patch) => {
@@ -437,9 +448,9 @@ export function useAgenda() {
 
         // ✅ VALIDACIÓN: Prevenir conflictos de solapamiento al mover citas y verificar disponibilidad del doctor
         if (finalPatch.fecha && finalPatch.horaInicio) {
-            // Obtener la cita actual para comparar
-            const currentDoc = await getDoc(doc(db, "citas", id));
-            const currentData = currentDoc.exists() ? currentDoc.data() : {};
+        // Get current appointment from Supabase for validation
+        const { data: currentDbData } = await supabase.from("citas").select("*").eq("id", id).maybeSingle();
+        const currentData = currentDbData || {};
             
             // Si la cita se está cancelando o ya estaba cancelada, no requiere validación de horarios ni solapamientos
             const isCancelled = finalPatch.status === 'cancelled' || 
@@ -460,16 +471,16 @@ export function useAgenda() {
             
             // 1. ✅ VALIDACIÓN DE DISPONIBILIDAD DEL DOCTOR (Horarios Predefinidos, Aperturas, No Disponibles)
             if (doctorId) {
-                // Fetch doctor schedule configurations in real-time
-                const [predSnap, openSnap, unavailSnap] = await Promise.all([
-                    getDocs(collection(db, "usuarios", doctorId, "horarios_predefinidos")),
-                    getDocs(collection(db, "usuarios", doctorId, "agenda_abierta")),
-                    getDocs(collection(db, "usuarios", doctorId, "no_disponibles"))
+                // Fetch doctor schedule from Supabase
+                const [predRes, openRes, unavailRes] = await Promise.all([
+                    supabase.from("horarios_predefinidos").select("*").eq("usuario_id", doctorId).eq("tenant_id", inquilino),
+                    supabase.from("agenda_abierta").select("*").eq("usuario_id", doctorId).eq("tenant_id", inquilino),
+                    supabase.from("no_disponibles").select("*").eq("usuario_id", doctorId).eq("tenant_id", inquilino)
                 ]);
 
-                const predefined = predSnap.docs.map(doc => doc.data());
-                const openAgenda = openSnap.docs.map(doc => doc.data());
-                const unavailable = unavailSnap.docs.map(doc => doc.data());
+                const predefined = predRes.data || [];
+                const openAgenda = openRes.data || [];
+                const unavailable = unavailRes.data || [];
 
                 const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
                 const dateObj = new Date(y, m - 1, d);
@@ -588,16 +599,16 @@ export function useAgenda() {
 
             // 1.5 ✅ VALIDACIÓN DE DISPONIBILIDAD DEL CONSULTORIO (Recurso Físico)
             if (consultorioId) {
-                // Fetch consultorio schedule configurations in real-time
-                const [resPredSnap, resOpenSnap, resUnavailSnap] = await Promise.all([
-                    getDocs(collection(db, "tenants", inquilino, "recursos_fisicos", consultorioId, "horarios_predefinidos")),
-                    getDocs(collection(db, "tenants", inquilino, "recursos_fisicos", consultorioId, "agenda_abierta")),
-                    getDocs(collection(db, "tenants", inquilino, "recursos_fisicos", consultorioId, "no_disponibles"))
+                // Fetch consultorio schedule from Supabase
+                const [resPredRes, resOpenRes, resUnavailRes] = await Promise.all([
+                    supabase.from("horarios_predefinidos").select("*").eq("consultorio_id", consultorioId).eq("tenant_id", inquilino),
+                    supabase.from("agenda_abierta").select("*").eq("consultorio_id", consultorioId).eq("tenant_id", inquilino),
+                    supabase.from("no_disponibles").select("*").eq("consultorio_id", consultorioId).eq("tenant_id", inquilino)
                 ]);
 
-                const resPredefined = resPredSnap.docs.map(doc => doc.data());
-                const resOpenAgenda = resOpenSnap.docs.map(doc => doc.data());
-                const resUnavailable = resUnavailSnap.docs.map(doc => doc.data());
+                const resPredefined = resPredRes.data || [];
+                const resOpenAgenda = resOpenRes.data || [];
+                const resUnavailable = resUnavailRes.data || [];
 
                 const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
                 const dateObj = new Date(y, m - 1, d);
@@ -683,62 +694,52 @@ export function useAgenda() {
 
             // 2. ✅ VALIDACIÓN: Prevenir solapamiento con otras citas del mismo Doctor (excluyendo la cita actual)
             if (doctorId) {
-                const doctorCheck = query(
-                    collection(db, 'citas'),
-                    where('inquilino', '==', inquilino),
-                    where('doctorId', '==', doctorId),
-                    where('fecha', '==', finalPatch.fecha)
-                );
+                const { data: doctorCitas } = await supabase
+                    .from("citas")
+                    .select("*")
+                    .eq("tenant_id", inquilino)
+                    .eq("profesional_id", doctorId)
+                    .gte("fecha_inicio", new Date(y, m - 1, d).toISOString())
+                    .lt("fecha_inicio", new Date(y, m - 1, d + 1).toISOString());
                 
-                const doctorSnap = await getDocs(doctorCheck);
-                
-                for (const docSnap of doctorSnap.docs) {
-                    if (docSnap.id === id) continue; // Excluir la cita actual
+                for (const citaExistente of (doctorCitas || [])) {
+                    if (citaExistente.id === id) continue;
+                    if (['cancelada', 'cancelado', 'cancelled'].includes((citaExistente.estado || '').toLowerCase())) continue;
                     
-                    const citaExistente = docSnap.data();
-                    if (citaExistente.status === 'cancelled' || ['cancelada', 'cancelado'].includes((citaExistente.estado || '').toLowerCase())) continue;
+                    const citaInicio = new Date(citaExistente.fecha_inicio).getTime();
+                    const citaFin = new Date(citaExistente.fecha_fin).getTime();
                     
-                    const [citaHh, citaMm] = (citaExistente.horaInicio || "00:00").split(":").map(Number);
-                    const citaInicio = new Date(y, m - 1, d, citaHh, citaMm);
-                    const citaFin = new Date(citaInicio.getTime() + ((citaExistente.duracion || 30) * 60000));
-                    
-                    // Verificar solapamiento: (nuevaInicio < citaFin) && (nuevaFin > citaInicio)
-                    if (nuevaInicio < citaFin.getTime() && nuevaFin > citaInicio.getTime()) {
-                        const doctorName = doctors.find(d => d.id === doctorId)?.nombreCompleto || 
-                                          `${doctors.find(d => d.id === doctorId)?.nombre || ''} ${doctors.find(d => d.id === doctorId)?.apellido || ''}`.trim() || 
-                                          'El doctor';
-                        const horaFinStr = `${String(citaFin.getHours()).padStart(2, '0')}:${String(citaFin.getMinutes()).padStart(2, '0')}`;
-                        throw new Error(`${doctorName} ya tiene una cita desde las ${citaExistente.horaInicio} hasta las ${horaFinStr}.`);
+                    if (nuevaInicio < citaFin && nuevaFin > citaInicio) {
+                        const doctorName = doctors.find(d => d.id === doctorId)?.nombreCompleto || 'El doctor';
+                        const horaFinStr = new Date(citaFin).toTimeString().substring(0, 5);
+                        const horaIniStr = new Date(citaInicio).toTimeString().substring(0, 5);
+                        throw new Error(`${doctorName} ya tiene una cita desde las ${horaIniStr} hasta las ${horaFinStr}.`);
                     }
                 }
             }
             
             // Validar que el consultorio no tenga solapamiento (excluyendo la cita actual)
             if (consultorioId) {
-                const consultorioCheck = query(
-                    collection(db, 'citas'),
-                    where('inquilino', '==', inquilino),
-                    where('consultorioId', '==', consultorioId),
-                    where('fecha', '==', finalPatch.fecha)
-                );
+                const { data: consulCitas } = await supabase
+                    .from("citas")
+                    .select("*")
+                    .eq("tenant_id", inquilino)
+                    .eq("consultorio_id", consultorioId)
+                    .gte("fecha_inicio", new Date(y, m - 1, d).toISOString())
+                    .lt("fecha_inicio", new Date(y, m - 1, d + 1).toISOString());
                 
-                const consultorioSnap = await getDocs(consultorioCheck);
-                
-                for (const docSnap of consultorioSnap.docs) {
-                    if (docSnap.id === id) continue; // Excluir la cita actual
+                for (const citaExistente of (consulCitas || [])) {
+                    if (citaExistente.id === id) continue;
+                    if (['cancelada', 'cancelado', 'cancelled'].includes((citaExistente.estado || '').toLowerCase())) continue;
                     
-                    const citaExistente = docSnap.data();
-                    if (citaExistente.status === 'cancelled' || ['cancelada', 'cancelado'].includes((citaExistente.estado || '').toLowerCase())) continue;
+                    const citaInicio = new Date(citaExistente.fecha_inicio).getTime();
+                    const citaFin = new Date(citaExistente.fecha_fin).getTime();
                     
-                    const [citaHh, citaMm] = (citaExistente.horaInicio || "00:00").split(":").map(Number);
-                    const citaInicio = new Date(y, m - 1, d, citaHh, citaMm);
-                    const citaFin = new Date(citaInicio.getTime() + ((citaExistente.duracion || 30) * 60000));
-                    
-                    // Verificar solapamiento
-                    if (nuevaInicio < citaFin.getTime() && nuevaFin > citaInicio.getTime()) {
+                    if (nuevaInicio < citaFin && nuevaFin > citaInicio) {
                         const consultorioName = chairs.find(c => c.id === consultorioId)?.nombre || 'El consultorio';
-                        const horaFinStr = `${String(citaFin.getHours()).padStart(2, '0')}:${String(citaFin.getMinutes()).padStart(2, '0')}`;
-                        throw new Error(`${consultorioName} está ocupado desde las ${citaExistente.horaInicio} hasta las ${horaFinStr}.`);
+                        const horaFinStr = new Date(citaFin).toTimeString().substring(0, 5);
+                        const horaIniStr = new Date(citaInicio).toTimeString().substring(0, 5);
+                        throw new Error(`${consultorioName} está ocupado desde las ${horaIniStr} hasta las ${horaFinStr}.`);
                     }
                 }
             }
@@ -748,13 +749,28 @@ export function useAgenda() {
         const cleanPatch = Object.fromEntries(
             Object.entries(finalPatch).filter(([_, v]) => v !== undefined)
         );
-        await updateDoc(doc(db, "citas", id), cleanPatch);
 
-        // If status changed or appointment is rescheduled, notify patient in real-time
+        // Update in Supabase
+        const supPatch = {};
+        if (finalPatch.doctorId !== undefined) supPatch.profesional_id = finalPatch.doctorId;
+        if (finalPatch.consultorioId !== undefined) supPatch.consultorio_id = finalPatch.consultorioId;
+        if (finalPatch.sucursalId !== undefined) supPatch.sucursal_id = finalPatch.sucursalId;
+        if (finalPatch.estado !== undefined) supPatch.estado = finalPatch.estado;
+        if (finalPatch.status !== undefined) supPatch.estado = statusMap[finalPatch.status] || finalPatch.status.toUpperCase();
+        if (finalPatch.comentario !== undefined) supPatch.notas = finalPatch.comentario;
+        if (finalPatch.start) supPatch.fecha_inicio = new Date(finalPatch.start).toISOString();
+        if (finalPatch.end) supPatch.fecha_fin = new Date(finalPatch.end).toISOString();
+        if (finalPatch.fecha && finalPatch.horaInicio) {
+            supPatch.fecha_inicio = new Date(`${finalPatch.fecha}T${finalPatch.horaInicio}:00`).toISOString();
+        }
+
+        if (Object.keys(supPatch).length > 0) {
+            await supabase.from("citas").update(supPatch).eq("id", id);
+        }
+
+        // Notify patient if status/date changed
         try {
-            const currentDoc = await getDoc(doc(db, "citas", id));
-            const currentData = currentDoc.exists() ? currentDoc.data() : {};
-            const pacienteId = currentData.pacienteId;
+            const pacienteId = currentData.paciente_id;
 
             // Audit log
             await logAction(pacienteId || "unknown", "UPDATE_APPOINTMENT", {
@@ -785,16 +801,15 @@ export function useAgenda() {
                     message = `Tu cita ha sido reprogramada para el ${currentData.fecha} a las ${currentData.horaInicio || currentData.hora || ""}.`;
                 }
 
-                await addDoc(collection(db, "notificaciones"), {
-                    inquilino: currentData.inquilino || inquilino,
+                await supabase.from("notificaciones").insert([{
+                    tenant_id: currentData.inquilino || inquilino,
                     target: "patient",
+                    paciente_id: pacienteId,
                     title,
                     message,
                     type: "appointment_update",
-                    pacienteId,
-                    read: false,
-                    createdAt: new Date().toISOString()
-                });
+                    read: false
+                }]);
             }
         } catch (nErr) {
             console.warn("Could not send real-time notification to patient/log audit:", nErr);
@@ -803,22 +818,17 @@ export function useAgenda() {
 
     const deleteAppointment = async (id) => {
         try {
-            const currentDoc = await getDoc(doc(db, "citas", id));
-            if (currentDoc.exists()) {
-                const currentData = currentDoc.data();
-                await deleteDoc(doc(db, "citas", id));
-                await logAction(currentData.pacienteId || "unknown", "DELETE_APPOINTMENT", {
-                    fecha: currentData.fecha,
-                    horaInicio: currentData.horaInicio || "",
-                    doctor: currentData.doctorNombre || currentData.doctorId || "No asignado",
-                    citaId: id
-                });
-            } else {
-                await deleteDoc(doc(db, "citas", id));
-            }
+            // Fetch from Supabase for audit
+            const { data: currentData } = await supabase.from("citas").select("*").eq("id", id).maybeSingle();
+            await supabase.from("citas").delete().eq("id", id);
+            await logAction(currentData?.paciente_id || "unknown", "DELETE_APPOINTMENT", {
+                fecha: currentData?.fecha_inicio ? currentData.fecha_inicio.split("T")[0] : "",
+                horaInicio: currentData?.fecha_inicio ? new Date(currentData.fecha_inicio).toTimeString().substring(0, 5) : "",
+                doctor: currentData?.profesional_id || "No asignado",
+                citaId: id
+            });
         } catch (err) {
-            console.error("Error in auditing deleteAppointment:", err);
-            await deleteDoc(doc(db, "citas", id));
+            console.error("Error in deleteAppointment:", err);
         }
     };
 

@@ -352,57 +352,65 @@ export const getPlans = async () => {
 
         const defaultPlans = [
             {
-                id: "free",
-                name: "Gratuito (IPS / Clínica)",
-                description: "Solución clínica integral para tu consultorio.",
-                maxUsers: 5,
-                monthlyPrice: 0,
-                yearlyPrice: 0,
+                id: "plan-basico-cop",
+                name: "Consultorio Básico",
+                description: "Ideal para odontólogos independientes y pequeños consultorios particulares.",
+                maxUsers: 3,
+                monthlyPrice: 89000,
+                yearlyPrice: 890000,
                 includeFacturacion: false,
                 facturasIncluidas: 0,
                 recommended: false,
-                features: ["Agenda", "Pacientes", "Historias Clínicas", "Odontograma"]
+                features: [
+                    "Hasta 3 Usuarios (Odontólogo + Asistentes)",
+                    "Agenda Inteligente con Recordatorios WhatsApp",
+                    "Gestión de Pacientes e Historia Clínica Digital",
+                    "Odontograma 3D Interactivo",
+                    "Control de Citas y Estado de Consultas"
+                ]
             },
             {
-                id: "basic",
-                name: "Básico",
-                description: "Solución clínica integral para tu consultorio.",
+                id: "plan-pro-cop",
+                name: "Clínica Profesional",
+                description: "La solución completa preferida por clínicas dentales en crecimiento.",
                 maxUsers: 10,
-                monthlyPrice: 99000,
-                yearlyPrice: 990000,
-                includeFacturacion: false,
-                facturasIncluidas: 0,
-                recommended: false,
-                features: ["Agenda", "Pacientes", "Historias Clínicas", "Facturación"]
-            },
-            {
-                id: "pro",
-                name: "Profesional",
-                description: "Solución clínica integral para tu consultorio.",
-                maxUsers: 25,
-                monthlyPrice: 199000,
-                yearlyPrice: 1990000,
+                monthlyPrice: 189000,
+                yearlyPrice: 1890000,
                 includeFacturacion: true,
-                facturasIncluidas: 500,
+                facturasIncluidas: 400,
                 recommended: true,
-                features: ["Todo en Básico", "RIPS", "Inventario", "Reportes IA"]
+                features: [
+                    "Hasta 10 Usuarios (Odontólogos + Recepción)",
+                    "⚡ Facturación Electrónica DIAN (500 facturas/mes)",
+                    "RIPS y Normativa Minsalud Vigente",
+                    "Control de Inventarios e Insumos Dentales",
+                    "Liquidación y Porcentajes para Odontólogos"
+                ]
             },
             {
-                id: "enterprise",
-                name: "IPS Enterprise",
-                description: "Solución clínica integral para tu consultorio.",
-                maxUsers: 100,
-                monthlyPrice: 399000,
-                yearlyPrice: 3990000,
+                id: "plan-enterprise-cop",
+                name: "IPS Enterprise Multi-Sede",
+                description: "Diseñado para redes de clínicas, IPS odontológicas y alta demanda.",
+                maxUsers: 50,
+                monthlyPrice: 349000,
+                yearlyPrice: 3490000,
                 includeFacturacion: true,
                 facturasIncluidas: 2000,
                 recommended: false,
-                features: ["Multi-sucursal", "Soporte 24/7", "Auditoría Avanzada"]
+                features: [
+                    "Usuarios y Sillas Odontológicas Ampliadas",
+                    "⚡ Facturación Electrónica DIAN (2.000 facturas/mes)",
+                    "Gestión Multi-Sucursal y Multi-Sede",
+                    "Sitio Web Corporativo Personalizado (CMS)",
+                    "Reportes Financieros Avanzados e IA",
+                    "Soporte Técnico Prioritario 24/7"
+                ]
             }
         ];
 
         return defaultPlans;
     } catch (error) {
+
         console.error("Error al cargar planes desde Supabase:", error);
         return [];
     }

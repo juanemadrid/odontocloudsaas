@@ -1,5 +1,4 @@
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
+import supabase from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 
 export function useAudit() {
@@ -11,23 +10,23 @@ export function useAudit() {
             const finalUserName = userName || userProfile?.nombre || userProfile?.nombreCompleto || user?.email || "Sistema";
             const tenantId = userProfile?.inquilino || "global";
 
-            await addDoc(collection(db, "audit_logs"), {
-                patientId: patientId || "system",
-                tenantId,
+            await supabase.from("audit_logs").insert([{
+                patient_id: patientId || "system",
+                tenant_id: tenantId,
+                inquilino: tenantId,
                 action: actionType,
                 details: details || {},
-                timestamp: serverTimestamp(),
-                performedBy: {
+                created_at: new Date().toISOString(),
+                performed_by: {
                     uid: finalUserId,
                     name: finalUserName,
                     role: userProfile?.rol || "usuario"
                 },
-                deviceInfo: navigator.userAgent
-            });
+                device_info: navigator.userAgent
+            }]);
             console.log("Audit log create:", actionType);
         } catch (error) {
             console.error("Error creating audit log:", error);
-            // No bloquear la app si falla el log, pero reportar
         }
     };
 

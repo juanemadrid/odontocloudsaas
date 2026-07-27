@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter, FiEye } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -64,32 +63,20 @@ export default function ReporteLogErroresFacturacion() {
       setLoading(true);
       try {
         // 1. Cargar Sucursales reales
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listSuc = (snapSuc || []).map(doc => ({ id: doc.id, nombre: doc.nombre || doc.id }));
         setSucursalesList(listSuc);
         if (listSuc.length > 0) setOficina(listSuc[0].nombre);
 
-        // 2. Cargar Logs de Errores de Facturación en Firestore
-        const qLogs = query(
-          collection(db, "facturas_errores"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapLogs = await getDocs(qLogs);
+        // 2. Cargar Logs de Errores de Facturación
+        const { data: snapLogs } = await supabase.from("facturas_errores").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listData = [];
 
-        snapLogs.forEach(doc => {
-          const l = doc.data();
-          const dateObj = l.createdAt?.toDate ? l.createdAt.toDate() : (l.fecha ? new Date(l.fecha) : new Date());
+        (snapLogs || []).forEach(l => {
+          const dateObj = l.createdAt?.toDate ? l.createdAt.toDate() : (l.fecha || l.created_at ? new Date(l.fecha || l.created_at) : new Date());
 
           listData.push({
-            id: doc.id,
+            id: l.id,
             fechaObj: dateObj,
             documento: l.idFactura || l.documento || "DCSE664",
             tipoDocumento: l.tipoDocumento || "Documento soporte",

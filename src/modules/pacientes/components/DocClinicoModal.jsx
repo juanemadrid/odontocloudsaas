@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiX, FiCheck, FiSave, FiPlus, FiTrash2, FiSearch, FiBox, FiList, FiPenTool } from 'react-icons/fi';
-
-import { collection, doc, setDoc, serverTimestamp, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import CIE10Search from './CIE10Search';
@@ -213,28 +211,26 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         const loadPlans = async () => {
             if (!isOpen || docType !== 'Receta' || !patient?.id) return;
             try {
-                const q = query(
-                    collection(db, "treatment_plans"),
-                    where("patientId", "==", patient.id)
-                );
-                const s = await getDocs(q);
-                const list = s.docs.map(d => {
-                    const data = d.data();
+                const { data: list } = await supabase
+                    .from("treatment_plans")
+                    .select("*")
+                    .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`);
+                const formatted = (list || []).map(d => {
                     let dateStr = "";
-                    if (data.createdAt) {
-                        const dateObj = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+                    if (d.created_at || d.createdAt) {
+                        const dateObj = new Date(d.created_at || d.createdAt);
                         dateStr = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    } else if (data.date) {
-                        dateStr = new Date(data.date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    } else if (d.date) {
+                        dateStr = new Date(d.date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
                     }
                     
                     return {
                         id: d.id,
-                        nombre: `${data.title || data.nombre || 'Plan'}${dateStr ? ' – ' + dateStr : ''}`
+                        nombre: `${d.title || d.nombre || 'Plan'}${dateStr ? ' – ' + dateStr : ''}`
                     };
                 });
 
-                setTreatmentPlans(list);
+                setTreatmentPlans(formatted);
             } catch (err) { }
         };
         loadPlans();
@@ -566,12 +562,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         setSaving(true);
         try {
             const isEditing = !!initialData;
-            const docRef = isEditing 
-                ? doc(db, `pacientes/${patient.id}/docClis`, initialData.id)
-                : doc(collection(db, `pacientes/${patient.id}/docClis`));
-            
             const payload = {
-                id: docRef.id,
+                paciente_id: patient.id,
+                patientId: patient.id,
                 fechaIso: isEditing ? initialData.fechaIso : new Date().toISOString(),
                 tipoDocumento: isEditing ? initialData.tipoDocumento : (isTemplateDoc && selectedTemplate ? selectedTemplate.nombre : docType),
                 profesional: profesional,
@@ -579,7 +572,8 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 creadorId: isEditing ? initialData.creadorId : (userProfile?.uid || ""),
                 contenido: finalContent,
                 diagnostico: diagVal,
-                actualizado: serverTimestamp(),
+                tenant_id: userProfile?.inquilino || "",
+                updated_at: new Date().toISOString(),
                 // Structured properties for recovery
                 ...(docType === 'Receta' && {
                     recetaItems: recetaItems,
@@ -613,7 +607,19 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 })
             };
 
-            await setDoc(docRef, payload, { merge: true });
+            if (isEditing) {
+                const { error: updateErr } = await supabase
+                    .from("documentos_clinicos")
+                    .update(payload)
+                    .eq("id", initialData.id);
+                if (updateErr) throw updateErr;
+            } else {
+                const { error: insertErr } = await supabase
+                    .from("documentos_clinicos")
+                    .insert([{ ...payload, created_at: new Date().toISOString() }]);
+                if (insertErr) throw insertErr;
+            }
+
             toast.success(`${docType || initialData?.tipoDocumento} guardada correctamente`);
             onClose();
         } catch (error) {

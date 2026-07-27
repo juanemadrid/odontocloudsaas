@@ -10,14 +10,8 @@ import {
   FiUser, FiBriefcase, FiSearch,
   FiEye, FiXSquare
 } from "react-icons/fi";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-} from "firebase/firestore";
 
 import AbrirCajaModal from "./components/AbrirCajaModal";
 import CajaDetalleModal from "./components/CajaDetalleModal";
@@ -91,27 +85,41 @@ export default function Caja() {
     return () => window.removeEventListener("reset-module-caja", handleReset);
   }, []);
 
-  /* ─── Load ALL cajas in real-time ─── */
+  /* ─── Load ALL cajas ─── */
   useEffect(() => {
     if (!inquilino) { setLoading(false); return; }
     setLoading(true);
-    const q = query(collection(db, "cajas"), where("inquilino", "==", inquilino));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const data = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (b.fechaApertura?.seconds || 0) - (a.fechaApertura?.seconds || 0));
-        setAllCajas(data);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error cargando cajas:", err);
+
+    const fetchCajas = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("cajas")
+          .select("*")
+          .eq("tenant_id", inquilino)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.warn("Caja: tabla 'cajas' no disponible todavía:", error.message);
+          setAllCajas([]);
+        } else {
+          setAllCajas(data || []);
+        }
+      } catch (e) {
+        console.warn("Caja fetchCajas error:", e);
         setAllCajas([]);
+      } finally {
         setLoading(false);
       }
-    );
-    return () => unsub();
+    };
+
+    fetchCajas();
+
+    const channel = supabase
+      .channel(`cajas-${inquilino}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cajas', filter: `tenant_id=eq.${inquilino}` }, fetchCajas)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [inquilino]);
 
   /* ─── Filter by active menu ─── */

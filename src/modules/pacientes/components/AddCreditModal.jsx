@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { db } from '../../../firebase/firebaseConfig';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { 
@@ -60,28 +59,26 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                         nombre: p.nombreCompleto || p.nombre || ""
                     })));
                 } else {
-                    const q = query(
-                        collection(db, "profesionales"),
-                        where("inquilino", "==", userProfile.inquilino),
-                        where("activo", "==", true)
-                    );
-                    const snap = await getDocs(q);
-                    setDoctors(snap.docs.map(d => ({
+                    const { data: docsData } = await supabase
+                        .from("profesionales")
+                        .select("id, nombre_completo, nombre")
+                        .eq("tenant_id", userProfile.inquilino)
+                        .eq("activo", true);
+                    setDoctors((docsData || []).map(d => ({
                         id: d.id,
-                        nombre: d.data().nombreCompleto || d.data().nombre || ""
+                        nombre: d.nombre_completo || d.nombre || ""
                     })));
                 }
 
                 // Load active payment methods
-                const qMetodos = query(
-                    collection(db, "metodos_pago"),
-                    where("inquilino", "==", userProfile.inquilino),
-                    where("activo", "==", true)
-                );
-                const snapMetodos = await getDocs(qMetodos);
-                if (!snapMetodos.empty) {
-                    const metodosList = snapMetodos.docs
-                        .map(d => d.data().nombre)
+                const { data: metodosData } = await supabase
+                    .from("metodos_pago")
+                    .select("nombre")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .eq("activo", true);
+                if (metodosData && metodosData.length > 0) {
+                    const metodosList = metodosData
+                        .map(d => d.nombre)
                         .filter(name => (name || "").toLowerCase() !== "saldo a favor");
                     
                     if (metodosList.length > 0) {
@@ -110,6 +107,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
             };
 
             const creditData = {
+                paciente_id: patient?.id || "",
                 patientId: patient?.id || "",
                 patientNombre: derivePatientName(),
                 monto: Number(data.valor) || 0,
@@ -118,19 +116,20 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                 concepto: "SALDO A FAVOR",
                 profesional: data.doctor || userProfile?.nombreCompleto || "Sistema",
                 notas: data.observaciones || "",
-                fecha: serverTimestamp(),
+                fecha: new Date(data.fecha).toISOString(),
                 fechaISO: new Date(data.fecha).toISOString(),
+                tenant_id: userProfile?.inquilino || userProfile?.tenantId || "",
                 inquilino: userProfile?.inquilino || userProfile?.tenantId || "",
                 registradoPor: userProfile?.nombreCompleto || "Sistema",
-                estado: "Completado",
-                createdAt: serverTimestamp()
+                estado: "Completado"
             };
 
-            if (!creditData.inquilino) {
+            if (!creditData.tenant_id) {
                  throw new Error("ID de inquilino no encontrado. Verifique su sesión.");
             }
 
-            await addDoc(collection(db, "pagos"), creditData);
+            const { error: insertError } = await supabase.from("pagos").insert([creditData]);
+            if (insertError) throw insertError;
             
             toast.success("Saldo a favor registrado exitosamente");
             onUpdate && onUpdate();

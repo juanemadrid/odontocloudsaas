@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter, FiSend, FiClock } from "react-icons/fi";
 import { format, differenceInDays } from "date-fns";
 import * as XLSX from "xlsx";
@@ -61,30 +60,15 @@ export default function ReporteOportunidadCitas() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        // Cargar Sucursales
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
-        setSucursalesList(listSuc);
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        // Cargar Citas de Agenda
-        const qCitas = query(
-          collection(db, "agenda"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapCitas = await getDocs(qCitas);
+        const { data: snapCitas } = await supabase.from("citas").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listCitas = [];
 
-        snapCitas.forEach(doc => {
-          const c = doc.data();
-          const fSolicitud = c.createdAt?.toDate ? c.createdAt.toDate() : (c.fechaCreacion ? new Date(c.fechaCreacion) : new Date());
-          const fAsignada = c.fecha ? new Date(`${c.fecha}T${c.hora || '08:00'}`) : fSolicitud;
+        (snapCitas || []).forEach(c => {
+          const fSolicitud = c.created_at ? new Date(c.created_at) : (c.fecha_creacion ? new Date(c.fecha_creacion) : new Date());
+          const fAsignada = c.fecha_inicio ? new Date(c.fecha_inicio) : (c.fecha ? new Date(`${c.fecha}T${c.hora || '08:00'}`) : fSolicitud);
 
           let diffDays = 0;
           if (fSolicitud && fAsignada && !isNaN(fSolicitud.getTime()) && !isNaN(fAsignada.getTime())) {

@@ -14,14 +14,18 @@ export function usePermissions() {
 
     const can = (moduleName, featureName, action) => {
         // 1. Superadmin bypass
-        const rolActual = (userProfile?.rol || "").trim().toLowerCase();
-        if (rolActual === "superadmin") return true;
+        const rawRol = (userProfile?.role || userProfile?.rol || "").trim().toLowerCase();
+        
+        const isAdmin = rawRol.includes("admin");
+        const isDoctor = rawRol.includes("doctor") || rawRol.includes("odontolog") || rawRol.includes("odontólog");
+        const isRecep = rawRol.includes("recepc") || rawRol.includes("auxiliar") || rawRol.includes("administrativ");
+
+        if (rawRol === "superadmin" || rawRol === "super_admin") return true;
 
         // 2. Subscription Check
         if (isSubscriptionExpired(userProfile?.tenant)) return false;
 
         // 3. Special "Editor Web" Plan Check
-        // CMS access is restricted to Premium/Corporativo plans or specific feature enablement.
         if (featureName === "Editor Web") {
             const hasPlan = userProfile?.tenant?.planId === "trial" ||
                 userProfile?.tenant?.features?.includes("CMS") ||
@@ -34,7 +38,6 @@ export function usePermissions() {
         }
 
         // 4. Trial Bypass Logic (Full Software Access 30 days)
-        // If the tenant is on a trial plan and is an administrator, grant access to core features.
         if (userProfile?.tenant?.planId === "trial") {
             const softwareFeatures = [
                 "Agenda", "Paciente", "Odontograma", "Documentos clínicos",
@@ -43,13 +46,10 @@ export function usePermissions() {
                 "Sucursales", "Almacenes", "Lista precios", "Usuarios", "Perfiles"
             ];
 
-            if (rolActual === "administrador") {
-                // Even in trial, we check "Editor Web" plan (handled in step 3)
-                // But for everything else, admin has access in trial.
+            if (isAdmin) {
                 if (featureName !== "Editor Web") return true;
             }
 
-            // For non-admin in trial, we still check softwareFeatures
             if (softwareFeatures.includes(featureName) || moduleName === "Configuración") return true;
         }
 
@@ -64,44 +64,64 @@ export function usePermissions() {
 
         const queryKey = normalizeKey(featureName);
 
-        // 6. Find and load permissions for this feature if profile is loaded
+        // 6. Find and load permissions for this feature if profile has custom permissions loaded
         const featurePerms = (() => {
             if (!userProfile?.permisos) return null;
-            const realKey = Object.keys(userProfile.permisos).find(
-                k => normalizeKey(k) === queryKey
+
+            // Compatibilidad 1: Si permisos es un Array ["Agenda", "Pacientes"]
+            if (Array.isArray(userProfile.permisos)) {
+                const normArray = userProfile.permisos.map(normalizeKey);
+                const hasMatch = normArray.includes(queryKey) || normArray.includes(normalizeKey(moduleName));
+                return hasMatch ? { consultar: true, crear: true, editar: true, eliminar: true } : null;
+            }
+
+            // Compatibilidad 2: Si permisos es un Objeto
+            const perms = userProfile.permisos;
+            const keyMatch = Object.keys(perms).find(
+                k => normalizeKey(k) === queryKey || normalizeKey(k) === normalizeKey(moduleName)
             );
-            return realKey ? userProfile.permisos[realKey] : null;
+            
+            if (keyMatch) {
+                const val = perms[keyMatch];
+                if (typeof val === 'boolean') return val ? { consultar: true, crear: true, editar: true, eliminar: true } : null;
+                if (typeof val === 'object' && val !== null) return val;
+            }
+
+            return null;
         })();
 
-        // 7. Fallback to Legacy/Role-based access if no custom profile permissions found
-        if (!featurePerms) {
-            const rol = rolActual;
-
-            if (rol === "administrador") return true;
-
-            if (rol === "doctor" || rol === "odontologo") {
-                const allowed = ["Agenda", "Pacientes", "Odontograma", "Documentos clínicos", "Historia clínica"];
-                const normAllowed = allowed.map(normalizeKey);
-                if (normAllowed.includes(queryKey) && action === "consultar") return true;
-                if (moduleName === "Agenda" && action === "consultar") return true;
-                if (moduleName === "Pacientes" && action === "consultar") return true;
-            }
-
-            if (rol === "recepcionista" || rol === "auxiliar") {
-                const allowed = ["Agenda", "Pacientes", "Gestion Facturas", "Gestion Reportes"];
-                const normAllowed = allowed.map(normalizeKey);
-                if (normAllowed.includes(queryKey) && action === "consultar") return true;
-                if (moduleName === "Configuración") return true;
-                if (moduleName === "Agenda" && action === "consultar") return true;
-                if (moduleName === "Pacientes" && action === "consultar") return true;
-                if (moduleName === "Administración" && queryKey === normalizeKey("Gestion Facturas")) return true;
-            }
-
-            return false;
+        if (featurePerms) {
+            if (typeof featurePerms[action] !== 'undefined') return !!featurePerms[action];
+            return true; // Por defecto permitido si el módulo/feature está asignado
         }
 
-        return !!featurePerms[action];
+        // 7. Fallback a permisos predeterminados si no se encontraron permisos personalizados
+        if (isAdmin) return true;
+
+        if (isDoctor) {
+            const allowed = ["Agenda", "Pacientes", "Odontograma", "Documentos clínicos", "Historia clínica"];
+            const normAllowed = allowed.map(normalizeKey);
+            if (normAllowed.includes(queryKey) && action === "consultar") return true;
+            if (moduleName === "Agenda" && action === "consultar") return true;
+            if (moduleName === "Pacientes" && action === "consultar") return true;
+            if (featureName === "Agenda" || featureName === "Paciente") return true;
+        }
+
+        if (isRecep) {
+            const allowed = ["Agenda", "Pacientes", "Gestion Facturas", "Gestion Reportes", "Caja", "Gestion Administración"];
+            const normAllowed = allowed.map(normalizeKey);
+            if (normAllowed.includes(queryKey) && action === "consultar") return true;
+            if (moduleName === "Configuración") return true;
+            if (moduleName === "Agenda" && action === "consultar") return true;
+            if (moduleName === "Pacientes" && action === "consultar") return true;
+            if (moduleName === "Caja" && action === "consultar") return true;
+            if (moduleName === "Administración" && (queryKey === normalizeKey("Gestion Facturas") || queryKey === normalizeKey("Gestion Administración"))) return true;
+        }
+
+        return false;
     };
+
+
 
     return { can };
 }

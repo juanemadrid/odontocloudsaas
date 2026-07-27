@@ -31,7 +31,21 @@ export default function Agenda() {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingApt, setEditingApt] = useState(null);
     const [slotData, setSlotData] = useState(null);
-    const [sidebarVisible, setSidebarVisible] = useState(true);
+    const [sidebarVisible, setSidebarVisible] = useState(() => {
+        try {
+            const saved = localStorage.getItem("odontocloud_agenda_sidebar");
+            return saved !== null ? JSON.parse(saved) : true;
+        } catch (e) {
+            return true;
+        }
+    });
+
+    React.useEffect(() => {
+        try {
+            localStorage.setItem("odontocloud_agenda_sidebar", JSON.stringify(sidebarVisible));
+        } catch (e) {}
+    }, [sidebarVisible]);
+
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
     const [cancellingAptId, setCancellingAptId] = useState(null);
 
@@ -473,7 +487,7 @@ export default function Agenda() {
             </div>
 
             {/* HEADER AREA (Top Level - Match Pacientes Alignment) */}
-            <div className="px-2 md:px-4 lg:px-6 pb-2 shrink-0 no-print">
+            <div className="px-3 md:px-6 lg:px-8 pt-2 pb-4 shrink-0 no-print">
                 <div className="flex flex-col gap-6">
                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8">
                         <div className="space-y-2">
@@ -530,14 +544,14 @@ export default function Agenda() {
             </div>
 
             {/* CONTENT ROW (Sidebar + View) */}
-            <div className="flex flex-1 min-h-0 px-2 md:px-4 lg:px-6 pb-6 relative">
-                {/* 1. SIDEBAR (Collapsible) */}
+            <div className="flex flex-1 min-h-0 px-3 md:px-6 lg:px-8 pb-8 relative gap-6">
+                {/* 1. SIDEBAR (Collapsible Desktop with shrink-0) */}
                 <div className={`
-                    transition-all duration-500 ease-in-out overflow-hidden no-print
-                    ${sidebarVisible ? 'w-64 opacity-100 pr-4' : 'w-0 opacity-0 pr-0'}
+                    transition-all duration-500 ease-in-out overflow-hidden no-print shrink-0
+                    ${sidebarVisible ? 'w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'}
                     hidden md:flex flex-col h-full
                 `}>
-                    <div className="min-w-[240px]">
+                    <div className="w-64 shrink-0">
                         <AgendaSidebar
                             selectedDate={selectedDate}
                             onDateChange={setSelectedDate}
@@ -553,10 +567,45 @@ export default function Agenda() {
                     </div>
                 </div>
 
+                {/* Mobile Drawer Overlay (screens < md) */}
+                {sidebarVisible && (
+                    <div className="md:hidden fixed inset-0 z-[150] flex no-print animate-fadeIn">
+                        <div 
+                            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs" 
+                            onClick={() => setSidebarVisible(false)} 
+                        />
+                        <div className="relative bg-white w-72 h-full shadow-2xl p-4 overflow-y-auto z-10 flex flex-col justify-between">
+                            <div>
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Calendario y Filtros</h3>
+                                    <button 
+                                        onClick={() => setSidebarVisible(false)}
+                                        className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+                                    >
+                                        <FiX size={18} />
+                                    </button>
+                                </div>
+                                <AgendaSidebar
+                                    selectedDate={selectedDate}
+                                    onDateChange={(d) => { setSelectedDate(d); setSidebarVisible(false); }}
+                                    doctors={doctors}
+                                    selectedDoctor={filters.filterDocId}
+                                    onSelectDoctor={filters.setFilterDocId}
+                                    branches={branches}
+                                    selectedBranch={filters.filterBranchId}
+                                    onSelectBranch={filters.setFilterBranchId}
+                                    chairs={chairs}
+                                    appointments={appointments}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* 2. MAIN CONTENT */}
-                <div className="flex-1 flex flex-col h-full min-w-0 gap-4">
+                <div className="flex-1 flex flex-col h-full min-w-0 gap-5">
                     {/* Toolbar */}
-                    <div className="flex items-center justify-between bg-white p-2.5 rounded-[22px] shadow-md shadow-slate-200/60 border border-slate-200 shrink-0 no-print">
+                    <div className="flex items-center justify-between bg-white p-3 rounded-[24px] shadow-sm border border-slate-200/80 shrink-0 no-print mb-1">
                         <div className="flex items-center gap-2 pl-2">
                             {/* Hamburger Button */}
                             <button 
@@ -603,7 +652,7 @@ export default function Agenda() {
                     </div>
 
                     {/* VIEW AREA */}
-                    <div className="flex-1 bg-white rounded-[28px] border-2 border-slate-200 shadow-lg shadow-slate-200/50 overflow-hidden relative">
+                    <div className="flex-1 bg-white rounded-[28px] border border-slate-200/80 shadow-md shadow-slate-100 overflow-hidden relative">
                         {viewMode === 'day' && (
                             <AgendaDailyTable
                                 appointments={appointments}

@@ -40,7 +40,8 @@ export default function PatientList({
     const hasSearchTerm = Boolean(searchTerm && searchTerm.trim());
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-4">
+        <div className="p-4 md:p-6 w-full max-w-[1800px] mx-auto space-y-4">
+
             {/* Header Toolbar */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-3">
                 <div className="flex items-center gap-2.5">

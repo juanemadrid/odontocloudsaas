@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -81,59 +80,38 @@ export default function ReporteFinanciero() {
       setLoading(true);
       try {
         // Cargar Facturas / Transacciones
-        const qFacturas = query(
-          collection(db, "facturas"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapFacturas = await getDocs(qFacturas);
-        const listFacturas = [];
-        snapFacturas.forEach(doc => {
-          listFacturas.push({ id: doc.id, ...doc.data() });
-        });
+        const { data: snapFacturas } = await supabase.from("facturas").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listFacturas = (snapFacturas || []).map(d => ({ ...d }));
 
         // Cargar Pagos / Recibos de caja adicionales si existen
-        const qPagos = query(
-          collection(db, "pagos"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapPagos = await getDocs(qPagos);
-        snapPagos.forEach(doc => {
-          const p = doc.data();
+        const { data: snapPagos } = await supabase.from("pagos").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        (snapPagos || []).forEach(p => {
           listFacturas.push({
-            id: doc.id,
-            idFactura: p.nroRecibo || `REC-${doc.id.slice(0, 6)}`,
+            id: p.id,
+            idFactura: p.nroRecibo || `REC-${p.id.slice(0, 6)}`,
             pacienteNombre: p.patientName || p.nombrePaciente || "—",
             descripcion: p.concepto || "Recibo de caja",
             monto: p.monto || p.valor || 0,
             estado: p.estado || "Pagada",
             tipoMovimiento: "Recibo de caja+",
-            fecha: p.fecha || p.createdAt,
+            fecha: p.fecha || p.created_at,
             profesional: p.profesional || p.odontologo || ""
           });
         });
 
-        listFacturas.sort((a, b) => {
-          const dateA = a.fecha?.seconds || (a.fecha ? new Date(a.fecha).getTime() / 1000 : 0);
-          const dateB = b.fecha?.seconds || (b.fecha ? new Date(b.fecha).getTime() / 1000 : 0);
-          return dateB - dateA;
-        });
+        listFacturas.sort((a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime());
         setAllFacturas(listFacturas);
 
         // Cargar Profesionales / Doctores
-        const qUsuarios = query(
-          collection(db, "usuarios"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapUsuarios = await getDocs(qUsuarios);
+        const { data: snapUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listProfs = [];
-        snapUsuarios.forEach(doc => {
-          const u = doc.data();
+        (snapUsuarios || []).forEach(u => {
           const role = (u.rol || u.role || "").toLowerCase();
           if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
             const primerNombre = u.nombre || u.nombres || u.displayName || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
-            listProfs.push({ id: doc.id, nombre: nombreCompleto });
+            listProfs.push({ id: u.id, nombre: nombreCompleto });
           }
         });
         setProfesionales(listProfs);

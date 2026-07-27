@@ -1,10 +1,6 @@
 // src/modules/administracion/views/Campanas.jsx
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import { 
-  collection, query, where, getDocs, doc, setDoc, 
-  addDoc, serverTimestamp, updateDoc, deleteDoc 
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { 
@@ -41,12 +37,11 @@ export default function Campanas() {
   const loadCampanas = async () => {
     setLoading(true);
     try {
-      const q = query(
-        collection(db, "campanas"), 
-        where("inquilino", "==", inquilino)
-      );
-      const snap = await getDocs(q);
-      setCampanas(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const { data } = await supabase
+        .from("campanas")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      setCampanas(data || []);
     } catch (e) {
       console.error("Error loading campanas:", e);
       toast?.error("Error al cargar campañas");
@@ -75,9 +70,8 @@ export default function Campanas() {
 
   const handleToggleActivo = async (campana) => {
     try {
-      const docRef = doc(db, "campanas", campana.id);
       const newStatus = !campana.activo;
-      await updateDoc(docRef, { activo: newStatus });
+      await supabase.from("campanas").update({ activo: newStatus }).eq("id", campana.id);
       toast?.success(`Campaña ${newStatus ? "activada" : "inactivada"} con éxito`);
       loadCampanas();
     } catch (e) {
@@ -89,7 +83,7 @@ export default function Campanas() {
   const handleDelete = async (campana) => {
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente la campaña "${campana.nombre}"?`)) return;
     try {
-      await deleteDoc(doc(db, "campanas", campana.id));
+      await supabase.from("campanas").delete().eq("id", campana.id);
       toast?.success("Campaña eliminada con éxito");
       loadCampanas();
     } catch (e) {
@@ -107,15 +101,16 @@ export default function Campanas() {
       const dataToSave = {
         ...formData,
         nombre: formData.nombre.trim(),
+        tenant_id: inquilino,
         inquilino,
-        updatedAt: serverTimestamp()
+        updated_at: new Date().toISOString()
       };
 
       if (editingCampana?.id) {
-        await setDoc(doc(db, "campanas", editingCampana.id), dataToSave, { merge: true });
+        await supabase.from("campanas").update(dataToSave).eq("id", editingCampana.id);
       } else {
-        dataToSave.createdAt = serverTimestamp();
-        await addDoc(collection(db, "campanas"), dataToSave);
+        dataToSave.created_at = new Date().toISOString();
+        await supabase.from("campanas").insert([dataToSave]);
       }
 
       toast?.success(editingCampana ? "Campaña actualizada correctamente" : "Campaña creada con éxito");

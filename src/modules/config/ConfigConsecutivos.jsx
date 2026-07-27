@@ -5,8 +5,7 @@
 // ============================================================
 import React, { useState, useEffect } from "react";
 import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiHash, FiUsers, FiFilter } from "react-icons/fi";
-import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 import Input from "../../components/ui/Input";
@@ -30,14 +29,9 @@ export default function ConfigConsecutivos() {
         
         setLoading(true);
         try {
-            const q = query(
-                collection(db, "consecutivos"),
-                where("inquilino", "==", userProfile.inquilino)
-            );
-            const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", undefined, { sensitivity: "base" }));
-            setConsecutivos(data);
+            const { data } = await supabase.from("consecutivos").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+            const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", undefined, { sensitivity: "base" }));
+            setConsecutivos(sorted);
         } catch (error) {
             console.error("Error cargando consecutivos:", error);
             toast.error("Error al cargar consecutivos");
@@ -55,7 +49,7 @@ export default function ConfigConsecutivos() {
         if (!window.confirm("¿Está seguro de eliminar este consecutivo?")) return;
         
         try {
-            await deleteDoc(doc(db, "consecutivos", id));
+            await supabase.from("consecutivos").delete().eq("id", id);
             toast.success("Consecutivo eliminado");
             loadConsecutivos();
         } catch (error) {

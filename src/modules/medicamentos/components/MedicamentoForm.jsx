@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiArrowLeft, FiSave, FiAlertCircle } from "react-icons/fi";
-import { collection, doc, getDoc, addDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -25,9 +24,12 @@ export default function MedicamentoForm({ id, onCancel, onSuccess }) {
         const loadMedicine = async () => {
             setLoading(true);
             try {
-                const snap = await getDoc(doc(db, "medicamentos", id));
-                if (snap.exists()) {
-                    const data = snap.data();
+                const { data } = await supabase
+                    .from("medicamentos")
+                    .select("*")
+                    .eq("id", id)
+                    .maybeSingle();
+                if (data) {
                     setTipo(data.tipo || "Otros");
                     setCodigo(data.codigo || "");
                     setPrincipioActivo(data.principio_activo || data.nombre || "");
@@ -62,18 +64,19 @@ export default function MedicamentoForm({ id, onCancel, onSuccess }) {
                 nombre: principioActivo.trim(), // Save both for auto-complete fallback
                 descripcion: descripcion.trim(),
                 marca: marca.trim(),
+                tenant_id: inquilino,
                 inquilino,
-                updatedAt: serverTimestamp()
+                updated_at: new Date().toISOString()
             };
 
             if (id) {
-                await updateDoc(doc(db, "medicamentos", id), medData);
+                await supabase.from("medicamentos").update(medData).eq("id", id);
                 toast.success("Medicamento actualizado correctamente");
             } else {
-                await addDoc(collection(db, "medicamentos"), {
+                await supabase.from("medicamentos").insert([{
                     ...medData,
-                    createdAt: serverTimestamp()
-                });
+                    created_at: new Date().toISOString()
+                }]);
                 toast.success("Medicamento creado correctamente");
             }
             if (onSuccess) onSuccess();

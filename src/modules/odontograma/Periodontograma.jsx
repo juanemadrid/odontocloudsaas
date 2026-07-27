@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import Button from "../../components/ui/Button";
 import { FiActivity, FiSave, FiAlertCircle, FiDroplet, FiSun, FiLayers, FiPrinter, FiCheckCircle, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 import { useToast } from "../../context/ToastContext";
@@ -526,9 +525,13 @@ export default function Periodontograma({ embeddedPatient }) {
         if (!tenantId) return;
         const loadClinicConfig = async () => {
             try {
-                const snap = await getDoc(doc(db, "tenants", tenantId));
-                if (snap.exists()) {
-                    setClinicConfig(snap.data());
+                const { data } = await supabase
+                    .from("tenants")
+                    .select("*")
+                    .eq("id", tenantId)
+                    .maybeSingle();
+                if (data) {
+                    setClinicConfig(data);
                 }
             } catch (err) {
                 console.error("Error loading clinic config", err);
@@ -542,10 +545,13 @@ export default function Periodontograma({ embeddedPatient }) {
         const load = async () => {
             setLoading(true);
             try {
-                const ref = doc(db, "pacientes", pacienteId);
-                const snap = await getDoc(ref);
-                if (snap.exists() && snap.data().periodontograma) {
-                    setPeriodonto(snap.data().periodontograma);
+                const { data } = await supabase
+                    .from("pacientes")
+                    .select("periodontograma")
+                    .eq("id", pacienteId)
+                    .maybeSingle();
+                if (data && data.periodontograma) {
+                    setPeriodonto(data.periodontograma);
                 } else {
                     setPeriodonto({});
                 }
@@ -566,9 +572,11 @@ export default function Periodontograma({ embeddedPatient }) {
         if (!pacienteId) return;
         setSaving(true);
         try {
-            await updateDoc(doc(db, "pacientes", pacienteId), {
-                periodontograma: periodonto
-            });
+            const { error } = await supabase
+                .from("pacientes")
+                .update({ periodontograma: periodonto })
+                .eq("id", pacienteId);
+            if (error) throw error;
             toast.success("Periodontograma guardado correctamente");
         } catch (e) {
             console.error("Error saving periodontogram", e);

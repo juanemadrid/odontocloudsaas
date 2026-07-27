@@ -1,8 +1,9 @@
 // Script para crear la función RPC admin_change_password en Supabase PostgreSQL
 import fetch from 'node-fetch';
+import 'dotenv/config';
 
-const SUPABASE_URL = 'https://jhdflchyhkwpedtbkusp.supabase.co';
-const SERVICE_KEY  = 'sb_secret_Vfz6a1lTTBaDJjoIr1KKhg_AmSkJpLz';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY;
 
 const headers = {
   'Content-Type': 'application/json',

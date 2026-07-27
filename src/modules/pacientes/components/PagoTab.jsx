@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../../firebase/firebaseConfig';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, updateDoc, increment } from 'firebase/firestore';
+import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { 
@@ -63,14 +62,13 @@ export default function PagoTab({ patient }) {
                     return;
                 }
 
-                const q = query(
-                    collection(db, "profesionales"),
-                    where("inquilino", "==", userProfile.inquilino)
-                );
-                const snap = await getDocs(q);
-                const list = snap.docs.map(doc => ({
+                const { data: profData } = await supabase
+                    .from("profesionales")
+                    .select("id, nombre_completo, nombre")
+                    .eq("tenant_id", userProfile.inquilino);
+                const list = (profData || []).map(doc => ({
                     id: doc.id,
-                    nombre: doc.data().nombreCompleto || doc.data().nombre || ""
+                    nombre: doc.nombre_completo || doc.nombre || ""
                 }));
                 setProfesionales(list);
                 
@@ -102,23 +100,22 @@ export default function PagoTab({ patient }) {
             setPlans(activePlans);
 
             // Load payments
-            const q = query(collection(db, "pagos"), where("patientId", "==", patient.id));
-            const snap = await getDocs(q);
-            const paymentsData = snap.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(p => p.estado !== "Anulado");
+            const { data: payData } = await supabase
+                .from("pagos")
+                .select("*")
+                .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`);
+            const paymentsData = (payData || []).filter(p => p.estado !== "Anulado");
             setPayments(paymentsData);
 
             // Load dynamic active payment methods from configuration
             if (userProfile?.inquilino) {
-                const qMetodos = query(
-                    collection(db, "metodos_pago"),
-                    where("inquilino", "==", userProfile.inquilino),
-                    where("activo", "==", true)
-                );
-                const snapMetodos = await getDocs(qMetodos);
-                if (!snapMetodos.empty) {
-                    const metodosList = snapMetodos.docs.map(d => d.data().nombre);
+                const { data: metData } = await supabase
+                    .from("metodos_pago")
+                    .select("nombre")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .eq("activo", true);
+                if (metData && metData.length > 0) {
+                    const metodosList = metData.map(d => d.nombre);
                     setPaymentMethods(metodosList);
                     if (metodosList.length > 0) {
                         setMethod(metodosList[0]);
@@ -319,16 +316,13 @@ export default function PagoTab({ patient }) {
         setLoading(true);
         try {
             // 1. Fetch active Caja session for this user
-            const cSnap = await getDocs(query(
-                collection(db, "cajas"), 
-                where("inquilino", "==", userProfile?.inquilino || "nop"),
-                where("estado", "==", "abierta"),
-                where("usuarioId", "==", userProfile?.uid)
-            ));
-            let activeCaja = null;
-            if (!cSnap.empty) {
-                activeCaja = { id: cSnap.docs[0].id, ...cSnap.docs[0].data() };
-            }
+            const { data: cajas } = await supabase
+                .from("cajas")
+                .select("*")
+                .eq("tenant_id", userProfile?.inquilino || "")
+                .eq("estado", "abierta")
+                .eq("usuario_id", userProfile?.uid);
+            let activeCaja = cajas && cajas.length > 0 ? cajas[0] : null;
 
             // 2. If paid in cash, active cash session is strictly required
             if (method === "Efectivo" && !activeCaja) {
@@ -337,6 +331,7 @@ export default function PagoTab({ patient }) {
             }
 
             const pagoData = {
+                paciente_id: patient.id,
                 patientId: patient.id,
                 patientNombre: patient.nombreCompleto,
                 monto: paymentAmount,
@@ -347,8 +342,8 @@ export default function PagoTab({ patient }) {
                 profesionalId: profesionalId || null,
                 profesionalNombre: profesional || null,
                 notas: notes,
-                fecha: serverTimestamp(),
                 fechaISO: new Date().toISOString(),
+                tenant_id: userProfile?.inquilino || "",
                 inquilino: userProfile?.inquilino || "",
                 registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || "Sistema",
                 estado: "Completado",
@@ -396,15 +391,14 @@ export default function PagoTab({ patient }) {
             let consDocId = null;
             let consNextCount = 1;
             try {
-                const qCons = query(
-                    collection(db, "consecutivos"),
-                    where("inquilino", "==", userProfile?.inquilino || "")
-                );
-                const snapCons = await getDocs(qCons);
-                if (!snapCons.empty) {
-                    const consDoc = snapCons.docs[0];
+                const { data: consData } = await supabase
+                    .from("consecutivos")
+                    .select("*")
+                    .eq("tenant_id", userProfile?.inquilino || "");
+                if (consData && consData.length > 0) {
+                    const consDoc = consData[0];
                     consDocId = consDoc.id;
-                    const currentCount = parseInt(String(consDoc.data().contReciboCaja || 1), 10) || 1;
+                    const currentCount = parseInt(String(consDoc.cont_recibo_caja || consDoc.contReciboCaja || 1), 10) || 1;
                     consNextCount = currentCount + 1;
                     nroConsecutivo = String(currentCount).padStart(2, '0');
                 } else {
@@ -421,14 +415,23 @@ export default function PagoTab({ patient }) {
             }
 
             // 3. Write payment doc
-            const docRef = await addDoc(collection(db, "pagos"), pagoData);
+            const { data: newPago, error: pagoErr } = await supabase
+                .from("pagos")
+                .insert([{
+                    ...pagoData,
+                    created_at: new Date().toISOString()
+                }])
+                .select()
+                .single();
+            if (pagoErr) throw pagoErr;
 
-            // 3.1. Increment consecutive counter (write plain number, not increment())
+            // 3.1. Increment consecutive counter
             if (consDocId) {
                 try {
-                    await updateDoc(doc(db, "consecutivos", consDocId), {
-                        contReciboCaja: consNextCount
-                    });
+                    await supabase
+                        .from("consecutivos")
+                        .update({ cont_recibo_caja: consNextCount })
+                        .eq("id", consDocId);
                 } catch (incErr) {
                     console.warn("No se pudo actualizar el consecutivo:", incErr);
                 }
@@ -437,27 +440,29 @@ export default function PagoTab({ patient }) {
             // 4. Synchronize with active Caja session
             if (activeCaja) {
                 const movData = {
-                    inquilino: userProfile?.inquilino || "",
+                    tenant_id: userProfile?.inquilino || "",
                     tipo: "ingreso",
                     concepto: concept || "Abono a tratamiento",
                     monto: paymentAmount,
-                    metodoPago: method,
+                    metodo_pago: method,
                     descripcion: `Abono de ${patient.nombreCompleto}. Plan: ${selectedPlan ? `"${selectedPlan.title || selectedPlan.nombre}"` : "General"}`,
-                    pacienteId: patient.id,
-                    pacienteNombre: patient.nombreCompleto,
-                    pagoId: docRef.id,
-                    usuarioId: userProfile?.uid,
-                    usuarioNombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Sistema",
-                    fecha: serverTimestamp(),
+                    paciente_id: patient.id,
+                    paciente_nombre: patient.nombreCompleto,
+                    pago_id: newPago.id,
+                    usuario_id: userProfile?.uid,
+                    caja_id: activeCaja.id,
+                    created_at: new Date().toISOString()
                 };
                 
-                await addDoc(collection(db, "cajas", activeCaja.id, "movimientos"), movData);
+                await supabase.from("movimientos_caja").insert([movData]);
                 
-                // Update balance and total ingresos of the active caja session
-                await updateDoc(doc(db, "cajas", activeCaja.id), {
-                    saldoActual: increment(paymentAmount),
-                    totalIngresos: increment(paymentAmount)
-                });
+                await supabase
+                    .from("cajas")
+                    .update({
+                        saldo_actual: (activeCaja.saldo_actual || activeCaja.saldoActual || 0) + paymentAmount,
+                        total_ingresos: (activeCaja.total_ingresos || activeCaja.totalIngresos || 0) + paymentAmount
+                    })
+                    .eq("id", activeCaja.id);
             }
 
             toast.success("Pago registrado exitosamente");

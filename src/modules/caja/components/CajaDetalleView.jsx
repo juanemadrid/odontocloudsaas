@@ -5,15 +5,7 @@
 // Genera e imprime el recibo PDF oficial del sistema OdontoCloud.
 // ============================================================
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  doc,
-  getDoc
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX } from "react-icons/fi";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 
@@ -45,40 +37,32 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   const [selectedMovimiento, setSelectedMovimiento] = useState(null);
   const [tenantConfig, setTenantConfig] = useState(null);
 
-  // Cargar datos reales de la empresa / inquilino desde Firestore
+  // Cargar datos reales de la empresa / inquilino desde Supabase
   useEffect(() => {
     const inquilinoId = userProfile?.inquilino || caja?.inquilino || "";
     if (!inquilinoId) return;
-    getDoc(doc(db, "tenants", inquilinoId))
-      .then((snap) => {
-        if (snap.exists()) {
-          setTenantConfig(snap.data());
-        }
+    supabase.from("tenants").select("*").eq("id", inquilinoId).maybeSingle()
+      .then(({ data }) => {
+        if (data) setTenantConfig(data);
       })
       .catch((err) => console.error("Error cargando tenant:", err));
   }, [userProfile?.inquilino, caja?.inquilino]);
 
-  // Cargar movimientos en tiempo real
+  // Cargar movimientos
   useEffect(() => {
     if (!caja?.id) return;
-    const q = query(
-      collection(db, "cajas", caja.id, "movimientos"),
-      orderBy("fecha", "desc")
-    );
+    const fetchMovs = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("movimientos_caja")
+        .select("*")
+        .eq("caja_id", caja.id)
+        .order("created_at", { ascending: false });
+      setMovimientos(data || []);
+      setLoading(false);
+    };
 
-    setLoading(true);
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setMovimientos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error cargando movimientos:", err);
-        setLoading(false);
-      }
-    );
-    return () => unsub();
+    fetchMovs();
   }, [caja?.id]);
 
   // Cálculos de totales

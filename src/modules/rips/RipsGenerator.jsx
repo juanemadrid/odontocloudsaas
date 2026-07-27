@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, getDoc, doc, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import {
     buildRipsJSON,
@@ -66,18 +65,21 @@ export default function RipsGenerator() {
 
         const loadTenantConfig = async () => {
             try {
-                const tenantSnap = await getDoc(doc(db, "tenants", inquilino));
-                if (tenantSnap.exists()) {
-                    const data = tenantSnap.data();
-                    const nitClean = formatNitForRips(data.nit || "");
-                    const codPrestador = String(data.codigoPrestador || "").trim();
-                    const rSocial = data.razonSocial || data.name || "";
+                const { data: tenantData } = await supabase
+                    .from("tenants")
+                    .select("*")
+                    .eq("id", inquilino)
+                    .maybeSingle();
+                if (tenantData) {
+                    const nitClean = formatNitForRips(tenantData.nit || "");
+                    const codPrestador = String(tenantData.codigoPrestador || "").trim();
+                    const rSocial = tenantData.razonSocial || tenantData.name || "";
 
                     setTenantConfig({
                         nit: nitClean,
                         codigoPrestador: codPrestador,
                         razonSocial: rSocial,
-                        esIps: data.esIps || false
+                        esIps: tenantData.esIps || false
                     });
 
                     let warningMsg = "";
@@ -93,20 +95,13 @@ export default function RipsGenerator() {
 
         const loadHistory = async () => {
             try {
-                const q = query(
-                    collection(db, "rips_generados"),
-                    where("inquilino", "==", inquilino)
-                );
-                const snap = await getDocs(q);
-                const files = snap.docs.map(doc => doc.data());
+                const { data: files } = await supabase
+                    .from("rips_generados")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                    .order("created_at", { ascending: false });
                 
-                files.sort((a, b) => {
-                    const da = a.fechaGeneracion?.toDate ? a.fechaGeneracion.toDate() : new Date(a.fechaGeneracion || 0);
-                    const db = b.fechaGeneracion?.toDate ? b.fechaGeneracion.toDate() : new Date(b.fechaGeneracion || 0);
-                    return db.getTime() - da.getTime();
-                });
-                
-                setGeneratedFiles(files);
+                setGeneratedFiles(files || []);
             } catch (e) {
                 console.error("Error al cargar historial RIPS:", e);
             }
@@ -114,13 +109,17 @@ export default function RipsGenerator() {
         
         const loadMetadata = async () => {
             try {
-                const qS = query(collection(db, "sucursales"), where("inquilino", "==", inquilino));
-                const snapS = await getDocs(qS);
-                setSucursales(snapS.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                const { data: snapS } = await supabase
+                    .from("sucursales")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                setSucursales(snapS || []);
 
-                const qE = query(collection(db, "eps_catalogo"), where("inquilino", "==", inquilino));
-                const snapE = await getDocs(qE);
-                const uniqueEps = [...new Set(snapE.docs.map(doc => doc.data().nombre))].filter(Boolean).sort();
+                const { data: snapE } = await supabase
+                    .from("eps_catalogo")
+                    .select("nombre")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                const uniqueEps = [...new Set((snapE || []).map(doc => doc.nombre))].filter(Boolean).sort();
                 setEpsList(uniqueEps);
             } catch (e) {
                 console.error("Error al cargar metadatos RIPS:", e);
@@ -192,17 +191,18 @@ export default function RipsGenerator() {
 
             const snapshots = await Promise.all(
                 colecciones.map(({ nombre }) =>
-                    getDocs(query(collection(db, nombre), where("inquilino", "==", inquilino)))
-                        .catch(() => ({ docs: [] })) // si la colección no existe, ignorar
+                    supabase.from(nombre).select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                        .then(res => res.data || [])
+                        .catch(() => [])
                 )
             );
 
             let facturas = [];
-            snapshots.forEach((snap, i) => {
-                const docs = snap.docs
-                    .map(d => ({ id: d.id, _coleccion: colecciones[i].nombre, _tipoDoc: colecciones[i].tipoDoc, ...d.data() }))
+            snapshots.forEach((docs, i) => {
+                const mapped = docs
+                    .map(d => ({ _coleccion: colecciones[i].nombre, _tipoDoc: colecciones[i].tipoDoc, ...d }))
                     .filter(inRange);
-                facturas.push(...docs);
+                facturas.push(...mapped);
             });
 
             // Deduplicar por id (por si el mismo documento aparece en varias colecciones)
@@ -223,24 +223,20 @@ export default function RipsGenerator() {
             }
 
             // 2. Cargar Pacientes y mapear por ID, Documento y Nombre
-            const patSnap = await getDocs(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)));
+            const { data: patData } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
             const pacientesById = {};
             const pacientesByDoc = {};
             const pacientesByName = {};
 
-            patSnap.docs.forEach(d => {
-                const p = { id: d.id, ...d.data() };
-                // Indexar por Firestore doc ID (el más común referenciado en pacienteId)
-                pacientesById[d.id] = p;
-                // También indexar por campo id interno si difiere
-                if (p.id && p.id !== d.id) pacientesById[p.id] = p;
+            (patData || []).forEach(p => {
+                pacientesById[p.id] = p;
                 const docNum = String(p.nroDocumento || p.cedula || p.numDoc || "").trim();
                 if (docNum) pacientesByDoc[docNum] = p;
                 const full = (p.nombreCompleto || p.nombre || `${p.nombres || ""} ${p.apellidos || ""}`).trim().toLowerCase();
                 if (full) pacientesByName[full] = p;
             });
 
-            setLogs(prev => [...prev, `👥 ${patSnap.docs.length} pacientes cargados para cruce de datos`]);
+            setLogs(prev => [...prev, `👥 ${(patData || []).length} pacientes cargados para cruce de datos`]);
 
             // 2.5 Filtros opcionales (Sucursal y EPS)
             if (selectedSucursal) {
@@ -430,10 +426,12 @@ export default function RipsGenerator() {
                 newFiles.push(fileObj);
 
                 try {
-                    await addDoc(collection(db, "rips_generados"), {
+                    await supabase.from("rips_generados").insert([{
                         ...fileObj,
-                        fechaGeneracion: serverTimestamp()
-                    });
+                        tenant_id: inquilino,
+                        inquilino,
+                        created_at: new Date().toISOString()
+                    }]);
                 } catch (err) {
                     console.error("Error al guardar archivo RIPS en BD:", err);
                 }

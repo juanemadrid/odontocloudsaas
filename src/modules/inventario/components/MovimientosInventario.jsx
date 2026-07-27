@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiSearch, FiCalendar, FiArrowUpRight, FiArrowDownLeft, FiSliders } from "react-icons/fi";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 
 export default function MovimientosInventario() {
@@ -16,15 +15,12 @@ export default function MovimientosInventario() {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "registro_movimientos_inventario"), where("inquilino", "==", inquilino)));
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort newest first
-      list.sort((a, b) => {
-        const tA = a.createdAt?.seconds || new Date(a.fecha || 0).getTime() / 1000;
-        const tB = b.createdAt?.seconds || new Date(b.fecha || 0).getTime() / 1000;
-        return tB - tA;
-      });
-      setLogs(list);
+      const { data: list } = await supabase
+        .from("registro_movimientos_inventario")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+        .order("created_at", { ascending: false });
+      setLogs(list || []);
     } catch (e) {
       console.error("Error loading movement logs:", e);
     } finally {

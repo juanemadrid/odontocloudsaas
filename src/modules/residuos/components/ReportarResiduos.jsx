@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiSearch, FiCalendar, FiPlusCircle, FiTrash2, FiX } from "react-icons/fi";
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -35,16 +34,20 @@ export default function ReportarResiduos() {
         setLoading(true);
         try {
             // Load types
-            const tQ = query(collection(db, "tipos_residuos"), where("inquilino", "==", inquilino));
-            const tSnap = await getDocs(tQ);
-            const tList = tSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+            const { data: tSnap } = await supabase
+                .from("tipos_residuos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const tList = (tSnap || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
             setTypes(tList);
             if (tList.length > 0) setSelectedTypeId(tList[0].id);
 
             // Load logs
-            const lQ = query(collection(db, "registro_residuos"), where("inquilino", "==", inquilino));
-            const lSnap = await getDocs(lQ);
-            setLogs(lSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const { data: lSnap } = await supabase
+                .from("registro_residuos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setLogs(lSnap || []);
         } catch (e) {
             console.error("Error loading reporting logs:", e);
             toast.error("Error al cargar los reportes de residuos");
@@ -92,13 +95,18 @@ export default function ReportarResiduos() {
                 residuoNombre: selectedType.nombre,
                 color: selectedType.color,
                 cantidad: parseFloat(peso),
+                tenant_id: inquilino,
                 inquilino,
-                createdAt: serverTimestamp()
+                created_at: new Date().toISOString()
             };
 
-            const docRef = await addDoc(collection(db, "registro_residuos"), reportItem);
+            const { data: inserted } = await supabase
+                .from("registro_residuos")
+                .insert([reportItem])
+                .select()
+                .single();
             toast.success("Pesaje de residuo reportado");
-            setLogs(prev => [{ id: docRef.id, ...reportItem }, ...prev]);
+            setLogs(prev => [inserted, ...prev]);
             setShowModal(false);
         } catch (err) {
             console.error("Error saving residue report:", err);
@@ -111,7 +119,7 @@ export default function ReportarResiduos() {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este reporte de residuo?")) return;
         try {
-            await deleteDoc(doc(db, "registro_residuos", id));
+            await supabase.from("registro_residuos").delete().eq("id", id);
             toast.success("Reporte de residuo eliminado");
             setLogs(prev => prev.filter(l => l.id !== id));
         } catch (e) {

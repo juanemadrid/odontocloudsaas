@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import UniversalTable from "../../components/UniversalTable";
 
 /* 
@@ -46,12 +45,10 @@ export default function ConfigFormularioPacientes() {
     useEffect(() => {
         const load = async () => {
             try {
-                const ref = doc(db, "config_global", "pacientes_form");
-                const snap = await getDoc(ref);
-                if (snap.exists()) {
-                    setConfig(snap.data());
+                const { data: snap } = await supabase.from("website_config").select("config").eq("tenant_id", "pacientes_form").maybeSingle();
+                if (snap?.config) {
+                    setConfig(snap.config);
                 } else {
-                    // Initialize with defaults if empty
                     const defaults = {};
                     STANDARD_FIELDS.forEach(f => {
                         defaults[f.key] = { visible: true, required: ["nombres", "celular"].includes(f.key) };
@@ -79,8 +76,8 @@ export default function ConfigFormularioPacientes() {
 
     const saveConfig = async () => {
         try {
-            await setDoc(doc(db, "config_global", "pacientes_form"), config);
-            alert("Configuración estándar guardada correctamente.");
+            await supabase.from("website_config").upsert([{ tenant_id: "pacientes_form", config }], { onConflict: "tenant_id" });
+            alert("Configuración del Formulario guardada con éxito.");
         } catch (e) {
             console.error(e);
             alert("Error al guardar.");

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiX } from 'react-icons/fi';
-import { collection, doc, setDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { useForm } from 'react-hook-form';
@@ -67,33 +66,23 @@ export default function RemissionModal({ isOpen, onClose, patient, initialData =
 
         const fetchDoctors = async () => {
             try {
-                const userQ = query(
-                    collection(db, "profesionales"), 
-                    where("inquilino", "==", userProfile?.inquilino || userProfile?.tenantId),
-                    where("activo", "==", true)
-                );
-                const userSnap = await getDocs(userQ);
-                setAllDoctors(userSnap.docs.map(d => {
-                    const data = d.data();
-                    return {
-                        id: d.id,
-                        nombreCompleto: data.nombreCompleto || data.nombre || "",
-                        ...data
-                    };
+                const { data: profData } = await supabase
+                    .from("profesionales")
+                    .select("*")
+                    .eq("tenant_id", userProfile?.inquilino || userProfile?.tenantId)
+                    .eq("activo", true);
+                const docs = (profData || []).map(d => ({
+                    id: d.id,
+                    nombreCompleto: d.nombre_completo || d.nombre || "",
+                    ...d
                 }));
+                setAllDoctors(docs);
                 
                 // Patient assigned doctors for the sender field
                 if (patient?.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
                     setPatientDoctors(patient.profesionales);
                 } else {
-                    setPatientDoctors(userSnap.docs.map(d => {
-                        const data = d.data();
-                        return {
-                            id: d.id,
-                            nombreCompleto: data.nombreCompleto || data.nombre || "",
-                            ...data
-                        };
-                    }));
+                    setPatientDoctors(docs);
                 }
             } catch (err) {
                 console.error("Error fetching dependencies", err);
@@ -128,6 +117,7 @@ export default function RemissionModal({ isOpen, onClose, patient, initialData =
 
             const remissionData = {
                 type: 'remission',
+                paciente_id: patient.id,
                 patientId: patient.id,
                 patientName: patient.nombreCompleto || patient.nombre || "Paciente",
                 profesional: docName,
@@ -137,15 +127,27 @@ export default function RemissionModal({ isOpen, onClose, patient, initialData =
                 description: data.comentario, 
                 ...data,
                 date: finalDate, 
+                tenant_id: userProfile?.inquilino || userProfile?.tenantId || "",
                 inquilino: userProfile?.inquilino || userProfile?.tenantId || "",
-                createdAt: isEditing ? initialData.createdAt : serverTimestamp(),
-                updatedAt: serverTimestamp(),
+                updated_at: new Date().toISOString(),
                 registeredBy: userProfile?.uid || "",
             };
 
-            const targetId = isEditing ? initialData.id : doc(collection(db, "clinical_evolutions")).id;
-            
-            await setDoc(doc(db, "clinical_evolutions", targetId), remissionData, { merge: true });
+            if (isEditing) {
+                const { error: updateError } = await supabase
+                    .from("evoluciones")
+                    .update(remissionData)
+                    .eq("id", initialData.id);
+                if (updateError) throw updateError;
+            } else {
+                const { error: insertError } = await supabase
+                    .from("evoluciones")
+                    .insert([{
+                        ...remissionData,
+                        created_at: new Date().toISOString()
+                    }]);
+                if (insertError) throw insertError;
+            }
 
             toast.success(isEditing ? "Remisión actualizada" : "Remisión registrada correctamente");
             onClose();

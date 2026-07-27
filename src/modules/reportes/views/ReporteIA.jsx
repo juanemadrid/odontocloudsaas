@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import {
     analyzeClinicKPIs,
     detectAtRiskPatients,

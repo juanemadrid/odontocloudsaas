@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 
 const TABS = [
     { id: "hero", label: "🏠 Inicio y Stats" },
@@ -32,16 +31,14 @@ export default function WebCms() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const docRef = doc(db, "website_config", "general");
-            const snap = await getDoc(docRef);
-            if (snap.exists()) {
-                const data = snap.data();
+            const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", "general").maybeSingle();
+            if (webSnap?.config) {
+                const data = webSnap.config;
                 setConfig({
                     ...data,
                     services: data.services || [],
                     doctors: data.doctors || [],
                     testimonials: data.testimonials || [],
-                    // Asegurar campos nuevos para evitar undefined
                     statYears: data.statYears || "10+",
                     statPatients: data.statPatients || "5k",
                     statSatisfaction: data.statSatisfaction || "100%",
@@ -73,7 +70,7 @@ export default function WebCms() {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await setDoc(doc(db, "website_config", "general"), config);
+            await supabase.from("website_config").upsert([{ tenant_id: "general", config }], { onConflict: "tenant_id" });
             alert("✅ Sitio web actualizado correctamente.");
         } catch (e) {
             console.error(e);

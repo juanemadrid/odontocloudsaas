@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiCalendar, FiSearch, FiLayers, FiEye } from "react-icons/fi";
-import { collection, query, where, getDocs, Timestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 
 const fmt = (n) =>
@@ -36,11 +35,14 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
     const loadProfessionals = async () => {
         if (!inquilino) return;
         try {
-            const pSnap = await getDocs(query(collection(db, "profesionales"), where("inquilino", "==", inquilino)));
-            const list = pSnap.docs.map(d => ({
+            const { data: pSnap } = await supabase
+                .from("profesionales")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const list = (pSnap || []).map(d => ({
                 id: d.id,
-                nombre: d.data().nombreCompleto || d.data().nombre || "Doctor",
-                cedula: d.data().cedula || d.data().documento || ""
+                nombre: d.nombreCompleto || d.nombre || "Doctor",
+                cedula: d.cedula || d.documento || ""
             }));
             list.sort((a, b) => a.nombre.localeCompare(b.nombre));
             setProfesionales(list);
@@ -83,18 +85,17 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
             const docObj = profesionales.find(p => p.id === selectedDoctorId);
 
             // Fetch payments (excluding SALDO A FAVOR, as those are credit advances and commission should only be calculated on treatments / evolution)
-            const q = query(
-                collection(db, "pagos"),
-                where("inquilino", "==", inquilino),
-                where("profesionalId", "==", selectedDoctorId)
-            );
-            const snap = await getDocs(q);
-            const rawList = snap.docs.map(d => {
-                const data = d.data();
-                const ts = data.fecha;
-                const dateObj = ts?.toDate ? ts.toDate() : new Date(ts);
+            const { data: rawData } = await supabase
+                .from("pagos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .eq("profesionalId", selectedDoctorId);
+
+            const rawList = (rawData || []).map(data => {
+                const ts = data.fecha || data.created_at;
+                const dateObj = new Date(ts || 0);
                 return {
-                    id: d.id,
+                    id: data.id,
                     ...data,
                     fechaObj: dateObj
                 };

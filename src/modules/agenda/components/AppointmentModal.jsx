@@ -54,6 +54,156 @@ const appointmentSchema = z.discriminatedUnion("isNewPatient", [
     })
 ]);
 
+const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const str = String(timeStr).trim();
+    const match12 = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (match12) {
+        let h = parseInt(match12[1], 10);
+        const m = parseInt(match12[2], 10);
+        const ampm = match12[3].toUpperCase();
+        if (ampm === "PM" && h < 12) h += 12;
+        if (ampm === "AM" && h === 12) h = 0;
+        return h * 60 + m;
+    }
+    const match24 = str.match(/^(\d{1,2}):(\d{2})/);
+    if (match24) {
+        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
+    }
+    return 0;
+};
+
+const compareDays = (d1, d2) => {
+    if (!d1 || !d2) return false;
+    return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
+           d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+};
+
+const getWorkingIntervalsForDate = (columnDateObj, columnDateStr, schedulesData, consultorioId) => {
+    const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+    const dayName = days[columnDateObj.getDay()];
+
+    const {
+        docPredefined = [],
+        docOpenAgenda = [],
+        docUnavailable = [],
+        resPredefined = [],
+        resOpenAgenda = [],
+        resUnavailable = []
+    } = schedulesData;
+
+    let docIntervals = [];
+    const openDoc = docOpenAgenda.filter(s => s.fecha === columnDateStr && s.active !== false);
+    if (openDoc.length > 0) {
+        docIntervals = openDoc.map(s => ({
+            start: parseTimeToMinutes(s.horaInicio),
+            end: parseTimeToMinutes(s.horaFin)
+        }));
+    } else {
+        const predDoc = docPredefined.filter(s => compareDays(s.dia, dayName) && s.activo !== false && (s.recursoId === "todos" || !consultorioId || s.recursoId === consultorioId));
+        if (predDoc.length > 0) {
+            docIntervals = predDoc.map(s => ({
+                start: parseTimeToMinutes(s.horaInicio),
+                end: parseTimeToMinutes(s.horaFin)
+            }));
+        }
+    }
+
+    let resIntervals = [];
+    const openRes = resOpenAgenda.filter(s => s.fecha === columnDateStr && s.active !== false);
+    if (openRes.length > 0) {
+        resIntervals = openRes.map(s => ({
+            start: parseTimeToMinutes(s.horaInicio),
+            end: parseTimeToMinutes(s.horaFin)
+        }));
+    } else {
+        const predRes = resPredefined.filter(s => compareDays(s.dia, dayName) && s.activo !== false);
+        if (predRes.length > 0) {
+            resIntervals = predRes.map(s => ({
+                start: parseTimeToMinutes(s.horaInicio),
+                end: parseTimeToMinutes(s.horaFin)
+            }));
+        }
+    }
+
+    let rawIntervals = [];
+    const hasDocConfig = docPredefined.length > 0 || docOpenAgenda.length > 0;
+    const hasResConfig = resPredefined.length > 0 || resOpenAgenda.length > 0;
+
+    if (hasDocConfig && hasResConfig) {
+        for (const dInt of docIntervals) {
+            for (const rInt of resIntervals) {
+                const start = Math.max(dInt.start, rInt.start);
+                const end = Math.min(dInt.end, rInt.end);
+                if (start < end) {
+                    rawIntervals.push({ start, end });
+                }
+            }
+        }
+    } else if (hasDocConfig) {
+        rawIntervals = docIntervals;
+    } else if (hasResConfig) {
+        rawIntervals = resIntervals;
+    } else {
+        if (columnDateObj.getDay() === 0) {
+            rawIntervals = [];
+        } else if (columnDateObj.getDay() === 6) {
+            rawIntervals = [{ start: 8 * 60, end: 14 * 60 }];
+        } else {
+            rawIntervals = [{ start: 7 * 60, end: 20 * 60 }];
+        }
+    }
+
+    const unavailables = [
+        ...docUnavailable.filter(u => u.fecha === columnDateStr && u.active !== false),
+        ...resUnavailable.filter(u => u.fecha === columnDateStr && u.active !== false)
+    ].map(u => ({
+        start: parseTimeToMinutes(u.horaInicio),
+        end: parseTimeToMinutes(u.horaFin)
+    }));
+
+    if (unavailables.length === 0) return rawIntervals;
+
+    let finalIntervals = [];
+    for (const interval of rawIntervals) {
+        let currentSegments = [interval];
+        for (const unavail of unavailables) {
+            let nextSegments = [];
+            for (const seg of currentSegments) {
+                if (unavail.end <= seg.start || unavail.start >= seg.end) {
+                    nextSegments.push(seg);
+                } else {
+                    if (unavail.start > seg.start) {
+                        nextSegments.push({ start: seg.start, end: unavail.start });
+                    }
+                    if (unavail.end < seg.end) {
+                        nextSegments.push({ start: unavail.end, end: seg.end });
+                    }
+                }
+            }
+            currentSegments = nextSegments;
+        }
+        finalIntervals.push(...currentSegments);
+    }
+
+    return finalIntervals;
+};
+
+const generateSlotsForDay = (columnDateObj, columnDateStr, schedulesData, consultorioId, durationMinutes) => {
+    const step = durationMinutes && durationMinutes >= 5 ? durationMinutes : 30;
+    const intervals = getWorkingIntervalsForDate(columnDateObj, columnDateStr, schedulesData, consultorioId);
+    
+    const slots = [];
+    for (const interval of intervals) {
+        for (let m = interval.start; m + step <= interval.end; m += step) {
+            const hh = String(Math.floor(m / 60)).padStart(2, '0');
+            const mm = String(m % 60).padStart(2, '0');
+            slots.push(`${hh}:${mm}`);
+        }
+    }
+    return slots;
+};
+
 export default function AppointmentModal({
     isOpen,
     onClose,
@@ -200,6 +350,76 @@ export default function AppointmentModal({
             });
         }
     }, [patientResults]);
+
+    const [schedulesData, setSchedulesData] = useState({
+        docPredefined: [],
+        docOpenAgenda: [],
+        docUnavailable: [],
+        resPredefined: [],
+        resOpenAgenda: [],
+        resUnavailable: []
+    });
+    const [loadingSchedules, setLoadingSchedules] = useState(false);
+
+    const watchedDoctorId = watch("doctorId");
+    const watchedConsultorioId = watch("consultorioId");
+    const watchedDuracion = watch("duracion");
+
+    useEffect(() => {
+        if (!isOpen || !inquilino) return;
+        let isMounted = true;
+        setLoadingSchedules(true);
+
+        const fetchSchedules = async () => {
+            try {
+                const { collection: firestoreCollection, getDocs } = await import('firebase/firestore');
+                const { db } = await import('../../../firebase/firebaseConfig');
+
+                let dp = [], doa = [], du = [];
+                let rp = [], roa = [], ru = [];
+
+                if (watchedDoctorId) {
+                    const [predSnap, openSnap, unavailSnap] = await Promise.all([
+                        getDocs(firestoreCollection(db, "usuarios", watchedDoctorId, "horarios_predefinidos")),
+                        getDocs(firestoreCollection(db, "usuarios", watchedDoctorId, "agenda_abierta")),
+                        getDocs(firestoreCollection(db, "usuarios", watchedDoctorId, "no_disponibles"))
+                    ]);
+                    dp = predSnap.docs.map(d => d.data());
+                    doa = openSnap.docs.map(d => d.data());
+                    du = unavailSnap.docs.map(d => d.data());
+                }
+
+                if (watchedConsultorioId) {
+                    const [resPredSnap, resOpenSnap, resUnavailSnap] = await Promise.all([
+                        getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", watchedConsultorioId, "horarios_predefinidos")),
+                        getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", watchedConsultorioId, "agenda_abierta")),
+                        getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", watchedConsultorioId, "no_disponibles"))
+                    ]);
+                    rp = resPredSnap.docs.map(d => d.data());
+                    roa = resOpenSnap.docs.map(d => d.data());
+                    ru = resUnavailSnap.docs.map(d => d.data());
+                }
+
+                if (isMounted) {
+                    setSchedulesData({
+                        docPredefined: dp,
+                        docOpenAgenda: doa,
+                        docUnavailable: du,
+                        resPredefined: rp,
+                        resOpenAgenda: roa,
+                        resUnavailable: ru
+                    });
+                }
+            } catch (e) {
+                console.error("Error loading schedules for grid:", e);
+            } finally {
+                if (isMounted) setLoadingSchedules(false);
+            }
+        };
+
+        fetchSchedules();
+        return () => { isMounted = false; };
+    }, [isOpen, inquilino, watchedDoctorId, watchedConsultorioId]);
 
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
@@ -732,7 +952,7 @@ export default function AppointmentModal({
                                                 <FiSearch size={14} />
                                             </div>
                                             <input
-                                                value={term}
+                                                value={term || ""}
                                                 onChange={e => { setTerm(e.target.value); if (e.target.value !== selectedPatientName) setValue("pacienteId", ""); }}
                                                 disabled={!hasWritePermission}
                                                 placeholder="BUSCAR POR NOMBRE O CC..."
@@ -844,25 +1064,58 @@ export default function AppointmentModal({
                                         <option value="">ELIJA ESPECIALIDAD...</option>
                                         {/* ✅ FILTRADO POR SUCURSAL */}
                                         {specialties
-                                            .filter(s => !watch("sucursalId") || !s.sucursalId || s.sucursalId === watch("sucursalId"))
-                                            .map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)
+                                            .filter(s => {
+                                                const selectedSuc = watch("sucursalId");
+                                                if (!selectedSuc) return true;
+                                                if (!s.sucursalId && (!s.sucursales || s.sucursales.length === 0)) return true;
+                                                if (s.sucursalId === selectedSuc) return true;
+                                                if (Array.isArray(s.sucursales) && s.sucursales.includes(selectedSuc)) return true;
+                                                return true;
+                                            })
+                                            .map(s => {
+                                                const specId = typeof s === 'string' ? s : (s.id || s.nombre);
+                                                const specName = typeof s === 'string' ? s : (s.nombre || s.id);
+                                                return <option key={specId} value={specId}>{specName}</option>;
+                                            })
                                         }
                                     </select>
                                 </div>
 
                                 <div className="space-y-1.5">
                                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Profesional *</label>
-                                    <select {...register("doctorId")} disabled={!hasWritePermission || doctors.length === 1} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none disabled:bg-slate-100 disabled:cursor-not-allowed">
+                                    <select {...register("doctorId")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none disabled:bg-slate-100 disabled:cursor-not-allowed">
                                         <option value="">ELIJA DOCTOR...</option>
-                                        {/* ✅ FILTRADO POR ESPECIALIDAD */}
+                                        {/* ✅ FILTRADO POR ESPECIALIDAD Y SUCURSAL */}
                                         {doctors
                                             .filter(d => {
+                                                const selectedSuc = watch("sucursalId");
+                                                if (selectedSuc && Array.isArray(d.sucursales) && d.sucursales.length > 0) {
+                                                    const matchBranch = d.sucursales.some(suc => 
+                                                        suc === selectedSuc || 
+                                                        branches.find(b => b.id === selectedSuc)?.nombre?.toLowerCase() === String(suc).toLowerCase()
+                                                    );
+                                                    if (!matchBranch) return false;
+                                                }
+
                                                 const esp = watch("especialidadId");
                                                 if (!esp) return true;
-                                                return d.especialidades && Array.isArray(d.especialidades) && d.especialidades.includes(esp);
+
+                                                const docEspStr = (d.especialidad || "").toLowerCase();
+                                                const docEspArr = Array.isArray(d.especialidades) ? d.especialidades.map(e => String(e).toLowerCase()) : [];
+                                                const specObj = specialties.find(s => (s.id || s.nombre) === esp);
+                                                const targetSpecName = (specObj?.nombre || esp || "").toLowerCase();
+                                                const targetSpecId = (specObj?.id || esp || "").toLowerCase();
+
+                                                if (docEspArr.length > 0) {
+                                                    return docEspArr.some(e => e.includes(targetSpecName) || e.includes(targetSpecId) || targetSpecName.includes(e));
+                                                }
+                                                if (docEspStr) {
+                                                    return docEspStr.includes(targetSpecName) || docEspStr.includes(targetSpecId);
+                                                }
+                                                return true;
                                             })
                                             .map(d => {
-                                                const fullName = `${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto || 'Doctor';
+                                                const fullName = `${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto || d.full_name || 'Doctor';
                                                 return <option key={d.id} value={d.id}>{fullName}</option>;
                                             })
                                         }
@@ -1027,15 +1280,29 @@ export default function AppointmentModal({
                                         </div>
                                         <div className="p-2 space-y-1.5 flex flex-col items-center">
                                         {(() => {
-                                                // Generar slots de 07:00 a 21:30 cada 30 minutos
-                                                const slots = [];
-                                                for (let h = 7; h <= 21; h++) {
-                                                    for (let m = 0; m < 60; m += 30) {
-                                                        if (h === 21 && m > 30) break;
-                                                        const hh = String(h).padStart(2, '0');
-                                                        const mm = String(m).padStart(2, '0');
-                                                        slots.push(`${hh}:${mm}`);
-                                                    }
+                                                if (loadingSchedules) {
+                                                    return (
+                                                        <div className="py-8 flex flex-col items-center justify-center text-slate-300">
+                                                            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-1" />
+                                                            <span className="text-[8px] font-black uppercase tracking-wider">Cargando</span>
+                                                        </div>
+                                                    );
+                                                }
+
+                                                const slots = generateSlotsForDay(
+                                                    columnDateObj,
+                                                    columnDateStr,
+                                                    schedulesData,
+                                                    watchedConsultorioId,
+                                                    watchedDuracion
+                                                );
+
+                                                if (slots.length === 0) {
+                                                    return (
+                                                        <div className="py-8 text-center px-1">
+                                                            <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest block leading-tight">Sin disponibilidad</span>
+                                                        </div>
+                                                    );
                                                 }
 
                                                 // Formatear a AM/PM para mostrar
@@ -1057,7 +1324,7 @@ export default function AppointmentModal({
                                                                 setValue("fecha", columnDateStr);
                                                             }}
                                                             disabled={!hasWritePermission}
-                                                            className={`w-full max-w-[80px] py-1.5 text-[9px] font-black rounded-lg transition-all border ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200 active:scale-95' : 'bg-white text-slate-400 border-slate-100 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 shadow-sm'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                                                            className={`w-full max-w-[80px] py-1.5 text-[9px] font-black rounded-lg transition-all border ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200 active:scale-95' : 'bg-white text-slate-500 border-slate-100 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 shadow-sm'} disabled:opacity-40 disabled:cursor-not-allowed`}
                                                         >
                                                             {fmt12(t)}
                                                         </button>

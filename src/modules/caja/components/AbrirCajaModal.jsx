@@ -1,13 +1,5 @@
 import React, { useState } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import {
-  collection,
-  addDoc,
-  getDocs,
-  query,
-  where,
-  serverTimestamp,
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiUser, FiX, FiCheck, FiLayout, FiBriefcase } from "react-icons/fi";
 
 const fmtPure = (n) => new Intl.NumberFormat("es-CO").format(n);
@@ -41,16 +33,14 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
 
     try {
       // 1. Validar si ya existe una caja abierta para este usuario
-      const q = query(
-        collection(db, "cajas"),
-        where("inquilino", "==", inquilino),
-        where("usuarioId", "==", form.userId),
-        where("estado", "==", "abierta")
-      );
+      const { data: snap } = await supabase
+        .from("cajas")
+        .select("id")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+        .eq("usuarioId", form.userId)
+        .eq("estado", "abierta");
       
-      const snap = await getDocs(q);
-      
-      if (!snap.empty) {
+      if (snap && snap.length > 0) {
         setError("Ya tienes una caja abierta. Debes cerrar la anterior antes de abrir una nueva.");
         setSaving(false);
         return;
@@ -58,7 +48,8 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
 
       const base = parseFloat(String(form.ajustarBase).replace(/[^0-9]/g, "")) || 0;
 
-      await addDoc(collection(db, "cajas"), {
+      await supabase.from("cajas").insert([{
+        tenant_id: inquilino,
         inquilino,
         nombre: form.nombreCaja.trim(),
         tipo: "efectivo",
@@ -70,9 +61,10 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
         observacion: form.observacion.trim(),
         usuarioId: form.userId,
         usuarioNombre: form.userName,
-        fechaApertura: serverTimestamp(),
+        fechaApertura: new Date().toISOString(),
+        created_at: new Date().toISOString(),
         movimientos: [],
-      });
+      }]);
       onSuccess?.();
     } catch (err) {
       console.error("Error abriendo caja:", err);

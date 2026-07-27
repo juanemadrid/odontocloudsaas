@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiX, FiCheck, FiTrash2, FiPlus } from 'react-icons/fi';
-import { collection, doc, setDoc, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { getPlansByPatient } from '../../../services/planService';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
@@ -250,43 +249,33 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
 
                 if (inquilino) {
                     try {
-                        // Primero intenta desde 'profesionales' (sincronizado por EmpresaUsuarios)
-                        const profQ = query(
-                            collection(db, 'profesionales'),
-                            where('inquilino', '==', inquilino),
-                            where('activo', '==', true)
-                        );
-                        const profSnap = await getDocs(profQ);
-                        if (!profSnap.empty) {
-                            loadedDoctors = profSnap.docs.map(d => {
-                                const data = d.data();
-                                return {
-                                    id: d.id,
-                                    nombre: data.nombreCompleto || data.nombre || data.displayName || '',
-                                    nombreCompleto: data.nombreCompleto || data.nombre || data.displayName || '',
-                                    email: data.correo || data.email || '',
-                                };
-                            });
+                        const { data: profData } = await supabase
+                            .from('profesionales')
+                            .select('*')
+                            .eq('tenant_id', inquilino)
+                            .eq('activo', true);
+                        if (profData && profData.length > 0) {
+                            loadedDoctors = profData.map(d => ({
+                                id: d.id,
+                                nombre: d.nombre_completo || d.nombre || '',
+                                nombreCompleto: d.nombre_completo || d.nombre || '',
+                                email: d.correo || d.email || '',
+                            }));
                         } else {
-                            // Fallback: buscar en 'usuarios' con esDoctor=true
-                            const usrQ = query(
-                                collection(db, 'usuarios'),
-                                where('inquilino', '==', inquilino),
-                                where('esDoctor', '==', true)
-                            );
-                            const usrSnap = await getDocs(usrQ);
-                            loadedDoctors = usrSnap.docs.map(d => {
-                                const data = d.data();
-                                return {
-                                    id: d.id,
-                                    nombre: data.nombreCompleto || `${data.nombre || ''} ${data.apellido || ''}`.trim() || data.displayName || data.email || d.id,
-                                    nombreCompleto: data.nombreCompleto || `${data.nombre || ''} ${data.apellido || ''}`.trim() || data.displayName || '',
-                                    email: data.correo || data.email || '',
-                                };
-                            });
+                            const { data: usrData } = await supabase
+                                .from('usuarios')
+                                .select('*')
+                                .eq('tenant_id', inquilino)
+                                .eq('es_doctor', true);
+                            loadedDoctors = (usrData || []).map(d => ({
+                                id: d.id,
+                                nombre: d.nombre_completo || `${d.nombre || ''} ${d.apellido || ''}`.trim() || d.email || d.id,
+                                nombreCompleto: d.nombre_completo || `${d.nombre || ''} ${d.apellido || ''}`.trim() || '',
+                                email: d.correo || d.email || '',
+                            }));
                         }
                     } catch (e) {
-                        console.warn('Error cargando doctores desde Firestore:', e);
+                        console.warn('Error cargando doctores desde Supabase:', e);
                     }
                 }
 
@@ -309,7 +298,7 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                     const myDoctorEntry = byUid || byEmail;
 
                     if (myDoctorEntry) {
-                        // Encontrado en la lista → seleccionarlo por su ID real de Firestore
+                        // Encontrado en la lista → seleccionarlo por su ID real
                         setValue('doctorId', myDoctorEntry.id);
                     } else {
                         // No está en la lista → inyectarlo y seleccionarlo
@@ -328,13 +317,12 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                 // Cargar medicamentos registrados de la clínica
                 try {
                     if (userProfile?.inquilino) {
-                        const invQ = query(
-                            collection(db, "medicamentos"),
-                            where("inquilino", "==", userProfile.inquilino)
-                        );
-                        const invSnap = await getDocs(invQ);
-                        const invList = invSnap.docs
-                            .map(d => d.data().nombre || d.data().name || d.data().principio_activo)
+                        const { data: invData } = await supabase
+                            .from("medicamentos")
+                            .select("nombre, name, principio_activo")
+                            .eq("tenant_id", userProfile.inquilino);
+                        const invList = (invData || [])
+                            .map(d => d.nombre || d.name || d.principio_activo)
                             .filter(Boolean);
                         setInventarioMeds(invList);
                     }
@@ -537,6 +525,7 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
 
             const evolutionData = {
                 type: 'evolution',
+                paciente_id: patient.id,
                 patientId: patient.id,
                 patientName: patient.nombreCompleto || patient.nombre || 'Paciente',
                 profesional: docName,
@@ -544,19 +533,29 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                 treatment: treatmentName,
                 description: data.comentario, 
                 ...data,
-                plantillaItems: plantillaDetails, // Attach the new rich checklist data
+                plantillaItems: plantillaDetails,
                 date: finalDate, 
+                tenant_id: userProfile?.inquilino || userProfile?.tenantId || "",
                 inquilino: userProfile?.inquilino || userProfile?.tenantId || "",
-                updatedAt: serverTimestamp(),
+                updated_at: new Date().toISOString(),
                 registeredBy: userProfile?.uid || "",
             };
 
-            const targetId = isEditing ? initialData.id : doc(collection(db, "clinical_evolutions")).id;
-            
-            await setDoc(doc(db, "clinical_evolutions", targetId), {
-                ...evolutionData,
-                ...(isEditing ? {} : { createdAt: serverTimestamp() })
-            }, { merge: true });
+            if (isEditing) {
+                const { error: updateError } = await supabase
+                    .from("evoluciones")
+                    .update(evolutionData)
+                    .eq("id", initialData.id);
+                if (updateError) throw updateError;
+            } else {
+                const { error: insertError } = await supabase
+                    .from("evoluciones")
+                    .insert([{
+                        ...evolutionData,
+                        created_at: new Date().toISOString()
+                    }]);
+                if (insertError) throw insertError;
+            }
 
             toast.success(isEditing ? "Evolución actualizada" : "Evolución registrada");
             onClose();

@@ -4,11 +4,7 @@ import {
     FiPlus, FiSave, FiAlertCircle, FiCheckCircle, FiX 
 } from "react-icons/fi";
 import { useNavigate, useParams } from "react-router-dom";
-import { db } from "../../../firebase/firebaseConfig";
-import { 
-    collection, addDoc, doc, updateDoc, getDoc, getDocs, 
-    query, where, serverTimestamp, increment, Timestamp 
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 
@@ -106,40 +102,45 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         setLoading(true);
         try {
             // 1. Professionals
-            const pSnap = await getDocs(query(collection(db, "profesionales"), where("inquilino", "==", inquilino)));
-            setProfesionales(pSnap.docs.map(d => ({ 
+            const { data: profs } = await supabase
+                .from("profesionales")
+                .select("*")
+                .eq("tenant_id", inquilino);
+            setProfesionales((profs || []).map(d => ({ 
                 id: d.id, 
-                nombre: d.data().nombreCompleto || d.data().nombre 
+                nombre: d.nombre_completo || d.nombreCompleto || d.nombre 
             })));
 
             // 2. Patients (Basic list for select)
-            const pacSnap = await getDocs(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)));
-            setPacientes(pacSnap.docs.map(d => ({ 
+            const { data: pacs } = await supabase
+                .from("pacientes")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setPacientes((pacs || []).map(d => ({ 
                 id: d.id, 
-                nombre: d.data().nombreCompleto || `${d.data().nombres || ""} ${d.data().apellidos || ""}`.trim(),
-                cedula: d.data().nroDocumento || d.data().cedula || ""
+                nombre: d.nombreCompleto || `${d.nombres || ""} ${d.apellidos || ""}`.trim(),
+                cedula: d.nroDocumento || d.cedula || ""
             })));
 
             // 3. Active Caja
-            const cSnap = await getDocs(query(
-                collection(db, "cajas"), 
-                where("inquilino", "==", inquilino),
-                where("estado", "==", "abierta"),
-                where("usuarioId", "==", userProfile?.uid)
-            ));
-            if (!cSnap.empty) {
-                setActiveCaja({ id: cSnap.docs[0].id, ...cSnap.docs[0].data() });
+            const { data: cajas } = await supabase
+                .from("cajas")
+                .select("*")
+                .eq("tenant_id", inquilino)
+                .eq("estado", "abierta")
+                .eq("usuario_id", userProfile?.uid);
+            if (cajas && cajas.length > 0) {
+                setActiveCaja(cajas[0]);
             }
 
             // 4. Dynamic payment methods
-            const qMetodos = query(
-                collection(db, "metodos_pago"),
-                where("inquilino", "==", inquilino),
-                where("activo", "==", true)
-            );
-            const snapMetodos = await getDocs(qMetodos);
-            if (!snapMetodos.empty) {
-                const metodosList = snapMetodos.docs.map(d => d.data().nombre);
+            const { data: metodos } = await supabase
+                .from("metodos_pago")
+                .select("nombre")
+                .eq("tenant_id", inquilino)
+                .eq("activo", true);
+            if (metodos && metodos.length > 0) {
+                const metodosList = metodos.map(d => d.nombre);
                 setPaymentMethods(metodosList);
                 setMedioPago(metodosList[0] || "Efectivo");
             }
@@ -242,30 +243,36 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         setModalError("");
         try {
             const name = `${newTercero.nombre.trim()} ${newTercero.apellidos.trim()}`;
-            const docRef = await addDoc(collection(db, "pacientes"), {
-                inquilino,
-                nombres: newTercero.nombre.trim(),
-                apellidos: newTercero.apellidos.trim(),
-                nombreCompleto: name,
-                tipoDocumento: newTercero.tipoDocumento,
-                nroDocumento: newTercero.nroDocumento.trim(),
-                razonSocial: newTercero.razonSocial.trim(),
-                celular: newTercero.telefono.trim(),
-                direccion: newTercero.direccion.trim(),
-                email: newTercero.email.trim(),
-                pais: newTercero.pais,
-                ciudad: newTercero.ciudad,
-                fechaCreacion: serverTimestamp()
-            });
+            const { data: createdPatient, error: pacErr } = await supabase
+                .from("pacientes")
+                .insert([{
+                    tenant_id: inquilino,
+                    inquilino,
+                    nombres: newTercero.nombre.trim(),
+                    apellidos: newTercero.apellidos.trim(),
+                    nombreCompleto: name,
+                    tipoDocumento: newTercero.tipoDocumento,
+                    nroDocumento: newTercero.nroDocumento.trim(),
+                    razonSocial: newTercero.razonSocial.trim(),
+                    celular: newTercero.telefono.trim(),
+                    direccion: newTercero.direccion.trim(),
+                    email: newTercero.email.trim(),
+                    pais: newTercero.pais,
+                    ciudad: newTercero.ciudad,
+                    created_at: new Date().toISOString()
+                }])
+                .select()
+                .single();
+            if (pacErr) throw pacErr;
 
-            const createdPatient = {
-                id: docRef.id,
+            const selectedPatientObj = {
+                id: createdPatient.id,
                 nombre: name,
                 cedula: newTercero.nroDocumento.trim()
             };
 
             // Select newly created patient
-            setPaciente(createdPatient);
+            setPaciente(selectedPatientObj);
 
             // Reset modal form
             setNewTercero({
@@ -303,36 +310,43 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
 
         try {
             // Fetch and increment consecutive number
-            const qCons = query(collection(db, "consecutivos"), where("inquilino", "==", inquilino));
-            const snapCons = await getDocs(qCons);
+            const { data: consDataList } = await supabase
+                .from("consecutivos")
+                .select("*")
+                .eq("tenant_id", inquilino);
+
             let finalConsecutivo = "";
             let consDocId = null;
             let nextCount = 1;
 
-            if (!snapCons.empty) {
-                const consDoc = snapCons.docs[0];
+            if (consDataList && consDataList.length > 0) {
+                const consDoc = consDataList[0];
                 consDocId = consDoc.id;
-                const consData = consDoc.data();
-                // Parse as number regardless of whether it was stored as string or number
-                const currentCount = parseInt(String(consData.contReciboCaja || 1), 10) || 1;
+                const currentCount = parseInt(String(consDoc.contReciboCaja || consDoc.cont_recibo_caja || 1), 10) || 1;
                 nextCount = currentCount + 1;
                 finalConsecutivo = String(currentCount).padStart(2, '0');
             } else {
-                const newConsDoc = await addDoc(collection(db, "consecutivos"), {
-                    inquilino,
-                    nombre: "Consecutivo Principal",
-                    contReciboCaja: 2,
-                    creado: serverTimestamp()
-                });
-                consDocId = newConsDoc.id;
+                const { data: newConsDoc } = await supabase
+                    .from("consecutivos")
+                    .insert([{
+                        tenant_id: inquilino,
+                        inquilino,
+                        nombre: "Consecutivo Principal",
+                        cont_recibo_caja: 2,
+                        created_at: new Date().toISOString()
+                    }])
+                    .select()
+                    .single();
+                if (newConsDoc) consDocId = newConsDoc.id;
                 nextCount = 2;
                 finalConsecutivo = "01";
             }
 
             const reciboData = {
+                tenant_id: inquilino,
                 inquilino,
                 nroConsecutivo: finalConsecutivo,
-                fecha: Timestamp.fromDate(new Date(fecha + "T00:00:00")),
+                fecha: new Date(fecha + "T00:00:00").toISOString(),
                 profesionalId: profesional.id || null,
                 profesionalNombre: profesional.nombre || null,
                 pacienteId: paciente.id,
@@ -346,38 +360,46 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 observaciones,
                 cajaId: activeCaja ? activeCaja.id : null,
                 creadoPor: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
-                createdAt: serverTimestamp()
+                created_at: new Date().toISOString()
             };
 
-            const docRef = await addDoc(collection(db, "recibos_caja"), reciboData);
+            const { data: newRecibo, error: recErr } = await supabase
+                .from("recibos_caja")
+                .insert([reciboData])
+                .select()
+                .single();
+            if (recErr) throw recErr;
 
-            // Always write nextCount as a plain integer (never use increment() — fails on string fields)
             if (consDocId) {
-                await updateDoc(doc(db, "consecutivos", consDocId), {
-                    contReciboCaja: nextCount
-                });
+                await supabase
+                    .from("consecutivos")
+                    .update({ cont_recibo_caja: nextCount, contReciboCaja: nextCount })
+                    .eq("id", consDocId);
             }
 
             if (activeCaja) {
                 const movData = {
-                    inquilino,
+                    tenant_id: inquilino,
                     tipo: "ingreso",
-                    concepto: "Recibo de Caja #" + docRef.id.slice(0,6).toUpperCase(),
+                    concepto: "Recibo de Caja #" + newRecibo.id.slice(0,6).toUpperCase(),
                     monto: totals.total,
-                    metodoPago: medioPago,
+                    metodo_pago: medioPago,
                     descripcion: `Cobro a ${paciente.nombre}. Conceptos: ${conceptos.map(c => c.concepto).join(", ")}`,
-                    pacienteId: paciente.id,
-                    pacienteNombre: paciente.nombre,
-                    reciboId: docRef.id,
-                    usuarioId: userProfile?.uid,
-                    usuarioNombre: userProfile?.nombre || userProfile?.email,
-                    fecha: serverTimestamp(),
+                    paciente_id: paciente.id,
+                    paciente_nombre: paciente.nombre,
+                    recibo_id: newRecibo.id,
+                    usuario_id: userProfile?.uid,
+                    caja_id: activeCaja.id,
+                    created_at: new Date().toISOString()
                 };
-                await addDoc(collection(db, "cajas", activeCaja.id, "movimientos"), movData);
-                await updateDoc(doc(db, "cajas", activeCaja.id), {
-                    saldoActual: increment(totals.total),
-                    totalIngresos: increment(totals.total)
-                });
+                await supabase.from("movimientos_caja").insert([movData]);
+                await supabase
+                    .from("cajas")
+                    .update({
+                        saldo_actual: (activeCaja.saldo_actual || activeCaja.saldoActual || 0) + totals.total,
+                        total_ingresos: (activeCaja.total_ingresos || activeCaja.totalIngresos || 0) + totals.total
+                    })
+                    .eq("id", activeCaja.id);
             }
 
             setSuccess(true);

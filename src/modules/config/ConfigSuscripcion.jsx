@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useToast } from "../../context/ToastContext";
 import { getPlans, getPaymentMethods, getGlobalConfig } from "../../services/adminService";
 import { FiPackage, FiZap, FiClock, FiStar, FiCreditCard, FiSmartphone, FiArrowRight, FiCheck } from "react-icons/fi";
@@ -12,9 +11,6 @@ export default function ConfigSuscripcion() {
     const { userProfile } = useAuth();
     const toast = useToast();
     const tenant = userProfile?.tenant || {};
-    const plan = tenant?.plan || {};
-    const isSuperAdmin = userProfile?.rol?.trim().toLowerCase() === 'superadmin';
-
     const [plans, setPlans] = useState([]);
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [globalConfig, setGlobalConfig] = useState({ adminPhone: "573124119846" });
@@ -22,6 +18,20 @@ export default function ConfigSuscripcion() {
     const [requesting, setRequesting] = useState(null);
     const [selectedDuration, setSelectedDuration] = useState("monthly");
     const [loading, setLoading] = useState(true);
+
+    const tenantPlanId = (tenant?.planId || tenant?.plan?.id || tenant?.plan || 'free').toString().toLowerCase();
+
+    // Encontrar plan activo dentro del catálogo de planes cargados
+    const activeCatalogPlan = (plans || []).find(p => p.id === tenantPlanId) || tenant.plan || {};
+    const plan = {
+        name: activeCatalogPlan.name || (tenantPlanId === 'pro' ? 'Profesional' : tenantPlanId === 'enterprise' ? 'IPS Enterprise' : tenantPlanId === 'basic' ? 'Básico' : 'Gratuito (IPS / Clínica)'),
+        monthlyPrice: activeCatalogPlan.monthlyPrice ?? activeCatalogPlan.price ?? 0,
+        yearlyPrice: activeCatalogPlan.yearlyPrice ?? 0,
+        maxUsers: activeCatalogPlan.maxUsers ?? (tenantPlanId === 'pro' ? 25 : tenantPlanId === 'enterprise' ? 100 : 10)
+    };
+
+    const isSuperAdmin = userProfile?.rol?.trim().toLowerCase() === 'superadmin';
+
 
     useEffect(() => {
         const load = async () => {
@@ -53,20 +63,20 @@ export default function ConfigSuscripcion() {
         if (!window.confirm(`¿Solicitar cambio al plan "${newPlan.name}" (${durationText})?`)) return;
 
         setRequesting(newPlan.id);
-        const requestData = {
-            inquilino: userProfile.inquilino,
-            tenantName: tenant.name,
-            currentPlanId: tenant.planId || "custom",
-            requestedPlanId: newPlan.id,
-            requestedPlanName: newPlan.name,
-            planDuration: selectedDuration,
-            status: "pending",
-            paymentStatus: "awaiting_validation",
-            tenantPhone: tenant.telCelular || "",
-            createdAt: serverTimestamp()
-        };
         try {
-            await addDoc(collection(db, "subscription_requests"), requestData);
+            await supabase.from("subscription_requests").insert([{
+                tenant_id: userProfile.inquilino,
+                inquilino: userProfile.inquilino,
+                tenant_name: tenant.name,
+                current_plan_id: tenant.planId || "custom",
+                requested_plan_id: newPlan.id,
+                requested_plan_name: newPlan.name,
+                plan_duration: selectedDuration,
+                status: "pending",
+                payment_status: "awaiting_validation",
+                tenant_phone: tenant.telCelular || "",
+                created_at: new Date().toISOString()
+            }]);
             if (toast?.success) toast.success("Solicitud enviada. Redirigiendo a WhatsApp para adjuntar comprobante...");
 
             const phone = globalConfig.adminPhone || "573124119846";
@@ -311,8 +321,9 @@ export default function ConfigSuscripcion() {
                     {/* Plans Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {plans.map(p => {
-                            const isSelected = !isSuperAdmin && p.id === plan.id;
+                            const isSelected = !isSuperAdmin && (p.id === tenantPlanId || p.id === activeCatalogPlan?.id);
                             return (
+
                                 <div key={p.id} className={`bg-white rounded-xl border p-4 space-y-4 flex flex-col justify-between shadow-sm ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200'}`}>
                                     <div className="space-y-2">
                                         <div className="flex justify-between items-center">

@@ -3,16 +3,19 @@ import supabase from "../lib/supabaseClient";
 
 const s = (n) => Number(n || 0);
 
-export const getPatientFinancials = async (patientId) => {
+export const getPatientFinancials = async (patientId, tenantId) => {
     if (!patientId) return { facturas: [], pagos: [], totals: {} };
 
     try {
-        const [resF, resP, resPlans, resND] = await Promise.all([
-            supabase.from("facturas").select("*").eq("paciente_id", patientId),
-            supabase.from("pagos").select("*").eq("paciente_id", patientId),
-            supabase.from("treatment_plans").select("*").eq("paciente_id", patientId),
-            supabase.from("notas_debito").select("*").eq("paciente_id", patientId)
+        const [resF, resP, resPlans] = await Promise.all([
+            supabase.from("facturas").select("*").eq("paciente_id", patientId).eq("tenant_id", tenantId),
+            supabase.from("pagos").select("*").eq("paciente_id", patientId).eq("tenant_id", tenantId),
+            supabase.from("treatment_plans").select("*").eq("paciente_id", patientId).eq("tenant_id", tenantId)
         ]);
+
+        if (resF.error || resP.error || resPlans.error) {
+            throw resF.error || resP.error || resPlans.error;
+        }
 
         const facturas = (resF.data || []).map(f => ({
             id: f.id,
@@ -37,7 +40,24 @@ export const getPatientFinancials = async (patientId) => {
             pagado: 0
         }));
 
-        const totalDebito = (resND.data || [])
+        const facturaIds = facturas.map(f => f.id).filter(Boolean);
+        let notasDebito = [];
+
+        if (facturaIds.length > 0) {
+            const resND = await supabase
+                .from("notas_debito")
+                .select("*")
+                .in("factura_id", facturaIds)
+                .eq("tenant_id", tenantId);
+
+            if (resND.error) {
+                console.warn("Error loading notas_debito:", resND.error);
+            } else {
+                notasDebito = resND.data || [];
+            }
+        }
+
+        const totalDebito = notasDebito
             .filter(n => n.estado !== "Anulado")
             .reduce((acc, n) => acc + s(n.monto), 0);
 

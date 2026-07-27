@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { FiDollarSign, FiCalendar, FiCreditCard, FiTrash2, FiActivity, FiArrowRight, FiPrinter, FiX } from 'react-icons/fi';
 import { formatCurrency } from '../../../utils/formatters';
@@ -22,12 +21,15 @@ export default function HistoricoPagosTab({ patientId }) {
 
     const handlePrint = async (pago) => {
         try {
-            const patientSnap = await getDoc(doc(db, "pacientes", patientId));
-            if (!patientSnap.exists()) {
+            const { data: patientData } = await supabase
+                .from("pacientes")
+                .select("*")
+                .eq("id", patientId)
+                .single();
+            if (!patientData) {
                 toast.error("No se pudo cargar la información del paciente");
                 return;
             }
-            const patientData = { id: patientSnap.id, ...patientSnap.data() };
 
             const clinic = userProfile?.tenant || {
                 nombre: userProfile?.tenantNombre || userProfile?.clinica || "Clínica",
@@ -44,32 +46,28 @@ export default function HistoricoPagosTab({ patientId }) {
     useEffect(() => {
         if (!patientId) return;
         
-        const q = query(
-            collection(db, "pagos"),
-            where("patientId", "==", patientId)
-        );
+        const loadPagos = async () => {
+            try {
+                const { data: payData } = await supabase
+                    .from("pagos")
+                    .select("*")
+                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
+                    .order("created_at", { ascending: false });
+                let data = (payData || []).map(d => ({
+                    id: d.id,
+                    ...d,
+                    fecha: d.created_at ? new Date(d.created_at) : (d.fecha ? new Date(d.fecha) : new Date())
+                }));
+                data = data.filter(p => p.concepto !== "SALDO A FAVOR");
+                setPagos(data);
+            } catch (err) {
+                console.error("Error fetching payments:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            let data = snapshot.docs.map(d => ({
-                id: d.id,
-                ...d.data(),
-                fecha: d.data().fecha?.toDate() || new Date()
-            }));
-            
-            // Sort descending client-side to avoid Firestore composite index requirement
-            data.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
-            
-            // Filter out 'SALDO A FAVOR' concept payments, but show voided ones with indicator
-            data = data.filter(p => p.concepto !== "SALDO A FAVOR");
-
-            setPagos(data);
-            setLoading(false);
-        }, (error) => {
-            console.error("Error fetching payments:", error);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
+        loadPagos();
     }, [patientId]);
 
     const handleDelete = (pago) => {
@@ -84,13 +82,16 @@ export default function HistoricoPagosTab({ patientId }) {
         }
         setVoiding(true);
         try {
-            await updateDoc(doc(db, "pagos", voidModal.pago.id), {
-                estado: "Anulado",
-                motivoAnulacion: voidReason.trim(),
-                anuladoPor: userProfile?.nombreCompleto || userProfile?.nombre || "Sistema",
-                fechaAnulacion: new Date().toISOString(),
-                updatedAt: serverTimestamp()
-            });
+            await supabase
+                .from("pagos")
+                .update({
+                    estado: "Anulado",
+                    motivoAnulacion: voidReason.trim(),
+                    anuladoPor: userProfile?.nombreCompleto || userProfile?.nombre || "Sistema",
+                    fechaAnulacion: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", voidModal.pago.id);
 
             // Audit log
             await logAction(patientId, "VOID_PAYMENT", {

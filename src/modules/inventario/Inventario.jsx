@@ -1,16 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { db } from "../../firebase/firebaseConfig";
-import {
-  collection,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  query,
-  where,
-  getDocs
-} from "firebase/firestore";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { subscribeToCategories } from "../../services/resourceService";
 import { toast } from "sonner";
@@ -85,22 +74,24 @@ export default function Inventario() {
     if (!inquilino) return;
     const loadAlmacenes = async () => {
       try {
-        const snap = await getDocs(query(collection(db, "almacenes"), where("inquilino", "==", inquilino)));
-        let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const { data: list } = await supabase
+          .from("almacenes")
+          .select("*")
+          .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        let almList = list || [];
 
         // Auto-populate default warehouses if empty
-        if (list.length === 0) {
-          const default1 = { nombre: "ALMACÉN PRINCIPAL", inquilino, creado: new Date() };
-          const default2 = { nombre: "BODEGA SECUNDARIA", inquilino, creado: new Date() };
-          const docRef1 = await addDoc(collection(db, "almacenes"), default1);
-          const docRef2 = await addDoc(collection(db, "almacenes"), default2);
-          list = [
-            { id: docRef1.id, ...default1 },
-            { id: docRef2.id, ...default2 }
-          ];
+        if (almList.length === 0) {
+          const default1 = { nombre: "ALMACÉN PRINCIPAL", tenant_id: inquilino, inquilino, created_at: new Date().toISOString() };
+          const default2 = { nombre: "BODEGA SECUNDARIA", tenant_id: inquilino, inquilino, created_at: new Date().toISOString() };
+          const { data: inserted } = await supabase
+            .from("almacenes")
+            .insert([default1, default2])
+            .select();
+          almList = inserted || [];
         }
-        setAlmacenes(list.sort((a, b) => a.nombre.localeCompare(b.nombre)));
-        if (list.length > 0) setTempAlmacenId(list[0].id);
+        setAlmacenes(almList.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
+        if (almList.length > 0) setTempAlmacenId(almList[0].id);
       } catch (err) {
         console.error("Error loading warehouses:", err);
       }
@@ -111,26 +102,32 @@ export default function Inventario() {
   // Load items
   useEffect(() => {
     if (!inquilino) return;
-    const q = query(
-      collection(db, "inventario"), 
-      where("inquilino", "==", inquilino)
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-      setItems(data);
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    const loadItems = async () => {
+      try {
+        const { data } = await supabase
+          .from("inventario")
+          .select("*")
+          .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+          .order("nombre", { ascending: true });
+        setItems(data || []);
+        setLoading(false);
+      } catch (err) {
+        console.error("Error loading inventory:", err);
+      }
+    };
+    loadItems();
   }, [inquilino]);
 
   const handleStockChange = async (item, delta) => {
     const newQty = Math.max(0, (item.cantidad || 0) + delta);
     try {
-      await updateDoc(doc(db, "inventario", item.id), { 
-        cantidad: newQty,
-        actualizado: new Date()
-      });
+      await supabase
+        .from("inventario")
+        .update({
+          cantidad: newQty,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", item.id);
     } catch (e) {
       console.error("Error setting stock delta:", e);
     }
@@ -139,18 +136,15 @@ export default function Inventario() {
   const handleSaveProduct = async (data) => {
     try {
       if (activeFormItem) {
-        await updateDoc(doc(db, "inventario", activeFormItem.id), {
-          ...data,
-          actualizado: new Date()
-        });
+        await supabase
+          .from("inventario")
+          .update({ ...data, updated_at: new Date().toISOString() })
+          .eq("id", activeFormItem.id);
         toast.success("Producto modificado correctamente.");
       } else {
-        await addDoc(collection(db, "inventario"), {
-          ...data,
-          inquilino,
-          creado: new Date(),
-          actualizado: new Date()
-        });
+        await supabase
+          .from("inventario")
+          .insert([{ ...data, tenant_id: inquilino, inquilino, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
         toast.success("Producto creado correctamente.");
       }
       setShowForm(false);
@@ -164,7 +158,7 @@ export default function Inventario() {
   const handleDeleteProduct = async (id) => {
     if (!window.confirm("¿Está seguro de eliminar este producto?")) return;
     try {
-      await deleteDoc(doc(db, "inventario", id));
+      await supabase.from("inventario").delete().eq("id", id);
       toast.success("Producto eliminado.");
     } catch (e) {
       console.error("Error deleting product:", e);

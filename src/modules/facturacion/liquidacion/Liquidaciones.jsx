@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import LiquidacionPendientes from "./LiquidacionPendientes";
 import LiquidacionDetalle from "./LiquidacionDetalle";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { FiFileText, FiDollarSign, FiClock, FiCheckCircle } from "react-icons/fi";
 
@@ -44,14 +43,12 @@ export default function Liquidaciones() {
         if (!inquilino) return;
         setLoadingHistory(true);
         try {
-            const q = query(
-                collection(db, "liquidaciones"),
-                where("inquilino", "==", inquilino)
-            );
-            const snap = await getDocs(q);
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            setHistory(list);
+            const { data: list } = await supabase
+                .from("liquidaciones")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .order("created_at", { ascending: false });
+            setHistory(list || []);
         } catch (e) {
             console.error("Error loading liquidations history:", e);
         } finally {

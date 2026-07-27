@@ -4,11 +4,7 @@ import {
     FiCheckCircle, FiUser, FiInfo, FiLayers, FiDollarSign 
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import { db } from "../../../firebase/firebaseConfig";
-import { 
-    collection, addDoc, getDocs, query, where, 
-    doc, getDoc, updateDoc, writeBatch, serverTimestamp, Timestamp 
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 
 const fmt = (n) =>
@@ -59,23 +55,27 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
         setLoading(true);
         try {
             // 1. Load Doctor commission pct from DB
-            const docRef = doc(db, "profesionales", doctor.id);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const pct = Number(docSnap.data().comisionGeneral || docSnap.data().comisionEspecialista || 50);
+            const { data: docSnap } = await supabase
+                .from("profesionales")
+                .select("*")
+                .eq("id", doctor.id)
+                .maybeSingle();
+
+            if (docSnap) {
+                const pct = Number(docSnap.comisionGeneral || docSnap.comisionEspecialista || 50);
                 setComisionPct(pct);
             }
 
             // 2. Load all treatment plans for this tenant to cross-reference total costs
-            const plansSnap = await getDocs(query(
-                collection(db, "treatment_plans"),
-                where("inquilino", "==", inquilino)
-            ));
+            const { data: plansSnap } = await supabase
+                .from("treatment_plans")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+
             const plansMap = {};
-            plansSnap.docs.forEach(d => {
-                const pData = d.data();
-                plansMap[d.id] = {
-                    id: d.id,
+            (plansSnap || []).forEach(pData => {
+                plansMap[pData.id] = {
+                    id: pData.id,
                     title: pData.title || pData.nombre || "Tratamiento",
                     total: Number(pData.total || pData.costoTotal || 0)
                 };
@@ -87,18 +87,17 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
             const end = parseLocalDate(dateRange.hasta);
             end.setHours(23, 59, 59, 999);
 
-            const q = query(
-                collection(db, "pagos"),
-                where("inquilino", "==", inquilino),
-                where("profesionalId", "==", doctor.id)
-            );
-            const snap = await getDocs(q);
-            const list = snap.docs.map(d => {
-                const data = d.data();
-                const ts = data.fecha;
-                const dObj = ts?.toDate ? ts.toDate() : new Date(ts);
+            const { data: snap } = await supabase
+                .from("pagos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .eq("profesionalId", doctor.id);
+
+            const list = (snap || []).map(data => {
+                const ts = data.fecha || data.created_at;
+                const dObj = new Date(ts || 0);
                 return {
-                    id: d.id,
+                    id: data.id,
                     ...data,
                     fechaObj: dObj
                 };
@@ -263,8 +262,6 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
         setError("");
 
         try {
-            const batch = writeBatch(db);
-
             // Collect all transaction payment IDs from selected groups
             const allPaymentIds = [];
             selectedPayments.forEach(g => {
@@ -273,6 +270,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
 
             // 1. Create liquidation document
             const liqData = {
+                tenant_id: inquilino,
                 inquilino,
                 profesionalId: doctor.id,
                 profesionalNombre: doctor.nombre,
@@ -288,22 +286,28 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                 conceptosLiquidados: allPaymentIds,
                 estado: "Pagado",
                 registradoPor: userProfile?.nombre || userProfile?.email || "Administración",
-                createdAt: serverTimestamp()
+                created_at: new Date().toISOString()
             };
 
-            const liqRef = doc(collection(db, "liquidaciones"));
-            batch.set(liqRef, liqData);
+            const { data: insertedLiq } = await supabase
+                .from("liquidaciones")
+                .insert([liqData])
+                .select()
+                .single();
 
             // 2. Mark payments as liquidated
-            allPaymentIds.forEach(id => {
-                const pRef = doc(db, "pagos", id);
-                batch.update(pRef, {
-                    liquidado: true,
-                    liquidacionId: liqRef.id
-                });
-            });
-
-            await batch.commit();
+            if (allPaymentIds.length > 0) {
+                for (const pId of allPaymentIds) {
+                    await supabase
+                        .from("pagos")
+                        .update({
+                            liquidado: true,
+                            liquidacionId: insertedLiq?.id || null,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("id", pId);
+                }
+            }
 
             setSuccess(true);
             setTimeout(() => {

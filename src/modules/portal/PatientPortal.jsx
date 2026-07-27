@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { db } from "../../firebase/firebaseConfig";
-import { collection, query, where, getDocs, orderBy, limit, Timestamp, doc, getDoc, onSnapshot, addDoc, updateDoc } from "firebase/firestore";
+import supabase from "../../lib/supabaseClient";
 import { useParams, useNavigate } from "react-router-dom";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
 import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell } from "react-icons/fi";
@@ -106,10 +105,9 @@ export default function PatientPortal() {
                     if (clinicSlug && session.clinicSlug !== clinicSlug) return;
                     
                     setLoading(true);
-                    const docRef = doc(db, "pacientes", session.patientId);
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        const patientData = { id: docSnap.id, ...docSnap.data() };
+                    const { data: docSnap } = await supabase.from("pacientes").select("*").eq("id", session.patientId).maybeSingle();
+                    if (docSnap) {
+                        const patientData = { ...docSnap };
                         setUser(patientData);
                         setNuevaCitaForm(f => ({ ...f, nombre: patientData.nombreCompleto || "", celular: patientData.celular || "" }));
                         setAuth(true);
@@ -129,17 +127,15 @@ export default function PatientPortal() {
         if (!clinicSlug) return;
         const loadConfig = async () => {
             try {
-                const q = query(collection(db, "tenants"), where("slug", "==", clinicSlug));
-                const qSnap = await getDocs(q);
-                if (!qSnap.empty) {
-                    const tenantData = qSnap.docs[0].data();
-                    const inq = qSnap.docs[0].id;
+                const { data: tenantData } = await supabase.from("tenants").select("*").eq("slug", clinicSlug).maybeSingle();
+                if (tenantData) {
+                    const inq = tenantData.id;
                     setInquilinoId(inq);
-                    setTenantInfo({ id: inq, ...tenantData });
-                    const webSnap = await getDoc(doc(db, "website_config", inq));
-                    setConfig(webSnap.exists()
-                        ? { ...DEFAULT_CONFIG, ...webSnap.data(), name: tenantData.name, slug: clinicSlug, phone: tenantData.phone || "" }
-                        : { ...DEFAULT_CONFIG, name: tenantData.name, slug: clinicSlug, phone: tenantData.phone || "" }
+                    setTenantInfo({ ...tenantData });
+                    const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", inq).maybeSingle();
+                    setConfig(webSnap?.config
+                        ? { ...DEFAULT_CONFIG, ...webSnap.config, name: tenantData.nombre || tenantData.name, slug: clinicSlug, phone: tenantData.telefono || tenantData.phone || "" }
+                        : { ...DEFAULT_CONFIG, name: tenantData.nombre || tenantData.name, slug: clinicSlug, phone: tenantData.telefono || tenantData.phone || "" }
                     );
                 }
             } catch (e) { console.error(e); }
@@ -154,11 +150,14 @@ export default function PatientPortal() {
         if (!birthDate) return toast.error("Ingrese su fecha de nacimiento.");
         setLoading(true);
         try {
-            let snap = await getDocs(query(collection(db, "pacientes"), where("nroDocumento", "==", docInput)));
-            if (snap.empty) snap = await getDocs(query(collection(db, "pacientes"), where("documento", "==", docInput)));
-            if (snap.empty) { toast.error("No encontramos un paciente con ese documento."); setLoading(false); return; }
+            let { data: snap } = await supabase.from("pacientes").select("*").eq("nroDocumento", docInput);
+            if (!snap || snap.length === 0) {
+                const { data: snap2 } = await supabase.from("pacientes").select("*").eq("documento", docInput);
+                snap = snap2;
+            }
+            if (!snap || snap.length === 0) { toast.error("No encontramos un paciente con ese documento."); setLoading(false); return; }
 
-            const patientData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+            const patientData = { id: snap[0].id, ...snap[0] };
             const nacimiento = patientData.nacimiento || patientData.fechaNacimiento || "";
             if (nacimiento !== birthDate) {
                 toast.error("La fecha de nacimiento no coincide con nuestros registros."); setLoading(false); return;
@@ -181,12 +180,16 @@ export default function PatientPortal() {
     const loadPatientData = async (patientId, inq) => {
         setLoadingData(true);
         try {
-            const iid = inq || inquilinoId;
-            // Citas (todas) - Correct collection name: citas
-            const qCitas = query(collection(db, "citas"), where("pacienteId", "==", patientId));
-            const snapCitas = await getDocs(qCitas).catch(() => ({ docs: [] }));
-            const citasArr = snapCitas.docs.map(d => ({ id: d.id, ...d.data() }))
-                .sort((a, b) => new Date(`${b.fecha}T${b.horaInicio || b.hora || "00:00"}`) - new Date(`${a.fecha}T${a.horaInicio || a.hora || "00:00"}`));
+            const { data: snapCitas } = await supabase.from("citas").select("*").or(`paciente_id.eq.${patientId},pacienteId.eq.${patientId}`);
+            const citasArr = (snapCitas || []).map(c => ({
+                id: c.id,
+                fecha: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : (c.fecha || ""),
+                horaInicio: c.fecha_inicio ? new Date(c.fecha_inicio).toTimeString().substring(0, 5) : (c.horaInicio || ""),
+                estado: c.estado || "confirmada",
+                motivo: c.motivo || "",
+                dentista: c.profesional_nombre || "—",
+                ...c
+            })).sort((a, b) => new Date(`${b.fecha}T${b.horaInicio || "00:00"}`) - new Date(`${a.fecha}T${a.horaInicio || "00:00"}`));
             setTodasCitas(citasArr);
 
             // Próxima cita
@@ -194,41 +197,25 @@ export default function PatientPortal() {
             const proxima = citasArr.find(c => c.fecha >= hoy && !["cancelada", "no asistio"].includes((c.estado || "").toLowerCase()));
             setNextAppt(proxima || null);
 
-            // Pagos / facturas - buscar en todas las colecciones posibles
-            const [snapPagos1, snapPagos2, snapRecibos] = await Promise.all([
-                getDocs(query(collection(db, "pagos"), where("patientId", "==", patientId))).catch(() => ({ docs: [] })),
-                getDocs(query(collection(db, "pagos"), where("pacienteId", "==", patientId))).catch(() => ({ docs: [] })),
-                getDocs(query(collection(db, "recibos_caja"), where("pacienteId", "==", patientId))).catch(() => ({ docs: [] }))
-            ]);
-            // Deduplicar por ID
-            const allPagos = [...snapPagos1.docs, ...snapPagos2.docs, ...snapRecibos.docs]
-                .map(d => ({ id: d.id, ...d.data() }));
+            // Pagos / facturas
+            const { data: snapPagos } = await supabase.from("pagos").select("*").or(`patient_id.eq.${patientId},paciente_id.eq.${patientId}`);
+            const { data: snapRecibos } = await supabase.from("recibos_caja").select("*").eq("paciente_id", patientId);
+            const allPagos = [...(snapPagos || []), ...(snapRecibos || [])];
             const seenIds = new Set();
             const dedupedPagos = allPagos.filter(p => {
                 if (seenIds.has(p.id)) return false;
                 seenIds.add(p.id);
                 return true;
             });
-            setPagos(dedupedPagos.sort((a, b) => (b.fecha?.seconds || 0) - (a.fecha?.seconds || 0)));
+            setPagos(dedupedPagos.sort((a, b) => new Date(b.created_at || b.fecha || 0).getTime() - new Date(a.created_at || a.fecha || 0).getTime()));
 
             // Planes de tratamiento
-            const qPlanes = query(collection(db, "treatment_plans"), where("patientId", "==", patientId));
-            const snapPlanes = await getDocs(qPlanes).catch(() => ({ docs: [] }));
-            setPlanes(snapPlanes.docs.map(d => ({ id: d.id, ...d.data() })));
+            const { data: snapPlanes } = await supabase.from("planes").select("*").or(`patient_id.eq.${patientId},paciente_id.eq.${patientId}`);
+            setPlanes(snapPlanes || []);
 
-            // Real-time notifications for patient
-            const qNotifs = query(
-                collection(db, "notificaciones"),
-                where("pacienteId", "==", patientId),
-                where("target", "==", "patient"),
-                orderBy("createdAt", "desc"),
-                limit(20)
-            );
-            if (unsubRef.current) unsubRef.current();
-            const unsubNotifs = onSnapshot(qNotifs, snap => {
-                setNotificaciones(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            });
-            unsubRef.current = unsubNotifs;
+            // Notificaciones para paciente
+            const { data: snapNotifs } = await supabase.from("notificaciones").select("*").or(`paciente_id.eq.${patientId},pacienteId.eq.${patientId}`).eq("target", "patient").order("created_at", { ascending: false }).limit(20);
+            setNotificaciones(snapNotifs || []);
         } catch (err) { console.error(err); }
         finally { setLoadingData(false); }
     };
@@ -236,36 +223,34 @@ export default function PatientPortal() {
     const handleSolicitarCita = async (e) => {
         e.preventDefault();
         
-        // Guardar la solicitud en Firestore (notificación al admin)
         try {
-            await addDoc(collection(db, "notificaciones"), {
-                inquilino: user.inquilino,
-                target: "admin",
-                title: "Nueva Solicitud de Cita 📅",
-                message: `${user.nombreCompleto || user.nombres} ha solicitado una cita para el ${nuevaCitaForm.fecha} por motivo: ${nuevaCitaForm.motivo || "Limpieza/Revisión"}.`,
-                type: "appointment_request",
-                pacienteId: user.id,
-                pacienteNombre: user.nombreCompleto || user.nombres || "",
-                pacienteCelular: nuevaCitaForm.celular || user.celular || "",
-                fechaSolicitada: nuevaCitaForm.fecha || "",
-                motivo: nuevaCitaForm.motivo || "Limpieza/Revisión",
-                estado: "pendiente",
-                read: false,
-                createdAt: new Date().toISOString()
-            });
-
-            // Notificar al paciente que su solicitud fue recibida
-            await addDoc(collection(db, "notificaciones"), {
-                inquilino: user.inquilino,
-                target: "patient",
-                title: "Solicitud Recibida ✅",
-                message: `Hemos recibido tu solicitud de cita para el ${nuevaCitaForm.fecha}. La clínica revisará tu solicitud y te notificará pronto.`,
-                type: "appointment_request_sent",
-                pacienteId: user.id,
-                read: false,
-                createdAt: new Date().toISOString()
-            });
-
+            await supabase.from("notificaciones").insert([
+                {
+                    tenant_id: user.inquilino || user.tenant_id,
+                    target: "admin",
+                    title: "Nueva Solicitud de Cita 📅",
+                    message: `${user.nombreCompleto || user.nombres || user.nombre} ha solicitado una cita para el ${nuevaCitaForm.fecha} por motivo: ${nuevaCitaForm.motivo || "Limpieza/Revisión"}.`,
+                    type: "appointment_request",
+                    paciente_id: user.id,
+                    paciente_nombre: user.nombreCompleto || user.nombres || user.nombre || "",
+                    paciente_celular: nuevaCitaForm.celular || user.celular || "",
+                    fecha_solicitada: nuevaCitaForm.fecha || "",
+                    motivo: nuevaCitaForm.motivo || "Limpieza/Revisión",
+                    estado: "pendiente",
+                    read: false,
+                    created_at: new Date().toISOString()
+                },
+                {
+                    tenant_id: user.inquilino || user.tenant_id,
+                    target: "patient",
+                    title: "Solicitud Recibida ✅",
+                    message: `Hemos recibido tu solicitud de cita para el ${nuevaCitaForm.fecha}. La clínica revisará tu solicitud y te notificará pronto.`,
+                    type: "appointment_request_sent",
+                    paciente_id: user.id,
+                    read: false,
+                    created_at: new Date().toISOString()
+                }
+            ]);
         } catch (err) {
             console.error("Error creating notification for admin:", err);
         }

@@ -35,36 +35,19 @@ export default function PricingSection({ config, dbPlans, onShowTrial, dark = fa
     const sourcePlans = (dbPlans && dbPlans.length > 0) ? dbPlans : fetchedPlans;
 
     let displayPlans = sourcePlans.map(p => {
-        const hasFactus = p.includeFacturacion !== false && Boolean(p.facturasIncluidas && p.facturasIncluidas > 0);
-        const factusFeature = hasFactus
-            ? `⚡ Facturación Electrónica (${(p.facturasIncluidas || 300).toLocaleString('es-CO')} / mes)`
-            : `✕ Sin Facturación Electrónica`;
-
-        const enrichedFeatures = [factusFeature];
-
-        if (p.features && Array.isArray(p.features)) {
-            p.features.forEach(f => {
-                const clean = f.trim();
-                const mapped = featureMapping[clean] || clean;
-                if (!enrichedFeatures.includes(mapped)) {
-                    enrichedFeatures.push(mapped);
-                }
-            });
-        }
-
         return {
             ...p,
             name: p.name || "Plan",
             desc: p.description || p.desc || "Solución clínica integral para tu consultorio.",
             userLimit: p.maxUsers ? `Hasta ${p.maxUsers} Usuarios` : "Usuarios Ilimitados",
-            coreModule: p.coreModule || "Módulo Core",
             price: p.monthlyPrice || p.price || 0,
             yearlyPrice: p.yearlyPrice || p.annualPrice || 0,
-            recommended: p.recommended || p.isPopular || p.name?.toLowerCase().includes('corporativo'),
-            features: enrichedFeatures,
+            recommended: p.recommended || false,
+            features: p.features || [],
             btnText: `Elegir ${p.name}`
         };
     });
+
 
     if (displayPlans.length === 2 && !displayPlans[1].recommended) {
         displayPlans[1].recommended = true;

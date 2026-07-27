@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { FiX, FiCheck, FiUpload, FiTrash2, FiUser, FiPenTool, FiLock, FiShield, FiSave } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
-import { db } from "../firebase/firebaseConfig";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
+import supabase from "../lib/supabaseClient";
 import { toast } from "sonner";
 
 const FingerprintIcon = ({ size = 20, className = "" }) => (
@@ -176,14 +175,22 @@ export default function UserProfileModal({ isOpen, onClose }) {
                 updatedAt: new Date().toISOString()
             };
 
-            const userId = userProfile?.uid || user?.uid;
+            const userId = userProfile?.uid || userProfile?.id || user?.uid || user?.id;
             if (userId) {
-                const userDocRef = doc(db, "usuarios", userId);
-                await updateDoc(userDocRef, updatePayload).catch(async () => {
-                    // Fallback to setDoc with merge
-                    const { setDoc } = await import("firebase/firestore");
-                    await setDoc(userDocRef, updatePayload, { merge: true });
-                });
+                await supabase.from("usuarios").update({
+                    nombre: nombre.trim(),
+                    apellido: apellido.trim(),
+                    nombreCompleto: `${nombre.trim()} ${apellido.trim()}`.trim(),
+                    telefono: telefono.trim(),
+                    telefonoMovil: telefono.trim(),
+                    registroMedico: registroMedico.trim(),
+                    tarjetaProfesional: registroMedico.trim(),
+                    fotoPerfil: fotoPerfil || "",
+                    firmaElectronica: currentSignature,
+                    firma: currentSignature,
+                    huellaDigital: huellaDigital || "",
+                    updated_at: new Date().toISOString()
+                }).eq("id", userId);
             }
 
             // Sync local Auth state

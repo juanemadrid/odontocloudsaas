@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiSearch, FiEdit2, FiTrash2, FiPlus } from "react-icons/fi";
-import { collection, query, where, getDocs, deleteDoc, doc } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -17,9 +16,11 @@ export default function PlanesFormulacionList({ onNew, onEdit }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const q = query(collection(db, "planes_formulacion"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            setPlanes(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const { data: list } = await supabase
+                .from("planes_formulacion")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setPlanes(list || []);
         } catch (e) {
             console.error("Error loading formulation plans:", e);
             toast.error("Error al cargar los planes de formulación");
@@ -35,7 +36,7 @@ export default function PlanesFormulacionList({ onNew, onEdit }) {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este plan de formulación?")) return;
         try {
-            await deleteDoc(doc(db, "planes_formulacion", id));
+            await supabase.from("planes_formulacion").delete().eq("id", id);
             toast.success("Plan de formulación eliminado");
             setPlanes(prev => prev.filter(p => p.id !== id));
         } catch (e) {

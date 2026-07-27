@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiActivity, FiDownload, FiSearch, FiCheckCircle, FiClock, FiXCircle } from "react-icons/fi";
 import { format } from "date-fns";
 
@@ -34,16 +33,17 @@ export default function ReporteClinico() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const q = query(collection(db, "agenda"), where("inquilino", "==", userProfile.inquilino));
-        const snapshot = await getDocs(q);
+        const { data: snapshot } = await supabase
+          .from("agenda")
+          .select("*")
+          .or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         
         const data = [];
         let completadas = 0;
         let canceladas = 0;
         let pendientes = 0;
 
-        snapshot.forEach(doc => {
-          const c = { id: doc.id, ...doc.data() };
+        (snapshot || []).forEach(c => {
           data.push(c);
 
           const estado = (c.estado || "").toLowerCase();

@@ -51,7 +51,7 @@ export default function ConfigLayout({ children }) {
                         .from("tenants")
                         .select("plan_tipo, has_website")
                         .eq("id", userProfile.inquilino)
-                        .single();
+                        .maybeSingle();
                     // Activar acceso a Editor Web según plan
                     setHasWebsiteAccess(
                         data?.has_website === true ||

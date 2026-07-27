@@ -1,8 +1,7 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { toast } from "sonner";
-import { db } from "../firebase/firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
+import supabase from "../lib/supabaseClient";
 
 export const EvolutionPrintService = {
     generatePDF: async (evolutionsList = [], patient = {}, clinic = {}, userProfile = {}) => {
@@ -25,11 +24,14 @@ export const EvolutionPrintService = {
 
             if (tenantId) {
                 try {
-                    const configSnap = await getDoc(doc(db, "tenants", tenantId));
-                    if (configSnap.exists()) {
-                        const clinicConfig = configSnap.data();
-                        dbLogoUrl = clinicConfig.logo || clinicConfig.logoUrl || "";
-                        dbClinicName = clinicConfig.nombreComercial || clinicConfig.name || clinicConfig.nombre || "";
+                    const { data: clinicConfig } = await supabase
+                        .from("tenants")
+                        .select("*")
+                        .eq("id", tenantId)
+                        .maybeSingle();
+                    if (clinicConfig) {
+                        dbLogoUrl = clinicConfig.logo || clinicConfig.logo_url || clinicConfig.logoUrl || "";
+                        dbClinicName = clinicConfig.nombre_comercial || clinicConfig.nombreComercial || clinicConfig.name || clinicConfig.nombre || "";
                         dbClinicNit = clinicConfig.nit || "";
                         dbClinicAddress = clinicConfig.address || clinicConfig.direccion || "";
                         dbClinicPhone = clinicConfig.phone || clinicConfig.telefono || "";

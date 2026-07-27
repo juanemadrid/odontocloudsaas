@@ -3,10 +3,7 @@ import {
   FiPlus, FiSearch, FiDownload, FiPrinter, FiRefreshCw,
   FiFileText, FiCalendar, FiCheck, FiAlertCircle, FiClock,
 } from "react-icons/fi";
-import {
-  collection, query, where, orderBy, getDocs, doc, getDoc, updateDoc, serverTimestamp,
-} from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { getDianStatusLabel } from "../../../services/DianService";
@@ -72,13 +69,12 @@ export default function FacturaElectronicaModule() {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const q = query(
-        collection(db, "facturas_electronicas"),
-        where("inquilino", "==", inquilino),
-        orderBy("createdAt", "desc")
-      );
-      const snap = await getDocs(q);
-      setFacturas(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const { data } = await supabase
+        .from("facturas_electronicas")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+        .order("created_at", { ascending: false });
+      setFacturas(data || []);
     } catch (err) {
       console.error(err);
       toast.error("Error al cargar facturas electrónicas.");
@@ -118,17 +114,17 @@ export default function FacturaElectronicaModule() {
     }
     setDownloadingId(factura.id);
     try {
-      const tenantDoc = await getDoc(doc(db, "tenants", inquilino));
-      const creds = tenantDoc.exists() ? tenantDoc.data() : {};
+      const { data: creds } = await supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle();
+      const tenantCreds = creds || {};
       const token = await factusService.getToken({
-        factusClientId: creds.factusClientId,
-        factusClientSecret: creds.factusClientSecret,
-        factusUsername: creds.factusUsername,
-        factusPassword: creds.factusPassword,
-        factusTestMode: creds.factusTestMode ?? true,
+        factusClientId: tenantCreds.factusClientId,
+        factusClientSecret: tenantCreds.factusClientSecret,
+        factusUsername: tenantCreds.factusUsername,
+        factusPassword: tenantCreds.factusPassword,
+        factusTestMode: tenantCreds.factusTestMode ?? true,
       });
       const blob = await factusService.downloadInvoicePDF(
-        factura.factusInvoiceNumber, token, creds.factusTestMode ?? true
+        factura.factusInvoiceNumber, token, tenantCreds.factusTestMode ?? true
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -147,19 +143,19 @@ export default function FacturaElectronicaModule() {
   const handleResend = async (factura) => {
     setResendingId(factura.id);
     try {
-      const tenantDoc = await getDoc(doc(db, "tenants", inquilino));
-      const creds = tenantDoc.exists() ? tenantDoc.data() : {};
+      const { data: creds } = await supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle();
+      const tenantCredsData = creds || {};
 
-      if (!creds.factusClientId || !creds.factusClientSecret || !creds.factusUsername || !creds.factusPassword) {
+      if (!tenantCredsData.factusClientId || !tenantCredsData.factusClientSecret || !tenantCredsData.factusUsername || !tenantCredsData.factusPassword) {
         toast.error("No hay credenciales Factus configuradas. Ve a Configuración → Facturación Electrónica.");
         return;
       }
 
       // Mark as PROCESANDO first
-      await updateDoc(doc(db, "facturas_electronicas", factura.id), {
+      await supabase.from("facturas_electronicas").update({
         dianStatus: "PROCESANDO",
-        updatedAt: serverTimestamp(),
-      });
+        updated_at: new Date().toISOString(),
+      }).eq("id", factura.id);
 
       // Re-build invoiceData from stored factura doc
       const invoiceData = {
@@ -186,12 +182,12 @@ export default function FacturaElectronicaModule() {
       };
 
       const tenantCreds = {
-        factusClientId: creds.factusClientId,
-        factusClientSecret: creds.factusClientSecret,
-        factusUsername: creds.factusUsername,
-        factusPassword: creds.factusPassword,
-        factusTestMode: creds.factusTestMode ?? true,
-        factusNumberingRangeId: creds.factusNumberingRangeId || 1,
+        factusClientId: tenantCredsData.factusClientId,
+        factusClientSecret: tenantCredsData.factusClientSecret,
+        factusUsername: tenantCredsData.factusUsername,
+        factusPassword: tenantCredsData.factusPassword,
+        factusTestMode: tenantCredsData.factusTestMode ?? true,
+        factusNumberingRangeId: tenantCredsData.factusNumberingRangeId || 1,
       };
 
       const result = await factusService.sendInvoice(invoiceData, patientData, tenantCreds);
@@ -203,24 +199,24 @@ export default function FacturaElectronicaModule() {
       const number = bill?.number || bill?.invoice_number || result?.data?.number || null;
       const isTestMode = tenantCreds.factusTestMode;
 
-      await updateDoc(doc(db, "facturas_electronicas", factura.id), {
+      await supabase.from("facturas_electronicas").update({
         dianStatus: isTestMode ? "SIMULADA" : "ACEPTADA",
         cufe,
         qrCode,
         factusInvoiceNumber: number,
         factusReferenceCode: invoiceData.factusReferenceCode,
         factusResponse: result?.data || null,
-        updatedAt: serverTimestamp(),
-      });
+        updated_at: new Date().toISOString(),
+      }).eq("id", factura.id);
 
       toast.success(`Factura reenviada con éxito.${number ? ` Número: ${number}` : ''}`);
       await loadFacturas();
     } catch (err) {
       console.error("Error al reenviar factura:", err);
-      await updateDoc(doc(db, "facturas_electronicas", factura.id), {
+      await supabase.from("facturas_electronicas").update({
         dianStatus: "RECHAZADA",
-        updatedAt: serverTimestamp(),
-      }).catch(() => {});
+        updated_at: new Date().toISOString(),
+      }).eq("id", factura.id).catch(() => {});
       toast.error(`Error al reenviar: ${err.message}`);
     } finally {
       setResendingId(null);

@@ -11,6 +11,8 @@ export const getConfigItems = async (tenantId, configKey, tableName) => {
     if (!tenantId) return [];
 
     try {
+        let tableData = [];
+
         // A. Intentar consultar la tabla dedicada en Supabase PostgreSQL
         if (tableName) {
             const { data, error, status } = await supabase
@@ -19,7 +21,7 @@ export const getConfigItems = async (tenantId, configKey, tableName) => {
                 .eq("tenant_id", tenantId);
 
             if (!error && status === 200 && Array.isArray(data) && data.length > 0) {
-                return data.map(d => ({
+                tableData = data.map(d => ({
                     id: d.id,
                     nombre: d.nombre || d.name || "",
                     ...d
@@ -27,17 +29,32 @@ export const getConfigItems = async (tenantId, configKey, tableName) => {
             }
         }
 
-        // B. Si la tabla no existe o está vacía, consultar website_config
+        // B. Siempre consultar website_config (aquí se sincronizan TODOS los campos, incluidos permisos)
         const { data: cfgRow } = await supabase
             .from("website_config")
             .select("config")
             .eq("tenant_id", tenantId)
             .maybeSingle();
 
-        const storedList = cfgRow?.config?.[configKey];
-        if (Array.isArray(storedList)) {
-            return storedList;
+        const wcData = Array.isArray(cfgRow?.config?.[configKey]) ? cfgRow.config[configKey] : [];
+
+        // C. Si hay datos en la tabla dedicada, fusionar con website_config para recuperar campos extra
+        if (tableData.length > 0) {
+            return tableData.map(item => {
+                const wcItem = wcData.find(w => w.id === item.id);
+                if (!wcItem) return item;
+                // wcItem tiene todos los campos guardados (incl. permisos).
+                // Los campos de la tabla dedicada tienen prioridad, pero si permisos no está en la tabla, viene de wcItem.
+                return {
+                    ...wcItem,   // base: todo lo de website_config
+                    ...item,     // override: campos de la tabla dedicada
+                    permisos: item.permisos ?? wcItem.permisos  // permisos: tabla primero, fallback a wcItem
+                };
+            });
         }
+
+        // D. Fallback: si no hay tabla dedicada o está vacía, usar website_config
+        if (wcData.length > 0) return wcData;
 
         return [];
     } catch (err) {
@@ -45,6 +62,7 @@ export const getConfigItems = async (tenantId, configKey, tableName) => {
         return [];
     }
 };
+
 
 // ── 2. Guardar / Editar ítem de configuración ──
 export const saveConfigItem = async (tenantId, configKey, tableName, itemData) => {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -72,54 +71,36 @@ export default function ReportePlanesTratamiento() {
       setLoading(true);
       try {
         // Cargar Planes / Presupuestos
-        const qPlanes = query(
-          collection(db, "planes"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapPlanes = await getDocs(qPlanes);
-        const listPlanes = [];
-        snapPlanes.forEach(doc => {
-          listPlanes.push({ id: doc.id, ...doc.data() });
-        });
+        const { data: snapPlanes } = await supabase.from("planes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listPlanes = (snapPlanes || []).map(p => ({ ...p }));
 
         // Ordenar por fecha descendente
         listPlanes.sort((a, b) => {
-          const dateA = a.createdAt?.seconds || (a.date ? new Date(a.date).getTime() / 1000 : 0);
-          const dateB = b.createdAt?.seconds || (b.date ? new Date(b.date).getTime() / 1000 : 0);
+          const dateA = a.created_at ? new Date(a.created_at).getTime() / 1000 : (a.date ? new Date(a.date).getTime() / 1000 : 0);
+          const dateB = b.created_at ? new Date(b.created_at).getTime() / 1000 : (b.date ? new Date(b.date).getTime() / 1000 : 0);
           return dateB - dateA;
         });
         setAllPlans(listPlanes);
 
         // Cargar Doctores / Profesionales
-        const qUsuarios = query(
-          collection(db, "usuarios"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapUsuarios = await getDocs(qUsuarios);
+        const { data: snapUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listProfs = [];
-        snapUsuarios.forEach(doc => {
-          const u = doc.data();
+        (snapUsuarios || []).forEach(u => {
           const role = (u.rol || u.role || "").toLowerCase();
           if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
             const primerNombre = u.nombre || u.nombres || u.displayName || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
-            listProfs.push({ id: doc.id, nombre: nombreCompleto });
+            listProfs.push({ id: u.id, nombre: nombreCompleto });
           }
         });
         setProfesionales(listProfs);
 
         // Cargar Pacientes
-        const qPacientes = query(
-          collection(db, "pacientes"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapPacientes = await getDocs(qPacientes);
-        const listPacs = [];
-        snapPacientes.forEach(doc => {
-          const p = doc.data();
+        const { data: snapPacientes } = await supabase.from("pacientes").select("id,nombre,nombres,apellido,apellidos,nombreCompleto").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listPacs = (snapPacientes || []).map(p => {
           const nom = `${p.nombre || p.nombres || ''} ${p.apellido || p.apellidos || ''}`.trim() || p.nombreCompleto || 'Sin nombre';
-          listPacs.push({ id: doc.id, nombre: nom });
+          return { id: p.id, nombre: nom };
         });
         setPacientesList(listPacs);
 

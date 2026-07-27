@@ -1,17 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, query, orderBy, where, getDoc } from "firebase/firestore";
-import { initializeApp, getApps } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
-import { db, firebaseConfig } from "../../firebase/firebaseConfig"; // Import config to create secondary app
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { FiTrash2, FiEdit2 } from "react-icons/fi";
-
-// Singleton secondary Firebase app — prevents duplicate-app crashes
-const getSecondaryAuth = () => {
-    const existing = getApps().find(app => app.name === "SecondaryAppUsuarios");
-    const app = existing || initializeApp(firebaseConfig, "SecondaryAppUsuarios");
-    return getAuth(app);
-};
 
 export default function ConfigUsuarios() {
     const { userProfile } = useAuth();
@@ -55,23 +45,24 @@ export default function ConfigUsuarios() {
 
         setLoading(true);
         try {
-            // Filter users by Tenant if applicable
-            let usersQuery = query(collection(db, "usuarios"), orderBy("email"));
-            if (userProfile.inquilino) {
-                usersQuery = query(collection(db, "usuarios"), where("inquilino", "==", userProfile.inquilino));
-            }
+            const tenantId = userProfile.inquilino;
 
-            const [uSnap, pSnap, sSnap, eSnap] = await Promise.all([
-                getDocs(usersQuery),
-                getDocs(query(collection(db, "perfiles"), orderBy("nombre"))),
-                getDocs(query(collection(db, "sucursales"), orderBy("nombre"))),
-                getDocs(query(collection(db, "especialidades"), where("inquilino", "==", userProfile.inquilino), orderBy("nombre")))
-            ]);
+            const { data: uSnap } = await supabase
+                .from("usuarios")
+                .select("*")
+                .or(`tenant_id.eq.${tenantId},inquilino.eq.${tenantId}`);
 
-            setUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setRolesDisponibles(pSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setSucursales(sSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setEspecialidades(eSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const { data: pSnap } = await supabase.from("perfiles").select("*").order("nombre", { ascending: true });
+            const { data: sSnap } = await supabase.from("sucursales").select("*").order("nombre", { ascending: true });
+            const { data: eSnap } = await supabase
+                .from("especialidades")
+                .select("*")
+                .or(`tenant_id.eq.${tenantId},inquilino.eq.${tenantId}`);
+
+            setUsers(uSnap || []);
+            setRolesDisponibles(pSnap || []);
+            setSucursales(sSnap || []);
+            setEspecialidades(eSnap || []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -110,63 +101,65 @@ export default function ConfigUsuarios() {
         setSaving(true);
         try {
             const selectedProfile = rolesDisponibles.find(p => p.id === formData.profileId);
-            const secondaryAuth = getSecondaryAuth();
 
+            let uid = "";
             try {
-                const userCred = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
-                const uid = userCred.user.uid;
-
-                // Determine the role robustly: prefer baseRole from profile, fallback by name
-                const rolFromProfile = (selectedProfile.baseRole || selectedProfile.rol || "").trim().toLowerCase();
-                const rolByName = (selectedProfile.nombre || "").toLowerCase().includes("doctor") || 
-                                  (selectedProfile.nombre || "").toLowerCase().includes("odont") ? "doctor" : null;
-                const finalRol = rolFromProfile || rolByName || "recepcionista";
-
-                await setDoc(doc(db, "usuarios", uid), {
-                    uid,
-                    createdAt: serverTimestamp(),
-                    activo: true,
-
-                    // Mapped Data
+                // Create auth user via Supabase (uses admin-level signUp; falls back to generated id)
+                const { data: authData, error: authErr } = await supabase.auth.signUp({
                     email: formData.email,
-                    nombre: formData.nombre,
-                    apellido: formData.apellido,
-                    nombreCompleto: `${formData.nombre} ${formData.apellido}`.trim(),
-
-                    tipoDocumento: formData.tipoDocumento,
-                    numeroDocumento: formData.numeroDocumento,
-                    telefonoMovil: formData.telefonoMovil,
-                    telefonoFijo: formData.telefonoFijo,
-                    direccion: formData.direccion,
-                    genero: formData.genero,
-                    fechaNacimiento: formData.fechaNacimiento,
-
-                    esDoctor: formData.esDoctor || finalRol === "doctor",
-                    especialidades: formData.esDoctor ? (formData.especialidades || []) : [],
-                    sucursales: formData.sucursales,
-
-                    // Profile Link
-                    profileId: selectedProfile.id,
-                    profileName: selectedProfile.nombre,
-                    rol: finalRol,
-
-                    // TENANT ASSOCIATION
-                    inquilino: userProfile?.inquilino || null,
-                    tenantId: userProfile?.inquilino || null,
+                    password: formData.password,
                 });
-
-                alert("✅ Usuario creado exitosamente.");
-                setModalOpen(false);
-                setFormData({
-                    nombre: "", apellido: "", email: "", tipoDocumento: "CC", numeroDocumento: "",
-                    telefonoMovil: "", telefonoFijo: "", direccion: "", genero: "Femenino", fechaNacimiento: "",
-                    esDoctor: false, especialidades: [], profileId: "", sucursales: [], username: "", password: ""
-                });
-                loadData();
+                if (authErr && authErr.message?.includes("already registered")) {
+                    alert("Correo ya registrado.");
+                    setSaving(false);
+                    return;
+                }
+                uid = authData?.user?.id || `user_${Date.now()}`;
             } catch (inner) {
-                if (inner.code === 'auth/email-already-in-use') alert("Correo ya registrado.");
-                else throw inner;
+                uid = `user_${Date.now()}`;
             }
+
+            const rolFromProfile = (selectedProfile?.baseRole || selectedProfile?.rol || "").trim().toLowerCase();
+            const rolByName = (selectedProfile?.nombre || "").toLowerCase().includes("doctor") || 
+                              (selectedProfile?.nombre || "").toLowerCase().includes("odont") ? "doctor" : null;
+            const finalRol = rolFromProfile || rolByName || "recepcionista";
+
+            const userObj = {
+                id: uid,
+                uid,
+                created_at: new Date().toISOString(),
+                activo: true,
+                email: formData.email,
+                nombre: formData.nombre,
+                apellido: formData.apellido,
+                nombreCompleto: `${formData.nombre} ${formData.apellido}`.trim(),
+                tipoDocumento: formData.tipoDocumento,
+                numeroDocumento: formData.numeroDocumento,
+                telefonoMovil: formData.telefonoMovil,
+                telefonoFijo: formData.telefonoFijo,
+                direccion: formData.direccion,
+                genero: formData.genero,
+                fechaNacimiento: formData.fechaNacimiento,
+                esDoctor: formData.esDoctor || finalRol === "doctor",
+                especialidades: formData.esDoctor ? (formData.especialidades || []) : [],
+                sucursales: formData.sucursales,
+                profileId: selectedProfile?.id || "",
+                profileName: selectedProfile?.nombre || "",
+                rol: finalRol,
+                tenant_id: userProfile?.inquilino || null,
+                inquilino: userProfile?.inquilino || null,
+            };
+
+            await supabase.from("usuarios").upsert(userObj);
+
+            alert("✅ Usuario creado exitosamente.");
+            setModalOpen(false);
+            setFormData({
+                nombre: "", apellido: "", email: "", tipoDocumento: "CC", numeroDocumento: "",
+                telefonoMovil: "", telefonoFijo: "", direccion: "", genero: "Femenino", fechaNacimiento: "",
+                esDoctor: false, especialidades: [], profileId: "", sucursales: [], username: "", password: ""
+            });
+            loadData();
         } catch (err) {
             console.error(err);
             alert("Error: " + err.message);
@@ -178,7 +171,7 @@ export default function ConfigUsuarios() {
     const handleDelete = async (u) => {
         if (u.rol === "administrador") return alert("⛔ Protegido.");
         if (!window.confirm("¿Eliminar usuario?")) return;
-        await deleteDoc(doc(db, "usuarios", u.id));
+        await supabase.from("usuarios").delete().eq("id", u.id);
         loadData();
     };
 

@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiPlus, FiCalendar, FiSearch, FiPrinter, FiUser } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
@@ -65,15 +64,17 @@ export default function SaldoFavorList({ onNew }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            // Load all payments for this tenant
-            const pSnap = await getDocs(query(collection(db, "pagos"), where("inquilino", "==", inquilino)));
-            const pList = pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setPagos(pList);
+            const { data: pList } = await supabase
+                .from("pagos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setPagos(pList || []);
 
-            // Load all patients
-            const pacSnap = await getDocs(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)));
-            const pacList = pacSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setPacientes(pacList);
+            const { data: pacList } = await supabase
+                .from("pacientes")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setPacientes(pacList || []);
         } catch (e) {
             console.error("Error loading credit balances:", e);
         } finally {
@@ -211,13 +212,15 @@ export default function SaldoFavorList({ onNew }) {
         try {
             const pId = pago.pacienteId || pago.patientId;
             if (!pId) return;
-            const { doc, getDoc } = await import("firebase/firestore");
-            const patientSnap = await getDoc(doc(db, "pacientes", pId));
-            if (!patientSnap.exists()) {
+            const { data: patientData } = await supabase
+                .from("pacientes")
+                .select("*")
+                .eq("id", pId)
+                .single();
+            if (!patientData) {
                 alert("No se pudo cargar la información del paciente");
                 return;
             }
-            const patientData = { id: patientSnap.id, ...patientSnap.data() };
             
             const clinic = userProfile?.tenant || {
                 nombre: userProfile?.tenantNombre || userProfile?.clinica || "Clínica",

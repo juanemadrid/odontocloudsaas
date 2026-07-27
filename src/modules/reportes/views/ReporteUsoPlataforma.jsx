@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { format } from "date-fns";
 
 export default function ReporteUsoPlataforma() {
@@ -34,46 +33,31 @@ export default function ReporteUsoPlataforma() {
     setLoading(true);
     try {
       const inquilino = userProfile.inquilino;
+      const filter = `tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`;
 
       // 1. Pacientes
-      const qPac = query(collection(db, "pacientes"), where("inquilino", "==", inquilino));
-      const snapPac = await getDocs(qPac);
-      const countPacientes = snapPac.size;
+      const { count: countPacientes } = await supabase.from("pacientes").select("id", { count: "exact", head: true }).or(filter);
 
       // 2. Citas
-      const qCitas = query(collection(db, "agenda"), where("inquilino", "==", inquilino));
-      const snapCitas = await getDocs(qCitas);
-      const countCitas = snapCitas.size;
+      const { count: countCitas } = await supabase.from("citas").select("id", { count: "exact", head: true }).or(filter);
 
       // 3. Presupuestos & Planes de tratamiento
-      const qPlanes = query(collection(db, "planes"), where("inquilino", "==", inquilino));
-      const snapPlanes = await getDocs(qPlanes);
-      const countPlanes = snapPlanes.size;
+      const { count: countPlanes } = await supabase.from("planes").select("id", { count: "exact", head: true }).or(filter);
 
       // 4. Pagos / Recibos de caja
-      const qPagos = query(collection(db, "pagos"), where("inquilino", "==", inquilino));
-      const snapPagos = await getDocs(qPagos);
-      const countRecibosCaja = snapPagos.size;
+      const { count: countRecibosCaja } = await supabase.from("pagos").select("id", { count: "exact", head: true }).or(filter);
 
       // 5. Facturas / Transacciones
-      const qFacturas = query(collection(db, "facturas"), where("inquilino", "==", inquilino));
-      const snapFacturas = await getDocs(qFacturas);
+      const { data: snapFacturas } = await supabase.from("facturas").select("tipo,isElectronic").or(filter);
       let countFacturasVenta = 0;
       let countFacturasElectronicas = 0;
-
-      snapFacturas.forEach(doc => {
-        const f = doc.data();
-        if (f.tipo === "electronica" || f.isElectronic) {
-          countFacturasElectronicas += 1;
-        } else {
-          countFacturasVenta += 1;
-        }
+      (snapFacturas || []).forEach(f => {
+        if (f.tipo === "electronica" || f.isElectronic) countFacturasElectronicas += 1;
+        else countFacturasVenta += 1;
       });
 
       // 6. Egresos
-      const qEgresos = query(collection(db, "egresos"), where("inquilino", "==", inquilino));
-      const snapEgresos = await getDocs(qEgresos);
-      const countEgresos = snapEgresos.size;
+      const { count: countEgresos } = await supabase.from("egresos").select("id", { count: "exact", head: true }).or(filter);
 
       setMetrics({
         pacientes: countPacientes || 11,

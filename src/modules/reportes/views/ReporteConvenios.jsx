@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -67,48 +66,30 @@ export default function ReporteConvenios() {
       setLoading(true);
       try {
         // Cargar Convenios registrados
-        const qConvenios = query(
-          collection(db, "convenios"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapConvenios = await getDocs(qConvenios);
-        const listConv = [];
-        snapConvenios.forEach(doc => {
-          const c = doc.data();
-          listConv.push({ id: doc.id, nombre: c.nombre || c.name || "Sin nombre" });
-        });
+        const { data: snapConvenios } = await supabase.from("convenios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listConv = (snapConvenios || []).map(c => ({ id: c.id, nombre: c.nombre || c.name || "Sin nombre" }));
         setConveniosList(listConv);
 
         // Cargar Pacientes
-        const qPacientes = query(
-          collection(db, "pacientes"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapPacientes = await getDocs(qPacientes);
-        const listPacs = [];
-        snapPacientes.forEach(doc => {
-          const p = doc.data();
-          const nom = `${p.nombre || p.nombres || ''} ${p.apellido || p.apellidos || ''}`.trim() || p.nombreCompleto || 'Sin nombre';
-          listPacs.push({ id: doc.id, nombre: nom, documento: p.identificacion || p.nroDocumento || '' });
-        });
+        const { data: snapPacientes } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listPacs = (snapPacientes || []).map(p => ({
+          id: p.id,
+          nombre: `${p.nombre || p.nombres || ''} ${p.apellido || p.apellidos || ''}`.trim() || p.nombreCompleto || 'Sin nombre',
+          documento: p.identificacion || p.nroDocumento || ''
+        }));
         setPacientesList(listPacs);
 
         // Cargar Planes / Facturas asociadas a Convenios
-        const qPlanes = query(
-          collection(db, "planes"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapPlanes = await getDocs(qPlanes);
+        const { data: snapPlanes } = await supabase.from("planes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listRecords = [];
 
-        snapPlanes.forEach(doc => {
-          const p = doc.data();
+        (snapPlanes || []).forEach(p => {
           if (p.convenio || p.convenioNombre || p.convenioId) {
             const total = Number(p.total || 0);
             const desc = Number(p.descuentoConvenio || p.descuento || 0);
             listRecords.push({
-              id: doc.id,
-              fecha: p.createdAt || p.date,
+              id: p.id,
+              fecha: p.createdAt || p.created_at || p.date,
               convenio: p.convenio || p.convenioNombre || "Convenio Institucional",
               paciente: p.patientName || p.nombrePaciente || "—",
               documento: p.patientDocument || p.identificacion || "—",
@@ -121,12 +102,7 @@ export default function ReporteConvenios() {
           }
         });
 
-        listRecords.sort((a, b) => {
-          const dateA = a.fecha?.seconds || (a.fecha ? new Date(a.fecha).getTime() / 1000 : 0);
-          const dateB = b.fecha?.seconds || (b.fecha ? new Date(b.fecha).getTime() / 1000 : 0);
-          return dateB - dateA;
-        });
-
+        listRecords.sort((a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime());
         setAllRecords(listRecords);
 
         // Aplicar filtrado inicial

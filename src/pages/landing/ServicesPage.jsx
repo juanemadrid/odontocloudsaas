@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import ServicesSection from "./ServicesSection";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
 import { MASTER_CONFIG } from "../../constants/MasterConfig";
@@ -23,32 +22,20 @@ export default function ServicesPage() {
         const loadData = async () => {
             try {
                 if (clinicSlug) {
-                    const q = query(collection(db, "tenants"), where("slug", "==", clinicSlug));
-                    const qSnap = await getDocs(q);
-
-                    if (!qSnap.empty) {
-                        const tenantData = qSnap.docs[0].data();
-                        const inquilino = qSnap.docs[0].id;
-
-                        const webRef = doc(db, "website_config", inquilino);
-                        const webSnap = await getDoc(webRef);
-
-                        if (webSnap.exists()) {
-                            setConfig({ ...DEFAULT_CONFIG, ...webSnap.data(), name: tenantData.name, slug: clinicSlug, isMaster: false });
+                    const { data: tenantData } = await supabase.from("tenants").select("*").eq("slug", clinicSlug).maybeSingle();
+                    if (tenantData) {
+                        const inquilino = tenantData.id;
+                        const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle();
+                        if (webSnap?.config) {
+                            setConfig({ ...DEFAULT_CONFIG, ...webSnap.config, name: tenantData.nombre || tenantData.name, slug: clinicSlug, isMaster: false });
                         } else {
-                            setConfig({ ...DEFAULT_CONFIG, name: tenantData.name, slug: clinicSlug, isMaster: false });
+                            setConfig({ ...DEFAULT_CONFIG, name: tenantData.nombre || tenantData.name, slug: clinicSlug, isMaster: false });
                         }
                     }
                 } else {
-                    const docRef = doc(db, "website_config", "general");
-                    const snap = await getDoc(docRef);
-                    if (snap.exists()) {
-                        setConfig({
-                            ...MASTER_CONFIG,
-                            ...snap.data(),
-                            services: snap.data().services || MASTER_CONFIG.services,
-                            isMaster: true
-                        });
+                    const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", "general").maybeSingle();
+                    if (webSnap?.config) {
+                        setConfig({ ...MASTER_CONFIG, ...webSnap.config, isMaster: true });
                     } else {
                         setConfig(MASTER_CONFIG);
                     }

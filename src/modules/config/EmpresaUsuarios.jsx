@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from "react";
-import supabase from "../../lib/supabaseClient";
+import supabase, { supabaseAdmin } from "../../lib/supabaseClient";
 import ReactDOM from "react-dom";
-import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp, query, orderBy, where, getDoc, or } from "firebase/firestore";
-import { initializeApp, getApps } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
-import { db, firebaseConfig } from "../../firebase/firebaseConfig";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 
@@ -103,24 +99,53 @@ export default function EmpresaUsuarios() {
                 supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle()
             ]);
 
-            const profilesList = (uRes.data || []).map(u => ({
-                id: u.id,
-                nombre: (u.full_name || "").split(" ")[0] || "",
-                apellido: (u.full_name || "").split(" ").slice(1).join(" ") || "",
-                nombreCompleto: u.full_name,
-                email: u.email,
-                rol: u.role,
-                profileId: u.role,
-                especialidad: u.especialidad,
-                registroMedico: u.registro_medico,
-                telefonoMovil: u.telefono,
-                activo: u.activo !== false
-            }));
+            const userDetailsMap = cRes.data?.config?.user_details || {};
+
+            const profilesList = (uRes.data || []).map(u => {
+                const detail = userDetailsMap[u.id] || {};
+                const rawEsp = u.especialidad || (detail.especialidades ? detail.especialidades.join(", ") : "");
+                const especialidadesArr = detail.especialidades || (rawEsp ? rawEsp.split(',').map(e => e.trim()).filter(Boolean) : []);
+                const userSucursales = detail.sucursales || (u.sucursal_id ? [u.sucursal_id] : []);
+                const rolLower = (u.role || "").toLowerCase();
+                const esDoctor = detail.esDoctor ?? (rolLower.includes('doctor') || rolLower.includes('odontólog') || rolLower.includes('odontologo') || especialidadesArr.length > 0);
+                return {
+                    id: u.id,
+                    nombre: (u.full_name || "").split(" ")[0] || "",
+                    apellido: (u.full_name || "").split(" ").slice(1).join(" ") || "",
+                    nombreCompleto: u.full_name,
+                    email: u.email,
+                    rol: u.role,
+                    profileId: u.role,
+                    especialidad: rawEsp,
+                    especialidades: especialidadesArr,
+                    sucursales: userSucursales,
+                    registroMedico: u.registro_medico,
+                    numeroDocumento: u.registro_medico || "",
+                    telefonoMovil: u.telefono,
+                    esDoctor,
+                    activo: u.activo !== false,
+                    ...detail
+                };
+            });
 
             const rolesList = (cRes.data?.config?.perfiles || []).map(p => ({
                 id: p.nombre || p.id,
                 nombre: p.nombre
             }));
+
+            // Extraer especialidades de website_config → formato {id, nombre}
+            const rawEspecialidades = cRes.data?.config?.especialidades || [];
+            const defaultEspecialidades = [
+                "Odontología General", "Ortodoncia", "Endodoncia", "Periodoncia",
+                "Cirugía Oral", "Odontopediatría", "Estética Dental",
+                "Implantología", "Rehabilitación Oral", "Patología Oral"
+            ];
+            const toObj = arr => arr.map(e => {
+                if (typeof e === 'string') return { id: e, nombre: e };
+                return { id: e.id || e.nombre || e.name, nombre: e.nombre || e.name || e.id };
+            }).filter(e => e.id && e.nombre);
+
+            const especialidadesList = toObj(rawEspecialidades);
 
             setUsers(profilesList);
             setRolesDisponibles(rolesList.length > 0 ? rolesList : [
@@ -129,6 +154,9 @@ export default function EmpresaUsuarios() {
                 { id: "Auxiliar de Odontología", nombre: "Auxiliar de Odontología" }
             ]);
             setSucursales(sRes.data || []);
+            setSpecialties(especialidadesList.length > 0 ? especialidadesList : toObj(defaultEspecialidades));
+
+
         } catch (e) {
             console.error("Error al cargar usuarios desde Supabase:", e);
             if (toast?.error) toast.error("Error cargando usuarios");
@@ -243,65 +271,150 @@ export default function EmpresaUsuarios() {
 
             let targetId = editId;
 
-            // Si es nuevo usuario, intentar crear cuenta en Supabase Auth
+            // Si es nuevo usuario, crear cuenta Auth usando el endpoint público de signup (anon key)
             if (!editId) {
+                if (!formData.password || formData.password.length < 8) {
+                    setSaving(false);
+                    return toast.error('La contraseña debe tener mínimo 8 caracteres para crear el usuario');
+                }
                 try {
-                    const { data: authData } = await supabase.auth.admin.createUser({
-                        email: formData.email.trim(),
-                        password: formData.password || "@NewUser2024",
-                        email_confirm: true,
-                        user_metadata: { full_name: fullName, role: roleName, tenant_id: userProfile.inquilino }
+                    const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://jhdflchyhkwpedtbkusp.supabase.co';
+                    const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+                    const authResp = await fetch(`${SUPA_URL}/auth/v1/signup`, {
+                        method: 'POST',
+                        headers: {
+                            'apikey': ANON_KEY,
+                            'Authorization': `Bearer ${ANON_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            email: formData.email.trim(),
+                            password: formData.password,
+                            options: {
+                                data: {
+                                    full_name: fullName,
+                                    role: roleName,
+                                    tenant_id: userProfile.inquilino
+                                }
+                            }
+                        })
                     });
-                    if (authData?.user?.id) {
+                    const authData = await authResp.json();
+                    if (authData?.id) {
+                        targetId = authData.id;
+                        console.log('✅ Auth user created:', authData.id);
+                    } else if (authData?.user?.id) {
                         targetId = authData.user.id;
+                        console.log('✅ Auth user created:', authData.user.id);
+                    } else {
+                        console.warn('⚠️ Auth signup response:', authData?.message || authData?.error_description || authData);
+                        // Si el usuario ya existe, intentar obtener su ID
+                        if (authData?.message?.includes('already registered') || authData?.code === 'user_already_exists') {
+                            toast.error('Este correo ya tiene una cuenta en el sistema');
+                            setSaving(false);
+                            return;
+                        }
                     }
                 } catch (authErr) {
-                    console.warn("Auth user create warning:", authErr);
+                    console.warn('⚠️ Auth user create warning:', authErr);
                 }
             }
 
+
             if (!targetId) {
-                targetId = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+                targetId = crypto.randomUUID?.() || Math.random().toString(36).substring(2);
             }
 
-            const profilePayload = {
-                id: targetId,
-                tenant_id: userProfile.inquilino,
-                full_name: fullName,
-                email: formData.email.trim(),
-                role: roleName,
-                especialidad: (formData.especialidades || []).join(", ") || null,
-                registro_medico: formData.numeroDocumento || null,
-                telefono: formData.telefonoMovil || formData.telefonoFijo || null,
-                activo: true
-            };
+            // Usar RPC SECURITY DEFINER para bypassar RLS y actualizar profiles + auth.users
+            const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_upsert_profile', {
+                p_id: targetId,
+                p_tenant_id: userProfile.inquilino,
+                p_full_name: fullName,
+                p_email: formData.email.trim(),
+                p_role: roleName,
+                p_especialidad: (formData.especialidades || []).join(', ') || null,
+                p_registro_medico: formData.numeroDocumento || null,
+                p_telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                p_activo: true,
+                p_password: formData.password ? formData.password.trim() : null
+            });
 
-            const { error: upsertErr } = await supabase.from("profiles").upsert(profilePayload);
-            if (upsertErr) throw upsertErr;
 
-            toast.success(editId ? "Usuario actualizado correctamente" : "Usuario creado con éxito en Supabase");
+            if (rpcErr) throw rpcErr;
+            if (rpcResult && rpcResult.success === false) throw new Error(rpcResult.error || 'Error al guardar perfil');
+
+            // Guardar configuración extendida de usuario (sucursales, especialidades, etc.) en website_config
+            try {
+                const { data: cfgData } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .maybeSingle();
+
+                const currentConfig = cfgData?.config || {};
+                const userDetails = currentConfig.user_details || {};
+
+                userDetails[targetId] = {
+                    sucursales: formData.sucursales || [],
+                    especialidades: formData.especialidades || [],
+                    esDoctor: formData.esDoctor || false,
+                    esLaboratory: formData.esLaboratory || false,
+                    seeOtherDoctorsData: formData.seeOtherDoctorsData || false,
+                    comisionPorcentaje: formData.comisionPorcentaje || 0,
+                    clinicalDocsWithLogo: formData.clinicalDocsWithLogo !== undefined ? formData.clinicalDocsWithLogo : true,
+                    clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
+                    encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
+                    formaPago: formData.formaPago || "Realizadas y pagadas"
+                };
+
+                await supabase
+                    .from("website_config")
+                    .upsert({
+                        tenant_id: userProfile.inquilino,
+                        config: {
+                            ...currentConfig,
+                            user_details: userDetails
+                        }
+                    }, { onConflict: "tenant_id" });
+            } catch (cfgErr) {
+                console.warn("Error guardando detalles extendidos en website_config:", cfgErr);
+            }
+
+            toast.success(editId ? 'Usuario actualizado correctamente' : 'Usuario creado con éxito');
             setModalOpen(false);
             loadData();
         } catch (error) {
-            console.error("Error al guardar usuario en Supabase:", error);
-            toast.error("Error al guardar usuario: " + error.message);
+            console.error('Error al guardar usuario:', error);
+            // Si el RPC no existe aún, dar instrucción clara
+            if (error.message?.includes('Could not find the function') || error.code === 'PGRST202') {
+                toast.error('⚠️ Falta ejecutar el SQL de migración en el dashboard de Supabase. Ver consola.');
+                console.error('👉 Ejecuta el SQL en: https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/editor');
+            } else {
+                toast.error('Error al guardar usuario: ' + (error.message || 'Error desconocido'));
+            }
         } finally {
             setSaving(false);
         }
     };
 
+
     const handleDisable = async (u) => {
-        if (!window.confirm(`¿${u.activo ? "Deshabilitar" : "Habilitar"} usuario "${u.nombreCompleto || u.email}"?`)) return;
+        if (!window.confirm(`¿${u.activo ? 'Deshabilitar' : 'Habilitar'} usuario "${u.nombreCompleto || u.email}"?`)) return;
         try {
-            const { error } = await supabase.from("profiles").update({ activo: !u.activo }).eq("id", u.id);
+            const { data: rpcResult, error } = await supabase.rpc('admin_toggle_profile_active', {
+                p_id: u.id,
+                p_activo: !u.activo
+            });
             if (error) throw error;
-            toast.success("Estado de usuario actualizado correctamente");
+            if (rpcResult?.success === false) throw new Error(rpcResult.error);
+            toast.success('Estado de usuario actualizado correctamente');
             loadData();
         } catch (e) {
-            console.error("Error al cambiar estado:", e);
-            toast.error("Error al cambiar estado de usuario");
+            console.error('Error al cambiar estado:', e);
+            toast.error('Error al cambiar estado de usuario: ' + (e.message || ''));
         }
     };
+
 
     const handleDelete = async (u) => {
         if (u.rol === "administrador") {
@@ -315,18 +428,20 @@ export default function EmpresaUsuarios() {
         const u = deleteConfirmModal;
         
         try {
-            const { error } = await supabase.from("profiles").delete().eq("id", u.id);
+            const { data: rpcResult, error } = await supabase.rpc('admin_delete_profile', { p_id: u.id });
             if (error) throw error;
+            if (rpcResult?.success === false) throw new Error(rpcResult.error);
 
             toast.success(`Usuario "${u.nombreCompleto || u.email}" eliminado correctamente`);
             setUsers(prev => prev.filter(usr => String(usr.id) !== String(u.id)));
             setDeleteConfirmModal(null);
             loadData();
         } catch (e) {
-            console.error("Error al eliminar usuario en Supabase:", e);
-            toast.error("Error al eliminar usuario: " + e.message);
+            console.error('Error al eliminar usuario:', e);
+            toast.error('Error al eliminar usuario: ' + (e.message || ''));
         }
     };
+
 
     const cancelDelete = () => {
         console.log("❌ Usuario canceló la eliminación");
@@ -338,7 +453,7 @@ export default function EmpresaUsuarios() {
             {/* Toolbar / Search Header */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-3">
                 <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                         <FiUser size={18} />
                     </div>
                     <div>
@@ -485,142 +600,133 @@ export default function EmpresaUsuarios() {
             </div>
 
             {modalOpen && ReactDOM.createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md transition-all duration-500">
-                    <div className="bg-white w-full max-w-6xl h-[95vh] rounded-[32px] overflow-hidden shadow-[0_48px_128px_rgba(0,0,0,0.3)] flex flex-col animate-scale-in border border-white/40">
-                        {/* Header: Pure Elite Styling */}
-                        <div className="bg-[#0F172A] px-6 py-4 flex items-center justify-between shrink-0 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-[40%] h-full bg-gradient-to-l from-blue-600/20 to-transparent skew-x-[30deg] pointer-events-none" />
-                            <div className="flex items-center gap-6 relative z-10">
-                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-900/20 group">
-                                    <FiUser size={28} className="text-white group-hover:scale-110 transition-transform duration-300" />
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-4xl h-[88vh] rounded-xl overflow-hidden shadow-2xl flex flex-col border border-slate-200">
+                        {/* Header limpio consistente con el estilo de config */}
+                        <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                    <FiUser size={18} />
                                 </div>
-                                <div className="flex flex-col">
-                                    <h2 className="text-[20px] font-black text-white uppercase tracking-[-0.02em] leading-tight">
-                                        {editId ? "Configuración de Perfil" : "Apertura de Cuenta Master"}
+                                <div>
+                                    <h2 className="text-[16px] font-bold text-slate-800">
+                                        {editId ? "Editar Usuario" : "Nuevo Usuario"}
                                     </h2>
-                                    <div className="flex items-center gap-3">
-                                        <div className="px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-[9px] font-black text-blue-400 uppercase tracking-widest">OdontoCloud Elite</div>
-                                        <div className="w-1 h-1 rounded-full bg-slate-700" />
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Gestión de privilegios y datos</p>
-                                    </div>
+                                    <p className="text-[10px] text-slate-400">Gestión de accesos y privilegios</p>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setModalOpen(false)}
-                                className="w-12 h-12 rounded-2xl bg-slate-800/50 flex items-center justify-center text-slate-500 hover:text-white hover:bg-red-500 transition-all duration-300 active:scale-90 group"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"
                             >
-                                <FiX size={24} className="group-hover:rotate-90 transition-transform duration-500" />
+                                <FiX size={18} />
                             </button>
                         </div>
 
-                        {/* Modal Body: Two-Column Side-by-Side Scrolling Sections */}
-                        <div className="flex-1 overflow-hidden relative bg-[#F8FAFC]">
-                            <form onSubmit={handleSave} className="h-full overflow-y-auto custom-scrollbar p-6 pb-32 space-y-6">
+                        {/* Cuerpo del modal */}
+                        <div className="flex-1 overflow-hidden relative bg-slate-50">
+                            <form onSubmit={handleSave} className="h-full overflow-y-auto custom-scrollbar p-4 pb-20 space-y-3">
                                 {/* BLOQUE 1: INFORMACIÓN BÁSICA */}
-                                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6 relative">
-                                    <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500" />
-                                    
-                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-50 pb-4">
+                                <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-3 border-b border-slate-100">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-inner">
-                                                <FiUser size={20} />
+                                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                                <FiUser size={18} />
                                             </div>
                                             <div>
-                                                <h4 className="text-[15px] font-black text-slate-800 uppercase tracking-tight">Información básica</h4>
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-80">Datos personales de identificación</p>
+                                                <h4 className="text-[13px] font-semibold text-slate-800">Información básica</h4>
+                                                <p className="text-[10px] text-slate-400">Datos personales de identificación</p>
                                             </div>
                                         </div>
-
-                                        <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
-                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-2 italic">¿Es laboratorio o centro diagnóstico?</label>
-                                            <button type="button" onClick={() => setFormData({ ...formData, esLaboratory: !formData.esLaboratory })} className={`w-12 h-6 rounded-full transition-all duration-500 relative ${formData.esLaboratory ? "bg-blue-600" : "bg-slate-200"}`}>
-                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-500 shadow-sm ${formData.esLaboratory ? "left-7" : "left-1"}`} />
+                                        <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                                            <label className="text-[11px] font-medium text-slate-500">¿Es laboratorio o centro diagnóstico?</label>
+                                            <button type="button" onClick={() => setFormData({ ...formData, esLaboratory: !formData.esLaboratory })} className={`w-10 h-5 rounded-full transition-all duration-300 relative shrink-0 ${formData.esLaboratory ? "bg-blue-600" : "bg-slate-200"}`}>
+                                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 shadow-sm ${formData.esLaboratory ? "left-6" : "left-1"}`} />
                                             </button>
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre *</label>
-                                            <Input type="text" value={formData.nombre} onChange={e => setFormData({ ...formData, nombre: e.target.value })} required placeholder="Ingrese nombre" className="h-10 bg-slate-50/50 border-slate-200 rounded-xl px-5 font-bold text-slate-700 shadow-sm text-[13px] focus:bg-white transition-all caret-black" />
+                                    {/* Fila 1: Nombre y Apellido */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Nombre *</label>
+                                            <Input type="text" value={formData.nombre} onChange={e => setFormData({ ...formData, nombre: e.target.value })} required placeholder="Ingrese nombre" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
                                         </div>
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Apellido *</label>
-                                            <Input type="text" value={formData.apellido} onChange={e => setFormData({ ...formData, apellido: e.target.value })} required placeholder="Ingrese apellidos" className="h-10 bg-slate-50/50 border-slate-200 rounded-xl px-5 font-bold text-slate-700 shadow-sm text-[13px] focus:bg-white transition-all caret-black" />
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Apellido *</label>
+                                            <Input type="text" value={formData.apellido} onChange={e => setFormData({ ...formData, apellido: e.target.value })} required placeholder="Ingrese apellidos" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo documento *</label>
-                                            <select value={formData.tipoDocumento} onChange={e => setFormData({ ...formData, tipoDocumento: e.target.value })} className="w-full h-10 bg-slate-50/50 border border-slate-100 rounded-lg px-3 font-bold text-[11px] text-slate-600 outline-none hover:border-slate-200 transition-all">
+                                    {/* Fila 2: Tipo documento y Número de documento */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Tipo de documento</label>
+                                            <select value={formData.tipoDocumento} onChange={e => setFormData({ ...formData, tipoDocumento: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
                                                 <option value="Cédula de ciudadanía">Cédula de ciudadanía</option>
                                                 <option value="Cédula de extranjería">Cédula de extranjería</option>
                                                 <option value="Pasaporte">Pasaporte</option>
                                             </select>
                                         </div>
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Número de documento *</label>
-                                            <Input type="text" value={formData.numeroDocumento} onChange={e => setFormData({ ...formData, numeroDocumento: e.target.value })} required placeholder="Número de identidad" className="h-10 bg-slate-50/50 border-slate-200 rounded-xl px-5 font-bold text-slate-700 shadow-sm text-[13px] focus:bg-white transition-all caret-black" />
-                                        </div>
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono móvil *</label>
-                                            <div className="relative">
-                                                <FiPhone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                                                <Input type="text" value={formData.telefonoMovil} onChange={e => setFormData({ ...formData, telefonoMovil: e.target.value })} required placeholder="Ej: 310..." className="h-10 pl-12 bg-slate-50/50 border-slate-200 rounded-xl px-5 font-bold text-slate-700 shadow-sm text-[13px] focus:bg-white transition-all caret-black" />
-                                            </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Número de documento *</label>
+                                            <Input type="text" value={formData.numeroDocumento} onChange={e => setFormData({ ...formData, numeroDocumento: e.target.value })} required placeholder="Ej: 12345678" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono fijo</label>
-                                            <Input type="text" value={formData.telefonoFijo} onChange={e => setFormData({ ...formData, telefonoFijo: e.target.value })} placeholder="Ej: 601..." className="h-10 bg-slate-50/50 border-slate-200 rounded-xl px-5 font-bold text-slate-700 shadow-sm text-[13px] focus:bg-white transition-all caret-black" />
+                                    {/* Fila 3: Teléfonos */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Teléfono móvil *</label>
+                                            <Input type="text" value={formData.telefonoMovil} onChange={e => setFormData({ ...formData, telefonoMovil: e.target.value })} required placeholder="Ej: 310..." className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
                                         </div>
-                                        <div className="space-y-2.5 lg:col-span-2">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Dirección *</label>
-                                            <div className="relative">
-                                                <FiMapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
-                                                <Input type="text" value={formData.direccion} onChange={e => setFormData({ ...formData, direccion: e.target.value })} required placeholder="Dirección de residencia" className="h-10 pl-12 bg-slate-50/50 border-slate-200 rounded-xl px-5 font-bold text-slate-700 shadow-sm text-[13px] focus:bg-white transition-all caret-black" />
-                                            </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Teléfono fijo</label>
+                                            <Input type="text" value={formData.telefonoFijo} onChange={e => setFormData({ ...formData, telefonoFijo: e.target.value })} placeholder="Ej: 601..." className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Género *</label>
-                                            <select value={formData.genero} onChange={e => setFormData({ ...formData, genero: e.target.value })} className="w-full h-10 bg-slate-50/50 border border-slate-200 rounded-xl px-4 font-bold text-[13px] text-slate-700 outline-none hover:border-blue-300 focus:border-blue-500 focus:bg-white transition-all shadow-sm">
+                                    {/* Fila 4: Género y Fecha de nacimiento */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Género *</label>
+                                            <select value={formData.genero} onChange={e => setFormData({ ...formData, genero: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
                                                 <option value="Femenino">Femenino</option>
                                                 <option value="Masculino">Masculino</option>
                                                 <option value="Otro">Otro</option>
                                             </select>
                                         </div>
-                                        <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha de nacimiento *</label>
-                                            <Input type="date" value={formData.fechaNacimiento} onChange={e => setFormData({ ...formData, fechaNacimiento: e.target.value })} required className="h-10 bg-slate-50/50 border-slate-200 rounded-xl px-5 font-bold text-slate-700 shadow-sm text-[13px] focus:bg-white transition-all caret-black" />
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-medium text-slate-500">Fecha de nacimiento *</label>
+                                            <Input type="date" value={formData.fechaNacimiento} onChange={e => setFormData({ ...formData, fechaNacimiento: e.target.value })} required className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
                                         </div>
+                                    </div>
+
+                                    {/* Fila 5: Dirección (ancho completo) */}
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-medium text-slate-500">Dirección</label>
+                                        <Input type="text" value={formData.direccion} onChange={e => setFormData({ ...formData, direccion: e.target.value })} placeholder="Dirección de residencia" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
                                     </div>
                                 </section>
 
+
                                 {/* BLOQUE 2: INFORMACIÓN EMPRESARIAL */}
-                                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6 relative">
-                                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-600" />
-                                    
-                                    <div className="flex items-center gap-3 border-b border-slate-50 pb-4">
-                                        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-inner">
-                                            <FiLayers size={20} />
+                                <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
+                                    <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+                                        <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                                            <FiLayers size={18} />
                                         </div>
                                         <div>
-                                            <h4 className="text-[15px] font-black text-slate-800 uppercase tracking-tight">Información empresarial</h4>
-                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-80">Configuración de rol y prestaciones</p>
+                                            <h4 className="text-[13px] font-semibold text-slate-800">Información empresarial</h4>
+                                            <p className="text-[10px] text-slate-400">Configuración de rol y prestaciones</p>
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
                                                 <div className="space-y-0.5">
-                                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Es doctor</span>
+                                                    <span className="text-[12px] font-semibold text-slate-700">Es doctor</span>
                                                 </div>
                                                 <button type="button" onClick={() => setFormData({ ...formData, esDoctor: !formData.esDoctor })} className={`w-12 h-6 rounded-full transition-all duration-500 relative ${formData.esDoctor ? "bg-emerald-500" : "bg-slate-200"}`}>
                                                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-500 shadow-sm ${formData.esDoctor ? "left-7" : "left-1"}`} />
@@ -630,26 +736,26 @@ export default function EmpresaUsuarios() {
                                             {formData.esDoctor && (
                                                 <div className="space-y-4 animate-in slide-in-from-left-2 transition-all">
                                                     <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                        <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Puede ver todo lo de otros doctores</span>
+                                                        <span className="text-[12px] font-medium text-slate-700">Puede ver todo lo de otros doctores</span>
                                                         <button type="button" onClick={() => setFormData({ ...formData, seeOtherDoctorsData: !formData.seeOtherDoctorsData })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.seeOtherDoctorsData ? "bg-blue-600" : "bg-slate-300"}`}>
                                                             <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.seeOtherDoctorsData ? "left-6" : "left-1"}`} />
                                                         </button>
                                                     </div>
 
-                                                    <div className="space-y-1.5 transition-all">
-                                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Porcentaje</label>
-                                                        <Input type="number" value={formData.comisionPorcentaje} onChange={e => setFormData({ ...formData, comisionPorcentaje: e.target.value })} placeholder="0" className="h-10 bg-white border-slate-200 rounded-lg px-4 font-black text-blue-600 text-[16px] shadow-sm" />
+                                                    <div className="space-y-1 transition-all">
+                                                        <label className="text-[11px] font-medium text-slate-500">Porcentaje</label>
+                                                        <Input type="number" value={formData.comisionPorcentaje} onChange={e => setFormData({ ...formData, comisionPorcentaje: e.target.value })} placeholder="0" className="h-8 bg-white border-slate-200 rounded-lg px-4 font-black text-blue-600 text-[16px] shadow-sm" />
                                                     </div>
 
                                                     <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                        <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">¿Documentos clinicos se imprimen con logo?</span>
+                                                        <span className="text-[12px] font-medium text-slate-700">¿Documentos clinicos se imprimen con logo?</span>
                                                         <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsWithLogo: !formData.clinicalDocsWithLogo })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.clinicalDocsWithLogo ? "bg-blue-600" : "bg-slate-300"}`}>
                                                             <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.clinicalDocsWithLogo ? "left-6" : "left-1"}`} />
                                                         </button>
                                                     </div>
 
-                                                    <div className="space-y-1.5 transition-all">
-                                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Cabecera documentos clínicos</label>
+                                                    <div className="space-y-1 transition-all">
+                                                        <label className="text-[11px] font-medium text-slate-500">Cabecera documentos clínicos</label>
                                                         <div className="flex bg-slate-100 p-1 rounded-lg">
                                                             <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsHeader: "sucursal" })} className={`flex-1 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${formData.clinicalDocsHeader === "sucursal" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>Sucursal</button>
                                                             <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsHeader: "personalizado" })} className={`flex-1 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${formData.clinicalDocsHeader === "personalizado" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>Personalizado</button>
@@ -659,7 +765,7 @@ export default function EmpresaUsuarios() {
                                                     {formData.clinicalDocsHeader === 'personalizado' && (
                                                         <div className="space-y-1.5 animate-in slide-in-from-top-2 transition-all">
                                                             <div className="flex items-center gap-2 ml-1">
-                                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Encabezado personalizado</label>
+                                                                <label className="text-[11px] font-medium text-slate-400">Encabezado personalizado</label>
                                                                 <FiHelpCircle size={12} className="text-slate-300 cursor-help" title="Este encabezado se usará en impresiones clínicas" />
                                                             </div>
                                                             <textarea 
@@ -674,17 +780,17 @@ export default function EmpresaUsuarios() {
                                             )}
                                         </div>
 
-                                        <div className="space-y-4">
-                                            <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de pago</label>
-                                                <select value={formData.formaPago} onChange={e => setFormData({ ...formData, formaPago: e.target.value })} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 font-black text-[11px] text-slate-700 focus:border-blue-500 transition-all">
+                                        <div className="space-y-3">
+                                            <div className="space-y-1">
+                                                <label className="text-[11px] font-semibold text-slate-500">Forma de pago</label>
+                                                <select value={formData.formaPago} onChange={e => setFormData({ ...formData, formaPago: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
                                                     <option value="Realizadas y pagadas">Realizadas y pagadas</option>
                                                     <option value="Solo realizadas">Solo realizadas</option>
                                                 </select>
                                             </div>
 
-                                            <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de perfil *</label>
+                                            <div className="space-y-1">
+                                                <label className="text-[11px] font-semibold text-slate-500">Tipo de perfil *</label>
                                                 {(() => {
                                                     const isEditingAdmin = editId && users.find(u => u.id === editId)?.rol === "administrador";
                                                     if (isEditingAdmin) {
@@ -693,12 +799,12 @@ export default function EmpresaUsuarios() {
                                                                 type="text" 
                                                                 readOnly 
                                                                 value="Administrador (Propietario)" 
-                                                                className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-4 font-black text-[11px] text-slate-500 cursor-not-allowed outline-none"
+                                                                className="w-full h-8 bg-slate-100 border border-slate-200 rounded-xl px-4 font-black text-[11px] text-slate-500 cursor-not-allowed outline-none"
                                                             />
                                                         );
                                                     }
                                                     return (
-                                                        <select required value={formData.profileId} onChange={e => setFormData({ ...formData, profileId: e.target.value })} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-lg px-3 font-black text-[11px] text-slate-700 focus:border-blue-500 transition-all">
+                                                        <select required value={formData.profileId} onChange={e => setFormData({ ...formData, profileId: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 font-black text-[11px] text-slate-700 focus:border-blue-500 transition-all">
                                                             <option value="">Seleccione perfil...</option>
                                                             {rolesDisponibles.map(p => (
                                                                 <option key={p.id} value={p.id}>{p.nombre}</option>
@@ -773,16 +879,14 @@ export default function EmpresaUsuarios() {
                                 </section>
 
                                 {/* BLOQUE 3: SUCURSALES */}
-                                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6 relative">
-                                    <div className="absolute top-0 left-0 w-1 h-full bg-slate-900" />
-                                    
-                                    <div className="flex items-center gap-3 border-b border-slate-50 pb-3 mb-2">
-                                        <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-800 flex items-center justify-center shadow-inner">
-                                            <FiMapPin size={20} />
+                                <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
+                                    <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+                                        <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
+                                            <FiMapPin size={18} />
                                         </div>
                                         <div>
-                                            <h4 className="text-[15px] font-black text-slate-800 uppercase tracking-tight">Acceso a Sucursales *</h4>
-                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-80">Puntos de atención autorizados</p>
+                                            <h4 className="text-[13px] font-semibold text-slate-800">Acceso a Sucursales</h4>
+                                            <p className="text-[10px] text-slate-400">Puntos de atención autorizados</p>
                                         </div>
                                     </div>
 
@@ -838,31 +942,29 @@ export default function EmpresaUsuarios() {
                                 </section>
 
                                 {/* BLOQUE 4: DATOS DE SESIÓN */}
-                                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-6 relative">
-                                    <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600 rounded-l-3xl" />
-
-                                    <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                                        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-inner">
-                                            <FiActivity size={20} />
+                                <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
+                                    <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+                                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                            <FiActivity size={18} />
                                         </div>
                                         <div>
-                                            <h4 className="text-[15px] font-black text-slate-800 uppercase tracking-tight">Datos de sesión</h4>
-                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest opacity-80">Credenciales de acceso al sistema</p>
+                                            <h4 className="text-[13px] font-semibold text-slate-800">Datos de sesión</h4>
+                                            <p className="text-[10px] text-slate-400">Credenciales de acceso al sistema</p>
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Correo electrónico *</label>
+                                            <label className="text-[11px] font-medium text-slate-500">Correo electrónico *</label>
                                             <div className="relative">
                                                 <FiMail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                                <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required placeholder="usuario@clinica.com" className="w-full h-11 bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl pl-11 pr-4 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black" />
+                                                <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required placeholder="usuario@clinica.com" className="w-full h-9 bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl pl-11 pr-4 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black" />
                                             </div>
                                             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Este correo se usa para iniciar sesión</p>
                                         </div>
 
                                         <div className="space-y-2.5">
-                                            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña *</label>
+                                            <label className="text-[11px] font-medium text-slate-500">Contraseña *</label>
                                             <div className="relative">
                                                 <input 
                                                     type={showPassword ? "text" : "password"} 
@@ -871,7 +973,7 @@ export default function EmpresaUsuarios() {
                                                     required={!editId} 
                                                     minLength={8}
                                                     placeholder="Mínimo 8 caracteres" 
-                                                    className={`w-full h-11 bg-slate-50 border ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-4 pr-12 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`}
+                                                    className={`w-full h-9 bg-slate-50 border ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-4 pr-12 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`}
                                                 />
                                                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all">
                                                     {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
@@ -889,39 +991,33 @@ export default function EmpresaUsuarios() {
                             </form>
                         </div>
 
-                        {/* Professional Footer Container */}
-                        <div className="bg-white px-10 py-8 border-t border-slate-100 flex items-center justify-between shrink-0 relative z-20">
-                            <div className="flex items-center gap-6">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Validación de Datos en Tiempo Real</span>
-                                </div>
-                                <div className="h-4 w-px bg-slate-200" />
-                                <div className="flex items-center gap-3">
-                                    <FiInfo className="text-blue-500" size={14} />
-                                    <span className="text-[9px] font-bold text-slate-400 leading-tight max-w-[200px]">Los cambios en el perfil de acceso se aplicarán de inmediato al próximo inicio de sesión.</span>
-                                </div>
+                        {/* Footer limpio */}
+                        <div className="bg-white px-5 py-3 border-t border-slate-200 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="text-[10px] text-slate-400">Validación en tiempo real</span>
+                                <div className="h-3 w-px bg-slate-200" />
+                                <span className="text-[10px] text-slate-400">Los cambios se aplicarán al próximo inicio de sesión</span>
                             </div>
 
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setModalOpen(false)}
-                                    className="px-8 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-[0.3em] text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all duration-300"
+                                    className="px-4 py-2 rounded-lg text-[12px] font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-all"
                                 >
-                                    Descartar
+                                    Cancelar
                                 </button>
                                 <button
                                     onClick={handleSave}
                                     disabled={saving}
-                                    className="group relative h-14 bg-slate-900 hover:bg-blue-600 text-white px-12 rounded-2xl text-[13px] font-black uppercase tracking-[0.3em] flex items-center gap-4 shadow-[0_20px_50px_rgba(0,0,0,0.2)] hover:shadow-blue-500/30 transition-all duration-500 active:scale-95 disabled:opacity-50 overflow-hidden"
+                                    className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[13px] font-semibold shadow-sm transition-all disabled:opacity-50"
                                 >
-                                    <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                                     {saving ? (
-                                        <div className="w-5 h-5 border-[3px] border-white/30 border-t-white rounded-full animate-spin relative z-10" />
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                     ) : (
                                         <>
-                                            <span className="relative z-10">{editId ? "Confirmar Cambios" : "Ejecutar Registro"}</span>
-                                            <FiSave size={20} className="relative z-10 group-hover:translate-x-1 transition-transform" />
+                                            <FiSave size={15} />
+                                            <span>{editId ? "Guardar cambios" : "Crear usuario"}</span>
                                         </>
                                     )}
                                 </button>
@@ -938,7 +1034,7 @@ export default function EmpresaUsuarios() {
                     <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full animate-in zoom-in-95 duration-300">
                         {/* Header */}
                         <div className="bg-red-50 px-8 py-6 rounded-t-3xl border-b border-red-100">
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3">
                                 <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center">
                                     <FiTrash2 size={28} className="text-red-600" />
                                 </div>
@@ -991,3 +1087,6 @@ export default function EmpresaUsuarios() {
         </div >
     );
 }
+
+
+

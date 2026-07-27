@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { FiPlus, FiCalendar, FiSearch, FiPrinter, FiEye, FiTrash2, FiX } from "react-icons/fi";
-import { collection, query, where, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 
 const fmt = (n) =>
@@ -67,17 +66,16 @@ export default function NotaCreditoList({ onNew }) {
             const end = parseLocalDate(fechaFin);
             end.setHours(23, 59, 59, 999);
 
-            const q = query(
-                collection(db, "notas_credito"),
-                where("inquilino", "==", inquilino)
-            );
-            const snap = await getDocs(q);
-            const list = snap.docs.map(doc => {
-                const data = doc.data();
-                const ts = data.fecha;
-                const dObj = ts?.toDate ? ts.toDate() : new Date(ts);
+            const { data: snap } = await supabase
+                .from("notas_credito")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+
+            const list = (snap || []).map(data => {
+                const ts = data.fechaISO || data.created_at || data.fecha;
+                const dObj = new Date(ts || 0);
                 return {
-                    id: doc.id,
+                    id: data.id,
                     ...data,
                     fechaObj: dObj
                 };
@@ -424,22 +422,30 @@ export default function NotaCreditoList({ onNew }) {
             const nota = voidModal.nota;
 
             // 1. Update Nota de Crédito status
-            await updateDoc(doc(db, "notas_credito", nota.id), {
-                estado: "Anulado",
-                motivoAnulacion: voidReason.trim(),
-                anuladoPor: voidUser.trim(),
-                fechaAnulacion: new Date().toISOString()
-            });
+            await supabase
+                .from("notas_credito")
+                .update({
+                    estado: "Anulado",
+                    motivoAnulacion: voidReason.trim(),
+                    anuladoPor: voidUser.trim(),
+                    fechaAnulacion: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", nota.id);
 
             // 2. Void related payment (Saldo a favor) in "pagos" collection
             if (nota.pagoId) {
                 try {
-                    await updateDoc(doc(db, "pagos", nota.pagoId), {
-                        estado: "Anulado",
-                        motivoAnulacion: `Anulación por Nota de Crédito #${nota.nroConsecutivo || nota.id.slice(0, 8).toUpperCase()}`,
-                        anuladoPor: voidUser.trim(),
-                        fechaAnulacion: new Date().toISOString()
-                    });
+                    await supabase
+                        .from("pagos")
+                        .update({
+                            estado: "Anulado",
+                            motivoAnulacion: `Anulación por Nota de Crédito #${nota.nroConsecutivo || nota.id.slice(0, 8).toUpperCase()}`,
+                            anuladoPor: voidUser.trim(),
+                            fechaAnulacion: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq("id", nota.pagoId);
                 } catch (pagoErr) {
                     console.error("Error voiding related payment:", pagoErr);
                 }

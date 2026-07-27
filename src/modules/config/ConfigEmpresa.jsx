@@ -4,13 +4,10 @@
 // Diseño compacto, limpio y estructurado sin desperdicio de espacio.
 // ============================================================
 import React, { useState, useEffect, useRef } from "react";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { FiSave, FiUpload, FiImage, FiMapPin, FiPhone, FiMail, FiBriefcase, FiFileText } from "react-icons/fi";
-import { uploadImage } from "../../services/FirebaseStorageService";
 
 export default function ConfigEmpresa() {
     const { userProfile } = useAuth();
@@ -56,17 +53,20 @@ export default function ConfigEmpresa() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const docRef = doc(db, "tenants", userProfile.inquilino);
-            const snap = await getDoc(docRef);
-            if (snap.exists()) {
-                const data = snap.data();
+            const { data } = await supabase
+                .from("tenants")
+                .select("*")
+                .eq("id", userProfile.inquilino)
+                .maybeSingle();
+
+            if (data) {
                 setFormData(prev => ({
                     ...prev,
                     nit: data.nit || "",
                     razonSocial: data.razonSocial || "",
-                    nombreComercial: data.name || data.nombreComercial || "",
-                    direccion: data.address || data.direccion || "",
-                    telefono: data.phone || data.telefono || "",
+                    nombreComercial: data.nombre || data.nombreComercial || "",
+                    direccion: data.direccion || data.address || "",
+                    telefono: data.telefono || data.phone || "",
                     celular: data.celular || "",
                     email: data.email || "",
                     website: data.website || "",
@@ -80,7 +80,7 @@ export default function ConfigEmpresa() {
                     sisproTipoDoc: data.sisproTipoDoc || "CC",
                     sisproPassword: data.sisproPassword || "",
                     codigoPrestador: data.codigoPrestador || "",
-                    logoUrl: data.logo || "",
+                    logoUrl: data.logo_url || data.logo || "",
                     ciudad: data.ciudad || "",
                     codigoPostal: data.codigoPostal || ""
                 }));
@@ -97,32 +97,22 @@ export default function ConfigEmpresa() {
         if (e) e.preventDefault();
         setSaving(true);
         try {
-            const docRef = doc(db, "tenants", userProfile.inquilino);
-            await setDoc(docRef, {
-                ...formData,
-                name: formData.nombreComercial,
+            const tenantPayload = {
+                id: userProfile.inquilino,
+                nombre: formData.nombreComercial,
                 nombreComercial: formData.nombreComercial,
-                address: formData.direccion,
-                phone: formData.telefono,
-                logo: formData.logoUrl,
+                razonSocial: formData.razonSocial,
+                nit: formData.nit,
+                telefono: formData.telefono,
+                direccion: formData.direccion,
                 logo_url: formData.logoUrl,
-                updatedAt: serverTimestamp(),
-                updatedBy: userProfile.uid
-            }, { merge: true });
+                ciudad: formData.ciudad,
+                esIps: formData.esIps,
+                codigoPrestador: formData.codigoPrestador,
+                updated_at: new Date().toISOString()
+            };
 
-            try {
-                await supabase.from("tenants").upsert({
-                    id: userProfile.inquilino,
-                    nombre: formData.nombreComercial,
-                    nit: formData.nit,
-                    telefono: formData.telefono,
-                    direccion: formData.direccion,
-                    logo_url: formData.logoUrl,
-                    ciudad: formData.ciudad
-                });
-            } catch (sErr) {
-                console.warn("Aviso al guardar tenant en Supabase:", sErr);
-            }
+            await supabase.from("tenants").upsert(tenantPayload);
 
             window.dispatchEvent(new CustomEvent("tenant-updated"));
             toast.success("Información guardada correctamente");
@@ -155,9 +145,19 @@ export default function ConfigEmpresa() {
 
         setUploading(true);
         try {
-            const logoPath = `tenants/${userProfile.inquilino}/logo_${Date.now()}`;
-            const downloadUrl = await uploadImage(file, logoPath);
-            setFormData(prev => ({ ...prev, logoUrl: downloadUrl }));
+            const fileExt = file.name.split('.').pop();
+            const fileName = `tenants/${userProfile.inquilino}_logo_${Date.now()}.${fileExt}`;
+            const { error: uploadError } = await supabase.storage
+                .from("clinical-files")
+                .upload(fileName, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: publicUrlData } = supabase.storage
+                .from("clinical-files")
+                .getPublicUrl(fileName);
+
+            setFormData(prev => ({ ...prev, logoUrl: publicUrlData.publicUrl }));
             toast.success("Logo cargado temporalmente. Guarde cambios para confirmar.");
         } catch (error) {
             toast.error(error.message);

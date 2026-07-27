@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiPieChart, FiBarChart2, FiDollarSign, FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -29,35 +28,21 @@ export default function ReporteVentasEfectividad() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        // Cargar Sucursales
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
-        setSucursalesList(listSuc);
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
         // Cargar Doctores
-        const qUsuarios = query(
-          collection(db, "usuarios"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapUsuarios = await getDocs(qUsuarios);
+        const { data: snapUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const doctoresMap = {};
 
-        snapUsuarios.forEach(doc => {
-          const u = doc.data();
+        (snapUsuarios || []).forEach(u => {
           const role = (u.rol || u.role || "").toLowerCase();
           if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
             const primerNombre = u.nombre || u.nombres || u.displayName || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
-            doctoresMap[doc.id] = {
-              id: doc.id,
+            doctoresMap[u.id] = {
+              id: u.id,
               nombre: nombreCompleto,
               presupuestosGenerados: 0,
               montoPresupuestado: 0,
@@ -69,14 +54,9 @@ export default function ReporteVentasEfectividad() {
         });
 
         // Cargar Planes/Presupuestos
-        const qPlanes = query(
-          collection(db, "planes"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapPlanes = await getDocs(qPlanes);
+        const { data: snapPlanes } = await supabase.from("planes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
 
-        snapPlanes.forEach(doc => {
-          const p = doc.data();
+        (snapPlanes || []).forEach(p => {
           const profId = p.profesionalId || p.odontologoId || p.doctorId || p.profesional;
           const profName = p.profesionalAsignado || p.profesional || p.odontologo || p.doctor;
           const total = Number(p.total || p.montoTotal || 0);

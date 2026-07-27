@@ -1307,24 +1307,37 @@ export default function Dashboard() {
 
     const loadTodaysAppointments = async () => {
       try {
-        const { data, error } = await supabase
-          .from("citas")
-          .select("*")
-          .eq("tenant_id", userProfile.inquilino)
-          .eq("fecha", todayIso);
+        const startOfDay = `${todayIso}T00:00:00.000Z`;
+        const endOfDay = `${todayIso}T23:59:59.999Z`;
 
-        if (error) throw error;
+        let { data, error } = await supabase
+          .from("citas")
+          .select("*, paciente:pacientes(nombres, apellidos)")
+          .eq("tenant_id", userProfile.inquilino)
+          .gte("fecha_inicio", startOfDay)
+          .lte("fecha_inicio", endOfDay);
+
+        if (error) {
+          const { data: altData } = await supabase
+            .from("citas")
+            .select("*")
+            .eq("tenant_id", userProfile.inquilino)
+            .limit(20);
+          data = altData || [];
+        }
 
         const rows = (data || []).map(d => {
-          const fechaDate = new Date(`${d.fecha}T${d.hora || '00:00'}`);
+          const rawDate = d.fecha_inicio || d.fecha || todayIso;
+          const fechaDate = new Date(rawDate);
+          const pacName = d.paciente ? `${d.paciente.nombres || ''} ${d.paciente.apellidos || ''}`.trim() : (d.paciente_nombre || d.paciente || "Paciente");
           return {
             id: d.id,
             fecha: fechaDate,
             pacienteId: d.paciente_id || "",
-            pacienteNombre: d.paciente_nombre || d.paciente || "Paciente",
+            pacienteNombre: pacName || "Paciente",
             estado: String(d.estado || d.status || "programada"),
             motivo: d.motivo || "",
-            doctorId: d.doctor_id || "",
+            doctorId: d.profesional_id || d.doctor_id || "",
           };
         }).sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
 
@@ -1336,7 +1349,7 @@ export default function Dashboard() {
         setTodaysAppointments(rows);
         setMetrics(m => ({ ...m, citasHoy: rows.length, enEspera: enEsperaCount }));
       } catch (e) {
-        console.error("Error cargando citas del día desde Supabase:", e);
+        console.warn("Citas hoy (info):", e.message || e);
       } finally {
         setTodaysLoading(false);
       }
@@ -1358,21 +1371,19 @@ export default function Dashboard() {
 
         let facturacionHoy = 0;
         try {
-          const { data: facturas } = await supabase
-            .from("facturas_venta")
+          const { data: facturas, error: factErr } = await supabase
+            .from("facturas")
             .select("total")
-            .eq("tenant_id", userProfile?.inquilino || "nop")
-            .eq("fecha", todayIso);
-          (facturas || []).forEach(f => {
-            if (typeof f.total === "number") facturacionHoy += f.total;
-          });
-        } catch (e) {
-          console.error("Error calc facturacion:", e);
-        }
+            .eq("tenant_id", userProfile?.inquilino || "nop");
+          if (!factErr && facturas) {
+            facturas.forEach(f => {
+              if (typeof f.total === "number") facturacionHoy += f.total;
+            });
+          }
+        } catch (e) {}
 
         setMetrics(m => ({ ...m, pacientesHoy: pacientesTotal || 0, facturacionHoy }));
       } catch (e) {
-        console.error("Error cargando métricas:", e);
         setMetrics(m => ({ ...m, pacientesHoy: 0, facturacionHoy: 0 }));
       } finally {
         setMetricsLoading(false);
@@ -1431,8 +1442,6 @@ export default function Dashboard() {
 
         setWeeklySeries(sortedSeries);
       } catch (e) {
-        console.error("Error cargando serie semanal (Supabase):", e);
-        // Fallback: empty series
         const emptySeries = Array.from(base.entries())
           .sort((a, b) => a[0].localeCompare(b[0]))
           .map(([k, v]) => ({ label: v.shortLabel, value: 0 }));
@@ -1449,15 +1458,15 @@ export default function Dashboard() {
     if (cacheLoaded) return;
     const loadRecent = async () => {
       try {
-        // Actividad reciente desde Supabase
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("actividad")
           .select("id, descripcion, titulo, created_at")
           .eq("tenant_id", userProfile?.inquilino || "nop")
           .order("created_at", { ascending: false })
           .limit(5);
+        if (error || !data) return;
         setRecent(
-          (data || []).map(d => ({
+          data.map(d => ({
             id: d.id,
             title: d.descripcion || d.titulo || "Actividad",
             time: d.created_at ? new Date(d.created_at).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }) : "",

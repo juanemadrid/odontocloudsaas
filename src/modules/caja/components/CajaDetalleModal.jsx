@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiX, FiArrowUpCircle, FiArrowDownCircle, FiFilter, FiDollarSign, FiPlus } from "react-icons/fi";
 
 const fmt = (n) =>
@@ -32,26 +26,20 @@ export default function CajaDetalleModal({ caja, onClose, onNuevoMovimiento }) {
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterMetodo, setFilterMetodo] = useState("todos");
 
-  // Real-time movimientos listener
+  // Load movimientos
   useEffect(() => {
-    const q = query(
-      collection(db, "cajas", caja.id, "movimientos"),
-      orderBy("fecha", "desc")
-    );
+    const fetchMovs = async () => {
+      setLoading(true);
+      const { data } = await supabase
+        .from("movimientos_caja")
+        .select("*")
+        .eq("caja_id", caja.id)
+        .order("created_at", { ascending: false });
+      setMovimientos(data || []);
+      setLoading(false);
+    };
 
-    setLoading(true);
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setMovimientos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Error cargando movimientos:", err);
-        setLoading(false);
-      }
-    );
-    return () => unsub();
+    fetchMovs();
   }, [caja.id]);
 
   const totalIngresos = movimientos

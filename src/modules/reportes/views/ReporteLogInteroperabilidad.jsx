@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter, FiDatabase } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -67,36 +66,18 @@ export default function ReporteLogInteroperabilidad() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        // 1. Cargar Sucursales
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
-        setSucursalesList(listSuc);
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        // 2. Cargar Logs de Interoperabilidad (IHCE) de Firestore
-        const qLogs = query(
-          collection(db, "ihce_logs"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapLogs = await getDocs(qLogs);
-        const listData = [];
-
-        snapLogs.forEach(doc => {
-          const l = doc.data();
-          const dateObj = l.createdAt?.toDate ? l.createdAt.toDate() : (l.fecha ? new Date(l.fecha) : new Date());
-
-          listData.push({
-            id: doc.id,
+        const { data: snapLogs } = await supabase.from("ihce_logs").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listData = (snapLogs || []).map(l => {
+          const dateObj = l.created_at ? new Date(l.created_at) : (l.fecha ? new Date(l.fecha) : new Date());
+          return {
+            id: l.id,
             fechaObj: dateObj,
             fechaStr: isNaN(dateObj.getTime()) ? (l.fecha || "") : format(dateObj, "dd/MM/yyyy HH:mm"),
             operacion: l.operacion || "CONSULTA_RDA",
-            sucursal: l.sucursal || l.oficina || listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+            sucursal: l.sucursal || l.oficina || (snapSuc && snapSuc[0]?.nombre) || "ATM CENTRO DEL DOLOR OROFACIAL",
             profesional: l.profesional || l.doctor || "—",
             paciente: l.pacienteNombre || l.paciente || "—",
             numDocumento: l.pacienteDocumento || l.documento || "—",
@@ -104,7 +85,7 @@ export default function ReporteLogInteroperabilidad() {
             exito: l.exito || "SI",
             identificadorRDA: l.identificadorRDA || l.rdaId || "RDA-2026-00192",
             error: l.error || "—"
-          });
+          };
         });
 
         listData.sort((a, b) => b.fechaObj - a.fechaObj);

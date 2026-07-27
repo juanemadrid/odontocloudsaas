@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useToast } from '../../../context/ToastContext';
 import { createPlan, updatePlan, deletePlan } from '../../../services/planService';
-import { db } from '../../../firebase/firebaseConfig';
-import { doc, getDoc, collection, getDocs, query, where, limit, updateDoc, onSnapshot } from 'firebase/firestore';
+import supabase from '../../../lib/supabaseClient';
 import { FiSearch, FiTrash2, FiPlus, FiCheck, FiX, FiInfo, FiActivity, FiDollarSign, FiChevronLeft, FiPlusCircle, FiPackage, FiFileText, FiPrinter, FiPlusSquare, FiSave, FiAlertCircle, FiLoader, FiSend, FiEye } from 'react-icons/fi';
 import { useFormContext } from 'react-hook-form';
 import { useAuth } from '../../../context/AuthContext';
@@ -148,9 +147,12 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         if (!inquilino) return;
         (async () => {
             try {
-                const snap = await getDoc(doc(db, 'tenants', inquilino));
-                if (snap.exists()) {
-                    const d = snap.data();
+                const { data: d } = await supabase
+                    .from('tenants')
+                    .select('*')
+                    .eq('id', inquilino)
+                    .maybeSingle();
+                if (d) {
                     if (d.factusClientId && d.factusClientSecret) {
                         setFactusCredentials({
                             factusClientId:         d.factusClientId,
@@ -171,13 +173,12 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             if (!inquilino) return;
             setLoadingPlanes(true);
             try {
-                const snap = await getDocs(query(
-                    collection(db, "planes"),
-                    where("inquilino", "==", inquilino)
-                ));
-                const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-                setPlanes(data);
+                const { data } = await supabase
+                    .from("planes")
+                    .select("*")
+                    .or(`inquilino.eq.${inquilino},tenant_id.eq.${inquilino}`);
+                const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+                setPlanes(sorted);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -190,28 +191,28 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     useEffect(() => {
         if (!patientId) return;
 
-        // Real-time listener so that when an evolution is saved/updated,
-        // isItemRealized() reflects the change immediately without a page reload.
-        const evoQuery = query(
-            collection(db, "clinical_evolutions"),
-            where("patientId", "==", patientId)
-        );
-        const unsubscribeEvo = onSnapshot(evoQuery, (snap) => {
-            setEvolutions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        }, (err) => {
-            console.error("Error listening to clinical evolutions:", err);
-        });
+        const loadEvolutions = async () => {
+            try {
+                const { data } = await supabase
+                    .from("evoluciones")
+                    .select("*")
+                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`);
+                setEvolutions(data || []);
+            } catch (err) {
+                console.error("Error loading clinical evolutions:", err);
+            }
+        };
+        loadEvolutions();
 
-        // Payments are less time-critical — a one-time fetch is fine
         const fetchPayments = async () => {
             if (!currentPlanId) return;
             try {
-                const paySnap = await getDocs(query(
-                    collection(db, "pagos"),
-                    where("patientId", "==", patientId),
-                    where("planId", "==", currentPlanId)
-                ));
-                setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.estado !== "Anulado"));
+                const { data: payData } = await supabase
+                    .from("pagos")
+                    .select("*")
+                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
+                    .eq("planId", currentPlanId);
+                setPayments((payData || []).filter(p => p.estado !== "Anulado"));
             } catch (err) {
                 console.error("Error fetching payments for plan editor:", err);
             }
@@ -372,8 +373,6 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
         setEmittingInvoice(true);
         try {
-            const { addDoc, updateDoc: updDoc, doc: docRef } = await import('firebase/firestore');
-
             // Build the invoice document
             const invoiceItems = selectedItems.map(it => {
                 const totalCost = (Number(it.amount || 0) * Number(it.qty || 1)) - Number(it.descuento || 0);
@@ -390,13 +389,15 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             });
 
             const invoiceData = {
+                paciente_id: patientId,
                 patientId,
+                tenant_id:  inquilino || '',
                 inquilino:  inquilino || '',
                 planId:     currentPlanId,
                 nroFactura: `FE-${Math.floor(1000 + Math.random() * 9000)}`,
                 fechaISO:   new Date().toISOString(),
                 total:      totalFactura,
-                medioPago:  '10', // Efectivo por defecto; se puede cambiar
+                medioPago:  '10',
                 condicionPago: '1',
                 estado:     'Pendiente',
                 factusEstado: 'Pendiente',
@@ -404,8 +405,13 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 items:      invoiceItems,
             };
 
-            // 1️⃣ Save to Firestore first (so we don't lose it if Factus fails)
-            const invoiceRef = await addDoc(collection(db, 'facturas'), invoiceData);
+            // 1️⃣ Save to Supabase first
+            const { data: invData, error: invError } = await supabase
+                .from('facturas')
+                .insert([invoiceData])
+                .select()
+                .single();
+            if (invError) throw invError;
 
             // 2️⃣ Mark plan items as invoiced immediately
             const updatedItems = items.map(it =>
@@ -413,7 +419,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     ? { ...it, facturado: true, fechaFacturado: new Date().toISOString() }
                     : it
             );
-            await updDoc(docRef(db, 'treatment_plans', currentPlanId), { items: updatedItems });
+            await updatePlan(currentPlanId, { items: updatedItems });
             setItems(updatedItems);
 
             // 3️⃣ Emit to DIAN via Factus
@@ -539,18 +545,20 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         setShowOdontoModal(true);
         setOdontoLoading(true);
         try {
-            const { collection, getDocs, query, orderBy } = await import("firebase/firestore");
-            const colRef = collection(db, "pacientes", patientId, "odontogramas");
-            const snap = await getDocs(query(colRef, orderBy("creado", "desc")));
+            const { data: odontoData } = await supabase
+                .from("odontogramas")
+                .select("*")
+                .eq("paciente_id", patientId)
+                .order("created_at", { ascending: false });
             
             const list = [];
-            snap.docs.forEach(doc => {
-                const s = doc.data();
-                const creadoDate = s.creado?.toDate ? s.creado.toDate() : s.creado ? new Date(s.creado) : null;
+            (odontoData || []).forEach(doc => {
+                const s = doc;
+                const creadoDate = s.created_at ? new Date(s.created_at) : null;
                 const formattedDate = creadoDate 
                     ? creadoDate.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) 
                     : "---";
-                const creadoPor = s.creadoPor || s.profesional || "---";
+                const creadoPor = s.creado_por || s.profesional || "---";
 
                 if (s.plan && Array.isArray(s.plan)) {
                     s.plan.forEach(item => {

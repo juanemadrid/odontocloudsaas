@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiSearch, FiEye, FiTrash2, FiEdit2, FiPlus, FiFileText, FiCalendar, FiUser } from "react-icons/fi";
-import { collection, query, orderBy, deleteDoc, doc, onSnapshot } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import PlantillaEditor from "./PlantillaEditor";
@@ -23,28 +22,27 @@ export default function ConfigPlantillas() {
         if (!inquilino || view !== "list") return;
 
         setLoading(true);
-        const q = query(
-            collection(db, "tenants", inquilino, "plantillas_clinicas"),
-            orderBy("nombre", "asc")
-        );
-
-        const unsub = onSnapshot(q, (snap) => {
-            const dbTemplates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setRows([...PREDEFINED_TEMPLATES, ...dbTemplates]);
-            setLoading(false);
-        }, (err) => {
-            console.error(err);
-            if (toast?.error) toast.error("Error al sincronizar plantillas");
-            setLoading(false);
-        });
-
-        return () => unsub();
+        const loadPlantillas = async () => {
+            try {
+                const { data: dbTemplates } = await supabase
+                    .from("plantillas_clinicas")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                    .order("nombre", { ascending: true });
+                setRows([...PREDEFINED_TEMPLATES, ...(dbTemplates || [])]);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadPlantillas();
     }, [inquilino, view]);
 
     const handleDelete = async (id) => {
         if (!window.confirm("¿Seguro que desea eliminar esta plantilla? Esta acción es irreversible.")) return;
         try {
-            await deleteDoc(doc(db, "tenants", inquilino, "plantillas_clinicas", id));
+            await supabase.from("plantillas_clinicas").delete().eq("id", id);
             if (toast?.success) toast.success("Plantilla eliminada correctamente");
         } catch (e) {
             console.error(e);

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -57,34 +56,19 @@ export default function ReporteMorbilidad() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        // 1. Cargar Sucursales reales de Firestore
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
-        setSucursalesList(listSuc);
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        // 2. Cargar datos de Morbilidad de Evoluciones / Historias Clínicas en Firestore
-        const qEvoluciones = query(
-          collection(db, "evoluciones"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapEvo = await getDocs(qEvoluciones);
+        const { data: snapEvo } = await supabase.from("evoluciones").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         
         const diagCounter = {};
         let totalCasos = 0;
 
-        snapEvo.forEach(doc => {
-          const evo = doc.data();
+        (snapEvo || []).forEach(evo => {
           const cod = evo.cie10Code || evo.codigoCie10 || evo.codigoDiagnostico || "K02.1";
           const nombreDiag = evo.cie10Nombre || evo.diagnostico || evo.patologia || "Caries de la dentina";
           const suc = evo.sucursal || evo.oficina || "TODAS LAS SUCURSALES";
-          const fEv = evo.createdAt?.toDate ? evo.createdAt.toDate() : (evo.fecha ? new Date(evo.fecha) : new Date());
+          const fEv = evo.created_at ? new Date(evo.created_at) : (evo.fecha ? new Date(evo.fecha) : new Date());
 
           const key = `${cod}_${nombreDiag}`;
           if (!diagCounter[key]) {

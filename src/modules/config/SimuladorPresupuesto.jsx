@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiPlus, FiTrash2, FiSave, FiCheckCircle, FiDollarSign, FiUser, FiCalendar, FiPackage } from "react-icons/fi";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 
 const COP = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
@@ -22,13 +21,9 @@ export default function SimuladorPresupuesto() {
             if (!inquilino) return;
             setLoadingPlanes(true);
             try {
-                const snap = await getDocs(query(
-                    collection(db, "planes"),
-                    where("inquilino", "==", inquilino)
-                ));
-                const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-                setPlanes(data);
+                const { data } = await supabase.from("planes").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+                setPlanes(sorted);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -41,8 +36,8 @@ export default function SimuladorPresupuesto() {
     const cargarPlan = async (plan) => {
         setLoadingItems(true);
         try {
-            const snap = await getDocs(collection(db, "planes", plan.id, "planes_items"));
-            const planItems = snap.docs.map(d => d.data());
+            const { data: planItemsData } = await supabase.from("planes_items").select("*").eq("plan_id", plan.id);
+            const planItems = planItemsData || [];
             
             if (planItems.length === 0) {
                 alert("Este plan no tiene ítems configurados.");

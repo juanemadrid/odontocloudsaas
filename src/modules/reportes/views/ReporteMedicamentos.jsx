@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -64,52 +63,31 @@ export default function ReporteMedicamentos() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        // Cargar Sucursales
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
-        setSucursalesList(listSuc);
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        // Cargar Doctores
-        const qUsuarios = query(
-          collection(db, "usuarios"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapUsuarios = await getDocs(qUsuarios);
+        const { data: snapUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listProfs = [];
-        snapUsuarios.forEach(doc => {
-          const u = doc.data();
+        (snapUsuarios || []).forEach(u => {
           const role = (u.rol || u.role || "").toLowerCase();
-          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
+          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true || u.esDoctor === true) {
             const primerNombre = u.nombre || u.nombres || u.displayName || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
-            listProfs.push({ id: doc.id, nombre: nombreCompleto });
+            listProfs.push({ id: u.id, nombre: nombreCompleto });
           }
         });
         setProfesionales(listProfs);
 
-        // Cargar Recetas / Prescripciones / Formulaciones
-        const qFormulaciones = query(
-          collection(db, "formulaciones"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapFormulaciones = await getDocs(qFormulaciones);
+        const { data: snapFormulaciones } = await supabase.from("formulaciones").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listMeds = [];
 
-        snapFormulaciones.forEach(doc => {
-          const f = doc.data();
+        (snapFormulaciones || []).forEach(f => {
           const items = f.medicamentos || f.items || [f];
           items.forEach(m => {
             listMeds.push({
-              id: `${doc.id}_${m.nombre || m.medicamento}`,
-              fechaCreacion: f.fecha || f.createdAt,
+              id: `${f.id}_${m.nombre || m.medicamento}`,
+              fechaCreacion: f.fecha || f.created_at || f.createdAt,
               sucursal: f.sucursal || f.oficina || "ATM CENTRO DEL DOLOR OROFACIAL",
               profesional: f.profesionalNombre || f.doctor || f.profesional || "—",
               paciente: f.pacienteNombre || f.patientName || "—",

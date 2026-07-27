@@ -1,14 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import {
-  collection,
-  query,
-  onSnapshot,
-  orderBy,
-  doc,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDown } from "react-icons/fi";
 
 const fmt = (n) =>
@@ -46,16 +37,17 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
 
   // Real-time movimientos
   useEffect(() => {
-    const q = query(
-      collection(db, "cajas", caja.id, "movimientos"),
-      orderBy("fecha", "desc")
-    );
-    setLoadingMov(true);
-    const unsub = onSnapshot(q, snap => {
-      setMovimientos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const fetchMovs = async () => {
+      setLoadingMov(true);
+      const { data } = await supabase
+        .from("movimientos_caja")
+        .select("*")
+        .eq("caja_id", caja.id)
+        .order("created_at", { ascending: false });
+      setMovimientos(data || []);
       setLoadingMov(false);
-    }, () => setLoadingMov(false));
-    return () => unsub();
+    };
+    fetchMovs();
   }, [caja.id]);
 
   // Calculated values
@@ -90,9 +82,9 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
     setSaving(true);
     setError("");
     try {
-      await updateDoc(doc(db, "cajas", caja.id), {
+      await supabase.from("cajas").update({
         estado: "cerrada",
-        fechaCierre: serverTimestamp(),
+        fechaCierre: new Date().toISOString(),
         conteoEfectivo: conteoEfNum,
         conteoOtros: conteoOtrosNum,
         conteoTotal,
@@ -103,7 +95,8 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
         observacionCierre: observacion.trim(),
         cierradoPor: userProfile?.nombre || userProfile?.email || "Usuario",
         cierradoPorId: userProfile?.uid || "",
-      });
+        updated_at: new Date().toISOString()
+      }).eq("id", caja.id);
       onSuccess?.();
     } catch (err) {
       console.error("Error cerrando caja:", err);

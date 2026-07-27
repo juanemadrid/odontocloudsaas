@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiCalendar, FiTrendingUp } from "react-icons/fi";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 
@@ -54,10 +53,11 @@ export default function Indicadores() {
     if (!userProfile?.inquilino) return;
     const fetchBranches = async () => {
       try {
-        const qB = query(collection(db, "sucursales"), where("inquilino", "==", userProfile.inquilino));
-        const snapB = await getDocs(qB);
-        const bList = snapB.docs.map(d => ({ id: d.id, nombre: d.data().nombre || d.id }));
-        setBranches(bList);
+        const { data: bList } = await supabase
+          .from("sucursales")
+          .select("*")
+          .or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        setBranches((bList || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
       } catch (err) {
         console.error("Error cargando sucursales:", err);
       }
@@ -87,16 +87,17 @@ export default function Indicadores() {
       const labelPrv = format(prevDateStart, "MMM. yyyy");
 
       // 1. Pacientes (Nuevos y Origen)
-      const qPacientes = query(collection(db, "pacientes"), where("inquilino", "==", inquilino));
-      const snapPacientes = await getDocs(qPacientes);
+      const { data: snapPacientes } = await supabase
+        .from("pacientes")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       let pacCur = 0;
       let pacPrv = 0;
       const origenesCount = {};
 
-      snapPacientes.forEach(doc => {
-        const p = doc.data();
-        const fCreated = p.createdAt?.toDate ? p.createdAt.toDate() : (p.fechaCreacion ? new Date(p.fechaCreacion) : null);
+      (snapPacientes || []).forEach(p => {
+        const fCreated = p.createdAt?.toDate ? p.createdAt.toDate() : (p.fechaCreacion || p.created_at ? new Date(p.fechaCreacion || p.created_at) : null);
         if (fCreated) {
           if (fCreated >= currDateStart && fCreated <= currDateEnd) pacCur++;
           if (fCreated >= prevDateStart && fCreated <= prevDateEnd) pacPrv++;
@@ -106,7 +107,7 @@ export default function Indicadores() {
         origenesCount[medio] = (origenesCount[medio] || 0) + 1;
       });
 
-      const totalPac = snapPacientes.size || 1;
+      const totalPac = (snapPacientes || []).length || 1;
       const palette = ["#3b82f6", "#22c55e", "#06b6d4", "#eab308", "#f97316", "#ef4444", "#f43f5e", "#c084fc", "#84cc16", "#38bdf8", "#a855f7", "#ec4899"];
       let paletteIdx = 0;
 
@@ -118,8 +119,10 @@ export default function Indicadores() {
       });
 
       // 2. Presupuestos / Planes de Tratamiento
-      const qPlanes = query(collection(db, "planes"), where("inquilino", "==", inquilino));
-      const snapPlanes = await getDocs(qPlanes);
+      const { data: snapPlanes } = await supabase
+        .from("planes")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       let presCur = 0;
       let presPrv = 0;
@@ -128,9 +131,8 @@ export default function Indicadores() {
       let pacTratCur = 0;
       let pacTratPrv = 0;
 
-      snapPlanes.forEach(doc => {
-        const p = doc.data();
-        const fCreated = p.createdAt?.toDate ? p.createdAt.toDate() : (p.fechaCreacion ? new Date(p.fechaCreacion) : null);
+      (snapPlanes || []).forEach(p => {
+        const fCreated = p.createdAt?.toDate ? p.createdAt.toDate() : (p.fechaCreacion || p.created_at ? new Date(p.fechaCreacion || p.created_at) : null);
         const isAceptado = p.status === "Aceptado" || p.status === "Iniciado" || p.status === "Finalizado" || (p.pagado && p.pagado > 0);
 
         if (fCreated) {
@@ -152,16 +154,17 @@ export default function Indicadores() {
       });
 
       // 3. Pagos / Recaudo
-      const qPagos = query(collection(db, "pagos"), where("inquilino", "==", inquilino));
-      const snapPagos = await getDocs(qPagos);
+      const { data: snapPagos } = await supabase
+        .from("pagos")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       let recCur = 0;
       let recPrv = 0;
 
-      snapPagos.forEach(doc => {
-        const pg = doc.data();
+      (snapPagos || []).forEach(pg => {
         if (pg.estado !== "Anulado") {
-          const fPago = pg.fecha?.toDate ? pg.fecha.toDate() : (pg.fechaPago ? new Date(pg.fechaPago) : null);
+          const fPago = pg.fecha?.toDate ? pg.fecha.toDate() : (pg.fechaPago || pg.fecha || pg.created_at ? new Date(pg.fechaPago || pg.fecha || pg.created_at) : null);
           const monto = Number(pg.monto || pg.valor || 0);
 
           if (fPago) {
@@ -172,14 +175,15 @@ export default function Indicadores() {
       });
 
       // 4. Citas / Asistencia
-      const qCitas = query(collection(db, "agenda"), where("inquilino", "==", inquilino));
-      const snapCitas = await getDocs(qCitas);
+      const { data: snapCitas } = await supabase
+        .from("agenda")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       let citasTotal = 0;
       let citasAsistidas = 0;
 
-      snapCitas.forEach(doc => {
-        const c = doc.data();
+      (snapCitas || []).forEach(c => {
         const fCita = c.fecha ? new Date(`${c.fecha}T${c.hora || '08:00'}`) : null;
         if (fCita && fCita >= currDateStart && fCita <= currDateEnd) {
           citasTotal++;

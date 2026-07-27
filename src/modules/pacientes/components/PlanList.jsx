@@ -5,8 +5,7 @@ import { FiPlus, FiPrinter, FiEdit3, FiTrash2, FiX, FiAlertCircle, FiShield, FiF
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { BudgetPrintService } from '../../../services/BudgetPrintService';
-import { db } from '../../../firebase/firebaseConfig';
-import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import supabase from '../../../lib/supabaseClient';
 
 export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditingPlan }) {
     const patientId = patient?.id;
@@ -49,22 +48,31 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     }, [patientId, refreshKey]);
 
     const loadData = async () => {
+        if (!patientId) {
+            setPlans([]);
+            setPayments([]);
+            setEvolutions([]);
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         try {
             const data = await getPlansByPatient(patientId);
             setPlans(data);
 
             if (patientId) {
-                // Load payments
-                const q = query(collection(db, "pagos"), where("patientId", "==", patientId));
-                const snap = await getDocs(q);
-                const paymentsData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                setPayments(paymentsData);
+                const { data: payData } = await supabase
+                    .from("pagos")
+                    .select("*")
+                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`);
+                setPayments(payData || []);
 
-                // Load clinical evolutions
-                const evoQ = query(collection(db, "clinical_evolutions"), where("patientId", "==", patientId));
-                const evoSnap = await getDocs(evoQ);
-                setEvolutions(evoSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const { data: evoData } = await supabase
+                    .from("evoluciones")
+                    .select("*")
+                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`);
+                setEvolutions(evoData || []);
             }
         } catch (error) {
             console.error(error);
@@ -84,16 +92,13 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                 return;
             }
 
-            // Asumiendo que los profesionales son usuarios del inquilino
-            const q = query(
-                collection(db, "usuarios"), 
-                where("inquilino", "==", userProfile.inquilino)
-            );
-            const snap = await getDocs(q);
-            const profs = snap.docs.map(d => {
-                const data = d.data();
-                return data.nombreCompleto || `${data.nombre || ''} ${data.apellido || ''}`.trim() || data.displayName || data.email || '';
-            }).filter(n => !!n);
+            const { data: profData } = await supabase
+                .from("profesionales")
+                .select("nombre_completo, nombre, apellido")
+                .eq("tenant_id", userProfile.inquilino);
+            const profs = (profData || []).map(data =>
+                data.nombre_completo || `${data.nombre || ''} ${data.apellido || ''}`.trim() || ''
+            ).filter(n => !!n);
             setProfesionalesDropdown([...new Set(profs)]);
         } catch (e) {
             console.error(e);
@@ -103,13 +108,17 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     const loadInstitutionalCatalogs = async () => {
         if (!userProfile?.inquilino) return;
         try {
-            const [entidadesSnap, tarifasSnap] = await Promise.all([
-                getDocs(query(collection(db, "entidades"), where("inquilino", "==", userProfile.inquilino))),
-                getDocs(query(collection(db, "listas_precios"), where("inquilino", "==", userProfile.inquilino)))
-            ]);
+            const { data: entData } = await supabase
+                .from("entidades")
+                .select("*")
+                .eq("tenant_id", userProfile.inquilino);
+            const { data: listData } = await supabase
+                .from("listas_precios")
+                .select("*")
+                .eq("tenant_id", userProfile.inquilino);
 
-            setEntidades(entidadesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setTarifas(tarifasSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setEntidades(entData || []);
+            setTarifas(listData || []);
         } catch (e) {
             console.error("Error loading institutional catalogs:", e);
         }

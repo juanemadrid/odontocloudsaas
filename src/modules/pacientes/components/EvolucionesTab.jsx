@@ -5,8 +5,7 @@ import RemissionModal from "./RemissionModal";
 import { FiPlus, FiPrinter, FiSearch, FiHome } from "react-icons/fi";
 import { EvolutionPrintService } from "../../../services/EvolutionPrintService";
 import { useAuth } from "../../../context/AuthContext";
-import { collection, query, where, orderBy, getDocs } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { toast } from "sonner";
 
 export default function EvolucionesTab({ patient }) {
@@ -43,32 +42,16 @@ export default function EvolucionesTab({ patient }) {
 
         setIsPrinting(true);
         try {
-            let evos = [];
-            try {
-                const q = query(
-                    collection(db, "clinical_evolutions"),
-                    where("patientId", "==", patient.id),
-                    orderBy("date", "desc")
-                );
-                const snap = await getDocs(q);
-                evos = snap.docs.map(d => ({
-                    id: d.id,
-                    ...d.data(),
-                    date: d.data().date?.toDate() || new Date()
-                }));
-            } catch (err) {
-                console.warn("Index query warning, executing un-indexed fetch fallback:", err);
-                const qFallback = query(
-                    collection(db, "clinical_evolutions"),
-                    where("patientId", "==", patient.id)
-                );
-                const snapFallback = await getDocs(qFallback);
-                evos = snapFallback.docs.map(d => ({
-                    id: d.id,
-                    ...d.data(),
-                    date: d.data().date?.toDate() || new Date()
-                })).sort((a, b) => b.date - a.date);
-            }
+            const { data: evosData } = await supabase
+                .from("evoluciones")
+                .select("*")
+                .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`)
+                .order("created_at", { ascending: false });
+            const evos = (evosData || []).map(d => ({
+                id: d.id,
+                ...d,
+                date: d.created_at ? new Date(d.created_at) : new Date()
+            }));
 
             await EvolutionPrintService.generatePDF(evos, patient, {}, userProfile);
         } catch (error) {

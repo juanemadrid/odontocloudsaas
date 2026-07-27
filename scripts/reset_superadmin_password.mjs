@@ -1,8 +1,10 @@
 // Resetea la contraseña del superadmin via Admin API
-const SUPABASE_URL = 'https://jhdflchyhkwpedtbkusp.supabase.co';
-const SERVICE_KEY  = 'sb_secret_Vfz6a1lTTBaDJjoIr1KKhg_AmSkJpLz';
-const TARGET_EMAIL = 'madridsystem@outlook.es';
-const NEW_PASSWORD = 'MadridSystem2026!';
+import 'dotenv/config';
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY;
+const TARGET_EMAIL = process.env.SUPERADMIN_EMAIL || 'madridsystem@outlook.es';
+const NEW_PASSWORD = process.env.SUPERADMIN_PASSWORD || 'MadridSystem2026!';
 
 const headers = {
   'Content-Type': 'application/json',

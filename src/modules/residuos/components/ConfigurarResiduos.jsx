@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiSearch, FiEdit2, FiTrash2, FiPlus, FiX } from "react-icons/fi";
-import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, writeBatch } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -45,32 +44,30 @@ export default function ConfigurarResiduos() {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const q = query(collection(db, "tipos_residuos"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const { data: snap } = await supabase
+                .from("tipos_residuos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            let list = snap || [];
 
             // If empty, pre-populate default Colombian waste types
             if (list.length === 0) {
-                const batch = writeBatch(db);
-                const colRef = collection(db, "tipos_residuos");
-                const createdList = [];
-                for (const item of DEFAULT_RESIDUES) {
-                    const newDocRef = doc(colRef);
-                    const newItem = {
-                        nombre: item.nombre,
-                        color: item.color,
-                        inquilino,
-                        createdAt: new Date()
-                    };
-                    batch.set(newDocRef, newItem);
-                    createdList.push({ id: newDocRef.id, ...newItem });
-                }
-                await batch.commit();
-                list = createdList;
+                const createdItems = DEFAULT_RESIDUES.map(item => ({
+                    nombre: item.nombre,
+                    color: item.color,
+                    tenant_id: inquilino,
+                    inquilino,
+                    created_at: new Date().toISOString()
+                }));
+                const { data: inserted } = await supabase
+                    .from("tipos_residuos")
+                    .insert(createdItems)
+                    .select();
+                list = inserted || [];
                 toast.success("Se cargaron los tipos de residuos por defecto");
             }
 
-            setResidues(list.sort((a, b) => a.nombre.localeCompare(b.nombre)));
+            setResidues(list.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         } catch (e) {
             console.error("Error loading residues types:", e);
             toast.error("Error al cargar los tipos de residuos");
@@ -109,21 +106,22 @@ export default function ConfigurarResiduos() {
             const data = {
                 nombre: nombre.trim(),
                 color,
+                tenant_id: inquilino,
                 inquilino,
-                updatedAt: new Date()
+                updated_at: new Date().toISOString()
             };
 
             if (editId) {
-                await updateDoc(doc(db, "tipos_residuos", editId), data);
+                await supabase.from("tipos_residuos").update(data).eq("id", editId);
                 toast.success("Tipo de residuo actualizado");
-                setResidues(prev => prev.map(r => r.id === editId ? { ...r, ...data } : r).sort((a, b) => a.nombre.localeCompare(b.nombre)));
+                await loadResidues();
             } else {
-                const docRef = await addDoc(collection(db, "tipos_residuos"), {
+                await supabase.from("tipos_residuos").insert([{
                     ...data,
-                    createdAt: new Date()
-                });
+                    created_at: new Date().toISOString()
+                }]);
                 toast.success("Tipo de residuo agregado");
-                setResidues(prev => [...prev, { id: docRef.id, ...data }].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+                await loadResidues();
             }
             setShowModal(false);
         } catch (err) {
@@ -137,7 +135,7 @@ export default function ConfigurarResiduos() {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este tipo de residuo?")) return;
         try {
-            await deleteDoc(doc(db, "tipos_residuos", id));
+            await supabase.from("tipos_residuos").delete().eq("id", id);
             toast.success("Tipo de residuo eliminado");
             setResidues(prev => prev.filter(r => r.id !== id));
         } catch (e) {

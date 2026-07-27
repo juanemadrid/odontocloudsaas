@@ -7,8 +7,7 @@ import {
 } from "react-icons/fi";
 import logo from "/assets/logo.png"; // Asegúrate de que esta ruta sea correcta
 import { useAuth } from "../context/AuthContext";
-import { db } from "../firebase/firebaseConfig";
-import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, addDoc } from "firebase/firestore";
+import supabase from "../lib/supabaseClient";
 
 import { usePermissions } from "../hooks/usePermissions";
 import CommandPalette from "../components/CommandPalette";
@@ -55,26 +54,37 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
 
     useEffect(() => {
         if (!inquilino) return;
-        const q = query(
-            collection(db, "notificaciones"),
-            where("inquilino", "==", inquilino),
-            where("target", "==", "admin"),
-            orderBy("createdAt", "desc"),
-            limit(15)
-        );
-        const unsub = onSnapshot(q, snap => {
-            setNotificaciones(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
+        const fetchNotifsAndTenant = async () => {
+            try {
+                const { data: notifData } = await supabase
+                    .from("notificaciones")
+                    .select("*")
+                    .eq("tenant_id", inquilino)
+                    .eq("target", "admin")
+                    .order("created_at", { ascending: false })
+                    .limit(15);
+                setNotificaciones(notifData || []);
+            } catch { setNotificaciones([]); }
 
-        const unsubTenant = onSnapshot(doc(db, "tenants", inquilino), snap => {
-            if (snap.exists()) {
-                setClinicConfig(snap.data());
-            }
-        });
+            try {
+                const { data: tenantData } = await supabase
+                    .from("tenants")
+                    .select("*")
+                    .eq("id", inquilino)
+                    .maybeSingle();
+                if (tenantData) setClinicConfig(tenantData);
+            } catch { /* ignore */ }
+        };
+
+        fetchNotifsAndTenant();
+
+        const channel = supabase
+            .channel(`admin-notifs-${inquilino}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notificaciones', filter: `tenant_id=eq.${inquilino}` }, fetchNotifsAndTenant)
+            .subscribe();
 
         return () => {
-            unsub();
-            unsubTenant();
+            supabase.removeChannel(channel);
         };
     }, [inquilino]);
 
@@ -88,23 +98,22 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
         if (!selectedRequest) return;
         setProcessingRequest(true);
         try {
-            // Marcar la solicitud como confirmada
-            await updateDoc(doc(db, "notificaciones", selectedRequest.id), {
+            await supabase.from("notificaciones").update({
                 estado: "confirmada",
                 read: true
-            });
+            }).eq("id", selectedRequest.id);
 
-            // Notificar al paciente que su cita fue confirmada
-            await addDoc(collection(db, "notificaciones"), {
+            await supabase.from("notificaciones").insert([{
+                tenant_id: inquilino,
                 inquilino,
                 target: "patient",
                 title: "Cita Confirmada ✅",
                 message: `Tu solicitud de cita para el ${selectedRequest.fechaSolicitada || "la fecha solicitada"} ha sido confirmada. Pronto te contactaremos con los detalles.`,
                 type: "appointment_confirmed",
-                pacienteId: selectedRequest.pacienteId,
+                paciente_id: selectedRequest.pacienteId,
                 read: false,
-                createdAt: new Date().toISOString()
-            });
+                created_at: new Date().toISOString()
+            }]);
 
             setSelectedRequest(null);
             setNotificationsOpen(false);
@@ -134,24 +143,23 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
         if (!selectedRequest) return;
         setProcessingRequest(true);
         try {
-            // Marcar la solicitud como rechazada
-            await updateDoc(doc(db, "notificaciones", selectedRequest.id), {
+            await supabase.from("notificaciones").update({
                 estado: "rechazada",
                 read: true
-            });
+            }).eq("id", selectedRequest.id);
 
-            // Notificar al paciente que no hay disponibilidad
             const motivo = rejectReason.trim() || "no hay disponibilidad en esa fecha";
-            await addDoc(collection(db, "notificaciones"), {
+            await supabase.from("notificaciones").insert([{
+                tenant_id: inquilino,
                 inquilino,
                 target: "patient",
                 title: "Solicitud de Cita No Disponible ⚠️",
                 message: `Lo sentimos, tu solicitud de cita para el ${selectedRequest.fechaSolicitada || "la fecha solicitada"} no pudo ser confirmada porque ${motivo}. Por favor solicita otra fecha o contáctanos.`,
                 type: "appointment_rejected",
-                pacienteId: selectedRequest.pacienteId,
+                paciente_id: selectedRequest.pacienteId,
                 read: false,
-                createdAt: new Date().toISOString()
-            });
+                created_at: new Date().toISOString()
+            }]);
 
             setSelectedRequest(null);
             setRejectReason("");

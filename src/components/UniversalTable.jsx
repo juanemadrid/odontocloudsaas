@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, query, orderBy, getDocs, addDoc, doc, updateDoc, deleteDoc } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
+import supabase from "../lib/supabaseClient";
 
 export default function UniversalTable({ collectionName, title, schema }) {
     const [items, setItems] = useState([]);
@@ -11,9 +10,8 @@ export default function UniversalTable({ collectionName, title, schema }) {
     const load = async () => {
         setLoading(true);
         try {
-            const q = query(collection(db, collectionName));
-            const snap = await getDocs(q);
-            setItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const { data } = await supabase.from(collectionName).select("*");
+            setItems(data || []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -26,7 +24,7 @@ export default function UniversalTable({ collectionName, title, schema }) {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Eliminar registro?")) return;
         try {
-            await deleteDoc(doc(db, collectionName, id));
+            await supabase.from(collectionName).delete().eq("id", id);
             load();
         } catch (e) { alert("Error al eliminar"); }
     };
@@ -90,9 +88,9 @@ function UniModal({ item, onClose, schema, collectionName, onSuccess }) {
         e.preventDefault();
         try {
             if (item.id) {
-                await updateDoc(doc(db, collectionName, item.id), form);
+                await supabase.from(collectionName).update(form).eq("id", item.id);
             } else {
-                await addDoc(collection(db, collectionName), { ...form, createdAt: new Date().toISOString() });
+                await supabase.from(collectionName).insert([{ ...form, created_at: new Date().toISOString() }]);
             }
             onSuccess();
         } catch (e) { alert("Error al guardar"); }

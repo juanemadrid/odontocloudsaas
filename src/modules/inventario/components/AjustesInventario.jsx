@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { FiCalendar, FiBox, FiAlertTriangle } from "react-icons/fi";
-import { collection, addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -67,6 +66,7 @@ export default function AjustesInventario({ items, onLoadRequired }) {
 
       // 1. Add movement log
       const mov = {
+        tenant_id: inquilino,
         inquilino,
         itemId: selectedItem.id,
         itemNombre: selectedItem.nombre,
@@ -75,15 +75,15 @@ export default function AjustesInventario({ items, onLoadRequired }) {
         fecha,
         notas: `Ajuste (${tipoAjuste}): ${motivo}`,
         responsable: userProfile?.nombre || "Administrador",
-        createdAt: serverTimestamp()
+        created_at: new Date().toISOString()
       };
-      await addDoc(collection(db, "registro_movimientos_inventario"), mov);
+      await supabase.from("registro_movimientos_inventario").insert([mov]);
 
       // 2. Update product stock count
-      await updateDoc(doc(db, "inventario", selectedItem.id), {
+      await supabase.from("inventario").update({
         cantidad: newStock,
-        actualizado: new Date()
-      });
+        updated_at: new Date().toISOString()
+      }).eq("id", selectedItem.id);
 
       toast.success(`Ajuste de inventario aplicado con éxito. Nuevo stock: ${newStock}`);
       

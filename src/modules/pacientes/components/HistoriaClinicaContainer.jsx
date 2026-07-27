@@ -10,8 +10,7 @@ import {
     FiDownload,
     FiPenTool
 } from "react-icons/fi";
-import { collection, query, onSnapshot, orderBy, doc, deleteDoc, setDoc, getDoc } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { getAnamnesis } from "../../../services/clinicalService";
@@ -52,10 +51,12 @@ export default function HistoriaClinicaContainer({ patient }) {
         if (!userProfile?.inquilino) return;
         const loadClinicConfig = async () => {
             try {
-                const snap = await getDoc(doc(db, "tenants", userProfile.inquilino));
-                if (snap.exists()) {
-                    setClinicConfig(snap.data());
-                }
+                const { data: tenantData } = await supabase
+                    .from("tenants")
+                    .select("*")
+                    .eq("id", userProfile.inquilino)
+                    .maybeSingle();
+                if (tenantData) setClinicConfig(tenantData);
             } catch (err) {
                 console.error("Error loading clinic config", err);
             }
@@ -113,9 +114,13 @@ export default function HistoriaClinicaContainer({ patient }) {
                 signedBy: userProfile?.uid
             }));
             
-            await setDoc(doc(db, `pacientes/${patient.id}/docClis`, docObj.id), {
-                recetaItems: updatedItems
-            }, { merge: true });
+            await supabase
+                .from("documentos_clinicos")
+                .update({
+                    recetaItems: updatedItems,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", docObj.id);
             
             toast.success("Receta firmada digitalmente ✅");
         } catch (err) {
@@ -127,15 +132,19 @@ export default function HistoriaClinicaContainer({ patient }) {
     // Real-time synchronization of clinical documents
     useEffect(() => {
         if (!patient?.id) return;
-        const q = query(
-            collection(db, `pacientes/${patient.id}/docClis`),
-            orderBy("fechaIso", "desc")
-        );
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setDocuments(docs);
-        });
-        return () => unsubscribe();
+        const loadDocs = async () => {
+            try {
+                const { data: docData } = await supabase
+                    .from("documentos_clinicos")
+                    .select("*")
+                    .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`)
+                    .order("created_at", { ascending: false });
+                setDocuments(docData || []);
+            } catch (err) {
+                console.error("Error loading clinical documents", err);
+            }
+        };
+        loadDocs();
     }, [patient?.id]);
 
     const handleOpenModal = (tipo) => {
@@ -167,7 +176,10 @@ export default function HistoriaClinicaContainer({ patient }) {
         const docId = deleteModal.docId;
         setDeleteModal({ isOpen: false, docId: null });
         try {
-            await deleteDoc(doc(db, `pacientes/${patient.id}/docClis`, docId));
+            await supabase
+                .from("documentos_clinicos")
+                .delete()
+                .eq("id", docId);
             toast.success("Documento eliminado correctamente");
         } catch (err) {
             console.error("Error deleting doc", err);

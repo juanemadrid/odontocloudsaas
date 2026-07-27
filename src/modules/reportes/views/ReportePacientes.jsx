@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -34,48 +33,27 @@ export default function ReportePacientes() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        // Cargar Pacientes
-        const qPacientes = query(
-          collection(db, "pacientes"), 
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapshotPacientes = await getDocs(qPacientes);
-        const dataPacientes = [];
-        snapshotPacientes.forEach(doc => {
-          dataPacientes.push({ id: doc.id, ...doc.data() });
-        });
+        const { data: dataPacientes } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const sortedPacientes = (dataPacientes || []).sort((a, b) => new Date(b.created_at || b.fechaCreacion || 0) - new Date(a.created_at || a.fechaCreacion || 0));
+        setAllPacientes(sortedPacientes);
 
-        // Ordenar desc por fecha
-        dataPacientes.sort((a, b) => {
-          const dateA = a.fechaCreacion?.seconds || (a.fechaCreacion ? new Date(a.fechaCreacion).getTime() / 1000 : 0);
-          const dateB = b.fechaCreacion?.seconds || (b.fechaCreacion ? new Date(b.fechaCreacion).getTime() / 1000 : 0);
-          return dateB - dateA;
-        });
-        setAllPacientes(dataPacientes);
-
-        // Cargar ÚNICAMENTE doctores / odontólogos para la lista de profesionales
-        const qUsuarios = query(
-          collection(db, "usuarios"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapshotUsuarios = await getDocs(qUsuarios);
+        const { data: snapshotUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listProfs = [];
-        snapshotUsuarios.forEach(doc => {
-          const u = doc.data();
+        (snapshotUsuarios || []).forEach(u => {
           const role = (u.rol || u.role || "").toLowerCase();
           // Filtrar estrictamente solo si es doctor u odontólogo
-          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
+          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true || u.esDoctor === true) {
             const primerNombre = u.nombre || u.nombres || u.displayName || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
             
             listProfs.push({ 
-              id: doc.id, 
+              id: u.id, 
               nombre: nombreCompleto,
-              rawName: u.nombre || u.nombres || u.displayName || "",
-              rawLastName: u.apellido || u.apellidos || "",
+              rawName: primerNombre,
+              rawLastName: primerApellido,
               allNames: [
-                doc.id,
+                u.id,
                 nombreCompleto.toLowerCase(),
                 primerNombre.toLowerCase(),
                 primerApellido.toLowerCase(),

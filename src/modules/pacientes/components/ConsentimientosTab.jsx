@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import Button from "../../../components/ui/Button";
 import { toast } from "sonner";
 
@@ -30,13 +29,12 @@ export default function ConsentimientosTab({ paciente }) {
     const loadHistory = async () => {
         setLoading(true);
         try {
-            const q = query(
-                collection(db, "consentimientos_firmados"),
-                where("pacienteId", "==", paciente.id),
-                orderBy("createdAt", "desc")
-            );
-            const snap = await getDocs(q);
-            setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const { data } = await supabase
+                .from("consentimientos_firmados")
+                .select("*")
+                .or(`paciente_id.eq.${paciente.id},pacienteId.eq.${paciente.id}`)
+                .order("created_at", { ascending: false });
+            setHistory(data || []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -46,8 +44,8 @@ export default function ConsentimientosTab({ paciente }) {
 
     const loadTemplates = async () => {
         try {
-            const snap = await getDocs(collection(db, "config_consentimientos"));
-            setTemplates(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const { data } = await supabase.from("config_consentimientos").select("*");
+            setTemplates(data || []);
         } catch (e) { console.error(e); }
     };
 
@@ -112,15 +110,16 @@ export default function ConsentimientosTab({ paciente }) {
         const signatureData = canvas.toDataURL("image/png");
 
         try {
-            await addDoc(collection(db, "consentimientos_firmados"), {
+            await supabase.from("consentimientos_firmados").insert([{
+                paciente_id: paciente.id,
                 pacienteId: paciente.id,
                 pacienteNombre: paciente.nombreCompleto,
                 templateId: selectedTemplate.id,
                 templateTitle: selectedTemplate.title,
                 contentSnapshot: previewContent,
-                signatureUrl: signatureData,
-                createdAt: serverTimestamp()
-            });
+                signatureData,
+                fecha: new Date().toISOString()
+            }]);
             toast.success("Consentimiento informado guardado exitosamente.");
             setView("list");
             loadHistory();

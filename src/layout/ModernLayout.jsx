@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
+import supabase from "../lib/supabaseClient";
 import VivaHeader from "./VivaHeader";
 import VivaFooter from "./VivaFooter";
 import { MASTER_CONFIG } from "../constants/MasterConfig";
@@ -38,25 +37,20 @@ export default function ModernLayout() {
         const loadData = async () => {
             try {
                 if (clinicSlug) {
-                    const q = query(collection(db, "tenants"), where("slug", "==", clinicSlug));
-                    const qSnap = await getDocs(q);
-                    if (!qSnap.empty) {
-                        const inquilino = qSnap.docs[0].id;
-                        const tenantData = qSnap.docs[0].data();
-
-                        const ref = doc(db, "website_config", inquilino);
-                        const snap = await getDoc(ref);
-                        if (snap.exists()) {
-                            setConfig({ ...DEFAULT_CONFIG, ...snap.data(), name: tenantData.name, slug: clinicSlug });
+                    const { data: tenantData } = await supabase.from("tenants").select("*").eq("slug", clinicSlug).maybeSingle();
+                    if (tenantData) {
+                        const inquilino = tenantData.id;
+                        const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle();
+                        if (webSnap?.config) {
+                            setConfig({ ...DEFAULT_CONFIG, ...webSnap.config, name: tenantData.nombre || tenantData.name, slug: clinicSlug });
                         } else {
-                            setConfig({ ...DEFAULT_CONFIG, name: tenantData.name, slug: clinicSlug });
+                            setConfig({ ...DEFAULT_CONFIG, name: tenantData.nombre || tenantData.name, slug: clinicSlug });
                         }
                     }
                 } else {
-                    const ref = doc(db, "website_config", "general");
-                    const snap = await getDoc(ref);
-                    if (snap.exists()) {
-                        setConfig((prev) => ({ ...prev, ...snap.data() }));
+                    const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", "general").maybeSingle();
+                    if (webSnap?.config) {
+                        setConfig((prev) => ({ ...prev, ...webSnap.config }));
                     }
                 }
             } catch (e) {

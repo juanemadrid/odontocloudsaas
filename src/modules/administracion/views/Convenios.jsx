@@ -1,10 +1,6 @@
 // src/modules/administracion/views/Convenios.jsx
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import { 
-  collection, query, where, getDocs, doc, setDoc, 
-  addDoc, serverTimestamp, updateDoc, deleteDoc 
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { 
@@ -47,18 +43,25 @@ export default function Convenios() {
     if (!convenio?.listaPreciosId) return;
     setLoadingItems(true);
     try {
-      const snapItems = await getDocs(collection(db, "listas_precios", convenio.listaPreciosId, "items"));
-      const items = snapItems.docs.map(d => ({ id: d.id, ...d.data() }));
-      items.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+      const { data: snapItems } = await supabase
+        .from("items_lista_precios")
+        .select("*")
+        .eq("lista_precios_id", convenio.listaPreciosId);
+
+      const items = (snapItems || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
       setPriceListItems(items);
 
       const cats = items.map(i => i.categoria).filter(c => !!c);
       setDetailCategories(["TODAS", ...new Set(cats)]);
 
-      const snapDiscounts = await getDocs(collection(db, "convenios", convenio.id, "descuentos"));
+      const { data: snapDiscounts } = await supabase
+        .from("descuentos_convenio")
+        .select("*")
+        .eq("convenio_id", convenio.id);
+
       const discMap = {};
-      snapDiscounts.docs.forEach(doc => {
-        discMap[doc.id] = doc.data();
+      (snapDiscounts || []).forEach(doc => {
+        discMap[doc.item_id || doc.id] = doc;
       });
       setDiscounts(discMap);
     } catch (e) {
@@ -98,15 +101,17 @@ export default function Convenios() {
     setSavingDiscounts(true);
     try {
       const promises = Object.entries(discounts).map(async ([itemId, disc]) => {
-        const docRef = doc(db, "convenios", selectedConvenio.id, "descuentos", itemId);
         if (disc.desc_porc > 0 || disc.descuento > 0) {
-          await setDoc(docRef, {
+          await supabase.from("descuentos_convenio").upsert({
+            id: `${selectedConvenio.id}_${itemId}`,
+            convenio_id: selectedConvenio.id,
+            item_id: itemId,
             desc_porc: disc.desc_porc,
             descuento: disc.descuento,
-            updatedAt: new Date().toISOString()
+            updated_at: new Date().toISOString()
           });
         } else {
-          await deleteDoc(docRef);
+          await supabase.from("descuentos_convenio").delete().eq("id", `${selectedConvenio.id}_${itemId}`);
         }
       });
       await Promise.all(promises);
@@ -147,12 +152,11 @@ export default function Convenios() {
   const loadConvenios = async () => {
     setLoading(true);
     try {
-      const q = query(
-        collection(db, "convenios"), 
-        where("inquilino", "==", inquilino)
-      );
-      const snap = await getDocs(q);
-      setConvenios(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const { data } = await supabase
+        .from("convenios")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      setConvenios(data || []);
     } catch (e) {
       console.error("Error loading convenios:", e);
       toast?.error("Error al cargar convenios");
@@ -163,21 +167,17 @@ export default function Convenios() {
 
   const loadMetadata = async () => {
     try {
-      // 1. Price lists
-      const qL = query(
-        collection(db, "listas_precios"), 
-        where("inquilino", "==", inquilino)
-      );
-      const snapL = await getDocs(qL);
-      setListasPrecios(snapL.docs.map(d => ({ id: d.id, nombre: d.data().nombre })));
+      const { data: snapL } = await supabase
+        .from("listas_precios")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      setListasPrecios(snapL || []);
 
-      // 2. Branches
-      const qS = query(
-        collection(db, "sucursales"), 
-        where("inquilino", "==", inquilino)
-      );
-      const snapS = await getDocs(qS);
-      setSucursales(snapS.docs.map(d => ({ id: d.id, nombre: d.data().nombre })));
+      const { data: snapS } = await supabase
+        .from("sucursales")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      setSucursales(snapS || []);
     } catch (e) {
       console.error("Error loading convenios metadata:", e);
     }
@@ -219,9 +219,8 @@ export default function Convenios() {
 
   const handleToggleActivo = async (convenio) => {
     try {
-      const docRef = doc(db, "convenios", convenio.id);
       const newStatus = !convenio.activo;
-      await updateDoc(docRef, { activo: newStatus });
+      await supabase.from("convenios").update({ activo: newStatus }).eq("id", convenio.id);
       toast?.success(`Convenio ${newStatus ? "activado" : "inactivado"} con éxito`);
       loadConvenios();
     } catch (e) {
@@ -233,7 +232,7 @@ export default function Convenios() {
   const handleDelete = async (convenio) => {
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente al convenio "${convenio.nombre}"?`)) return;
     try {
-      await deleteDoc(doc(db, "convenios", convenio.id));
+      await supabase.from("convenios").delete().eq("id", convenio.id);
       toast?.success("Convenio eliminado con éxito");
       loadConvenios();
     } catch (e) {
@@ -273,17 +272,18 @@ export default function Convenios() {
         telefono: formData.telefono.trim(),
         direccion: formData.direccion.trim(),
         listaPreciosNombre: priceListName,
+        tenant_id: inquilino,
         inquilino,
-        updatedAt: serverTimestamp()
+        updated_at: new Date().toISOString()
       };
 
       let convenioId = editingConvenio?.id;
       if (editingConvenio?.id) {
-        await setDoc(doc(db, "convenios", editingConvenio.id), dataToSave, { merge: true });
+        await supabase.from("convenios").update(dataToSave).eq("id", editingConvenio.id);
       } else {
-        dataToSave.createdAt = serverTimestamp();
-        const docRef = await addDoc(collection(db, "convenios"), dataToSave);
-        convenioId = docRef.id;
+        dataToSave.created_at = new Date().toISOString();
+        const { data: insData } = await supabase.from("convenios").insert([dataToSave]).select().single();
+        convenioId = insData?.id || `conv_${Date.now()}`;
       }
 
       toast?.success(editingConvenio ? "Convenio actualizado correctamente" : "Convenio creado con éxito");

@@ -27,10 +27,10 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      // Consultar perfil e información mínima necesaria del tenant en Supabase
+      // Consultar perfil e información completa del tenant en Supabase
       const { data: profile, error } = await supabase
         .from("profiles")
-        .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit)")
+        .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
         .eq("id", authUser.id)
         .maybeSingle();
 
@@ -39,11 +39,71 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (profile) {
+        let permisosConfig = null;
+        try {
+          const { data: wData } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", profile.tenant_id)
+            .maybeSingle();
+
+          const perfiles = wData?.config?.perfiles || [];
+          const userRoleName = (profile.role || "").trim().toLowerCase();
+          const matchedPerfil = perfiles.find(p => {
+            const pName = (p.nombre || p.id || "").trim().toLowerCase();
+            if (!pName || !userRoleName) return false;
+            return pName === userRoleName ||
+                   userRoleName.includes(pName) ||
+                   pName.includes(userRoleName);
+          });
+          if (matchedPerfil?.permisos) {
+            permisosConfig = matchedPerfil.permisos;
+          }
+
+        } catch (e) {
+          console.warn("Error cargando permisos de perfil:", e);
+        }
+
+        let masterPlans = [];
+        try {
+          const { data: superConfig } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
+            .maybeSingle();
+          masterPlans = superConfig?.config?.plans || [];
+        } catch (e) {}
+
         const tenantData = profile.tenant || {};
+        const rawPlanKey = (tenantData.plan || "free").toString().toLowerCase().trim();
+
+        const matchedMasterPlan = masterPlans.find(p => {
+          const pId = (p.id || "").toLowerCase();
+          const pName = (p.name || "").toLowerCase();
+          return pId === rawPlanKey ||
+                 pId.includes(rawPlanKey) || rawPlanKey.includes(pId) ||
+                 pName.includes(rawPlanKey) || rawPlanKey.includes(pName);
+        });
+
+        const activePlanObj = matchedMasterPlan || {
+          id: rawPlanKey,
+          name: rawPlanKey.includes('pro') ? 'Clínica Profesional' : rawPlanKey.includes('enterp') ? 'IPS Enterprise Multi-Sede' : rawPlanKey.includes('basic') ? 'Consultorio Básico' : 'Gratuito (IPS / Clínica)',
+          monthlyPrice: rawPlanKey.includes('pro') ? 189000 : rawPlanKey.includes('enterp') ? 349000 : rawPlanKey.includes('basic') ? 89000 : 0,
+          yearlyPrice: rawPlanKey.includes('pro') ? 1890000 : rawPlanKey.includes('enterp') ? 3490000 : rawPlanKey.includes('basic') ? 890000 : 0,
+          maxUsers: rawPlanKey.includes('pro') ? 10 : rawPlanKey.includes('enterp') ? 50 : rawPlanKey.includes('basic') ? 3 : 5
+        };
+
+        const createdAtDate = tenantData.created_at ? new Date(tenantData.created_at) : new Date();
+        const subEndDate = tenantData.parametros?.subscription_end_date ||
+                           tenantData.subscription_end_date ||
+                           new Date(createdAtDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
         const fullProfile = {
           ...profile,
           uid: profile.id,
           rol: (profile.role || "odontologo").trim().toLowerCase(),
+          role: profile.role,
+          permisos: permisosConfig,
           inquilino: profile.tenant_id,
           nombre: profile.full_name,
           nombreCompleto: profile.full_name,
@@ -54,9 +114,15 @@ export const AuthProvider = ({ children }) => {
             direccion: tenantData.direccion || tenantData.address || "No configurada",
             telefono: tenantData.telefono || tenantData.phone || "---",
             logo: tenantData.logo_url || tenantData.logoUrl || tenantData.logo || "",
-            nit: tenantData.nit || ""
+            nit: tenantData.nit || "",
+            planId: activePlanObj.id || rawPlanKey,
+            plan: activePlanObj,
+            subscriptionEndDate: subEndDate,
+            createdAt: tenantData.created_at
           }
         };
+
+
 
         if (authUser.email === "madridsystem@outlook.es") {
           fullProfile.rol = "superadmin";
@@ -65,6 +131,7 @@ export const AuthProvider = ({ children }) => {
         try { sessionStorage.setItem(cacheKey, JSON.stringify(fullProfile)); } catch (e) {}
         return fullProfile;
       }
+
 
       // 2. Profile fallback: Buscar si el usuario pertenece a una clínica registrada en website_config JSONB
       try {

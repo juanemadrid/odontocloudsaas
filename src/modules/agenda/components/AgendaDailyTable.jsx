@@ -142,12 +142,12 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                 <div className="w-full h-full flex flex-col">
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
                         {hydratedAppointments.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center min-h-[340px] m-6 bg-slate-50/80 rounded-3xl border-2 border-dashed border-slate-300 p-8 shadow-xs">
-                                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mb-3">
-                                    <FiCalendar className="text-blue-600 text-2xl" />
+                            <div className="flex flex-col items-center justify-center min-h-[380px] m-8 bg-gradient-to-b from-slate-50 to-slate-100/60 rounded-[32px] border-2 border-dashed border-slate-300/80 p-10 shadow-xs">
+                                <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center mb-4 shadow-sm">
+                                    <FiCalendar className="text-blue-600 text-3xl" />
                                 </div>
-                                <span className="text-[12px] font-black text-slate-700 uppercase tracking-widest">Sin citas registradas</span>
-                                <p className="text-[10px] text-slate-500 font-bold mt-1">Selecciona otra fecha o crea una nueva cita</p>
+                                <span className="text-[13px] font-black text-slate-700 uppercase tracking-widest">Sin citas registradas</span>
+                                <p className="text-[10.5px] text-slate-500 font-bold mt-1.5">Selecciona otra fecha o crea una nueva cita</p>
                             </div>
                         ) : (
                             <div className="flex flex-col h-full">
@@ -318,14 +318,10 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                         {APPOINTMENT_STATUSES.slice(0, 4).map(s => (
                             <div key={s.id} className="flex items-center gap-1.5">
                                 <div className={`w-2.5 h-2.5 rounded-full ${s.color.split(' ')[0]} border border-slate-300`} />
-                                <span className="text-[9.5px] font-black text-slate-700 uppercase">{s.label}</span>
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{s.label}</span>
                             </div>
                         ))}
                     </div>
-                </div>
-                <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-xs">
-                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                    <span className="text-[10px] font-black text-blue-700 tracking-wider uppercase">OdontoCloud Live</span>
                 </div>
             </div>
         </div>

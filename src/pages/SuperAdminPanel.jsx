@@ -204,7 +204,7 @@ export default function SuperAdminPanel() {
                                         ? "Credenciales Factus centralizadas y cuotas de facturación por clínica."
                                         : activeTab === "novedades"
                                             ? "Publica actualizaciones, alertas y comunicados que verán todos los usuarios en su panel de inicio."
-                                            : "Personalización avanzada de la landing page corporativa de OdontoCloud."}}
+                                            : "Personalización avanzada de la landing page corporativa de OdontoCloud."}
                             </p>
                         </header>
                     )}

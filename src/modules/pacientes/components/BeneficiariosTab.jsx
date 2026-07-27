@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiAlertCircle, FiSearch, FiPlus, FiTrash2, FiEdit2, FiX } from 'react-icons/fi';
-import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { v4 as uuidv4 } from 'uuid';
 import { searchPatients } from '../../../services/patientService';
@@ -58,9 +57,8 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
             }
         };
 
-        const timer = setTimeout(fetchPatients, 300);
-        return () => clearTimeout(timer);
-    }, [searchQuery, patient.inquilino, patient.id]);
+        fetchPatients();
+    }, [searchQuery, patient]);
 
     // Clear selected patient if user manually edits search query
     useEffect(() => {
@@ -94,10 +92,13 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
             };
             const updatedList = [...beneficiarios, newBen];
 
-            await updateDoc(doc(db, "pacientes", patient.id), {
-                beneficiarios: updatedList,
-                actualizado: serverTimestamp()
-            });
+            await supabase
+                .from("pacientes")
+                .update({
+                    beneficiarios: updatedList,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", patient.id);
             onUpdate && onUpdate({ ...patient, beneficiarios: updatedList });
             toast.success("Beneficiario agregado");
             setIsOpen(false);
@@ -136,10 +137,13 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
             };
             const updatedList = [...beneficiarios, newBen];
 
-            await updateDoc(doc(db, "pacientes", patient.id), {
-                beneficiarios: updatedList,
-                actualizado: serverTimestamp()
-            });
+            await supabase
+                .from("pacientes")
+                .update({
+                    beneficiarios: updatedList,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", patient.id);
             onUpdate && onUpdate({ ...patient, beneficiarios: updatedList });
             toast.success("Beneficiario agregado");
             setSearchQuery('');
@@ -158,10 +162,13 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
         setIsSubmitting(true);
         try {
             const updatedList = beneficiarios.filter(b => b.id !== targetId);
-            await updateDoc(doc(db, "pacientes", patient.id), {
-                beneficiarios: updatedList,
-                actualizado: serverTimestamp()
-            });
+            await supabase
+                .from("pacientes")
+                .update({
+                    beneficiarios: updatedList,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", patient.id);
             onUpdate && onUpdate({ ...patient, beneficiarios: updatedList });
             toast.success("Beneficiario eliminado");
         } catch (e) {

@@ -1,10 +1,6 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import supabase from "../../lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "../../firebase/firebaseConfig";
 import { useAuth } from "../../context/AuthContext";
 import ModernLanding from "../../pages/ModernLanding";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
@@ -193,10 +189,11 @@ export default function WebCms() {
         if (!file) return;
 
         try {
-            const storageRef = ref(storage, `website_uploads/${Date.now()}_${file.name}`);
-            const snapshot = await uploadBytes(storageRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-            updateItem(listKey, index, field, downloadURL);
+            const fileName = `website_uploads/${Date.now()}_${file.name}`;
+            const { data, error } = await supabase.storage.from("clinical-files").upload(fileName, file);
+            if (error) throw error;
+            const { data: pubUrl } = supabase.storage.from("clinical-files").getPublicUrl(fileName);
+            updateItem(listKey, index, field, pubUrl.publicUrl);
         } catch (error) {
             console.error("Error uploading image:", error);
             alert(`Error subiendo imagen: ${error.message}`);
@@ -208,10 +205,11 @@ export default function WebCms() {
         if (!file) return;
 
         try {
-            const storageRef = ref(storage, `website_uploads/${Date.now()}_${file.name}`);
-            const snapshot = await uploadBytes(storageRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-            setConfig(prev => ({ ...prev, [field]: downloadURL }));
+            const fileName = `website_uploads/${Date.now()}_${file.name}`;
+            const { data, error } = await supabase.storage.from("clinical-files").upload(fileName, file);
+            if (error) throw error;
+            const { data: pubUrl } = supabase.storage.from("clinical-files").getPublicUrl(fileName);
+            setConfig(prev => ({ ...prev, [field]: pubUrl.publicUrl }));
         } catch (error) {
             console.error("Error uploading image:", error);
             alert(`Error subiendo imagen: ${error.message}`);

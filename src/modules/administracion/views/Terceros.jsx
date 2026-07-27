@@ -1,10 +1,6 @@
 // src/modules/administracion/views/Terceros.jsx
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import { 
-  collection, query, where, getDocs, doc, setDoc, 
-  addDoc, serverTimestamp, updateDoc, deleteDoc 
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { 
@@ -115,13 +111,11 @@ export default function Terceros() {
   const loadTerceros = async () => {
     setLoading(true);
     try {
-      const q = query(
-        collection(db, "terceros"), 
-        where("inquilino", "==", inquilino)
-      );
-      const snap = await getDocs(q);
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTerceros(list);
+      const { data } = await supabase
+        .from("terceros")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      setTerceros(data || []);
     } catch (e) {
       console.error("Error loading terceros:", e);
       toast?.error("Error al cargar los terceros");
@@ -186,9 +180,8 @@ export default function Terceros() {
 
   const handleToggleActivo = async (tercero) => {
     try {
-      const docRef = doc(db, "terceros", tercero.id);
       const newStatus = !tercero.activo;
-      await updateDoc(docRef, { activo: newStatus });
+      await supabase.from("terceros").update({ activo: newStatus }).eq("id", tercero.id);
       toast?.success(`Tercero ${newStatus ? "activado" : "inactivado"} con éxito`);
       loadTerceros();
     } catch (e) {
@@ -203,10 +196,10 @@ export default function Terceros() {
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente al tercero "${name}"?`)) return;
     
     try {
-      await deleteDoc(doc(db, "terceros", tercero.id));
+      await supabase.from("terceros").delete().eq("id", tercero.id);
       if (tercero.isEps) {
         try {
-          await deleteDoc(doc(db, "eps_catalogo", tercero.id));
+          await supabase.from("eps_catalogo").delete().eq("id", tercero.id);
         } catch {}
       }
       toast?.success("Tercero eliminado con éxito");
@@ -246,41 +239,43 @@ export default function Terceros() {
         email: formData.email.trim(),
         contrato: formData.contrato.trim(),
         codigoEntidadAdministradora: formData.isEps ? formData.codigoEntidadAdministradora.trim() : "",
+        tenant_id: inquilino,
         inquilino,
-        updatedAt: serverTimestamp()
+        updated_at: new Date().toISOString()
       };
 
       let terceroId = editingTercero?.id;
       if (terceroId) {
-        await setDoc(doc(db, "terceros", terceroId), dataToSave, { merge: true });
+        await supabase.from("terceros").update(dataToSave).eq("id", terceroId);
       } else {
-        dataToSave.createdAt = serverTimestamp();
-        const docRef = await addDoc(collection(db, "terceros"), dataToSave);
-        terceroId = docRef.id;
+        dataToSave.created_at = new Date().toISOString();
+        const { data: insData } = await supabase.from("terceros").insert([dataToSave]).select().single();
+        terceroId = insData?.id || `terc_${Date.now()}`;
       }
 
       // Sincronización con EPS Catálogo para módulo RIPS
       if (formData.isEps) {
         const epsName = formData.razonSocial || `${formData.nombre} ${formData.apellidos}`.trim();
-        await setDoc(doc(db, "eps_catalogo", terceroId), {
+        await supabase.from("eps_catalogo").upsert({
+          id: terceroId,
           nombre: epsName,
+          tenant_id: inquilino,
           inquilino,
           terceroId,
           codigoEps: formData.codigoEntidadAdministradora.trim(),
           activo: formData.activo
-        }, { merge: true });
+        });
       } else {
-        // Si ya no es EPS o se inactivó, eliminar del catálogo de RIPS
         try {
-          await deleteDoc(doc(db, "eps_catalogo", terceroId));
+          await supabase.from("eps_catalogo").delete().eq("id", terceroId);
         } catch {}
       }
 
       toast?.success(editingTercero ? "Tercero actualizado correctamente" : "Tercero creado con éxito");
       setViewMode("LIST");
       loadTerceros();
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
       toast?.error("Error al guardar el tercero");
     } finally {
       setSaving(false);

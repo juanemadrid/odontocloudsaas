@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../../firebase/firebaseConfig';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import supabase from '../../../lib/supabaseClient';
 import { FiSearch, FiPlus, FiX, FiInfo, FiTrash2, FiPercent, FiCheckCircle, FiPlusCircle } from 'react-icons/fi';
 import { useToast } from '../../../context/ToastContext';
 import ToothSelectorModal from './ToothSelectorModal';
@@ -42,8 +41,16 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
             const loadAllItems = async () => {
                 setLoadingAllItems(true);
                 try {
-                    const snap = await getDocs(collection(db, "listas_precios", baseListId, "items"));
-                    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    const { data: listData } = await supabase
+                        .from("lista_precios_items")
+                        .select("*")
+                        .eq("lista_id", baseListId);
+                    const list = (listData || []).map(d => ({
+                        id: d.id,
+                        ...d,
+                        amount: d.valor || d.precio || d.amount || 0,
+                        desc: d.nombre || d.descripcion || d.desc || ""
+                    }));
                     setAllItems(list);
                     
                     // Extraer categorías únicas

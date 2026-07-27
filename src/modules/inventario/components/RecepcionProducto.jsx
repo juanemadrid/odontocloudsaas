@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { FiCalendar, FiBox, FiCheckCircle, FiSearch, FiPlus, FiEye, FiTrash2, FiArrowLeft } from "react-icons/fi";
-import { collection, addDoc, getDocs, deleteDoc, doc, query, where, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -38,14 +37,16 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
     if (!inquilino) return;
     setLoadingOrders(true);
     try {
-      const snap = await getDocs(query(collection(db, "ordenes_compra"), where("inquilino", "==", inquilino)));
-      const list = snap.docs.map((doc, index) => ({
+      const { data: list } = await supabase
+        .from("ordenes_compra")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+        .order("created_at", { ascending: false });
+      setOrders((list || []).map((doc, index) => ({
         id: doc.id,
         consecutivo: index + 1,
-        ...doc.data()
-      }));
-      list.sort((a, b) => b.fechaCreacion?.localeCompare(a.fechaCreacion));
-      setOrders(list);
+        ...doc
+      })));
     } catch (e) {
       console.error("Error loading purchase orders:", e);
     } finally {
@@ -105,6 +106,7 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
 
       // 1. Create Purchase Order document
       const orderData = {
+        tenant_id: inquilino,
         inquilino,
         itemId: selectedItem.id,
         itemNombre: selectedItem.nombre,
@@ -116,12 +118,13 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
         vencimiento,
         notas,
         responsable: userProfile?.nombre || "Administrador",
-        createdAt: serverTimestamp()
+        created_at: new Date().toISOString()
       };
-      await addDoc(collection(db, "ordenes_compra"), orderData);
+      await supabase.from("ordenes_compra").insert([orderData]);
 
       // 2. Add movement log
       const mov = {
+        tenant_id: inquilino,
         inquilino,
         itemId: selectedItem.id,
         itemNombre: selectedItem.nombre,
@@ -130,19 +133,19 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
         fecha: fechaRecepcion,
         notas: `Orden Compra: ${notas} (Proveedor: ${tercero})`,
         responsable: userProfile?.nombre || "Administrador",
-        createdAt: serverTimestamp()
+        created_at: new Date().toISOString()
       };
-      await addDoc(collection(db, "registro_movimientos_inventario"), mov);
+      await supabase.from("registro_movimientos_inventario").insert([mov]);
 
       // 3. Update product stock count
       const currentStock = parseFloat(selectedItem.cantidad || 0);
       const newStock = currentStock + qty;
-      await updateDoc(doc(db, "inventario", selectedItem.id), {
+      await supabase.from("inventario").update({
         cantidad: newStock,
         lote: lote || selectedItem.lote || "",
         vencimiento: vencimiento || selectedItem.vencimiento || "",
-        actualizado: new Date()
-      });
+        updated_at: new Date().toISOString()
+      }).eq("id", selectedItem.id);
 
       toast.success(`Orden registrada e ingresada: +${qty} ${selectedItem.unidad || "unidades"}`);
       
@@ -169,7 +172,7 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
   const handleDelete = async (id) => {
     if (!window.confirm("¿Está seguro de eliminar este registro de orden de compra?")) return;
     try {
-      await deleteDoc(doc(db, "ordenes_compra", id));
+      await supabase.from("ordenes_compra").delete().eq("id", id);
       toast.success("Registro de orden de compra eliminado");
       setOrders(prev => prev.filter(o => o.id !== id));
     } catch (e) {

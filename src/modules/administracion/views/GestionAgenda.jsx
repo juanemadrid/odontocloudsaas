@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { 
-  collection, query, where, onSnapshot, doc, updateDoc, addDoc, deleteDoc, orderBy, serverTimestamp 
-} from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { 
   FiSearch, FiEdit2, FiPlus, FiSave, FiX, FiCheck, FiUsers, FiPhone, FiInfo, FiTrash2, FiActivity, FiClock, FiChevronLeft, FiCalendar 
@@ -162,26 +159,20 @@ export default function GestionAgenda() {
     if (!inquilino) return;
 
     setLoadingProfs(true);
-    const q = query(
-      collection(db, "usuarios"),
-      where("inquilino", "==", inquilino)
-    );
-
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const filtered = docs.filter(u => 
-        u.esDoctor === true || 
-        (typeof u.rol === 'string' && ['doctor', 'odontologo', 'especialista'].includes(u.rol.toLowerCase())) ||
-        (typeof u.profileName === 'string' && u.profileName.toLowerCase().includes('octor'))
-      );
-      setProfessionals(filtered);
-      setLoadingProfs(false);
-    }, (err) => {
-      console.error("Error fetching professionals:", err);
-      setLoadingProfs(false);
-    });
-
-    return () => unsubscribe();
+    supabase.from("usuarios").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+      .then(({ data }) => {
+        const docs = data || [];
+        const filtered = docs.filter(u => 
+          u.esDoctor === true || 
+          (typeof u.rol === 'string' && ['doctor', 'odontologo', 'especialista'].includes(u.rol.toLowerCase())) ||
+          (typeof u.profileName === 'string' && u.profileName.toLowerCase().includes('octor'))
+        );
+        setProfessionals(filtered);
+        setLoadingProfs(false);
+      }).catch(err => {
+        console.error("Error fetching professionals:", err);
+        setLoadingProfs(false);
+      });
   }, [inquilino]);
 
   // Fetch Physical Resources
@@ -189,21 +180,14 @@ export default function GestionAgenda() {
     if (!inquilino) return;
 
     setLoadingRes(true);
-    const q = query(
-      collection(db, "tenants", inquilino, "recursos_fisicos"),
-      orderBy("nombre", "asc")
-    );
-
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setResources(docs);
-      setLoadingRes(false);
-    }, (err) => {
-      console.error("Error fetching resources:", err);
-      setLoadingRes(false);
-    });
-
-    return () => unsubscribe();
+    supabase.from("recursos_fisicos").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`).order("nombre", { ascending: true })
+      .then(({ data }) => {
+        setResources(data || []);
+        setLoadingRes(false);
+      }).catch(err => {
+        console.error("Error fetching resources:", err);
+        setLoadingRes(false);
+      });
   }, [inquilino]);
 
   // Reactive listeners for selected doctor's schedule subcollections
@@ -213,36 +197,16 @@ export default function GestionAgenda() {
     setLoadingSchedule(true);
     const docId = selectedProfForSchedule.id;
 
-    // Listen to predefined weekly schedule
-    const unsubPred = onSnapshot(
-      collection(db, "usuarios", docId, "horarios_predefinidos"),
-      (snap) => {
-        setPredefinedSlots(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setLoadingSchedule(false);
-      }
-    );
-
-    // Listen to open agenda dates
-    const unsubOpen = onSnapshot(
-      collection(db, "usuarios", docId, "agenda_abierta"),
-      (snap) => {
-        setOpenAgendaSlots(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      }
-    );
-
-    // Listen to unavailable dates
-    const unsubUnavail = onSnapshot(
-      collection(db, "usuarios", docId, "no_disponibles"),
-      (snap) => {
-        setUnavailableSlots(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      }
-    );
-
-    return () => {
-      unsubPred();
-      unsubOpen();
-      unsubUnavail();
-    };
+    Promise.all([
+      supabase.from("horarios_predefinidos").select("*").eq("usuario_id", docId),
+      supabase.from("agenda_abierta").select("*").eq("usuario_id", docId),
+      supabase.from("no_disponibles").select("*").eq("usuario_id", docId),
+    ]).then(([pred, open, unavail]) => {
+      setPredefinedSlots(pred.data || []);
+      setOpenAgendaSlots(open.data || []);
+      setUnavailableSlots(unavail.data || []);
+      setLoadingSchedule(false);
+    });
   }, [selectedProfForSchedule]);
 
   // Reactive listeners for selected resource's schedule subcollections
@@ -291,15 +255,14 @@ export default function GestionAgenda() {
 
     setSaving(true);
     try {
-      const profRef = doc(db, "usuarios", selectedProf.id);
-      await updateDoc(profRef, {
+      await supabase.from("usuarios").update({
         nombre: profForm.nombre.trim(),
         apellido: profForm.apellido.trim(),
         nombreCompleto: `${profForm.nombre.trim()} ${profForm.apellido.trim()}`.trim(),
         telefonoMovil: profForm.telefonoMovil.trim(),
         activo: profForm.activo,
-        updatedAt: serverTimestamp()
-      });
+        updated_at: new Date().toISOString()
+      }).eq("id", selectedProf.id);
       setProfModalOpen(false);
       setSelectedProf(null);
     } catch (err) {
@@ -341,24 +304,23 @@ export default function GestionAgenda() {
 
     setSaving(true);
     try {
-      const resCollection = collection(db, "tenants", inquilino, "recursos_fisicos");
-      
       if (selectedRes) {
-        const resRef = doc(resCollection, selectedRes.id);
-        await updateDoc(resRef, {
+        await supabase.from("recursos_fisicos").update({
           nombre: resForm.nombre.trim(),
           descripcion: resForm.descripcion.trim(),
           active: resForm.active,
-          updatedAt: serverTimestamp()
-        });
+          updated_at: new Date().toISOString()
+        }).eq("id", selectedRes.id);
       } else {
-        await addDoc(resCollection, {
+        await supabase.from("recursos_fisicos").insert([{
+          tenant_id: inquilino,
+          inquilino,
           nombre: resForm.nombre.trim(),
           descripcion: resForm.descripcion.trim(),
           active: resForm.active,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
       }
       setResModalOpen(false);
       setSelectedRes(null);
@@ -376,8 +338,7 @@ export default function GestionAgenda() {
     if (!window.confirm("¿Está seguro de eliminar este recurso físico? Las citas asociadas podrían perder su referencia.")) return;
 
     try {
-      const resRef = doc(db, "tenants", inquilino, "recursos_fisicos", id);
-      await deleteDoc(resRef);
+      await supabase.from("recursos_fisicos").delete().eq("id", id);
     } catch (err) {
       console.error("Error deleting resource:", err);
       alert("Error al eliminar el recurso físico");

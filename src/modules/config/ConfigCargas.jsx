@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { FiDownload, FiUpload, FiInfo, FiAlertCircle, FiDatabase, FiUsers, FiBox, FiActivity } from "react-icons/fi";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
-import { db } from "../../firebase/firebaseConfig";
-import { collection, writeBatch, doc, Timestamp } from "firebase/firestore";
+import supabase from "../../lib/supabaseClient";
 
 function ensureXLSX() {
     return new Promise((resolve) => {
@@ -112,7 +111,7 @@ export default function ConfigCargas() {
                 }
 
                 if (window.confirm(`¿Está seguro de importar ${jsonData.length} registros a ${item.label}?`)) {
-                    await uploadToFirestore(jsonData, item);
+                    await uploadToSupabase(jsonData, item);
                 } else {
                     setLoading(false);
                 }
@@ -126,25 +125,21 @@ export default function ConfigCargas() {
         reader.readAsArrayBuffer(file);
     };
 
-    const uploadToFirestore = async (data, item) => {
+    const uploadToSupabase = async (data, item) => {
         const total = data.length;
         setProgress({ current: 0, total });
 
         try {
-            const BATCH_SIZE = 400;
+            const BATCH_SIZE = 100;
             let count = 0;
 
             for (let i = 0; i < total; i += BATCH_SIZE) {
-                const batch = writeBatch(db);
                 const chunk = data.slice(i, i + BATCH_SIZE);
-
-                chunk.forEach((row) => {
-                    const docRef = doc(collection(db, item.collection));
-
+                const records = chunk.map((row) => {
                     let payload = {
+                        tenant_id: inquilino,
                         inquilino,
-                        importado: true,
-                        createdAt: Timestamp.now()
+                        created_at: new Date().toISOString()
                     };
 
                     if (item.id === "pacientes") {
@@ -152,15 +147,14 @@ export default function ConfigCargas() {
                             ...payload,
                             nroDocumento: String(row.Documento || ""),
                             tipoDocumento: row.Tipo_Doc || "CC",
-                            nombres: String(row.Nombres || "").toUpperCase(),
-                            apellidos: String(row.Apellidos || "").toUpperCase(),
+                            nombre: String(row.Nombres || "").toUpperCase(),
+                            apellido: String(row.Apellidos || "").toUpperCase(),
                             nombreCompleto: `${row.Nombres || ""} ${row.Apellidos || ""}`.trim().toUpperCase(),
                             celular: String(row.Celular || ""),
                             email: String(row.Email || "").toLowerCase(),
                             sexo: String(row.Sexo || "").toUpperCase(),
-                            lugarResidencia: row.Direccion || "",
-                            activo: true,
-                            facturacion: { saldoFavor: 0 }
+                            direccion: row.Direccion || "",
+                            activo: true
                         };
                     } else if (item.id === "productos") {
                         payload = {
@@ -169,7 +163,7 @@ export default function ConfigCargas() {
                             nombre: String(row.Nombre || "").toUpperCase(),
                             costo: Number(row.Costo || 0),
                             cantidad: Number(row.Stock_Actual || 0),
-                            minStock: Number(row.Stock_Minimo || 5)
+                            min_stock: Number(row.Stock_Minimo || 5)
                         };
                     } else if (item.id === "servicios") {
                         payload = {
@@ -180,19 +174,20 @@ export default function ConfigCargas() {
                             categoria: String(row.Categoria || "GENERAL").toUpperCase()
                         };
                     }
-
-                    batch.set(docRef, payload);
+                    return payload;
                 });
 
-                await batch.commit();
+                const { error } = await supabase.from(item.collection).insert(records);
+                if (error) console.error(error);
+
                 count += chunk.length;
                 setProgress({ current: count, total });
             }
 
-            if (toast?.success) toast.success(`¡Importación exitosa! ${total} registros cargados correctamente.`);
-        } catch (err) {
-            console.error(err);
-            if (toast?.error) toast.error("Error durante el cargue a la base de datos");
+            if (toast?.success) toast.success(`Importación masiva completada: ${total} registros procesados.`);
+        } catch (e) {
+            console.error(e);
+            if (toast?.error) toast.error("Error al importar datos a la base de datos");
         } finally {
             setLoading(false);
             setProgress({ current: 0, total: 0 });

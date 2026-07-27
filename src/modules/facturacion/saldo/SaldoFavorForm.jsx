@@ -4,12 +4,8 @@ import {
     FiSave, FiAlertCircle, FiCheckCircle 
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
-import { 
-    collection, addDoc, getDocs, query, where, 
-    serverTimestamp, increment, doc, updateDoc, Timestamp 
-} from "firebase/firestore";
 import { useAuth } from "../../../context/AuthContext";
 
 const CIUDADES_COLOMBIA = [
@@ -84,40 +80,45 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
         setLoading(true);
         try {
             // 1. Professionals
-            const pSnap = await getDocs(query(collection(db, "profesionales"), where("inquilino", "==", inquilino)));
-            setProfesionales(pSnap.docs.map(d => ({ 
+            const { data: profData } = await supabase
+                .from("profesionales")
+                .select("*")
+                .eq("tenant_id", inquilino);
+            setProfesionales((profData || []).map(d => ({ 
                 id: d.id, 
-                nombre: d.data().nombreCompleto || d.data().nombre 
+                nombre: d.nombre_completo || d.nombreCompleto || d.nombre 
             })));
 
             // 2. Patients (Basic list for select)
-            const pacSnap = await getDocs(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)));
-            setPacientes(pacSnap.docs.map(d => ({ 
+            const { data: pacData } = await supabase
+                .from("pacientes")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setPacientes((pacData || []).map(d => ({ 
                 id: d.id, 
-                nombre: d.data().nombreCompleto || `${d.data().nombres || ""} ${d.data().apellidos || ""}`.trim(),
-                cedula: d.data().nroDocumento || d.data().cedula || ""
+                nombre: d.nombreCompleto || `${d.nombres || ""} ${d.apellidos || ""}`.trim(),
+                cedula: d.nroDocumento || d.cedula || ""
             })));
 
             // 3. Active Caja
-            const cSnap = await getDocs(query(
-                collection(db, "cajas"), 
-                where("inquilino", "==", inquilino),
-                where("estado", "==", "abierta"),
-                where("usuarioId", "==", userProfile?.uid)
-            ));
-            if (!cSnap.empty) {
-                setActiveCaja({ id: cSnap.docs[0].id, ...cSnap.docs[0].data() });
+            const { data: cajas } = await supabase
+                .from("cajas")
+                .select("*")
+                .eq("tenant_id", inquilino)
+                .eq("estado", "abierta")
+                .eq("usuario_id", userProfile?.uid);
+            if (cajas && cajas.length > 0) {
+                setActiveCaja(cajas[0]);
             }
 
             // 4. Dynamic payment methods
-            const qMetodos = query(
-                collection(db, "metodos_pago"),
-                where("inquilino", "==", inquilino),
-                where("activo", "==", true)
-            );
-            const snapMetodos = await getDocs(qMetodos);
-            if (!snapMetodos.empty) {
-                const metodosList = snapMetodos.docs.map(d => d.data().nombre);
+            const { data: metData } = await supabase
+                .from("metodos_pago")
+                .select("nombre")
+                .eq("tenant_id", inquilino)
+                .eq("activo", true);
+            if (metData && metData.length > 0) {
+                const metodosList = metData.map(d => d.nombre);
                 setPaymentMethods(metodosList);
                 setMedioPago(metodosList[0] || "Efectivo");
             }
@@ -142,30 +143,36 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
         setModalError("");
         try {
             const name = `${newTercero.nombre.trim()} ${newTercero.apellidos.trim()}`;
-            const docRef = await addDoc(collection(db, "pacientes"), {
-                inquilino,
-                nombres: newTercero.nombre.trim(),
-                apellidos: newTercero.apellidos.trim(),
-                nombreCompleto: name,
-                tipoDocumento: newTercero.tipoDocumento,
-                nroDocumento: newTercero.nroDocumento.trim(),
-                razonSocial: newTercero.razonSocial.trim(),
-                celular: newTercero.telefono.trim(),
-                direccion: newTercero.direccion.trim(),
-                email: newTercero.email.trim(),
-                pais: newTercero.pais,
-                ciudad: newTercero.ciudad,
-                fechaCreacion: serverTimestamp()
-            });
+            const { data: createdPatient, error: pacErr } = await supabase
+                .from("pacientes")
+                .insert([{
+                    tenant_id: inquilino,
+                    inquilino,
+                    nombres: newTercero.nombre.trim(),
+                    apellidos: newTercero.apellidos.trim(),
+                    nombreCompleto: name,
+                    tipoDocumento: newTercero.tipoDocumento,
+                    nroDocumento: newTercero.nroDocumento.trim(),
+                    razonSocial: newTercero.razonSocial.trim(),
+                    celular: newTercero.telefono.trim(),
+                    direccion: newTercero.direccion.trim(),
+                    email: newTercero.email.trim(),
+                    pais: newTercero.pais,
+                    ciudad: newTercero.ciudad,
+                    created_at: new Date().toISOString()
+                }])
+                .select()
+                .single();
+            if (pacErr) throw pacErr;
 
-            const createdPatient = {
-                id: docRef.id,
+            const selectedPatientObj = {
+                id: createdPatient.id,
                 nombre: name,
                 cedula: newTercero.nroDocumento.trim()
             };
 
             // Select newly created patient
-            setPaciente(createdPatient);
+            setPaciente(selectedPatientObj);
 
             // Reset modal form
             setNewTercero({
@@ -202,46 +209,55 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
         setError("");
 
         try {
-            // Save credit to "pagos" collection with concept "SALDO A FAVOR"
             const creditData = {
+                tenant_id: inquilino,
                 inquilino,
-                fecha: Timestamp.fromDate(new Date(fecha + "T00:00:00")),
+                fechaISO: new Date(fecha + "T00:00:00").toISOString(),
                 profesionalId: profesional.id || null,
                 profesionalNombre: profesional.nombre || null,
-                pacienteId: paciente.id,
-                patientNombre: paciente.nombre, // Match exact key used in AddCreditModal
+                paciente_id: paciente.id,
+                patientId: paciente.id,
+                patientNombre: paciente.nombre,
                 concepto: "SALDO A FAVOR",
                 monto: valNum,
                 medio: medioPago,
                 notes: observaciones || "ABONO SALDO A FAVOR",
                 cajaId: activeCaja ? activeCaja.id : null,
                 registradoPor: `${userProfile?.nombre || userProfile?.email}`,
-                createdAt: serverTimestamp()
+                created_at: new Date().toISOString()
             };
 
-            const docRef = await addDoc(collection(db, "pagos"), creditData);
+            const { data: newPago, error: pagoErr } = await supabase
+                .from("pagos")
+                .insert([creditData])
+                .select()
+                .single();
+            if (pagoErr) throw pagoErr;
 
             // Sync with open Caja
             if (activeCaja) {
                 const movData = {
-                    inquilino,
+                    tenant_id: inquilino,
                     tipo: "ingreso",
                     concepto: "SALDO A FAVOR",
                     monto: valNum,
-                    metodoPago: medioPago,
+                    metodo_pago: medioPago,
                     descripcion: `Saldo a favor para ${paciente.nombre}`,
-                    pacienteId: paciente.id,
-                    pacienteNombre: paciente.nombre,
-                    pagoId: docRef.id,
-                    usuarioId: userProfile?.uid,
-                    usuarioNombre: userProfile?.nombre || userProfile?.email,
-                    fecha: serverTimestamp(),
+                    paciente_id: paciente.id,
+                    paciente_nombre: paciente.nombre,
+                    pago_id: newPago.id,
+                    usuario_id: userProfile?.uid,
+                    caja_id: activeCaja.id,
+                    created_at: new Date().toISOString()
                 };
-                await addDoc(collection(db, "cajas", activeCaja.id, "movimientos"), movData);
-                await updateDoc(doc(db, "cajas", activeCaja.id), {
-                    saldoActual: increment(valNum),
-                    totalIngresos: increment(valNum)
-                });
+                await supabase.from("movimientos_caja").insert([movData]);
+                await supabase
+                    .from("cajas")
+                    .update({
+                        saldo_actual: (activeCaja.saldo_actual || activeCaja.saldoActual || 0) + valNum,
+                        total_ingresos: (activeCaja.total_ingresos || activeCaja.totalIngresos || 0) + valNum
+                    })
+                    .eq("id", activeCaja.id);
             }
 
             setSuccess(true);

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiSearch, FiTrash2, FiEdit2, FiPlus, FiArrowUp, FiArrowDown, FiX, FiList, FiClock, FiFileText, FiSave } from "react-icons/fi";
-import { collection, getDocs, query, orderBy, deleteDoc, doc, updateDoc, addDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 
@@ -44,30 +43,36 @@ export default function ConfigPestanasMedicas() {
     useEffect(() => {
         if (!inquilino) return;
 
-        setLoading(true);
-        const q = query(
-            collection(db, "tenants", inquilino, "pestanas_medicas"),
-            orderBy("orden", "asc")
-        );
-
-        const unsub = onSnapshot(q, (snap) => {
-            setRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setLoading(false);
-        }, (err) => {
-            console.error(err);
-            if (toast?.error) toast.error("Error al sincronizar pestañas");
-            setLoading(false);
-        });
-
+        fetchPestanas();
         fetchTemplates();
-        return () => unsub();
     }, [inquilino]);
+
+    const fetchPestanas = async () => {
+        setLoading(true);
+        try {
+            const { data } = await supabase
+                .from("pestanas_medicas")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .order("orden", { ascending: true });
+            setRows(data || []);
+        } catch (err) {
+            console.error(err);
+            if (toast?.error) toast.error("Error al cargar pestañas");
+        } finally {
+            setLoading(false);
+        }
+    };
+
 
     const fetchTemplates = async () => {
         try {
-            const q = query(collection(db, "tenants", inquilino, "plantillas_clinicas"), orderBy("nombre", "asc"));
-            const snap = await getDocs(q);
-            setTemplates(snap.docs.map(d => ({ id: d.id, nombre: d.data().nombre })));
+            const { data } = await supabase
+                .from("plantillas_clinicas")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .order("nombre", { ascending: true });
+            setTemplates((data || []).map(d => ({ id: d.id, nombre: d.nombre })));
         } catch (error) {
             console.error("Error fetching templates:", error);
         }
@@ -87,26 +92,28 @@ export default function ConfigPestanasMedicas() {
         setSaving(true);
         try {
             const payload = {
+                tenant_id: inquilino,
+                inquilino,
                 nombre: formData.nombre.trim(),
                 descripcion: formData.descripcion.trim(),
                 plantillaId: formData.plantillaId,
+                plantilla_id: formData.plantillaId,
                 momento: formData.momento,
-                updatedAt: serverTimestamp(),
-                updatedBy: userProfile.email
+                updated_at: new Date().toISOString(),
+                updated_by: userProfile.email
             };
 
             if (editingId) {
-                await updateDoc(doc(db, "tenants", inquilino, "pestanas_medicas", editingId), payload);
+                await supabase.from("pestanas_medicas").update(payload).eq("id", editingId);
                 if (toast?.success) toast.success("Pestaña médica actualizada");
             } else {
-                await addDoc(collection(db, "tenants", inquilino, "pestanas_medicas"), {
-                    ...payload,
-                    orden: rows.length,
-                    createdAt: serverTimestamp(),
-                    createdBy: userProfile.email
-                });
+                payload.orden = rows.length;
+                payload.created_at = new Date().toISOString();
+                payload.created_by = userProfile.email;
+                await supabase.from("pestanas_medicas").insert([payload]);
                 if (toast?.success) toast.success("Nueva pestaña creada con éxito");
             }
+            fetchPestanas();
             closeModal();
         } catch (e) {
             console.error(e);
@@ -119,8 +126,9 @@ export default function ConfigPestanasMedicas() {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Seguro que desea eliminar esta pestaña de la historia clínica?")) return;
         try {
-            await deleteDoc(doc(db, "tenants", inquilino, "pestanas_medicas", id));
+            await supabase.from("pestanas_medicas").delete().eq("id", id);
             if (toast?.success) toast.success("Registro eliminado correctamente");
+            fetchPestanas();
         } catch (e) {
             console.error(e);
             if (toast?.error) toast.error("Error al eliminar");

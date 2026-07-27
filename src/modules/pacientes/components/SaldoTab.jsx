@@ -10,8 +10,7 @@ import { formatCurrency } from '../../../utils/formatters';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { ReceiptPrintService } from '../../../services/ReceiptPrintService';
-import { db } from '../../../firebase/firebaseConfig';
-import { doc, updateDoc } from 'firebase/firestore';
+import supabase from '../../../lib/supabaseClient';
 import { useAudit } from '../../../hooks/useAudit';
 
 export default function SaldoTab({ patient }) {
@@ -32,7 +31,7 @@ export default function SaldoTab({ patient }) {
     const loadData = async () => {
         if (!patient?.id) return;
         setLoading(true);
-        const data = await getPatientFinancials(patient.id);
+        const data = await getPatientFinancials(patient.id, userProfile?.inquilino);
         setFinancials(data);
         setLoading(false);
     };
@@ -66,12 +65,15 @@ export default function SaldoTab({ patient }) {
             return;
         }
         try {
-            await updateDoc(doc(db, "pagos", selectedPagoToVoid.id), {
-                estado: "Anulado",
-                motivoAnulacion: voidReason.trim(),
-                anuladoPor: userProfile?.nombreCompleto || "Sistema",
-                fechaAnulacion: new Date().toISOString()
-            });
+            await supabase
+                .from("pagos")
+                .update({
+                    estado: "Anulado",
+                    motivoAnulacion: voidReason.trim(),
+                    anuladoPor: userProfile?.nombreCompleto || "Sistema",
+                    fechaAnulacion: new Date().toISOString()
+                })
+                .eq("id", selectedPagoToVoid.id);
 
             // Audit log
             await logAction(patient?.id, "VOID_CREDIT", {

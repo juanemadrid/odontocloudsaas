@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { updateDoc, doc } from "firebase/firestore";
+import supabase from "../../lib/supabaseClient";
 import { useSearchParams, useLocation } from "react-router-dom";
 import "./pacientes.css";
 
@@ -10,7 +10,6 @@ import PatientList from "./components/PatientList";
 import PatientDetails from "./components/PatientDetails";
 import PatientForm from "./components/PatientForm";
 
-import { db } from "../../firebase/firebaseConfig";
 import {
   createOrUpdatePatient,
   deletePatient,
@@ -227,7 +226,7 @@ export default function Pacientes() {
           onToggleStatus={async (p) => {
             const isCurrentlyActive = p.activo !== false;
             try {
-              await updateDoc(doc(db, "pacientes", p.id), { activo: !isCurrentlyActive });
+              await supabase.from("pacientes").update({ activo: !isCurrentlyActive }).eq("id", p.id);
               reloadData();
             } catch (e) { toast.error("Error al cambiar estado"); }
           }}
@@ -253,9 +252,10 @@ export default function Pacientes() {
       )}
 
       {open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-10 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full h-full md:max-w-6xl md:max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 md:p-6 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full h-full md:max-w-[95vw] md:max-h-[94vh] overflow-hidden rounded-2xl shadow-2xl">
             <PatientForm
+
               initialData={editData}
               onSubmit={handleSubmit}
               onCancel={() => setOpen(false)}

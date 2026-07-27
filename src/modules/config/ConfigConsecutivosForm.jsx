@@ -5,8 +5,7 @@
 // ============================================================
 import React, { useState, useEffect } from "react";
 import { FiSave, FiX, FiCheck } from "react-icons/fi";
-import { collection, addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -77,18 +76,17 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
         try {
             const payload = {
                 ...formData,
+                tenant_id: userProfile.inquilino,
                 inquilino: userProfile.inquilino,
-                actualizado: serverTimestamp(),
+                updated_at: new Date().toISOString()
             };
 
             if (initialData?.id) {
-                await updateDoc(doc(db, "consecutivos", initialData.id), payload);
+                await supabase.from("consecutivos").update(payload).eq("id", initialData.id);
                 toast.success("Consecutivo actualizado correctamente");
             } else {
-                await addDoc(collection(db, "consecutivos"), {
-                    ...payload,
-                    creado: serverTimestamp(),
-                });
+                payload.created_at = new Date().toISOString();
+                await supabase.from("consecutivos").insert([payload]);
                 toast.success("Consecutivo creado correctamente");
             }
             

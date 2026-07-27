@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiCpu, FiSettings, FiExternalLink, FiFileText, FiAlertTriangle, FiBookOpen, FiClipboard, FiCheck, FiRefreshCw, FiActivity } from 'react-icons/fi';
 import { getAnamnesis } from '../../../services/clinicalService';
-import { collection, query, where, getDocs, limit, orderBy, doc, getDoc } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { toast } from 'sonner';
 import { suggestTreatmentPlan, predictAbsenteeism } from '../../../services/intelligenceService';
 
@@ -116,15 +115,13 @@ export default function AIInsightsTab({ patient }) {
             // Fetch last 3 evolutions
             let evolutionsText = '';
             try {
-                const q = query(
-                    collection(db, 'clinical_evolutions'),
-                    where('patientId', '==', patient.id),
-                    orderBy('date', 'desc'),
-                    limit(3)
-                );
-                const snap = await getDocs(q);
-                const evos = snap.docs.map(d => d.data());
-                evolutionsText = evos.map((e, idx) => `Evolución ${idx+1}: ${e.description || e.comentario || ''}`).join('\n');
+                const { data: evos } = await supabase
+                    .from("evoluciones")
+                    .select("*")
+                    .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`)
+                    .order("created_at", { ascending: false })
+                    .limit(3);
+                evolutionsText = (evos || []).map((e, idx) => `Evolución ${idx+1}: ${e.description || e.comentario || ''}`).join('\n');
             } catch (err) {
                 console.warn('Could not fetch evolutions:', err);
             }

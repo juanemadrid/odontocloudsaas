@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiCalendar, FiPlus, FiSearch, FiTrash2, FiEye, FiArrowLeft, FiSave, FiUploadCloud, FiClock, FiFileText } from "react-icons/fi";
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -53,13 +51,16 @@ export default function Esterilizacion() {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "ciclos_esterilizacion"), where("inquilino", "==", inquilino)));
-      const list = snap.docs.map((doc, idx) => ({
-        id: doc.id,
+      const { data: snap } = await supabase
+        .from("ciclos_esterilizacion")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      const list = (snap || []).map((docData, idx) => ({
+        id: docData.id,
         consecutivo: idx + 1,
-        ...doc.data()
+        ...docData
       }));
-      list.sort((a, b) => b.fechaEsterilizacion.localeCompare(a.fechaEsterilizacion));
+      list.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
       setCycles(list);
     } catch (e) {
       console.error("Error loading sterilization cycles:", e);
@@ -106,9 +107,19 @@ export default function Esterilizacion() {
     if (type === "biologico") setUploadingBiologico(true);
 
     try {
-      const storageRef = ref(storage, `esterilizacion/${inquilino}_${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const fileExt = file.name.split('.').pop();
+      const fileName = `esterilizacion/${inquilino}_${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
+        .from("clinical-files")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("clinical-files")
+        .getPublicUrl(fileName);
+
+      const url = publicUrlData.publicUrl;
       if (type === "quimico") {
         setQuimicoImg(url);
         toast.success("Control químico cargado");
@@ -143,6 +154,7 @@ export default function Esterilizacion() {
     setSaving(true);
     try {
       const cycleData = {
+        tenant_id: inquilino,
         inquilino,
         fechaEsterilizacion,
         cargaItems,
@@ -154,10 +166,10 @@ export default function Esterilizacion() {
         responsable: finalResponsable.toUpperCase(),
         quimicoImg,
         biologicoImg,
-        createdAt: serverTimestamp()
+        created_at: new Date().toISOString()
       };
 
-      await addDoc(collection(db, "ciclos_esterilizacion"), cycleData);
+      await supabase.from("ciclos_esterilizacion").insert([cycleData]);
       toast.success("Ciclo de esterilización registrado con éxito");
 
       // Reset form
@@ -186,7 +198,7 @@ export default function Esterilizacion() {
   const handleDelete = async (id) => {
     if (!window.confirm("¿Está seguro de eliminar este ciclo de esterilización?")) return;
     try {
-      await deleteDoc(doc(db, "ciclos_esterilizacion", id));
+      await supabase.from("ciclos_esterilizacion").delete().eq("id", id);
       toast.success("Ciclo de esterilización eliminado");
       setCycles(prev => prev.filter(c => c.id !== id));
     } catch (e) {

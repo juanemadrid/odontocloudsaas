@@ -1,8 +1,7 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { toast } from "sonner";
-import { db } from "../firebase/firebaseConfig";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import supabase from "../lib/supabaseClient";
 
 export const ReceiptPrintService = {
     generatePDF: async (pago, patient, clinic, userProfile) => {
@@ -22,19 +21,20 @@ export const ReceiptPrintService = {
             let planTitle = pago.planTitle || "Abono General";
 
             if (pago.planId) {
-                const planSnap = await getDoc(doc(db, "treatment_plans", pago.planId));
-                if (planSnap.exists()) {
-                    const planData = planSnap.data();
+                const { data: planData } = await supabase
+                    .from("treatment_plans")
+                    .select("*")
+                    .eq("id", pago.planId)
+                    .maybeSingle();
+                if (planData) {
                     totalPlan = Number(planData.total || 0);
                     
                     // Sum payments for this plan
-                    const q = query(
-                        collection(db, "pagos"),
-                        where("planId", "==", pago.planId)
-                    );
-                    const paymentsSnap = await getDocs(q);
-                    const allPayments = paymentsSnap.docs.map(d => d.data());
-                    totalPagadoPlan = allPayments.reduce((sum, p) => sum + Number(p.monto || 0), 0);
+                    const { data: allPayments } = await supabase
+                        .from("pagos")
+                        .select("*")
+                        .eq("planId", pago.planId);
+                    totalPagadoPlan = (allPayments || []).reduce((sum, p) => sum + Number(p.monto || 0), 0);
                     saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
                 }
             }
@@ -61,11 +61,14 @@ export const ReceiptPrintService = {
 
             if (tenantId) {
                 try {
-                    const configSnap = await getDoc(doc(db, "tenants", tenantId));
-                    if (configSnap.exists()) {
-                        const clinicConfig = configSnap.data();
-                        dbLogoUrl = clinicConfig.logo || clinicConfig.logoUrl || "";
-                        dbClinicName = clinicConfig.nombreComercial || clinicConfig.name || clinicConfig.nombre || "";
+                    const { data: clinicConfig } = await supabase
+                        .from("tenants")
+                        .select("*")
+                        .eq("id", tenantId)
+                        .maybeSingle();
+                    if (clinicConfig) {
+                        dbLogoUrl = clinicConfig.logo || clinicConfig.logo_url || clinicConfig.logoUrl || "";
+                        dbClinicName = clinicConfig.nombre_comercial || clinicConfig.nombreComercial || clinicConfig.name || clinicConfig.nombre || "";
                         dbClinicNit = clinicConfig.nit || "";
                         dbClinicAddress = clinicConfig.address || clinicConfig.direccion || "";
                         dbClinicPhone = clinicConfig.phone || clinicConfig.telefono || "";

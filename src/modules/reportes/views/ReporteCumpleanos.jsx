@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter, FiGift } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -52,15 +51,10 @@ export default function ReporteCumpleanos() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const qPacientes = query(
-          collection(db, "pacientes"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapPacientes = await getDocs(qPacientes);
+        const { data: snapPacientes } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listCumple = [];
 
-        snapPacientes.forEach(doc => {
-          const p = doc.data();
+        (snapPacientes || []).forEach(p => {
           if (p.fechaNacimiento) {
             const dateBirth = new Date(p.fechaNacimiento);
             if (!isNaN(dateBirth.getTime())) {
@@ -74,7 +68,7 @@ export default function ReporteCumpleanos() {
               const nom = `${p.nombre || p.nombres || ''} ${p.apellido || p.apellidos || ''}`.trim() || p.nombreCompleto || 'Sin nombre';
 
               listCumple.push({
-                id: doc.id,
+                id: p.id,
                 fechaNacimientoRaw: dateBirth,
                 fechaCumpleanos: format(dateBirth, "dd/MM/yyyy"),
                 edad: `${age} años`,

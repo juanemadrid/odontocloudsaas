@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { doc, setDoc, serverTimestamp, collection } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { FiDownload, FiUpload, FiUsers } from "react-icons/fi";
@@ -408,15 +407,21 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
             for (const patient of validPatients) {
                 const payload = {
                     ...patient,
-                    creado: serverTimestamp(),
+                    id: patient.nroDocumento,
+                    tenant_id: userProfile?.inquilino || "",
                     inquilino: userProfile?.inquilino || "",
                     celularPaciente: patient.celular,
                     documento: patient.nroDocumento,
                     paciente: patient.nombreCompleto,
-                    facturacion: { saldoFavor: 0 }
+                    facturacion: { saldoFavor: 0 },
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
                 };
 
-                await setDoc(doc(db, "pacientes", patient.nroDocumento), payload);
+                const { error: upsertErr } = await supabase
+                    .from("pacientes")
+                    .upsert([payload]);
+                if (upsertErr) console.warn("Error upserting patient:", upsertErr);
                 count++;
                 setProgress(prev => ({ ...prev, current: count }));
             }

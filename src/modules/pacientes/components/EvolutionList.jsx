@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter } from 'react-icons/fi';
@@ -689,26 +688,27 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     useEffect(() => {
         if (!patientId) return;
 
-        const q = query(
-            collection(db, "clinical_evolutions"),
-            where("patientId", "==", patientId),
-            orderBy("date", "desc")
-        );
+        const loadEvolutions = async () => {
+            try {
+                const { data } = await supabase
+                    .from("evoluciones")
+                    .select("*")
+                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
+                    .order("created_at", { ascending: false });
+                const list = (data || []).map(d => ({
+                    id: d.id,
+                    ...d,
+                    date: d.created_at ? new Date(d.created_at) : (d.date ? new Date(d.date) : new Date())
+                }));
+                setEvolutions(list);
+            } catch (err) {
+                console.error("Error loading evolutions:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(d => ({
-                id: d.id,
-                ...d.data(),
-                date: d.data().date?.toDate() || new Date()
-            }));
-            setEvolutions(data);
-            setLoading(false);
-        }, (error) => {
-            console.error("Error watching evolutions:", error);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
+        loadEvolutions();
     }, [patientId]);
 
     // Cargar planes para lookup
@@ -724,23 +724,23 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
 
         const fetchPlans = async () => {
             const lookup = {};
-            await Promise.all(planIds.map(async (planId) => {
-                try {
-                    const planSnap = await getDoc(doc(db, "treatment_plans", planId));
-                    if (planSnap.exists()) {
-                        const planData = planSnap.data();
-                        lookup[planId] = {};
-                        (planData.items || []).forEach(item => {
-                            lookup[planId][item.id] = {
-                                desc: item.desc || item.procedimiento || item.nombre || '',
-                                dientes: item.dientes || ''
-                            };
-                        });
-                    }
-                } catch (e) {
-                    // Ignorar
-                }
-            }));
+            try {
+                const { data: plansData } = await supabase
+                    .from("treatment_plans")
+                    .select("*")
+                    .in("id", planIds);
+                (plansData || []).forEach(planData => {
+                    lookup[planData.id] = {};
+                    (planData.items || []).forEach(item => {
+                        lookup[planData.id][item.id] = {
+                            desc: item.desc || item.procedimiento || item.nombre || '',
+                            dientes: item.dientes || ''
+                        };
+                    });
+                });
+            } catch (e) {
+                // Ignorar
+            }
             setPlanItemsLookup(lookup);
         };
         fetchPlans();
@@ -749,14 +749,17 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     // Firma Doctor (Eliminada confirmación innecesaria al dar clic)
     const handleSignEvolutionDoctor = async (evoObj) => {
         try {
-            await updateDoc(doc(db, "clinical_evolutions", evoObj.id), {
-                doctorSignature: {
-                    signature: userProfile?.nombreCompleto || userProfile?.nombre || "Doctor",
-                    signedAt: new Date().toISOString(),
-                    signedBy: userProfile?.uid
-                },
-                updatedAt: serverTimestamp()
-            });
+            await supabase
+                .from("evoluciones")
+                .update({
+                    doctorSignature: {
+                        signature: userProfile?.nombreCompleto || userProfile?.nombre || "Doctor",
+                        signedAt: new Date().toISOString(),
+                        signedBy: userProfile?.uid
+                    },
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", evoObj.id);
             toast.success("Evolución firmada por el profesional");
         } catch (error) {
             toast.error("Error al firmar como profesional");
@@ -770,16 +773,19 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
 
     // Guarda firma / huella del Paciente
     const handleSavePatientSignature = async (evoId, data) => {
-        await updateDoc(doc(db, "clinical_evolutions", evoId), {
-            ...data,
-            updatedAt: serverTimestamp()
-        });
+        await supabase
+            .from("evoluciones")
+            .update({
+                ...data,
+                updated_at: new Date().toISOString()
+            })
+            .eq("id", evoId);
     };
 
     const handleDelete = async (id) => {
         if (!window.confirm("¿Seguro que deseas eliminar esta evolución?")) return;
         try {
-            await deleteDoc(doc(db, "clinical_evolutions", id));
+            await supabase.from("evoluciones").delete().eq("id", id);
             toast.success("Evolución eliminada");
         } catch (error) {
             toast.error("Error al eliminar");

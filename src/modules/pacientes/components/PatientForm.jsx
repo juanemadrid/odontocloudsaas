@@ -8,8 +8,7 @@ import {
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { doc, getDoc, collection, query, where, getDocs, addDoc, limit } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { patientSchema } from "../schemas/patientSchema";
@@ -20,23 +19,25 @@ import {
 import { fetchCitiesForCountry, CIUDADES_COLOMBIA } from "../services/geoService";
 import SearchableSelect from "../../../components/ui/SearchableSelect";
 
-const FormRow = ({ label, required, children, error, helpText }) => (
-    <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 py-3 border-b border-slate-100/50 last:border-0 hover:bg-slate-50/50 transition-colors px-4">
-        <label className={`w-full md:w-60 shrink-0 text-[13px] font-bold md:text-right flex items-center justify-start md:justify-end gap-1 ${error ? 'text-rose-500' : 'text-slate-600'}`}>
-            {label} {required && <span className="text-rose-500">*</span>}
-        </label>
-        <div className="flex-1 w-full max-w-2xl relative">
+const FormRow = ({ label, required, children, error, helpText, className = "" }) => (
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+        {label && (
+            <label className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${error ? 'text-rose-500' : 'text-slate-600'}`}>
+                {label} {required && <span className="text-rose-500">*</span>}
+            </label>
+        )}
+        <div className="w-full relative">
             {children}
-            {error && <p className="text-rose-500 text-[11px] font-bold uppercase tracking-wider mt-1">{error.message}</p>}
-            {helpText && !error && <p className="text-slate-400 text-[11px] font-medium mt-1 uppercase tracking-widest">{helpText}</p>}
+            {error && <p className="text-rose-500 text-[10px] font-bold uppercase tracking-wider mt-0.5">{error.message}</p>}
+            {helpText && !error && <p className="text-slate-400 text-[10px] font-medium mt-0.5 uppercase tracking-widest">{helpText}</p>}
         </div>
     </div>
 );
 
 const SectionTitle = ({ title, num }) => (
-    <div className="flex items-center gap-4 bg-slate-50 px-6 py-4 border-y border-slate-200 mt-6 mb-2">
-        <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-black shadow-md">{num}</div>
-        <h3 className="text-[13px] font-black text-slate-700 uppercase tracking-widest">{title}</h3>
+    <div className="flex items-center gap-3 border-b border-slate-100 pb-3 mb-2">
+        <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-black shrink-0">{num}</div>
+        <h3 className="text-[13px] font-bold text-slate-800 uppercase tracking-wide">{title}</h3>
     </div>
 );
 
@@ -103,12 +104,13 @@ export default function PatientForm({
         const loadFormConfig = async () => {
             if (!inquilino) return;
             try {
-                const docSnap = await getDoc(doc(db, "tenants", inquilino, "config", "formulario_pacientes"));
-                if (docSnap.exists()) {
-                    setFormConfig(docSnap.data());
+                const { configuracionFormulariosService } = await import("../../../services/supabaseServices");
+                const config = await configuracionFormulariosService.get(inquilino, "formulario_pacientes");
+                if (config) {
+                    setFormConfig(config);
                 }
             } catch (e) {
-                console.error("Error loading patient form config:", e);
+                console.error("Error loading patient form config from Supabase:", e);
             }
         };
         loadFormConfig();
@@ -197,19 +199,45 @@ export default function PatientForm({
 
     // Camera Handlers
     const startCamera = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: "user",
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                } 
-            });
+        if (!navigator?.mediaDevices?.getUserMedia) {
+            toast.error("El acceso a la cámara requiere una conexión segura (HTTPS o localhost) o un navegador compatible.");
+            return;
+        }
+
+        const constraintConfigs = [
+            { video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } },
+            { video: { facingMode: "user" } },
+            { video: true }
+        ];
+
+        let stream = null;
+        let lastError = null;
+
+        for (const constraints of constraintConfigs) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                if (stream) break;
+            } catch (err) {
+                lastError = err;
+            }
+        }
+
+        if (stream) {
             setCameraStream(stream);
             setIsCameraActive(true);
-        } catch (err) {
-            console.error("Error accessing camera:", err);
-            toast.error("No se pudo acceder a la cámara. Verifica los permisos.");
+        } else {
+            console.error("Error accessing camera:", lastError);
+            let msg = "No se pudo acceder a la cámara. Verifica los permisos de tu navegador.";
+            if (lastError?.name === "NotAllowedError" || lastError?.name === "PermissionDeniedError") {
+                msg = "Permiso de cámara denegado. Haz clic en el icono del candado en la barra de navegación para permitir el acceso.";
+            } else if (lastError?.name === "NotFoundError" || lastError?.name === "DevicesNotFoundError") {
+                msg = "No se encontró ninguna cámara conectada a este dispositivo.";
+            } else if (lastError?.name === "NotReadableError" || lastError?.name === "TrackStartError") {
+                msg = "La cámara está siendo usada por otra aplicación (ej: Zoom, Meet, Teams). Ciérrala e inténtalo de nuevo.";
+            } else if (lastError?.name === "OverconstrainedError") {
+                msg = "La cámara no admite la resolución o configuración solicitada.";
+            }
+            toast.error(msg);
         }
     };
 
@@ -232,8 +260,8 @@ export default function PatientForm({
         if (videoRef.current && canvasRef.current) {
             const video = videoRef.current;
             const canvas = canvasRef.current;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
             const ctx = canvas.getContext("2d");
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             canvas.toBlob((blob) => {
@@ -244,6 +272,7 @@ export default function PatientForm({
                     });
                     onFotoChange(photoFile);
                     stopCamera();
+                    toast.success("Foto capturada correctamente.");
                 } else {
                     toast.error("Error al capturar la imagen. Inténtalo de nuevo.");
                 }
@@ -257,15 +286,13 @@ export default function PatientForm({
 
     // Load Catalogs
     useEffect(() => {
+        // TODO: Migrar loadPlanes a Supabase cuando esté listo el servicio
         const loadPlanes = async () => {
             if (!inquilino) return;
             setLoadingPlanes(true);
             try {
-                const q = query(collection(db, "planes"), where("inquilino", "==", inquilino));
-                const snap = await getDocs(q);
-                const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-                setPlanes(data);
+                console.log("💡 Planes temporalmente vacío - pendiente migración a Supabase");
+                setPlanes([]);
             } catch (e) {
                 console.error("Error loading planes:", e);
             } finally {
@@ -277,19 +304,18 @@ export default function PatientForm({
             if (!inquilino) return;
             setLoadingProfesionales(true);
             try {
-                // Se consulta la colección 'profesionales' que es donde EmpresaUsuarios guarda a los doctores
-                const q = query(collection(db, "profesionales"), where("inquilino", "==", inquilino));
-                const snap = await getDocs(q);
-                const data = snap.docs.map(d => ({ 
+                const { profesionales } = await import("../../../services/supabaseServices");
+                const data = await profesionales.getByTenant(inquilino);
+                const professionalsList = data.map(d => ({ 
                     id: d.id, 
-                    ...d.data(), 
-                    displayName: d.data().nombreCompleto || d.data().nombre 
+                    ...d, 
+                    displayName: d.nombre_completo || d.nombre 
                 }));
                 // Ordenar alfabéticamente
-                data.sort((a, b) => a.displayName.localeCompare(b.displayName));
-                setProfesionales(data);
+                professionalsList.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                setProfesionales(professionalsList);
             } catch (e) {
-                console.error("Error loading profesionales:", e);
+                console.error("Error loading profesionales from Supabase:", e);
             } finally {
                 setLoadingProfesionales(false);
             }
@@ -299,21 +325,13 @@ export default function PatientForm({
             if (!inquilino) return;
             setLoadingEps(true);
             try {
-                const q = query(collection(db, "eps_catalogo"), where("inquilino", "==", inquilino));
-                const snap = await getDocs(q);
-                const data = snap.docs.map(d => d.data().nombre?.trim()).filter(Boolean);
-                const uniqueEps = [];
-                const seen = new Set();
-                data.forEach(item => {
-                    if (!seen.has(item.toLowerCase())) {
-                        seen.add(item.toLowerCase());
-                        uniqueEps.push(item);
-                    }
-                });
+                const { epsCatalogo } = await import("../../../services/supabaseServices");
+                const eps = await epsCatalogo.getByTenant(inquilino);
+                const uniqueEps = eps.map(e => e.nombre).filter(Boolean);
                 uniqueEps.sort((a, b) => a.localeCompare(b));
                 setEpsList(uniqueEps);
             } catch (e) {
-                console.error("Error loading EPS catalog:", e);
+                console.error("Error loading EPS catalog from Supabase:", e);
             } finally {
                 setLoadingEps(false);
             }
@@ -323,21 +341,13 @@ export default function PatientForm({
             if (!inquilino) return;
             setLoadingBarrios(true);
             try {
-                const q = query(collection(db, "barrios_catalogo"), where("inquilino", "==", inquilino));
-                const snap = await getDocs(q);
-                const data = snap.docs.map(d => d.data().nombre?.trim()).filter(Boolean);
-                const uniqueBarrios = [];
-                const seen = new Set();
-                data.forEach(item => {
-                    if (!seen.has(item.toLowerCase())) {
-                        seen.add(item.toLowerCase());
-                        uniqueBarrios.push(item);
-                    }
-                });
+                const { barriosCatalogo } = await import("../../../services/supabaseServices");
+                const barrios = await barriosCatalogo.getByTenant(inquilino);
+                const uniqueBarrios = barrios.map(b => b.nombre).filter(Boolean);
                 uniqueBarrios.sort((a, b) => a.localeCompare(b));
                 setBarrioList(uniqueBarrios);
             } catch (e) {
-                console.error("Error loading Barrio catalog:", e);
+                console.error("Error loading Barrio catalog from Supabase:", e);
             } finally {
                 setLoadingBarrios(false);
             }
@@ -387,13 +397,37 @@ export default function PatientForm({
             }
         };
 
-        loadPlanes();
+        // TODO: Migrar estas funciones a Supabase cuando estén listos los servicios
+        // const loadPlanes = async () => {
+        //     if (!inquilino) return;
+        //     setLoadingPlanes(true);
+        //     // ... implementar cuando esté listo el servicio de planes
+        //     setLoadingPlanes(false);
+        // };
+
+        // const loadSucursales = async () => {
+        //     if (!inquilino) return;
+        //     // ... implementar cuando esté listo el servicio de sucursales  
+        // };
+
+        // const loadConvenios = async () => {
+        //     if (!inquilino) return;
+        //     // ... implementar cuando esté listo el servicio de convenios
+        // };
+
+        // const loadRemisionData = async () => {
+        //     if (!inquilino) return;
+        //     // ... implementar cuando esté listo el servicio de usuarios/pacientes para remisión
+        // };
+
+        // Cargar solo los servicios que ya están migrados
         loadProfesionales();
         loadEps();
         loadBarrios();
-        loadSucursales();
-        loadRemisionData();
-        loadConvenios();
+        // loadPlanes();           // TODO: Migrar
+        // loadSucursales();       // TODO: Migrar  
+        // loadConvenios();        // TODO: Migrar
+        // loadRemisionData();     // TODO: Migrar
     }, [inquilino]);
 
     const {
@@ -439,15 +473,17 @@ export default function PatientForm({
         }
         
         try {
-            const q = query(
-                collection(db, "pacientes"),
-                where("inquilino", "==", inquilino),
-                where("nroDocumento", "==", val),
-                limit(1)
-            );
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-                const foundDoc = snap.docs[0];
+            const { data, error } = await supabase
+                .from("pacientes")
+                .select("id")
+                .eq("tenant_id", inquilino)
+                .eq("documento", val)
+                .limit(1);
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                const foundDoc = data[0];
                 if (foundDoc.id !== initialData?.id) {
                     setError("nroDocumento", {
                         type: "manual",
@@ -729,15 +765,12 @@ export default function PatientForm({
             return;
         }
         try {
-            await addDoc(collection(db, "eps_catalogo"), {
-                nombre: normalizedEps,
-                inquilino: inquilino,
-                createdAt: new Date().toISOString()
-            });
+            const { epsCatalogo } = await import("../../../services/supabaseServices");
+            await epsCatalogo.create(inquilino, normalizedEps);
             setEpsList(prev => [...prev, normalizedEps].sort((a, b) => a.localeCompare(b)));
             toast.success("EPS agregada al catálogo con éxito");
         } catch (err) {
-            console.error("Error saving new EPS to catalog:", err);
+            console.error("Error saving new EPS to Supabase:", err);
             toast.error("Error al guardar la EPS en el catálogo");
         }
     };
@@ -758,15 +791,12 @@ export default function PatientForm({
             return;
         }
         try {
-            await addDoc(collection(db, "barrios_catalogo"), {
-                nombre: normalizedBarrio,
-                inquilino: inquilino,
-                createdAt: new Date().toISOString()
-            });
+            const { barriosCatalogo } = await import("../../../services/supabaseServices");
+            await barriosCatalogo.create(inquilino, normalizedBarrio);
             setBarrioList(prev => [...prev, normalizedBarrio].sort((a, b) => a.localeCompare(b)));
             toast.success("Barrio agregado al catálogo con éxito");
         } catch (err) {
-            console.error("Error saving new barrio to catalog:", err);
+            console.error("Error saving new barrio to Supabase:", err);
             toast.error("Error al guardar el barrio en el catálogo");
         }
     };
@@ -779,13 +809,10 @@ export default function PatientForm({
             const normalizedEps = data.nombreEps.trim();
             if (!epsList.map(e => e.toLowerCase()).includes(normalizedEps.toLowerCase())) {
                 try {
-                    await addDoc(collection(db, "eps_catalogo"), {
-                        nombre: normalizedEps,
-                        inquilino: inquilino,
-                        createdAt: new Date().toISOString()
-                    });
+                    const { epsCatalogo } = await import("../../../services/supabaseServices");
+                    await epsCatalogo.create(inquilino, normalizedEps);
                 } catch (e) {
-                    console.error("Error saving new EPS to catalog:", e);
+                    console.error("Error saving new EPS to Supabase:", e);
                 }
             }
         }
@@ -794,13 +821,10 @@ export default function PatientForm({
             const normalizedBarrio = data.barrio.trim();
             if (!barrioList.map(b => b.toLowerCase()).includes(normalizedBarrio.toLowerCase())) {
                 try {
-                    await addDoc(collection(db, "barrios_catalogo"), {
-                        nombre: normalizedBarrio,
-                        inquilino: inquilino,
-                        createdAt: new Date().toISOString()
-                    });
+                    const { barriosCatalogo } = await import("../../../services/supabaseServices");
+                    await barriosCatalogo.create(inquilino, normalizedBarrio);
                 } catch (e) {
-                    console.error("Error saving new barrio to catalog:", e);
+                    console.error("Error saving new barrio to Supabase:", e);
                 }
             }
         }
@@ -854,17 +878,137 @@ export default function PatientForm({
             <form autoComplete="off" onSubmit={handleSubmit(onValidSubmit, onErrorSubmit)} className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                 
                 {/* BIG SCROLL CANVAS */}
-                <div className="flex-1 overflow-y-auto px-4 md:px-16 py-8 bg-white custom-scrollbar scroll-smooth">
+                <div className="flex-1 overflow-y-auto px-4 md:px-12 py-6 bg-slate-50/50 custom-scrollbar scroll-smooth">
                     
-                    <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-12">
-                        
-                        {/* MAIN LEFT COLUMN - FORM FIELDS */}
-                        <div className="flex-1">
-                            
+                    <div className="w-full max-w-[1700px] mx-auto space-y-6">
+
+                        {/* TOP BANNER CARD: FOTO Y ADMINISTRATIVO */}
+                        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+                            {/* FOTO COMPACTA Y MODERNA */}
+                            <div className="lg:col-span-5 flex items-center gap-4 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
+                                <div className="relative group w-20 h-20 shrink-0 bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col items-center justify-center shadow-xs">
+                                    {isCameraActive ? (
+                                        <div className="flex flex-col items-center justify-center text-emerald-600 bg-emerald-50 w-full h-full">
+                                            <FiCamera size={24} className="animate-pulse" />
+                                            <span className="text-[9px] font-bold uppercase mt-1">Cámara activa</span>
+                                        </div>
+                                    ) : fotoPreview ? (
+                                        <>
+                                            <img src={fotoPreview} className="w-full h-full object-cover" alt="Preview" />
+                                            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-2">
+                                                <button type="button" onClick={startCamera} className="p-1.5 bg-white/20 text-white rounded-full hover:bg-[#8CC63F]"><FiCamera size={12} /></button>
+                                                <button type="button" onClick={() => onFotoChange(null)} className="p-1.5 bg-white/20 text-white rounded-full hover:bg-rose-500"><FiTrash2 size={12} /></button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="text-center p-1">
+                                            <FiCamera size={20} className="text-slate-400 mx-auto mb-0.5" />
+                                            <span className="text-[9px] text-slate-400 font-bold uppercase block leading-tight">Subir Foto</span>
+                                            <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={(e) => onFotoChange(e.target.files[0])} title="Subir archivo" />
+                                        </div>
+                                    )}
+                                    <canvas ref={canvasRef} className="hidden" />
+                                </div>
+                                <div className="space-y-1">
+                                    <h4 className="text-[12px] font-bold text-slate-800 uppercase tracking-wide">Foto del Paciente</h4>
+                                    <p className="text-[10px] text-slate-400 font-medium">Adjunta foto o activa la cámara</p>
+                                    {!isCameraActive && (
+                                        <button type="button" onClick={startCamera} className="text-[10px] font-bold text-white bg-[#8CC63F] hover:bg-[#7bb335] px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shadow-xs border-0 cursor-pointer">
+                                            <FiCamera size={12} /> ACTIVAR CÁMARA
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* MODAL CÁMARA */}
+                            {isCameraActive && (
+                                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+                                    <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-md w-full border border-slate-100 flex flex-col items-center p-5 space-y-4">
+                                        <div className="w-full flex items-center justify-between border-b border-slate-100 pb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                                    <FiCamera size={18} />
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Capturar Foto de Paciente</h3>
+                                                    <p className="text-[10px] text-slate-400 font-medium">Centra el rostro en la guía</p>
+                                                </div>
+                                            </div>
+                                            <button type="button" onClick={stopCamera} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+                                                <FiX size={18} />
+                                            </button>
+                                        </div>
+
+                                        <div className="relative w-full aspect-4/3 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+                                            <video 
+                                                ref={videoRef} 
+                                                className="w-full h-full object-cover" 
+                                                autoPlay 
+                                                playsInline 
+                                            />
+                                            {/* Guía ovalada para centrar el rostro */}
+                                            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                                                <div className="w-48 h-60 rounded-[50%] border-2 border-white/40 border-dashed shadow-2xl"></div>
+                                            </div>
+                                        </div>
+
+                                        <div className="w-full flex items-center justify-end gap-2 pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={stopCamera}
+                                                className="px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={takePhoto}
+                                                className="px-4 py-2 text-xs font-bold text-white bg-[#8CC63F] hover:bg-[#7bb335] rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                                <FiCamera size={14} /> CAPTURAR FOTO
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CAMPOS ADMINISTRATIVOS INTEGRADOS */}
+                            <div className="lg:col-span-7 bg-slate-50/80 p-3 rounded-xl border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Plan de Atención</label>
+                                    <select {...register("planId")} className="form-input text-xs w-full bg-white border-slate-200">
+                                        <option value="">SELECCIONE PLAN...</option>
+                                        {planes.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                                    </select>
+                                </div>
+                                {isVisible("profesionales") && (
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Profesional Responsable</label>
+                                        <select {...register("profesionalId")} className="form-input text-xs w-full bg-white border-slate-200">
+                                            <option value="">Ninguno asignado</option>
+                                            {profesionales.map(p => <option key={p.id} value={p.id}>{p.displayName}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+                                {isVisible("sucursales") && (
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Sede de atención</label>
+                                        <select {...register("sede")} className="form-input text-xs w-full bg-white border-slate-200">
+                                            <option value="">Ninguna asignada</option>
+                                            {sucursales.map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* SECTION 1: DATOS DE IDENTIFICACIÓN */}
+                        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
                             <SectionTitle num="1" title="Datos de Identificación" />
-                            <div className="pl-0 md:pl-4 space-y-1">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
                                 <FormRow label="Tipo de documento" required error={errors.tipoDocumento}>
-                                    <select {...register("tipoDocumento")} className="form-input text-sm w-full md:w-64">
+                                    <select {...register("tipoDocumento")} className="form-input text-sm w-full">
                                         <option value="">Seleccione...</option>
                                         {TIPOS_DOCUMENTO.map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
@@ -877,13 +1021,13 @@ export default function PatientForm({
                                             register("nroDocumento").onBlur(e);
                                             checkDocumentDuplication(e);
                                         }}
-                                        className="form-input text-sm w-full md:w-64" 
+                                        className="form-input text-sm w-full" 
                                         placeholder="Nro. documento paciente" 
                                     />
                                 </FormRow>
 
                                 <FormRow label="Número de Historia">
-                                    <input {...register("nroHistoria")} className="form-input text-sm w-full md:w-64" placeholder="Nro. historia paciente" />
+                                    <input {...register("nroHistoria")} className="form-input text-sm w-full" placeholder="Nro. historia paciente" />
                                 </FormRow>
 
                                 {isVisible("fechaIngreso") && (
@@ -909,7 +1053,7 @@ export default function PatientForm({
 
                                 {isVisible("sexo") && (
                                     <FormRow label="Sexo" required={isRequired("sexo", true)} error={errors.sexo}>
-                                        <select {...register("sexo")} className="form-input text-sm w-full md:w-64">
+                                        <select {...register("sexo")} className="form-input text-sm w-full">
                                             <option value="">Seleccione...</option>
                                             {SEXOS.map(s => <option key={s} value={s}>{s}</option>)}
                                         </select>
@@ -918,16 +1062,14 @@ export default function PatientForm({
 
                                 {isVisible("estadoCivil") && (
                                     <FormRow label="Estado civil" required={isRequired("estadoCivil", true)} error={errors.estadoCivil}>
-                                        <select {...register("estadoCivil")} className="form-input text-sm w-full md:w-64">
+                                        <select {...register("estadoCivil")} className="form-input text-sm w-full">
                                             <option value="">Seleccione...</option>
                                             {ESTADOS_CIVILES.map(ec => <option key={ec} value={ec}>{ec}</option>)}
                                         </select>
                                     </FormRow>
                                 )}
-                            </div>
-
-                            <SectionTitle num="2" title="Información de Contacto" />
-                            <div className="pl-0 md:pl-4 space-y-1">
+                            </div></div><div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4"><SectionTitle num="2" title="Información de Contacto" />
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {isVisible("paisNacimiento") && (
                                     <FormRow label="País de nacimiento" required={isRequired("paisNacimiento", true)} error={errors.paisNacimiento}>
                                         <SearchableSelect 
@@ -964,7 +1106,7 @@ export default function PatientForm({
                                             <input 
                                                 type="text" 
                                                 {...register("ciudadNacimiento")} 
-                                                className="form-input text-sm w-full md:w-64 font-medium" 
+                                                className="form-input text-sm w-full font-medium" 
                                                 placeholder="Escriba la ciudad" 
                                             />
                                         )}
@@ -1018,7 +1160,7 @@ export default function PatientForm({
                                             <input 
                                                 type="text" 
                                                 {...register("ciudadDomicilio")} 
-                                                className="form-input text-sm w-full md:w-64 font-medium" 
+                                                className="form-input text-sm w-full font-medium" 
                                                 placeholder="Escriba la ciudad" 
                                             />
                                         )}
@@ -1163,7 +1305,7 @@ export default function PatientForm({
 
                                 {isVisible("ocupacion") && (
                                     <FormRow label="Ocupación" required={isRequired("ocupacion", true)} error={errors.ocupacion}>
-                                        <input {...register("ocupacion")} className="form-input text-sm w-full md:w-64" placeholder="Ocupación del paciente" />
+                                        <input {...register("ocupacion")} className="form-input text-sm w-full" placeholder="Ocupación del paciente" />
                                     </FormRow>
                                 )}
 
@@ -1193,12 +1335,11 @@ export default function PatientForm({
                                         </div>
                                     </FormRow>
                                 )}
-                            </div>
+                            </div></div>
 
-                            {(isVisible("nombreEps") || isVisible("tipoVinculacion") || isVisible("polizaSalud")) && (
-                                <>
+                            {(isVisible("nombreEps") || isVisible("tipoVinculacion") || isVisible("polizaSalud")) && (<div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
                                     <SectionTitle num="3" title="EPS y Aseguramiento" />
-                                    <div className="pl-0 md:pl-4 space-y-1">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {isVisible("nombreEps") && (
                                              <FormRow label="Nombre de la EPS" required={isRequired("nombreEps", true)} error={errors.nombreEps}>
                                                  <div className="flex gap-2">
@@ -1229,7 +1370,7 @@ export default function PatientForm({
                                          )}
                                         {isVisible("tipoVinculacion") && (
                                             <FormRow label="Tipo de Vinculación" required={isRequired("tipoVinculacion", true)} error={errors.tipoVinculacion}>
-                                                <select {...register("tipoVinculacion")} className="form-input text-sm w-full md:w-64">
+                                                <select {...register("tipoVinculacion")} className="form-input text-sm w-full">
                                                     <option value="">Seleccione tipo...</option>
                                                     {TIPOS_VINCULACION.map(v => <option key={v} value={v}>{v}</option>)}
                                                 </select>
@@ -1238,20 +1379,18 @@ export default function PatientForm({
 
                                         {isVisible("polizaSalud") && (
                                             <FormRow label="Póliza de Salud">
-                                                <input {...register("polizaSalud")} className="form-input text-sm w-full md:w-64" placeholder="Número de contrato o póliza" />
+                                                <input {...register("polizaSalud")} className="form-input text-sm w-full" placeholder="Número de contrato o póliza" />
                                             </FormRow>
                                         )}
-                                    </div>
-                                </>
+                                    </div></div>
                             )}
 
-                            {(isVisible("comoNosConocio") || isVisible("campana") || isVisible("remitidoPor") || isVisible("asesorComercial")) && (
-                                <>
+                            {(isVisible("comoNosConocio") || isVisible("campana") || isVisible("remitidoPor") || isVisible("asesorComercial")) && (<div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
                                     <SectionTitle num="4" title="Estrategia de Mercadeo" />
-                                    <div className="pl-0 md:pl-4 space-y-1">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {isVisible("comoNosConocio") && (
                                             <FormRow label="¿Cómo nos conoció?">
-                                                <select {...register("comoConocio")} className="form-input text-sm w-full md:w-64">
+                                                <select {...register("comoConocio")} className="form-input text-sm w-full">
                                                     <option value="">Seleccione...</option>
                                                     {MEDIOS_CONOCIMIENTO.map(m => <option key={m} value={m}>{m}</option>)}
                                                 </select>
@@ -1384,14 +1523,12 @@ export default function PatientForm({
                                                 </div>
                                             </FormRow>
                                         )}
-                                    </div>
-                                </>
+                                    </div></div>
                             )}
 
-                            {(isVisible("respNombre") || isVisible("respParentesco") || isVisible("respCelular") || isVisible("respTelefono") || isVisible("respCorreo") || isVisible("acompNombre") || isVisible("acompTelefono")) && (
-                                <>
+                            {(isVisible("respNombre") || isVisible("respParentesco") || isVisible("respCelular") || isVisible("respTelefono") || isVisible("respCorreo") || isVisible("acompNombre") || isVisible("acompTelefono")) && (<div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
                                     <SectionTitle num="5" title="Responsable y Acompañante" />
-                                    <div className="pl-0 md:pl-4 space-y-1">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {isVisible("respNombre") && (
                                             <FormRow label="Nombre Responsable" error={errors.nombreResponsable}>
                                                 <input {...register("nombreResponsable")} className="form-input text-sm w-full" placeholder="Nombre completo del responsable" />
@@ -1399,7 +1536,7 @@ export default function PatientForm({
                                         )}
                                         {isVisible("respParentesco") && (
                                             <FormRow label="Parentesco">
-                                                <select {...register("parentesco")} className="form-input text-sm w-full md:w-64">
+                                                <select {...register("parentesco")} className="form-input text-sm w-full">
                                                     <option value="">Seleccione...</option>
                                                     {PARENTESCOS.map(p => <option key={p} value={p}>{p}</option>)}
                                                 </select>
@@ -1407,12 +1544,12 @@ export default function PatientForm({
                                         )}
                                         {isVisible("respCelular") && (
                                             <FormRow label="Celular Responsable" error={errors.celularResponsable}>
-                                                <input {...register("celularResponsable")} className="form-input text-sm w-full md:w-64" placeholder="Celular" />
+                                                <input {...register("celularResponsable")} className="form-input text-sm w-full" placeholder="Celular" />
                                             </FormRow>
                                         )}
                                         {isVisible("respTelefono") && (
                                             <FormRow label="Teléfono Responsable" error={errors.telefonoResponsable}>
-                                                <input {...register("telefonoResponsable")} className="form-input text-sm w-full md:w-64" placeholder="Teléfono" />
+                                                <input {...register("telefonoResponsable")} className="form-input text-sm w-full" placeholder="Teléfono" />
                                             </FormRow>
                                         )}
                                         {isVisible("respCorreo") && (
@@ -1421,12 +1558,10 @@ export default function PatientForm({
                                             </FormRow>
                                         )}
 
-                                    </div>
-                                </>
+                                    </div></div>
                             )}
 
-                            {(isVisible("alertas") || isVisible("nota")) && (
-                                <>
+                            {(isVisible("alertas") || isVisible("nota")) && (<div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
                                     <SectionTitle num="6" title="Alertas y Notas Clínicas" />
                                     <div className="pl-0 md:pl-4 space-y-4">
                                         {isVisible("alertas") && (
@@ -1451,87 +1586,13 @@ export default function PatientForm({
                                             </div>
                                         )}
                                     </div>
-                                </>
+                                </div>
                             )}
-                        </div>
-
-                        {/* RIGHT COLUMN - FLOATING PHOTO PANEL */}
-                        <div className="w-full lg:w-72 shrink-0">
-                            <div className="sticky top-8 space-y-6">
-                                <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                                    <div className="p-4 border-b border-slate-200 bg-white">
-                                        <h4 className="text-[13px] font-black text-slate-800 uppercase tracking-widest text-center">Foto del Paciente</h4>
-                                    </div>
-                                    <div className="p-6">
-                                        <div className="relative group mx-auto w-48 h-48 bg-white rounded-2xl border-2 border-dashed border-slate-300 overflow-hidden flex flex-col items-center justify-center transition-all hover:border-[#8CC63F]">
-                                            {isCameraActive ? (
-                                                <div className="absolute inset-0 bg-black">
-                                                    <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline />
-                                                    <div className="absolute bottom-2 inset-x-0 flex justify-center gap-2">
-                                                        <button type="button" onClick={takePhoto} className="p-2 bg-[#8CC63F] text-white rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all"><FiCheck size={18} /></button>
-                                                        <button type="button" onClick={stopCamera} className="p-2 bg-rose-500 text-white rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all"><FiX size={18} /></button>
-                                                    </div>
-                                                </div>
-                                            ) : fotoPreview ? (
-                                                <>
-                                                    <img src={fotoPreview} className="w-full h-full object-cover" alt="Preview" />
-                                                    <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3 backdrop-blur-[2px]">
-                                                        <button type="button" onClick={startCamera} className="p-2.5 bg-white/20 text-white rounded-full hover:bg-[#8CC63F] transition-colors"><FiCamera size={18} /></button>
-                                                        <button type="button" onClick={() => onFotoChange(null)} className="p-2.5 bg-white/20 text-white rounded-full hover:bg-rose-500 transition-colors"><FiTrash2 size={18} /></button>
-                                                    </div>
-                                                </>
-                                            ) : (
-                                                <div className="text-center p-4">
-                                                    <div className="w-14 h-14 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-3">
-                                                        <FiCamera size={28} />
-                                                    </div>
-                                                    <button type="button" onClick={startCamera} className="text-[11px] font-black text-white bg-[#8CC63F] px-4 py-2 rounded-full hover:bg-[#7bb335] active:scale-95 mb-4 shadow-md transition-all flex items-center gap-2 mx-auto">
-                                                        <FiCamera size={14} /> ACTIVAR CÁMARA
-                                                    </button>
-                                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Arrastra o click<br/>para subir archivo</p>
-                                                    <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" onChange={(e) => onFotoChange(e.target.files[0])} title="Subir archivo" />
-                                                </div>
-                                            )}
-                                            <canvas ref={canvasRef} className="hidden" />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
-                                    <h4 className="text-[12px] font-black text-slate-800 uppercase tracking-widest mb-4">Administrativo</h4>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Plan de Atención</label>
-                                            <select {...register("planId")} className="form-input text-xs w-full bg-blue-50/50 border-blue-100 focus:ring-blue-500/10">
-                                                <option value="">SELECCIONE PLAN...</option>
-                                                {planes.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                                            </select>
-                                        </div>
-                                        {isVisible("profesionales") && (
-                                            <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Profesional Responsable</label>
-                                                <select {...register("profesionalId")} className="form-input text-xs w-full">
-                                                    <option value="">Ninguno asignado</option>
-                                                    {profesionales.map(p => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-                                                </select>
-                                            </div>
-                                        )}
-                                        {isVisible("sucursales") && (
-                                            <div>
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Sede de atención</label>
-                                                <select {...register("sede")} className="form-input text-xs w-full">
-                                                    <option value="">Ninguna asignada</option>
-                                                    {sucursales.map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
-                                                </select>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
                     </div>
                 </div>
+
+
 
                 {/* BOTTOM FIX BAR */}
                 <div className="px-8 py-5 bg-white border-t border-slate-200 flex justify-between items-center shrink-0 z-10 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)]">
@@ -1606,3 +1667,7 @@ export default function PatientForm({
         </div>
     );
 }
+
+
+
+

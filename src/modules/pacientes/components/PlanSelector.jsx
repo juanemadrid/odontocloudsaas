@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { collection, getDocs, query, limit } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
-import { COLLECTIONS } from "../../../utils/listaPreciosApi";
+import supabase from "../../../lib/supabaseClient";
 
 export default function PlanSelector({ onClose, onSelect }) {
     const [items, setItems] = useState([]);
@@ -11,11 +9,11 @@ export default function PlanSelector({ onClose, onSelect }) {
     const load = async () => {
         setLoading(true);
         try {
-            // Usamos la colección centralizada "catalogo_procedimientos"
-            const q = query(collection(db, COLLECTIONS.catalogo_procedimientos), limit(50));
-            const snap = await getDocs(q);
-            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setItems(data);
+            const { data } = await supabase
+                .from("catalogo_procedimientos")
+                .select("*")
+                .limit(50);
+            setItems(data || []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -78,7 +76,7 @@ export default function PlanSelector({ onClose, onSelect }) {
                             <p className="text-slate-400 text-sm mt-1">Intenta con otro término de búsqueda.</p>
 
                             <div className="mt-6 p-4 bg-blue-50 rounded-lg mx-8 text-xs text-blue-700 text-left">
-                                <strong>Tip:</strong> Verifica que la colección <code>{COLLECTIONS.catalogo_procedimientos}</code> tenga datos en Firebase.
+                                <strong>Tip:</strong> Verifica que la tabla <code>catalogo_procedimientos</code> tenga datos en Supabase.
                             </div>
                         </div>
                     )}

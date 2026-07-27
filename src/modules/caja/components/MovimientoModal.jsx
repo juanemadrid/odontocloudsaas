@@ -2,19 +2,7 @@
 // ─── Modal para registrar ingresos y egresos ───
 // Conectado en tiempo real con: Cajas + Pacientes + Facturas
 import React, { useState, useEffect, useRef } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import {
-  collection,
-  addDoc,
-  doc,
-  updateDoc,
-  increment,
-  serverTimestamp,
-  getDocs,
-  query,
-  where,
-  orderBy,
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 
 const CONCEPTOS = {
   ingreso: [
@@ -53,18 +41,18 @@ function usePatientSearch(inquilino) {
   useEffect(() => {
     if (!inquilino) return;
     setLoading(true);
-    getDocs(query(
-      collection(db, "pacientes"),
-      where("inquilino", "==", inquilino)
-    )).then(snap => {
-      setPatients(snap.docs.map(d => ({
-        id: d.id,
-        nombre: d.data().nombreCompleto || `${d.data().nombres || ""} ${d.data().apellidos || ""}`.trim() || d.data().paciente || "Sin nombre",
-        cedula: d.data().nroDocumento || d.data().cedula || "",
-        celular: d.data().celular || d.data().celularPaciente || "",
-      })));
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    supabase.from("pacientes")
+      .select("*")
+      .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+      .then(({ data }) => {
+        setPatients((data || []).map(d => ({
+          id: d.id,
+          nombre: d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim() || "Sin nombre",
+          cedula: d.nroDocumento || d.cedula || "",
+          celular: d.celular || "",
+        })));
+        setLoading(false);
+      }).catch(() => setLoading(false));
   }, [inquilino]);
 
   return { patients, loading };
@@ -76,14 +64,14 @@ function useInvoiceSearch(inquilino, patientId) {
 
   useEffect(() => {
     if (!inquilino || !patientId) { setFacturas([]); return; }
-    getDocs(query(
-      collection(db, "facturas"),
-      where("inquilino", "==", inquilino),
-      where("pacienteId", "==", patientId),
-      where("estado", "in", ["Pendiente", "Parcial"])
-    )).then(snap => {
-      setFacturas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }).catch(() => setFacturas([]));
+    supabase.from("facturas")
+      .select("*")
+      .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+      .or(`pacienteId.eq.${patientId},paciente_id.eq.${patientId}`)
+      .in("estado", ["Pendiente", "Parcial"])
+      .then(({ data }) => {
+        setFacturas(data || []);
+      }).catch(() => setFacturas([]));
   }, [inquilino, patientId]);
 
   return facturas;
@@ -142,15 +130,19 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
     setSaving(true);
     setError("");
     try {
-      // 1. Registrar en subcolección movimientos
+      // 1. Registrar en movimientos
       const movData = {
+        tenant_id: inquilino,
         inquilino,
+        caja_id: caja.id,
+        cajaId: caja.id,
         tipo,
         concepto: form.concepto,
         monto: montoNum,
         metodoPago: form.metodoPago,
         descripcion: form.descripcion.trim(),
         // Paciente
+        paciente_id: selectedPatient?.id || "",
         pacienteId: selectedPatient?.id || "",
         pacienteNombre: selectedPatient?.nombre || "",
         pacienteCedula: selectedPatient?.cedula || "",
@@ -160,32 +152,38 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         // Usuario
         usuarioId: userProfile?.uid || "",
         usuarioNombre: userProfile?.nombre || userProfile?.email || "Usuario",
-        fecha: serverTimestamp(),
+        fecha: new Date().toISOString(),
+        created_at: new Date().toISOString()
       };
 
-      await addDoc(collection(db, "cajas", caja.id, "movimientos"), movData);
+      await supabase.from("movimientos_caja").insert([movData]);
 
       // 2. Actualizar saldo en caja
       const delta = tipo === "ingreso" ? montoNum : -montoNum;
-      await updateDoc(doc(db, "cajas", caja.id), {
-        saldoActual: increment(delta),
-        totalIngresos: tipo === "ingreso" ? increment(montoNum) : increment(0),
-        totalEgresos: tipo === "egreso" ? increment(montoNum) : increment(0),
-      });
+      const newSaldo = (caja.saldoActual || 0) + delta;
+      const newIngresos = (caja.totalIngresos || 0) + (tipo === "ingreso" ? montoNum : 0);
+      const newEgresos = (caja.totalEgresos || 0) + (tipo === "egreso" ? montoNum : 0);
+
+      await supabase.from("cajas").update({
+        saldoActual: newSaldo,
+        totalIngresos: newIngresos,
+        totalEgresos: newEgresos,
+        updated_at: new Date().toISOString()
+      }).eq("id", caja.id);
 
       // 3. Si tiene factura vinculada, actualizar estado/saldo de la factura
       if (selectedFactura?.id && tipo === "ingreso") {
-        const factRef = doc(db, "facturas", selectedFactura.id);
         const pagado = (selectedFactura.montoPagado || 0) + montoNum;
         const total = selectedFactura.monto || selectedFactura.total || 0;
         const nuevoEstado = pagado >= total ? "Pagada" : "Parcial";
-        await updateDoc(factRef, {
+        await supabase.from("facturas").update({
           montoPagado: pagado,
           saldoPendiente: Math.max(0, total - pagado),
           estado: nuevoEstado,
-          ultimoPagoFecha: serverTimestamp(),
+          ultimoPagoFecha: new Date().toISOString(),
           ultimoPagoCaja: caja.id,
-        });
+          updated_at: new Date().toISOString()
+        }).eq("id", selectedFactura.id);
       }
 
       onSuccess?.();

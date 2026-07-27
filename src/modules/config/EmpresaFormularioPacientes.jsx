@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiSave, FiClipboard, FiInfo } from "react-icons/fi";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 
@@ -114,12 +113,8 @@ export default function EmpresaFormularioPacientes() {
         const load = async () => {
             if (!inquilino) return;
             try {
-                const docSnap = await getDoc(doc(db, "tenants", inquilino, "config", "formulario_pacientes"));
-                if (docSnap.exists()) {
-                    setConfig(docSnap.data());
-                } else {
-                    setConfig({});
-                }
+                const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", `${inquilino}_formulario_pacientes`).maybeSingle();
+                if (webSnap?.config) setConfig(webSnap.config);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -155,7 +150,7 @@ export default function EmpresaFormularioPacientes() {
         if (!inquilino) return;
         setSaving(true);
         try {
-            await setDoc(doc(db, "tenants", inquilino, "config", "formulario_pacientes"), config);
+            await supabase.from("website_config").upsert([{ tenant_id: `${inquilino}_formulario_pacientes`, config }], { onConflict: "tenant_id" });
             if (toast && toast.success) {
                 toast.success("Configuración guardada correctamente");
             } else {

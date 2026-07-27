@@ -9,7 +9,7 @@ export const createPlan = async (planData) => {
             .eq("id", planData.patientId || planData.paciente_id)
             .maybeSingle();
 
-        const tenantId = patient?.tenant_id || planData.tenant_id;
+        const tenantId = patient?.tenant_id || planData.tenant_id || planData.inquilino;
         if (!tenantId) throw new Error("Tenant ID no encontrado para el plan de tratamiento");
 
         const payload = {
@@ -18,7 +18,7 @@ export const createPlan = async (planData) => {
             nombre: planData.title || planData.nombre || "Plan de Tratamiento",
             total: Number(planData.total || planData.costoTotal || 0),
             estado: planData.status || "draft",
-            items: planData.items || []
+            detalles: planData.items || []
         };
 
         const { data, error } = await supabase
@@ -34,6 +34,7 @@ export const createPlan = async (planData) => {
             ...data,
             title: data.nombre,
             costoTotal: data.total,
+            items: data.detalles || [],
             date: new Date(data.created_at)
         };
     } catch (error) {
@@ -59,6 +60,7 @@ export const getPlansByPatient = async (patientId) => {
             title: p.nombre,
             costoTotal: p.total,
             status: p.estado,
+            items: p.detalles || [],
             date: new Date(p.created_at)
         }));
     } catch (error) {
@@ -73,7 +75,7 @@ export const updatePlan = async (planId, planData) => {
         if (planData.title || planData.nombre) payload.nombre = planData.title || planData.nombre;
         if (planData.total !== undefined || planData.costoTotal !== undefined) payload.total = Number(planData.total ?? planData.costoTotal);
         if (planData.status || planData.estado) payload.estado = planData.status || planData.estado;
-        if (planData.items) payload.items = planData.items;
+        if (planData.items) payload.detalles = planData.items;
 
         const { data, error } = await supabase
             .from("treatment_plans")

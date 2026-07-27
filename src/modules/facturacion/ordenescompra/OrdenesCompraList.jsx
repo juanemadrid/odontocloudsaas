@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { FiShoppingBag, FiSearch, FiCalendar, FiPrinter, FiEye } from "react-icons/fi";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 
 const fmt = (n) =>
@@ -41,22 +40,21 @@ export default function OrdenesCompraList({ onNew }) {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const q = query(collection(db, "ordenes_compra"), where("inquilino", "==", inquilino));
-      const snap = await getDocs(q);
+      const { data: list } = await supabase
+        .from("ordenes_compra")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+
       const start = parseLocalDate(fechaInicio); start.setHours(0,0,0,0);
       const end = parseLocalDate(fechaFin); end.setHours(23,59,59,999);
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const filtered = (list || [])
         .filter(o => {
-          if (!o.fecha) return false;
-          const ts = o.fecha.toDate ? o.fecha.toDate().getTime() : new Date(o.fecha).getTime();
+          if (!o.fecha && !o.created_at) return false;
+          const ts = new Date(o.fecha || o.created_at).getTime();
           return ts >= start.getTime() && ts <= end.getTime();
         })
-        .sort((a, b) => {
-          const ta = a.fecha?.toDate ? a.fecha.toDate().getTime() : new Date(a.fecha).getTime();
-          const tb = b.fecha?.toDate ? b.fecha.toDate().getTime() : new Date(b.fecha).getTime();
-          return tb - ta;
-        });
-      setOrdenes(list);
+        .sort((a, b) => new Date(b.fecha || b.created_at).getTime() - new Date(a.fecha || a.created_at).getTime());
+      setOrdenes(filtered);
     } catch (e) {
       console.error("Error loading ordenes:", e);
     } finally {

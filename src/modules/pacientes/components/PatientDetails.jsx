@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { doc, onSnapshot, collection, query, where, getDocs, addDoc, getDoc, limit } from "firebase/firestore";
-import { db, storage } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { formatCurrency, calculateAgeStr } from "../../../utils/formatters";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
@@ -42,23 +41,45 @@ import HistoricoFacturasTab from "./HistoricoFacturasTab";
 import AIInsightsTab from "./AIInsightsTab";
 import HistoriaClinicaTab from "./HistoriaClinicaTab";
 
-const FormRow = ({ label, required, children, error, helpText }) => (
-    <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 py-3 border-b border-slate-100/50 last:border-0 hover:bg-slate-50/50 transition-colors px-4">
-        <label className={"w-full md:w-60 shrink-0 text-[13px] font-bold md:text-right flex items-center justify-start md:justify-end gap-1 " + (error ? 'text-rose-500' : 'text-slate-600')}>
-            {label} {required && <span className="text-rose-500">*</span>}
-        </label>
-        <div className="flex-1 w-full max-w-2xl relative">
-            {children}
-            {error && <p className="text-rose-500 text-[11px] font-bold uppercase tracking-wider mt-1">{error.message}</p>}
-            {helpText && !error && <p className="text-slate-400 text-[11px] font-medium mt-1 uppercase tracking-widest">{helpText}</p>}
+const FormRow = ({ label, required, children, error, helpText }) => {
+    // Clonar el children y agregar clases de error si es necesario
+    const childrenWithError = React.Children.map(children, child => {
+        if (React.isValidElement(child) && error) {
+            // Si es un input, select o textarea, agregar clase de error
+            const isFormElement = ['input', 'select', 'textarea'].includes(child.type) || 
+                                  child.props?.className?.includes('form-input');
+            
+            if (isFormElement) {
+                const originalClassName = child.props.className || '';
+                const errorClassName = 'border-red-500 ring-2 ring-red-100 focus:ring-red-200';
+                return React.cloneElement(child, {
+                    className: `${originalClassName} ${errorClassName}`,
+                    'aria-invalid': 'true',
+                    'aria-describedby': error ? `${child.props.name}-error` : undefined
+                });
+            }
+        }
+        return child;
+    });
+
+    return (
+        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 py-2 border-b border-slate-100/60 last:border-0 hover:bg-slate-50/40 transition-colors px-3 md:px-5">
+            <label className={"w-full md:w-52 shrink-0 text-[11px] font-bold uppercase tracking-wider md:text-right flex items-center justify-start md:justify-end gap-1 " + (error ? 'text-rose-500' : 'text-slate-500')}>
+                {label} {required && <span className="text-rose-500">*</span>}
+            </label>
+            <div className="flex-1 w-full max-w-xl relative">
+                {childrenWithError}
+                {error && <p id={`${error.ref?.name}-error`} className="text-rose-500 text-[10px] font-bold uppercase tracking-wider mt-1">{error.message}</p>}
+                {helpText && !error && <p className="text-slate-400 text-[10px] font-medium mt-1 uppercase tracking-widest">{helpText}</p>}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 const SectionTitle = ({ title, num }) => (
-    <div className="flex items-center gap-4 bg-slate-50 px-6 py-4 border-y border-slate-200 mt-6 mb-2">
-        <div className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-black shadow-md">{num}</div>
-        <h3 className="text-[13px] font-black text-slate-700 uppercase tracking-widest">{title}</h3>
+    <div className="flex items-center gap-3 bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/80">
+        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[11px] font-black shadow-sm">{num}</div>
+        <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">{title}</h3>
     </div>
 );
 
@@ -78,24 +99,22 @@ const FormDatosPersonales = ({ patient, photoState }) => {
         }
         
         try {
-            const q = query(
-                collection(db, "pacientes"),
-                where("inquilino", "==", inquilino),
-                where("nroDocumento", "==", val),
-                limit(1)
-            );
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-                const foundDoc = snap.docs[0];
-                if (foundDoc.id !== patient?.id) {
-                    setError("nroDocumento", {
-                        type: "manual",
-                        message: `Ya existe un paciente registrado con el número de documento ${val}`
-                    });
-                    toast?.error(`Atención: Ya existe un paciente con el número de documento ${val}`);
-                } else {
-                    clearErrors("nroDocumento");
-                }
+            const { data, error } = await supabase
+                .from("pacientes")
+                .select("id")
+                .eq("tenant_id", inquilino)
+                .eq("documento", val)
+                .limit(1)
+                .maybeSingle();
+
+            if (error) throw error;
+
+            if (data && data.id !== patient?.id) {
+                setError("nroDocumento", {
+                    type: "manual",
+                    message: `Ya existe un paciente registrado con el número de documento ${val}`
+                });
+                toast?.error(`Atención: Ya existe un paciente con el número de documento ${val}`);
             } else {
                 clearErrors("nroDocumento");
             }
@@ -109,12 +128,13 @@ const FormDatosPersonales = ({ patient, photoState }) => {
         if (!inquilino) return;
         const loadFormConfig = async () => {
             try {
-                const docSnap = await getDoc(doc(db, "tenants", inquilino, "config", "formulario_pacientes"));
-                if (docSnap.exists()) {
-                    setFormConfig(docSnap.data());
+                const { configuracionFormularios } = await import("../../../services/supabaseServices");
+                const config = await configuracionFormularios.get(inquilino, "formulario_pacientes");
+                if (config) {
+                    setFormConfig(config);
                 }
             } catch (e) {
-                console.error("Error loading patient form config:", e);
+                console.error("Error loading patient form config from Supabase:", e);
             }
         };
         loadFormConfig();
@@ -125,6 +145,11 @@ const FormDatosPersonales = ({ patient, photoState }) => {
         return formConfig[key]?.visible !== false;
     };
 
+    const isRequired = (key, defaultRequired = false) => {
+        if (!formConfig) return defaultRequired;
+        return formConfig[key]?.required === true;
+    };
+
     const toast = useToast();
     const [barrioList, setBarrioList] = React.useState([]);
     const [loadingBarrios, setLoadingBarrios] = React.useState(false);
@@ -132,23 +157,21 @@ const FormDatosPersonales = ({ patient, photoState }) => {
 
     React.useEffect(() => {
         if (!inquilino) return;
-        setLoadingBarrios(true);
-        getDocs(query(collection(db, "barrios_catalogo"), where("inquilino", "==", inquilino)))
-            .then(snap => {
-                const data = snap.docs.map(d => d.data().nombre?.trim()).filter(Boolean);
-                const uniqueBarrios = [];
-                const seen = new Set();
-                data.forEach(item => {
-                    if (!seen.has(item.toLowerCase())) {
-                        seen.add(item.toLowerCase());
-                        uniqueBarrios.push(item);
-                    }
-                });
+        const loadBarrios = async () => {
+            setLoadingBarrios(true);
+            try {
+                const { barriosCatalogo } = await import("../../../services/supabaseServices");
+                const barrios = await barriosCatalogo.getByTenant(inquilino);
+                const uniqueBarrios = barrios.map(b => b.nombre).filter(Boolean);
                 uniqueBarrios.sort((a, b) => a.localeCompare(b));
                 setBarrioList(uniqueBarrios);
-            })
-            .catch(e => console.error("Error loading Barrio catalog:", e))
-            .finally(() => setLoadingBarrios(false));
+            } catch (e) {
+                console.error("Error loading Barrio catalog from Supabase:", e);
+            } finally {
+                setLoadingBarrios(false);
+            }
+        };
+        loadBarrios();
     }, [inquilino]);
 
     const barrioValue = watch("barrio");
@@ -181,15 +204,12 @@ const FormDatosPersonales = ({ patient, photoState }) => {
         }
 
         try {
-            await addDoc(collection(db, "barrios_catalogo"), {
-                nombre: normalizedBarrio,
-                inquilino: inquilino,
-                createdAt: new Date().toISOString()
-            });
+            const { barriosCatalogo } = await import("../../../services/supabaseServices");
+            await barriosCatalogo.create(inquilino, normalizedBarrio);
             setBarrioList(prev => [...prev, normalizedBarrio].sort((a, b) => a.localeCompare(b)));
             toast?.success("Barrio agregado al catálogo con éxito");
         } catch (err) {
-            console.error("Error saving new barrio to catalog:", err);
+            console.error("Error saving new barrio to Supabase:", err);
             toast?.error("Error al guardar el barrio en el catálogo");
         }
     };
@@ -296,13 +316,13 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                 <div className="bg-white rounded-[32px] overflow-hidden border border-slate-100 shadow-sm mb-8 pb-8">
                     <SectionTitle num="1" title="Datos de identificación" />
                     <div className="pl-0 md:pl-4 space-y-1">
-                        <FormRow label="Tipo de documento" required error={errors.tipoDocumento}>
+                        <FormRow label="Tipo de documento" required={isRequired("tipoDocumento", true)} error={errors.tipoDocumento}>
                             <select {...register("tipoDocumento")} className="form-input text-sm w-full md:w-64">
                                 <option value="">Seleccione...</option>
                                 {TIPOS_DOCUMENTO.map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
                         </FormRow>
-                        <FormRow label="Nro. de documento" required error={errors.nroDocumento}>
+                        <FormRow label="Nro. de documento" required={isRequired("nroDocumento", true)} error={errors.nroDocumento}>
                             <input 
                                 {...register("nroDocumento")} 
                                 onBlur={(e) => {
@@ -322,22 +342,22 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                                 <FiCalendar className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                             </div>
                         </FormRow>
-                        <FormRow label="Nombres" required error={errors.nombres}>
+                        <FormRow label="Nombres" required={isRequired("nombres", true)} error={errors.nombres}>
                             <input {...register("nombres")} autoComplete="new-password" className="form-input text-sm w-full" placeholder="Nombres" />
                         </FormRow>
-                        <FormRow label="Apellidos" required error={errors.apellidos}>
+                        <FormRow label="Apellidos" required={isRequired("apellidos", true)} error={errors.apellidos}>
                             <input {...register("apellidos")} autoComplete="new-password" className="form-input text-sm w-full" placeholder="Apellidos" />
                         </FormRow>
                         <FormRow label="Nombre completo">
                             <input value={watch("nombreCompleto") || ""} readOnly className="form-input text-sm w-full bg-slate-50 text-slate-600 font-bold border-transparent" />
                         </FormRow>
-                        <FormRow label="Sexo" required error={errors.sexo}>
+                        <FormRow label="Sexo" required={isRequired("sexo", true)} error={errors.sexo}>
                             <select {...register("sexo")} className="form-input text-sm w-full md:w-64">
                                 <option value="">Seleccione...</option>
                                 {SEXOS.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </FormRow>
-                        <FormRow label="Estado civil" required error={errors.estadoCivil}>
+                        <FormRow label="Estado civil" required={isRequired("estadoCivil", true)} error={errors.estadoCivil}>
                             <select {...register("estadoCivil")} className="form-input text-sm w-full md:w-64">
                                 <option value="">Seleccione...</option>
                                 {ESTADOS_CIVILES.map(ec => <option key={ec} value={ec}>{ec}</option>)}
@@ -347,7 +367,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
 
                     <SectionTitle num="2" title="Datos de contacto & Ubicación" />
                     <div className="pl-0 md:pl-4 space-y-1">
-                        <FormRow label="País de nacimiento" required error={errors.paisNacimiento}>
+                        <FormRow label="País de nacimiento" required={isRequired("paisNacimiento", true)} error={errors.paisNacimiento}>
                             <SearchableSelect 
                                 value={watch("paisNacimiento")}
                                 onChange={(val) => setValue("paisNacimiento", val, { shouldDirty: true })}
@@ -384,7 +404,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                                 />
                             )}
                         </FormRow>
-                        <FormRow label="Fecha de Nacimiento" required error={errors.fechaNacimiento}>
+                        <FormRow label="Fecha de Nacimiento" required={isRequired("fechaNacimiento", true)} error={errors.fechaNacimiento}>
                             <div className="flex gap-4">
                                 <input type="date" {...register("fechaNacimiento")} className="form-input text-sm w-full md:w-48" />
                                 <div className="px-4 py-2 bg-slate-100 rounded-lg text-sm text-slate-700 font-bold flex items-center shadow-inner">
@@ -393,7 +413,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                             </div>
                         </FormRow>
 
-                        <FormRow label="País de domicilio" required error={errors.paisDomicilio}>
+                        <FormRow label="País de domicilio" required={isRequired("paisDomicilio", true)} error={errors.paisDomicilio}>
                             <SearchableSelect 
                                 value={watch("paisDomicilio")}
                                 onChange={(val) => setValue("paisDomicilio", val, { shouldDirty: true })}
@@ -401,7 +421,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                                 placeholder="Seleccione..."
                             />
                         </FormRow>
-                        <FormRow label="Ciudad de domicilio" required error={errors.ciudadDomicilio}>
+                        <FormRow label="Ciudad de domicilio" required={isRequired("ciudadDomicilio", true)} error={errors.ciudadDomicilio}>
                             {!paisDomicilio ? (
                                 <select disabled className="form-input text-sm w-full md:w-64 bg-slate-50 cursor-not-allowed">
                                     <option value="">Seleccione primero un país...</option>
@@ -430,7 +450,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                                 />
                             )}
                         </FormRow>
-                        <FormRow label="Barrio" required error={errors.barrio}>
+                        <FormRow label="Barrio" required={isRequired("barrioDomicilio", true)} error={errors.barrio}>
                             <div className="flex gap-2">
                                 <div className="relative flex-1 max-w-[16rem]">
                                     <input 
@@ -455,7 +475,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                                 </button>
                             </div>
                         </FormRow>
-                        <FormRow label="Lugar de residencia" required error={errors.lugarResidencia}>
+                        <FormRow label="Lugar de residencia" required={isRequired("lugarResidencia", true)} error={errors.lugarResidencia}>
                             <input {...register("lugarResidencia")} className="form-input text-sm w-full" placeholder="Dirección completa" />
                         </FormRow>
 
@@ -471,7 +491,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                                 </select>
                             </div>
                         </FormRow>
-                        <FormRow label="Celular" required error={errors.celular}>
+                        <FormRow label="Celular" required={isRequired("celular", true)} error={errors.celular}>
                             <div className="flex items-center gap-0 w-full max-w-sm">
                                 {/* Prefijo compacto con dropdown de búsqueda */}
                                 <div className="relative shrink-0">
@@ -537,10 +557,10 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                             </div>
                         </FormRow>
 
-                        <FormRow label="Correo Electrónico" required error={errors.email}>
+                        <FormRow label="Correo Electrónico" required={isRequired("correoElectronico", true)} error={errors.email}>
                             <input {...register("email")} className="form-input text-sm w-full" placeholder="Correo" />
                         </FormRow>
-                        <FormRow label="Ocupación" required error={errors.ocupacion}>
+                        <FormRow label="Ocupación" required={isRequired("ocupacion", true)} error={errors.ocupacion}>
                             <input {...register("ocupacion")} className="form-input text-sm w-full md:w-64" placeholder="Ocupación" />
                         </FormRow>
 
@@ -603,12 +623,9 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                 <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm flex flex-col items-center">
                     <div className="w-48 h-48 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center overflow-hidden mb-6 group relative">
                         {isCameraActive ? (
-                            <div className="absolute inset-0 bg-black">
-                                <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline />
-                                <div className="absolute bottom-2 inset-x-0 flex justify-center gap-2">
-                                    <button type="button" onClick={takePhoto} className="p-2 bg-[#8CC63F] text-white rounded-full"><FiCheck size={18} /></button>
-                                    <button type="button" onClick={stopCamera} className="p-2 bg-rose-500 text-white rounded-full"><FiX size={18} /></button>
-                                </div>
+                            <div className="flex flex-col items-center justify-center text-emerald-600 bg-emerald-50 w-full h-full">
+                                <FiCamera size={32} className="animate-pulse mb-1" />
+                                <span className="text-[10px] font-bold uppercase">Cámara activa</span>
                             </div>
                         ) : fotoPreview ? (
                             <>
@@ -631,6 +648,58 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                     <button type="button" onClick={startCamera} className="w-full py-3 bg-[#8CC63F] text-white text-[11px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-[#8CC63F]/10 hover:bg-[#7bb335] transition-all flex items-center justify-center gap-2 mb-8">
                         <FiCamera size={14} /> Tomar foto
                     </button>
+
+                    {/* MODAL CÁMARA */}
+                    {isCameraActive && (
+                        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+                            <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-md w-full border border-slate-100 flex flex-col items-center p-5 space-y-4">
+                                <div className="w-full flex items-center justify-between border-b border-slate-100 pb-3">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                            <FiCamera size={18} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Capturar Foto de Paciente</h3>
+                                            <p className="text-[10px] text-slate-400 font-medium">Centra el rostro en la guía</p>
+                                        </div>
+                                    </div>
+                                    <button type="button" onClick={stopCamera} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+                                        <FiX size={18} />
+                                    </button>
+                                </div>
+
+                                <div className="relative w-full aspect-4/3 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+                                    <video 
+                                        ref={videoRef} 
+                                        className="w-full h-full object-cover" 
+                                        autoPlay 
+                                        playsInline 
+                                    />
+                                    {/* Guía ovalada para centrar el rostro */}
+                                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                                        <div className="w-48 h-60 rounded-[50%] border-2 border-white/40 border-dashed shadow-2xl"></div>
+                                    </div>
+                                </div>
+
+                                <div className="w-full flex items-center justify-end gap-2 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={stopCamera}
+                                        className="px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={takePhoto}
+                                        className="px-4 py-2 text-xs font-bold text-white bg-[#8CC63F] hover:bg-[#7bb335] rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <FiCamera size={14} /> CAPTURAR FOTO
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="w-full space-y-3">
                         <div className="w-full py-3 bg-blue-600 text-white text-[9px] font-black uppercase tracking-widest rounded-lg flex items-center justify-center gap-2">
@@ -660,20 +729,18 @@ const FormAseguramiento = ({ conveniosList = [] }) => {
 
     useEffect(() => {
         if(userProfile?.inquilino) {
-            getDocs(query(collection(db, "eps_catalogo"), where("inquilino", "==", userProfile.inquilino)))
-                .then(snap => {
-                    const data = snap.docs.map(d => d.data().nombre?.trim()).filter(Boolean);
-                    const uniqueEps = [];
-                    const seen = new Set();
-                    data.forEach(item => {
-                        if (!seen.has(item.toLowerCase())) {
-                            seen.add(item.toLowerCase());
-                            uniqueEps.push(item);
-                        }
-                    });
+            const loadEps = async () => {
+                try {
+                    const { epsCatalogo } = await import("../../../services/supabaseServices");
+                    const eps = await epsCatalogo.getByTenant(userProfile.inquilino);
+                    const uniqueEps = eps.map(e => e.nombre).filter(Boolean);
                     uniqueEps.sort((a, b) => a.localeCompare(b));
                     setEpsList(uniqueEps);
-                });
+                } catch (e) {
+                    console.error("Error loading EPS catalog from Supabase:", e);
+                }
+            };
+            loadEps();
         }
     }, [userProfile?.inquilino]);
 
@@ -702,66 +769,61 @@ const FormAseguramiento = ({ conveniosList = [] }) => {
         }
 
         try {
-            await addDoc(collection(db, "eps_catalogo"), {
-                nombre: normalizedEps,
-                inquilino: userProfile.inquilino,
-                createdAt: new Date().toISOString()
-            });
+            const { epsCatalogo } = await import("../../../services/supabaseServices");
+            await epsCatalogo.create(userProfile.inquilino, normalizedEps);
             setEpsList(prev => [...prev, normalizedEps].sort((a, b) => a.localeCompare(b)));
             toast?.success("EPS agregada al catálogo con éxito");
         } catch (err) {
-            console.error("Error saving new EPS to catalog:", err);
+            console.error("Error saving new EPS to Supabase:", err);
             toast?.error("Error al guardar la EPS en el catálogo");
         }
     };
 
     return (
-        <div className="p-4 md:p-8 animate-fadeIn max-w-4xl mx-auto">
-            <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm pb-32">
-                <div className="flex items-center gap-4 bg-slate-50 px-6 py-4 border-b border-slate-200 mb-2 rounded-t-[32px]">
-                    <h3 className="text-[14px] font-black text-slate-700 uppercase tracking-widest">EPS</h3>
+        <div className="p-3 md:p-6 animate-fadeIn max-w-3xl mx-auto">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden mb-4">
+                <div className="flex items-center gap-3 bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/80">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[11px] font-black shadow-sm">
+                        <FiShield size={13} />
+                    </div>
+                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider">Aseguramiento & EPS</h3>
                 </div>
-                <div className="pl-0 md:pl-4 space-y-1 mt-4">
-                    <FormRow label="Tipo de vinculación" required error={errors.tipoVinculacion}>
-                        <select {...register("tipoVinculacion")} className="form-input text-sm w-full md:w-64">
+                <div className="py-2 space-y-0.5">
+                    <FormRow label="Tipo de vinculación" required={isRequired("tipoVinculacion", true)} error={errors.tipoVinculacion}>
+                        <select {...register("tipoVinculacion")} className="form-input text-xs w-full md:w-64 rounded-xl border-slate-200 h-9">
                             <option value="">Seleccione...</option>
                             {TIPOS_VINCULACION.map(v => <option key={v} value={v}>{v}</option>)}
                         </select>
                     </FormRow>
-                    <FormRow label="Nombre de la EPS" required error={errors.nombreEps}>
+                    <FormRow label="Nombre de la EPS" required={isRequired("nombreEps", true)} error={errors.nombreEps}>
                         <div className="flex gap-2">
                             <div className="relative flex-1 max-w-[16rem]">
                                 <input 
                                     {...register("nombreEps")} 
                                     onFocus={() => setShowEps(true)}
                                     onBlur={() => setTimeout(() => setShowEps(false), 200)}
-                                    className="form-input text-sm w-full"
+                                    className="form-input text-xs w-full rounded-xl border-slate-200 h-9"
+                                    placeholder="Nombre de la EPS"
                                 />
                                 {showEps && filteredEps.length > 0 && (
-                                    <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden py-1">
+                                    <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden py-1">
                                         {filteredEps.map(eps => (
-                                            <button key={eps} type="button" onMouseDown={() => setValue("nombreEps", eps)} className="w-full px-4 py-2 text-left text-[13px] hover:bg-slate-50 text-slate-700">
+                                            <button key={eps} type="button" onMouseDown={() => setValue("nombreEps", eps)} className="w-full px-4 py-2 text-left text-xs hover:bg-slate-50 text-slate-700 font-medium">
                                                 {eps}
                                             </button>
                                         ))}
                                     </div>
                                 )}
                             </div>
-                            <button type="button" onClick={handleAgregarEps} className="w-10 h-10 shrink-0 bg-[#8CC63F] text-white rounded-xl flex items-center justify-center hover:bg-[#7bb335] transition-colors shadow-md shadow-[#8CC63F]/20">
-                                <FiPlus size={20} />
+                            <button type="button" onClick={handleAgregarEps} className="w-9 h-9 shrink-0 bg-[#8CC63F] text-white rounded-xl flex items-center justify-center hover:bg-[#7bb335] transition-colors shadow-md shadow-[#8CC63F]/20" title="Agregar EPS al catálogo">
+                                <FiPlus size={18} />
                             </button>
                         </div>
                     </FormRow>
                     <FormRow label="Póliza de salud">
-                        <input {...register("polizaSalud")} className="form-input text-sm w-full md:w-80" placeholder="Póliza de salud del paciente" />
+                        <input {...register("polizaSalud")} className="form-input text-xs w-full md:w-80 rounded-xl border-slate-200 h-9" placeholder="Póliza de salud del paciente" />
                     </FormRow>
                 </div>
-            </div>
-            {/* Action button mimicking the image bottom guard */}
-            <div className="flex justify-end mt-4 px-4">
-                <button type="submit" className="px-8 py-2 bg-[#8CC63F] text-white text-[11px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-[#8CC63F]/20 hover:bg-[#7bb335] active:scale-95 transition-all flex items-center gap-2">
-                    <FiCheck size={14} /> Guardar
-                </button>
             </div>
         </div>
     );
@@ -959,9 +1021,10 @@ const SidebarButton = ({ label, active, onClick, icon: Icon, badge }) => (
     <button
         type="button"
         onClick={onClick}
-        className={`w-full group px-3 py-1.5 rounded-lg transition-all flex items-center justify-between border-l-[3px] ${active
-            ? "bg-indigo-50/50 border-indigo-600 text-indigo-700 shadow-sm"
-            : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+        className={`w-full group px-3 py-1.5 rounded-lg transition-all flex items-center justify-between border-l-[3px] ${
+            active
+                ? "bg-indigo-50/50 border-indigo-600 text-indigo-700 shadow-sm"
+                : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-800"
             }`}
     >
         <div className="flex items-center gap-2.5">
@@ -1017,9 +1080,43 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
     const [showWarningModal, setShowWarningModal] = useState(false);
 
+    const isPatientIncomplete = useMemo(() => {
+        if (!patient) return true;
+
+        // Si ya fue guardado y marcado explícitamente como completo
+        if (patient.registroCompleto === true || patient.registro_completo === true) {
+            const hasDoc = Boolean(patient.nroDocumento || patient.documento);
+            const hasNom = Boolean(patient.nombres);
+            const hasApe = Boolean(patient.apellidos);
+            if (hasDoc && hasNom && hasApe) return false;
+        }
+
+        // Verificar campos obligatorios exigidos por la ficha clínica
+        const doc = (patient.nroDocumento || patient.documento || "").toString().trim();
+        const nom = (patient.nombres || "").toString().trim();
+        const ape = (patient.apellidos || "").toString().trim();
+        const fn = (patient.fechaNacimiento || patient.fecha_nacimiento || "").toString().trim();
+        const sex = (patient.sexo || patient.genero || "").toString().trim();
+        const ec = (patient.estadoCivil || patient.estado_civil || "").toString().trim();
+        const pn = (patient.paisNacimiento || patient.pais_nacimiento || "").toString().trim();
+        const pd = (patient.paisDomicilio || patient.pais_domicilio || "").toString().trim();
+        const cd = (patient.ciudadDomicilio || patient.ciudad_domicilio || "").toString().trim();
+        const bar = (patient.barrio || "").toString().trim();
+        const dir = (patient.lugarResidencia || patient.lugar_residencia || patient.direccion || "").toString().trim();
+        const cel = (patient.celular || patient.telefono || "").toString().trim();
+        const em = (patient.email || patient.correo || "").toString().trim();
+        const oc = (patient.ocupacion || "").toString().trim();
+
+        // Si falta alguno de los datos clave de datos personales
+        if (!doc || !nom || !ape || !fn || !sex || !ec || !pn || !pd || !cd || !bar || !dir || !cel || !em || !oc) {
+            return true;
+        }
+
+        return false;
+    }, [patient]);
+
     useEffect(() => {
-        if (patient?.registroCompleto === false) {
-            setShowWarningModal(true);
+        if (isPatientIncomplete) {
             if (activeTab !== "datos") {
                 setActiveTab("datos");
                 const currentParams = {};
@@ -1029,10 +1126,8 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                 currentParams.tab = "datos";
                 setSearchParams(currentParams);
             }
-        } else {
-            setShowWarningModal(false);
         }
-    }, [patient?.id, patient?.registroCompleto, activeTab, searchParams, setSearchParams]);
+    }, [patient?.id, isPatientIncomplete, activeTab, searchParams, setSearchParams]);
 
     const [financials, setFinancials] = useState(null);
     const { userProfile } = useAuth();
@@ -1047,42 +1142,78 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
         if (!inquilino) return;
         const loadRemisionCatalogs = async () => {
             try {
-                const pSnap = await getDocs(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)));
-                const pacientes = pSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                    .sort((a, b) => (a.nombreCompleto || a.nombre || "").localeCompare(b.nombreCompleto || b.nombre || ""));
+                // Load patients from Supabase
+                const { data: pacientesData, error: pacientesError } = await supabase
+                    .from("pacientes")
+                    .select("id, nombres, apellidos, documento")
+                    .eq("tenant_id", inquilino);
+
+                if (pacientesError) throw pacientesError;
+
+                const pacientes = (pacientesData || []).map(d => ({
+                    id: d.id,
+                    nombres: d.nombres,
+                    apellidos: d.apellidos,
+                    nombreCompleto: `${d.nombres || ""} ${d.apellidos || ""}`.trim() || d.documento
+                })).sort((a, b) => (a.nombreCompleto || "").localeCompare(b.nombreCompleto || ""));
                 setPacientesRemision(pacientes);
 
-                const dSnap = await getDocs(query(collection(db, "profesionales"), where("inquilino", "==", inquilino)));
-                const doctors = dSnap.docs.map(d => ({ 
+                // Load professionals from Supabase
+                const { profesionalesService } = await import("../../../services/supabaseServices");
+                const doctors = await profesionalesService.getByTenant(inquilino);
+                const doctorsFormatted = doctors.map(d => ({ 
                     id: d.id, 
-                    ...d.data(), 
-                    displayName: d.data().nombreCompleto || d.data().nombre 
+                    ...d, 
+                    displayName: d.nombre_completo || d.nombre 
                 })).sort((a, b) => a.displayName.localeCompare(b.displayName));
-                setProfesionales(doctors);
+                setProfesionales(doctorsFormatted);
 
-                const cSnap = await getDocs(query(collection(db, "convenios"), where("inquilino", "==", inquilino), where("activo", "==", true)));
-                const convenios = cSnap.docs.map(d => d.data().nombre?.trim()).filter(Boolean);
-                convenios.sort((a, b) => a.localeCompare(b));
-                setConveniosList(convenios);
+                // TODO: Migrate convenios to Supabase when ready
+                // For now, set empty array to avoid Firestore dependency
+                setConveniosList([]);
+                console.log("💡 Convenios temporalmente vacío - pendiente migración a Supabase");
             } catch (e) {
-                console.error("Error loading remision catalogs in PatientDetails:", e);
+                console.error("Error loading remision catalogs from Supabase:", e);
             }
         };
         loadRemisionCatalogs();
     }, [inquilino]);
 
+    const buildDefaultValues = (data = {}) => ({
+        prefijoCelular: "+57",
+        paisNacimiento: data.paisNacimiento || data.pais_nacimiento || "Colombia",
+        paisDomicilio: data.paisDomicilio || data.pais_domicilio || "Colombia",
+        ciudadDomicilio: data.ciudadDomicilio || data.ciudad_domicilio || "",
+        ciudadNacimiento: data.ciudadNacimiento || data.ciudad_nacimiento || "",
+        barrio: data.barrio || "",
+        lugarResidencia: data.lugarResidencia || data.lugar_residencia || data.direccion || "",
+        zonaResidencial: data.zonaResidencial || data.zona_residencial || data.zona || "Urbana",
+        sexo: data.sexo || data.genero || "",
+        estadoCivil: data.estadoCivil || data.estado_civil || "",
+        ocupacion: data.ocupacion || "",
+        email: data.email || data.correo || "",
+        estrato: data.estrato || "",
+        ...data,
+        tipoDocumento: normalizeTipoDocumento(data.tipoDocumento || data.tipo_documento),
+        nroDocumento: data.nroDocumento || data.documento || "",
+        nombres: data.nombres || "",
+        apellidos: data.apellidos || "",
+        celular: data.celular || data.telefono || "",
+        fechaNacimiento: data.fechaNacimiento || data.fecha_nacimiento || "",
+        remitidoPorType: data.remitidoPorType || "Libre",
+        asesorComercialType: data.asesorComercialType || "Libre",
+        esExtranjero: data.esExtranjero || false,
+        permitePublicidad: data.permitePublicidad ?? true,
+        fechaIngreso: data.fechaIngreso || (() => {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        })()
+    });
+
     // RHF Form
     const methods = useForm({
         resolver: zodResolver(patientSchema),
-        defaultValues: { 
-            prefijoCelular: "+57", 
-            ...(initialData || {}),
-            tipoDocumento: normalizeTipoDocumento(initialData?.tipoDocumento),
-            fechaIngreso: initialData?.fechaIngreso || (() => {
-                const d = new Date();
-                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            })()
-        }
+        defaultValues: buildDefaultValues(initialData)
     });
 
     const isEditableTab = ['datos', 'mark', 'eps'].includes(activeTab);
@@ -1092,8 +1223,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
     const [showEpsWarning, setShowEpsWarning] = useState(false);
 
     const handleTabChange = (newTab) => {
-        if (patient?.registroCompleto === false && newTab !== "datos") {
-            toast.error("Debe completar el registro del paciente para poder acceder a otras pestañas.");
+        if (isPatientIncomplete && newTab !== "datos") {
             setShowWarningModal(true);
             return;
         }
@@ -1161,66 +1291,57 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
         if (initialData) {
             setPatient(initialData);
             if (!methods.formState.isDirty) {
-                methods.reset({
-                    ...initialData,
-                    tipoDocumento: normalizeTipoDocumento(initialData.tipoDocumento),
-                    remitidoPorType: initialData.remitidoPorType || "Libre",
-                    asesorComercialType: initialData.asesorComercialType || "Libre",
-                    esExtranjero: initialData.esExtranjero || false,
-                    permitePublicidad: initialData.permitePublicidad ?? true,
-                    fechaIngreso: initialData.fechaIngreso || (() => {
-                        const d = new Date();
-                        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                    })()
-                });
+                methods.reset(buildDefaultValues(initialData));
             }
         }
     }, [initialData, methods]);
 
     useEffect(() => {
         if (!initialData?.id) return;
-        const unsub = onSnapshot(doc(db, "pacientes", initialData.id), (snap) => {
-            if (snap.exists()) {
-                const data = { id: snap.id, ...snap.data() };
-                setPatient(data);
+        
+        console.log("🔍 PatientDetails - Cargando paciente ID:", initialData.id);
+        
+        let isMounted = true;
+        
+        // Cargar SOLO desde Supabase (fuente única de datos de pacientes)
+        const loadPatientData = async () => {
+            try {
+                console.log("📡 Cargando desde Supabase...");
+                const { getPatientById } = await import("../../../services/patientService");
+                const supabaseData = await getPatientById(initialData.id);
                 
-                // Keep form in sync without overriding active typing
-                if (!methods.formState.isDirty) {
-                    methods.reset({
-                        ...data,
-                        tipoDocumento: normalizeTipoDocumento(data.tipoDocumento),
-                        remitidoPorType: data.remitidoPorType || "Libre",
-                        asesorComercialType: data.asesorComercialType || "Libre",
-                        esExtranjero: data.esExtranjero || false,
-                        permitePublicidad: data.permitePublicidad ?? true,
-                        fechaIngreso: data.fechaIngreso || (() => {
-                            const d = new Date();
-                            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                        })()
-                    });
+                if (supabaseData && isMounted) {
+                    console.log("✅ Paciente cargado desde Supabase:", supabaseData);
+                    setPatient(supabaseData);
+                    if (!methods.formState.isDirty) {
+                        methods.reset(buildDefaultValues(supabaseData));
+                    }
+                } else {
+                    console.warn("⚠️ No se encontró paciente con ID:", initialData.id);
                 }
+            } catch (err) {
+                console.error("❌ Error cargando paciente:", err);
             }
-        });
-        return () => unsub();
-    }, [initialData?.id, methods]);
+        };
+        
+        loadPatientData();
+        
+        // Cleanup
+        return () => {
+            isMounted = false;
+        };
+    }, [initialData?.id]);
 
     useEffect(() => {
         if (!patient?.id) return;
         
         // Listen to changes in the pagos collection in real-time to auto-update credit/balances
-        const qPagos = query(
-            collection(db, "pagos"),
-            where("patientId", "==", patient.id),
-            where("inquilino", "==", userProfile?.inquilino || "")
-        );
-        
-        const unsub = onSnapshot(qPagos, () => {
-            import("../../../services/billingService").then(({ getPatientFinancials }) => {
-                getPatientFinancials(patient.id).then(setFinancials);
-            });
+        // TODO: Implementar real-time subscriptions de Supabase cuando sea necesario
+        import("../../../services/billingService").then(({ getPatientFinancials }) => {
+            getPatientFinancials(patient.id, userProfile?.inquilino).then(setFinancials);
+        }).catch((e) => {
+            console.error("Error cargando finanzas del paciente:", e);
         });
-        
-        return () => unsub();
     }, [patient?.id, userProfile?.inquilino]);
 
     // Compute active realized debt (items marked as done but not paid) in real-time
@@ -1232,35 +1353,41 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
     useEffect(() => {
         if (!patient?.id) return;
 
-        const unsubPlans = onSnapshot(
-            query(collection(db, "treatment_plans"), where("patientId", "==", patient.id)),
-            (snap) => {
-                setRealtimePlans(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            },
-            (err) => console.error("Error listening to plans:", err)
-        );
+        // TODO: Migrar a Supabase real-time subscriptions cuando se implementen
+        // Por ahora, cargar datos una sola vez
+        const loadData = async () => {
+            try {
+                // Cargar planes de tratamiento desde Supabase
+                const { data: plans } = await supabase
+                    .from("treatment_plans")
+                    .select("*")
+                    .eq("paciente_id", patient.id);
+                
+                setRealtimePlans(plans || []);
 
-        const unsubPagos = onSnapshot(
-            query(collection(db, "pagos"), where("patientId", "==", patient.id)),
-            (snap) => {
-                setRealtimePayments(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.estado !== 'Anulado'));
-            },
-            (err) => console.error("Error listening to pagos:", err)
-        );
+                // Cargar pagos desde Supabase
+                const { data: payments } = await supabase
+                    .from("pagos")
+                    .select("*")
+                    .eq("paciente_id", patient.id)
+                    .neq("estado", "anulado");
+                
+                setRealtimePayments(payments || []);
 
-        const unsubEvos = onSnapshot(
-            query(collection(db, "clinical_evolutions"), where("patientId", "==", patient.id)),
-            (snap) => {
-                setRealtimeEvos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            },
-            (err) => console.error("Error listening to evolutions:", err)
-        );
+                // Cargar evoluciones desde Supabase
+                const { data: evolutions } = await supabase
+                    .from("evoluciones")
+                    .select("*")
+                    .eq("paciente_id", patient.id);
+                
+                setRealtimeEvos(evolutions || []);
 
-        return () => {
-            unsubPlans();
-            unsubPagos();
-            unsubEvos();
+            } catch (error) {
+                console.error("Error loading patient data:", error);
+            }
         };
+
+        loadData();
     }, [patient?.id]);
 
     useEffect(() => {
@@ -1308,14 +1435,52 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
     }, [patient, fotoPreview]);
 
     const startCamera = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        if (!navigator?.mediaDevices?.getUserMedia) {
+            toast.error("El acceso a la cámara requiere una conexión segura (HTTPS o localhost) o un navegador compatible.");
+            return;
+        }
+
+        const constraintConfigs = [
+            { video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } },
+            { video: { facingMode: "user" } },
+            { video: true }
+        ];
+
+        let stream = null;
+        let lastError = null;
+
+        for (const constraints of constraintConfigs) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                if (stream) break;
+            } catch (err) {
+                lastError = err;
+            }
+        }
+
+        if (stream) {
             setCameraStream(stream);
             setIsCameraActive(true);
-        } catch (err) { toast.error("Error al acceder a la cámara."); }
+        } else {
+            console.error("Error accessing camera:", lastError);
+            let msg = "No se pudo acceder a la cámara. Verifica los permisos de tu navegador.";
+            if (lastError?.name === "NotAllowedError" || lastError?.name === "PermissionDeniedError") {
+                msg = "Permiso de cámara denegado. Haz clic en el icono del candado en la barra de navegación para permitir el acceso.";
+            } else if (lastError?.name === "NotFoundError" || lastError?.name === "DevicesNotFoundError") {
+                msg = "No se encontró ninguna cámara conectada a este dispositivo.";
+            } else if (lastError?.name === "NotReadableError" || lastError?.name === "TrackStartError") {
+                msg = "La cámara está siendo usada por otra aplicación (ej: Zoom, Meet, Teams). Ciérrala e inténtalo de nuevo.";
+            } else if (lastError?.name === "OverconstrainedError") {
+                msg = "La cámara no admite la resolución o configuración solicitada.";
+            }
+            toast.error(msg);
+        }
     };
     useEffect(() => {
-        if (isCameraActive && cameraStream && videoRef.current) videoRef.current.srcObject = cameraStream;
+        if (isCameraActive && cameraStream && videoRef.current) {
+            videoRef.current.srcObject = cameraStream;
+            videoRef.current.play().catch(e => console.error("Error playing video:", e));
+        }
     }, [isCameraActive, cameraStream]);
 
     const stopCamera = () => {
@@ -1326,13 +1491,14 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
     const takePhoto = () => {
         if (videoRef.current && canvasRef.current) {
             const canvas = canvasRef.current;
-            canvas.width = videoRef.current.videoWidth;
-            canvas.height = videoRef.current.videoHeight;
+            canvas.width = videoRef.current.videoWidth || 640;
+            canvas.height = videoRef.current.videoHeight || 480;
             canvas.getContext("2d").drawImage(videoRef.current, 0, 0);
             canvas.toBlob(blob => {
                 if (blob) {
-                    setFotoFile(new File([blob], `capture.jpg`, { type: "image/jpeg" }));
+                    setFotoFile(new File([blob], `capture_${Date.now()}.jpg`, { type: "image/jpeg" }));
                     setFotoPreview(URL.createObjectURL(blob));
+                    toast.success("Foto capturada correctamente.");
                 }
                 stopCamera();
             }, "image/jpeg", 0.9);
@@ -1360,31 +1526,45 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
                     if (data.barrio && userProfile?.inquilino) {
                         try {
-                            const qBar = query(collection(db, "barrios_catalogo"), where("inquilino", "==", userProfile.inquilino));
-                            const snapBar = await getDocs(qBar);
-                            const barExists = snapBar.docs.some(doc => doc.data().nombre?.trim().toLowerCase() === data.barrio.trim().toLowerCase());
+                            const { barriosCatalogo } = await import("../../../services/supabaseServices");
+                            const barrios = await barriosCatalogo.getByTenant(userProfile.inquilino);
+                            const barExists = barrios.some(b => b.nombre?.trim().toLowerCase() === data.barrio.trim().toLowerCase());
                             if (!barExists) {
-                                await addDoc(collection(db, "barrios_catalogo"), {
-                                    nombre: data.barrio.trim(),
-                                    inquilino: userProfile.inquilino,
-                                    createdAt: new Date().toISOString()
-                                });
+                                await barriosCatalogo.create(userProfile.inquilino, data.barrio.trim());
+                                console.log("✅ Barrio agregado automáticamente al catálogo de Supabase");
                             }
                         } catch (e) {
-                            console.error("Error auto-saving barrio in submitForm:", e);
+                            console.error("Error auto-saving barrio to Supabase:", e);
                         }
                     }
 
                     const saved = await createOrUpdatePatient(userProfile.inquilino, finalPayload, false, fotoFile);
                     
+                    // Actualizar el estado local con los datos guardados SIN recargar desde BD
+                    // (evita sobrescribir con datos desactualizados de la BD)
+                    setPatient(prev => ({
+                        ...prev,
+                        ...finalPayload,
+                        id: saved.id || patient.id,
+                        registroCompleto: true,
+                        registro_completo: true
+                    }));
+
+                    // Resetear el formulario con los valores guardados
+                    methods.reset(buildDefaultValues({
+                        ...finalPayload,
+                        id: saved.id || patient.id,
+                        registroCompleto: true
+                    }));
+
                     // Audit log
                     await logAction(patient?.id || data.nroDocumento, "UPDATE_PATIENT", {
                         nombre: finalPayload.nombreCompleto || `${finalPayload.nombres} ${finalPayload.apellidos}`,
                         documento: finalPayload.nroDocumento
                     });
 
-                    toast.success("Información del paciente actualizada y guardada");
-                    methods.reset(finalPayload); // Clear isDirty
+                    toast.success("Información del paciente actualizada y guardada con éxito");
+                    setShowWarningModal(false);
                 } catch(e) {
                     toast.error("Hubo un error al guardar");
                 }
@@ -1407,22 +1587,32 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
                     if (allValues.nombreEps && userProfile?.inquilino) {
                         try {
-                            const qEps = query(collection(db, "eps_catalogo"), where("inquilino", "==", userProfile.inquilino));
-                            const snapEps = await getDocs(qEps);
-                            const epsExists = snapEps.docs.some(doc => doc.data().nombre?.trim().toLowerCase() === allValues.nombreEps.trim().toLowerCase());
+                            const { epsCatalogo } = await import("../../../services/supabaseServices");
+                            const epsList = await epsCatalogo.getByTenant(userProfile.inquilino);
+                            const epsExists = epsList.some(e => e.nombre?.trim().toLowerCase() === allValues.nombreEps.trim().toLowerCase());
                             if (!epsExists) {
-                                await addDoc(collection(db, "eps_catalogo"), {
-                                    nombre: allValues.nombreEps.trim(),
-                                    inquilino: userProfile.inquilino,
-                                    createdAt: new Date().toISOString()
-                                });
+                                await epsCatalogo.create(userProfile.inquilino, allValues.nombreEps.trim());
+                                console.log("✅ EPS agregada automáticamente al catálogo de Supabase");
                             }
                         } catch (e) {
-                            console.error("Error auto-saving EPS in handlePartialSave:", e);
+                            console.error("Error auto-saving EPS to Supabase:", e);
                         }
                     }
 
                     const saved = await createOrUpdatePatient(userProfile.inquilino, finalPayload, false, fotoFile);
+                    
+                    // Actualizar el estado local con los datos guardados SIN recargar desde BD
+                    setPatient(prev => ({
+                        ...prev,
+                        ...finalPayload,
+                        id: saved.id || patient.id
+                    }));
+
+                    // Resetear el formulario con los valores guardados
+                    methods.reset(buildDefaultValues({
+                        ...finalPayload,
+                        id: saved.id || patient.id
+                    }));
                     
                     // Audit log
                     await logAction(patient?.id || allValues.nroDocumento, "UPDATE_PATIENT", {
@@ -1432,7 +1622,6 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                     });
 
                     toast.success("Información guardada correctamente ✅");
-                    methods.reset(finalPayload);
                 } catch(e) {
                     console.error("Error saving partial form:", e);
                     toast.error("Hubo un error al guardar");
@@ -1547,7 +1736,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                     badge={financials?.totals?.totalSaldosAFavor > 0 ? `$${formatCurrency(financials.totals.totalSaldosAFavor)}` : "$ 0"} 
                                 />
                                 <SidebarButton icon={FiDollarSign} label="Realizar pago" active={activeTab === "pago"} onClick={() => handleTabChange("pago")} />
-                                {realizedDebt > 0 && (
+                                {realizedDebt > 0 && !isPatientIncomplete && (
                                     <button
                                         type="button"
                                         onClick={() => handleTabChange('pago')}
@@ -1569,7 +1758,45 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                     autoComplete="off"
                                     onSubmit={methods.handleSubmit(submitForm, (errors) => {
                                         console.warn("Form validation errors:", errors);
-                                        toast.error("Por favor completa los campos obligatorios pendientes.");
+                                        
+                                        // Construir mensaje con los campos faltantes
+                                        const missingFields = Object.keys(errors).map(key => {
+                                            const fieldLabels = {
+                                                tipoDocumento: "Tipo de Documento",
+                                                nroDocumento: "Número de Documento",
+                                                nombres: "Nombres",
+                                                apellidos: "Apellidos",
+                                                fechaNacimiento: "Fecha de Nacimiento",
+                                                sexo: "Sexo",
+                                                estadoCivil: "Estado Civil",
+                                                paisNacimiento: "País de Nacimiento",
+                                                paisDomicilio: "País de Domicilio",
+                                                ciudadDomicilio: "Ciudad de Domicilio",
+                                                barrio: "Barrio",
+                                                lugarResidencia: "Lugar de Residencia",
+                                                celular: "Celular",
+                                                email: "Correo Electrónico",
+                                                ocupacion: "Ocupación"
+                                            };
+                                            return fieldLabels[key] || key;
+                                        });
+                                        
+                                        // Hacer scroll al primer campo con error
+                                        const firstErrorKey = Object.keys(errors)[0];
+                                        const firstErrorElement = document.querySelector(`[name="${firstErrorKey}"]`);
+                                        if (firstErrorElement) {
+                                            firstErrorElement.scrollIntoView({ behavior: "smooth", block: "center" });
+                                            firstErrorElement.focus();
+                                        }
+                                        
+                                        // Mostrar mensaje con los campos faltantes
+                                        if (missingFields.length === 1) {
+                                            toast.error(`Campo obligatorio faltante: ${missingFields[0]}`);
+                                        } else if (missingFields.length <= 3) {
+                                            toast.error(`Campos obligatorios faltantes: ${missingFields.join(", ")}`);
+                                        } else {
+                                            toast.error(`Por favor completa los ${missingFields.length} campos obligatorios marcados en rojo.`);
+                                        }
                                     })} 
                                     className="h-full flex flex-col"
                                 >
@@ -1641,11 +1868,11 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                             </div>
                             
                             <h3 className="text-base font-black text-slate-800 uppercase tracking-tight mb-2">
-                                Registro Incompleto
+                                Datos de Paciente Incompletos
                             </h3>
                             
                             <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wide leading-relaxed mb-6">
-                                Este paciente fue registrado de forma rápida desde la agenda. Es obligatorio completar sus datos personales, de contacto y ubicación para habilitar la facturación y la historia clínica.
+                                Para navegar en este módulo es necesario completar los datos obligatorios del paciente. ¿Deseas completarlos ahora o prefieres omitir y salir al menú?
                             </p>
 
                             <div className="flex flex-col gap-3 w-full">
@@ -1662,10 +1889,13 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                 
                                 <button
                                     type="button"
-                                    onClick={onClose}
-                                    className="w-full py-3 bg-slate-100 text-slate-500 text-[11px] font-black uppercase tracking-widest rounded-full hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center"
+                                    onClick={() => {
+                                        setShowWarningModal(false);
+                                        onClose();
+                                    }}
+                                    className="w-full py-3 bg-slate-100 text-slate-600 text-[11px] font-black uppercase tracking-widest rounded-full hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center"
                                 >
-                                    Volver a Pacientes
+                                    Omitir / Salir al Menú
                                 </button>
                             </div>
                         </div>

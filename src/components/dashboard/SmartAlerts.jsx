@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiAlertCircle, FiTrendingUp, FiUsers, FiBox, FiArrowRight } from "react-icons/fi";
-import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
 
@@ -25,15 +24,9 @@ export default function SmartAlerts() {
                 sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
                 // 1. CRM Check: Dormant Patients (Fetch and filter in memory)
-                const qDormant = query(
-                    collection(db, "pacientes"),
-                    where("inquilino", "==", userProfile.inquilino),
-                    limit(20)
-                );
-                const snapDormant = await getDocs(qDormant);
-                const dormantDocs = snapDormant.docs.filter(d => {
-                    const data = d.data();
-                    return data.actualizado && data.actualizado.toDate() < sixMonthsAgo;
+                const { data: snapDormant } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`).limit(20);
+                const dormantDocs = (snapDormant || []).filter(data => {
+                    return data.updated_at && new Date(data.updated_at) < sixMonthsAgo;
                 }).slice(0, 3);
 
                 if (dormantDocs.length > 0) {
@@ -48,21 +41,14 @@ export default function SmartAlerts() {
                 }
 
                 // 2. Inventory Check: Predict low stock (Fetch and filter in memory)
-                const qInv = query(
-                    collection(db, "inventario"),
-                    where("inquilino", "==", userProfile.inquilino),
-                    limit(20)
-                );
-                const snapInv = await getDocs(qInv);
-                const lowStockDocs = snapInv.docs.filter(d => {
-                    const data = d.data();
+                const { data: snapInv } = await supabase.from("inventario").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`).limit(20);
+                const lowStockDocs = (snapInv || []).filter(data => {
                     return data.cantidad !== undefined && data.cantidad < 5;
                 }).slice(0, 2);
 
-                lowStockDocs.forEach(doc => {
-                    const item = doc.data();
+                lowStockDocs.forEach(item => {
                     foundAlerts.push({
-                        id: `inv-low-${doc.id}`,
+                        id: `inv-low-${item.id}`,
                         type: 'inventario',
                         title: `Stock Crítico: ${item.nombre}`,
                         description: `Quedan solo ${item.cantidad} unidades. Necesario para citas próximas.`,
@@ -71,23 +57,13 @@ export default function SmartAlerts() {
                     });
                 });
 
-                // 3. Efficiency Check (Real Data from treatment_plans)
-                const qPlans = query(
-                    collection(db, "treatment_plans"),
-                    where("inquilino", "==", userProfile.inquilino),
-                    limit(50)
-                );
-                const snapPlans = await getDocs(qPlans);
+                // 3. Efficiency Check (Real Data from planes)
+                const { data: snapPlans } = await supabase.from("planes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`).limit(50);
                 const treatmentCounts = {};
                 
-                snapPlans.docs.forEach(docPlan => {
-                    const data = docPlan.data();
-                    // Optional: check if data belongs to tenant if property exists
-                    // if (data.inquilino && data.inquilino !== userProfile.inquilino) return;
-
+                (snapPlans || []).forEach(data => {
                     if (data.items && Array.isArray(data.items)) {
                         data.items.forEach(item => {
-                            // Validar que exista descripción y cantidad
                             if (!item.desc) return;
                             const name = item.desc;
                             const subtotal = (Number(item.amount) || 0) * (Number(item.qty) || 1);

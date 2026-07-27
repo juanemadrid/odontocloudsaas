@@ -1,7 +1,5 @@
 import React, { useRef, useState, useMemo } from "react";
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { setDoc, doc, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { FiPlus, FiSearch, FiFileText, FiImage, FiTrash2, FiDownload, FiUploadCloud, FiEdit, FiEye, FiX } from "react-icons/fi";
@@ -54,20 +52,16 @@ export default function PatientRxTab({ patient, onUpdate }) {
                     return;
                 }
 
-                const q = query(
-                    collection(db, "profesionales"),
-                    where("inquilino", "==", userProfile.inquilino),
-                    where("activo", "==", true)
-                );
-                const s = await getDocs(q);
-                const list = s.docs.map(doc => {
-                    const d = doc.data();
-                    return { 
-                        id: doc.id, 
-                        nombreCompleto: d.nombreCompleto || d.nombre || "",
-                        ...d
-                    };
-                });
+                const { data: profData } = await supabase
+                    .from("profesionales")
+                    .select("*")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .eq("activo", true);
+                const list = (profData || []).map(doc => ({
+                    id: doc.id,
+                    nombreCompleto: doc.nombre_completo || doc.nombre || "",
+                    ...doc
+                }));
                 setCatalogProfesionales(list.sort((a,b) => a.nombreCompleto?.localeCompare(b.nombreCompleto) || 0));
             } catch (err) {
                 console.error("Error loading professionals:", err);
@@ -100,40 +94,40 @@ export default function PatientRxTab({ patient, onUpdate }) {
         if (!profesionalResp.trim()) return toast.error("El profesional es requerido");
 
         setUploading(true);
-        const storage = getStorage();
         try {
             let url, path;
             
             if (editingImage) {
-                // Edición: mantener URL y path si no se cambió el archivo
                 url = editingImage.url;
                 path = editingImage.path;
                 
                 if (selectedFile) {
-                    // Si se cambió el archivo, eliminar el anterior y subir el nuevo
-                    if (editingImage.path) {
-                        try {
-                            await deleteObject(ref(storage, editingImage.path));
-                        } catch (err) {
-                            console.warn("Could not delete old file in Storage:", err);
-                        }
-                    }
-                    
                     const safe = (selectedFile.name || "archivo").replace(/\s+/g, "_");
                     path = `pacientes/${patient.id}/rx/${Date.now()}_${safe}`;
-                    const sref = ref(storage, path);
                     
-                    await uploadBytes(sref, selectedFile, { contentType: selectedFile.type });
-                    url = await getDownloadURL(sref);
+                    const { error: uploadErr } = await supabase.storage
+                        .from("adjuntos")
+                        .upload(path, selectedFile, { upsert: true });
+                    if (uploadErr) throw uploadErr;
+
+                    const { data: urlData } = supabase.storage
+                        .from("adjuntos")
+                        .getPublicUrl(path);
+                    url = urlData.publicUrl;
                 }
             } else {
-                // Creación: subir nuevo archivo
                 const safe = (selectedFile.name || "archivo").replace(/\s+/g, "_");
                 path = `pacientes/${patient.id}/rx/${Date.now()}_${safe}`;
-                const sref = ref(storage, path);
+                
+                const { error: uploadErr } = await supabase.storage
+                    .from("adjuntos")
+                    .upload(path, selectedFile, { upsert: true });
+                if (uploadErr) throw uploadErr;
 
-                await uploadBytes(sref, selectedFile, { contentType: selectedFile.type });
-                url = await getDownloadURL(sref);
+                const { data: urlData } = supabase.storage
+                    .from("adjuntos")
+                    .getPublicUrl(path);
+                url = urlData.publicUrl;
             }
 
             const itemData = {
@@ -153,19 +147,20 @@ export default function PatientRxTab({ patient, onUpdate }) {
 
             let updatedList;
             if (editingImage) {
-                // Actualizar el elemento existente
                 updatedList = (patient.rxImagenes || []).map(img => 
                     img.path === editingImage.path ? itemData : img
                 );
             } else {
-                // Agregar nuevo elemento
                 updatedList = [...(patient.rxImagenes || []), itemData];
             }
 
-            await setDoc(doc(db, "pacientes", patient.id), {
-                rxImagenes: updatedList,
-                actualizado: serverTimestamp()
-            }, { merge: true });
+            await supabase
+                .from("pacientes")
+                .update({
+                    rxImagenes: updatedList,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", patient.id);
             onUpdate && onUpdate({ ...patient, rxImagenes: updatedList });
             toast.success(editingImage ? "Archivo actualizado correctamente" : "Archivo guardado correctamente");
             
@@ -190,30 +185,21 @@ export default function PatientRxTab({ patient, onUpdate }) {
 
     const executeDelete = async (item) => {
         const currentList = patient.rxImagenes || [];
-        // Filter by both path and url to guarantee clean removal even if path is missing/empty
         const newList = currentList.filter(x => x.path !== item.path && x.url !== item.url);
 
         try {
-            // First update Firestore so the document is immediately removed in the UI
-            await setDoc(doc(db, "pacientes", patient.id), {
-                rxImagenes: newList,
-                actualizado: serverTimestamp()
-            }, { merge: true });
+            await supabase
+                .from("pacientes")
+                .update({
+                    rxImagenes: newList,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", patient.id);
 
             onUpdate && onUpdate({ ...patient, rxImagenes: newList });
             toast.success("Archivo eliminado");
-
-            // Attempt to delete from Storage asynchronously, without blocking the user
-            if (item.path) {
-                try {
-                    const storage = getStorage();
-                    await deleteObject(ref(storage, item.path));
-                } catch (storageErr) {
-                    console.warn("Storage binary deletion failed or was bypassed:", storageErr);
-                }
-            }
         } catch (e) {
-            console.error("Firestore document deletion failed:", e);
+            console.error("Document deletion failed:", e);
             toast.error("Error al borrar el archivo");
         }
     };

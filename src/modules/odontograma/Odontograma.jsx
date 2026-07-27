@@ -2,19 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import OdontogramaVisual from "./components/OdontogramaVisual";
 import TratamientosToolbar, { TOOLS, SURFACES } from "./components/TratamientosToolbar";
-import { db } from "../../firebase/firebaseConfig";
-import {
-    collection,
-    query,
-    orderBy,
-    onSnapshot,
-    getDocs,
-    doc,
-    setDoc,
-    serverTimestamp,
-    addDoc,
-    deleteDoc
-} from "firebase/firestore";
+import supabase from "../../lib/supabaseClient";
 import {
     FiPlus,
     FiSave,
@@ -320,26 +308,52 @@ export default function Odontograma({ embeddedPatient }) {
     const loadSesiones = async () => {
         setLoading(true);
         try {
-            const colRef = collection(db, "pacientes", embeddedPatient.id, "odontogramas");
-            const snap = await getDocs(query(colRef, orderBy("creado", "desc")));
-            setSesiones(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        } catch { toast?.error("Error al cargar historial"); }
+            const { data, error } = await supabase
+                .from("odontogramas")
+                .select("*")
+                .eq("paciente_id", embeddedPatient.id)
+                .order("created_at", { ascending: false });
+            if (error) throw error;
+            setSesiones((data || []).map(d => ({
+                id: d.id,
+                data: d.data || {},
+                plan: d.plan || [],
+                observaciones: d.observaciones || "",
+                estado: d.estado || "Abierto",
+                creado: d.created_at,
+                creadoPor: d.creado_por,
+                profesional: d.profesional
+            })));
+        } catch (err) { 
+            console.error("Error loading sessions:", err);
+            toast?.error("Error al cargar historial"); 
+        }
         finally { setLoading(false); }
     };
 
     const handleNuevo = async () => {
         setLoading(true);
         try {
-            const colRef = collection(db, "pacientes", embeddedPatient.id, "odontogramas");
-            const docRef = await addDoc(colRef, {
-                creado: serverTimestamp(),
-                creadoPor: embeddedPatient.creadorEmail || "usuario@sistema.com",
-                profesional: embeddedPatient.dentistaResponsable || "Profesional",
-                estado: "Abierto",
-                data: {}, plan: [], observaciones: ""
-            });
-            abrirEditor({ id: docRef.id, data: {}, plan: [], observaciones: "", estado: "Abierto" });
-        } catch { toast?.error("Error al crear sesión"); }
+            const { data, error } = await supabase
+                .from("odontogramas")
+                .insert([{
+                    paciente_id: embeddedPatient.id,
+                    tenant_id: embeddedPatient.inquilino || embeddedPatient.tenant_id,
+                    creado_por: embeddedPatient.creadorEmail || "usuario@sistema.com",
+                    profesional: embeddedPatient.dentistaResponsable || "Profesional",
+                    estado: "Abierto",
+                    data: {},
+                    plan: [],
+                    observaciones: ""
+                }])
+                .select()
+                .single();
+            if (error) throw error;
+            abrirEditor({ id: data.id, data: {}, plan: [], observaciones: "", estado: "Abierto" });
+        } catch (err) { 
+            console.error("Error creating session:", err);
+            toast?.error("Error al crear sesión"); 
+        }
         finally { setLoading(false); }
     };
 
@@ -354,7 +368,11 @@ export default function Odontograma({ embeddedPatient }) {
     const handleEliminar = async (id) => {
         if (!window.confirm("¿Eliminar este odontograma permanentemente?")) return;
         try {
-            await deleteDoc(doc(db, "pacientes", embeddedPatient.id, "odontogramas", id));
+            const { error } = await supabase
+                .from("odontogramas")
+                .delete()
+                .eq("id", id);
+            if (error) throw error;
             toast?.success("Eliminado correctamente");
             loadSesiones();
         } catch { toast?.error("Error al eliminar"); }
@@ -701,26 +719,35 @@ export default function Odontograma({ embeddedPatient }) {
         if (!currentSesion?.id) return;
         setSaving(true);
         try {
-            const ref = doc(db, "pacientes", embeddedPatient.id, "odontogramas", currentSesion.id);
-            await setDoc(ref, {
-                data: odontogramaData, plan: planTratamiento,
-                observaciones, updatedAt: serverTimestamp(),
-                ...(finalizar ? { estado: "Finalizado" } : {})
-            }, { merge: true });
+            const { error } = await supabase
+                .from("odontogramas")
+                .update({
+                    data: odontogramaData,
+                    plan: planTratamiento,
+                    observaciones,
+                    updated_at: new Date().toISOString(),
+                    ...(finalizar ? { estado: "Finalizado" } : {})
+                })
+                .eq("id", currentSesion.id);
+
+            if (error) throw error;
 
             // Sincronización con Plan de Tratamiento Centralizado
             if (finalizar && planTratamiento.length > 0) {
-                const tratamientosRef = collection(db, "pacientes", embeddedPatient.id, "tratamientos_pendientes");
-                for (const item of planTratamiento) {
-                    await addDoc(tratamientosRef, {
-                        ...item,
-                        odontogramaId: currentSesion.id,
-                        fechaFinalizacion: serverTimestamp(),
-                        estado: "Pendiente", // Para que Tesorería lo vea
-                        valor: 0, // Se definirá en Caja o por catálogo
-                        creadoPor: embeddedPatient.creadorEmail || "Doctor"
-                    });
-                }
+                const itemsToInsert = planTratamiento.map(item => ({
+                    paciente_id: embeddedPatient.id,
+                    tenant_id: embeddedPatient.inquilino || embeddedPatient.tenant_id,
+                    odontograma_id: currentSesion.id,
+                    diente: item.diente,
+                    zona: item.zona,
+                    zona_label: item.zonaLabel,
+                    tratamiento: item.tratamiento,
+                    color: item.color,
+                    estado: "Pendiente",
+                    valor: 0,
+                    creado_por: embeddedPatient.creadorEmail || "Doctor"
+                }));
+                await supabase.from("tratamientos_pendientes").insert(itemsToInsert);
             }
 
             toast?.success(finalizar ? "✅ Sesión finalizada y sincronizada con el Plan" : "✅ Guardado correctamente");

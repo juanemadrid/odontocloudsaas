@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { FiPlus, FiCalendar, FiSearch, FiPrinter, FiEdit2, FiTrash2, FiArrowLeft, FiEye } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import { collection, query, where, getDocs, Timestamp, doc, updateDoc, increment, addDoc } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 
 const fmt = (n) =>
@@ -368,47 +367,53 @@ export default function ReciboCajaList({ onNew }) {
         
         try {
             const recibo = voidModal.recibo;
-            const targetCollection = recibo.isPago ? "pagos" : "recibos_caja";
+            const targetTable = recibo.isPago ? "pagos" : "recibos_caja";
             
             // 1. Update document status
-            const docRef = doc(db, targetCollection, recibo.id);
-            await updateDoc(docRef, {
-                estado: "Anulado",
-                motivoAnulacion: voidReason.trim(),
-                anuladoPor: voidUser.trim(),
-                fechaAnulacion: new Date().toISOString()
-            });
+            await supabase
+                .from(targetTable)
+                .update({
+                    estado: "Anulado",
+                    motivoAnulacion: voidReason.trim(),
+                    anuladoPor: voidUser.trim(),
+                    fechaAnulacion: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", recibo.id);
 
             // 2. Synchronize with active Caja session (if exists)
-            const cSnap = await getDocs(query(
-                collection(db, "cajas"), 
-                where("inquilino", "==", inquilino),
-                where("estado", "==", "abierta"),
-                where("usuarioId", "==", userProfile?.uid)
-            ));
+            const { data: cajas } = await supabase
+                .from("cajas")
+                .select("*")
+                .eq("tenant_id", inquilino)
+                .eq("estado", "abierta")
+                .eq("usuario_id", userProfile?.uid);
             
-            if (!cSnap.empty) {
-                const activeCaja = { id: cSnap.docs[0].id, ...cSnap.docs[0].data() };
+            if (cajas && cajas.length > 0) {
+                const activeCaja = cajas[0];
                 const movData = {
-                    inquilino,
+                    tenant_id: inquilino,
                     tipo: "egreso",
                     concepto: `Anulación de recibo #${recibo.id.slice(0, 8).toUpperCase()}`,
                     monto: recibo.total,
-                    metodoPago: recibo.condicionPago || "Otros",
+                    metodo_pago: recibo.condicionPago || "Otros",
                     descripcion: `Anulación del recibo de ${recibo.pacienteNombre}. Motivo: ${voidReason.trim()}`,
-                    pacienteId: recibo.pacienteId || "",
-                    pacienteNombre: recibo.pacienteNombre,
-                    pagoId: recibo.id,
-                    usuarioId: userProfile?.uid,
-                    usuarioNombre: userProfile?.nombre || userProfile?.email,
-                    fecha: Timestamp.now(),
+                    paciente_id: recibo.pacienteId || "",
+                    paciente_nombre: recibo.pacienteNombre,
+                    pago_id: recibo.id,
+                    usuario_id: userProfile?.uid,
+                    caja_id: activeCaja.id,
+                    created_at: new Date().toISOString()
                 };
                 
-                await addDoc(collection(db, "cajas", activeCaja.id, "movimientos"), movData);
-                await updateDoc(doc(db, "cajas", activeCaja.id), {
-                    saldoActual: increment(-recibo.total),
-                    totalEgresos: increment(recibo.total)
-                });
+                await supabase.from("movimientos_caja").insert([movData]);
+                await supabase
+                    .from("cajas")
+                    .update({
+                        saldo_actual: (activeCaja.saldo_actual || activeCaja.saldoActual || 0) - recibo.total,
+                        total_egresos: (activeCaja.total_egresos || activeCaja.totalEgresos || 0) + recibo.total
+                    })
+                    .eq("id", activeCaja.id);
             }
 
             await loadData();
@@ -444,32 +449,25 @@ export default function ReciboCajaList({ onNew }) {
             end.setHours(23, 59, 59, 999);
 
             // 1. Fetch recibos_caja
-            const qRecibos = query(
-                collection(db, "recibos_caja"),
-                where("inquilino", "==", inquilino)
-            );
-            const snapRecibos = await getDocs(qRecibos);
-            const dataRecibos = snapRecibos.docs.map(d => ({ 
-                id: d.id, 
-                ...d.data(),
-                isPago: false 
-            }));
+            const { data: dataRecibos } = await supabase
+                .from("recibos_caja")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const recibosMapped = (dataRecibos || []).map(d => ({ ...d, isPago: false }));
 
             // 2. Fetch pagos (abonos from patient profile)
-            const qPagos = query(
-                collection(db, "pagos"),
-                where("inquilino", "==", inquilino)
-            );
-            const snapPagos = await getDocs(qPagos);
-            const dataPagos = snapPagos.docs
-                .map(d => {
-                    const pData = d.data();
+            const { data: dataPagosRaw } = await supabase
+                .from("pagos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const dataPagos = (dataPagosRaw || [])
+                .map(pData => {
                     const medioRaw = pData.medio || "Abono";
                     const condicionPago = medioRaw.toLowerCase() === "saldo a favor" ? "Consumo s. a favor" : medioRaw;
                     return {
-                        id: d.id,
+                        id: pData.id,
                         nroConsecutivo: pData.nroConsecutivo || "",
-                        fecha: pData.fecha,
+                        fecha: pData.fechaISO || pData.created_at || pData.fecha,
                         pacienteNombre: pData.patientNombre || pData.pacienteNombre || "—",
                         condicionPago: condicionPago,
                         concepto: pData.concepto || "Abono",
@@ -480,7 +478,7 @@ export default function ReciboCajaList({ onNew }) {
                 .filter(p => p.concepto !== "SALDO A FAVOR");
 
             // Combine and filter by date range client-side
-            let data = [...dataRecibos, ...dataPagos];
+            let data = [...recibosMapped, ...dataPagos];
             const startTime = start.getTime();
             const endTime = end.getTime();
             data = data.filter(r => {

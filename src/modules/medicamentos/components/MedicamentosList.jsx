@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiSearch, FiEdit2, FiTrash2, FiPlus } from "react-icons/fi";
-import { collection, query, where, getDocs, deleteDoc, doc } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -19,9 +18,11 @@ export default function MedicamentosList({ onNew, onEdit }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const q = query(collection(db, "medicamentos"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            setMedicamentos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const { data: list } = await supabase
+                .from("medicamentos")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setMedicamentos(list || []);
         } catch (e) {
             console.error("Error loading medicines:", e);
             toast.error("Error al cargar los medicamentos");
@@ -37,7 +38,7 @@ export default function MedicamentosList({ onNew, onEdit }) {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este medicamento?")) return;
         try {
-            await deleteDoc(doc(db, "medicamentos", id));
+            await supabase.from("medicamentos").delete().eq("id", id);
             toast.success("Medicamento eliminado");
             setMedicamentos(prev => prev.filter(m => m.id !== id));
         } catch (e) {

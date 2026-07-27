@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter, FiCheckCircle, FiAlertCircle, FiMessageSquare } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -59,32 +58,18 @@ export default function ReporteLogWhatsApp() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        // 1. Cargar Sucursales
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
-        setSucursalesList(listSuc);
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        // 2. Cargar Logs de WhatsApp Business API en Firestore
-        const qLogs = query(
-          collection(db, "whatsapp_logs"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapLogs = await getDocs(qLogs);
+        // 2. Cargar Logs de WhatsApp Business API en Supabase
+        const { data: snapLogs } = await supabase.from("whatsapp_logs").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listData = [];
 
-        snapLogs.forEach(doc => {
-          const l = doc.data();
-          const dateObj = l.createdAt?.toDate ? l.createdAt.toDate() : (l.fecha ? new Date(l.fecha) : new Date());
+        (snapLogs || []).forEach(l => {
+          const dateObj = l.created_at ? new Date(l.created_at) : (l.fecha ? new Date(l.fecha) : new Date());
 
           listData.push({
-            id: doc.id,
+            id: l.id,
             fechaObj: dateObj,
             fechaHoraStr: isNaN(dateObj.getTime()) ? (l.fecha || "") : format(dateObj, "dd/MM/yyyy HH:mm:ss"),
             destinatario: l.pacienteNombre || l.destinatario || "—",

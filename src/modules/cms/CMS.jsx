@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import PremiumLoading from "../../components/PremiumLoading";
 import { FiPlus } from "react-icons/fi";
 
@@ -23,11 +22,8 @@ export default function CMS() {
     useEffect(() => {
         const load = async () => {
             try {
-                const docRef = doc(db, "website_config", "general");
-                const snap = await getDoc(docRef);
-                if (snap.exists()) {
-                    setConfig((prev) => ({ ...prev, ...snap.data() }));
-                }
+                const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", "general").maybeSingle();
+                if (webSnap?.config) setConfig((prev) => ({ ...prev, ...webSnap.config }));
             } catch (err) {
                 console.error(err);
             } finally {
@@ -63,7 +59,7 @@ export default function CMS() {
         setSaving(true);
         setMsg("");
         try {
-            await setDoc(doc(db, "website_config", "general"), config, { merge: true });
+            await supabase.from("website_config").upsert([{ tenant_id: "general", config }], { onConflict: "tenant_id" });
             setMsg("¡Guardado correctamente!");
         } catch (error) {
             console.error(error);

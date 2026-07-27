@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import {
@@ -375,21 +374,33 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
 
     useEffect(() => {
         if (!patientId) return;
-        const q = query(collection(db, 'facturas'), where('patientId', '==', patientId), orderBy('fechaISO', 'desc'));
-        const unsub = onSnapshot(q, (snap) => {
-            setFacturas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setLoading(false);
-        }, (err) => { console.error(err); setLoading(false); });
-        return () => unsub();
+        const loadFacturas = async () => {
+            try {
+                const { data } = await supabase
+                    .from('facturas')
+                    .select('*')
+                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
+                    .order('created_at', { ascending: false });
+                setFacturas(data || []);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadFacturas();
     }, [patientId]);
 
     useEffect(() => {
         if (!userProfile?.inquilino) return;
         (async () => {
             try {
-                const snap = await getDoc(doc(db, 'tenants', userProfile.inquilino));
-                if (snap.exists()) {
-                    const d = snap.data();
+                const { data: d } = await supabase
+                    .from('tenants')
+                    .select('*')
+                    .eq('id', userProfile.inquilino)
+                    .maybeSingle();
+                if (d) {
                     setTenant({
                         nit: d.nit || '',
                         razonSocial: d.razonSocial || '',

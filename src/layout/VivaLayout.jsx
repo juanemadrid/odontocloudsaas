@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
+import supabase from "../lib/supabaseClient";
 import VivaHeader from "./VivaHeader";
 import VivaFooter from "./VivaFooter";
 import "../styles/landing.css";
@@ -16,9 +15,8 @@ export default function VivaLayout() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const ref = doc(db, "website_config", "general");
-                const snap = await getDoc(ref);
-                if (snap.exists()) setConfig((prev) => ({ ...prev, ...snap.data() }));
+                const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", "general").maybeSingle();
+                if (webSnap?.config) setConfig((prev) => ({ ...prev, ...webSnap.config }));
             } catch (e) {
                 console.error(e);
             }

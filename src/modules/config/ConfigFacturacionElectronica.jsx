@@ -3,8 +3,7 @@
  * Rediseño corporativo compacto e institucional
  */
 import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc, collection, getDocs, query, where, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { FiSave, FiInfo, FiFileText, FiZap, FiAlertCircle, FiMapPin } from "react-icons/fi";
@@ -42,9 +41,8 @@ export default function ConfigFacturacionElectronica() {
     const initLoad = async () => {
         setLoading(true);
         try {
-            const qSuc = query(collection(db, "sucursales"), where("inquilino", "==", userProfile.inquilino));
-            const snapSuc = await getDocs(qSuc);
-            const listSuc = snapSuc.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+            const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+            const listSuc = (snapSuc || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
             setSucursales(listSuc);
 
             const initialSucId = listSuc.length > 0 ? listSuc[0].id : "";
@@ -64,12 +62,12 @@ export default function ConfigFacturacionElectronica() {
             let sucursalDocData = null;
             let tenantDocData = null;
 
-            const tenantSnap = await getDoc(doc(db, "tenants", userProfile.inquilino));
-            if (tenantSnap.exists()) tenantDocData = tenantSnap.data();
+            const { data: tenantSnap } = await supabase.from("tenants").select("*").eq("id", userProfile.inquilino).maybeSingle();
+            if (tenantSnap) tenantDocData = tenantSnap;
 
             if (sucId) {
-                const sucSnap = await getDoc(doc(db, "sucursales", sucId));
-                if (sucSnap.exists()) sucursalDocData = sucSnap.data();
+                const { data: sucSnap } = await supabase.from("sucursales").select("*").eq("id", sucId).maybeSingle();
+                if (sucSnap) sucursalDocData = sucSnap;
             }
 
             const quotaData = await getSucursalQuota(sucId, userProfile.inquilino);
@@ -104,15 +102,15 @@ export default function ConfigFacturacionElectronica() {
         try {
             const payload = {
                 ...dianData,
-                updatedAt: serverTimestamp(),
-                updatedBy: userProfile.uid,
+                updated_at: new Date().toISOString(),
+                updated_by: userProfile.uid || userProfile.id,
             };
 
             if (selectedSucursalId) {
-                await setDoc(doc(db, "sucursales", selectedSucursalId), payload, { merge: true });
+                await supabase.from("sucursales").update(payload).eq("id", selectedSucursalId);
             }
 
-            await setDoc(doc(db, "tenants", userProfile.inquilino), payload, { merge: true });
+            await supabase.from("tenants").update(payload).eq("id", userProfile.inquilino);
 
             if (toast?.success) toast.success("Configuración de facturación electrónica guardada");
         } catch (e) {

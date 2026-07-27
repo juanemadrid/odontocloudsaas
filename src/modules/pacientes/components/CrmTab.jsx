@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import { FiMessageSquare } from "react-icons/fi";
 import { useAuth } from "../../../context/AuthContext";
-import { setDoc, doc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 
 export default function CrmTab({ patient }) {
@@ -28,10 +27,13 @@ export default function CrmTab({ patient }) {
             const newLog = [newEntry, ...currentLog];
             
             try {
-                await setDoc(doc(db, "pacientes", patient.id), {
-                    crm_log: newLog,
-                    actualizado: serverTimestamp()
-                }, { merge: true });
+                await supabase
+                    .from("pacientes")
+                    .update({
+                        crm_log: newLog,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq("id", patient.id);
                 setNote("");
                 toast.success("Comentario agregado");
             } catch (err) {

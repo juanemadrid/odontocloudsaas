@@ -1,7 +1,9 @@
 // Crea la tabla anuncios_sistema via Supabase Management API
-const SUPABASE_URL = 'https://jhdflchyhkwpedtbkusp.supabase.co';
-const PROJECT_REF  = 'jhdflchyhkwpedtbkusp';
-const SERVICE_KEY  = 'sb_secret_Vfz6a1lTTBaDJjoIr1KKhg_AmSkJpLz';
+import 'dotenv/config';
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const PROJECT_REF  = process.env.VITE_SUPABASE_URL?.split('//')[1]?.split('.')[0] || 'jhdflchyhkwpedtbkusp';
+const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY;
 
 const headers = {
   'Content-Type': 'application/json',

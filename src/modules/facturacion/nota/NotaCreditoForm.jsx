@@ -4,12 +4,8 @@ import {
     FiPlus, FiSave, FiAlertCircle, FiCheckCircle, FiX 
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
-import { 
-    collection, addDoc, getDocs, query, where, 
-    serverTimestamp, doc, updateDoc, Timestamp 
-} from "firebase/firestore";
 import { useAuth } from "../../../context/AuthContext";
 
 const fmt = (n) =>
@@ -80,11 +76,14 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
         setLoading(true);
         try {
             // Load Patients for select
-            const pacSnap = await getDocs(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)));
-            setPacientes(pacSnap.docs.map(d => ({ 
+            const { data: pacSnap } = await supabase
+                .from("pacientes")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            setPacientes((pacSnap || []).map(d => ({ 
                 id: d.id, 
-                nombre: d.data().nombreCompleto || `${d.data().nombres || ""} ${d.data().apellidos || ""}`.trim(),
-                cedula: d.data().nroDocumento || d.data().cedula || ""
+                nombre: d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim(),
+                cedula: d.nroDocumento || d.cedula || ""
             })));
         } catch (e) {
             console.error("Error loading patients:", e);
@@ -160,16 +159,20 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
 
         try {
             // 1. Calculate consecutive number
-            const qCount = query(collection(db, "notas_credito"), where("inquilino", "==", inquilino));
-            const snapCount = await getDocs(qCount);
-            const consecutive = `NC${snapCount.size + 1}`;
+            const { count } = await supabase
+                .from("notas_credito")
+                .select("*", { count: "exact", head: true })
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const consecutive = `NC${(count || 0) + 1}`;
 
             // 2. If generating balance in favor, insert into "pagos"
             let pagoId = null;
             if (generarSaldoFavor && totalCalculado > 0) {
                 const pagoData = {
+                    tenant_id: inquilino,
                     inquilino,
-                    fecha: Timestamp.fromDate(new Date(fecha + "T00:00:00")),
+                    fecha: new Date(fecha + "T00:00:00").toISOString(),
+                    paciente_id: paciente.id,
                     pacienteId: paciente.id,
                     patientNombre: paciente.nombre,
                     concepto: "SALDO A FAVOR",
@@ -178,17 +181,20 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
                     notes: `SALDO A FAVOR GENERADO POR NOTA CRÉDITO #${consecutive}`,
                     registradoPor: `${userProfile?.nombre || userProfile?.email}`,
                     estado: "Activo",
-                    createdAt: serverTimestamp()
+                    created_at: new Date().toISOString()
                 };
-                const pagoRef = await addDoc(collection(db, "pagos"), pagoData);
-                pagoId = pagoRef.id;
+                const { data: pagoRes } = await supabase.from("pagos").insert([pagoData]).select().single();
+                if (pagoRes) pagoId = pagoRes.id;
             }
 
             // 3. Save credit note document
             const notaData = {
+                tenant_id: inquilino,
                 inquilino,
-                fecha: Timestamp.fromDate(new Date(fecha + "T00:00:00")),
+                fecha: new Date(fecha + "T00:00:00").toISOString(),
+                fechaISO: new Date(fecha + "T00:00:00").toISOString(),
                 nroConsecutivo: consecutive,
+                paciente_id: paciente.id,
                 pacienteId: paciente.id,
                 pacienteNombre: paciente.nombre,
                 conceptos,
@@ -200,10 +206,10 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
                 notas: observaciones,
                 estado: "Activo",
                 registradoPor: `${userProfile?.nombre || userProfile?.email}`,
-                createdAt: serverTimestamp()
+                created_at: new Date().toISOString()
             };
 
-            await addDoc(collection(db, "notas_credito"), notaData);
+            await supabase.from("notas_credito").insert([notaData]);
 
             setSuccess(true);
             setTimeout(() => {

@@ -3,10 +3,7 @@ import {
   FiArrowLeft, FiSearch, FiUser, FiPlus, FiTrash2,
   FiSave, FiAlertCircle, FiCheckCircle, FiFileText,
 } from "react-icons/fi";
-import {
-  collection, query, where, getDocs, addDoc, doc, getDoc, serverTimestamp,
-} from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { emitirFacturaDian } from "../../../services/DianService";
@@ -83,10 +80,11 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
     if (!term || term.length < 2 || !inquilino) { setPatients([]); return; }
     setLoadingPacientes(true);
     try {
-      const snap = await getDocs(
-        query(collection(db, "pacientes"), where("inquilino", "==", inquilino))
-      );
-      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const { data: snap } = await supabase
+        .from("pacientes")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      const all = snap || [];
       const q = term.toLowerCase();
       setPatients(
         all.filter(
@@ -179,8 +177,12 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
     setNoCredsWarning(false);
     try {
       // Load tenant credentials
-      const tenantSnap = await getDoc(doc(db, "tenants", inquilino));
-      const tenantData = tenantSnap.exists() ? tenantSnap.data() : {};
+      const { data: tSnap } = await supabase
+        .from("tenants")
+        .select("*")
+        .eq("id", inquilino)
+        .maybeSingle();
+      const tenantData = tSnap || {};
       const hasCredentials =
         tenantData.factusClientId &&
         tenantData.factusClientSecret &&
@@ -211,7 +213,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
       );
 
       const firestoreDoc = {
+        tenant_id: inquilino,
         inquilino,
+        paciente_id: paciente.id,
         pacienteId: paciente.id,
         pacienteNombre: `${paciente.nombre || ""} ${paciente.apellido || ""}`.trim(),
         pacienteDocumento: paciente.documento || paciente.cedula || "",
@@ -229,11 +233,11 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
         cufe: result.cufe || null,
         qrCode: result.qrCode || null,
         factusInvoiceNumber: result.factusInvoiceNumber || null,
-        createdAt: serverTimestamp(),
+        created_at: new Date().toISOString(),
         creadoPor: userProfile?.uid || "",
       };
 
-      await addDoc(collection(db, "facturas_electronicas"), firestoreDoc);
+      await supabase.from("facturas_electronicas").insert([firestoreDoc]);
 
       if (result.success && result.cufe) {
         setSuccessData(result);

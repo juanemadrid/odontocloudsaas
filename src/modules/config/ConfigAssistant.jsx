@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../../firebase/firebaseConfig";
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
@@ -17,12 +16,10 @@ const STEPS = [
         description: "Nombre, logo, NIT y contacto principal.",
         icon: FiSettings,
         path: buildDashboardPath('config/datos-basicos'),
-        check: async (db, inquilino) => {
-            const docRef = doc(db, "tenants", inquilino);
-            const snap = await getDoc(docRef);
-            if (!snap.exists()) return false;
-            const data = snap.data();
-            return !!(data.nit && (data.nombreComercial || data.name) && (data.telefono || data.phone));
+        check: async (inquilino) => {
+            const { data } = await supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle();
+            if (!data) return false;
+            return !!(data.nit && (data.nombreComercial || data.nombre || data.name) && (data.telefono || data.phone));
         }
     },
     {
@@ -31,10 +28,9 @@ const STEPS = [
         description: "Registra las sedes físicas donde atiendes.",
         icon: FiMapPin,
         path: buildDashboardPath('config/sucursales'),
-        check: async (db, inquilino) => {
-            const q = query(collection(db, "sucursales"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            return !snap.empty;
+        check: async (inquilino) => {
+            const { data } = await supabase.from("sucursales").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            return data && data.length > 0;
         }
     },
     {
@@ -43,9 +39,9 @@ const STEPS = [
         description: "Configura las unidades dentales o cubículos.",
         icon: FiMonitor,
         path: buildDashboardPath('config/recursos-fisicos'),
-        check: async (db, inquilino) => {
-            const snap = await getDocs(collection(db, "tenants", inquilino, "recursos_fisicos"));
-            return !snap.empty;
+        check: async (inquilino) => {
+            const { data } = await supabase.from("recursos_fisicos").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            return data && data.length > 0;
         }
     },
     {
@@ -54,10 +50,9 @@ const STEPS = [
         description: "Define las ramas odontológicas de tu clínica.",
         icon: FiAward,
         path: buildDashboardPath('config/especialidades'),
-        check: async (db, inquilino) => {
-            const q = query(collection(db, "especialidades"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            return !snap.empty;
+        check: async (inquilino) => {
+            const { data } = await supabase.from("especialidades").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            return data && data.length > 0;
         }
     },
     {
@@ -66,10 +61,9 @@ const STEPS = [
         description: "Crea perfiles para doctores y recepcionistas.",
         icon: FiUsers,
         path: buildDashboardPath('config/usuarios'),
-        check: async (db, inquilino) => {
-            const q = query(collection(db, "usuarios"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            return snap.size > 1; // Más de 1 porque el admin ya existe
+        check: async (inquilino) => {
+            const { data } = await supabase.from("usuarios").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            return data && data.length > 1;
         }
     },
     {
@@ -78,10 +72,9 @@ const STEPS = [
         description: "Costos de tratamientos y servicios.",
         icon: FiList,
         path: buildDashboardPath('config/listas-precios'),
-        check: async (db, inquilino) => {
-            const q = query(collection(db, "listas_precios"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            return !snap.empty;
+        check: async (inquilino) => {
+            const { data } = await supabase.from("listas_precios").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            return data && data.length > 0;
         }
     },
     {
@@ -90,10 +83,9 @@ const STEPS = [
         description: "Numeración para facturas y recibos.",
         icon: FiFileText,
         path: buildDashboardPath('config/consecutivos'),
-        check: async (db, inquilino) => {
-            const q = query(collection(db, "consecutivos"), where("inquilino", "==", inquilino));
-            const snap = await getDocs(q);
-            return !snap.empty;
+        check: async (inquilino) => {
+            const { data } = await supabase.from("consecutivos").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            return data && data.length > 0;
         }
     }
 ];
@@ -115,7 +107,7 @@ export default function ConfigAssistant() {
         setLoading(true);
         try {
             const results = await Promise.all(
-                STEPS.map(step => step.check(db, userProfile.inquilino))
+                STEPS.map(step => step.check(userProfile.inquilino))
             );
             const completedCount = results.filter(r => r).length;
             setStats({ total: STEPS.length, completed: completedCount });

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiArrowLeft, FiSave, FiAlertCircle, FiPlus, FiTrash2 } from "react-icons/fi";
-import { collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -32,12 +31,11 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
         if (!inquilino) return;
         const loadCatalog = async () => {
             try {
-                const q = query(collection(db, "medicamentos"), where("inquilino", "==", inquilino));
-                const snap = await getDocs(q);
-                setMedicamentosList(snap.docs.map(d => ({
-                    id: d.id,
-                    ...d.data()
-                })));
+                const { data: list } = await supabase
+                    .from("medicamentos")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                setMedicamentosList(list || []);
             } catch (err) {
                 console.error("Error loading medicines catalog:", err);
             }
@@ -51,9 +49,12 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
         const loadPlan = async () => {
             setLoading(true);
             try {
-                const snap = await getDoc(doc(db, "planes_formulacion", id));
-                if (snap.exists()) {
-                    const data = snap.data();
+                const { data } = await supabase
+                    .from("planes_formulacion")
+                    .select("*")
+                    .eq("id", id)
+                    .maybeSingle();
+                if (data) {
                     setNombre(data.nombre || "");
                     setDescripcion(data.descripcion || "");
                     setPlanMeds(data.medicamentos || []);
@@ -178,18 +179,19 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
                     descripcion: (m.descripcion || "").trim(),
                     marca: (m.marca || "").trim()
                 })),
+                tenant_id: inquilino,
                 inquilino,
-                updatedAt: serverTimestamp()
+                updated_at: new Date().toISOString()
             };
 
             if (id) {
-                await updateDoc(doc(db, "planes_formulacion", id), planData);
+                await supabase.from("planes_formulacion").update(planData).eq("id", id);
                 toast.success("Plan de formulación actualizado correctamente");
             } else {
-                await addDoc(collection(db, "planes_formulacion"), {
+                await supabase.from("planes_formulacion").insert([{
                     ...planData,
-                    createdAt: serverTimestamp()
-                });
+                    created_at: new Date().toISOString()
+                }]);
                 toast.success("Plan de formulación creado correctamente");
             }
             if (onSuccess) onSuccess();

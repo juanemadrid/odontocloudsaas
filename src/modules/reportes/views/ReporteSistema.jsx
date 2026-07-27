@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, orderBy, query, where, limit } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiCpu, FiDownload, FiSearch, FiShield, FiUserCheck, FiClock, FiGrid, FiFileText } from "react-icons/fi";
 
 const StatBox = ({ title, value, icon: Icon, color, bg }) => (
@@ -106,32 +105,20 @@ export default function ReporteSistema() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const q = query(collection(db, "usuarios"), where("inquilino", "==", userProfile.inquilino));
-        const snapshot = await getDocs(q);
+        const { data: snapshot } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         
-        const data = [];
+        const data = snapshot || [];
         let admins = 0;
         let activos = 0;
 
-        snapshot.forEach(doc => {
-          const u = { id: doc.id, ...doc.data() };
-          data.push(u);
-
+        data.forEach(u => {
           const rol = (u.rol || "").toLowerCase();
-          if (rol === "admin" || rol === "superadmin") {
-               admins++;
-          }
-          if (u.estado !== "inactivo") {
-               activos++;
-          }
+          if (rol === "admin" || rol === "superadmin") admins++;
+          if (u.estado !== "inactivo") activos++;
         });
 
         setUsuarios(data);
-        setStats({
-          total: data.length,
-          admins,
-          activos
-        });
+        setStats({ total: data.length, admins, activos });
       } catch (error) {
         console.error("Error fetching usuarios:", error);
       } finally {
@@ -139,9 +126,7 @@ export default function ReporteSistema() {
       }
     };
 
-    if (userProfile?.inquilino) {
-        fetchData();
-    }
+    if (userProfile?.inquilino) fetchData();
   }, [userProfile?.inquilino]);
 
   // 2. Fetch Audit Logs (On-demand when clicking the tab)
@@ -150,34 +135,18 @@ export default function ReporteSistema() {
       if (!userProfile?.inquilino || activeTab !== "auditoria") return;
       setLoadingLogs(true);
       try {
-        let snapshot;
-        try {
-          // Standard optimized query
-          const qLogs = query(
-            collection(db, "audit_logs"),
-            where("tenantId", "==", userProfile.inquilino),
-            orderBy("timestamp", "desc"),
-            limit(150)
-          );
-          snapshot = await getDocs(qLogs);
-        } catch (err) {
-          console.warn("Firestore index not ready for audit_logs query. Querying without orderBy...", err);
-          const qFallback = query(
-            collection(db, "audit_logs"),
-            where("tenantId", "==", userProfile.inquilino),
-            limit(200)
-          );
-          snapshot = await getDocs(qFallback);
-        }
+        const { data: logsRaw } = await supabase
+          .from("audit_logs")
+          .select("*")
+          .or(`tenant_id.eq.${userProfile.inquilino},tenantId.eq.${userProfile.inquilino}`)
+          .order("timestamp", { ascending: false })
+          .limit(150);
 
-        const logsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // Ensure accurate client-side ordering (fallback safety)
-        logsData.sort((a, b) => {
-          const timeA = a.timestamp?.seconds || a.timestamp?.toDate?.()?.getTime() || 0;
-          const timeB = b.timestamp?.seconds || b.timestamp?.toDate?.()?.getTime() || 0;
-          return timeB - timeA;
-        });
+        const logsData = (logsRaw || []).map(log => ({
+          ...log,
+          // Normalise timestamp to ISO string for formatTimestamp helper
+          timestamp: log.timestamp || log.created_at
+        }));
 
         setLogs(logsData);
       } catch (error) {

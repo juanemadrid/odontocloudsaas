@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -65,47 +64,27 @@ export default function ReporteAsistenciaClientes() {
       setLoading(true);
       try {
         // 1. Cargar Sucursales
-        const qSucursales = query(
-          collection(db, "sucursales"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapSuc = await getDocs(qSucursales);
-        const listSuc = [];
-        snapSuc.forEach(doc => {
-          listSuc.push({ id: doc.id, nombre: doc.data().nombre || doc.id });
-        });
+        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listSuc = (snapSuc || []).map(doc => ({ id: doc.id, nombre: doc.nombre || doc.id }));
         setSucursalesList(listSuc);
         if (listSuc.length > 0) setOficina(listSuc[0].nombre);
 
         // 2. Cargar Odontólogos / Profesionales
-        const qUsers = query(
-          collection(db, "usuarios"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapUsers = await getDocs(qUsers);
-        const listProf = [];
-        snapUsers.forEach(doc => {
-          const u = doc.data();
-          listProf.push({ id: doc.id, nombre: u.nombre || u.nombres || u.displayName || doc.id });
-        });
+        const { data: snapUsers } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const listProf = (snapUsers || []).map(u => ({ id: u.id, nombre: u.nombre || u.nombres || u.displayName || u.id }));
         setProfesionalesList(listProf);
 
         // 3. Cargar Asistencia de Citas de la Agenda
-        const qAgenda = query(
-          collection(db, "agenda"),
-          where("inquilino", "==", userProfile.inquilino)
-        );
-        const snapAgenda = await getDocs(qAgenda);
+        const { data: snapAgenda } = await supabase.from("agenda").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
         const listData = [];
 
-        snapAgenda.forEach(doc => {
-          const c = doc.data();
-          const dateObj = c.fecha ? new Date(`${c.fecha}T${c.hora || "08:00"}:00`) : (c.createdAt?.toDate ? c.createdAt.toDate() : new Date());
+        (snapAgenda || []).forEach(c => {
+          const dateObj = c.fecha ? new Date(`${c.fecha}T${c.hora || "08:00"}:00`) : (c.createdAt?.toDate ? c.createdAt.toDate() : new Date(c.created_at || Date.now()));
           const est = (c.estado || "Atendida").toUpperCase();
           const asistioOk = est === "ATENDIDA" || est === "COMPLETADA" || est === "EN CONSULTA";
 
           listData.push({
-            id: doc.id,
+            id: c.id,
             fechaObj: dateObj,
             fechaCitaStr: isNaN(dateObj.getTime()) ? (c.fecha || "") : format(dateObj, "dd/MM/yyyy HH:mm"),
             profesional: c.odontologo || c.profesional || c.doctor || "—",

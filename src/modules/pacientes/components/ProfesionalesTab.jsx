@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { FiSearch, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
-import { collection, setDoc, doc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../../firebase/firebaseConfig';
+import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 
@@ -23,31 +22,26 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
         const loadCatalog = async () => {
             if (!userProfile?.inquilino) return;
             try {
-                const q = query(
-                    collection(db, "profesionales"), 
-                    where("inquilino", "==", userProfile.inquilino), 
-                    where("activo", "==", true)
-                );
-                const snap = await getDocs(q);
-                const data = snap.docs.map(doc => {
-                    const d = doc.data();
-                    return { 
-                        id: doc.id, 
-                        nombreCompleto: d.nombreCompleto || d.nombre || "",
-                        ...d
-                    };
-                });
+                const { data: profData } = await supabase
+                    .from("profesionales")
+                    .select("*")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .eq("activo", true);
+                const data = (profData || []).map(d => ({
+                    id: d.id,
+                    nombreCompleto: d.nombre_completo || d.nombre || "",
+                    ...d
+                }));
                 setCatalogProfesionales(data.sort((a,b) => a.nombreCompleto?.localeCompare(b.nombreCompleto) || 0));
 
                 // Cargar especialidades para el mapeo visual
-                const espQ = query(
-                    collection(db, "especialidades"), 
-                    where("inquilino", "==", userProfile.inquilino)
-                );
-                const espSnap = await getDocs(espQ);
+                const { data: espData } = await supabase
+                    .from("especialidades")
+                    .select("*")
+                    .eq("tenant_id", userProfile.inquilino);
                 const eMap = {};
-                espSnap.forEach(e => {
-                    eMap[e.id] = e.data().nombre || "Sin nombre";
+                (espData || []).forEach(e => {
+                    eMap[e.id] = e.nombre || "Sin nombre";
                 });
                 setEspecialidadesMap(eMap);
             } catch (err) {
@@ -95,10 +89,13 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
         setIsSubmitting(true);
         try {
             const updatedList = [...profesionales, newPro];
-            await setDoc(doc(db, "pacientes", patient.id), {
-                profesionales: updatedList,
-                actualizado: serverTimestamp()
-            }, { merge: true });
+            await supabase
+                .from("pacientes")
+                .update({
+                    profesionales: updatedList,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", patient.id);
             onUpdate && onUpdate({ ...patient, profesionales: updatedList });
             toast.success("Profesional vinculado al paciente");
             setSearchTerm("");
@@ -118,10 +115,13 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
         setIsSubmitting(true);
         try {
             const updatedList = profesionales.filter(p => p.id !== targetId);
-            await setDoc(doc(db, "pacientes", patient.id), {
-                profesionales: updatedList,
-                actualizado: serverTimestamp()
-            }, { merge: true });
+            await supabase
+                .from("pacientes")
+                .update({
+                    profesionales: updatedList,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", patient.id);
             onUpdate && onUpdate({ ...patient, profesionales: updatedList });
             toast.success("Profesional desvinculado");
         } catch (e) {

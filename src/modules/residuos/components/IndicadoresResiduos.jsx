@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiCalendar } from "react-icons/fi";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
@@ -27,13 +26,18 @@ export default function IndicadoresResiduos() {
             setLoading(true);
             try {
                 // Load types
-                const tQ = query(collection(db, "tipos_residuos"), where("inquilino", "==", inquilino));
-                const tSnap = await getDocs(tQ);
-                setTypes(tSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const { data: tSnap } = await supabase
+                    .from("tipos_residuos")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                setTypes(tSnap || []);
 
                 // Load logs
-                const snap = await getDocs(query(collection(db, "registro_residuos"), where("inquilino", "==", inquilino)));
-                setLogs(snap.docs.map(d => d.data()));
+                const { data: snap } = await supabase
+                    .from("registro_residuos")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                setLogs(snap || []);
             } catch (e) {
                 console.error("Error loading data for indicators:", e);
             } finally {

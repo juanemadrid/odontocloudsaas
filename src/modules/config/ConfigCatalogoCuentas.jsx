@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiSearch, FiEdit2, FiTrash2, FiPlus, FiSave, FiX, FiBook, FiBriefcase } from "react-icons/fi";
-import { collection, query, orderBy, deleteDoc, doc, updateDoc, setDoc, getDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 
@@ -51,17 +50,19 @@ export default function ConfigCatalogoCuentas() {
         if (!inquilino) return;
 
         fetchGeneralConfig();
+        fetchAccounts();
+    }, [inquilino]);
 
+    const fetchAccounts = async () => {
         setLoading(true);
-        const q = query(
-            collection(db, "tenants", inquilino, "catalogo_cuentas"),
-            orderBy("codigo", "asc")
-        );
+        try {
+            const { data: fetchedAccounts } = await supabase
+                .from("catalogo_cuentas")
+                .select("*")
+                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .order("codigo", { ascending: true });
 
-        const unsub = onSnapshot(q, (snap) => {
-            const fetchedAccounts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            const combined = [...fetchedAccounts];
+            const combined = [...(fetchedAccounts || [])];
             INITIAL_CLASSES.forEach(c => {
                 if (!combined.find(a => a.codigo === c.code)) {
                     combined.push({ id: `base-${c.code}`, codigo: c.code, nombre: c.nombre, isBase: true });
@@ -69,22 +70,18 @@ export default function ConfigCatalogoCuentas() {
             });
             combined.sort((a, b) => a.codigo.localeCompare(b.codigo));
             setAccounts(combined);
-            setLoading(false);
-        }, (err) => {
+        } catch (err) {
             console.error(err);
-            if (toast?.error) toast.error("Error al sincronizar catálogo");
+            if (toast?.error) toast.error("Error al cargar catálogo");
+        } finally {
             setLoading(false);
-        });
-
-        return () => unsub();
-    }, [inquilino]);
+        }
+    };
 
     const fetchGeneralConfig = async () => {
         try {
-            const docSnap = await getDoc(doc(db, "tenants", inquilino, "config", "contabilidad"));
-            if (docSnap.exists()) {
-                setGeneralConfig(docSnap.data());
-            }
+            const { data } = await supabase.from("website_config").select("config").eq("tenant_id", `${inquilino}_contabilidad`).maybeSingle();
+            if (data?.config) setGeneralConfig(data.config);
         } catch (e) {
             console.error("Error fetching config:", e);
         }
@@ -93,11 +90,7 @@ export default function ConfigCatalogoCuentas() {
     const handleSaveGeneral = async () => {
         setSavingGeneral(true);
         try {
-            await setDoc(doc(db, "tenants", inquilino, "config", "contabilidad"), {
-                ...generalConfig,
-                updatedAt: serverTimestamp(),
-                updatedBy: userProfile.email
-            }, { merge: true });
+            await supabase.from("website_config").upsert([{ tenant_id: `${inquilino}_contabilidad`, config: { ...generalConfig, updated_at: new Date().toISOString(), updated_by: userProfile.email } }], { onConflict: "tenant_id" });
             if (toast?.success) toast.success("Configuración contable guardada");
         } catch (e) {
             console.error(e);
@@ -128,26 +121,27 @@ export default function ConfigCatalogoCuentas() {
         setSavingAccount(true);
         try {
             const payload = {
+                tenant_id: inquilino,
+                inquilino,
                 nombre: formData.nombre.trim(),
                 codigo: codigoCompleto,
                 codigoPadre: formData.codigoPadre,
                 descripcion: formData.descripcion.trim(),
                 naturaleza: formData.naturaleza,
-                updatedAt: serverTimestamp(),
-                updatedBy: userProfile.email
+                updated_at: new Date().toISOString(),
+                updated_by: userProfile.email
             };
 
             if (editingId) {
-                await updateDoc(doc(db, "tenants", inquilino, "catalogo_cuentas", editingId), payload);
+                await supabase.from("catalogo_cuentas").update(payload).eq("id", editingId);
                 if (toast?.success) toast.success("Cuenta contable actualizada");
             } else {
-                await setDoc(doc(db, "tenants", inquilino, "catalogo_cuentas", codigoCompleto), {
-                    ...payload,
-                    createdAt: serverTimestamp(),
-                    createdBy: userProfile.email
-                });
+                payload.created_at = new Date().toISOString();
+                payload.created_by = userProfile.email;
+                await supabase.from("catalogo_cuentas").insert([payload]);
                 if (toast?.success) toast.success("Nueva cuenta vinculada al catálogo");
             }
+            fetchAccounts();
             closeModal();
         } catch (e) {
             console.error(e);
@@ -160,8 +154,9 @@ export default function ConfigCatalogoCuentas() {
     const handleDeleteAccount = async (id) => {
         if (!window.confirm("¿Seguro que desea eliminar esta cuenta del PUC?")) return;
         try {
-            await deleteDoc(doc(db, "tenants", inquilino, "catalogo_cuentas", id));
-            if (toast?.success) toast.success("Cuenta removida del catálogo");
+            await supabase.from("catalogo_cuentas").delete().eq("id", id);
+            if (toast?.success) toast.success("Cuenta eliminada correctamente");
+            fetchAccounts();
         } catch (e) {
             console.error(e);
             if (toast?.error) toast.error("Error al eliminar");

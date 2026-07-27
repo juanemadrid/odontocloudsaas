@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import { collection, query, where, getDocs, collectionGroup } from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { 
   FiArrowLeft, FiBriefcase, FiDollarSign, FiEye, 
   FiCreditCard, FiCalendar, FiActivity, FiUser, FiSearch,
@@ -43,70 +42,59 @@ export default function BancosView({ inquilino, userProfile }) {
   const [currentPage, setCurrentPage] = useState(1);
 
   const loadData = async () => {
-    console.log("BancosView - loadData starting for inquilino:", inquilino);
     if (!inquilino) return;
     setLoading(true);
     try {
       // 1. Load banks
-      const snapBancos = await getDocs(query(collection(db, "bancos"), where("inquilino", "==", inquilino)));
-      const listBancos = snapBancos.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log("BancosView - listBancos loaded:", listBancos);
+      const { data: listBancos } = await supabase
+        .from("bancos")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       // 2. Load payment methods
-      const snapMetodos = await getDocs(query(collection(db, "metodos_pago"), where("inquilino", "==", inquilino)));
-      const listMetodos = snapMetodos.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const { data: listMetodos } = await supabase
+        .from("metodos_pago")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       // Map payment method names to bank IDs
       const methodToBankId = {};
-      listMetodos.forEach(m => {
+      (listMetodos || []).forEach(m => {
         if (m.bancoId && m.nombre) {
           methodToBankId[m.nombre.toLowerCase().trim()] = m.bancoId;
         }
-      });
-
-      // Also map method IDs if relevant
-      listMetodos.forEach(m => {
         if (m.bancoId) {
           methodToBankId[m.id] = m.bancoId;
         }
       });
 
       // 3. Load payments (pagos)
-      let listPagos = [];
-      try {
-        const snapPagos = await getDocs(query(collection(db, "pagos"), where("inquilino", "==", inquilino)));
-        listPagos = snapPagos.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err) {
-        console.warn("BancosView - Failed to load pagos:", err);
-      }
+      const { data: listPagos } = await supabase
+        .from("pagos")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       // 4. Load receipts (recibos_caja)
-      let listRecibos = [];
-      try {
-        const snapRecibos = await getDocs(query(collection(db, "recibos_caja"), where("inquilino", "==", inquilino)));
-        listRecibos = snapRecibos.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err) {
-        console.warn("BancosView - Failed to load recibos_caja:", err);
-      }
+      const { data: listRecibos } = await supabase
+        .from("recibos_caja")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
-      // 5. Load caja movements (collection group)
-      let listMovs = [];
-      try {
-        const snapMovs = await getDocs(query(collectionGroup(db, "movimientos"), where("inquilino", "==", inquilino)));
-        listMovs = snapMovs.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err) {
-        console.warn("BancosView - Failed to load collection group movimientos (index might be missing):", err);
-      }
+      // 5. Load caja movements
+      const { data: listMovs } = await supabase
+        .from("movimientos_caja")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
 
       // Calculate balance and movements for each bank
-      const updatedBancos = listBancos.map(b => {
+      const updatedBancos = (listBancos || []).map(b => {
         const initialVal = Number(b.valor || 0);
         let totalRecaudos = 0;
         let totalGastos = 0;
         const movements = [];
 
         // 1. Process pagos
-        listPagos.forEach(p => {
+        (listPagos || []).forEach(p => {
           if (p.estado === "Anulado") return;
           const linkedBankId = methodToBankId[p.medio?.toLowerCase().trim()] || p.bancoId;
           if (linkedBankId === b.id) {
@@ -114,7 +102,7 @@ export default function BancosView({ inquilino, userProfile }) {
             totalRecaudos += val;
             movements.push({
               id: p.id,
-              fecha: p.fecha || p.createdAt,
+              fecha: p.fecha || p.created_at,
               concepto: p.concepto || "Abono a tratamiento",
               pacienteNombre: p.patientNombre || "Paciente",
               medio: p.medio || "Pago",
@@ -124,61 +112,51 @@ export default function BancosView({ inquilino, userProfile }) {
           }
         });
 
-        // 2. Process recibos_caja
-        listRecibos.forEach(r => {
-          const linkedBankId = methodToBankId[r.condicionPago?.toLowerCase().trim()] || r.cajaId;
+        // 2. Process recibos
+        (listRecibos || []).forEach(r => {
+          if (r.estado === "Anulado") return;
+          const linkedBankId = methodToBankId[r.medioPago?.toLowerCase().trim()] || r.bancoId;
           if (linkedBankId === b.id) {
             const val = Number(r.total || 0);
             totalRecaudos += val;
             movements.push({
               id: r.id,
-              fecha: r.fecha || r.createdAt,
-              concepto: `Recibo de Caja #${r.id.slice(0, 6).toUpperCase()}`,
+              fecha: r.fecha || r.created_at,
+              concepto: `Recibo de Caja #${r.nroConsecutivo || ""}`,
               pacienteNombre: r.pacienteNombre || "Paciente",
-              medio: r.condicionPago || "Pago",
+              medio: r.medioPago || "Recibo",
               monto: val,
               tipo: "ingreso"
             });
           }
         });
 
-        // 3. Process caja movements (e.g. transfers, manual logs)
-        listMovs.forEach(m => {
-          if (m.reciboId || m.pagoId) return;
-          
-          const linkedBankId = methodToBankId[m.metodoPago?.toLowerCase().trim()];
+        // 3. Process movs
+        (listMovs || []).forEach(m => {
+          const linkedBankId = methodToBankId[m.metodoPago?.toLowerCase().trim()] || m.bancoId;
           if (linkedBankId === b.id) {
             const val = Number(m.monto || 0);
-            if (m.tipo === "egreso") {
+            if (m.tipo === "ingreso") {
               totalRecaudos += val;
-              movements.push({
-                id: m.id,
-                fecha: m.fecha,
-                concepto: m.concepto || "Consignación / Traslado",
-                pacienteNombre: m.usuarioNombre || m.registradoPor || "Sistema",
-                medio: m.metodoPago || "Efectivo",
-                monto: val,
-                tipo: "ingreso"
-              });
             } else {
               totalGastos += val;
-              movements.push({
-                id: m.id,
-                fecha: m.fecha,
-                concepto: m.concepto || "Retiro / Gasto",
-                pacienteNombre: m.usuarioNombre || m.registradoPor || "Sistema",
-                medio: m.metodoPago || "Efectivo",
-                monto: val,
-                tipo: "egreso"
-              });
             }
+            movements.push({
+              id: m.id,
+              fecha: m.fecha || m.created_at,
+              concepto: m.concepto || (m.tipo === "ingreso" ? "Ingreso de Caja" : "Egreso de Caja"),
+              pacienteNombre: m.pacienteNombre || "N/A",
+              medio: m.metodoPago || "Caja",
+              monto: val,
+              tipo: m.tipo
+            });
           }
         });
 
         // Sort movements ascending to calculate running balance
         const sortedAsc = [...movements].sort((x, y) => {
-          const tx = x.fecha?.seconds || new Date(x.fecha).getTime() / 1000 || 0;
-          const ty = y.fecha?.seconds || new Date(y.fecha).getTime() / 1000 || 0;
+          const tx = new Date(x.fecha || 0).getTime();
+          const ty = new Date(y.fecha || 0).getTime();
           return tx - ty;
         });
 
@@ -193,7 +171,7 @@ export default function BancosView({ inquilino, userProfile }) {
         });
 
         // Sort back to descending for display
-        const movementsWithRunningDesc = movementsWithRunning.reverse();
+        const movementsWithRunningDesc = [...movementsWithRunning].reverse();
 
         // Group by payment methods for summary table
         const methodSummaries = {};

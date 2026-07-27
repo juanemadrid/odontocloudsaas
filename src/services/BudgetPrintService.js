@@ -1,8 +1,7 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { toast } from "sonner";
-import { db } from "../firebase/firebaseConfig";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import supabase from "../lib/supabaseClient";
 
 /**
  * BudgetPrintService
@@ -45,13 +44,12 @@ export const BudgetPrintService = {
             const patientId = patient?.id || patient?.documento || "";
             if (patientId && plan.id) {
                 try {
-                    const evoQ = query(
-                        collection(db, "clinical_evolutions"),
-                        where("patientId", "==", patientId),
-                        where("planId", "==", plan.id)
-                    );
-                    const snap = await getDocs(evoQ);
-                    evolutions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    const { data: evoData } = await supabase
+                        .from("evoluciones")
+                        .select("*")
+                        .eq("paciente_id", patientId)
+                        .eq("plan_id", plan.id);
+                    evolutions = evoData || [];
                 } catch (err) {
                     console.error("Error loading evolutions for print:", err);
                 }
@@ -97,18 +95,21 @@ export const BudgetPrintService = {
 
             if (tenantId) {
                 try {
-                    const configSnap = await getDoc(doc(db, "tenants", tenantId));
-                    if (configSnap.exists()) {
-                        const clinicConfig = configSnap.data();
-                        dbLogoUrl = clinicConfig.logo || clinicConfig.logoUrl || "";
-                        dbClinicName = clinicConfig.nombreComercial || clinicConfig.name || clinicConfig.nombre || "";
+                    const { data: clinicConfig } = await supabase
+                        .from("tenants")
+                        .select("*")
+                        .eq("id", tenantId)
+                        .maybeSingle();
+                    if (clinicConfig) {
+                        dbLogoUrl = clinicConfig.logo || clinicConfig.logo_url || clinicConfig.logoUrl || "";
+                        dbClinicName = clinicConfig.nombre_comercial || clinicConfig.nombreComercial || clinicConfig.name || clinicConfig.nombre || "";
                         dbClinicNit = clinicConfig.nit || "";
                         dbClinicAddress = clinicConfig.address || clinicConfig.direccion || "";
                         dbClinicPhone = clinicConfig.phone || clinicConfig.telefono || "";
                         dbClinicEmail = clinicConfig.email || "";
                     }
                 } catch (err) {
-                    console.error("Error loading tenant config for budget print:", err);
+                    console.error("Error loading tenant config for print:", err);
                 }
             }
 

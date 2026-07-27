@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiArrowLeft, FiSave, FiList, FiType, FiCalendar, FiCheckSquare, FiTrash2, FiFileText, FiLayout, FiHash as FiNumber } from "react-icons/fi";
-import { doc, getDoc, addDoc, updateDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase/firebaseConfig";
+import supabase from "../../lib/supabaseClient";
 import { useToast } from "../../context/ToastContext";
 import { PREDEFINED_TEMPLATES } from "../../data/plantillasPredeterminadas";
 
@@ -29,12 +28,11 @@ export default function PlantillaEditor({ id, isViewOnly = false, onBack, inquil
     const loadTemplate = async () => {
         setLoading(true);
         try {
-            const snap = await getDoc(doc(db, "tenants", inquilino, "plantillas_clinicas", id));
-            if (snap.exists()) {
-                const data = snap.data();
+            const { data } = await supabase.from("plantillas_clinicas").select("*").eq("id", id).maybeSingle();
+            if (data) {
                 setNombre(data.nombre || "");
                 setFields(data.campos || []);
-                setTerceraFirma(data.terceraFirma || false);
+                setTerceraFirma(data.terceraFirma || data.tercera_firma || false);
             }
         } catch (e) {
             console.error(e);
@@ -57,22 +55,23 @@ export default function PlantillaEditor({ id, isViewOnly = false, onBack, inquil
         setSaving(true);
         try {
             const payload = {
+                tenant_id: inquilino,
+                inquilino,
                 nombre: nombre.toUpperCase(),
                 campos: fields,
-                terceraFirma: terceraFirma,
-                updatedAt: serverTimestamp(),
-                updatedBy: userEmail
+                terceraFirma,
+                tercera_firma: terceraFirma,
+                updated_at: new Date().toISOString(),
+                updated_by: userEmail
             };
 
             if (id) {
-                await updateDoc(doc(db, "tenants", inquilino, "plantillas_clinicas", id), payload);
+                await supabase.from("plantillas_clinicas").update(payload).eq("id", id);
                 if (toast?.success) toast.success("Documento actualizado con éxito");
             } else {
-                await addDoc(collection(db, "tenants", inquilino, "plantillas_clinicas"), {
-                    ...payload,
-                    createdAt: serverTimestamp(),
-                    createdBy: userEmail
-                });
+                payload.created_at = new Date().toISOString();
+                payload.created_by = userEmail;
+                await supabase.from("plantillas_clinicas").insert([payload]);
                 if (toast?.success) toast.success("Nuevo formato clínico registrado");
             }
             onBack();

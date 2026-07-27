@@ -1,9 +1,8 @@
 import React, { useState } from "react";
-import { collection, addDoc, updateDoc, doc, arrayUnion, serverTimestamp } from "firebase/firestore";
-import { db } from "../../../firebase/firebaseConfig";
+import supabase from "../../../lib/supabaseClient";
 import Button from "../../../components/ui/Button";
 import { toast } from "sonner";
-import { useAuth } from "../../../contexts/AuthContext";
+import { useAuth } from "../../../context/AuthContext";
 import { useAudit } from "../../../hooks/useAudit";
 
 // Helper to format date
@@ -13,7 +12,7 @@ const formatDate = (iso) => {
 };
 
 export default function EvolucionesInmutables({ pacienteId, evoluciones = [], onAdd }) {
-    const { user } = useAuth();
+    const { userProfile: user } = useAuth();
     const { logAction } = useAudit();
     const [newEvo, setNewEvo] = useState("");
     const [loading, setLoading] = useState(false);
@@ -31,15 +30,18 @@ export default function EvolucionesInmutables({ pacienteId, evoluciones = [], on
             const entry = {
                 content: newEvo,
                 createdAt: new Date().toISOString(),
-                author: user?.displayName || user?.email || "Sistema",
+                author: user?.nombreCompleto || user?.email || "Sistema",
                 type: "EVOLUCION",
                 clarifications: []
             };
 
-            const ref = doc(db, "pacientes", pacienteId);
-            await updateDoc(ref, {
-                evoluciones: arrayUnion(entry)
-            });
+            const updatedEvos = [...evoluciones, entry];
+            const { error } = await supabase
+                .from("pacientes")
+                .update({ evoluciones: updatedEvos })
+                .eq("id", pacienteId);
+
+            if (error) throw error;
 
             // Audit log
             await logAction(pacienteId, "CREATE_EVOLUTION", {
@@ -60,11 +62,6 @@ export default function EvolucionesInmutables({ pacienteId, evoluciones = [], on
 
     const handleAddClarification = async () => {
         if (!clarificationText.trim()) return;
-        // This is trickier with arrayUnion if we want to modify a specific index.
-        // We might need to read -> modify -> write, which has concurrency risks,
-        // OR use a proper subcollection structure.
-        // GIVEN existing code used an array, we will assume we read the whole array, modify it, and write it back.
-        // To allow "immutability", we logically block editing the original text, but technically update the array to add a child note.
 
         const updatedEvos = [...evoluciones];
         const target = updatedEvos[clarifyingId];
@@ -73,17 +70,22 @@ export default function EvolucionesInmutables({ pacienteId, evoluciones = [], on
         target.clarifications.push({
             note: clarificationText,
             createdAt: new Date().toISOString(),
-            author: user?.displayName || user?.email || "Sistema"
+            author: user?.nombreCompleto || user?.email || "Sistema"
         });
 
         try {
-            await updateDoc(doc(db, "pacientes", pacienteId), { evoluciones: updatedEvos });
+            const { error } = await supabase
+                .from("pacientes")
+                .update({ evoluciones: updatedEvos })
+                .eq("id", pacienteId);
+
+            if (error) throw error;
             
             // Audit log
             await logAction(pacienteId, "ADD_EVOLUTION_CLARIFICATION", {
                 note: clarificationText,
                 targetIndex: clarifyingId,
-                author: user?.displayName || user?.email || "Sistema"
+                author: user?.nombreCompleto || user?.email || "Sistema"
             });
 
             setClarifyingId(null);

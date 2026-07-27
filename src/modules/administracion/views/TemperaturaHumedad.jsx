@@ -1,10 +1,6 @@
 // src/modules/administracion/views/TemperaturaHumedad.jsx
 import React, { useState, useEffect } from "react";
-import { db } from "../../../firebase/firebaseConfig";
-import { 
-  collection, query, where, getDocs, doc, setDoc, 
-  addDoc, serverTimestamp, updateDoc, deleteDoc, orderBy 
-} from "firebase/firestore";
+import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { 
@@ -87,13 +83,11 @@ export default function TemperaturaHumedad() {
 
   const loadLocations = async () => {
     try {
-      const q = query(
-        collection(db, "temp_ubicaciones"), 
-        where("inquilino", "==", inquilino)
-      );
-      const snap = await getDocs(q);
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setLocations(list);
+      const { data } = await supabase
+        .from("temp_ubicaciones")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      setLocations(data || []);
     } catch (e) {
       console.error(e);
     }
@@ -101,14 +95,12 @@ export default function TemperaturaHumedad() {
 
   const loadMediciones = async () => {
     try {
-      const q = query(
-        collection(db, "temp_mediciones"), 
-        where("inquilino", "==", inquilino),
-        orderBy("fechaMedida", "desc")
-      );
-      const snap = await getDocs(q);
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMediciones(list);
+      const { data } = await supabase
+        .from("temp_mediciones")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+        .order("fechaMedida", { ascending: false });
+      setMediciones(data || []);
     } catch (e) {
       console.error("Error loading measurements:", e);
     }
@@ -116,10 +108,11 @@ export default function TemperaturaHumedad() {
 
   const loadProfessionals = async () => {
     try {
-      const snap = await getDocs(
-        query(collection(db, "profesionales"), where("inquilino", "==", inquilino))
-      );
-      setProfessionals(snap.docs.map(d => d.data().nombreCompleto || d.data().nombre));
+      const { data } = await supabase
+        .from("profesionales")
+        .select("*")
+        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      setProfessionals((data || []).map(d => d.nombreCompleto || d.nombre));
     } catch (e) {
       console.error(e);
     }
@@ -145,16 +138,17 @@ export default function TemperaturaHumedad() {
     try {
       const payload = {
         nombre: locationName.trim(),
+        tenant_id: inquilino,
         inquilino,
-        updatedAt: serverTimestamp()
+        updated_at: new Date().toISOString()
       };
 
       if (editingLocation?.id) {
-        await setDoc(doc(db, "temp_ubicaciones", editingLocation.id), payload, { merge: true });
+        await supabase.from("temp_ubicaciones").update(payload).eq("id", editingLocation.id);
         toast?.success("Ubicación actualizada con éxito");
       } else {
-        payload.createdAt = serverTimestamp();
-        await addDoc(collection(db, "temp_ubicaciones"), payload);
+        payload.created_at = new Date().toISOString();
+        await supabase.from("temp_ubicaciones").insert([payload]);
         toast?.success("Ubicación creada con éxito");
       }
       setLocationFormOpen(false);
@@ -170,7 +164,7 @@ export default function TemperaturaHumedad() {
   const handleDeleteLocation = async (loc) => {
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente la ubicación "${loc.nombre}"?`)) return;
     try {
-      await deleteDoc(doc(db, "temp_ubicaciones", loc.id));
+      await supabase.from("temp_ubicaciones").delete().eq("id", loc.id);
       toast?.success("Ubicación eliminada");
       loadLocations();
     } catch (e) {
@@ -198,16 +192,17 @@ export default function TemperaturaHumedad() {
         humedad: parseFloat(medicionForm.humedad),
         ubicacionNombre: selectedLoc?.nombre || "",
         responsable: userProfile?.displayName || userProfile?.nombreCompleto || "Admin",
+        tenant_id: inquilino,
         inquilino,
-        updatedAt: serverTimestamp()
+        updated_at: new Date().toISOString()
       };
 
       if (editingMedicion?.id) {
-        await setDoc(doc(db, "temp_mediciones", editingMedicion.id), payload, { merge: true });
+        await supabase.from("temp_mediciones").update(payload).eq("id", editingMedicion.id);
         toast?.success("Medición actualizada");
       } else {
-        payload.createdAt = serverTimestamp();
-        await addDoc(collection(db, "temp_mediciones"), payload);
+        payload.created_at = new Date().toISOString();
+        await supabase.from("temp_mediciones").insert([payload]);
         toast?.success("Medición registrada con éxito");
       }
 
@@ -246,7 +241,7 @@ export default function TemperaturaHumedad() {
   const handleDeleteMedicion = async (med) => {
     if (!window.confirm("¿Está seguro de eliminar permanentemente esta medición?")) return;
     try {
-      await deleteDoc(doc(db, "temp_mediciones", med.id));
+      await supabase.from("temp_mediciones").delete().eq("id", med.id);
       toast?.success("Medición eliminada");
       loadMediciones();
     } catch (e) {
