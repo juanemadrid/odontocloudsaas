@@ -154,12 +154,12 @@ export default function GestionAgenda() {
     return `${d}/${m}/${y}`;
   };
 
-  // Fetch Professionals (Doctors only)
+  // Fetch Professionals (Doctors only) - Using profiles table from Supabase
   useEffect(() => {
     if (!inquilino) return;
 
     setLoadingProfs(true);
-    supabase.from("usuarios").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+    supabase.from("profiles").select("*").eq("tenant_id", inquilino)
       .then(({ data }) => {
         const docs = data || [];
         const filtered = docs.filter(u => {
@@ -168,10 +168,12 @@ export default function GestionAgenda() {
                  u.esOdontologo === true ||
                  rolLower === 'doctor' || 
                  rolLower === 'odontologo' || 
+                 rolLower === 'odontólogo / doctor' ||
                  rolLower === 'odontóloga' ||
                  rolLower === 'doctores' ||
                  rolLower === 'especialista' ||
-                 (typeof u.profileName === 'string' && u.profileName.toLowerCase().includes('octor'));
+                 rolLower.includes('doctor') ||
+                 rolLower.includes('odont');
         });
         setProfessionals(filtered);
         setLoadingProfs(false);
@@ -186,7 +188,7 @@ export default function GestionAgenda() {
     if (!inquilino) return;
 
     setLoadingRes(true);
-    supabase.from("recursos_fisicos").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`).order("nombre", { ascending: true })
+    supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true })
       .then(({ data }) => {
         setResources(data || []);
         setLoadingRes(false);
