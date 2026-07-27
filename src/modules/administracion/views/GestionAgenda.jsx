@@ -167,6 +167,21 @@ export default function GestionAgenda() {
           const roleLower = (u.role || "").toLowerCase();
           return roleLower.includes('odontologo') || 
                  roleLower.includes('doctor');
+        }).map(u => {
+          // Map Supabase profiles fields to expected component structure
+          const nameParts = (u.full_name || '').split(' ');
+          return {
+            id: u.id,
+            nombre: nameParts[0] || '',
+            apellido: nameParts.slice(1).join(' ') || '',
+            nombreCompleto: u.full_name || '',
+            email: u.email,
+            telefono: u.telefono,
+            telefonoMovil: u.telefono, // Supabase uses 'telefono'
+            rol: u.role,
+            especialidad: u.especialidad,
+            activo: u.activo !== false
+          };
         });
         console.log('🔍 Profesionales filtrados (solo doctores):', filtered);
         setProfessionals(filtered);
