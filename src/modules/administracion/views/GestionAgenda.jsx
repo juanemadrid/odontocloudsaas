@@ -296,8 +296,8 @@ export default function GestionAgenda() {
       setSelectedRes(res);
       setResForm({
         nombre: res.nombre || "",
-        descripcion: res.descripcion || "",
-        active: res.active !== false
+        descripcion: res.ubicacion || "", // Supabase uses 'ubicacion'
+        active: res.activo !== false // Supabase uses 'activo'
       });
     } else {
       setSelectedRes(null);
@@ -310,7 +310,7 @@ export default function GestionAgenda() {
     setResModalOpen(true);
   };
 
-  // Save resource
+  // Save resource (consultorio)
   const handleSaveRes = async (e) => {
     e.preventDefault();
     if (!inquilino) return;
@@ -322,43 +322,50 @@ export default function GestionAgenda() {
     setSaving(true);
     try {
       if (selectedRes) {
-        await supabase.from("recursos_fisicos").update({
+        // Update existing consultorio
+        await supabase.from("consultorios").update({
           nombre: resForm.nombre.trim(),
-          descripcion: resForm.descripcion.trim(),
-          active: resForm.active,
+          ubicacion: resForm.descripcion.trim(), // Supabase uses 'ubicacion' not 'descripcion'
+          activo: resForm.active,
           updated_at: new Date().toISOString()
         }).eq("id", selectedRes.id);
       } else {
-        await supabase.from("recursos_fisicos").insert([{
+        // Create new consultorio
+        await supabase.from("consultorios").insert([{
           tenant_id: inquilino,
-          inquilino,
           nombre: resForm.nombre.trim(),
-          descripcion: resForm.descripcion.trim(),
-          active: resForm.active,
+          ubicacion: resForm.descripcion.trim(),
+          activo: resForm.active,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }]);
       }
       setResModalOpen(false);
       setSelectedRes(null);
+      // Reload resources
+      const { data } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true });
+      setResources(data || []);
     } catch (err) {
       console.error("Error saving resource:", err);
-      alert("Error al guardar el recurso físico");
+      alert("Error al guardar el consultorio: " + err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  // Delete Resource
+  // Delete Resource (consultorio)
   const handleDeleteRes = async (id) => {
     if (!inquilino) return;
-    if (!window.confirm("¿Está seguro de eliminar este recurso físico? Las citas asociadas podrían perder su referencia.")) return;
+    if (!window.confirm("¿Está seguro de eliminar este consultorio? Las citas asociadas podrían perder su referencia.")) return;
 
     try {
-      await supabase.from("recursos_fisicos").delete().eq("id", id);
+      await supabase.from("consultorios").delete().eq("id", id);
+      // Reload resources after delete
+      const { data } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true });
+      setResources(data || []);
     } catch (err) {
       console.error("Error deleting resource:", err);
-      alert("Error al eliminar el recurso físico");
+      alert("Error al eliminar el consultorio: " + err.message);
     }
   };
 
