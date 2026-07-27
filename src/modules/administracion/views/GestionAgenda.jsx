@@ -154,7 +154,7 @@ export default function GestionAgenda() {
     return `${d}/${m}/${y}`;
   };
 
-  // Fetch Professionals (Doctors)
+  // Fetch Professionals (Doctors only)
   useEffect(() => {
     if (!inquilino) return;
 
@@ -162,11 +162,17 @@ export default function GestionAgenda() {
     supabase.from("usuarios").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
       .then(({ data }) => {
         const docs = data || [];
-        const filtered = docs.filter(u => 
-          u.esDoctor === true || 
-          (typeof u.rol === 'string' && ['doctor', 'odontologo', 'especialista'].includes(u.rol.toLowerCase())) ||
-          (typeof u.profileName === 'string' && u.profileName.toLowerCase().includes('octor'))
-        );
+        const filtered = docs.filter(u => {
+          const rolLower = (u.rol || u.role || "").toLowerCase();
+          return u.esDoctor === true || 
+                 u.esOdontologo === true ||
+                 rolLower === 'doctor' || 
+                 rolLower === 'odontologo' || 
+                 rolLower === 'odontóloga' ||
+                 rolLower === 'doctores' ||
+                 rolLower === 'especialista' ||
+                 (typeof u.profileName === 'string' && u.profileName.toLowerCase().includes('octor'));
+        });
         setProfessionals(filtered);
         setLoadingProfs(false);
       }).catch(err => {
