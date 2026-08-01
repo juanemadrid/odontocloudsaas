@@ -109,10 +109,14 @@ export default function EmpresaUsuarios() {
                 const userSucursales = detail.sucursales || (u.sucursal_id ? [u.sucursal_id] : []);
                 const rolLower = (u.role || "").toLowerCase();
                 const esDoctor = detail.esDoctor ?? (rolLower.includes('doctor') || rolLower.includes('odontólog') || rolLower.includes('odontologo') || especialidadesArr.length > 0);
+
+                let userNombre = detail.nombre || (u.full_name || "").split(" ")[0] || "";
+                let userApellido = detail.apellido || (u.full_name || "").split(" ").slice(1).join(" ") || "";
+
                 return {
                     id: u.id,
-                    nombre: (u.full_name || "").split(" ")[0] || "",
-                    apellido: (u.full_name || "").split(" ").slice(1).join(" ") || "",
+                    nombre: userNombre,
+                    apellido: userApellido,
                     nombreCompleto: u.full_name,
                     email: u.email,
                     rol: u.role,
@@ -120,9 +124,16 @@ export default function EmpresaUsuarios() {
                     especialidad: rawEsp,
                     especialidades: especialidadesArr,
                     sucursales: userSucursales,
-                    registroMedico: u.registro_medico,
-                    numeroDocumento: u.registro_medico || "",
-                    telefonoMovil: u.telefono,
+
+                    // Campos personales y de identificación
+                    tipoDocumento: detail.tipoDocumento || u.tipo_documento || "CC",
+                    numeroDocumento: detail.numeroDocumento || u.registro_medico || "",
+                    telefonoMovil: detail.telefonoMovil || u.telefono || "",
+                    telefonoFijo: detail.telefonoFijo || "",
+                    direccion: detail.direccion || "",
+                    genero: detail.genero || "Femenino",
+                    fechaNacimiento: detail.fechaNacimiento || "",
+
                     esDoctor,
                     activo: u.activo !== false,
                     ...detail
@@ -384,6 +395,15 @@ export default function EmpresaUsuarios() {
                 const userDetails = currentConfig.user_details || {};
 
                 userDetails[targetId] = {
+                    nombre: formData.nombre,
+                    apellido: formData.apellido,
+                    tipoDocumento: formData.tipoDocumento || "CC",
+                    numeroDocumento: formData.numeroDocumento || "",
+                    telefonoMovil: formData.telefonoMovil || "",
+                    telefonoFijo: formData.telefonoFijo || "",
+                    direccion: formData.direccion || "",
+                    genero: formData.genero || "Femenino",
+                    fechaNacimiento: formData.fechaNacimiento || "",
                     sucursales: formData.sucursales || [],
                     especialidades: formData.especialidades || [],
                     esDoctor: formData.esDoctor || false,
@@ -1034,15 +1054,15 @@ export default function EmpresaUsuarios() {
                                                     onChange={e => setFormData({ ...formData, password: e.target.value })} 
                                                     required={!editId} 
                                                     minLength={8}
-                                                    placeholder="Mínimo 8 caracteres" 
+                                                    placeholder={editId ? "•••••••• (Guardada — Escribe para cambiar)" : "Mínimo 8 caracteres"} 
                                                     className={`w-full h-9 bg-slate-50 border ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-4 pr-12 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`}
                                                 />
                                                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all">
                                                     {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
                                                 </button>
                                             </div>
-                                            <p className={`text-[9px] font-bold uppercase tracking-widest pl-1 ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'text-red-500' : 'text-slate-400'}`}>
-                                                {editId ? "Dejar vacío para conservar la actual" : 
+                                            <p className={`text-[10px] font-semibold tracking-wide pl-1 ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'text-red-500' : editId ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                {editId ? "🔒 Contraseña guardada en sistema. Dejar en blanco para mantener la actual" : 
                                                  formData.password && formData.password.length > 0 && formData.password.length < 8 ? 
                                                  `Faltan ${8 - formData.password.length} caracteres` : 
                                                  "Mín. 8 caracteres alfanuméricos"}
