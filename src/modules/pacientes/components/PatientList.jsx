@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import Skeleton from "../../../components/ui/Skeleton";
 import { FiUsers, FiSearch, FiFilter, FiPlus, FiEdit2, FiTrash2, FiUserX, FiUserCheck, FiUpload } from "react-icons/fi";
+import { usePermissions } from "../../../hooks/usePermissions";
 
 export default function PatientList({
     pacientes,
@@ -20,6 +21,12 @@ export default function PatientList({
     const [patientToDelete, setPatientToDelete] = useState(null);
     const [showToggleConfirm, setShowToggleConfirm] = useState(false);
     const [patientToToggle, setPatientToToggle] = useState(null);
+
+    const { can } = usePermissions();
+    const canCreate = can("Pacientes", "Paciente", "crear");
+    const canEdit = can("Pacientes", "Paciente", "editar");
+    const canToggle = can("Pacientes", "Paciente", "desactivar");
+    const canDelete = can("Pacientes", "Paciente", "eliminar");
 
     const displayList = useMemo(() => {
         let res = pacientes;
@@ -49,38 +56,42 @@ export default function PatientList({
                         <FiUsers size={18} />
                     </div>
                     <div>
-                        <h1 className="text-[16px] font-bold text-slate-800 tracking-tight">Gestión de Pacientes</h1>
-                        <p className="text-[11px] text-slate-500 font-medium">Expedientes clínicos, historia odontológica y registro general de pacientes</p>
+                        <h2 className="text-[14px] font-extrabold text-slate-800 tracking-tight">Directorio de Pacientes</h2>
+                        <p className="text-[11px] text-slate-500">Gestión de expedientes e historial clínico</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+                <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                     <button
                         onClick={() => setShowInactive(!showInactive)}
-                        className={`px-3 py-1.5 rounded-lg font-semibold text-[11px] transition-colors border cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
                             showInactive
-                                ? "bg-slate-800 text-white border-slate-800"
+                                ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
                                 : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                         }`}
                     >
                         {showInactive ? "Ver Activos" : "Ver Inactivos"}
                     </button>
 
-                    <button
-                        onClick={onImportClick}
-                        className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                        <FiUpload size={14} />
-                        <span>Importar Excel</span>
-                    </button>
+                    {canCreate && (
+                        <>
+                            <button
+                                onClick={onImportClick}
+                                className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                                <FiUpload size={14} />
+                                <span>Importar Excel</span>
+                            </button>
 
-                    <button
-                        onClick={onCreateNew}
-                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
-                    >
-                        <FiPlus size={16} />
-                        <span>Nuevo Paciente</span>
-                    </button>
+                            <button
+                                onClick={onCreateNew}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                            >
+                                <FiPlus size={16} />
+                                <span>Nuevo Paciente</span>
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -185,33 +196,39 @@ export default function PatientList({
                                     </td>
                                     <td className="py-2.5 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); onEdit(p); }}
-                                                className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                title="Editar Paciente"
-                                            >
-                                                <FiEdit2 size={13} />
-                                            </button>
-                                            <button
-                                                onClick={(e) => handleToggleStatus(e, p)}
-                                                className={`w-7 h-7 rounded-lg text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0 ${
-                                                    p.activo !== false ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
-                                                }`}
-                                                title={p.activo !== false ? "Desactivar" : "Reactivar"}
-                                            >
-                                                {p.activo !== false ? <FiUserX size={13} /> : <FiUserCheck size={13} />}
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setPatientToDelete(p);
-                                                    setShowDeleteConfirm(true);
-                                                }}
-                                                className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                title="Eliminar Paciente"
-                                            >
-                                                <FiTrash2 size={13} />
-                                            </button>
+                                            {canEdit && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onEdit(p); }}
+                                                    className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                    title="Editar Paciente"
+                                                >
+                                                    <FiEdit2 size={13} />
+                                                </button>
+                                            )}
+                                            {canToggle && (
+                                                <button
+                                                    onClick={(e) => handleToggleStatus(e, p)}
+                                                    className={`w-7 h-7 rounded-lg text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0 ${
+                                                        p.activo !== false ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                                                    }`}
+                                                    title={p.activo !== false ? "Desactivar" : "Reactivar"}
+                                                >
+                                                    {p.activo !== false ? <FiUserX size={13} /> : <FiUserCheck size={13} />}
+                                                </button>
+                                            )}
+                                            {canDelete && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setPatientToDelete(p);
+                                                        setShowDeleteConfirm(true);
+                                                    }}
+                                                    className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                    title="Eliminar Paciente"
+                                                >
+                                                    <FiTrash2 size={13} />
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

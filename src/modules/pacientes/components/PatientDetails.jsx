@@ -5,6 +5,7 @@ import { formatCurrency, calculateAgeStr } from "../../../utils/formatters";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { useAudit } from "../../../hooks/useAudit";
+import { usePermissions } from "../../../hooks/usePermissions";
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { patientSchema } from "../schemas/patientSchema";
@@ -1169,6 +1170,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
     const [financials, setFinancials] = useState(null);
     const { userProfile } = useAuth();
+    const { can } = usePermissions();
     const toast = useToast();
 
     const [pacientesRemision, setPacientesRemision] = useState([]);
@@ -1775,16 +1777,28 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                 <SidebarButton icon={FiShield} label="EPS" active={activeTab === "eps"} onClick={() => handleTabChange("eps")} />
                                 <SidebarButton icon={FiUsers} label="Beneficiarios convenio" active={activeTab === "conv"} onClick={() => handleTabChange("conv")} />
                                 <SidebarButton icon={FiBriefcase} label="Profesionales" active={activeTab === "pro"} onClick={() => handleTabChange("pro")} />
-                                <SidebarButton icon={FiCamera} label="Rx / Imágenes / Doc" active={activeTab === "rx"} onClick={() => handleTabChange("rx")} />
+                                {can("Pacientes", "Rx/imágenes/Doc", "consultar") && (
+                                    <SidebarButton icon={FiCamera} label="Rx / Imágenes / Doc" active={activeTab === "rx"} onClick={() => handleTabChange("rx")} />
+                                )}
                             </div>
 
                             <SidebarSectionTitle>Historia Clínica</SidebarSectionTitle>
                             <div className="flex lg:flex-col gap-1 min-w-max lg:min-w-0">
-                                <SidebarButton icon={FiClipboard} label="Doc. Clínicos" active={activeTab === "hc"} onClick={() => handleTabChange("hc")} />
-                                <SidebarButton icon={FiActivity} label="Odontogramas" active={activeTab === "odonto"} onClick={() => handleTabChange("odonto")} />
-                                <SidebarButton icon={FiActivity} label="Periodontogramas" active={activeTab === "perio"} onClick={() => handleTabChange("perio")} />
-                                <SidebarButton icon={FiFileText} label="Presupuestos & planes" active={activeTab === "presu"} onClick={() => handleTabChange("presu")} />
-                                <SidebarButton icon={FiActivity} label="Evoluciones & Remis" active={activeTab === "evo"} onClick={() => handleTabChange("evo")} />
+                                {can("Pacientes", "Historia clínica", "consultar") && (
+                                    <SidebarButton icon={FiClipboard} label="Doc. Clínicos" active={activeTab === "hc"} onClick={() => handleTabChange("hc")} />
+                                )}
+                                {can("Pacientes", "Odontograma", "consultar") && (
+                                    <SidebarButton icon={FiActivity} label="Odontogramas" active={activeTab === "odonto"} onClick={() => handleTabChange("odonto")} />
+                                )}
+                                {can("Pacientes", "Periodontograma", "consultar") && (
+                                    <SidebarButton icon={FiActivity} label="Periodontogramas" active={activeTab === "perio"} onClick={() => handleTabChange("perio")} />
+                                )}
+                                {can("Pacientes", "Presupuestos", "consultar") && (
+                                    <SidebarButton icon={FiFileText} label="Presupuestos & planes" active={activeTab === "presu"} onClick={() => handleTabChange("presu")} />
+                                )}
+                                {can("Pacientes", "Evoluciones", "consultar") && (
+                                    <SidebarButton icon={FiActivity} label="Evoluciones & Remis" active={activeTab === "evo"} onClick={() => handleTabChange("evo")} />
+                                )}
                             </div>
 
                             <SidebarSectionTitle>Inteligencia Artificial</SidebarSectionTitle>
@@ -1794,32 +1808,36 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
                             <SidebarSectionTitle>Facturación</SidebarSectionTitle>
                             <div className="flex lg:flex-col gap-1 min-w-max lg:min-w-0">
-                                <SidebarButton 
-                                    icon={FiDollarSign} 
-                                    label="Saldo a favor" 
-                                    active={activeTab === "saldo"} 
-                                    onClick={() => handleTabChange("saldo")} 
-                                    badge={
-                                        (typeof financials?.totals?.totalSaldosAFavor === "number")
-                                            ? `$${formatCurrency(financials.totals.totalSaldosAFavor)}`
-                                            : (Number(patient?.saldo_favor || patient?.saldoFavor || 0) > 0)
-                                                ? `$${formatCurrency(patient.saldo_favor || patient.saldoFavor)}`
-                                                : "$ 0"
-                                    } 
-                                />
-                                <SidebarButton icon={FiDollarSign} label="Realizar pago" active={activeTab === "pago"} onClick={() => handleTabChange("pago")} />
-                                {realizedDebt > 0 && !isPatientIncomplete && (
-                                    <button
-                                        type="button"
-                                        onClick={() => handleTabChange('pago')}
-                                        className="w-full mt-1 mb-1 px-3 py-2 rounded-xl bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-2 animate-pulse hover:animate-none hover:bg-rose-600 transition-all shadow-lg shadow-rose-200 active:scale-95"
-                                    >
-                                        <FiAlertCircle size={14} className="shrink-0" />
-                                        <span>Deuda activa: ${realizedDebt.toLocaleString('es-CO')}</span>
-                                    </button>
+                                {can("Caja", "Caja", "consultar") && (
+                                    <>
+                                        <SidebarButton 
+                                            icon={FiDollarSign} 
+                                            label="Saldo a favor" 
+                                            active={activeTab === "saldo"} 
+                                            onClick={() => handleTabChange("saldo")} 
+                                            badge={
+                                                (typeof financials?.totals?.totalSaldosAFavor === "number")
+                                                    ? `$${formatCurrency(financials.totals.totalSaldosAFavor)}`
+                                                    : (Number(patient?.saldo_favor || patient?.saldoFavor || 0) > 0)
+                                                        ? `$${formatCurrency(patient.saldo_favor || patient.saldoFavor)}`
+                                                        : "$ 0"
+                                            } 
+                                        />
+                                        <SidebarButton icon={FiDollarSign} label="Realizar pago" active={activeTab === "pago"} onClick={() => handleTabChange("pago")} />
+                                        {realizedDebt > 0 && !isPatientIncomplete && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleTabChange('pago')}
+                                                className="w-full mt-1 mb-1 px-3 py-2 rounded-xl bg-rose-500 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-2 animate-pulse hover:animate-none hover:bg-rose-600 transition-all shadow-lg shadow-rose-200 active:scale-95"
+                                            >
+                                                <FiAlertCircle size={14} className="shrink-0" />
+                                                <span>Deuda activa: ${realizedDebt.toLocaleString('es-CO')}</span>
+                                            </button>
+                                        )}
+                                        <SidebarButton icon={FiDollarSign} label="Histórico pagos" active={activeTab === "hist_pago"} onClick={() => handleTabChange("hist_pago")} />
+                                        <SidebarButton icon={FiFileText} label="Histórico facturas" active={activeTab === "hist_fact"} onClick={() => handleTabChange("hist_fact")} />
+                                    </>
                                 )}
-                                <SidebarButton icon={FiDollarSign} label="Histórico pagos" active={activeTab === "hist_pago"} onClick={() => handleTabChange("hist_pago")} />
-                                <SidebarButton icon={FiFileText} label="Histórico facturas" active={activeTab === "hist_fact"} onClick={() => handleTabChange("hist_fact")} />
                             </div>
                         </aside>
 
