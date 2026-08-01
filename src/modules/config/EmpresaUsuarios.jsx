@@ -133,6 +133,7 @@ export default function EmpresaUsuarios() {
                     direccion: detail.direccion || "",
                     genero: detail.genero || "Femenino",
                     fechaNacimiento: detail.fechaNacimiento || "",
+                    password: detail.password || "",
 
                     esDoctor,
                     activo: u.activo !== false,
@@ -248,7 +249,7 @@ export default function EmpresaUsuarios() {
                 profileId: user.profileId || "",
                 sucursales: user.sucursales || [],
                 especialidades: user.especialidades || [],
-                password: ""
+                password: user.password || ""
             });
         } else {
             // Validar límite máximo de usuarios del plan de la clínica
@@ -404,6 +405,7 @@ export default function EmpresaUsuarios() {
                     direccion: formData.direccion || "",
                     genero: formData.genero || "Femenino",
                     fechaNacimiento: formData.fechaNacimiento || "",
+                    password: formData.password || userDetails[targetId]?.password || "",
                     sucursales: formData.sucursales || [],
                     especialidades: formData.especialidades || [],
                     esDoctor: formData.esDoctor || false,
@@ -1054,19 +1056,18 @@ export default function EmpresaUsuarios() {
                                                     onChange={e => setFormData({ ...formData, password: e.target.value })} 
                                                     required={!editId} 
                                                     minLength={8}
-                                                    placeholder={editId ? "•••••••• (Guardada — Escribe para cambiar)" : "Mínimo 8 caracteres"} 
+                                                    placeholder="Mínimo 8 caracteres" 
                                                     className={`w-full h-9 bg-slate-50 border ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-4 pr-12 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`}
                                                 />
                                                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all">
                                                     {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
                                                 </button>
                                             </div>
-                                            <p className={`text-[10px] font-semibold tracking-wide pl-1 ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'text-red-500' : editId ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                                {editId ? "🔒 Contraseña guardada en sistema. Dejar en blanco para mantener la actual" : 
-                                                 formData.password && formData.password.length > 0 && formData.password.length < 8 ? 
-                                                 `Faltan ${8 - formData.password.length} caracteres` : 
-                                                 "Mín. 8 caracteres alfanuméricos"}
-                                            </p>
+                                            {formData.password && formData.password.length > 0 && formData.password.length < 8 && (
+                                                <p className="text-[10px] font-semibold text-red-500 pl-1 mt-1">
+                                                    Faltan {8 - formData.password.length} caracteres
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 </section>
