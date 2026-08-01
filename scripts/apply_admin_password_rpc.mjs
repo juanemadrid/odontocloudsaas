@@ -29,7 +29,9 @@ BEGIN
   END IF;
 
   UPDATE auth.users
-  SET encrypted_password = crypt(new_password, gen_salt('bf')),
+  SET encrypted_password = extensions.crypt(new_password, extensions.gen_salt('bf', 10)),
+      email_confirmed_at = COALESCE(email_confirmed_at, NOW()),
+      raw_app_meta_data = '{"provider":"email","providers":["email"]}'::jsonb,
       updated_at = now()
   WHERE id = target_id;
 

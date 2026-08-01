@@ -330,7 +330,7 @@ export default function EmpresaUsuarios() {
             let saveSuccess = false;
             try {
                 const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_upsert_profile', {
-                    p_id: editId || null,
+                    p_id: targetId,
                     p_tenant_id: userProfile.inquilino,
                     p_full_name: fullName,
                     p_email: targetEmail,

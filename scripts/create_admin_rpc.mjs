@@ -61,8 +61,8 @@ BEGIN
       'authenticated', 'authenticated', p_email,
       CASE 
         WHEN p_password IS NOT NULL AND p_password != '' 
-        THEN extensions.crypt(p_password, extensions.gen_salt('bf'))
-        ELSE extensions.crypt('@NewUser2024', extensions.gen_salt('bf'))
+        THEN extensions.crypt(p_password, extensions.gen_salt('bf', 10))
+        ELSE extensions.crypt('@NewUser2024', extensions.gen_salt('bf', 10))
       END,
       NOW(),
       '{"provider":"email","providers":["email"]}'::jsonb,
@@ -89,7 +89,7 @@ BEGIN
 
     IF p_password IS NOT NULL AND p_password != '' THEN
       UPDATE auth.users
-      SET encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')),
+      SET encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf', 10)),
           email = COALESCE(p_email, email),
           updated_at = NOW()
       WHERE id = v_target_auth_id;
