@@ -330,7 +330,7 @@ export default function EmpresaUsuarios() {
             let saveSuccess = false;
             try {
                 const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_upsert_profile', {
-                    p_id: targetId,
+                    p_id: editId || null,
                     p_tenant_id: userProfile.inquilino,
                     p_full_name: fullName,
                     p_email: targetEmail,
@@ -343,17 +343,19 @@ export default function EmpresaUsuarios() {
                 });
 
                 if (rpcErr) throw rpcErr;
-                if (rpcResult && rpcResult.success === false) {
-                    const errStr = (rpcResult.error || '').toLowerCase();
-                    if (errStr.includes('registrado') || errStr.includes('exists') || errStr.includes('duplicado')) {
+
+                const resObj = typeof rpcResult === 'string' ? JSON.parse(rpcResult) : rpcResult;
+                if (resObj && resObj.success === false) {
+                    const errStr = (resObj.error || '').toLowerCase();
+                    if (errStr.includes('registrado') || errStr.includes('exists') || errStr.includes('duplicado') || errStr.includes('unique')) {
                         toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
                         setSaving(false);
                         return;
                     }
-                    throw new Error(rpcResult.error || 'Error al guardar perfil');
+                    throw new Error(resObj.error || 'Error al guardar perfil');
                 }
-                if (rpcResult?.data?.id) {
-                    targetId = rpcResult.data.id;
+                if (resObj?.id) {
+                    targetId = resObj.id;
                 }
                 saveSuccess = true;
             } catch (rpcError) {
