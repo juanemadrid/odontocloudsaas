@@ -3,6 +3,7 @@ import supabase, { supabaseAdmin } from "../../lib/supabaseClient";
 import ReactDOM from "react-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { DEFAULT_PERFILES } from "../../constants/DefaultProfiles";
 
 // Singleton secondary Firebase app — prevents duplicate-app crashes
 // firebaseConfig debe estar importado antes de esta función
@@ -148,11 +149,7 @@ export default function EmpresaUsuarios() {
             const especialidadesList = toObj(rawEspecialidades);
 
             setUsers(profilesList);
-            setRolesDisponibles(rolesList.length > 0 ? rolesList : [
-                { id: "Administrativo / Recepción", nombre: "Administrativo / Recepción" },
-                { id: "Odontólogo / Doctor", nombre: "Odontólogo / Doctor" },
-                { id: "Auxiliar de Odontología", nombre: "Auxiliar de Odontología" }
-            ]);
+            setRolesDisponibles(rolesList.length > 0 ? rolesList : DEFAULT_PERFILES);
             setSucursales(sRes.data || []);
             setSpecialties(especialidadesList.length > 0 ? especialidadesList : toObj(defaultEspecialidades));
 

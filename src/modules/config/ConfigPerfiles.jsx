@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
+import { DEFAULT_PERFILES } from "../../constants/DefaultProfiles";
 import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiShield, FiArrowLeft, FiSave, FiCheck, FiInfo } from "react-icons/fi";
 
 const PERMISSION_MAP = {
@@ -252,10 +253,23 @@ export default function ConfigPerfiles() {
         setLoading(true);
         try {
             const list = await getConfigItems(inquilino, "perfiles", null);
-            const sortedList = (list || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-            setProfiles(sortedList);
+            if (list && Array.isArray(list) && list.length > 0) {
+                const sortedList = (list || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+                setProfiles(sortedList);
+            } else {
+                // Si la clínica aún no tiene perfiles guardados, mostramos y sincronizamos los perfiles base
+                setProfiles(DEFAULT_PERFILES);
+                try {
+                    for (const p of DEFAULT_PERFILES) {
+                        await saveConfigItem(inquilino, "perfiles", null, p);
+                    }
+                } catch (saveErr) {
+                    console.warn("Aviso al auto-guardar perfiles base:", saveErr);
+                }
+            }
         } catch (e) {
             console.error("Error al cargar perfiles desde Supabase:", e);
+            setProfiles(DEFAULT_PERFILES);
         } finally {
             setLoading(false);
         }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { getConfigItems } from "../../services/configPersistenceService";
+import { DEFAULT_PERFILES } from "../../constants/DefaultProfiles";
 import { FiTrash2, FiEdit2 } from "react-icons/fi";
 
 export default function ConfigUsuarios() {
@@ -56,11 +57,7 @@ export default function ConfigUsuarios() {
             ]);
 
             setUsers(uRes.data || []);
-            setRolesDisponibles(pData.length > 0 ? pData : [
-                { id: "admin", nombre: "Administrador" },
-                { id: "doctor", nombre: "Doctor" },
-                { id: "recepcion", nombre: "Recepcionista" }
-            ]);
+            setRolesDisponibles(pData && pData.length > 0 ? pData : DEFAULT_PERFILES);
             setSucursales(sRes.data || []);
             setEspecialidades(eRes.data || []);
         } catch (e) {
