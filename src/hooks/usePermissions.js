@@ -12,20 +12,16 @@ import { isSubscriptionExpired } from "../utils/subscriptionHelper";
 export function usePermissions() {
     const { userProfile } = useAuth();
 
-    const can = (moduleName, featureName, action) => {
-        // 1. Superadmin bypass
+    const can = (moduleName, featureName, action = "consultar") => {
         const rawRol = (userProfile?.role || userProfile?.rol || "").trim().toLowerCase();
-        
-        const isAdmin = rawRol.includes("admin");
-        const isDoctor = rawRol.includes("doctor") || rawRol.includes("odontolog") || rawRol.includes("odontólog");
-        const isRecep = rawRol.includes("recepc") || rawRol.includes("auxiliar") || rawRol.includes("administrativ");
 
+        // 1. Superadmin bypass (siempre tiene acceso a todo)
         if (rawRol === "superadmin" || rawRol === "super_admin") return true;
 
-        // 2. Subscription Check
+        // 2. Suscripción vencida
         if (isSubscriptionExpired(userProfile?.tenant)) return false;
 
-        // 3. Special "Editor Web" Plan Check
+        // 3. Verificación de Plan especial para "Editor Web"
         if (featureName === "Editor Web") {
             const hasPlan = userProfile?.tenant?.planId === "trial" ||
                 userProfile?.tenant?.features?.includes("CMS") ||
@@ -37,23 +33,6 @@ export function usePermissions() {
             if (!hasPlan) return false;
         }
 
-        // 4. Trial Bypass Logic (Full Software Access 30 days)
-        if (userProfile?.tenant?.planId === "trial") {
-            const softwareFeatures = [
-                "Agenda", "Paciente", "Odontograma", "Documentos clínicos",
-                "Historia clínica", "Gestion Facturas", "Inventario",
-                "Gestion Reportes", "Gestion Configuración", "Parámetros",
-                "Sucursales", "Almacenes", "Lista precios", "Usuarios", "Perfiles"
-            ];
-
-            if (isAdmin) {
-                if (featureName !== "Editor Web") return true;
-            }
-
-            if (softwareFeatures.includes(featureName) || moduleName === "Configuración") return true;
-        }
-
-        // 5. Normalization helper for key comparisons
         const normalizeKey = (str) => {
             return (str || "")
                 .toLowerCase()
@@ -62,66 +41,64 @@ export function usePermissions() {
                 .trim();
         };
 
-        const queryKey = normalizeKey(featureName);
+        const queryFeatureKey = normalizeKey(featureName);
+        const queryModuleKey = normalizeKey(moduleName);
 
-        // 6. Find and load permissions for this feature if profile has custom permissions loaded
-        const featurePerms = (() => {
-            if (!userProfile?.permisos) return null;
-
-            // Compatibilidad 1: Si permisos es un Array ["Agenda", "Pacientes"]
-            if (Array.isArray(userProfile.permisos)) {
-                const normArray = userProfile.permisos.map(normalizeKey);
-                const hasMatch = normArray.includes(queryKey) || normArray.includes(normalizeKey(moduleName));
-                return hasMatch ? { consultar: true, crear: true, editar: true, eliminar: true } : null;
-            }
-
-            // Compatibilidad 2: Si permisos es un Objeto
+        // 4. EVALUAR PERMISOS DEL PERFIL DEL USUARIO (Prioridad Máxima)
+        if (userProfile?.permisos) {
             const perms = userProfile.permisos;
-            const keyMatch = Object.keys(perms).find(
-                k => normalizeKey(k) === queryKey || normalizeKey(k) === normalizeKey(moduleName)
-            );
-            
-            if (keyMatch) {
-                const val = perms[keyMatch];
-                if (typeof val === 'boolean') return val ? { consultar: true, crear: true, editar: true, eliminar: true } : null;
-                if (typeof val === 'object' && val !== null) return val;
+
+            // Compatibilidad 1: Si permisos es un Array de strings ["Agenda", "Pacientes"]
+            if (Array.isArray(perms)) {
+                const normArray = perms.map(normalizeKey);
+                const hasMatch = normArray.includes(queryFeatureKey) || normArray.includes(queryModuleKey);
+                if (hasMatch) return true;
+                // Si hay un perfil asignado como Array y no coincide, se deniega
+                return false;
             }
 
-            return null;
-        })();
+            // Compatibilidad 2: Si permisos es un Objeto { "Historia clinica": { consultar: true, ... } }
+            if (typeof perms === 'object' && perms !== null) {
+                // Prioridad 1: Coincidencia exacta de la función específica
+                let matchKey = Object.keys(perms).find(k => normalizeKey(k) === queryFeatureKey);
+                
+                // Prioridad 2: Coincidencia del nombre del módulo general
+                if (!matchKey) {
+                    matchKey = Object.keys(perms).find(k => normalizeKey(k) === queryModuleKey);
+                }
 
-        if (featurePerms) {
-            if (typeof featurePerms[action] !== 'undefined') return !!featurePerms[action];
-            return true; // Por defecto permitido si el módulo/feature está asignado
+                if (matchKey) {
+                    const val = perms[matchKey];
+                    if (typeof val === 'boolean') return val;
+                    if (typeof val === 'object' && val !== null) {
+                        if (typeof val[action] !== 'undefined') return !!val[action];
+                        // Si la acción específica no está definida, verificar si la función tiene alguna acción habilitada
+                        return Object.values(val).some(Boolean);
+                    }
+                }
+            }
         }
 
-        // 7. Fallback a permisos predeterminados si no se encontraron permisos personalizados
+        // 5. FALLBACK: Si no hay matriz de permisos configurada explícitamente para este perfil
+        const isAdmin = rawRol.includes("admin");
         if (isAdmin) return true;
 
+        const isDoctor = rawRol.includes("doctor") || rawRol.includes("odontolog") || rawRol.includes("odontólog");
         if (isDoctor) {
-            const allowed = ["Agenda", "Pacientes", "Odontograma", "Documentos clínicos", "Historia clínica"];
+            const allowed = ["Agenda", "Pacientes", "Odontograma", "Documentos clínicos", "Historia clínica", "Evoluciones", "Plan tratamiento", "Medicamentos"];
             const normAllowed = allowed.map(normalizeKey);
-            if (normAllowed.includes(queryKey) && action === "consultar") return true;
-            if (moduleName === "Agenda" && action === "consultar") return true;
-            if (moduleName === "Pacientes" && action === "consultar") return true;
-            if (featureName === "Agenda" || featureName === "Paciente") return true;
+            if (normAllowed.includes(queryFeatureKey) || normAllowed.includes(queryModuleKey)) return true;
         }
 
+        const isRecep = rawRol.includes("recepc") || rawRol.includes("auxiliar") || rawRol.includes("administrativ");
         if (isRecep) {
-            const allowed = ["Agenda", "Pacientes", "Gestion Facturas", "Gestion Reportes", "Caja", "Gestion Administración"];
+            const allowed = ["Agenda", "Pacientes", "Caja", "Convenios"];
             const normAllowed = allowed.map(normalizeKey);
-            if (normAllowed.includes(queryKey) && action === "consultar") return true;
-            if (moduleName === "Configuración") return true;
-            if (moduleName === "Agenda" && action === "consultar") return true;
-            if (moduleName === "Pacientes" && action === "consultar") return true;
-            if (moduleName === "Caja" && action === "consultar") return true;
-            if (moduleName === "Administración" && (queryKey === normalizeKey("Gestion Facturas") || queryKey === normalizeKey("Gestion Administración"))) return true;
+            if (normAllowed.includes(queryFeatureKey) || normAllowed.includes(queryModuleKey)) return true;
         }
 
         return false;
     };
-
-
 
     return { can };
 }
