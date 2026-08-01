@@ -57,8 +57,8 @@ export default function SmartAlerts() {
                     });
                 });
 
-                // 3. Efficiency Check (Real Data from planes)
-                const { data: snapPlans } = await supabase.from("planes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`).limit(50);
+                // 3. Efficiency Check (Real Data from treatment_plans)
+                const { data: snapPlans } = await supabase.from("treatment_plans").select("*").eq("tenant_id", userProfile.inquilino).limit(50);
                 const treatmentCounts = {};
                 
                 (snapPlans || []).forEach(data => {

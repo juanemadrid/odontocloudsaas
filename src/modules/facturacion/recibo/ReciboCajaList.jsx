@@ -448,29 +448,97 @@ export default function ReciboCajaList({ onNew }) {
             const end = parseLocalDate(fechaFin);
             end.setHours(23, 59, 59, 999);
 
+            // 0. Fetch patient map for current tenant
+            let patientMap = {};
+            try {
+                const { data: pacsData } = await supabase
+                    .from("pacientes")
+                    .select("id, nombres, apellidos, nombre, apellido, nombre_completo, nombreCompleto")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                
+                (pacsData || []).forEach(p => {
+                    const full = p.nombreCompleto || p.nombre_completo || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim();
+                    if (p.id && full) {
+                        patientMap[p.id] = full;
+                    }
+                });
+
+                // Fallback check from website_config config.pacientes
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                (cfgRow?.config?.pacientes || []).forEach(p => {
+                    const full = p.nombreCompleto || p.nombre_completo || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim();
+                    if (p.id && full && !patientMap[p.id]) {
+                        patientMap[p.id] = full;
+                    }
+                });
+            } catch (e) {
+                console.warn("Could not fetch pacientes for map:", e);
+            }
+
             // 1. Fetch recibos_caja
-            const { data: dataRecibos } = await supabase
-                .from("recibos_caja")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            const recibosMapped = (dataRecibos || []).map(d => ({ ...d, isPago: false }));
+            let dataRecibos = [];
+            try {
+                const { data } = await supabase
+                    .from("recibos_caja")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                if (data && data.length > 0) dataRecibos = data;
+            } catch (e) {}
+
+            if (dataRecibos.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                dataRecibos = cfgRow?.config?.recibos_caja || [];
+            }
+            const recibosMapped = (dataRecibos || []).map(d => {
+                const pId = d.paciente_id || d.pacienteId || d.patient_id || d.paciente;
+                const pName = d.pacienteNombre || d.patientNombre || d.paciente_nombre || d.nombrePaciente || patientMap[pId] || "—";
+                return { 
+                    ...d, 
+                    pacienteNombre: pName,
+                    isPago: false 
+                };
+            });
 
             // 2. Fetch pagos (abonos from patient profile)
-            const { data: dataPagosRaw } = await supabase
-                .from("pagos")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            let dataPagosRaw = [];
+            try {
+                const { data } = await supabase
+                    .from("pagos")
+                    .select("*")
+                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                if (data && data.length > 0) dataPagosRaw = data;
+            } catch (e) {}
+
+            if (dataPagosRaw.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                dataPagosRaw = cfgRow?.config?.pagos || [];
+            }
+
             const dataPagos = (dataPagosRaw || [])
                 .map(pData => {
                     const medioRaw = pData.medio || "Abono";
                     const condicionPago = medioRaw.toLowerCase() === "saldo a favor" ? "Consumo s. a favor" : medioRaw;
+                    const pId = pData.paciente_id || pData.pacienteId || pData.patient_id || pData.paciente;
+                    const pName = pData.patientNombre || pData.pacienteNombre || pData.paciente_nombre || pData.nombrePaciente || patientMap[pId] || "—";
                     return {
                         id: pData.id,
                         nroConsecutivo: pData.nroConsecutivo || "",
                         fecha: pData.fechaISO || pData.created_at || pData.fecha,
-                        pacienteNombre: pData.patientNombre || pData.pacienteNombre || "—",
+                        pacienteNombre: pName,
                         condicionPago: condicionPago,
-                        concepto: pData.concepto || "Abono",
+                        concepto: pData.concepto || pData.referencia || pData.notas || "Abono",
                         total: pData.monto || 0,
                         isPago: true
                     };

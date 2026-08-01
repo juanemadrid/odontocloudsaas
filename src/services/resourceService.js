@@ -94,7 +94,7 @@ export const deleteSpecialty = async (tenantId, id) => {
 // ── CATEGORÍAS ──
 export const getCategories = async (tenantId) => {
     if (!tenantId) return [];
-    const items = await getConfigItems(tenantId, "categorias", "categorias");
+    const items = await getConfigItems(tenantId, "categorias", null);
     if (items.length > 0) return items;
     return [
         { id: "1", nombre: "Restauración" },
@@ -110,13 +110,13 @@ export const subscribeToCategories = (tenantId, callback) => {
 };
 
 export const createCategory = async (tenantId, data) => {
-    return await saveConfigItem(tenantId, "categorias", "categorias", data);
+    return await saveConfigItem(tenantId, "categorias", null, data);
 };
 
 export const updateCategory = async (tenantId, id, data) => {
-    return await saveConfigItem(tenantId, "categorias", "categorias", { id, ...data });
+    return await saveConfigItem(tenantId, "categorias", null, { id, ...data });
 };
 
 export const deleteCategory = async (tenantId, id) => {
-    return await deleteConfigItem(tenantId, "categorias", "categorias", id);
+    return await deleteConfigItem(tenantId, "categorias", null, id);
 };

@@ -24,8 +24,8 @@ export default function FeatureDetail() {
             slug: "historia-clinica",
             title: "Historia Clínica Digital",
             desc: "Acceso instantáneo a radiografías, evoluciones y anexos desde cualquier dispositivo.",
-            longDesc: "Cumpla con la normativa vigente con historias clínicas 100% en la nube y seguras. Incluye odontograma 3D interactivo, periodontograma, consentimientos informados digitales y firma biométrica. Todo centralizado y accesible desde cualquier lugar.",
-            features: ["Odontograma 3D Interactivo", "Carga de Imágenes y Rayos X", "Consentimientos Informados Digitales", "Firma Biométrica y Digital"],
+            longDesc: "Cumpla con la normativa vigente con historias clínicas 100% en la nube y seguras. Incluye odontograma digital interactivo, periodontograma, consentimientos informados digitales y firma biométrica. Todo centralizado y accesible desde cualquier lugar.",
+            features: ["Odontograma Digital Interactivo", "Carga de Imágenes y Rayos X", "Consentimientos Informados Digitales", "Firma Biométrica y Digital"],
             benefits: ["Cero Papel y Archivo Físico", "Información Centralizada y Segura", "Cumplimiento Normativo Total", "Acceso Rápido en Consulta"],
             color: "#06b6d4"
         },

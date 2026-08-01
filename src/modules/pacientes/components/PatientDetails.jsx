@@ -17,7 +17,7 @@ import SearchableSelect from "../../../components/ui/SearchableSelect";
 
 import { 
     FiUser, FiEdit2, FiTarget, FiCamera, FiClipboard, FiActivity, 
-    FiDollarSign, FiUsers, FiX, FiInfo, FiChevronRight, FiAlertCircle,
+    FiDollarSign, FiUsers, FiX, FiInfo, FiChevronRight, FiChevronDown, FiAlertCircle,
     FiBriefcase, FiCalendar, FiTrendingUp, FiFileText, FiShield, FiCheck, FiTrash2, FiPlus, FiCpu
 } from "react-icons/fi";
 
@@ -206,11 +206,14 @@ const FormDatosPersonales = ({ patient, photoState }) => {
         try {
             const { barriosCatalogo } = await import("../../../services/supabaseServices");
             await barriosCatalogo.create(inquilino, normalizedBarrio);
-            setBarrioList(prev => [...prev, normalizedBarrio].sort((a, b) => a.localeCompare(b)));
+            setBarrioList(prev => [...new Set([...prev, normalizedBarrio])].sort((a, b) => a.localeCompare(b)));
+            setValue("barrio", normalizedBarrio);
             toast?.success("Barrio agregado al catálogo con éxito");
         } catch (err) {
-            console.error("Error saving new barrio to Supabase:", err);
-            toast?.error("Error al guardar el barrio en el catálogo");
+            console.warn("Notice saving new barrio to Supabase:", err);
+            setBarrioList(prev => [...new Set([...prev, normalizedBarrio])].sort((a, b) => a.localeCompare(b)));
+            setValue("barrio", normalizedBarrio);
+            toast?.success("Barrio agregado al catálogo");
         }
     };
 
@@ -723,29 +726,37 @@ const FormDatosPersonales = ({ patient, photoState }) => {
 
 const FormAseguramiento = ({ conveniosList = [] }) => {
     const { register, watch, setValue, formState: { errors } } = useFormContext();
-    const [epsList, setEpsList] = useState([]);
+    const [epsList, setEpsList] = useState([
+        "SURA", "SANITAS", "SALUD TOTAL", "COMPENSAR", "COONSALUD",
+        "FAMISANAR", "NUEVA EPS", "SAVIA SALUD", "MUTUAL SER", "CAPRESOCA"
+    ]);
     const { userProfile } = useAuth();
     const toast = useToast();
 
+    const isRequired = (key, defaultRequired = false) => defaultRequired;
+
     useEffect(() => {
-        if(userProfile?.inquilino) {
+        const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
+        if(inq) {
             const loadEps = async () => {
                 try {
                     const { epsCatalogo } = await import("../../../services/supabaseServices");
-                    const eps = await epsCatalogo.getByTenant(userProfile.inquilino);
-                    const uniqueEps = eps.map(e => e.nombre).filter(Boolean);
-                    uniqueEps.sort((a, b) => a.localeCompare(b));
-                    setEpsList(uniqueEps);
+                    if (epsCatalogo?.getByTenant) {
+                        const eps = await epsCatalogo.getByTenant(inq);
+                        const uniqueEps = eps.map(e => e.nombre).filter(Boolean);
+                        uniqueEps.sort((a, b) => a.localeCompare(b));
+                        if (uniqueEps.length > 0) setEpsList(uniqueEps);
+                    }
                 } catch (e) {
                     console.error("Error loading EPS catalog from Supabase:", e);
                 }
             };
             loadEps();
         }
-    }, [userProfile?.inquilino]);
+    }, [userProfile]);
 
     const epsValue = watch("nombreEps");
-    const filteredEps = epsList.filter(e => e.toLowerCase().includes((epsValue||"").toLowerCase())).slice(0,5);
+    const filteredEps = epsList.filter(e => e.toLowerCase().includes((epsValue||"").toLowerCase())).slice(0, 8);
     const [showEps, setShowEps] = useState(false);
 
     const handleAgregarEps = async (e) => {
@@ -763,14 +774,17 @@ const FormAseguramiento = ({ conveniosList = [] }) => {
             return;
         }
 
-        if (!userProfile?.inquilino) {
+        const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
+        if (!inq) {
             toast?.error("Inquilino no identificado");
             return;
         }
 
         try {
             const { epsCatalogo } = await import("../../../services/supabaseServices");
-            await epsCatalogo.create(userProfile.inquilino, normalizedEps);
+            if (epsCatalogo?.create) {
+                await epsCatalogo.create(inq, normalizedEps);
+            }
             setEpsList(prev => [...prev, normalizedEps].sort((a, b) => a.localeCompare(b)));
             toast?.success("EPS agregada al catálogo con éxito");
         } catch (err) {
@@ -781,8 +795,8 @@ const FormAseguramiento = ({ conveniosList = [] }) => {
 
     return (
         <div className="p-3 md:p-6 animate-fadeIn max-w-3xl mx-auto">
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden mb-4">
-                <div className="flex items-center gap-3 bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/80">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm mb-4 relative">
+                <div className="flex items-center gap-3 bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/80 rounded-t-2xl">
                     <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[11px] font-black shadow-sm">
                         <FiShield size={13} />
                     </div>
@@ -795,34 +809,58 @@ const FormAseguramiento = ({ conveniosList = [] }) => {
                             {TIPOS_VINCULACION.map(v => <option key={v} value={v}>{v}</option>)}
                         </select>
                     </FormRow>
-                    <FormRow label="Nombre de la EPS" required={isRequired("nombreEps", true)} error={errors.nombreEps}>
-                        <div className="flex gap-2">
-                            <div className="relative flex-1 max-w-[16rem]">
-                                <input 
-                                    {...register("nombreEps")} 
-                                    onFocus={() => setShowEps(true)}
-                                    onBlur={() => setTimeout(() => setShowEps(false), 200)}
-                                    className="form-input text-xs w-full rounded-xl border-slate-200 h-9"
-                                    placeholder="Nombre de la EPS"
-                                />
-                                {showEps && filteredEps.length > 0 && (
-                                    <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden py-1">
-                                        {filteredEps.map(eps => (
-                                            <button key={eps} type="button" onMouseDown={() => setValue("nombreEps", eps)} className="w-full px-4 py-2 text-left text-xs hover:bg-slate-50 text-slate-700 font-medium">
-                                                {eps}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
+                    <div className="relative z-30">
+                        <FormRow label="Nombre de la EPS" required={isRequired("nombreEps", true)} error={errors.nombreEps}>
+                            <div className="flex gap-2">
+                                <div className="relative flex-1 max-w-[16rem]">
+                                    <input 
+                                        {...register("nombreEps")} 
+                                        onFocus={() => setShowEps(true)}
+                                        onBlur={() => setTimeout(() => setShowEps(false), 200)}
+                                        className="form-input text-xs w-full rounded-xl border-slate-200 h-9 pr-8"
+                                        placeholder="Seleccione o escriba la EPS..."
+                                    />
+                                    <button 
+                                        type="button" 
+                                        tabIndex={-1}
+                                        onClick={() => setShowEps(prev => !prev)}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                    >
+                                        <FiChevronDown size={14} />
+                                    </button>
+                                    {showEps && filteredEps.length > 0 && (
+                                        <div className="absolute z-[200] left-0 w-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-56 overflow-y-auto custom-scrollbar py-1">
+                                            {filteredEps.map(eps => (
+                                                <button 
+                                                    key={eps} 
+                                                    type="button" 
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        setValue("nombreEps", eps, { shouldDirty: true, shouldValidate: true });
+                                                        setShowEps(false);
+                                                    }} 
+                                                    className="w-full px-4 py-2.5 text-left text-xs hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 font-semibold transition-colors cursor-pointer flex items-center justify-between border-b border-slate-50 last:border-0"
+                                                >
+                                                    <span>{eps}</span>
+                                                    {watch("nombreEps") === eps && (
+                                                        <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0"></span>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <button type="button" onClick={handleAgregarEps} className="w-9 h-9 shrink-0 bg-[#8CC63F] text-white rounded-xl flex items-center justify-center hover:bg-[#7bb335] transition-colors shadow-md shadow-[#8CC63F]/20 cursor-pointer" title="Agregar EPS al catálogo">
+                                    <FiPlus size={18} />
+                                </button>
                             </div>
-                            <button type="button" onClick={handleAgregarEps} className="w-9 h-9 shrink-0 bg-[#8CC63F] text-white rounded-xl flex items-center justify-center hover:bg-[#7bb335] transition-colors shadow-md shadow-[#8CC63F]/20" title="Agregar EPS al catálogo">
-                                <FiPlus size={18} />
-                            </button>
-                        </div>
-                    </FormRow>
-                    <FormRow label="Póliza de salud">
-                        <input {...register("polizaSalud")} className="form-input text-xs w-full md:w-80 rounded-xl border-slate-200 h-9" placeholder="Póliza de salud del paciente" />
-                    </FormRow>
+                        </FormRow>
+                    </div>
+                    <div className="relative z-10">
+                        <FormRow label="Póliza de salud">
+                            <input {...register("polizaSalud")} className="form-input text-xs w-full md:w-80 rounded-xl border-slate-200 h-9" placeholder="Póliza de salud del paciente" />
+                        </FormRow>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1042,7 +1080,7 @@ const SidebarButton = ({ label, active, onClick, icon: Icon, badge }) => (
 );
 
 const SidebarSectionTitle = ({ children }) => (
-    <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 mt-5 px-3 border-b border-slate-50 pb-1.5">
+    <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 lg:mb-2 mt-2 lg:mt-5 px-3 border-b border-slate-50 pb-1.5 shrink-0 whitespace-nowrap">
         {children}
     </div>
 );
@@ -1335,14 +1373,12 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
     useEffect(() => {
         if (!patient?.id) return;
         
-        // Listen to changes in the pagos collection in real-time to auto-update credit/balances
-        // TODO: Implementar real-time subscriptions de Supabase cuando sea necesario
         import("../../../services/billingService").then(({ getPatientFinancials }) => {
             getPatientFinancials(patient.id, userProfile?.inquilino).then(setFinancials);
         }).catch((e) => {
             console.error("Error cargando finanzas del paciente:", e);
         });
-    }, [patient?.id, userProfile?.inquilino]);
+    }, [patient?.id, userProfile?.inquilino, activeTab]);
 
     // Compute active realized debt (items marked as done but not paid) in real-time
     const [realizedDebt, setRealizedDebt] = useState(0);
@@ -1366,13 +1402,20 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                 setRealtimePlans(plans || []);
 
                 // Cargar pagos desde Supabase
-                const { data: payments } = await supabase
+                const { data: rawPayments } = await supabase
                     .from("pagos")
                     .select("*")
-                    .eq("paciente_id", patient.id)
-                    .neq("estado", "anulado");
+                    .eq("paciente_id", patient.id);
                 
-                setRealtimePayments(payments || []);
+                const isNotAnulado = (p) => {
+                    const estadoStr = (p.estado || "").toLowerCase();
+                    const refStr = (p.referencia || "").toUpperCase();
+                    const notesStr = (p.notas || p.notes || "").toUpperCase();
+                    return estadoStr !== "anulado" && !refStr.includes("ANULADO") && !notesStr.includes("ANULADO");
+                };
+                
+                const payments = (rawPayments || []).filter(isNotAnulado);
+                setRealtimePayments(payments);
 
                 // Cargar evoluciones desde Supabase
                 const { data: evolutions } = await supabase
@@ -1380,7 +1423,23 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                     .select("*")
                     .eq("paciente_id", patient.id);
                 
-                setRealtimeEvos(evolutions || []);
+                const parsedEvos = (evolutions || []).map(row => {
+                    let parsed = {};
+                    if (row.tratamiento && typeof row.tratamiento === 'string' && row.tratamiento.startsWith('{')) {
+                        try { parsed = JSON.parse(row.tratamiento); } catch (e) {}
+                    } else if (row.tratamiento && typeof row.tratamiento === 'object') {
+                        parsed = row.tratamiento;
+                    }
+                    return {
+                        ...row,
+                        ...parsed,
+                        id: row.id,
+                        planId: parsed.planId || row.planId,
+                        plantillaItems: parsed.plantillaItems || row.plantillaItems || {}
+                    };
+                });
+                
+                setRealtimeEvos(parsedEvos);
 
             } catch (error) {
                 console.error("Error loading patient data:", error);
@@ -1662,8 +1721,15 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                 <h3 className="text-base font-black text-slate-800 uppercase tracking-tight leading-none">{methods.watch("nombreCompleto") || "Cargando..."}</h3>
                             </div>
                             <div className="flex items-center gap-2.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                <span className="flex items-center gap-1"><FiInfo className="text-indigo-600" /> {patient.tipoDocumento} {patient.nroDocumento}</span>
-                                <span>ID: <span className="text-slate-600">#{patient.nroHistoria || "S/N"}</span></span>
+                                <span className="flex items-center gap-1">
+                                    <FiInfo className="text-[#8CC63F]" /> ID / DOC: <span className="text-slate-700 font-extrabold">{patient.nroDocumento || patient.nroHistoria || "S/N"}</span>
+                                </span>
+                                {patient.nroHistoria && String(patient.nroHistoria).trim() !== String(patient.nroDocumento).trim() && (
+                                    <>
+                                        <span className="text-slate-300">|</span>
+                                        <span>HISTORIA: <span className="text-slate-700 font-extrabold">#{patient.nroHistoria}</span></span>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1699,7 +1765,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
                 {/* 2. STUDIO WORKSPACE (Sidebar + Content) */}
                 <FormProvider {...methods}>
-                    <div className="flex-1 flex flex-col xl:flex-row overflow-hidden">
+                    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
                         {/* SIDEBAR */}
                         <aside className="w-full lg:w-60 bg-white border-b lg:border-b-0 lg:border-r border-slate-100 overflow-x-auto lg:overflow-y-auto p-3 flex flex-row lg:flex-col shrink-0 custom-scrollbar-hidden lg:custom-scrollbar scrollbar-hide">
                             <SidebarSectionTitle>Información General</SidebarSectionTitle>
@@ -1733,7 +1799,13 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                     label="Saldo a favor" 
                                     active={activeTab === "saldo"} 
                                     onClick={() => handleTabChange("saldo")} 
-                                    badge={financials?.totals?.totalSaldosAFavor > 0 ? `$${formatCurrency(financials.totals.totalSaldosAFavor)}` : "$ 0"} 
+                                    badge={
+                                        (typeof financials?.totals?.totalSaldosAFavor === "number")
+                                            ? `$${formatCurrency(financials.totals.totalSaldosAFavor)}`
+                                            : (Number(patient?.saldo_favor || patient?.saldoFavor || 0) > 0)
+                                                ? `$${formatCurrency(patient.saldo_favor || patient.saldoFavor)}`
+                                                : "$ 0"
+                                    } 
                                 />
                                 <SidebarButton icon={FiDollarSign} label="Realizar pago" active={activeTab === "pago"} onClick={() => handleTabChange("pago")} />
                                 {realizedDebt > 0 && !isPatientIncomplete && (

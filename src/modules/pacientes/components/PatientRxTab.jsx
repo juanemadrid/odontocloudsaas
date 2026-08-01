@@ -3,6 +3,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { FiPlus, FiSearch, FiFileText, FiImage, FiTrash2, FiDownload, FiUploadCloud, FiEdit, FiEye, FiX } from "react-icons/fi";
+import { getDoctorsList } from "../../../services/supabaseServices";
 
 
 export default function PatientRxTab({ patient, onUpdate }) {
@@ -31,7 +32,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
     const [selectedFile, setSelectedFile] = useState(null);
     const [nombreVisible, setNombreVisible] = useState("");
     const [descripcion, setDescripcion] = useState("");
-    const [profesionalResp, setProfesionalResp] = useState("");
+    const [profesionalResp, setProfesionalResp] = useState(currentUserName);
     const [fechaAsoc, setFechaAsoc] = useState(new Date().toISOString().split("T")[0]);
     const fileInputRef = useRef(null);
 
@@ -40,35 +41,21 @@ export default function PatientRxTab({ patient, onUpdate }) {
 
     React.useEffect(() => {
         const loadCatalog = async () => {
-            if (!userProfile?.inquilino) return;
             try {
-                if (patient?.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
-                    const list = patient.profesionales.map(p => ({
-                        id: p.id,
-                        nombreCompleto: p.nombreCompleto || p.nombre || "",
-                        ...p
-                    }));
-                    setCatalogProfesionales(list.sort((a,b) => a.nombreCompleto?.localeCompare(b.nombreCompleto) || 0));
-                    return;
+                const list = await getDoctorsList(userProfile, patient);
+                setCatalogProfesionales(list);
+                if (list.length > 0) {
+                    const currentUid = String(userProfile?.uid || userProfile?.id || '');
+                    const me = list.find(p => String(p.id) === currentUid);
+                    const myName = me ? (me.nombreCompleto || me.nombre) : (list[0].nombreCompleto || list[0].nombre);
+                    setProfesionalResp(prev => prev && prev !== "Usuario" ? prev : myName);
                 }
-
-                const { data: profData } = await supabase
-                    .from("profesionales")
-                    .select("*")
-                    .eq("tenant_id", userProfile.inquilino)
-                    .eq("activo", true);
-                const list = (profData || []).map(doc => ({
-                    id: doc.id,
-                    nombreCompleto: doc.nombre_completo || doc.nombre || "",
-                    ...doc
-                }));
-                setCatalogProfesionales(list.sort((a,b) => a.nombreCompleto?.localeCompare(b.nombreCompleto) || 0));
             } catch (err) {
-                console.error("Error loading professionals:", err);
+                console.error("Error loading professionals in PatientRxTab:", err);
             }
         };
         loadCatalog();
-    }, [userProfile, patient?.profesionales]);
+    }, [userProfile, patient]);
 
     const images = useMemo(() => {
         let list = Array.isArray(patient?.rxImagenes) ? patient.rxImagenes : [];
@@ -292,7 +279,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                     onChange={e => setProfesionalResp(e.target.value)} 
                                     className="w-full bg-white border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium text-slate-700 focus:border-blue-500 outline-none cursor-pointer"
                                 >
-                                    <option value="" disabled>Seleccione...</option>
+                                    <option value="">Seleccione...</option>
                                     {catalogProfesionales.map((p) => (
                                         <option key={p.id} value={p.nombreCompleto || p.nombre || p.id}>
                                             {p.nombreCompleto || p.nombre || p.id}
@@ -347,15 +334,15 @@ export default function PatientRxTab({ patient, onUpdate }) {
 
                 {/* TABLE */}
                 <div className="flex-1 overflow-x-auto overflow-y-auto custom-scrollbar">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
+                    <table className="w-full text-left border-collapse min-w-[850px] table-auto">
                         <thead className="bg-[#f8fafc] sticky top-0 z-10 shadow-[0_1px_0_0_#f1f5f9]">
                             <tr>
-                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 w-24 text-center">Vista previa</th>
-                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Profesional</th>
-                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Nombre</th>
-                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Descripción</th>
-                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 w-32">Fecha asoc ↓</th>
-                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center w-32">Acciones</th>
+                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 w-20 text-center">Vista previa</th>
+                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 w-44 whitespace-nowrap">Profesional</th>
+                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 w-64">Nombre</th>
+                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 min-w-[200px]">Descripción</th>
+                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 w-32 whitespace-nowrap">Fecha asoc ↓</th>
+                                <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 text-center w-40 whitespace-nowrap">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -364,21 +351,35 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                     <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
                                         <td className="py-4 px-6 text-center">
                                             {img.type?.startsWith('image/') ? (
-                                                <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden mx-auto shadow-sm">
+                                                <div className="w-11 h-11 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden mx-auto shadow-sm">
                                                     <img src={img.url} alt={img.title} className="w-full h-full object-cover" />
                                                 </div>
                                             ) : (
-                                                <div className="w-12 h-12 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-blue-500 shadow-sm">
+                                                <div className="w-11 h-11 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto text-blue-500 shadow-sm">
                                                     <FiFileText size={20} />
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="py-4 px-6 font-bold text-sm text-slate-800">{img.profesional || '---'}</td>
-                                        <td className="py-4 px-6 font-bold text-sm text-slate-800">{img.title}</td>
-                                        <td className="py-4 px-6 text-sm text-slate-600 truncate max-w-xs" title={img.descripcion}>{img.descripcion || '---'}</td>
-                                        <td className="py-4 px-6 text-sm font-medium text-slate-500">{img.fechaAsocISO || new Date(img.uploadedAtMS).toLocaleDateString()}</td>
-                                        <td className="py-4 px-6 text-center">
-                                            <div className="flex items-center justify-center gap-2 transition-opacity">
+                                        <td className="py-4 px-6 font-bold text-xs text-slate-800 whitespace-nowrap">
+                                            <div className="truncate max-w-[160px]" title={img.profesional || '---'}>
+                                                {img.profesional || '---'}
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-6 text-xs text-slate-800 font-bold max-w-[260px]">
+                                            <div className="line-clamp-2 break-all text-slate-800 leading-snug" title={img.title}>
+                                                {img.title}
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-6 text-xs text-slate-600 max-w-[300px]">
+                                            <div className="line-clamp-2 break-words text-slate-500 leading-relaxed" title={img.descripcion || ''}>
+                                                {img.descripcion || '---'}
+                                            </div>
+                                        </td>
+                                        <td className="py-4 px-6 text-xs font-semibold text-slate-500 whitespace-nowrap">
+                                            {img.fechaAsocISO || new Date(img.uploadedAtMS).toLocaleDateString()}
+                                        </td>
+                                        <td className="py-4 px-6 text-center whitespace-nowrap">
+                                            <div className="flex items-center justify-center gap-1.5">
                                                 <button 
                                                     className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-colors"
                                                     onClick={() => setPreviewItem(img)}

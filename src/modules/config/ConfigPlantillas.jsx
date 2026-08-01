@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import PlantillaEditor from "./PlantillaEditor";
 import { PREDEFINED_TEMPLATES } from "../../data/plantillasPredeterminadas";
+import { getConfigItems, deleteConfigItem } from "../../services/configPersistenceService";
 
 export default function ConfigPlantillas() {
     const { userProfile } = useAuth();
@@ -24,11 +25,7 @@ export default function ConfigPlantillas() {
         setLoading(true);
         const loadPlantillas = async () => {
             try {
-                const { data: dbTemplates } = await supabase
-                    .from("plantillas_clinicas")
-                    .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
-                    .order("nombre", { ascending: true });
+                const dbTemplates = await getConfigItems(inquilino, "plantillas_clinicas", "plantillas_clinicas");
                 setRows([...PREDEFINED_TEMPLATES, ...(dbTemplates || [])]);
             } catch (err) {
                 console.error(err);
@@ -42,7 +39,8 @@ export default function ConfigPlantillas() {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Seguro que desea eliminar esta plantilla? Esta acción es irreversible.")) return;
         try {
-            await supabase.from("plantillas_clinicas").delete().eq("id", id);
+            await deleteConfigItem(inquilino, "plantillas_clinicas", "plantillas_clinicas", id);
+            setRows(prev => prev.filter(r => r.id !== id));
             if (toast?.success) toast.success("Plantilla eliminada correctamente");
         } catch (e) {
             console.error(e);
@@ -102,7 +100,7 @@ export default function ConfigPlantillas() {
 
                     <button
                         onClick={() => { setSelectedId(null); setView("editor"); }}
-                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
                     >
                         <FiPlus size={16} />
                         <span>Nueva Plantilla</span>

@@ -314,16 +314,19 @@ export default function Odontograma({ embeddedPatient }) {
                 .eq("paciente_id", embeddedPatient.id)
                 .order("created_at", { ascending: false });
             if (error) throw error;
-            setSesiones((data || []).map(d => ({
-                id: d.id,
-                data: d.data || {},
-                plan: d.plan || [],
-                observaciones: d.observaciones || "",
-                estado: d.estado || "Abierto",
-                creado: d.created_at,
-                creadoPor: d.creado_por,
-                profesional: d.profesional
-            })));
+            setSesiones((data || []).map(d => {
+                const h = d.hallazgos || {};
+                return {
+                    id: d.id,
+                    data: h.data || d.data || {},
+                    plan: h.plan || d.plan || [],
+                    observaciones: d.observaciones || h.observaciones || "",
+                    estado: h.estado || d.estado || "Abierto",
+                    creado: d.created_at,
+                    creadoPor: h.creadoPor || d.creado_por || "usuario@sistema.com",
+                    profesional: h.profesional || d.profesional || "Profesional de Planta"
+                };
+            }));
         } catch (err) { 
             console.error("Error loading sessions:", err);
             toast?.error("Error al cargar historial"); 
@@ -334,25 +337,40 @@ export default function Odontograma({ embeddedPatient }) {
     const handleNuevo = async () => {
         setLoading(true);
         try {
+            const tenantId = embeddedPatient?.inquilino || embeddedPatient?.tenant_id || userProfile?.tenant_id || userProfile?.inquilino;
+            const creador = userProfile?.email || embeddedPatient?.creadorEmail || "usuario@sistema.com";
+            const prof = userProfile?.nombreCompleto || userProfile?.nombre || embeddedPatient?.dentistaResponsable || "Profesional de Planta";
+
             const { data, error } = await supabase
                 .from("odontogramas")
                 .insert([{
                     paciente_id: embeddedPatient.id,
-                    tenant_id: embeddedPatient.inquilino || embeddedPatient.tenant_id,
-                    creado_por: embeddedPatient.creadorEmail || "usuario@sistema.com",
-                    profesional: embeddedPatient.dentistaResponsable || "Profesional",
-                    estado: "Abierto",
-                    data: {},
-                    plan: [],
+                    tenant_id: tenantId,
+                    hallazgos: {
+                        data: {},
+                        plan: [],
+                        estado: "Abierto",
+                        creadoPor: creador,
+                        profesional: prof
+                    },
                     observaciones: ""
                 }])
                 .select()
                 .single();
             if (error) throw error;
-            abrirEditor({ id: data.id, data: {}, plan: [], observaciones: "", estado: "Abierto" });
+            const h = data.hallazgos || {};
+            abrirEditor({ 
+                id: data.id, 
+                data: h.data || {}, 
+                plan: h.plan || [], 
+                observaciones: data.observaciones || "", 
+                estado: h.estado || "Abierto",
+                creadoPor: h.creadoPor || creador,
+                profesional: h.profesional || prof
+            });
         } catch (err) { 
             console.error("Error creating session:", err);
-            toast?.error("Error al crear sesión"); 
+            toast?.error("Error al crear sesión: " + (err.message || "")); 
         }
         finally { setLoading(false); }
     };
@@ -719,14 +737,18 @@ export default function Odontograma({ embeddedPatient }) {
         if (!currentSesion?.id) return;
         setSaving(true);
         try {
+            const newEstado = finalizar ? "Finalizado" : (currentSesion.estado || "Abierto");
             const { error } = await supabase
                 .from("odontogramas")
                 .update({
-                    data: odontogramaData,
-                    plan: planTratamiento,
-                    observaciones,
-                    updated_at: new Date().toISOString(),
-                    ...(finalizar ? { estado: "Finalizado" } : {})
+                    hallazgos: {
+                        data: odontogramaData,
+                        plan: planTratamiento,
+                        estado: newEstado,
+                        creadoPor: currentSesion.creadoPor || userProfile?.email || "usuario@sistema.com",
+                        profesional: currentSesion.profesional || userProfile?.nombreCompleto || "Profesional de Planta"
+                    },
+                    observaciones: observaciones
                 })
                 .eq("id", currentSesion.id);
 
@@ -846,7 +868,7 @@ export default function Odontograma({ embeddedPatient }) {
                             </button>
                         </div>
                     ) : filtered.map((s, idx) => {
-                        const fecha = s.creado?.toDate ? s.creado.toDate() : new Date();
+                        const fecha = s.creado?.toDate ? s.creado.toDate() : (s.creado ? new Date(s.creado) : new Date());
                         const fechaStr = fecha.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
                         const horaStr = fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
                         const finalizado = s.estado === "Finalizado";

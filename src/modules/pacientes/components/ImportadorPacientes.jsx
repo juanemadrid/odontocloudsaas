@@ -463,7 +463,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
 
                 <div className="p-8 overflow-y-auto flex-1 space-y-6 custom-scrollbar">
                     <p className="text-xs text-slate-500 font-medium leading-relaxed font-sans">
-                        Sube tu base de datos de pacientes exportada directamente desde **OralDrive** o en cualquier formato Excel/CSV. 
+                        Sube tu base de datos de pacientes exportada directamente desde tu software anterior o en cualquier formato Excel/CSV. 
                         El sistema mapeará automáticamente los nombres, apellidos, tipo de identificación, dirección, celular y EPS.
                     </p>
 
@@ -566,7 +566,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
 
                             <button
                                 type="button"
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-[16px] py-3.5 font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all active:scale-98 border-0 mt-4 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-[16px] py-3.5 font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition-all active:scale-98 border-0 mt-4 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                                 onClick={handleImport}
                                 disabled={loading || stats.valid === 0}
                             >

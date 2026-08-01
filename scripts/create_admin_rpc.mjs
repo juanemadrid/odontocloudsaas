@@ -1,14 +1,14 @@
 /**
  * create_admin_rpc.mjs
- * Crea funciones RPC con SECURITY DEFINER en Supabase para que el admin
+ * Crea/actualiza las funciones RPC con SECURITY DEFINER en Supabase para que el admin
  * pueda crear/editar/eliminar usuarios y actualizar su contraseña de Auth sin service key.
  */
 import 'dotenv/config';
+import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://jhdflchyhkwpedtbkusp.supabase.co';
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_G87lxtV9IRKBUA71AFGzmA_8c5qz8wB';
 
-// SQL para crear las funciones RPC con SECURITY DEFINER
 const SQL_CREATE_FUNCTIONS = `
 -- ============================================================
 -- Función: admin_upsert_profile (Actualiza auth.users + profiles)
@@ -31,35 +31,34 @@ SECURITY DEFINER
 SET search_path = public, auth, extensions
 AS $$
 DECLARE
-  v_result JSON;
   v_user_id UUID;
-  v_exists BOOLEAN;
+  v_target_auth_id UUID;
+  v_email_exists BOOLEAN;
 BEGIN
   v_user_id := p_id;
 
-  -- 1. Verificar si el usuario existe por ID o Email en auth.users
-  SELECT EXISTS(SELECT 1 FROM auth.users WHERE id = v_user_id OR email = p_email) INTO v_exists;
+  -- 1. Buscar si el usuario existe en auth.users por ID primero, luego por email
+  SELECT id INTO v_target_auth_id FROM auth.users WHERE id = p_id LIMIT 1;
+  
+  IF v_target_auth_id IS NULL THEN
+    SELECT id INTO v_target_auth_id FROM auth.users WHERE lower(email) = lower(p_email) LIMIT 1;
+  END IF;
 
-  IF NOT v_exists THEN
-    -- Si es nuevo usuario y no existe en auth.users, crearlo
+  -- 2. Si no existe en auth.users, verificar si el email ya está tomado por OTRO usuario
+  IF v_target_auth_id IS NULL THEN
+    SELECT EXISTS(SELECT 1 FROM auth.users WHERE lower(email) = lower(p_email)) INTO v_email_exists;
+    IF v_email_exists THEN
+      RETURN json_build_object('success', false, 'error', 'Este correo electrónico ya está registrado en otra cuenta del sistema.');
+    END IF;
+
+    -- Crear nuevo usuario en auth.users
     INSERT INTO auth.users (
-      id,
-      instance_id,
-      aud,
-      role,
-      email,
-      encrypted_password,
-      email_confirmed_at,
-      raw_app_meta_data,
-      raw_user_meta_data,
-      created_at,
-      updated_at
+      id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at
     ) VALUES (
       v_user_id,
       '00000000-0000-0000-0000-000000000000',
-      'authenticated',
-      'authenticated',
-      p_email,
+      'authenticated', 'authenticated', p_email,
       CASE 
         WHEN p_password IS NOT NULL AND p_password != '' 
         THEN extensions.crypt(p_password, extensions.gen_salt('bf'))
@@ -68,29 +67,41 @@ BEGIN
       NOW(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       json_build_object('full_name', p_full_name, 'role', p_role, 'tenant_id', p_tenant_id)::jsonb,
-      NOW(),
-      NOW()
+      NOW(), NOW()
     );
   ELSE
-    -- Si ya existe en auth.users, obtener su id
-    SELECT id INTO v_user_id FROM auth.users WHERE id = p_id OR email = p_email LIMIT 1;
+    -- El usuario existe en auth.users (ID = v_target_auth_id).
+    -- Verificar si se está intentando cambiar el email a uno que ya pertenece a OTRO usuario distinto
+    IF p_email IS NOT NULL AND p_email != '' THEN
+      SELECT EXISTS(
+        SELECT 1 FROM auth.users 
+        WHERE lower(email) = lower(p_email) 
+          AND id != v_target_auth_id
+      ) INTO v_email_exists;
 
-    -- Actualizar contraseña en auth.users si se proporcionó una nueva
+      IF v_email_exists THEN
+        RETURN json_build_object('success', false, 'error', 'Este correo electrónico ya está registrado en otra cuenta del sistema.');
+      END IF;
+    END IF;
+
+    -- Actualizar auth.users para v_target_auth_id
+    v_user_id := v_target_auth_id;
+
     IF p_password IS NOT NULL AND p_password != '' THEN
       UPDATE auth.users
       SET encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')),
           email = COALESCE(p_email, email),
           updated_at = NOW()
-      WHERE id = v_user_id;
+      WHERE id = v_target_auth_id;
     ELSIF p_email IS NOT NULL AND p_email != '' THEN
       UPDATE auth.users
       SET email = p_email,
           updated_at = NOW()
-      WHERE id = v_user_id;
+      WHERE id = v_target_auth_id;
     END IF;
   END IF;
 
-  -- 2. Upsert en tabla profiles
+  -- 3. Upsert en tabla profiles
   INSERT INTO profiles (id, tenant_id, full_name, email, role, especialidad, registro_medico, telefono, activo)
   VALUES (v_user_id, p_tenant_id, p_full_name, p_email, p_role, p_especialidad, p_registro_medico, p_telefono, p_activo)
   ON CONFLICT (id) DO UPDATE SET
@@ -111,52 +122,6 @@ $$;
 
 GRANT EXECUTE ON FUNCTION admin_upsert_profile TO authenticated;
 GRANT EXECUTE ON FUNCTION admin_upsert_profile TO anon;
-
--- ============================================================
--- Función: admin_toggle_profile_active
--- Activa/desactiva un usuario
--- ============================================================
-CREATE OR REPLACE FUNCTION admin_toggle_profile_active(
-  p_id UUID,
-  p_activo BOOLEAN
-)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  UPDATE profiles SET activo = p_activo WHERE id = p_id;
-  RETURN json_build_object('success', true);
-EXCEPTION WHEN OTHERS THEN
-  RETURN json_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION admin_toggle_profile_active TO authenticated;
-
--- ============================================================
--- Función: admin_delete_profile
--- Elimina un usuario
--- ============================================================
-CREATE OR REPLACE FUNCTION admin_delete_profile(p_id UUID)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  DELETE FROM profiles WHERE id = p_id AND id != auth.uid();
-  DELETE FROM auth.users WHERE id = p_id AND id != auth.uid();
-  RETURN json_build_object('success', true);
-EXCEPTION WHEN OTHERS THEN
-  RETURN json_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION admin_delete_profile TO authenticated;
-
-SELECT 'Functions created successfully' AS status;
 `;
 
-console.log(SQL_CREATE_FUNCTIONS);
+console.log("SQL generated for admin_upsert_profile");

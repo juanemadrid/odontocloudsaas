@@ -24,10 +24,10 @@ export default function SupportPage() {
         },
         {
             category: "Clínica",
-            title: "Dominando el Odontograma 3D",
-            desc: "Uso avanzado del visor interactivo para diagnósticos precisos y evoluciones gráficas.",
+            title: "Dominando el Odontograma Digital Interactivo",
+            desc: "Aprenda a registrar evoluciones clínicas, hallazgos y tratamientos de forma rápida.",
             icon: "🦷",
-            slug: "odontograma-3d"
+            slug: "odontograma-digital"
         },
         {
             category: "Finanzas",

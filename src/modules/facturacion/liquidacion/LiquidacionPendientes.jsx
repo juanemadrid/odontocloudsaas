@@ -35,13 +35,37 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
     const loadProfessionals = async () => {
         if (!inquilino) return;
         try {
-            const { data: pSnap } = await supabase
-                .from("profesionales")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            const list = (pSnap || []).map(d => ({
+            let profsList = [];
+            try {
+                const { data: profData } = await supabase
+                    .from("profiles")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (profData && profData.length > 0) profsList = profData;
+            } catch (e) {}
+
+            if (profsList.length === 0) {
+                try {
+                    const { data: profData2 } = await supabase
+                        .from("profesionales")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (profData2 && profData2.length > 0) profsList = profData2;
+                } catch (e) {}
+            }
+
+            if (profsList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                profsList = cfgRow?.config?.profesionales || cfgRow?.config?.profiles || [];
+            }
+
+            const list = profsList.map(d => ({
                 id: d.id,
-                nombre: d.nombreCompleto || d.nombre || "Doctor",
+                nombre: d.full_name || d.nombreCompleto || d.nombre_completo || d.nombre || "Doctor",
                 cedula: d.cedula || d.documento || ""
             }));
             list.sort((a, b) => a.nombre.localeCompare(b.nombre));

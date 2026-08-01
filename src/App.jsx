@@ -11,12 +11,15 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import ModernLanding from "./pages/ModernLanding";
 import ModernLayout from "./layout/ModernLayout";
-import Servicios from "./pages/Servicios"; // Restored dedicated page
-import Planes from "./pages/Planes"; // Restored dedicated page
+import Servicios from "./pages/Servicios";
+import Planes from "./pages/Planes";
 import { FAQPage } from "./pages/SectionPages";
 import PatientPortal from "./modules/portal/PatientPortal";
 import CmsPreview from "./pages/CmsPreview";
 import ResetPassword from "./pages/ResetPassword";
+import ClinicServiciosPage from "./pages/landing/ClinicServiciosPage";
+import ClinicNosotrosPage from "./pages/landing/ClinicNosotrosPage";
+import ClinicSedesPage from "./pages/landing/ClinicSedesPage";
 
 // Lazy Imports
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
@@ -74,11 +77,12 @@ export default function App() {
         <Route element={<ModernLayout />}>
           <Route path="/" element={<ModernLanding isMaster={true} />} />
           <Route path="/c/:clinicSlug" element={<ModernLanding />} />
-          <Route path="/c/:clinicSlug/nosotros" element={<ModernLanding section="nosotros" />} />
-          <Route path="/c/:clinicSlug/servicios" element={<ModernLanding section="servicios" />} />
-          <Route path="/c/:clinicSlug/sedes" element={<ModernLanding section="sedes" />} />
+          <Route path="/c/:clinicSlug/nosotros" element={<ClinicNosotrosPage />} />
+          <Route path="/c/:clinicSlug/servicios" element={<ClinicServiciosPage />} />
+          <Route path="/c/:clinicSlug/sedes" element={<ClinicSedesPage />} />
 
           <Route path="/servicios" element={<Servicios />} />
+          <Route path="/funcionalidades" element={<Servicios />} />
           <Route path="/planes" element={<Planes />} />
           <Route path="/faq" element={<FAQPage />} />
         </Route>

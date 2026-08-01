@@ -33,10 +33,23 @@ export default function TrasladosList({ onNew }) {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const { data: list } = await supabase
-        .from("traslados")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      let list = [];
+      try {
+        const { data } = await supabase
+          .from("traslados")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.traslados || [];
+      }
 
       const start = parseLocalDate(fechaInicio); start.setHours(0,0,0,0);
       const end = parseLocalDate(fechaFin); end.setHours(23,59,59,999);

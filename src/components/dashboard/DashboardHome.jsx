@@ -158,6 +158,34 @@ export default function DashboardHome({ userName, companyName }) {
     const dateLabel = now.toLocaleDateString("es-CO", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
     const initials = getInitials(userName || "U");
 
+    // ── Título médico (Dr. / Dra.) e Identidad ────────────────────
+    const rawName = (userName || userProfile?.full_name || userProfile?.nombre || "Usuario").trim();
+    const cleanName = rawName.replace(/^(dr|dra|doctor|doctora)\.?\s+/i, "");
+    const firstName = cleanName.split(" ")[0];
+
+    const genderStr = (userProfile?.genero || userProfile?.sexo || "").toString().toLowerCase();
+    const isFemale = genderStr.startsWith("f") || genderStr.includes("fem") || 
+                     firstName.toLowerCase().endsWith("is") || 
+                     firstName.toLowerCase().endsWith("a") || 
+                     firstName.toLowerCase().endsWith("eth") ||
+                     firstName.toLowerCase().endsWith("y");
+
+    const isDoctorRole = rol === "doctor" || rol === "odontologo" || 
+                         (rolLabel || "").toLowerCase().includes("odontól") || 
+                         (rolLabel || "").toLowerCase().includes("doct");
+
+    let titlePrefix = "";
+    if (isDoctorRole) {
+        if (/^dra\.?\s+/i.test(rawName)) {
+            titlePrefix = "Dra. ";
+        } else if (/^dr\.?\s+/i.test(rawName)) {
+            titlePrefix = "Dr. ";
+        } else {
+            titlePrefix = isFemale ? "Dra. " : "Dr. ";
+        }
+    }
+    const displayName = `${titlePrefix}${firstName}`;
+
     // ── Cargar avisos con caché ─────────────────────────────────
     const loadAvisos = useCallback(async () => {
         setLoadingAvisos(true);
@@ -171,16 +199,42 @@ export default function DashboardHome({ userName, companyName }) {
                 }
             } catch (e) {}
 
-            const { data, error } = await supabase
-                .from("anuncios_sistema")
-                .select("id, titulo, contenido, tipo, activo, created_at, orden")
-                .eq("activo", true)
-                .order("orden", { ascending: false })
-                .order("created_at", { ascending: false });
+            let dbList = [];
+            try {
+                const { data, error } = await supabase
+                    .from("anuncios_sistema")
+                    .select("*")
+                    .eq("activo", true)
+                    .order("orden", { ascending: false })
+                    .order("created_at", { ascending: false });
 
-            if (error) { if (error.code === "42P01") { setAvisos([]); return; } throw error; }
+                if (!error && Array.isArray(data)) dbList = data;
+            } catch (e) {}
 
-            const list = data || [];
+            let configList = [];
+            try {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
+                    .maybeSingle();
+
+                if (cfgRow?.config?.system_announcements && Array.isArray(cfgRow.config.system_announcements)) {
+                    configList = cfgRow.config.system_announcements.filter(a => a.activo !== false);
+                }
+            } catch (e) {}
+
+            const mergedMap = new Map();
+            configList.forEach(item => mergedMap.set(item.id || item.titulo, item));
+            dbList.forEach(item => mergedMap.set(item.id || item.titulo, item));
+
+            const list = Array.from(mergedMap.values()).sort((a, b) => {
+                const ordA = Number(a.orden || 0);
+                const ordB = Number(b.orden || 0);
+                if (ordA !== ordB) return ordB - ordA;
+                return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+            });
+
             setAvisos(list);
             try { sessionStorage.setItem(cacheKey, JSON.stringify({ data: list, ts: Date.now() })); } catch (e) {}
         } catch (e) {
@@ -232,18 +286,37 @@ export default function DashboardHome({ userName, companyName }) {
                     </div>
 
                     <div className="relative z-10 p-7 md:p-10 flex flex-col md:flex-row items-start md:items-center gap-6">
-                        {/* Avatar */}
-                        <div style={{ flexShrink: 0 }}>
+                        {/* Avatar con Identidad Odontológica y Centrado Milimétrico */}
+                        <div style={{ flexShrink: 0, position: "relative" }}>
                             <div style={{
-                                width: 72, height: 72, borderRadius: 20,
-                                background: "rgba(255,255,255,0.15)",
-                                border: "2px solid rgba(255,255,255,0.3)",
+                                width: 76, height: 76, borderRadius: 22,
+                                background: "linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.08) 100%)",
+                                border: "2px solid rgba(255,255,255,0.35)",
                                 display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: 26, fontWeight: 900, color: "white",
-                                backdropFilter: "blur(8px)",
-                                boxShadow: "0 8px 32px rgba(0,0,0,0.2)"
+                                backdropFilter: "blur(12px)",
+                                boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+                                position: "relative"
                             }}>
-                                {initials}
+                                {/* Ícono de diente Odontología (Centrado Geométrico 100%) */}
+                                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.3))" }}>
+                                    <path d="M12 2C8.5 2 6 4 6 7c0 2.5 1 4.5 1.5 7.5.5 3 1.5 6.5 3.5 6.5 1.5 0 1.5-2 1.5-3.5 0-1.5 1-2 1.5-2s1.5.5 1.5 2c0 1.5 0 3.5 1.5 3.5 2 0 3-3.5 3.5-6.5C21 11.5 22 9.5 22 7c0-3-2.5-5-6-5-1.5 0-3 1-4 2-1-1-2.5-2-4-2z" fill="rgba(255,255,255,0.25)" />
+                                </svg>
+                            </div>
+
+                            {/* Badge de Iniciales en esquina inferior derecha */}
+                            <div style={{
+                                position: "absolute",
+                                bottom: -4, right: -4,
+                                background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                                border: "2px solid #ffffff",
+                                borderRadius: 10,
+                                padding: "2px 7px",
+                                boxShadow: "0 4px 10px rgba(0,0,0,0.3)",
+                                display: "flex", alignItems: "center", justifyContent: "center"
+                            }}>
+                                <span style={{ fontSize: 10, fontWeight: 900, color: "#ffffff", letterSpacing: "0.05em", lineHeight: 1 }}>
+                                    {initials}
+                                </span>
                             </div>
                         </div>
 
@@ -260,7 +333,7 @@ export default function DashboardHome({ userName, companyName }) {
                                 <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 500, textTransform: "capitalize" }}>{dateLabel}</span>
                             </div>
                             <h1 style={{ fontSize: 28, fontWeight: 900, color: "white", margin: "4px 0 2px", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
-                                {saludo}, {(userName || "Usuario").split(" ")[0]}! 👋
+                                {saludo}, {displayName}! 👋
                             </h1>
                             {companyName && companyName !== "OdontoCloud" && (
                                 <p style={{ fontSize: 13, color: "rgba(196,181,253,0.85)", fontWeight: 600, marginTop: 4 }}>

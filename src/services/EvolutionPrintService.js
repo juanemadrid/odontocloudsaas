@@ -79,8 +79,8 @@ export const EvolutionPrintService = {
             // Header HTML
             const headerHTML = `
                 <div style="position: relative; padding-bottom: 20px; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-start;">
-                    <!-- Top Blue Gradient Bar -->
-                    <div style="position: absolute; top: -40px; left: -40px; right: -40px; height: 8px; background: linear-gradient(90deg, #2563eb, #3b82f6, #60a5fa);"></div>
+                    <!-- Top Brand Accent Bar -->
+                    <div style="position: absolute; top: -40px; left: -40px; right: -40px; height: 8px; background: linear-gradient(90deg, #8dc63f, #a2d654, #7cb035);"></div>
 
                     <div style="display: flex; gap: 18px; align-items: center;">
                         ${logoHTML}
@@ -235,15 +235,33 @@ export const EvolutionPrintService = {
                         `;
                     }
 
+                    const isNota = evo.type === 'nota';
+                    const badgeText = isRemission ? 'Remisión' : isNota ? 'Nota Aclaratoria' : 'Evolución';
+                    const badgeBg = isRemission ? '#fff7ed' : isNota ? '#faf5ff' : '#f0fdf4';
+                    const badgeColor = isRemission ? '#c2410c' : isNota ? '#6b21a8' : '#15803d';
+                    const badgeBorder = isRemission ? '#ffedd5' : isNota ? '#f3e8ff' : '#dcfce7';
+
                     return `
                         <div style="margin-bottom: 18px; padding: 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <span style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase;">
-                                    ${patientName} (${profName})
-                                </span>
-                                <span style="font-size: 9.5px; font-weight: 800; color: #64748b;">
-                                    ${dateStr} — ${timeStr}
-                                </span>
+                                <div>
+                                    <span style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase;">
+                                        ${patientName} (${profName})
+                                    </span>
+                                    ${isRemission && evo.doctorQuienRecibeName ? `
+                                        <div style="font-size: 9px; font-weight: 800; color: #c2410c; margin-top: 2px;">
+                                            RECEPTOR: ${evo.doctorQuienRecibeName}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 8px; font-weight: 900; background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder}; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
+                                        ${badgeText}
+                                    </span>
+                                    <span style="font-size: 9.5px; font-weight: 800; color: #64748b;">
+                                        ${dateStr} — ${timeStr}
+                                    </span>
+                                </div>
                             </div>
 
                             ${procTagsHTML ? `<div style="margin-top: 6px; margin-bottom: 6px;">${procTagsHTML}</div>` : ''}

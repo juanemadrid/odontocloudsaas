@@ -137,7 +137,7 @@ export default function HistoriaClinicaContainer({ patient }) {
                 const { data: docData } = await supabase
                     .from("documentos_clinicos")
                     .select("*")
-                    .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`)
+                    .eq("paciente_id", patient.id)
                     .order("created_at", { ascending: false });
                 setDocuments(docData || []);
             } catch (err) {

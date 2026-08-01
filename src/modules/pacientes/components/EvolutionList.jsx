@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
-import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter } from 'react-icons/fi';
+import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter, FiLock } from 'react-icons/fi';
 
 
 // SVG de Huella digital codificado para simulador
@@ -23,19 +23,44 @@ const getSelectedProcedures = (plantillaItems, planItemsLookup = {}) => {
         .filter(p => p.desc);
 };
 
+const printHTMLInHiddenIframe = (htmlContent) => {
+    let iframe = document.getElementById("oc-print-iframe");
+    if (!iframe) {
+        iframe = document.createElement("iframe");
+        iframe.id = "oc-print-iframe";
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "0px";
+        iframe.style.height = "0px";
+        iframe.style.border = "none";
+        iframe.style.visibility = "hidden";
+        document.body.appendChild(iframe);
+    }
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+
+    setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+    }, 150);
+};
+
 // ======================================================
-// FUNCIÓN: Imprimir una sola evolución al estilo OralDrive
+// FUNCIÓN: Imprimir una sola evolución al estilo unificado de Historia Clínica
 // ======================================================
 const printEvolution = (evo, patient, clinicInfo = {}) => {
-    const logo = clinicInfo.logo || '';
-    const clinicNombre = clinicInfo.nombre || clinicInfo.name || 'Clínica Dental';
-    const clinicNit = clinicInfo.nit || '';
-    const clinicDireccion = clinicInfo.direccion || clinicInfo.address || '';
-    const clinicTelefono = clinicInfo.telefono || clinicInfo.phone || '';
+    const logoUrl = clinicInfo.logo || '';
+    const clinicName = clinicInfo.nombre || clinicInfo.name || 'CLÍNICA DENTAL';
+    const clinicNit = clinicInfo.nit || '—';
+    const clinicAddress = clinicInfo.direccion || clinicInfo.address || '—';
+    const clinicPhone = clinicInfo.telefono || clinicInfo.phone || '—';
 
-    const patientName = patient?.nombreCompleto || patient?.nombre || 'Paciente';
+    const patientName = patient?.nombreCompleto || patient?.nombre || 'Paciente Sin Nombre';
     const fechaNac = patient?.fechaNacimiento ? new Date(patient.fechaNacimiento) : null;
-    const edad = fechaNac ? Math.floor((new Date() - fechaNac) / (365.25 * 24 * 60 * 60 * 1000)) : '';
+    const edad = patient?.edad || (fechaNac && !isNaN(fechaNac.getTime()) ? Math.floor((new Date() - fechaNac) / (365.25 * 24 * 60 * 60 * 1000)) : 'No registrada');
 
     const dateStr = evo.date ? new Date(evo.date).toLocaleDateString('es-CO', {
         weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
@@ -51,104 +76,300 @@ const printEvolution = (evo, patient, clinicInfo = {}) => {
         .map(v => v.desc || v.procedimiento || v.nombre || '')
         .filter(Boolean);
 
+    const docBadgeLabel = evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : 'Evolución';
+
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <title>Evolución — ${patientName}</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #1e293b; padding: 18mm 15mm; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
-    .clinic-logo { max-height: 65px; max-width: 140px; object-fit: contain; }
-    .clinic-name { font-size: 11pt; font-weight: 900; text-transform: uppercase; color: #0f172a; }
-    .clinic-meta { font-size: 7.5pt; color: #64748b; margin-top: 3px; }
-    .badge { font-size: 7pt; font-weight: 900; background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 3px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.1em; }
-    table.info { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-    table.info td { border: 1px solid #cbd5e1; padding: 4px 7px; font-size: 8pt; }
-    table.info td.lbl { font-weight: 700; background: #f8fafc; white-space: nowrap; }
-    .section-title { font-size: 9pt; font-weight: 900; text-align: center; text-transform: uppercase; letter-spacing: 0.15em; border-top: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 4px 0; margin: 10px 0 8px; color: #334155; }
-    .evo-header { font-size: 9pt; font-weight: 900; color: #0f172a; margin-bottom: 3px; }
-    .evo-date { font-size: 8pt; color: #64748b; margin-bottom: 6px; }
-    .evo-text { font-size: 8.5pt; line-height: 1.55; color: #334155; white-space: pre-wrap; word-break: break-word; }
-    .proc-tag { display: inline-block; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 6px; font-size: 7.5pt; font-weight: 700; margin: 2px 3px 2px 0; color: #475569; }
-    @media print { @page { size: Letter; margin: 15mm 12mm; } body { padding: 0; } }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      padding: 30px;
+      max-width: 850px;
+      margin: 0 auto;
+      line-height: 1.5;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 4px solid #2563eb;
+      padding-bottom: 25px;
+      margin-bottom: 25px;
+      gap: 20px;
+    }
+    .logo-container {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    .clinic-logo {
+      max-height: 75px;
+      max-width: 160px;
+      object-fit: contain;
+    }
+    .logo-text-placeholder {
+      width: 70px;
+      height: 70px;
+      background: #2563eb;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 32px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .clinic-title {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 900;
+      color: #0f172a;
+      text-transform: uppercase;
+      letter-spacing: -1px;
+    }
+    .clinic-meta {
+      margin: 2px 0;
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 500;
+    }
+    .doc-info {
+      text-align: right;
+    }
+    .doc-badge {
+      background: #eff6ff;
+      padding: 12px 20px;
+      border-radius: 16px;
+      border: 2px solid #dbeafe;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+    .doc-badge span {
+      font-size: 16px;
+      font-weight: 900;
+      color: #1d4ed8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .doc-meta {
+      margin: 0;
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .patient-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 25px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .info-group {
+      padding: 6px 10px;
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #f1f5f9;
+    }
+    .info-label {
+      font-size: 8px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #94a3b8;
+      letter-spacing: 0.05em;
+      margin-bottom: 3px;
+    }
+    .info-value {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #1e3a8a;
+      letter-spacing: 0.08em;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 5px;
+      margin-top: 30px;
+      margin-bottom: 15px;
+    }
+    .document-item {
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #2563eb;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 15px;
+      background: #ffffff;
+    }
+    .document-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+      color: #475569;
+    }
+    .document-type {
+      color: #2563eb;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .document-body {
+      font-size: 11.5px;
+      color: #334155;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .proc-tag {
+      display: inline-block;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 8pt;
+      font-weight: 800;
+      margin: 3px 4px 6px 0;
+      color: #166534;
+      text-transform: uppercase;
+    }
+    .signature-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px dashed #cbd5e1;
+    }
+    .sig-box {
+      text-align: center;
+    }
+    .sig-line {
+      border-bottom: 1.5px solid #64748b;
+      height: 45px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .sig-title {
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+    @media print {
+      body { padding: 15px; }
+      @page { size: Letter; margin: 15mm 12mm; }
+    }
   </style>
 </head>
 <body>
   <div class="header">
-    <div style="display:flex;gap:12px;align-items:flex-start;">
-      ${logo ? `<img src="${logo}" class="clinic-logo" crossorigin="anonymous" />` : `<div style="width:50px;height:50px;background:#e0f2fe;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11pt;color:#0284c7;">&#x1F9B7;</div>`}
+    <div class="logo-container">
+      ${logoUrl ? `<img src="${logoUrl}" class="clinic-logo" crossorigin="anonymous" />` : `<div class="logo-text-placeholder">${clinicName.substring(0, 1) || "O"}</div>`}
       <div>
-        <div class="clinic-name">${clinicNombre}</div>
-        <div class="clinic-meta">${[clinicNit, clinicDireccion, clinicTelefono].filter(Boolean).join(' · ')}</div>
+        <h1 class="clinic-title">${clinicName}</h1>
+        <p class="clinic-meta" style="font-weight: 800;">NIT: ${clinicNit}</p>
+        <p class="clinic-meta">${clinicAddress}</p>
+        <p class="clinic-meta">TEL: ${clinicPhone}</p>
       </div>
     </div>
-    <span class="badge">${evo.type === 'remission' ? 'Remisión' : 'Evolución'}</span>
+    <div class="doc-info">
+      <div class="doc-badge">
+        <span>${docBadgeLabel}</span>
+      </div>
+      <p class="doc-meta">EXPEDIENTE REGISTRO CLÍNICO</p>
+    </div>
   </div>
 
-  <table class="info">
-    <tbody>
-      <tr>
-        <td class="lbl" style="width:18%">Nombre del paciente</td>
-        <td style="width:32%">${patientName}</td>
-        <td class="lbl" style="width:12%">Edad</td>
-        <td style="width:10%">${edad}</td>
-        <td class="lbl" style="width:14%">Nro Historia</td>
-        <td>${patient?.documento || patient?.cedula || '—'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Tipo documento</td>
-        <td>${patient?.tipoDocumento || 'Cédula de ciudadanía'}</td>
-        <td class="lbl">Nro de documento</td>
-        <td colspan="3">${patient?.documento || patient?.cedula || '—'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Sexo</td>
-        <td>${patient?.genero || patient?.sexo || '—'}</td>
-        <td class="lbl">Fecha y lugar de nacimiento</td>
-        <td colspan="3">${fechaNac ? fechaNac.toLocaleDateString('es-CO') : '—'} · ${patient?.lugarNacimiento || '—'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Correo</td>
-        <td>${patient?.email || patient?.correo || '—'}</td>
-        <td class="lbl">Ocupación</td>
-        <td>${patient?.ocupacion || '—'}</td>
-        <td class="lbl">Fecha impresión</td>
-        <td>${printDate}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Teléfonos</td>
-        <td>${patient?.telefono || patient?.celular || '—'}</td>
-        <td class="lbl">Estado civil</td>
-        <td>${patient?.estadoCivil || '—'}</td>
-        <td class="lbl">Doctor/Profesional</td>
-        <td>${evo.profesional || '—'}</td>
-      </tr>
-      <tr>
-        <td class="lbl">Nombre responsable</td>
-        <td>${patient?.nombreResponsable || patient?.acudiente || '—'}</td>
-        <td class="lbl">Teléfono responsable</td>
-        <td class="meta-label">Paciente</td>
-        <td><strong>${patientName}</strong></td>
-      </tr>
-      <tr>
-        <td class="meta-label">Fecha / Hora</td>
-        <td>${dateStr} ${timeStr}</td>
-      </tr>
-      <tr>
-        <td class="meta-label">Profesional</td>
-        <td>${evo.profesional || 'Odontólogo Responsable'}</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="patient-card">
+    <div class="info-group">
+      <div class="info-label">Nombre Completo</div>
+      <div class="info-value">${patientName}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">Identificación</div>
+      <div class="info-value">${patient?.tipoDocumento || 'Cédula de ciudadanía'} ${patient?.documento || patient?.cedula || 'N/A'}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">Nro. Historia</div>
+      <div class="info-value">${patient?.documento || patient?.cedula || patient?.id || 'N/A'}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">Celular</div>
+      <div class="info-value">${patient?.celular || patient?.telefono || 'No registrado'}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">Correo Electrónico</div>
+      <div class="info-value">${patient?.email || patient?.correo || 'No registrado'}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">Edad</div>
+      <div class="info-value">${edad}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">EPS</div>
+      <div class="info-value">${patient?.nombreEps || patient?.eps || 'No registrada'}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">Tipo Vinculación</div>
+      <div class="info-value">${patient?.tipoVinculacion || 'Particular'}</div>
+    </div>
+    <div class="info-group">
+      <div class="info-label">Fecha de Ingreso</div>
+      <div class="info-value">${patient?.created_at ? new Date(patient.created_at).toLocaleDateString('es-CO') : printDate}</div>
+    </div>
+  </div>
 
-  <div class="section-title">Evolución</div>
+  <div class="section-title">Evoluciones y Documentos Clínicos</div>
 
-  <div class="evo-header">${patientName}${evo.profesional ? ` (${evo.profesional})` : ''}</div>
-  <div class="evo-date">${dateStr} — ${timeStr}</div>
-  ${procedimientos.length > 0 ? `<div style="margin-bottom:6px;">${procedimientos.map(p => `<span class="proc-tag">${p}</span>`).join('')}</div>` : ''}
-  <p class="evo-text">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+  <div class="document-item">
+    <div class="document-header">
+      <div>
+        <span class="document-type">${docBadgeLabel}</span>
+        <span style="color:#64748b; margin-left: 8px;">(${evo.profesional || 'Odontólogo Responsable'})</span>
+      </div>
+      <div>${dateStr} — ${timeStr}</div>
+    </div>
+
+    ${procedimientos.length > 0 ? `<div style="margin-bottom: 10px;">${procedimientos.map(p => `<span class="proc-tag">${p}</span>`).join('')}</div>` : ''}
+
+    <div class="document-body">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+
+    ${(evo.doctorSignature || evo.patientSignature) ? `
+    <div class="signature-grid">
+      <div class="sig-box">
+        <div class="sig-line">
+          ${evo.doctorSignature?.signature ? `<span style="font-size:10px;font-weight:900;color:#1e293b;">${evo.doctorSignature.signature}</span>` : ''}
+        </div>
+        <div class="sig-title">Doctor / Profesional</div>
+      </div>
+      <div class="sig-box">
+        <div class="sig-line">
+          ${evo.patientSignature ? `<img src="${evo.patientSignature}" style="max-height:40px;object-fit:contain;" />` : ''}
+        </div>
+        <div class="sig-title">Paciente</div>
+      </div>
+    </div>` : ''}
+  </div>
 </body>
 </html>`;
 
@@ -157,44 +378,70 @@ const printEvolution = (evo, patient, clinicInfo = {}) => {
 
 function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onPrint, patientName, planItemsLookup }) {
     const isRemission = evo.type === 'remission';
+    const isNota = evo.type === 'nota';
+    const hasRealizedItems = Object.values(evo.plantillaItems || {}).some(
+        item => item?.realizado === true
+    );
+    const isFinalized = evo.isFinalized === true || evo.estadoEvolucion === 'finalizado' || hasRealizedItems;
     const procedures = getSelectedProcedures(evo.plantillaItems, planItemsLookup);
     const isSignedDoc = !!evo.doctorSignature?.signature;
     const isSignedPat = !!evo.patientSignature;
     const text = evo.description || evo.comentario || '';
 
-    const dateStr = evo.date.toLocaleDateString('es-CO', {
+    const dateObj = evo.date instanceof Date ? evo.date : new Date(evo.date || Date.now());
+
+    const dateStr = dateObj.toLocaleDateString('es-CO', {
         weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'
     });
-    const timeStr = evo.date.toLocaleTimeString('es-CO', {
+    const timeStr = dateObj.toLocaleTimeString('es-CO', {
         hour: '2-digit', minute: '2-digit', hour12: true
     });
 
     const procedureNames = procedures.map(p =>
         p.dientes ? `[Diente ${p.dientes}] ${p.desc}` : p.desc
     );
-    const infoLine = [evo.treatment, procedureNames.join(', ')].filter(Boolean).join(' - ');
+    const infoLine = isNota ? '' : [evo.treatment, procedureNames.join(', ')].filter(Boolean).join(' - ');
+
+    const badgeClass = isRemission
+        ? 'text-amber-700 bg-amber-50 border-amber-200'
+        : isNota
+        ? 'text-purple-700 bg-purple-50 border-purple-200'
+        : isFinalized
+        ? 'text-emerald-800 bg-emerald-100 border-emerald-300'
+        : 'text-[#5a8a2e] bg-[#f0f9e8] border-[#c5e4a0]';
+
+    const badgeLabel = isRemission 
+        ? 'Remisión' 
+        : isNota 
+        ? 'Nota Aclaratoria' 
+        : isFinalized
+        ? 'Finalizado'
+        : 'Evolución';
 
     return (
         <div className="bg-white rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all p-4">
 
             {/* FILA 1: Paciente (Doctor) + badge + acciones */}
             <div className="flex items-start justify-between gap-3 mb-1.5">
-                <p className="text-[12px] font-black text-slate-800 uppercase tracking-tight leading-tight">
-                    {patientName}
-                    {evo.profesional && (
-                        <span className="font-semibold text-slate-500 normal-case tracking-normal">
-                            {' '}({evo.profesional})
-                        </span>
+                <div>
+                    <p className="text-[12px] font-black text-slate-800 uppercase tracking-tight leading-tight">
+                        {patientName}
+                        {evo.profesional && (
+                            <span className="font-semibold text-slate-500 normal-case tracking-normal">
+                                {' '}({evo.profesional})
+                            </span>
+                        )}
+                    </p>
+                    {isRemission && evo.doctorQuienRecibeName && (
+                        <p className="text-[10px] font-bold text-amber-700 mt-0.5">
+                            Receptor: <span className="font-extrabold">{evo.doctorQuienRecibeName}</span>
+                        </p>
                     )}
-                </p>
+                </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border whitespace-nowrap ${
-                        isRemission
-                            ? 'text-orange-600 bg-orange-50 border-orange-100'
-                            : 'text-[#5a8a2e] bg-[#f0f9e8] border-[#c5e4a0]'
-                    }`}>
-                        {isRemission ? 'Remisión' : 'Evolución'}
+                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border whitespace-nowrap ${badgeClass}`}>
+                        {badgeLabel}
                     </span>
 
                     {/* FIRMA DOCTOR (D) */}
@@ -236,23 +483,9 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                     <button
                         onClick={() => onPrint(evo)}
                         className="w-7 h-7 bg-slate-50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-100"
-                        title="Imprimir esta evolución"
+                        title="Imprimir este registro"
                     >
                         <FiPrinter size={12} />
-                    </button>
-                    <button
-                        onClick={() => onEdit(evo)}
-                        className="w-7 h-7 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center transition-all"
-                        title="Editar"
-                    >
-                        <FiEdit3 size={12} />
-                    </button>
-                    <button
-                        onClick={() => onDelete(evo.id)}
-                        className="w-7 h-7 bg-rose-50 hover:bg-rose-500 text-rose-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-rose-100"
-                        title="Eliminar"
-                    >
-                        <FiTrash2 size={12} />
                     </button>
                 </div>
             </div>
@@ -262,19 +495,25 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 {dateStr} — {timeStr}
             </p>
 
-            {/* FILA 3: Texto de la evolución */}
+            {/* FILA 3: Texto del registro */}
             {text && (
                 <p className="text-[11px] text-slate-600 font-medium leading-relaxed mb-2 line-clamp-3">
                     {text}
                 </p>
             )}
 
-            {/* FILA 4: Plan · Procedimientos */}
-            {infoLine && (
-                <p className="text-[11px] font-bold text-slate-500">
-                    {infoLine}
-                </p>
-            )}
+            {/* FILA 4: Plan · Procedimientos + Registro Clínico Permanente (Candado) */}
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
+                {infoLine ? (
+                    <p className="text-[11px] font-bold text-slate-500">
+                        {infoLine}
+                    </p>
+                ) : <span />}
+                
+                <span className="flex items-center gap-1 text-[9px] font-bold text-slate-400 cursor-help" title="Registro clínico inalterable">
+                    <FiLock size={12} className="text-slate-400" />
+                </span>
+            </div>
         </div>
     );
 }
@@ -661,7 +900,7 @@ function SignatureModal({ isOpen, onClose, evolution, patient, onSaveSignature }
     );
 }
 
-export default function EvolutionList({ patientId, patientName, patientObj, onEdit, searchTerm }) {
+export default function EvolutionList({ patientId, patientName, patientObj, onEdit, searchTerm, refreshKey }) {
     const { userProfile } = useAuth();
     const [evolutions, setEvolutions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -672,13 +911,36 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     
     const toast = useToast();
 
-    // Info de la clínica para el PDF
+    const [clinicConfig, setClinicConfig] = useState(null);
+
+    useEffect(() => {
+        const fetchClinicConfig = async () => {
+            const tenantId = userProfile?.inquilino || userProfile?.tenantId || patientObj?.tenant_id;
+            if (!tenantId) return;
+            try {
+                const { data } = await supabase
+                    .from("tenants")
+                    .select("*")
+                    .eq("id", tenantId)
+                    .maybeSingle();
+                if (data) {
+                    setClinicConfig(data);
+                }
+            } catch (e) {
+                console.error("Error loading clinic config for print:", e);
+            }
+        };
+        fetchClinicConfig();
+    }, [userProfile, patientObj]);
+
+    // Info de la clínica para el PDF / Impresión
     const clinicInfo = {
-        logo: userProfile?.tenant?.logo || '',
-        nombre: userProfile?.tenant?.name || userProfile?.tenant?.nombre || '',
-        nit: userProfile?.tenant?.nit || '',
-        direccion: userProfile?.tenant?.direccion || userProfile?.tenant?.address || '',
-        telefono: userProfile?.tenant?.telefono || userProfile?.tenant?.phone || '',
+        logo: clinicConfig?.logo || clinicConfig?.logo_url || clinicConfig?.logoUrl || userProfile?.tenant?.logo || userProfile?.tenant?.logo_url || '',
+        nombre: clinicConfig?.nombre_comercial || clinicConfig?.nombreComercial || clinicConfig?.name || clinicConfig?.nombre || userProfile?.tenant?.nombreComercial || 'CLÍNICA DENTAL',
+        nit: clinicConfig?.nit || userProfile?.tenant?.nit || '',
+        direccion: clinicConfig?.address || clinicConfig?.direccion || userProfile?.tenant?.direccion || '',
+        telefono: clinicConfig?.phone || clinicConfig?.telefono || userProfile?.tenant?.telefono || '',
+        email: clinicConfig?.email || userProfile?.tenant?.email || ''
     };
 
     const handlePrintEvolution = (evo) => {
@@ -693,13 +955,23 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                 const { data } = await supabase
                     .from("evoluciones")
                     .select("*")
-                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
+                    .eq("paciente_id", patientId)
                     .order("created_at", { ascending: false });
-                const list = (data || []).map(d => ({
-                    id: d.id,
-                    ...d,
-                    date: d.created_at ? new Date(d.created_at) : (d.date ? new Date(d.date) : new Date())
-                }));
+
+                const list = (data || []).map(row => {
+                    let parsed = {};
+                    if (row.tratamiento && typeof row.tratamiento === 'string' && row.tratamiento.startsWith('{')) {
+                        try { parsed = JSON.parse(row.tratamiento); } catch (e) {}
+                    }
+                    return {
+                        id: row.id,
+                        ...parsed,
+                        ...row,
+                        comentario: parsed.comentario || parsed.description || (typeof row.tratamiento === 'string' && !row.tratamiento.startsWith('{') ? row.tratamiento : ''),
+                        type: parsed.type || 'evolution',
+                        date: row.fecha ? new Date(row.fecha) : (parsed.date ? new Date(parsed.date) : (row.created_at ? new Date(row.created_at) : new Date()))
+                    };
+                });
                 setEvolutions(list);
             } catch (err) {
                 console.error("Error loading evolutions:", err);
@@ -709,7 +981,7 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
         };
 
         loadEvolutions();
-    }, [patientId]);
+    }, [patientId, refreshKey]);
 
     // Cargar planes para lookup
     useEffect(() => {
@@ -746,22 +1018,40 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
         fetchPlans();
     }, [evolutions]);
 
-    // Firma Doctor (Eliminada confirmación innecesaria al dar clic)
+    // Firma Doctor
     const handleSignEvolutionDoctor = async (evoObj) => {
         try {
-            await supabase
+            let parsed = {};
+            if (evoObj.tratamiento && typeof evoObj.tratamiento === 'string' && evoObj.tratamiento.startsWith('{')) {
+                try { parsed = JSON.parse(evoObj.tratamiento); } catch (e) {}
+            } else {
+                parsed = { ...evoObj };
+            }
+
+            const doctorSignature = {
+                signature: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || userProfile?.email || "Doctor",
+                signedAt: new Date().toISOString(),
+                signedBy: userProfile?.uid
+            };
+
+            const updatedData = {
+                ...parsed,
+                doctorSignature
+            };
+
+            const { error } = await supabase
                 .from("evoluciones")
                 .update({
-                    doctorSignature: {
-                        signature: userProfile?.nombreCompleto || userProfile?.nombre || "Doctor",
-                        signedAt: new Date().toISOString(),
-                        signedBy: userProfile?.uid
-                    },
-                    updated_at: new Date().toISOString()
+                    tratamiento: JSON.stringify(updatedData)
                 })
                 .eq("id", evoObj.id);
+
+            if (error) throw error;
+
+            setEvolutions(prev => prev.map(e => e.id === evoObj.id ? { ...e, doctorSignature } : e));
             toast.success("Evolución firmada por el profesional");
         } catch (error) {
+            console.error("Error signing evolution by doctor:", error);
             toast.error("Error al firmar como profesional");
         }
     };
@@ -772,14 +1062,43 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     };
 
     // Guarda firma / huella del Paciente
-    const handleSavePatientSignature = async (evoId, data) => {
-        await supabase
-            .from("evoluciones")
-            .update({
-                ...data,
-                updated_at: new Date().toISOString()
-            })
-            .eq("id", evoId);
+    const handleSavePatientSignature = async (evoId, signatureData) => {
+        try {
+            const evoObj = evolutions.find(e => e.id === evoId);
+            let parsed = {};
+            if (evoObj?.tratamiento && typeof evoObj.tratamiento === 'string' && evoObj.tratamiento.startsWith('{')) {
+                try { parsed = JSON.parse(evoObj.tratamiento); } catch (e) {}
+            } else if (evoObj) {
+                parsed = { ...evoObj };
+            }
+
+            const updatedData = {
+                ...parsed,
+                patientSignature: signatureData.patientSignature || parsed.patientSignature,
+                patientFingerprint: signatureData.patientFingerprint || parsed.patientFingerprint,
+                patientSignedAt: signatureData.patientSignedAt || new Date().toISOString()
+            };
+
+            const { error } = await supabase
+                .from("evoluciones")
+                .update({
+                    tratamiento: JSON.stringify(updatedData)
+                })
+                .eq("id", evoId);
+
+            if (error) throw error;
+
+            setEvolutions(prev => prev.map(e => e.id === evoId ? {
+                ...e,
+                patientSignature: signatureData.patientSignature || e.patientSignature,
+                patientFingerprint: signatureData.patientFingerprint || e.patientFingerprint,
+                patientSignedAt: signatureData.patientSignedAt || e.patientSignedAt
+            } : e));
+            toast.success("Firma del paciente guardada correctamente");
+        } catch (error) {
+            console.error("Error saving patient signature:", error);
+            toast.error("Error al guardar la firma del paciente");
+        }
     };
 
     const handleDelete = async (id) => {
@@ -816,10 +1135,13 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
         const q = searchTerm.toLowerCase();
         const lookup = evo.planId ? (planItemsLookup[evo.planId] || {}) : {};
         const procedures = getSelectedProcedures(evo.plantillaItems, lookup).map(p => p.desc).join(' ');
+        const typeLabel = evo.type === 'remission' ? 'remisión' : evo.type === 'nota' ? 'nota aclaratoria' : 'evolución';
         return (
-            (evo.description || '').toLowerCase().includes(q) ||
+            (evo.description || evo.comentario || '').toLowerCase().includes(q) ||
             (evo.profesional || '').toLowerCase().includes(q) ||
+            (evo.doctorQuienRecibeName || '').toLowerCase().includes(q) ||
             (evo.treatment || '').toLowerCase().includes(q) ||
+            typeLabel.includes(q) ||
             procedures.toLowerCase().includes(q)
         );
     });

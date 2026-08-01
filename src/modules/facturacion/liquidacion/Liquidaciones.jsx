@@ -43,12 +43,25 @@ export default function Liquidaciones() {
         if (!inquilino) return;
         setLoadingHistory(true);
         try {
-            const { data: list } = await supabase
-                .from("liquidaciones")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
-                .order("created_at", { ascending: false });
-            setHistory(list || []);
+            let list = [];
+            try {
+                const { data } = await supabase
+                    .from("liquidaciones")
+                    .select("*")
+                    .eq("tenant_id", inquilino)
+                    .order("created_at", { ascending: false });
+                if (data && data.length > 0) list = data;
+            } catch (e) {}
+
+            if (list.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                list = cfgRow?.config?.liquidaciones || [];
+            }
+            setHistory(list);
         } catch (e) {
             console.error("Error loading liquidations history:", e);
         } finally {

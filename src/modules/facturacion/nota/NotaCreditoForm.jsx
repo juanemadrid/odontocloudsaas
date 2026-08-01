@@ -75,15 +75,38 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            // Load Patients for select
-            const { data: pacSnap } = await supabase
-                .from("pacientes")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setPacientes((pacSnap || []).map(d => ({ 
+            let pacsList = [];
+            try {
+                const { data: pacData } = await supabase
+                    .from("pacientes")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (pacData && pacData.length > 0) pacsList = pacData;
+            } catch (e) {}
+
+            if (pacsList.length === 0) {
+                try {
+                    const { data: tercData } = await supabase
+                        .from("terceros")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (tercData && tercData.length > 0) pacsList = tercData;
+                } catch (e) {}
+            }
+
+            if (pacsList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                pacsList = cfgRow?.config?.pacientes || cfgRow?.config?.terceros || [];
+            }
+
+            setPacientes(pacsList.map(d => ({ 
                 id: d.id, 
-                nombre: d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim(),
-                cedula: d.nroDocumento || d.cedula || ""
+                nombre: d.nombreCompleto || d.full_name || d.nombre || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim(),
+                cedula: d.nroDocumento || d.cedula || d.documento || ""
             })));
         } catch (e) {
             console.error("Error loading patients:", e);

@@ -16,6 +16,14 @@ export default function EvolucionesTab({ patient }) {
     const [searchTerms, setSearchTerms] = useState("");
     const [isPrinting, setIsPrinting] = useState(false);
 
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    const handleSaveSuccess = () => {
+        setModalOpen(false);
+        setEditingEvo(null);
+        setRefreshKey(prev => prev + 1);
+    };
+
     const handleOpenEvolution = () => {
         setEditingEvo(null);
         setModalType("evolution");
@@ -45,7 +53,7 @@ export default function EvolucionesTab({ patient }) {
             const { data: evosData } = await supabase
                 .from("evoluciones")
                 .select("*")
-                .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`)
+                .eq("paciente_id", patient.id)
                 .order("created_at", { ascending: false });
             const evos = (evosData || []).map(d => ({
                 id: d.id,
@@ -123,7 +131,7 @@ export default function EvolucionesTab({ patient }) {
 
             {/* Timeline Area */}
             <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30">
-                <EvolutionList patientId={patient?.id} patientName={patient?.nombreCompleto || patient?.nombre || ''} patientObj={patient} onEdit={handleEdit} searchTerm={searchTerms} />
+                <EvolutionList patientId={patient?.id} patientName={patient?.nombreCompleto || patient?.nombre || ''} patientObj={patient} onEdit={handleEdit} searchTerm={searchTerms} refreshKey={refreshKey} />
             </div>
 
             {/* Float Modal Container */}
@@ -134,6 +142,7 @@ export default function EvolucionesTab({ patient }) {
                         setModalOpen(false);
                         setEditingEvo(null);
                     }} 
+                    onSave={handleSaveSuccess}
                     patient={patient} 
                     initialData={editingEvo}
                 />
@@ -147,6 +156,7 @@ export default function EvolucionesTab({ patient }) {
                         setModalOpen(false);
                         setEditingEvo(null);
                     }} 
+                    onSave={handleSaveSuccess}
                     patient={patient} 
                     initialData={editingEvo}
                 />

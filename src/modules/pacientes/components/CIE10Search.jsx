@@ -35,7 +35,7 @@ export default function CIE10Search({ onSelect, className, value, label }) {
             {label && <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">{label}</label>}
             <input
                 type="text"
-                className="w-full p-3 rounded-xl border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-slate-700"
+                className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all placeholder:text-slate-400 placeholder:font-normal"
                 placeholder="Buscar código o nombre (ej: K02)"
                 value={query}
                 onChange={(e) => {

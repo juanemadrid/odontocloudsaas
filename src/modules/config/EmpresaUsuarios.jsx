@@ -243,6 +243,15 @@ export default function EmpresaUsuarios() {
                 password: ""
             });
         } else {
+            // Validar límite máximo de usuarios del plan de la clínica
+            const tenantPlanObj = userProfile?.tenant?.plan || {};
+            const maxUsersLimit = tenantPlanObj.maxUsers || 2;
+            const currentCount = users.length;
+
+            if (currentCount >= maxUsersLimit) {
+                return toast.error(`⚠️ Has alcanzado el límite máximo de ${maxUsersLimit} usuario(s) de tu plan actual (${tenantPlanObj.name || 'Consultorio'}). Actualiza tu plan para agregar más usuarios.`);
+            }
+
             setEditId(null);
             setFormData(initialForm);
         }
@@ -263,8 +272,38 @@ export default function EmpresaUsuarios() {
         if (!formData.nombre.trim()) return toast.error("El nombre es obligatorio");
         if (!formData.email.trim()) return toast.error("El correo electrónico es obligatorio");
 
+        const targetEmail = formData.email.trim().toLowerCase();
+
+        // 1. Validar duplicación de correo en la lista local de usuarios (excluyendo el usuario actual editado)
+        const emailDuplicateInMemory = users.find(u => (u.email || "").trim().toLowerCase() === targetEmail && u.id !== editId);
+        if (emailDuplicateInMemory) {
+            return toast.error(`⚠️ El correo "${targetEmail}" ya pertenece a otro usuario registrado (${emailDuplicateInMemory.nombreCompleto || emailDuplicateInMemory.email}). Por favor ingresa un correo diferente.`);
+        }
+
+        // Validar límite de usuarios antes de guardar un nuevo usuario
+        if (!editId) {
+            const tenantPlanObj = userProfile?.tenant?.plan || {};
+            const maxUsersLimit = tenantPlanObj.maxUsers || 2;
+            const currentCount = users.length;
+            if (currentCount >= maxUsersLimit) {
+                return toast.error(`⚠️ Has alcanzado el límite máximo de ${maxUsersLimit} usuario(s) de tu plan actual (${tenantPlanObj.name || 'Consultorio'}). Actualiza tu plan para agregar más usuarios.`);
+            }
+        }
+
         setSaving(true);
         try {
+            // 2. Validar duplicación de correo en la base de datos (tabla profiles)
+            const { data: dbCheck } = await supabase
+                .from("profiles")
+                .select("id, full_name, email")
+                .ilike("email", targetEmail);
+
+            const dbDuplicate = dbCheck?.find(p => p.id !== editId);
+            if (dbDuplicate) {
+                setSaving(false);
+                return toast.error(`⚠️ El correo "${targetEmail}" ya se encuentra registrado por otro usuario (${dbDuplicate.full_name || dbDuplicate.email}).`);
+            }
+
             const selectedProfile = rolesDisponibles.find(r => r.id === formData.profileId || r.nombre === formData.profileId);
             const fullName = `${formData.nombre} ${formData.apellido}`.trim();
             const roleName = editId && users.find(u => u.id === editId)?.rol === "administrador" ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Usuario");
@@ -288,7 +327,7 @@ export default function EmpresaUsuarios() {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            email: formData.email.trim(),
+                            email: targetEmail,
                             password: formData.password,
                             options: {
                                 data: {
@@ -308,40 +347,65 @@ export default function EmpresaUsuarios() {
                         console.log('✅ Auth user created:', authData.user.id);
                     } else {
                         console.warn('⚠️ Auth signup response:', authData?.message || authData?.error_description || authData);
-                        // Si el usuario ya existe, intentar obtener su ID
-                        if (authData?.message?.includes('already registered') || authData?.code === 'user_already_exists') {
-                            toast.error('Este correo ya tiene una cuenta en el sistema');
-                            setSaving(false);
-                            return;
-                        }
+                        toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
+                        setSaving(false);
+                        return;
                     }
                 } catch (authErr) {
                     console.warn('⚠️ Auth user create warning:', authErr);
+                    toast.error(`⚠️ Error al verificar credenciales del usuario: ${authErr.message || authErr}`);
+                    setSaving(false);
+                    return;
                 }
             }
 
-
             if (!targetId) {
-                targetId = crypto.randomUUID?.() || Math.random().toString(36).substring(2);
+                toast.error("⚠️ No se pudo obtener el identificador del usuario para registrarlo.");
+                setSaving(false);
+                return;
             }
 
-            // Usar RPC SECURITY DEFINER para bypassar RLS y actualizar profiles + auth.users
-            const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_upsert_profile', {
-                p_id: targetId,
-                p_tenant_id: userProfile.inquilino,
-                p_full_name: fullName,
-                p_email: formData.email.trim(),
-                p_role: roleName,
-                p_especialidad: (formData.especialidades || []).join(', ') || null,
-                p_registro_medico: formData.numeroDocumento || null,
-                p_telefono: formData.telefonoMovil || formData.telefonoFijo || null,
-                p_activo: true,
-                p_password: formData.password ? formData.password.trim() : null
-            });
+            // Usar RPC SECURITY DEFINER para actualizar profiles + auth.users
+            let saveSuccess = false;
+            try {
+                const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_upsert_profile', {
+                    p_id: targetId,
+                    p_tenant_id: userProfile.inquilino,
+                    p_full_name: fullName,
+                    p_email: formData.email.trim(),
+                    p_role: roleName,
+                    p_especialidad: (formData.especialidades || []).join(', ') || null,
+                    p_registro_medico: formData.numeroDocumento || null,
+                    p_telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                    p_activo: true,
+                    p_password: formData.password ? formData.password.trim() : null
+                });
 
+                if (rpcErr) throw rpcErr;
+                if (rpcResult && rpcResult.success === false) throw new Error(rpcResult.error || 'Error al guardar perfil');
+                saveSuccess = true;
+            } catch (rpcError) {
+                console.warn('⚠️ admin_upsert_profile RPC error, realizando fallback directo a tabla profiles:', rpcError);
+                
+                // Fallback directo a la tabla profiles si falla el RPC de Auth
+                const { error: profileErr } = await supabase
+                    .from('profiles')
+                    .upsert({
+                        id: targetId,
+                        tenant_id: userProfile.inquilino,
+                        full_name: fullName,
+                        email: formData.email.trim(),
+                        role: roleName,
+                        especialidad: (formData.especialidades || []).join(', ') || null,
+                        registro_medico: formData.numeroDocumento || null,
+                        telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                        activo: true
+                    }, { onConflict: 'id' });
 
-            if (rpcErr) throw rpcErr;
-            if (rpcResult && rpcResult.success === false) throw new Error(rpcResult.error || 'Error al guardar perfil');
+                if (profileErr) {
+                    throw rpcError || profileErr;
+                }
+            }
 
             // Guardar configuración extendida de usuario (sucursales, especialidades, etc.) en website_config
             try {
@@ -385,12 +449,13 @@ export default function EmpresaUsuarios() {
             loadData();
         } catch (error) {
             console.error('Error al guardar usuario:', error);
-            // Si el RPC no existe aún, dar instrucción clara
-            if (error.message?.includes('Could not find the function') || error.code === 'PGRST202') {
-                toast.error('⚠️ Falta ejecutar el SQL de migración en el dashboard de Supabase. Ver consola.');
-                console.error('👉 Ejecuta el SQL en: https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/editor');
+            const errMsg = error.message || '';
+            if (errMsg.includes('users_email_partial_key') || errMsg.includes('duplicate key') || errMsg.includes('already registered') || errMsg.includes('ya está registrado')) {
+                toast.error('⚠️ Este correo electrónico ya está registrado por otro usuario en el sistema. Por favor utiliza un correo diferente.');
+            } else if (errMsg.includes('Could not find the function') || error.code === 'PGRST202') {
+                toast.error('⚠️ Falta ejecutar la función RPC en Supabase.');
             } else {
-                toast.error('Error al guardar usuario: ' + (error.message || 'Error desconocido'));
+                toast.error('Error al guardar usuario: ' + (errMsg || 'Error desconocido'));
             }
         } finally {
             setSaving(false);
@@ -457,7 +522,12 @@ export default function EmpresaUsuarios() {
                         <FiUser size={18} />
                     </div>
                     <div>
-                        <h1 className="text-[16px] font-bold text-slate-800 tracking-tight">Usuarios y Talento Humano</h1>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-[16px] font-bold text-slate-800 tracking-tight">Usuarios y Talento Humano</h1>
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#8CC63F]/15 border border-[#8CC63F]/30 text-[#5da832]">
+                                {users.length} / {userProfile?.tenant?.plan?.maxUsers || 2} usuarios (Plan {userProfile?.tenant?.plan?.name || 'Consultorio'})
+                            </span>
+                        </div>
                         <p className="text-[11px] text-slate-500 font-medium">Gestión de profesionales, perfiles y accesos a la clínica</p>
                     </div>
                 </div>
@@ -494,7 +564,7 @@ export default function EmpresaUsuarios() {
                     {/* New User Button */}
                     <button
                         onClick={() => handleOpenModal()}
-                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
                     >
                         <FiPlus size={16} />
                         <span>Nuevo Miembro</span>
@@ -958,9 +1028,28 @@ export default function EmpresaUsuarios() {
                                             <label className="text-[11px] font-medium text-slate-500">Correo electrónico *</label>
                                             <div className="relative">
                                                 <FiMail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                                <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required placeholder="usuario@clinica.com" className="w-full h-9 bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl pl-11 pr-4 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black" />
+                                                <input 
+                                                    type="email" 
+                                                    value={formData.email} 
+                                                    onChange={e => setFormData({ ...formData, email: e.target.value })} 
+                                                    required 
+                                                    placeholder="usuario@clinica.com" 
+                                                    className={`w-full h-9 bg-slate-50 border ${formData.email && users.some(u => u.email?.toLowerCase() === formData.email.trim().toLowerCase() && u.id !== editId) ? 'border-red-500 text-red-600 bg-red-50/20' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-11 pr-4 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`} 
+                                                />
                                             </div>
-                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Este correo se usa para iniciar sesión</p>
+                                            {(() => {
+                                                const isDup = formData.email.trim() && users.some(u => u.email?.toLowerCase() === formData.email.trim().toLowerCase() && u.id !== editId);
+                                                if (isDup) {
+                                                    return (
+                                                        <p className="text-[10px] font-bold text-red-500 flex items-center gap-1 mt-1">
+                                                            <span>⚠️ Este correo ya está registrado por otro usuario.</span>
+                                                        </p>
+                                                    );
+                                                }
+                                                return (
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Este correo se usa para iniciar sesión</p>
+                                                );
+                                            })()}
                                         </div>
 
                                         <div className="space-y-2.5">

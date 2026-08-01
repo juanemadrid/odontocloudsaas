@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { useForm } from 'react-hook-form';
 
-export default function RemissionModal({ isOpen, onClose, patient, initialData = null }) {
+export default function RemissionModal({ isOpen, onClose, onSave, patient, initialData = null }) {
     const { userProfile } = useAuth();
     const toast = useToast();
     
@@ -66,31 +66,122 @@ export default function RemissionModal({ isOpen, onClose, patient, initialData =
 
         const fetchDoctors = async () => {
             try {
-                const { data: profData } = await supabase
-                    .from("profesionales")
-                    .select("*")
-                    .eq("tenant_id", userProfile?.inquilino || userProfile?.tenantId)
-                    .eq("activo", true);
-                const docs = (profData || []).map(d => ({
-                    id: d.id,
-                    nombreCompleto: d.nombre_completo || d.nombre || "",
-                    ...d
-                }));
-                setAllDoctors(docs);
-                
-                // Patient assigned doctors for the sender field
-                if (patient?.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
-                    setPatientDoctors(patient.profesionales);
-                } else {
-                    setPatientDoctors(docs);
+                const mapDoctors = new Map();
+                const inquilino = userProfile?.inquilino || userProfile?.tenantId || patient?.inquilino || patient?.tenant_id;
+
+                // A. Doctores asignados al paciente
+                if (patient?.profesionales && Array.isArray(patient.profesionales)) {
+                    patient.profesionales.forEach(d => {
+                        const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+                        const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+                        if (name.trim() && docId) {
+                            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
+                        }
+                    });
                 }
+
+                // B. Cargar desde tabla profesionales
+                try {
+                    let query = supabase.from('profesionales').select('*');
+                    if (inquilino) {
+                        query = query.or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                    }
+                    const { data: profData } = await query;
+                    if (profData && Array.isArray(profData)) {
+                        profData.forEach(d => {
+                            if (d.activo !== false) {
+                                const name = d.nombre_completo || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+                                if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.correo || d.email || '' });
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn("Error en profesionales para remisión:", e);
+                }
+
+                // C. Cargar desde tabla profiles
+                try {
+                    let query = supabase.from('profiles').select('*');
+                    if (inquilino) query = query.eq('tenant_id', inquilino);
+                    const { data: profsData } = await query;
+                    if (profsData && Array.isArray(profsData)) {
+                        profsData.forEach(u => {
+                            const name = u.full_name || u.nombreCompleto || u.nombre || u.email || '';
+                            const docId = String(u.id || (name ? name.toLowerCase() : ''));
+                            if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error cargando profiles:', e);
+                }
+
+                // D. Cargar desde website_config
+                try {
+                    if (inquilino) {
+                        const { data: cfgRow } = await supabase
+                            .from("website_config")
+                            .select("config")
+                            .eq("tenant_id", inquilino)
+                            .maybeSingle();
+
+                        if (cfgRow?.config) {
+                            const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
+                            const doctores = cfgRow.config.doctores || cfgRow.config.profesionales || [];
+
+                            usuarios.forEach(u => {
+                                const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
+                                const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
+                                if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
+                                }
+                            });
+
+                            doctores.forEach(d => {
+                                const name = d.nombreCompleto || d.nombre || d.displayName || d.email || "";
+                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+                                if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
+                                }
+                            });
+                        }
+                    }
+                } catch (e) {}
+
+                // E. SIEMPRE incluir al usuario actual en sesión
+                if (userProfile) {
+                    const myId = String(userProfile.uid || userProfile.id || 'current_user');
+                    const myName = userProfile.nombreCompleto ||
+                        userProfile.nombre ||
+                        `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() ||
+                        userProfile.displayName ||
+                        userProfile.email ||
+                        "Doctor Principal";
+
+                    if (myName.trim() && !mapDoctors.has(myId)) {
+                        mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' });
+                    }
+                }
+
+                // F. Fallback por si no hay médicos en la base de datos
+                if (mapDoctors.size === 0) {
+                    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '' });
+                }
+
+                let docs = Array.from(mapDoctors.values());
+                setAllDoctors(docs);
+                setPatientDoctors(docs);
             } catch (err) {
                 console.error("Error fetching dependencies", err);
             }
         };
 
         fetchDoctors();
-    }, [isOpen, userProfile]);
+    }, [isOpen, userProfile, patient]);
 
     const onSubmit = async (data) => {
         setSaving(true);
@@ -98,11 +189,11 @@ export default function RemissionModal({ isOpen, onClose, patient, initialData =
             if (!patient?.id) throw new Error("Paciente no identificado");
             const isEditing = !!initialData;
             
-            const docObj = patientDoctors.find(d => d.id === data.doctorId);
-            const docName = docObj ? `${docObj.nombre || docObj.nombres || ''} ${docObj.apellido || docObj.apellidos || ''}`.trim() : "Doctor Remitente";
+            const docObj = patientDoctors.find(d => String(d.id) === String(data.doctorId)) || allDoctors.find(d => String(d.id) === String(data.doctorId));
+            const docName = docObj ? (docObj.nombreCompleto || docObj.nombre || `${docObj.nombres || ''} ${docObj.apellidos || ''}`.trim()) : (userProfile?.nombreCompleto || userProfile?.nombre || "Doctor Remitente");
 
-            const recvObj = allDoctors.find(d => d.id === data.doctorQuienRecibeId);
-            const recvName = recvObj ? `${recvObj.nombre || recvObj.nombres || ''} ${recvObj.apellido || recvObj.apellidos || ''}`.trim() : "Doctor Receptor";
+            const recvObj = allDoctors.find(d => String(d.id) === String(data.doctorQuienRecibeId));
+            const recvName = recvObj ? (recvObj.nombreCompleto || recvObj.nombre || `${recvObj.nombres || ''} ${recvObj.apellidos || ''}`.trim()) : "Doctor Receptor";
 
             // Robust date construction
             let finalDate = new Date(`${data.fecha}T00:00:00`);
@@ -121,35 +212,46 @@ export default function RemissionModal({ isOpen, onClose, patient, initialData =
                 patientId: patient.id,
                 patientName: patient.nombreCompleto || patient.nombre || "Paciente",
                 profesional: docName,
-                profesionalId: data.doctorId,
+                profesionalId: data.doctorId || docObj?.id || "",
                 doctorQuienRecibeId: data.doctorQuienRecibeId,
                 doctorQuienRecibeName: recvName,
+                treatment: `Remisión a ${recvName}`,
                 description: data.comentario, 
+                comentario: data.comentario,
                 ...data,
-                date: finalDate, 
-                tenant_id: userProfile?.inquilino || userProfile?.tenantId || "",
-                inquilino: userProfile?.inquilino || userProfile?.tenantId || "",
+                date: finalDate.toISOString(), 
+                tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
+                inquilino: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
                 updated_at: new Date().toISOString(),
                 registeredBy: userProfile?.uid || "",
+            };
+
+            const dbPayload = {
+                paciente_id: patient.id,
+                tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
+                profesional_id: data.doctorId || docObj?.id || userProfile?.uid || null,
+                fecha: finalDate.toISOString(),
+                tratamiento: JSON.stringify(remissionData)
             };
 
             if (isEditing) {
                 const { error: updateError } = await supabase
                     .from("evoluciones")
-                    .update(remissionData)
+                    .update(dbPayload)
                     .eq("id", initialData.id);
                 if (updateError) throw updateError;
             } else {
                 const { error: insertError } = await supabase
                     .from("evoluciones")
                     .insert([{
-                        ...remissionData,
+                        ...dbPayload,
                         created_at: new Date().toISOString()
                     }]);
                 if (insertError) throw insertError;
             }
 
             toast.success(isEditing ? "Remisión actualizada" : "Remisión registrada correctamente");
+            if (onSave) onSave();
             onClose();
         } catch (error) {
             console.error("Error saving remission:", error);

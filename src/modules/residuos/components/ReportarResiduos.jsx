@@ -34,20 +34,47 @@ export default function ReportarResiduos() {
         setLoading(true);
         try {
             // Load types
-            const { data: tSnap } = await supabase
-                .from("tipos_residuos")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            const tList = (tSnap || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-            setTypes(tList);
+            let tList = [];
+            try {
+                const { data: tSnap } = await supabase
+                    .from("tipos_residuos")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (tSnap && tSnap.length > 0) tList = tSnap;
+            } catch (e) {}
+
+            if (tList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                tList = cfgRow?.config?.tipos_residuos || [];
+            }
+
+            setTypes(tList.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
             if (tList.length > 0) setSelectedTypeId(tList[0].id);
 
             // Load logs
-            const { data: lSnap } = await supabase
-                .from("registro_residuos")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setLogs(lSnap || []);
+            let lList = [];
+            try {
+                const { data: lSnap } = await supabase
+                    .from("registro_residuos")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (lSnap && lSnap.length > 0) lList = lSnap;
+            } catch (e) {}
+
+            if (lList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                lList = cfgRow?.config?.registro_residuos || [];
+            }
+
+            setLogs(lList);
         } catch (e) {
             console.error("Error loading reporting logs:", e);
             toast.error("Error al cargar los reportes de residuos");
@@ -88,24 +115,19 @@ export default function ReportarResiduos() {
 
         setSaving(true);
         try {
+            const reportId = crypto.randomUUID ? crypto.randomUUID() : `rep_${Date.now()}`;
             const reportItem = {
+                id: reportId,
                 fechaHora,
-                fecha: fechaHora.split(" ")[0], // Extract just the date for query range filtering
+                fecha: fechaHora.split(" ")[0],
                 residuoId: selectedTypeId,
                 residuoNombre: selectedType.nombre,
                 color: selectedType.color,
                 cantidad: parseFloat(peso),
                 tenant_id: inquilino,
-                inquilino,
                 created_at: new Date().toISOString()
             };
 
-            const { data: inserted } = await supabase
-                .from("registro_residuos")
-                .insert([reportItem])
-                .select()
-                .single();
-            toast.success("Pesaje de residuo reportado");
             setLogs(prev => [inserted, ...prev]);
             setShowModal(false);
         } catch (err) {

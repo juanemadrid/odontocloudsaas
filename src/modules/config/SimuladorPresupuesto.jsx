@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FiPlus, FiTrash2, FiSave, FiCheckCircle, FiDollarSign, FiUser, FiCalendar, FiPackage } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import { getConfigItems } from "../../services/configPersistenceService";
 
 const COP = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 
@@ -21,7 +22,7 @@ export default function SimuladorPresupuesto() {
             if (!inquilino) return;
             setLoadingPlanes(true);
             try {
-                const { data } = await supabase.from("planes").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                const data = await getConfigItems(inquilino, "planes", null);
                 const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
                 setPlanes(sorted);
             } catch (e) {

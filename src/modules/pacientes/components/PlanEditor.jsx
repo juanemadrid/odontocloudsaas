@@ -9,6 +9,7 @@ import ProcedureAdditionModal from './ProcedureAdditionModal';
 import ToothSelectorModal from './ToothSelectorModal';
 import { BudgetPrintService } from '../../../services/BudgetPrintService';
 import factusService from '../../../services/factusService';
+import { getConfigItems } from '../../../services/configPersistenceService';
 
 export default function PlanEditor({ patient: dbPatient, initialData, onClose, onSaved }) {
     const { watch: watchPatient } = useFormContext() || { watch: () => ({}) };
@@ -142,18 +143,22 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     const [factusCredentials, setFactusCredentials] = useState(null);
     const [emittingInvoice, setEmittingInvoice] = useState(false);
 
-    // Load Factus credentials from tenant
+    // Load Factus credentials from tenant / global config
     useEffect(() => {
         if (!inquilino) return;
         (async () => {
             try {
-                const { data: d } = await supabase
-                    .from('tenants')
-                    .select('*')
-                    .eq('id', inquilino)
-                    .maybeSingle();
-                if (d) {
-                    if (d.factusClientId && d.factusClientSecret) {
+                const { getFactusCredentialsForTenant } = await import('../../../services/factusAdminService');
+                const creds = await getFactusCredentialsForTenant(inquilino);
+                if (creds) {
+                    setFactusCredentials(creds);
+                } else {
+                    const { data: d } = await supabase
+                        .from('tenants')
+                        .select('*')
+                        .eq('id', inquilino)
+                        .maybeSingle();
+                    if (d && d.factusClientId && d.factusClientSecret) {
                         setFactusCredentials({
                             factusClientId:         d.factusClientId,
                             factusClientSecret:     d.factusClientSecret,
@@ -173,10 +178,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             if (!inquilino) return;
             setLoadingPlanes(true);
             try {
-                const { data } = await supabase
-                    .from("planes")
-                    .select("*")
-                    .or(`inquilino.eq.${inquilino},tenant_id.eq.${inquilino}`);
+                const data = await getConfigItems(inquilino, "planes", null);
                 const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
                 setPlanes(sorted);
             } catch (e) {
@@ -193,11 +195,32 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
         const loadEvolutions = async () => {
             try {
-                const { data } = await supabase
+                const { data, error } = await supabase
                     .from("evoluciones")
                     .select("*")
-                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`);
-                setEvolutions(data || []);
+                    .eq("paciente_id", patientId);
+
+                if (error) {
+                    console.error("Error loading clinical evolutions:", error);
+                    return;
+                }
+
+                const parsedEvos = (data || []).map(row => {
+                    let parsed = {};
+                    if (row.tratamiento && typeof row.tratamiento === 'string' && row.tratamiento.startsWith('{')) {
+                        try { parsed = JSON.parse(row.tratamiento); } catch (e) {}
+                    } else if (row.tratamiento && typeof row.tratamiento === 'object') {
+                        parsed = row.tratamiento;
+                    }
+                    return {
+                        ...row,
+                        ...parsed,
+                        id: row.id,
+                        planId: parsed.planId || row.planId,
+                        plantillaItems: parsed.plantillaItems || row.plantillaItems || {}
+                    };
+                });
+                setEvolutions(parsedEvos);
             } catch (err) {
                 console.error("Error loading clinical evolutions:", err);
             }
@@ -207,19 +230,33 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         const fetchPayments = async () => {
             if (!currentPlanId) return;
             try {
-                const { data: payData } = await supabase
+                const { data: payData, error } = await supabase
                     .from("pagos")
                     .select("*")
-                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
-                    .eq("planId", currentPlanId);
-                setPayments((payData || []).filter(p => p.estado !== "Anulado"));
+                    .eq("paciente_id", patientId);
+
+                if (error) {
+                    console.error("Error fetching payments:", error);
+                    return;
+                }
+                
+                const parsedPayments = (payData || []).map(p => {
+                    let parsedNotes = {};
+                    if (p.notas && typeof p.notas === 'string' && p.notas.trim().startsWith('{')) {
+                        try { parsedNotes = JSON.parse(p.notas); } catch (e) {}
+                    }
+                    return {
+                        ...p,
+                        ...parsedNotes,
+                        planId: parsedNotes.planId || p.planId || p.plan_id
+                    };
+                }).filter(p => p.planId === currentPlanId && (p.estado || "").toLowerCase() !== "anulado");
+                setPayments(parsedPayments);
             } catch (err) {
                 console.error("Error fetching payments for plan editor:", err);
             }
         };
         fetchPayments();
-
-        return () => unsubscribeEvo();
     }, [patientId, currentPlanId]);
 
     const isItemRealized = (itemId) => {
@@ -343,14 +380,15 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             return;
         }
 
-        if (!factusCredentials) {
-            // Try centralized credentials
-            const { getFactusAdminCredentials } = await import('../../../services/factusAdminService');
-            const adminCreds = await getFactusAdminCredentials();
-            if (!adminCreds) {
+        let activeCreds = factusCredentials;
+        if (!activeCreds) {
+            const { getFactusCredentialsForTenant } = await import('../../../services/factusAdminService');
+            activeCreds = await getFactusCredentialsForTenant(inquilino);
+            if (!activeCreds) {
                 toast.error('La facturación electrónica no está configurada. Contacta al administrador del sistema.');
                 return;
             }
+            setFactusCredentials(activeCreds);
         }
         if (!patient?.nroDocumento && !patient?.documento && !patient?.identificacion) {
             toast.error('El paciente debe tener número de documento registrado para facturar ante la DIAN.');
@@ -388,15 +426,29 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 };
             });
 
+            const nroFactura = `FE-${Math.floor(1000 + Math.random() * 9000)}`;
+
+            const dbPayload = {
+                tenant_id:   inquilino || null,
+                paciente_id: patientId || null,
+                numero:      nroFactura,
+                fecha_emision: new Date().toISOString(),
+                subtotal:    totalFactura,
+                total:       totalFactura,
+                estado:      'Pendiente'
+            };
+
             const invoiceData = {
                 paciente_id: patientId,
                 patientId,
                 tenant_id:  inquilino || '',
                 inquilino:  inquilino || '',
                 planId:     currentPlanId,
-                nroFactura: `FE-${Math.floor(1000 + Math.random() * 9000)}`,
+                nroFactura: nroFactura,
+                numero:     nroFactura,
                 fechaISO:   new Date().toISOString(),
                 total:      totalFactura,
+                subtotal:   totalFactura,
                 medioPago:  '10',
                 condicionPago: '1',
                 estado:     'Pendiente',
@@ -408,7 +460,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             // 1️⃣ Save to Supabase first
             const { data: invData, error: invError } = await supabase
                 .from('facturas')
-                .insert([invoiceData])
+                .insert([dbPayload])
                 .select()
                 .single();
             if (invError) throw invError;
@@ -439,24 +491,23 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 };
 
                 const result = await factusService.sendInvoice(
-                    { ...invoiceData, id: invoiceRef.id },
+                    { ...invoiceData, id: invData?.id },
                     patientForFactus,
-                    factusCredentials
+                    activeCreds || factusCredentials
                 );
 
                 const bill = result?.data?.bill || result?.bill || result?.data || {};
-                const updates = {
-                    factusEstado:      'Emitido',
-                    estado:            'Emitido',
-                    factusUuid:        bill?.uuid    || result?.data?.uuid    || null,
-                    factusNumero:      bill?.number  || bill?.invoice_number  || result?.data?.number || null,
-                    factusPdfUrl:      bill?.pdf_download_url || bill?.pdf   || result?.data?.pdf_download_url || null,
-                    factusQr:          bill?.qr_code || bill?.qr             || result?.data?.qr_code || null,
-                    factusCufe:        bill?.cufe    || bill?.cude            || result?.data?.cufe   || null,
-                    nroFactura:        bill?.number  || bill?.invoice_number  || result?.data?.number || invoiceData.nroFactura,
-                    factusRawResponse: result?.data  || null,
-                };
-                await updDoc(invoiceRef, updates);
+                const finalNro = bill?.number || bill?.invoice_number || result?.data?.number || nroFactura;
+
+                if (invData?.id) {
+                    await supabase
+                        .from('facturas')
+                        .update({
+                            estado: 'Emitido',
+                            numero: finalNro
+                        })
+                        .eq('id', invData.id);
+                }
 
                 // ── Consumir una factura de la cuota del tenant ──
                 try {
@@ -466,7 +517,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     console.warn('Could not decrement invoice quota:', e.message);
                 }
 
-                toast.success(`✅ Factura emitida ante la DIAN.${ updates.nroFactura ? ` N.º: ${updates.nroFactura}` : '' }`);
+                toast.success(`✅ Factura emitida ante la DIAN.${ finalNro ? ` N.º: ${finalNro}` : '' }`);
             } catch (factusErr) {
                 // Factus failed — invoice saved as Pendiente, user can retry from Historial
                 console.error('Factus error:', factusErr);
@@ -616,107 +667,74 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
     useEffect(() => {
         const fetchAllLists = async () => {
-            const currentInquilino = inquilino || patient?.inquilino;
+            const currentInquilino = inquilino || patient?.inquilino || patient?.tenant_id;
             if (!currentInquilino) return;
             try {
-                const q = query(collection(db, "listas_precios"), where("inquilino", "==", currentInquilino));
-                const snap = await getDocs(q);
-                setAllPriceLists(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const { data } = await supabase
+                    .from("listas_precios")
+                    .select("*")
+                    .eq("tenant_id", currentInquilino);
+                setAllPriceLists(data || []);
             } catch (e) { console.error(e); }
         };
         fetchAllLists();
-    }, [inquilino, patient?.inquilino]);
+    }, [inquilino, patient?.inquilino, patient?.tenant_id]);
 
     useEffect(() => {
         const fetchInitialBaseList = async () => {
-            const currentInquilino = inquilino || patient?.inquilino;
+            const currentInquilino = inquilino || patient?.inquilino || patient?.tenant_id;
             if (!currentInquilino) return;
             
             try {
-                // SI EL PACIENTE TIENE CONVENIO: Cargar descuentos y usar su lista de precios
                 if (patient?.convenioBeneficio) {
-                    const qConv = query(
-                        collection(db, "convenios"),
-                        where("inquilino", "==", currentInquilino),
-                        where("nombre", "==", patient.convenioBeneficio.trim()),
-                        where("activo", "==", true),
-                        limit(1)
-                    );
-                    const convSnap = await getDocs(qConv);
-                    if (!convSnap.empty) {
-                        const convenioDoc = convSnap.docs[0];
-                        const convData = convenioDoc.data();
-                        
-                        // Cargar los descuentos asociados a este convenio
-                        const descSnap = await getDocs(collection(db, "convenios", convenioDoc.id, "descuentos"));
-                        const descMap = {};
-                        descSnap.docs.forEach(d => {
-                            descMap[d.id] = d.data();
-                        });
-                        setConvenioDescuentos(descMap);
+                    const { data: convData } = await supabase
+                        .from("convenios")
+                        .select("*")
+                        .eq("tenant_id", currentInquilino)
+                        .eq("nombre", patient.convenioBeneficio.trim())
+                        .maybeSingle();
 
-                        // Si no hay lista pre-establecida en initialData, usamos la del convenio
-                        if (!initialData?.baseListId && convData.listaPreciosId) {
-                            setBaseListId(convData.listaPreciosId);
-                            const listSnap = await getDoc(doc(db, "listas_precios", convData.listaPreciosId));
-                            if (listSnap.exists()) setBaseListName(listSnap.data().nombre);
+                    if (convData) {
+                        if (!initialData?.baseListId && (convData.lista_precios_id || convData.listaPreciosId)) {
+                            const listId = convData.lista_precios_id || convData.listaPreciosId;
+                            setBaseListId(listId);
+                            const { data: listData } = await supabase
+                                .from("listas_precios")
+                                .select("*")
+                                .eq("id", listId)
+                                .maybeSingle();
+                            if (listData) setBaseListName(listData.nombre);
                             return;
                         }
                     }
                 }
 
-                // PRIMERO: Intentar por el plan actual (si ya tiene uno guardado)
                 if (initialData?.baseListId) {
                     setBaseListId(initialData.baseListId);
-                    const listSnap = await getDoc(doc(db, "listas_precios", initialData.baseListId));
-                    if(listSnap.exists()) setBaseListName(listSnap.data().nombre);
+                    const { data: listData } = await supabase
+                        .from("listas_precios")
+                        .select("*")
+                        .eq("id", initialData.baseListId)
+                        .maybeSingle();
+                    if (listData) setBaseListName(listData.nombre);
                     return;
                 }
 
-                // SEGUNDO: Intentar por el plan asignado al paciente
-                if (patient?.planId) {
-                    const planSnap = await getDoc(doc(db, "planes", patient.planId));
-                    if (planSnap.exists() && planSnap.data().baseListId) {
-                        const bId = planSnap.data().baseListId;
-                        setBaseListId(bId);
-                        const listSnap = await getDoc(doc(db, "listas_precios", bId));
-                        if(listSnap.exists()) setBaseListName(listSnap.data().nombre);
-                        return;
-                    }
-                }
-
-                // TERCERO: Fallback - Buscar la lista marcada como "en_uso"
-                const q = query(
-                    collection(db, "listas_precios"),
-                    where("inquilino", "==", currentInquilino),
-                    where("en_uso", "==", true),
-                    limit(1)
-                );
-                const activeListSnap = await getDocs(q);
-                if (!activeListSnap.empty) {
-                    const docData = activeListSnap.docs[0].data();
-                    setBaseListId(activeListSnap.docs[0].id);
-                    setBaseListName(docData.nombre);
-                } else {
-                    // CUARTO: Fallback final - Cualquier lista del inquilino
-                    const qAll = query(
-                        collection(db, "listas_precios"),
-                        where("inquilino", "==", currentInquilino),
-                        limit(1)
-                    );
-                    const anyListSnap = await getDocs(qAll);
-                    if (!anyListSnap.empty) {
-                        const docData = anyListSnap.docs[0].data();
-                        setBaseListId(anyListSnap.docs[0].id);
-                        setBaseListName(docData.nombre);
-                    }
+                const { data: lists } = await supabase
+                    .from("listas_precios")
+                    .select("*")
+                    .eq("tenant_id", currentInquilino);
+                if (lists && lists.length > 0) {
+                    const activeList = lists.find(l => l.en_uso) || lists[0];
+                    setBaseListId(activeList.id);
+                    setBaseListName(activeList.nombre);
                 }
             } catch (e) {
                 console.error("Error fetching price list context:", e);
             }
         };
         fetchInitialBaseList();
-    }, [patient?.planId, inquilino, patient?.inquilino, initialData?.baseListId, patient?.convenioBeneficio]);
+    }, [patient?.planId, inquilino, patient?.inquilino, patient?.tenant_id, initialData?.baseListId, patient?.convenioBeneficio]);
 
     const handleListChange = async (e) => {
         const id = e.target.value;
@@ -728,7 +746,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
     const handleItemSearch = async (id, term) => {
         updateItem(id, 'desc', term);
-        if (!baseListId || term.length < 1) { // Reducido a 1 carácter
+        if (term.length < 1) {
             setSearchResults([]);
             setShowResults(false);
             return;
@@ -738,14 +756,44 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         setActiveSearchId(id);
         setShowResults(true);
         try {
-            const q = query(
-                collection(db, "listas_precios", baseListId, "items"),
-                where("search_name", ">=", term.toLowerCase()),
-                where("search_name", "<=", term.toLowerCase() + "\uf8ff"),
-                limit(10)
-            );
-            const snap = await getDocs(q);
-            setSearchResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            let rawItems = [];
+            if (baseListId) {
+                const { data: listRow } = await supabase
+                    .from("listas_precios")
+                    .select("descripcion")
+                    .eq("id", baseListId)
+                    .maybeSingle();
+
+                if (listRow?.descripcion) {
+                    try {
+                        const parsed = JSON.parse(listRow.descripcion);
+                        if (Array.isArray(parsed) && parsed.length > 0) rawItems = parsed;
+                    } catch (_) {}
+                }
+            }
+
+            if (rawItems.length === 0) {
+                rawItems = CUPS_DENTAL_CODES.map((c, idx) => ({
+                    id: `cups_${c.code}_${idx}`,
+                    codigo: c.code,
+                    nombre: c.name,
+                    precio: Number(c.precio || 0)
+                }));
+            }
+
+            const searchWords = term.toLowerCase().split(/\s+/).filter(Boolean);
+            const filtered = rawItems.filter(item => {
+                const nameLower = (item.nombre || item.descripcion || item.desc || "").toLowerCase();
+                const codeLower = (item.codigo || "").toLowerCase();
+                return searchWords.every(word => nameLower.includes(word) || codeLower.includes(word));
+            }).slice(0, 10);
+
+            setSearchResults(filtered.map((d, idx) => ({
+                id: d.id || `search_${idx}`,
+                ...d,
+                amount: Number(d.precio || d.valor || d.amount || 0),
+                desc: d.nombre || d.descripcion || d.desc || ""
+            })));
         } catch (e) {
             console.error("Search error:", e);
         } finally {

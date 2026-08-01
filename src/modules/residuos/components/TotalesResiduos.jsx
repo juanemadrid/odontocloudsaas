@@ -25,18 +25,44 @@ export default function TotalesResiduos() {
         setLoading(true);
         try {
             // Load types
-            const { data: tSnap } = await supabase
-                .from("tipos_residuos")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setTypes((tSnap || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
+            let tList = [];
+            try {
+                const { data: tSnap } = await supabase
+                    .from("tipos_residuos")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (tSnap && tSnap.length > 0) tList = tSnap;
+            } catch (e) {}
+
+            if (tList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                tList = cfgRow?.config?.tipos_residuos || [];
+            }
+            setTypes(tList.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
 
             // Load logs
-            const { data: lSnap } = await supabase
-                .from("registro_residuos")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setLogs(lSnap || []);
+            let lList = [];
+            try {
+                const { data: lSnap } = await supabase
+                    .from("registro_residuos")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (lSnap && lSnap.length > 0) lList = lSnap;
+            } catch (e) {}
+
+            if (lList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                lList = cfgRow?.config?.registro_residuos || [];
+            }
+            setLogs(lList);
         } catch (e) {
             console.error("Error loading totals data:", e);
             toast.error("Error al cargar la planilla de totales");

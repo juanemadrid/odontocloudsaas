@@ -252,7 +252,7 @@ function CommandSearch({ onNavigate, onAction, placeholder }) {
       { group: "Navegación", label: "Ir a Inventario", keywords: "inventario stock", run: () => onNavigate?.("Inventario") },
       { group: "Navegación", label: "Ir a Inventario", keywords: "inventario stock", run: () => onNavigate?.("Inventario") },
       // Update link to real 3D route
-      { group: "Navegación", label: "Ir a Odontograma 3D", keywords: "odontograma 3d", run: () => onNavigate?.("Odontograma") },
+      { group: "Navegación", label: "Ir a Odontograma Digital", keywords: "odontograma digital", run: () => onNavigate?.("Odontograma") },
       { group: "Navegación", label: "Ir a Reportes", keywords: "reportes informes", run: () => onNavigate?.("Reportes") },
       { group: "Navegación", label: "Ir a Reportes", keywords: "reportes informes", run: () => onNavigate?.("Reportes") },
 

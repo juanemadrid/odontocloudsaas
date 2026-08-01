@@ -37,7 +37,7 @@ function MetodoPagoEditor({ item, onBack }) {
         setIsSaving(true);
         try {
             const bancoObj = bancos.find(b => b.id === form.bancoId);
-            await saveConfigItem(inquilino, "metodos_pago", "metodos_pago", {
+            await saveConfigItem(inquilino, "metodos_pago", null, {
                 ...(item || {}),
                 nombre: form.nombre.trim(),
                 requiereReferencia: form.requiereReferencia,
@@ -158,7 +158,7 @@ export default function EmpresaMetodosPago() {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const data = await getConfigItems(inquilino, "metodos_pago", "metodos_pago");
+            const data = await getConfigItems(inquilino, "metodos_pago", null);
             setRows(data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         } catch (error) {
             console.error("Error fetching metodos_pago:", error);
@@ -174,7 +174,7 @@ export default function EmpresaMetodosPago() {
         if (!window.confirm(`⚠️ ¿Seguro que deseas eliminar el método de pago "${row.nombre}"?`)) return;
         setLoading(true);
         try {
-            await deleteConfigItem(inquilino, "metodos_pago", "metodos_pago", row.id);
+            await deleteConfigItem(inquilino, "metodos_pago", null, row.id);
             setRows(prev => prev.filter(r => r.id !== row.id));
             if (toast?.success) toast.success("Método de pago eliminado correctamente");
             else alert("✅ Método de pago eliminado correctamente");

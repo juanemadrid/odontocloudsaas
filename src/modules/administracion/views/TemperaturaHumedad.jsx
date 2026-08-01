@@ -83,11 +83,28 @@ export default function TemperaturaHumedad() {
 
   const loadLocations = async () => {
     try {
-      const { data } = await supabase
-        .from("temp_ubicaciones")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-      setLocations(data || []);
+      let list = [];
+      try {
+        const { data } = await supabase
+          .from("temp_ubicaciones")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.temp_ubicaciones || [
+          { id: "loc_1", nombre: "CONSULTORIO 1" },
+          { id: "loc_2", nombre: "REFRIGERADOR VACUNAS / INSUMOS" }
+        ];
+      }
+
+      setLocations(list);
     } catch (e) {
       console.error(e);
     }
@@ -95,12 +112,26 @@ export default function TemperaturaHumedad() {
 
   const loadMediciones = async () => {
     try {
-      const { data } = await supabase
-        .from("temp_mediciones")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
-        .order("fechaMedida", { ascending: false });
-      setMediciones(data || []);
+      let list = [];
+      try {
+        const { data } = await supabase
+          .from("temp_mediciones")
+          .select("*")
+          .eq("tenant_id", inquilino)
+          .order("fechaMedida", { ascending: false });
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.temp_mediciones || [];
+      }
+
+      setMediciones(list);
     } catch (e) {
       console.error("Error loading measurements:", e);
     }
@@ -109,10 +140,10 @@ export default function TemperaturaHumedad() {
   const loadProfessionals = async () => {
     try {
       const { data } = await supabase
-        .from("profesionales")
+        .from("profiles")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-      setProfessionals((data || []).map(d => d.nombreCompleto || d.nombre));
+        .eq("tenant_id", inquilino);
+      setProfessionals((data || []).map(d => d.full_name || d.nombreCompleto || d.nombre));
     } catch (e) {
       console.error(e);
     }
@@ -136,21 +167,45 @@ export default function TemperaturaHumedad() {
     if (!locationName.trim()) return toast?.error("El nombre de la ubicación es requerido");
     setSaving(true);
     try {
+      const locId = editingLocation?.id || (crypto.randomUUID ? crypto.randomUUID() : `loc_${Date.now()}`);
       const payload = {
+        id: locId,
         nombre: locationName.trim(),
         tenant_id: inquilino,
-        inquilino,
         updated_at: new Date().toISOString()
       };
 
+      try {
+        if (editingLocation?.id) {
+          await supabase.from("temp_ubicaciones").update(payload).eq("id", editingLocation.id);
+        } else {
+          payload.created_at = new Date().toISOString();
+          await supabase.from("temp_ubicaciones").insert([payload]);
+        }
+      } catch (err) {}
+
+      // Sincronizar en website_config
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.temp_ubicaciones) ? currentConfig.temp_ubicaciones : [];
+      let updatedList;
       if (editingLocation?.id) {
-        await supabase.from("temp_ubicaciones").update(payload).eq("id", editingLocation.id);
-        toast?.success("Ubicación actualizada con éxito");
+        updatedList = currentList.map(item => item.id === editingLocation.id ? { ...item, ...payload } : item);
       } else {
-        payload.created_at = new Date().toISOString();
-        await supabase.from("temp_ubicaciones").insert([payload]);
-        toast?.success("Ubicación creada con éxito");
+        updatedList = [payload, ...currentList];
       }
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, temp_ubicaciones: updatedList } },
+        { onConflict: "tenant_id" }
+      );
+
+      toast?.success(editingLocation ? "Ubicación actualizada con éxito" : "Ubicación creada con éxito");
       setLocationFormOpen(false);
       loadLocations();
     } catch (e) {
@@ -164,7 +219,25 @@ export default function TemperaturaHumedad() {
   const handleDeleteLocation = async (loc) => {
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente la ubicación "${loc.nombre}"?`)) return;
     try {
-      await supabase.from("temp_ubicaciones").delete().eq("id", loc.id);
+      try {
+        await supabase.from("temp_ubicaciones").delete().eq("id", loc.id);
+      } catch (err) {}
+
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.temp_ubicaciones) ? currentConfig.temp_ubicaciones : [];
+      const filteredList = currentList.filter(item => item.id !== loc.id);
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, temp_ubicaciones: filteredList } },
+        { onConflict: "tenant_id" }
+      );
+
       toast?.success("Ubicación eliminada");
       loadLocations();
     } catch (e) {
@@ -185,26 +258,50 @@ export default function TemperaturaHumedad() {
     setSaving(true);
     try {
       const selectedLoc = locations.find(l => l.id === medicionForm.ubicacionId);
+      const medId = editingMedicion?.id || (crypto.randomUUID ? crypto.randomUUID() : `med_${Date.now()}`);
       const payload = {
+        id: medId,
         ...medicionForm,
         temperaturaInterna: parseFloat(medicionForm.temperaturaInterna),
         temperaturaExterna: parseFloat(medicionForm.temperaturaExterna),
         humedad: parseFloat(medicionForm.humedad),
         ubicacionNombre: selectedLoc?.nombre || "",
-        responsable: userProfile?.displayName || userProfile?.nombreCompleto || "Admin",
+        responsable: userProfile?.displayName || userProfile?.full_name || userProfile?.nombreCompleto || "Admin",
         tenant_id: inquilino,
-        inquilino,
         updated_at: new Date().toISOString()
       };
 
+      try {
+        if (editingMedicion?.id) {
+          await supabase.from("temp_mediciones").update(payload).eq("id", editingMedicion.id);
+        } else {
+          payload.created_at = new Date().toISOString();
+          await supabase.from("temp_mediciones").insert([payload]);
+        }
+      } catch (err) {}
+
+      // Sincronizar en website_config
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.temp_mediciones) ? currentConfig.temp_mediciones : [];
+      let updatedList;
       if (editingMedicion?.id) {
-        await supabase.from("temp_mediciones").update(payload).eq("id", editingMedicion.id);
-        toast?.success("Medición actualizada");
+        updatedList = currentList.map(item => item.id === editingMedicion.id ? { ...item, ...payload } : item);
       } else {
-        payload.created_at = new Date().toISOString();
-        await supabase.from("temp_mediciones").insert([payload]);
-        toast?.success("Medición registrada con éxito");
+        updatedList = [payload, ...currentList];
       }
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, temp_mediciones: updatedList } },
+        { onConflict: "tenant_id" }
+      );
+
+      toast?.success(editingMedicion ? "Medición actualizada" : "Medición registrada con éxito");
 
       setMedicionForm({
         ubicacionId: "",

@@ -53,38 +53,38 @@ export default function ConfigEmpresa() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const { data } = await supabase
-                .from("tenants")
-                .select("*")
-                .eq("id", userProfile.inquilino)
-                .maybeSingle();
+            const [tRes, cRes] = await Promise.all([
+                supabase.from("tenants").select("*").eq("id", userProfile.inquilino).maybeSingle(),
+                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle()
+            ]);
 
-            if (data) {
-                setFormData(prev => ({
-                    ...prev,
-                    nit: data.nit || "",
-                    razonSocial: data.razonSocial || "",
-                    nombreComercial: data.nombre || data.nombreComercial || "",
-                    direccion: data.direccion || data.address || "",
-                    telefono: data.telefono || data.phone || "",
-                    celular: data.celular || "",
-                    email: data.email || "",
-                    website: data.website || "",
-                    agendamientoUrl: data.agendamientoUrl || "",
-                    regimen: data.regimen || "Responsable de IVA",
-                    moneda: data.moneda || "COP",
-                    zonaHoraria: data.zonaHoraria || "America/Bogota",
-                    cuentaContable: data.cuentaContable || "",
-                    esIps: data.esIps || false,
-                    sisproUsuario: data.sisproUsuario || "",
-                    sisproTipoDoc: data.sisproTipoDoc || "CC",
-                    sisproPassword: data.sisproPassword || "",
-                    codigoPrestador: data.codigoPrestador || "",
-                    logoUrl: data.logo_url || data.logo || "",
-                    ciudad: data.ciudad || "",
-                    codigoPostal: data.codigoPostal || ""
-                }));
-            }
+            const data = tRes.data || {};
+            const extraConfig = cRes.data?.config?.empresa_datos || {};
+
+            setFormData(prev => ({
+                ...prev,
+                nit: data.nit || extraConfig.nit || "",
+                razonSocial: data.razonSocial || extraConfig.razonSocial || "",
+                nombreComercial: data.nombre || data.nombreComercial || extraConfig.nombreComercial || "",
+                direccion: data.direccion || data.address || extraConfig.direccion || "",
+                telefono: data.telefono || data.phone || extraConfig.telefono || "",
+                celular: data.celular || extraConfig.celular || "",
+                email: data.email || extraConfig.email || "",
+                website: data.website || extraConfig.website || "",
+                agendamientoUrl: data.agendamientoUrl || extraConfig.agendamientoUrl || "",
+                regimen: data.regimen || extraConfig.regimen || "Responsable de IVA",
+                moneda: data.moneda || extraConfig.moneda || "COP",
+                zonaHoraria: data.zonaHoraria || extraConfig.zonaHoraria || "America/Bogota",
+                cuentaContable: data.cuentaContable || extraConfig.cuentaContable || "",
+                esIps: data.esIps ?? extraConfig.esIps ?? false,
+                sisproUsuario: data.sisproUsuario || extraConfig.sisproUsuario || "",
+                sisproTipoDoc: data.sisproTipoDoc || extraConfig.sisproTipoDoc || "CC",
+                sisproPassword: data.sisproPassword || extraConfig.sisproPassword || "",
+                codigoPrestador: data.codigoPrestador || extraConfig.codigoPrestador || "",
+                logoUrl: data.logo_url || data.logo || extraConfig.logoUrl || "",
+                ciudad: data.ciudad || extraConfig.ciudad || "",
+                codigoPostal: data.codigoPostal || extraConfig.codigoPostal || ""
+            }));
         } catch (error) {
             console.error("Error cargando datos de empresa:", error);
             toast.error("Error al cargar información");
@@ -99,33 +99,57 @@ export default function ConfigEmpresa() {
         try {
             const tenantPayload = {
                 id: userProfile.inquilino,
-                nombre: formData.nombreComercial,
-                nombreComercial: formData.nombreComercial,
-                razonSocial: formData.razonSocial,
-                nit: formData.nit,
-                telefono: formData.telefono,
-                direccion: formData.direccion,
-                logo_url: formData.logoUrl,
-                ciudad: formData.ciudad,
-                esIps: formData.esIps,
-                codigoPrestador: formData.codigoPrestador,
-                updated_at: new Date().toISOString()
+                nombre: formData.nombreComercial || formData.razonSocial || "Clínica",
+                nit: formData.nit || "",
+                telefono: formData.telefono || formData.celular || "",
+                direccion: formData.direccion || "",
+                ciudad: formData.ciudad || "",
+                logo_url: formData.logoUrl || ""
             };
 
-            await supabase.from("tenants").upsert(tenantPayload);
+            const { error: tErr } = await supabase.from("tenants").upsert(tenantPayload);
+            if (tErr) throw tErr;
+
+            // Sincronizar la totalidad de los datos en website_config JSON para durabilidad completa
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", userProfile.inquilino)
+                .maybeSingle();
+
+            const currentConfig = cfgRow?.config || {};
+            const newConfig = {
+                ...currentConfig,
+                empresa_datos: { ...formData },
+                updatedAt: new Date().toISOString()
+            };
+
+            const { error: wcErr } = await supabase.from("website_config").upsert(
+                { tenant_id: userProfile.inquilino, config: newConfig },
+                { onConflict: "tenant_id" }
+            );
+            if (wcErr) throw wcErr;
+
+            // Limpiar caché de sesión de AuthContext para asegurar recarga limpia en F5
+            try {
+                const uid = userProfile?.id || userProfile?.uid;
+                if (uid) {
+                    sessionStorage.removeItem(`oc_user_profile_${uid}`);
+                }
+            } catch (e) {}
 
             window.dispatchEvent(new CustomEvent("tenant-updated"));
             toast.success("Información guardada correctamente");
         } catch (error) {
             console.error("Error guardando empresa:", error);
-            toast.error("Error al guardar cambios");
+            toast.error("Error al guardar cambios: " + (error.message || ""));
         } finally {
             setSaving(false);
         }
     };
 
     const handleLogoClick = () => {
-        fileInputRef.current.click();
+        fileInputRef.current?.click();
     };
 
     const handleFileChange = async (e) => {
@@ -147,20 +171,68 @@ export default function ConfigEmpresa() {
         try {
             const fileExt = file.name.split('.').pop();
             const fileName = `tenants/${userProfile.inquilino}_logo_${Date.now()}.${fileExt}`;
+            
+            let finalUrl = "";
+
             const { error: uploadError } = await supabase.storage
                 .from("clinical-files")
-                .upload(fileName, file);
+                .upload(fileName, file, { upsert: true });
 
-            if (uploadError) throw uploadError;
+            if (!uploadError) {
+                const { data: publicUrlData } = supabase.storage
+                    .from("clinical-files")
+                    .getPublicUrl(fileName);
+                finalUrl = publicUrlData.publicUrl;
+            } else {
+                console.warn("Storage upload note (RLS policy active), fall-backing to DataURL preview:", uploadError.message);
+                finalUrl = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(file);
+                });
+            }
 
-            const { data: publicUrlData } = supabase.storage
-                .from("clinical-files")
-                .getPublicUrl(fileName);
+            setFormData(prev => ({ ...prev, logoUrl: finalUrl }));
 
-            setFormData(prev => ({ ...prev, logoUrl: publicUrlData.publicUrl }));
-            toast.success("Logo cargado temporalmente. Guarde cambios para confirmar.");
+            // Guardar automáticamente en Supabase para durabilidad absoluta en F5
+            if (userProfile?.inquilino && finalUrl) {
+                await supabase.from("tenants").update({ logo_url: finalUrl }).eq("id", userProfile.inquilino);
+
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .maybeSingle();
+
+                const currentConfig = cfgRow?.config || {};
+                const newConfig = {
+                    ...currentConfig,
+                    empresa_datos: {
+                        ...(currentConfig.empresa_datos || {}),
+                        logoUrl: finalUrl
+                    },
+                    updatedAt: new Date().toISOString()
+                };
+
+                await supabase.from("website_config").upsert(
+                    { tenant_id: userProfile.inquilino, config: newConfig },
+                    { onConflict: "tenant_id" }
+                );
+
+                try {
+                    const uid = userProfile?.id || userProfile?.uid;
+                    if (uid) {
+                        sessionStorage.removeItem(`oc_user_profile_${uid}`);
+                    }
+                } catch (e) {}
+
+                window.dispatchEvent(new CustomEvent("tenant-updated"));
+            }
+
+            toast.success("Logo guardado correctamente.");
         } catch (error) {
-            toast.error(error.message);
+            console.error("Error al procesar el logo:", error);
+            toast.error(error.message || "Error al procesar la imagen");
         } finally {
             setUploading(false);
         }

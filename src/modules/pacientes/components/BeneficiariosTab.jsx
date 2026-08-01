@@ -26,7 +26,7 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
     const beneficiarios = patient?.beneficiarios || [];
 
     const handleAssignClick = () => {
-        if (onSwitchTab) onSwitchTab('eps'); 
+        if (onSwitchTab) onSwitchTab('mark'); 
     };
 
     // Close search dropdown on click outside

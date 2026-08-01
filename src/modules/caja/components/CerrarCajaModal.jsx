@@ -82,21 +82,55 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
     setSaving(true);
     setError("");
     try {
-      await supabase.from("cajas").update({
+      const fechaCierreIso = new Date().toISOString();
+      const updatedCajaObj = {
+        ...caja,
         estado: "cerrada",
-        fechaCierre: new Date().toISOString(),
+        fechaCierre: fechaCierreIso,
+        fecha_cierre: fechaCierreIso,
         conteoEfectivo: conteoEfNum,
         conteoOtros: conteoOtrosNum,
         conteoTotal,
         saldoTeorico,
         diferencia,
         totalIngresos,
+        total_ingresos: totalIngresos,
         totalEgresos,
+        total_egresos: totalEgresos,
         observacionCierre: observacion.trim(),
         cierradoPor: userProfile?.nombre || userProfile?.email || "Usuario",
         cierradoPorId: userProfile?.uid || "",
-        updated_at: new Date().toISOString()
-      }).eq("id", caja.id);
+        updated_at: fechaCierreIso
+      };
+
+      try {
+        await supabase.from("cajas").update({
+          estado: "cerrada",
+          fecha_cierre: fechaCierreIso,
+          total_ingresos: totalIngresos,
+          total_egresos: totalEgresos,
+          updated_at: fechaCierreIso
+        }).eq("id", caja.id);
+      } catch (e) {}
+
+      // Sincronizar en website_config
+      try {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        const currentConfig = cfgRow?.config || {};
+        const currentList = Array.isArray(currentConfig.cajas) ? currentConfig.cajas : [];
+        const updatedList = currentList.map(item => item.id === caja.id ? updatedCajaObj : item);
+
+        await supabase.from("website_config").upsert(
+          { tenant_id: inquilino, config: { ...currentConfig, cajas: updatedList } },
+          { onConflict: "tenant_id" }
+        );
+      } catch (e) {}
+
       onSuccess?.();
     } catch (err) {
       console.error("Error cerrando caja:", err);

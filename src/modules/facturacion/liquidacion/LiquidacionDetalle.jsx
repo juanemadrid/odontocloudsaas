@@ -70,7 +70,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
             const { data: plansSnap } = await supabase
                 .from("treatment_plans")
                 .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                .eq("tenant_id", inquilino);
 
             const plansMap = {};
             (plansSnap || []).forEach(pData => {
@@ -90,7 +90,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
             const { data: snap } = await supabase
                 .from("pagos")
                 .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .eq("tenant_id", inquilino)
                 .eq("profesionalId", doctor.id);
 
             const list = (snap || []).map(data => {

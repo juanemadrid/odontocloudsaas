@@ -120,9 +120,9 @@ export default function Indicadores() {
 
       // 2. Presupuestos / Planes de Tratamiento
       const { data: snapPlanes } = await supabase
-        .from("planes")
+        .from("treatment_plans")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
 
       let presCur = 0;
       let presPrv = 0;

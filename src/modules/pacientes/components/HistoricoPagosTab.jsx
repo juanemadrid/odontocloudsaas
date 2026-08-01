@@ -1,15 +1,72 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import supabase from '../../../lib/supabaseClient';
+import { getConfigCached } from '../../../hooks/useConfig';
 import { useToast } from '../../../context/ToastContext';
-import { FiDollarSign, FiCalendar, FiCreditCard, FiTrash2, FiActivity, FiArrowRight, FiPrinter, FiX } from 'react-icons/fi';
-import { formatCurrency } from '../../../utils/formatters';
 import { useAuth } from '../../../context/AuthContext';
-import { ReceiptPrintService } from '../../../services/ReceiptPrintService';
 import { useAudit } from '../../../hooks/useAudit';
+import { ReceiptPrintService } from '../../../services/ReceiptPrintService';
+import { formatCurrency } from '../../../utils/formatters';
+import {
+    FiDollarSign, FiCalendar, FiCreditCard, FiTrash2,
+    FiPrinter, FiX, FiSearch, FiCopy, FiInbox, FiLoader,
+    FiCheckCircle, FiAlertCircle, FiInfo, FiUser, FiArrowRight
+} from 'react-icons/fi';
+
+const PAYMENT_METHOD_BADGES = {
+    'efectivo': { bg: 'bg-emerald-50 text-emerald-700 border-emerald-100', label: 'Efectivo' },
+    'nequi': { bg: 'bg-purple-50 text-purple-700 border-purple-100', label: 'Nequi' },
+    'daviplata': { bg: 'bg-rose-50 text-rose-700 border-rose-100', label: 'Daviplata' },
+    'transferencia': { bg: 'bg-blue-50 text-blue-700 border-blue-100', label: 'Transferencia' },
+    'tarjeta débito': { bg: 'bg-indigo-50 text-indigo-700 border-indigo-100', label: 'T. Débito' },
+    'tarjeta crédito': { bg: 'bg-violet-50 text-violet-700 border-violet-100', label: 'T. Crédito' },
+    'saldo a favor': { bg: 'bg-amber-50 text-amber-700 border-amber-100', label: 'Saldo a Favor' },
+};
+
+const getMethodBadge = (m) => {
+    const key = (m || '').toLowerCase().trim();
+    if (key.includes('saldo')) return PAYMENT_METHOD_BADGES['saldo a favor'];
+    if (key.includes('nequi')) return PAYMENT_METHOD_BADGES['nequi'];
+    if (key.includes('davi')) return PAYMENT_METHOD_BADGES['daviplata'];
+    if (key.includes('transf')) return PAYMENT_METHOD_BADGES['transferencia'];
+    if (key.includes('débito') || key.includes('debito')) return PAYMENT_METHOD_BADGES['tarjeta débito'];
+    if (key.includes('crédito') || key.includes('credito')) return PAYMENT_METHOD_BADGES['tarjeta crédito'];
+    return PAYMENT_METHOD_BADGES[key] || { bg: 'bg-slate-100 text-slate-700 border-slate-200', label: m || 'Efectivo' };
+};
+
+const formatDate = (iso) => {
+    if (!iso) return '—';
+    try {
+        const d = new Date(iso);
+        return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+        return '—';
+    }
+};
+
+const getReceiptNumber = (pago, index) => {
+    if (pago.nroConsecutivo) return `#${pago.nroConsecutivo}`;
+    if (pago.consecutivo) return `#${pago.consecutivo}`;
+    if (pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo) return `#${pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo}`;
+    if (pago.referencia && pago.referencia !== 'SALDO A FAVOR' && pago.referencia !== 'ABONO GENERAL') return `#${pago.referencia}`;
+    if (pago.id) return `#RC-${pago.id.slice(0, 6).toUpperCase()}`;
+    return `#RC-${String(index + 1).padStart(3, '0')}`;
+};
+
+const getUserLabel = (pago, profile) => {
+    const raw = pago.registradoPor || pago.registrado_por || pago.usuario || pago.usuarioNombre || pago.creadoPor || pago.created_by;
+    if (raw && typeof raw === 'string' && !raw.includes('@') && raw.toLowerCase() !== 'sistema') {
+        return raw;
+    }
+    if (raw && typeof raw === 'string' && raw.includes('@')) {
+        return raw.split('@')[0];
+    }
+    return profile?.nombreCompleto || profile?.nombre || profile?.email?.split('@')[0] || 'Administración';
+};
 
 export default function HistoricoPagosTab({ patientId }) {
     const [pagos, setPagos] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
     const toast = useToast();
     const { userProfile } = useAuth();
     const { logAction } = useAudit();
@@ -19,56 +76,85 @@ export default function HistoricoPagosTab({ patientId }) {
     const [voidReason, setVoidReason] = useState("");
     const [voiding, setVoiding] = useState(false);
 
-    const handlePrint = async (pago) => {
-        try {
-            const { data: patientData } = await supabase
-                .from("pacientes")
-                .select("*")
-                .eq("id", patientId)
-                .single();
-            if (!patientData) {
-                toast.error("No se pudo cargar la información del paciente");
-                return;
-            }
-
-            const clinic = userProfile?.tenant || {
-                nombre: userProfile?.tenantNombre || userProfile?.clinica || "Clínica",
-                inquilino: userProfile?.inquilino || userProfile?.tenantId
-            };
-
-            await ReceiptPrintService.generatePDF(pago, patientData, clinic, userProfile);
-        } catch (e) {
-            console.error("Error launching print:", e);
-            toast.error("Error al preparar la impresión");
-        }
-    };
-
     useEffect(() => {
         if (!patientId) return;
-        
         const loadPagos = async () => {
+            setLoading(true);
             try {
-                const { data: payData } = await supabase
+                const PAGO_COLS = "id, paciente_id, tenant_id, monto, fecha, created_at, metodo, medio, referencia, concepto, notas, notes, estado, motivoAnulacion, anuladoPor, fechaAnulacion, nroConsecutivo, consecutivo, registradoPor, usuarioNombre";
+
+                let { data: payData } = await supabase
                     .from("pagos")
-                    .select("*")
-                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
+                    .select(PAGO_COLS)
+                    .eq("paciente_id", patientId)
                     .order("created_at", { ascending: false });
-                let data = (payData || []).map(d => ({
+
+                let list = payData || [];
+
+                // Usar caché compartida de config en lugar de nueva query
+                if (userProfile?.inquilino) {
+                    const cfg = await getConfigCached(userProfile.inquilino);
+                    const cfgPagos = cfg?.pagos || [];
+                    const matchingCfg = cfgPagos.filter(p =>
+                        p.paciente_id === patientId ||
+                        p.pacienteId === patientId ||
+                        p.patient_id === patientId ||
+                        p.patientId === patientId
+                    );
+
+                    const existingIds = new Set(list.map(p => p.id));
+                    matchingCfg.forEach(p => {
+                        if (!existingIds.has(p.id)) {
+                            list.push(p);
+                        }
+                    });
+                }
+
+                let data = (list || []).map(d => ({
                     id: d.id,
                     ...d,
-                    fecha: d.created_at ? new Date(d.created_at) : (d.fecha ? new Date(d.fecha) : new Date())
+                    fechaISO: d.created_at || d.fecha || d.fechaISO,
+                    monto: Number(d.monto || d.total || d.valor || 0)
                 }));
+
                 data = data.filter(p => p.concepto !== "SALDO A FAVOR");
                 setPagos(data);
             } catch (err) {
                 console.error("Error fetching payments:", err);
+                toast?.error?.("Error al cargar el historial de pagos");
             } finally {
                 setLoading(false);
             }
         };
 
         loadPagos();
-    }, [patientId]);
+    }, [patientId, userProfile]);
+
+    const handlePrint = async (pago) => {
+        try {
+            // SELECT específico — solo columnas necesarias para imprimir
+            const { data: patientData } = await supabase
+                .from("pacientes")
+                .select("id, nombres, apellidos, nombre, apellido, nroDocumento, tipoDocumento, celular, email, saldo_favor")
+                .eq("id", patientId)
+                .single();
+
+            if (!patientData) {
+                toast?.error?.("No se pudo cargar la información del paciente");
+                return;
+            }
+
+            const clinic = userProfile?.tenant || {
+                nombre: userProfile?.tenantNombre || userProfile?.clinica || "Clínica Dental",
+                inquilino: userProfile?.inquilino || userProfile?.tenantId
+            };
+
+            await ReceiptPrintService.generatePDF(pago, patientData, clinic, userProfile);
+        } catch (e) {
+            console.error("Error launching print:", e);
+            toast?.error?.("Error al preparar el comprobante de impresión");
+        }
+    };
 
     const handleDelete = (pago) => {
         setVoidReason("");
@@ -77,7 +163,7 @@ export default function HistoricoPagosTab({ patientId }) {
 
     const handleConfirmVoid = async () => {
         if (!voidReason.trim()) {
-            toast.error("El motivo de la anulación es obligatorio");
+            toast?.error?.("El motivo de la anulación es obligatorio");
             return;
         }
         setVoiding(true);
@@ -93,176 +179,279 @@ export default function HistoricoPagosTab({ patientId }) {
                 })
                 .eq("id", voidModal.pago.id);
 
-            // Audit log
+            // Update local state
+            setPagos(prev => prev.map(p => p.id === voidModal.pago.id ? { ...p, estado: "Anulado", motivoAnulacion: voidReason.trim() } : p));
+
             await logAction(patientId, "VOID_PAYMENT", {
                 pagoId: voidModal.pago.id,
-                monto: voidModal.pago.monto || voidModal.pago.total || 0,
-                concepto: voidModal.pago.concepto || "Servicio Dental",
+                monto: voidModal.pago.monto || 0,
+                concepto: voidModal.pago.concepto || "ABONO GENERAL",
                 motivoAnulacion: voidReason.trim()
             });
 
-            toast.success("Pago anulado correctamente");
+            toast?.success?.("Pago anulado correctamente");
             setVoidModal({ open: false, pago: null });
             setVoidReason("");
         } catch (error) {
             console.error("Error voiding payment:", error);
-            toast.error("Error al anular el pago");
+            toast?.error?.("Error al anular el pago");
         } finally {
             setVoiding(false);
         }
     };
 
-    if (loading) return (
-        <div className="flex flex-col items-center justify-center p-20 opacity-30 animate-pulse">
-            <FiActivity size={48} className="text-slate-400 mb-4" />
-            <h5 className="text-[14px] font-black uppercase tracking-widest text-slate-500">Cargando Transacciones...</h5>
-        </div>
-    );
+    const filtered = pagos.filter(p => {
+        if (!search) return true;
+        const q = search.toLowerCase();
+        const num = String(p.nroConsecutivo || p.consecutivo || '');
+        const dateStr = formatDate(p.fechaISO);
+        return (p.concepto || '').toLowerCase().includes(q) ||
+            num.includes(q) ||
+            (p.registradoPor || p.registrado_por || '').toLowerCase().includes(q) ||
+            (p.medio || p.metodo_pago || '').toLowerCase().includes(q) ||
+            dateStr.includes(q);
+    });
 
-    if (pagos.length === 0) {
+    const totalValid = pagos.filter(p => p.estado !== "Anulado").reduce((acc, p) => acc + (p.monto || 0), 0);
+
+    const copyTable = () => {
+        const text = filtered.map(p =>
+            [
+                formatDate(p.fechaISO),
+                p.nroConsecutivo ? `#${p.nroConsecutivo}` : '—',
+                p.concepto || 'ABONO GENERAL',
+                p.medio || 'Efectivo',
+                p.registradoPor || 'Sistema',
+                `$${(p.monto || 0).toLocaleString('es-CO')}`,
+                p.estado || 'Completado'
+            ].join('\t')
+        ).join('\n');
+
+        navigator.clipboard.writeText(text).then(() => toast?.success?.('Tabla copiada al portapapeles'));
+    };
+
+    if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center p-20 bg-slate-50 border border-slate-100 rounded-[32px] m-4">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-slate-200 mb-4 shadow-sm">
-                    <FiDollarSign size={32} />
-                </div>
-                <h3 className="text-sm font-black text-slate-700 uppercase tracking-tight mb-2">Sin Registro de Pagos</h3>
-                <p className="text-[11px] font-bold text-slate-400 text-center uppercase tracking-widest leading-relaxed px-10">No se han detectado abonos o pagos registrados para este paciente.</p>
+            <div className="flex items-center justify-center h-48 gap-3 text-slate-400">
+                <FiLoader size={20} className="animate-spin" />
+                <span className="text-xs font-semibold">Cargando histórico de pagos...</span>
             </div>
         );
     }
 
     return (
-        <div className="flex-1 p-6 md:p-10 animate-fadeIn bg-slate-50/20 custom-scrollbar overflow-y-auto">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
-                <div className="flex items-center gap-5">
-                    <div className="w-14 h-14 bg-emerald-600 rounded-[22px] flex items-center justify-center text-white shadow-xl shadow-emerald-100">
-                        <FiDollarSign size={28} />
+        <div className="flex flex-col h-full bg-white animate-fadeIn">
+            {/* Header Toolbar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between px-5 py-3 border-b border-slate-100 bg-white sticky top-0 z-10 gap-3">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
+                        <FiDollarSign size={16} />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none mb-1 uppercase">Historial de <span className="text-emerald-600 underline decoration-emerald-100 decoration-8 underline-offset-4">Pagos</span></h2>
-                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                           <span>Comprobantes de ingreso y abonos</span>
-                           <FiArrowRight size={10} className="text-slate-200" />
-                           <span className="text-slate-500">Histórico acumulado</span>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-sm font-bold text-slate-800 tracking-tight">Historial de Pagos y Abonos</h2>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                Total: ${formatCurrency(totalValid)}
+                            </span>
                         </div>
+                        <p className="text-[11px] text-slate-400 font-medium">Comprobantes de ingreso registrados y recibos de caja</p>
                     </div>
-                 </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <button
+                        onClick={copyTable}
+                        title="Copiar tabla"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                    >
+                        <FiCopy size={14} />
+                    </button>
+                    <div className="relative">
+                        <FiSearch size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Buscar abono..."
+                            className="pl-7 pr-3 h-8 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 w-44 transition"
+                        />
+                    </div>
+                </div>
             </div>
 
-            {/* List - Compacted sizing & typography */}
-            <div className="max-w-6xl mx-auto space-y-2.5">
-                {pagos.map((pago) => (
-                    <div key={pago.id} className="bg-white rounded-2xl border border-slate-100 p-4 flex flex-col md:flex-row items-center justify-between gap-4 hover:shadow-lg hover:shadow-slate-100/50 hover:-translate-y-0.5 transition-all duration-300 group">
-                        
-                        <div className="flex items-center gap-4 flex-1">
-                            <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center group-hover:bg-emerald-50 transition-colors shrink-0 overflow-hidden">
-                                {pago.nroConsecutivo ? (
-                                    <span className="text-[11px] font-black text-emerald-600 group-hover:text-emerald-700 tracking-tight leading-none"># {pago.nroConsecutivo}</span>
-                                ) : (
-                                    <FiCreditCard size={16} className="text-slate-300 group-hover:text-emerald-600 transition-colors" />
-                                )}
-                            </div>
-                            
-                            <div>
-                                <div className="flex items-center gap-2.5 mb-0.5">
-                                    {pago.nroConsecutivo && (
-                                        <span className="text-[8px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase tracking-widest font-mono">
-                                            # {pago.nroConsecutivo}
-                                        </span>
-                                    )}
-                                    <h4 className="font-black text-slate-800 text-[12px] uppercase tracking-tight">{pago.concepto || "ABONO GENERAL"}</h4>
-                                    <span className="text-[8px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                                        {(pago.medio || "").toLowerCase() === "saldo a favor" ? "Consumo s. a favor" : pago.medio}
-                                    </span>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5">
-                                     <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                         <FiCalendar className="text-slate-200" />
-                                         {pago.fecha ? pago.fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }) : '---'}
-                                     </div>
-                                     <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                                         <FiActivity className="text-slate-200" />
-                                         Registrado por: <span className="text-slate-600">{pago.registradoPor || 'Sistema'}</span>
-                                     </div>
-                                </div>
-                            </div>
-                        </div>
+            {/* Table */}
+            {filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center flex-1 gap-2 text-slate-300 py-16">
+                    <FiInbox size={36} strokeWidth={1.2} />
+                    <p className="text-xs font-semibold text-slate-400">
+                        {search ? 'Sin resultados para la búsqueda' : 'No hay abonos o pagos registrados'}
+                    </p>
+                    {search && (
+                        <button onClick={() => setSearch('')} className="text-xs font-medium text-emerald-600 hover:underline">
+                            Limpiar búsqueda
+                        </button>
+                    )}
+                </div>
+            ) : (
+                <div className="overflow-x-auto flex-1">
+                    <table className="w-full text-xs border-collapse">
+                        <thead>
+                            <tr className="border-b border-slate-100 bg-slate-50/70">
+                                {['Fecha', 'Recibo N.º', 'Concepto', 'Medio de Pago', 'Registrado Por', 'Valor Abono', 'Estado', 'Acciones'].map((col, i) => (
+                                    <th
+                                        key={i}
+                                        className={`px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider select-none whitespace-nowrap ${
+                                            col === 'Valor Abono' || col === 'Acciones' ? 'text-right' : 'text-left'
+                                        }`}
+                                    >
+                                        {col}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {filtered.map((pago, idx) => {
+                                const isVoided = pago.estado === "Anulado";
+                                const badge = getMethodBadge(pago.medio || pago.metodo_pago);
+                                const numLabel = getReceiptNumber(pago, idx);
+                                const userLabel = getUserLabel(pago, userProfile);
 
-                        <div className="flex items-center gap-6 w-full md:w-auto border-t md:border-t-0 pt-3 md:pt-0 border-slate-50">
-                             <div className="text-right">
-                                  <div className="text-[8px] font-black text-slate-300 uppercase tracking-[0.2em] mb-0.5">Valor Abono</div>
-                                  <div className="text-lg font-black text-emerald-600 tracking-tighter">
-                                      <span className="text-xs font-bold text-emerald-200 mr-0.5">$</span>
-                                      {formatCurrency(pago.monto || 0)}
-                                  </div>
-                             </div>
+                                return (
+                                    <tr
+                                        key={pago.id}
+                                        className={`hover:bg-slate-50/60 transition-colors ${
+                                            isVoided ? 'bg-rose-50/20 opacity-75' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'
+                                        }`}
+                                    >
+                                        {/* Fecha */}
+                                        <td className="px-4 py-3 whitespace-nowrap text-slate-600 font-medium">
+                                            {formatDate(pago.fechaISO)}
+                                        </td>
 
-                             <div className="flex items-center gap-1.5">
-                                  <button
-                                      onClick={() => handlePrint(pago)}
-                                      title="Imprimir recibo"
-                                      className="w-8 h-8 bg-slate-50 text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg flex items-center justify-center transition-all shadow-sm"
-                                  >
-                                      <FiPrinter size={13} />
-                                  </button>
-                                  {pago.estado === "Anulado" ? (
-                                      <span className="px-3 py-1 rounded-full text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-100 uppercase tracking-widest">
-                                          Anulado
-                                      </span>
-                                  ) : (
-                                      <button
-                                          onClick={() => handleDelete(pago)}
-                                          title="Anular pago"
-                                          className="w-8 h-8 bg-slate-50 text-slate-300 hover:bg-rose-600 hover:text-white rounded-lg flex items-center justify-center transition-all shadow-sm"
-                                      >
-                                          <FiTrash2 size={13} />
-                                      </button>
-                                  )}
-                             </div>
-                        </div>
-                    </div>
-                ))}
+                                        {/* Nro Consecutivo */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className="font-mono text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                                {numLabel}
+                                            </span>
+                                        </td>
+
+                                        {/* Concepto */}
+                                        <td className="px-4 py-3 font-semibold text-slate-800 uppercase tracking-tight">
+                                            {pago.concepto || "ABONO GENERAL"}
+                                        </td>
+
+                                        {/* Medio de Pago */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${badge.bg}`}>
+                                                {badge.label}
+                                            </span>
+                                        </td>
+
+                                        {/* Registrado por */}
+                                        <td className="px-4 py-3 whitespace-nowrap text-slate-600 font-medium">
+                                            {userLabel}
+                                        </td>
+
+                                        {/* Valor Abono */}
+                                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                                            <span className={`font-bold text-sm ${isVoided ? 'text-slate-400 line-through' : 'text-emerald-600'}`}>
+                                                ${formatCurrency(pago.monto || 0)}
+                                            </span>
+                                        </td>
+
+                                        {/* Estado */}
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            {isVoided ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-100">
+                                                    Anulado
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                                    <FiCheckCircle size={11} /> Recibido
+                                                </span>
+                                            )}
+                                        </td>
+
+                                        {/* Acciones */}
+                                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                <button
+                                                    onClick={() => handlePrint(pago)}
+                                                    title="Imprimir comprobante de caja"
+                                                    className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors border border-slate-200/60"
+                                                >
+                                                    <FiPrinter size={13} />
+                                                </button>
+                                                {!isVoided && (
+                                                    <button
+                                                        onClick={() => handleDelete(pago)}
+                                                        title="Anular abono"
+                                                        className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors border border-rose-100"
+                                                    >
+                                                        <FiTrash2 size={13} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* Footer summary */}
+            <div className="px-5 py-2 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <p className="text-[11px] text-slate-400 font-medium">OdontoCloud &middot; Comprobantes de Pago</p>
+                <p className="text-[11px] text-slate-400 font-medium">{filtered.length} de {pagos.length} registros</p>
             </div>
 
-            {/* Void Reason Modal */}
+            {/* Void Modal */}
             {voidModal.open && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !voiding && setVoidModal({ open: false, pago: null })} />
-                    <div className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl border border-slate-100 p-8 animate-fadeIn">
-                        <div className="flex items-center justify-between mb-2">
-                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Anular Pago</h3>
-                            <button onClick={() => !voiding && setVoidModal({ open: false, pago: null })} className="text-slate-300 hover:text-slate-600 transition-colors">
-                                <FiX size={20} />
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 animate-fadeIn">
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                            <h3 className="text-sm font-bold text-slate-800">Anular Registro de Pago</h3>
+                            <button
+                                onClick={() => !voiding && setVoidModal({ open: false, pago: null })}
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                            >
+                                <FiX size={16} />
                             </button>
                         </div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                            Pago: <span className="text-slate-700">{voidModal.pago?.concepto}</span>
-                        </p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">
-                            Monto: <span className="text-rose-600 font-black">{formatCurrency(voidModal.pago?.monto || 0)}</span>
-                        </p>
 
-                        <div className="space-y-3">
-                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 mb-4 space-y-1 text-xs">
+                            <div className="flex justify-between">
+                                <span className="text-slate-400 font-medium">Concepto:</span>
+                                <span className="font-semibold text-slate-700">{voidModal.pago?.concepto || "ABONO GENERAL"}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-400 font-medium">Monto a anular:</span>
+                                <span className="font-bold text-rose-600">${formatCurrency(voidModal.pago?.monto || 0)}</span>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="block text-xs font-semibold text-slate-700">
                                 Motivo de anulación <span className="text-rose-500">*</span>
                             </label>
                             <textarea
                                 autoFocus
-                                rows={4}
-                                placeholder="Describe el motivo de la anulación para el registro de auditoría..."
+                                rows={3}
+                                placeholder="Escribe el motivo detallado de la anulación..."
                                 value={voidReason}
                                 onChange={(e) => setVoidReason(e.target.value)}
-                                className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-semibold text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-rose-500/5 focus:border-rose-300 transition-all resize-none placeholder:text-slate-200 custom-scrollbar"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 transition"
                             />
                         </div>
 
-                        <div className="mt-6 flex gap-3">
+                        <div className="mt-5 flex gap-2 justify-end">
                             <button
                                 type="button"
                                 onClick={() => { setVoidModal({ open: false, pago: null }); setVoidReason(""); }}
                                 disabled={voiding}
-                                className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
+                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-semibold text-xs transition"
                             >
                                 Cancelar
                             </button>
@@ -270,9 +459,10 @@ export default function HistoricoPagosTab({ patientId }) {
                                 type="button"
                                 onClick={handleConfirmVoid}
                                 disabled={voiding || !voidReason.trim()}
-                                className="flex-1 py-3 bg-rose-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-rose-600/20 hover:bg-rose-700 transition-all active:scale-95 disabled:opacity-50"
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold text-xs shadow-sm transition disabled:opacity-50 flex items-center gap-1.5"
                             >
-                                {voiding ? "Anulando..." : "Confirmar Anulación"}
+                                {voiding && <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
+                                <span>{voiding ? "Anulando..." : "Confirmar Anulación"}</span>
                             </button>
                         </div>
                     </div>

@@ -13,6 +13,33 @@ import { ReceiptPrintService } from '../../../services/ReceiptPrintService';
 import supabase from '../../../lib/supabaseClient';
 import { useAudit } from '../../../hooks/useAudit';
 
+const parseNotes = (notesRaw) => {
+    if (!notesRaw) return null;
+    if (typeof notesRaw === "object") return notesRaw;
+    try {
+        if (typeof notesRaw === "string" && notesRaw.trim().startsWith("{")) {
+            return JSON.parse(notesRaw);
+        }
+    } catch (e) {}
+    return null;
+};
+
+const getDisplayNotes = (pago) => {
+    const parsed = parseNotes(pago.notas || pago.notes);
+    if (parsed) {
+        const parts = [];
+        if (parsed.concepto) parts.push(parsed.concepto);
+        if (parsed.planTitle) parts.push(`[${parsed.planTitle}]`);
+        if (parsed.observaciones) parts.push(parsed.observaciones);
+        if (parts.length > 0) return parts.join(" — ");
+    }
+    const raw = pago.notes || pago.notas || pago.referencia || pago.concepto || "ABONO SALDO A FAVOR";
+    if (typeof raw === "string" && raw.trim().startsWith("{")) {
+        return "ABONO A TRATAMIENTO";
+    }
+    return raw;
+};
+
 export default function SaldoTab({ patient }) {
     const [financials, setFinancials] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -65,23 +92,84 @@ export default function SaldoTab({ patient }) {
             return;
         }
         try {
-            await supabase
-                .from("pagos")
-                .update({
-                    estado: "Anulado",
-                    motivoAnulacion: voidReason.trim(),
-                    anuladoPor: userProfile?.nombreCompleto || "Sistema",
-                    fechaAnulacion: new Date().toISOString()
-                })
-                .eq("id", selectedPagoToVoid.id);
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || "";
+            const voidNotes = `ANULADO - ${voidReason.trim()} (${userProfile?.nombre || userProfile?.email || "Usuario"})`;
 
-            // Audit log
-            await logAction(patient?.id, "VOID_CREDIT", {
-                pagoId: selectedPagoToVoid.id,
-                monto: selectedPagoToVoid.monto || selectedPagoToVoid.total || 0,
-                concepto: "SALDO A FAVOR",
-                motivoAnulacion: voidReason.trim()
-            });
+            // 1. Actualizar tabla pagos en DB Supabase (columnas válidas: referencia, notas)
+            try {
+                await supabase
+                    .from("pagos")
+                    .update({
+                        referencia: "ANULADO",
+                        notas: voidNotes
+                    })
+                    .eq("id", selectedPagoToVoid.id);
+            } catch (err) {
+                console.warn("Error actualizando pagos en DB:", err);
+            }
+
+            // 2. Actualizar website_config
+            try {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inq)
+                    .maybeSingle();
+
+                if (cfgRow?.config) {
+                    const currentPagos = cfgRow.config.pagos || [];
+                    const updatedPagos = currentPagos.map(p => {
+                        if (p.id === selectedPagoToVoid.id) {
+                            return {
+                                ...p,
+                                estado: "Anulado",
+                                referencia: "ANULADO",
+                                notas: voidNotes
+                            };
+                        }
+                        return p;
+                    });
+                    await supabase.from("website_config").upsert(
+                        { tenant_id: inq, config: { ...cfgRow.config, pagos: updatedPagos } },
+                        { onConflict: "tenant_id" }
+                    );
+                }
+            } catch (e) {
+                console.warn("Error actualizando website_config pagos:", e);
+            }
+
+            // 3. Recalcular saldo_favor en tabla pacientes
+            try {
+                const { data: pac } = await supabase
+                    .from("pacientes")
+                    .select("id, saldo_favor")
+                    .eq("id", patient.id)
+                    .single();
+
+                if (pac) {
+                    const currentSaldo = Number(pac.saldo_favor || 0);
+                    const voidMonto = Number(selectedPagoToVoid.monto || selectedPagoToVoid.total || 0);
+                    const newSaldo = Math.max(0, currentSaldo - voidMonto);
+
+                    await supabase
+                        .from("pacientes")
+                        .update({ saldo_favor: newSaldo })
+                        .eq("id", patient.id);
+                }
+            } catch (e) {
+                console.warn("Error actualizando saldo_favor de paciente:", e);
+            }
+
+            // 4. Audit log (seguro)
+            try {
+                if (logAction) {
+                    await logAction(patient?.id, "VOID_CREDIT", {
+                        pagoId: selectedPagoToVoid.id,
+                        monto: selectedPagoToVoid.monto || 0,
+                        motivoAnulacion: voidReason.trim()
+                    });
+                }
+            } catch (e) {}
 
             toast.success("Abono de saldo a favor anulado con éxito");
             setVoidModalOpen(false);
@@ -103,12 +191,17 @@ export default function SaldoTab({ patient }) {
 
     const { totals, pagos = [] } = financials;
 
-    const creditPayments = pagos.filter(p => p.concepto === "SALDO A FAVOR");
+    const creditPayments = pagos.filter(p => {
+        const ref = (p.referencia || p.concepto || "").toUpperCase();
+        const notes = (p.notas || p.notes || "").toUpperCase();
+        const isAnulado = (p.estado || "").toLowerCase() === "anulado" || ref.includes("ANULADO") || notes.includes("ANULADO");
+        return isAnulado || ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR");
+    });
 
     const filteredCredits = creditPayments.filter(p => 
-        (p.medio || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.notas || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.registradoPor || "").toLowerCase().includes(searchQuery.toLowerCase())
+        (p.medio || p.metodo || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.notas || p.notes || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.registradoPor || p.registrado_por || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     return (
@@ -187,6 +280,8 @@ export default function SaldoTab({ patient }) {
                                     filteredCredits.map(pago => {
                                         const dateStr = pago.fechaISO ? new Date(pago.fechaISO).toLocaleDateString('es-CO') : "—";
                                         const isVoided = pago.estado === "Anulado";
+                                        const isUsage = (pago.medio || pago.metodo || "").toLowerCase() === "saldo a favor";
+                                        const displayNotes = getDisplayNotes(pago);
                                         return (
                                             <tr key={pago.id} className={`transition-colors group ${isVoided ? 'bg-rose-50/10 hover:bg-rose-50/20' : 'hover:bg-slate-50/50'}`}>
                                                 <td className="py-5 px-8">
@@ -194,29 +289,47 @@ export default function SaldoTab({ patient }) {
                                                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors
                                                             ${isVoided 
                                                                 ? 'bg-rose-50 text-rose-500' 
-                                                                : 'bg-slate-100 text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-500'}`}
+                                                                : isUsage
+                                                                    ? 'bg-amber-50 text-amber-500 group-hover:bg-amber-100'
+                                                                    : 'bg-emerald-50 text-emerald-500 group-hover:bg-emerald-100'}`}
                                                         >
                                                             <FiClock size={14} />
                                                         </div>
                                                         <span className={`font-mono ${isVoided ? 'text-rose-500/80 line-through' : 'text-slate-700'}`}>{dateStr}</span>
                                                     </div>
                                                 </td>
-                                                <td className="py-5 px-6 uppercase text-[10px] text-slate-400 font-black">
-                                                    <span className={`px-3 py-1 rounded-full ${isVoided ? 'bg-rose-50 text-rose-600 border border-rose-100/50' : 'bg-slate-100 text-slate-600'}`}>{pago.medio}</span>
+                                                <td className="py-5 px-6 uppercase text-[10px] font-black">
+                                                    <span className={`inline-block whitespace-nowrap px-3 py-1 rounded-full ${
+                                                        isVoided 
+                                                            ? 'bg-rose-50 text-rose-600 border border-rose-100/50' 
+                                                            : isUsage 
+                                                                ? 'bg-amber-50 text-amber-700 border border-amber-200/60'
+                                                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                                    }`}>
+                                                        {isUsage ? "USO DE SALDO" : (pago.medio || pago.metodo || "EFECTIVO")}
+                                                    </span>
                                                 </td>
-                                                <td className={`py-5 px-6 uppercase ${isVoided ? 'text-rose-500/80 line-through' : 'text-slate-600'}`}>
-                                                    {pago.notes || pago.notas || "ABONO SALDO A FAVOR"}
-                                                    {isVoided && pago.motivoAnulacion && (
-                                                        <span className="block text-[8px] font-bold text-rose-400 normal-case tracking-normal mt-0.5" style={{ textDecoration: 'none' }}>
-                                                            Motivo: {pago.motivoAnulacion}
+                                                <td className="py-5 px-6 uppercase">
+                                                    <span className={isVoided ? 'text-rose-400 line-through' : 'text-slate-600'}>
+                                                        {displayNotes}
+                                                    </span>
+                                                    {isVoided && (
+                                                        <span className="block text-[11px] font-bold text-rose-600 normal-case tracking-normal mt-1 bg-rose-50 border border-rose-200/60 px-2.5 py-1 rounded-lg">
+                                                            ⚠️ Motivo de anulación: <span className="font-semibold text-rose-700">{pago.motivoAnulacion || (pago.notas && pago.notas.includes("ANULADO") ? pago.notas.replace(/^ANULADO\s*-\s*/i, "") : "Sin motivo especificado")}</span>
                                                         </span>
                                                     )}
                                                 </td>
                                                 <td className={`py-5 px-6 uppercase ${isVoided ? 'text-rose-400/80' : 'text-slate-500'}`}>
                                                     {pago.registradoPor || pago.profesional || "Sistema"}
                                                 </td>
-                                                <td className={`py-5 px-6 text-right font-black font-mono ${isVoided ? 'text-rose-400/80 line-through' : 'text-indigo-600'}`}>
-                                                    $ {formatCurrency(pago.monto || 0)}
+                                                <td className={`py-5 px-6 text-right font-black font-mono ${
+                                                    isVoided 
+                                                        ? 'text-rose-400/80 line-through' 
+                                                        : isUsage 
+                                                            ? 'text-amber-600' 
+                                                            : 'text-emerald-600'
+                                                }`}>
+                                                    {isUsage ? `- $ ${formatCurrency(pago.monto || 0)}` : `+ $ ${formatCurrency(pago.monto || 0)}`}
                                                 </td>
                                                 <td className="py-5 px-8 text-center">
                                                     {isVoided ? (

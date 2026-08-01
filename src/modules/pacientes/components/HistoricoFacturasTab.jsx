@@ -243,8 +243,11 @@ function InvoiceDetailModal({ fact, patient, tenant, onClose }) {
     if (!fact) return null;
     const items    = fact.items || [];
     const total    = parseFloat(fact.total || 0);
-    const payLabel = PAYMENT_LABELS[String(fact.medioPago)] || fact.medioPago || 'Contado';
-    const isEmit   = fact.factusEstado === 'Emitido';
+    const payLabel = PAYMENT_LABELS[String(fact.medioPago || fact.medio_pago)] || fact.medioPago || fact.medio_pago || 'Efectivo';
+    const isEmit   = fact.factusEstado === 'Emitido' || (fact.estado || '').toLowerCase() === 'emitido';
+    const invoiceNum = fact.numero || fact.nroFactura || fact.id?.slice(-6).toUpperCase();
+    const dateVal  = fact.fecha_emision || fact.fechaISO || fact.created_at;
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col max-h-[90vh]">
@@ -252,7 +255,7 @@ function InvoiceDetailModal({ fact, patient, tenant, onClose }) {
                     <div>
                         <h3 className="text-base font-bold text-slate-800">Detalle de factura</h3>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            #{fact.nroFactura || fact.id.slice(-6).toUpperCase()} &middot; {fmtDateLong(fact.fechaISO)}
+                            #{invoiceNum} &middot; {fmtDateLong(dateVal)}
                         </p>
                     </div>
                     <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors">
@@ -262,9 +265,9 @@ function InvoiceDetailModal({ fact, patient, tenant, onClose }) {
                 <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
                     <div className="grid grid-cols-2 gap-3 text-xs">
                         <div><p className="text-slate-400 mb-0.5">Medio de pago</p><p className="font-medium text-slate-700">{payLabel}</p></div>
-                        <div><p className="text-slate-400 mb-0.5">Estado</p><p className="font-medium text-slate-700">{fact.estado || 'Pendiente'}</p></div>
-                        {fact.factusNumero && (
-                            <div className="col-span-2"><p className="text-slate-400 mb-0.5">N.\u00ba Oficial DIAN</p><p className="font-mono font-semibold text-indigo-600">{fact.factusNumero}</p></div>
+                        <div><p className="text-slate-400 mb-0.5">Estado</p><p className="font-medium text-slate-700">{fact.estado || 'Emitido'}</p></div>
+                        {(fact.factusNumero || fact.numero) && (
+                            <div className="col-span-2"><p className="text-slate-400 mb-0.5">N.º Oficial DIAN</p><p className="font-mono font-semibold text-indigo-600">{fact.factusNumero || fact.numero}</p></div>
                         )}
                     </div>
                     <div>
@@ -379,7 +382,7 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
                 const { data } = await supabase
                     .from('facturas')
                     .select('*')
-                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`)
+                    .eq('paciente_id', patientId)
                     .order('created_at', { ascending: false });
                 setFacturas(data || []);
             } catch (err) {
@@ -422,25 +425,30 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
     }, [userProfile]);
 
     const copyTable = () => {
-        const text = filtered.map(f =>
-            [fmtDate(f.fechaISO), f.nroFactura || f.id.slice(-6).toUpperCase(),
-             PAYMENT_LABELS[String(f.medioPago)] || f.medioPago || '\u2014',
-             f.factusNumero || '\u2014', f.total || 0, f.estado || 'Pendiente'].join('\t')
-        ).join('\n');
+        const text = filtered.map(f => {
+            const dateVal = f.fecha_emision || f.fechaISO || f.created_at;
+            const payVal  = PAYMENT_LABELS[String(f.medioPago || f.medio_pago)] || f.medioPago || f.medio_pago || 'Efectivo';
+            const numVal  = f.numero || f.nroFactura || f.id?.slice(-6).toUpperCase();
+            return [fmtDate(dateVal), `#${numVal}`,
+             payVal, f.factusNumero || f.numero || '—', f.total || 0, f.estado || 'Emitido'].join('\t');
+        }).join('\n');
         navigator.clipboard.writeText(text).then(() => toast.success('Tabla copiada'));
     };
 
     const filtered = facturas.filter(f => {
         if (!search) return true;
         const q = search.toLowerCase();
-        return (f.nroFactura||'').toLowerCase().includes(q) || (f.factusNumero||'').toLowerCase().includes(q) ||
-               (f.estado||'').toLowerCase().includes(q)    || (f.fechaISO||'').includes(q);
+        const dateVal = f.fecha_emision || f.fechaISO || f.created_at;
+        const dateStr = fmtDate(dateVal);
+        return (f.numero||'').toLowerCase().includes(q)     || (f.nroFactura||'').toLowerCase().includes(q) ||
+               (f.factusNumero||'').toLowerCase().includes(q) || (f.estado||'').toLowerCase().includes(q)    ||
+               dateStr.includes(q);
     });
 
     if (loading) return (
         <div className="flex items-center justify-center h-48 gap-3 text-slate-400">
             <FiLoader size={20} className="animate-spin" />
-            <span className="text-sm font-medium">Cargando facturas\u2026</span>
+            <span className="text-sm font-medium">Cargando facturas…</span>
         </div>
     );
 
@@ -469,47 +477,66 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
                 <div className="flex flex-col items-center justify-center flex-1 gap-3 text-slate-300 py-16">
                     <FiInbox size={38} strokeWidth={1} />
                     <p className="text-sm font-medium text-slate-400">{search ? 'Sin resultados' : 'No hay facturas registradas'}</p>
-                    {search && <button onClick={() => setSearch('')} className="text-xs text-indigo-500 hover:underline">Limpiar b\u00fasqueda</button>}
+                    {search && <button onClick={() => setSearch('')} className="text-xs text-indigo-500 hover:underline">Limpiar búsqueda</button>}
                 </div>
             ) : (
                 <div className="overflow-x-auto flex-1">
-                    <table className="w-full text-sm border-collapse">
+                    <table className="w-full text-xs border-collapse">
                         <thead>
                             <tr className="border-b border-slate-100 bg-slate-50/70">
-                                {['Fecha','N.º Factura','Sucursal','Profesional','Medio de pago','Factura','Valor','Usuario','Acciones'].map((col,i) => (
-                                    <th key={i} className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">{col}</th>
-                                ))}
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">Fecha</th>
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">N.º Factura</th>
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">Sucursal</th>
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">Profesional</th>
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">Medio de pago</th>
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">Factura</th>
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">Valor</th>
+                                <th className="text-left px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none">Usuario</th>
+                                <th className="text-center px-2.5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap select-none sticky right-0 bg-slate-50 z-10 shadow-[-4px_0_8px_rgba(0,0,0,0.03)]">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filtered.map((fact, idx) => {
-                                const isEmit    = fact.factusEstado === 'Emitido';
-                                const st        = getStatus(isEmit ? 'emitido' : fact.estado);
-                                const payLabel  = PAYMENT_LABELS[String(fact.medioPago)] || fact.medioPago || '\u2014';
+                                const isEmit    = fact.factusEstado === 'Emitido' || (fact.estado || '').toLowerCase() === 'emitido';
+                                const payVal    = String(fact.medioPago || fact.medio_pago || '10');
+                                const payLabel  = PAYMENT_LABELS[payVal] || fact.medioPago || fact.medio_pago || 'Efectivo';
+                                const dateVal   = fact.fecha_emision || fact.fechaISO || fact.created_at;
+                                const invoiceNro = fact.numero || fact.nroFactura || fact.id?.slice(-6).toUpperCase();
+                                const officialDian = fact.factusNumero || (fact.numero && fact.numero.startsWith('SETP') ? fact.numero : null);
+                                const userEmail = patient?.email || patient?.correo || '—';
+                                const profName  = fact.profesional || userProfile?.nombreCompleto || '—';
+                                const branchName = tenant?.nombreComercial || 'Sede Principal';
+
                                 return (
-                                    <tr key={fact.id} className={`border-b border-slate-50 hover:bg-indigo-50/20 transition-colors ${idx%2===0?'bg-white':'bg-slate-50/20'}`}>
-                                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(fact.fechaISO)}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap"><span className="font-semibold text-slate-700 text-xs">#{fact.nroFactura||fact.numero||fact.id.slice(-6).toUpperCase()}</span></td>
-                                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{tenant?.nombreComercial || 'Sede Principal'}</td>
-                                        <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{fact.profesional || userProfile?.nombreCompleto || '—'}</td>
-                                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{payLabel}</td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            {fact.factusNumero
-                                                ? <span className="font-mono text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{fact.factusNumero}</span>
-                                                : <span className="text-xs text-slate-300">—</span>}
+                                    <tr key={fact.id} className={`border-b border-slate-50 hover:bg-indigo-50/20 transition-colors group ${idx%2===0?'bg-white':'bg-slate-50/20'}`}>
+                                        <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">{fmtDate(dateVal)}</td>
+                                        <td className="px-2.5 py-2.5 whitespace-nowrap"><span className="font-semibold text-slate-700 text-xs">#{invoiceNro}</span></td>
+                                        <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                                            <div className="truncate max-w-[110px]" title={branchName}>{branchName}</div>
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap"><span className="font-semibold text-slate-800 text-sm">${formatCurrency(fact.total||0)}</span></td>
-                                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                                            {patient?.email || patient?.correo || '—'}
+                                        <td className="px-2.5 py-2.5 text-xs text-slate-600 whitespace-nowrap">
+                                            <div className="truncate max-w-[120px]" title={profName}>{profName}</div>
                                         </td>
-                                        <td className="px-3 py-3 whitespace-nowrap">
-                                            <div className="relative" ref={openMenu===fact.id?menuRef:null}>
+                                        <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">{payLabel}</td>
+                                        <td className="px-2.5 py-2.5 whitespace-nowrap">
+                                            {officialDian
+                                                ? <span className="font-mono text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{officialDian}</span>
+                                                : <span className="font-mono text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">#{invoiceNro}</span>}
+                                        </td>
+                                        <td className="px-2.5 py-2.5 whitespace-nowrap"><span className="font-semibold text-slate-800 text-xs">${formatCurrency(fact.total||0)}</span></td>
+                                        <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                                            <div className="truncate max-w-[130px] font-mono text-[11px]" title={userEmail}>
+                                                {userEmail}
+                                            </div>
+                                        </td>
+                                        <td className="px-2.5 py-2.5 whitespace-nowrap text-center sticky right-0 bg-white group-hover:bg-[#f5f6ff] transition-colors z-10 shadow-[-4px_0_8px_rgba(0,0,0,0.03)]">
+                                            <div className="relative inline-block" ref={openMenu===fact.id?menuRef:null}>
                                                 <button onClick={() => setOpenMenu(openMenu===fact.id?null:fact.id)}
-                                                    className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+                                                    className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors mx-auto">
                                                     <FiMoreHorizontal size={16} />
                                                 </button>
                                                 {openMenu===fact.id && (
-                                                    <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl z-50 py-1 min-w-[172px]">
+                                                    <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl z-50 py-1 min-w-[172px] text-left">
                                                         <button onClick={() => { setSelected(fact); setOpenMenu(null); }}
                                                             className="flex items-center gap-2.5 w-full px-4 py-2 text-xs font-semibold text-[#8CC63F] hover:bg-green-50 transition-colors">
                                                             <FiInfo size={13}/> Información

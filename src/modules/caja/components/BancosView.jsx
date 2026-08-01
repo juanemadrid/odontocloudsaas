@@ -49,13 +49,16 @@ export default function BancosView({ inquilino, userProfile }) {
       const { data: listBancos } = await supabase
         .from("bancos")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
 
-      // 2. Load payment methods
-      const { data: listMetodos } = await supabase
-        .from("metodos_pago")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      // 2. Load payment methods from website_config
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const listMetodos = cfgRow?.config?.metodos_pago || [];
 
       // Map payment method names to bank IDs
       const methodToBankId = {};
@@ -72,19 +75,19 @@ export default function BancosView({ inquilino, userProfile }) {
       const { data: listPagos } = await supabase
         .from("pagos")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
 
       // 4. Load receipts (recibos_caja)
       const { data: listRecibos } = await supabase
         .from("recibos_caja")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
 
       // 5. Load caja movements
       const { data: listMovs } = await supabase
         .from("movimientos_caja")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
 
       // Calculate balance and movements for each bank
       const updatedBancos = (listBancos || []).map(b => {

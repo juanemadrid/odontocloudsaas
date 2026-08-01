@@ -15,17 +15,21 @@ export const getConfigItems = async (tenantId, configKey, tableName) => {
 
         // A. Intentar consultar la tabla dedicada en Supabase PostgreSQL
         if (tableName) {
-            const { data, error, status } = await supabase
-                .from(tableName)
-                .select("*")
-                .eq("tenant_id", tenantId);
+            try {
+                const { data, error, status } = await supabase
+                    .from(tableName)
+                    .select("*")
+                    .eq("tenant_id", tenantId);
 
-            if (!error && status === 200 && Array.isArray(data) && data.length > 0) {
-                tableData = data.map(d => ({
-                    id: d.id,
-                    nombre: d.nombre || d.name || "",
-                    ...d
-                }));
+                if (!error && status >= 200 && status < 300 && Array.isArray(data) && data.length > 0) {
+                    tableData = data.map(d => ({
+                        id: d.id,
+                        nombre: d.nombre || d.name || "",
+                        ...d
+                    }));
+                }
+            } catch (e) {
+                // Silencioso: fallback directo a website_config
             }
         }
 

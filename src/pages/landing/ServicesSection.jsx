@@ -24,13 +24,12 @@ const itemConfig = {
     }
 };
 
-export default function ServicesSection({ config, onShowTrial, dark = false, hideTitle = true }) {
+export default function ServicesSection({ config, onShowTrial, dark = false, hideTitle = false }) {
     const isMaster = config?.isMaster;
-    const hideHeader = config?.servicesSectionTitle === null || hideTitle;
     const navigate = useNavigate();
     const [selectedFeature, setSelectedFeature] = useState(null);
 
-    const title = hideHeader ? null : (config?.servicesSectionTitle || (isMaster ? "Nuestros Módulos" : "Servicios Especializados"));
+    const title = config?.servicesSectionTitle || (isMaster ? "Nuestros Módulos" : "Tratamientos Odontológicos Especializados");
 
     const saasFeatures = [
         {
@@ -85,7 +84,6 @@ export default function ServicesSection({ config, onShowTrial, dark = false, hid
 
     let finalServices = (!isMaster && config?.services) ? config.services : saasFeatures;
 
-    // Hydrate missing images from DEFAULT_CONFIG (Fix for tenants with old Firestore data)
     finalServices = finalServices.map(svc => {
         if (svc.image) return svc;
         const defaultSvc = DEFAULT_CONFIG?.services?.find(d =>
@@ -103,39 +101,25 @@ export default function ServicesSection({ config, onShowTrial, dark = false, hid
     };
 
     return (
-        <section id="servicios" className={`py-12 relative ${dark ? 'bg-transparent' : 'bg-white'}`} style={{ backgroundColor: dark ? 'transparent' : '#ffffff' }}>
+        <section id="servicios" className={`py-16 relative ${dark ? 'bg-transparent' : 'bg-white'}`} style={{ backgroundColor: dark ? 'transparent' : '#ffffff' }}>
             <div className="container mx-auto px-6 max-w-7xl relative z-10">
-                {/* Header removed as per user request to clean up interface
-                {title && (
-                    <div className="mb-16 text-center">
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-sky-100 text-sky-700 text-xs font-bold uppercase tracking-widest mb-6 border border-sky-200"
-                        >
-                            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-                            {config?.servicesSectionBadge || "Funcionalidades Clave"}
-                        </motion.div>
 
-                        <h2 className={`text-3xl md:text-4xl font-display font-bold ${dark ? 'text-white drop-shadow-lg' : 'text-slate-900'}`}>
+                {!hideTitle && (
+                    <div className="mb-14 text-center max-w-3xl mx-auto space-y-3">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider border border-blue-100 shadow-sm">
+                            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                            {config?.servicesSectionBadge || (isMaster ? "Funcionalidades Clave" : "Especialidades Dentales")}
+                        </div>
+
+                        <h2 className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${dark ? 'text-white' : 'text-slate-900'}`}>
                             {title}
                         </h2>
 
-                        {!hideTitle && (
-                            <motion.p
-                                initial={{ opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true }}
-                                transition={{ delay: 0.2 }}
-                                className={`text-xl font-light mt-6 max-w-3xl mx-auto ${dark ? 'text-slate-400' : 'text-slate-500'}`}
-                            >
-                                {config?.servicesSectionDesc || "Herramientas potentes y fáciles de usar diseñadas para la odontología moderna."}
-                            </motion.p>
-                        )}
+                        <p className={`text-sm sm:text-base font-normal ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            {config?.servicesSectionDesc || "Tecnología avanzada y atención personalizada para garantizar la mejor salud oral para ti y tu familia."}
+                        </p>
                     </div>
-                )} 
-                */}
+                )}
 
                 <motion.div
                     variants={containerConfig}
@@ -149,10 +133,10 @@ export default function ServicesSection({ config, onShowTrial, dark = false, hid
                             key={i}
                             variants={itemConfig}
                             onClick={() => handleServiceClick(svc)}
-                            className={`group relative p-8 rounded-[2.5rem] cursor-pointer transition-all duration-500 flex flex-col h-full
+                            className={`group relative p-6 rounded-3xl cursor-pointer transition-all duration-300 flex flex-col h-full
                                 ${dark
-                                    ? 'glass-premium border border-white/5 hover:bg-white/5 hover:-translate-y-2'
-                                    : '!bg-white border border-slate-100 shadow-xl hover:shadow-2xl hover:-translate-y-4 hover:border-blue-100'
+                                    ? 'glass-premium border border-white/5 hover:bg-white/5 hover:-translate-y-1.5'
+                                    : '!bg-white border border-slate-200/80 shadow-md hover:shadow-xl hover:-translate-y-1.5 hover:border-blue-300'
                                 }
                             `}
                         >
@@ -184,26 +168,26 @@ export default function ServicesSection({ config, onShowTrial, dark = false, hid
                                 </div>
                             ) : (
                                 <div className="relative z-10 flex flex-col h-full">
-                                    <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center text-3xl mb-8 transition-all duration-300 shadow-sm group-hover:scale-110
+                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl mb-4 transition-all duration-300 shadow-xs group-hover:scale-105
                                         ${dark
-                                            ? 'bg-white/10 text-sky-400 group-hover:bg-sky-500 group-hover:text-white group-hover:shadow-[0_0_20px_rgba(14,165,233,0.4)]'
-                                            : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-blue-200'
+                                            ? 'bg-white/10 text-sky-400 group-hover:bg-sky-500 group-hover:text-white'
+                                            : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
                                         }
                                     `}>
                                         {svc.icon}
                                     </div>
 
-                                    <h3 className={`text-2xl font-bold mb-4 tracking-tight transition-colors ${dark ? 'text-white group-hover:text-sky-300' : 'text-slate-900 group-hover:text-blue-700'}`}>
+                                    <h3 className={`text-lg font-bold mb-2 tracking-tight transition-colors ${dark ? 'text-white group-hover:text-sky-300' : 'text-slate-900 group-hover:text-blue-600'}`}>
                                         {svc.title}
                                     </h3>
 
-                                    <p className={`text-base leading-relaxed mb-8 font-light flex-grow ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                    <p className={`text-xs leading-relaxed mb-5 font-normal flex-grow ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
                                         {svc.desc}
                                     </p>
 
-                                    <div className={`mt-auto pt-4 border-t ${dark ? 'border-white/10' : 'border-slate-50'}`}>
-                                        <div className={`text-xs font-black uppercase tracking-[0.15em] flex items-center gap-2 transition-all duration-300 group-hover:gap-4 ${dark ? 'text-sky-400 group-hover:text-sky-300' : 'text-blue-600'}`}>
-                                            Explorar Detalles <FiArrowRight className="text-lg" />
+                                    <div className={`mt-auto pt-3 border-t ${dark ? 'border-white/10' : 'border-slate-100'}`}>
+                                        <div className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all duration-300 group-hover:gap-3 ${dark ? 'text-sky-400 group-hover:text-sky-300' : 'text-blue-600'}`}>
+                                            Explorar Detalles <FiArrowRight className="text-sm" />
                                         </div>
                                     </div>
                                 </div>

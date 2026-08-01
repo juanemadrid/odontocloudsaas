@@ -120,8 +120,9 @@ export const saveOdontogramSnapshot = async (patientId, type, data) => {
             .insert([{
                 tenant_id: tenantId,
                 paciente_id: patientId,
-                hallazgos: { type, ...data },
-                observaciones: `Snapshot de odontograma (${type})`
+                data: data,
+                observaciones: `Snapshot de odontograma (${type})`,
+                estado: "Abierto"
             }]);
 
         if (error) throw error;
@@ -137,14 +138,14 @@ export const getOdontogramSnapshot = async (patientId, type) => {
     try {
         const { data, error } = await supabase
             .from("odontogramas")
-            .select("hallazgos")
+            .select("data")
             .eq("paciente_id", patientId)
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
 
         if (error) throw error;
-        return data?.hallazgos || {};
+        return data?.data || {};
     } catch (error) {
         console.error("Error fetching odontogram:", error);
         return {};

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import supabase from "../../lib/supabaseClient";
 import { useParams, useNavigate } from "react-router-dom";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
+import { fetchTenantConfigBySlug } from "../../utils/tenantConfigHelper";
 import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell } from "react-icons/fi";
 import { toast } from "sonner";
 import { isAccessBlocked } from "../../utils/subscriptionHelper";
@@ -125,23 +126,25 @@ export default function PatientPortal() {
 
     useEffect(() => {
         if (!clinicSlug) return;
+        let isMounted = true;
         const loadConfig = async () => {
+            setLoadingConfig(true);
             try {
-                const { data: tenantData } = await supabase.from("tenants").select("*").eq("slug", clinicSlug).maybeSingle();
-                if (tenantData) {
-                    const inq = tenantData.id;
-                    setInquilinoId(inq);
-                    setTenantInfo({ ...tenantData });
-                    const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", inq).maybeSingle();
-                    setConfig(webSnap?.config
-                        ? { ...DEFAULT_CONFIG, ...webSnap.config, name: tenantData.nombre || tenantData.name, slug: clinicSlug, phone: tenantData.telefono || tenantData.phone || "" }
-                        : { ...DEFAULT_CONFIG, name: tenantData.nombre || tenantData.name, slug: clinicSlug, phone: tenantData.telefono || tenantData.phone || "" }
-                    );
+                const fetchedConfig = await fetchTenantConfigBySlug(clinicSlug);
+                if (isMounted && fetchedConfig) {
+                    setConfig(fetchedConfig);
+                    if (fetchedConfig.tenant_id) {
+                        setInquilinoId(fetchedConfig.tenant_id);
+                    }
                 }
-            } catch (e) { console.error(e); }
-            finally { setLoadingConfig(false); }
+            } catch (e) {
+                console.error("Error loading PatientPortal config:", e);
+            } finally {
+                if (isMounted) setLoadingConfig(false);
+            }
         };
         loadConfig();
+        return () => { isMounted = false; };
     }, [clinicSlug]);
 
     const handleLogin = async (e) => {
@@ -210,7 +213,7 @@ export default function PatientPortal() {
             setPagos(dedupedPagos.sort((a, b) => new Date(b.created_at || b.fecha || 0).getTime() - new Date(a.created_at || a.fecha || 0).getTime()));
 
             // Planes de tratamiento
-            const { data: snapPlanes } = await supabase.from("planes").select("*").or(`patient_id.eq.${patientId},paciente_id.eq.${patientId}`);
+            const { data: snapPlanes } = await supabase.from("treatment_plans").select("*").eq("paciente_id", patientId);
             setPlanes(snapPlanes || []);
 
             // Notificaciones para paciente
@@ -309,114 +312,158 @@ export default function PatientPortal() {
 
     // ── Login screen ─────────────────────────────────────────────────────────
     if (!auth) {
+        const clinicPrimary = config?.primaryColor || "#1a56db";
+
         return (
-            <div className="min-h-screen flex bg-white font-sans">
-                <div className="hidden lg:flex w-1/2 bg-slate-900 relative overflow-hidden items-center justify-center">
-                    <img src="https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&q=80&w=1600" alt="" className="absolute inset-0 w-full h-full object-cover opacity-35 mix-blend-overlay" />
-                    <div className="absolute inset-0 bg-gradient-to-tr from-indigo-950 via-slate-900/90 to-indigo-950/80" />
-                    <div className="relative z-10 max-w-lg text-center px-12 text-white space-y-6">
-                        <div className="flex justify-center">
-                            {config?.logo ? (
-                                <div className="p-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl shadow-2xl">
-                                    <img src={config.logo} className="h-20 w-auto object-contain brightness-0 invert" alt="Logo" />
-                                </div>
-                            ) : (
-                                <div className="w-20 h-20 bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl shadow-2xl flex items-center justify-center text-4xl">🦷</div>
-                            )}
-                        </div>
-                        <div className="space-y-3">
-                            <h1 className="text-5xl font-black mb-2 leading-tight tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-100 to-sky-100">
-                                {config.name || "Tu Salud Dental"}
-                            </h1>
-                            <div className="h-1 w-20 bg-gradient-to-r from-indigo-500 to-sky-400 mx-auto rounded-full" />
-                        </div>
-                        <p className="text-indigo-200/90 text-lg font-light leading-relaxed italic">
-                            "{config.vision || config.mission || 'Experiencias odontológicas que transforman vidas.'}"
-                        </p>
-                    </div>
-                    {/* Decorative blobs */}
-                    <div className="absolute -bottom-24 -left-24 w-96 h-96 bg-indigo-500 rounded-full blur-[120px] opacity-20 animate-pulse" />
-                    <div className="absolute -top-24 -right-24 w-96 h-96 bg-sky-500 rounded-full blur-[120px] opacity-20 animate-pulse" />
-                </div>
-                
-                <div className="w-full lg:w-1/2 flex items-center justify-center p-8 lg:p-24 bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 relative">
-                    {/* Custom Floating Back Button */}
-                    <button 
-                        onClick={() => navigate(clinicSlug ? `/c/${clinicSlug}` : "/")} 
-                        className="absolute top-8 left-8 flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 hover:bg-white text-slate-600 hover:text-indigo-600 transition-all border border-slate-200/80 hover:border-slate-300 shadow-sm font-semibold text-xs backdrop-blur-sm"
+            <div className="min-h-screen relative flex items-center justify-center font-sans overflow-hidden">
+                {/* Video background */}
+                <video
+                    autoPlay muted loop playsInline preload="auto"
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ zIndex: 0 }}
+                >
+                    <source src={`${import.meta.env.BASE_URL}video.mp4`} type="video/mp4" />
+                </video>
+
+                {/* Overlay — darker at left, lighter right so card pops */}
+                <div className="absolute inset-0" style={{ zIndex: 1, background: 'rgba(2,6,18,0.72)' }} />
+
+                {/* Top nav bar */}
+                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-8 py-5">
+                    <button
+                        onClick={() => navigate(clinicSlug ? `/c/${clinicSlug}` : "/")}
+                        className="flex items-center gap-2 text-white/70 hover:text-white text-sm font-semibold transition-colors group"
                     >
-                        <FiArrowLeft size={14} /> Volver
+                        <FiArrowLeft size={15} className="group-hover:-translate-x-1 transition-transform" />
+                        Volver a {config.name || "Inicio"}
                     </button>
-                    
-                    <div className="w-full max-w-md bg-white/80 backdrop-blur-md border border-white p-8 sm:p-10 rounded-3xl shadow-xl shadow-slate-100/50 space-y-8">
-                        <div className="text-center space-y-2">
-                            <div className="inline-flex items-center justify-center p-4 rounded-3xl bg-indigo-50 text-indigo-600 shadow-sm border border-indigo-100/50 mb-1">
-                                <FiShield size={24} />
+                    <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Acceso seguro
+                    </div>
+                </div>
+
+                {/* WHITE LOGIN CARD */}
+                <div className="relative z-10 w-full max-w-sm mx-auto px-4">
+                    <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
+
+                        {/* Colored top strip with clinic name */}
+                        <div className="px-8 pt-8 pb-7 text-center" style={{ background: clinicPrimary }}>
+                            {/* Clinic logo or initial */}
+                            <div className="flex justify-center mb-4">
+                                {config?.logo && config.logo !== "/assets/logo.png" ? (
+                                    <div className="w-16 h-16 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center overflow-hidden">
+                                        <img
+                                            src={config.logo}
+                                            alt={config.name}
+                                            className="h-12 w-auto object-contain"
+                                            onError={e => { e.target.style.display = 'none'; }}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="w-16 h-16 rounded-2xl bg-white/20 border border-white/30 flex items-center justify-center">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M12 2C9.2 2 7 4.2 7 7c0 1.5.6 3 1.3 4.3L7 21h1l1-4h6l1 4h1l-1.3-9.7C15.4 10 16 8.5 16 7c0-2.8-2.2-5-4-5z"/>
+                                        </svg>
+                                    </div>
+                                )}
                             </div>
-                            <h2 className="text-3xl font-black text-slate-800 tracking-tight">Portal Pacientes</h2>
-                            <p className="text-slate-500 text-sm font-medium">Consulta tus citas, pagos y tratamientos de forma segura.</p>
+                            <p className="text-white/70 text-[10px] font-black uppercase tracking-widest mb-1">Portal de Pacientes</p>
+                            <h1 className="text-2xl font-black text-white leading-tight">{config.name || "Tu Clínica"}</h1>
                         </div>
-                        
-                        <form onSubmit={handleLogin} className="space-y-5">
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Documento de Identidad</label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
-                                        <FiUser size={18} />
+
+                        {/* Form area — white background */}
+                        <div className="px-8 py-7 space-y-5">
+                            <p className="text-slate-500 text-sm text-center leading-snug">
+                                Ingresa tus datos para consultar citas, pagos y tratamientos.
+                            </p>
+
+                            <form onSubmit={handleLogin} className="space-y-4 mt-2">
+                                {/* Document field */}
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                                        Número de documento
+                                    </label>
+                                    <div className="relative">
+                                        <FiUser size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            placeholder="Ej: 1234567890"
+                                            value={docInput}
+                                            onChange={e => setDocInput(e.target.value)}
+                                            disabled={loading}
+                                            required
+                                            className="w-full pl-10 pr-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white"
+                                        />
                                     </div>
-                                    <input 
-                                        type="text"
-                                        className="w-full pl-11 p-4 bg-slate-50 border border-slate-200/80 rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none font-semibold text-slate-800 placeholder-slate-400/80" 
-                                        placeholder="Número de documento" 
-                                        value={docInput} 
-                                        onChange={e => setDocInput(e.target.value)} 
-                                        disabled={loading} 
-                                        required
-                                    />
                                 </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Fecha de Nacimiento</label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
-                                        <FiCalendar size={18} />
+
+                                {/* Birth date field */}
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                                        Fecha de nacimiento
+                                    </label>
+                                    <div className="relative">
+                                        <FiCalendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                        <input
+                                            type="date"
+                                            value={birthDate}
+                                            onChange={e => setBirthDate(e.target.value)}
+                                            disabled={loading}
+                                            required
+                                            className="w-full pl-10 pr-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white"
+                                        />
                                     </div>
-                                    <input 
-                                        type="date" 
-                                        className="w-full pl-11 p-4 bg-slate-50 border border-slate-200/80 rounded-2xl focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all outline-none font-semibold text-slate-800" 
-                                        value={birthDate} 
-                                        onChange={e => setBirthDate(e.target.value)} 
-                                        disabled={loading} 
-                                        required
-                                    />
                                 </div>
-                            </div>
-                            
-                            <button 
-                                type="submit" 
-                                className="w-full py-4.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-2xl font-bold text-lg shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all active:scale-[0.99] hover:-translate-y-0.5 flex justify-center items-center gap-2 mt-2 disabled:opacity-50" 
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <>
-                                        <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                                        <span>Verificando...</span>
-                                    </>
-                                ) : "Ingresar al Portal"}
-                            </button>
-                        </form>
-                        
-                        <div className="text-center pt-4 border-t border-slate-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Área Segura • {config.name}</p>
+
+                                {/* Submit button — single solid color */}
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full py-4 rounded-xl font-black text-sm text-white shadow-lg transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2.5 mt-2"
+                                    style={{ background: clinicPrimary }}
+                                >
+                                    {loading ? (
+                                        <>
+                                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            Verificando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FiShield size={15} />
+                                            Ingresar al Portal
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-8 pb-7 pt-2 text-center border-t border-slate-100">
+                            <p className="text-[11px] text-slate-400">
+                                ¿Problemas para ingresar?{" "}
+                                <a
+                                    href={`https://wa.me/57${(config.contactPhone || "3015768935").replace(/\D/g, '')}?text=Hola, necesito ayuda para ingresar al portal de ${config.name}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-bold text-slate-600 hover:underline"
+                                >
+                                    Contactar Recepción
+                                </a>
+                            </p>
                         </div>
                     </div>
+
+                    <p className="text-center text-white/30 text-[10px] font-semibold mt-5 tracking-wider">
+                        © {new Date().getFullYear()} {config.name || "OdontoCloud"} · Todos los derechos reservados
+                    </p>
                 </div>
             </div>
         );
     }
 
     // ── Portal autenticado ────────────────────────────────────────────────────
+
     // Normalizar: recibos_caja tienen 'total', pagos tienen 'monto'. Estado varía entre colecciones.
     const getPagoMonto = (p) => Number(p.total || p.monto || p.valorTotal || 0);
     const esPagado = (p) => {

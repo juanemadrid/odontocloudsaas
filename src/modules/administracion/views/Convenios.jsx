@@ -152,11 +152,25 @@ export default function Convenios() {
   const loadConvenios = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from("convenios")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-      setConvenios(data || []);
+      let list = [];
+      try {
+        const { data, error } = await supabase
+          .from("convenios")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (!error && data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.convenios || [];
+      }
+
+      setConvenios(list);
     } catch (e) {
       console.error("Error loading convenios:", e);
       toast?.error("Error al cargar convenios");
@@ -170,13 +184,13 @@ export default function Convenios() {
       const { data: snapL } = await supabase
         .from("listas_precios")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
       setListasPrecios(snapL || []);
 
       const { data: snapS } = await supabase
         .from("sucursales")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
       setSucursales(snapS || []);
     } catch (e) {
       console.error("Error loading convenios metadata:", e);
@@ -264,8 +278,11 @@ export default function Convenios() {
     setSaving(true);
     try {
       const priceListName = listasPrecios.find(l => l.id === formData.listaPreciosId)?.nombre || "Particular / Base";
+      const { inquilino: _, ...cleanFormData } = formData;
+      const convenioId = editingConvenio?.id || (crypto.randomUUID ? crypto.randomUUID() : `conv_${Date.now()}`);
       const dataToSave = {
-        ...formData,
+        ...cleanFormData,
+        id: convenioId,
         nombre: formData.nombre.trim(),
         nombreContacto: formData.nombreContacto.trim(),
         email: formData.email.trim(),
@@ -273,18 +290,44 @@ export default function Convenios() {
         direccion: formData.direccion.trim(),
         listaPreciosNombre: priceListName,
         tenant_id: inquilino,
-        inquilino,
         updated_at: new Date().toISOString()
       };
 
-      let convenioId = editingConvenio?.id;
+      try {
+        if (editingConvenio?.id) {
+          await supabase.from("convenios").update(dataToSave).eq("id", editingConvenio.id);
+        } else {
+          dataToSave.created_at = new Date().toISOString();
+          await supabase.from("convenios").insert([dataToSave]);
+        }
+      } catch (e) {}
+
+      // Sincronizar en website_config JSON
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.convenios) ? currentConfig.convenios : [];
+      let updatedList;
       if (editingConvenio?.id) {
-        await supabase.from("convenios").update(dataToSave).eq("id", editingConvenio.id);
+        updatedList = currentList.map(item => item.id === editingConvenio.id ? { ...item, ...dataToSave } : item);
       } else {
-        dataToSave.created_at = new Date().toISOString();
-        const { data: insData } = await supabase.from("convenios").insert([dataToSave]).select().single();
-        convenioId = insData?.id || `conv_${Date.now()}`;
+        updatedList = [dataToSave, ...currentList];
       }
+
+      const newConfig = {
+        ...currentConfig,
+        convenios: updatedList,
+        updatedAt: new Date().toISOString()
+      };
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: newConfig },
+        { onConflict: "tenant_id" }
+      );
 
       toast?.success(editingConvenio ? "Convenio actualizado correctamente" : "Convenio creado con éxito");
       

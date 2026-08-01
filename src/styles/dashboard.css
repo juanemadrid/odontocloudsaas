@@ -670,3 +670,20 @@ body {
     padding: 10px 15px;
   }
 }
+
+/* ============================================================
+   ODONTOCLOUD UNIFIED BUTTON SYSTEM
+   All system action buttons use single brand color (#2563eb)
+   ============================================================ */
+.btn-primary,
+.oc-btn-primary {
+  background-color: var(--oc-blue) !important;
+  color: #ffffff !important;
+  border: none !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-primary:hover,
+.oc-btn-primary:hover {
+  background-color: var(--oc-blue-dark) !important;
+}

@@ -66,12 +66,25 @@ export default function NotaDebitoList({ onNew }) {
             const end = parseLocalDate(fechaFin);
             end.setHours(23, 59, 59, 999);
 
-            const { data: snap } = await supabase
-                .from("notas_debito")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            let snapList = [];
+            try {
+                const { data: snap } = await supabase
+                    .from("notas_debito")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (snap && snap.length > 0) snapList = snap;
+            } catch (e) {}
 
-            const list = (snap || []).map(data => {
+            if (snapList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                snapList = cfgRow?.config?.notas_debito || [];
+            }
+
+            const list = snapList.map(data => {
                 const ts = data.fechaISO || data.created_at || data.fecha;
                 const dObj = new Date(ts || 0);
                 return {

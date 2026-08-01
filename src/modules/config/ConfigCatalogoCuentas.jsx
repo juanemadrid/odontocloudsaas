@@ -282,7 +282,7 @@ export default function ConfigCatalogoCuentas() {
 
                         <button
                             onClick={() => openModal()}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
                         >
                             <FiPlus size={16} />
                             <span>Nueva Cuenta</span>

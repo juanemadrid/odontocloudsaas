@@ -36,12 +36,12 @@ export default function EmpresaPlanes() {
         setLoading(true);
         try {
             const [pData, lRes] = await Promise.all([
-                getConfigItems(inquilino, "planes", "planes"),
-                supabase.from("listas_precios").select("*").eq("tenant_id", inquilino)
+                getConfigItems(inquilino, "planes", null),
+                getConfigItems(inquilino, "listas_precios", "listas_precios")
             ]);
 
             setRows(pData.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
-            if (lRes.data) setListas(lRes.data);
+            setListas(lRes || []);
         } catch (error) {
             console.error("Error fetching planes:", error);
             setRows([]);
@@ -59,7 +59,7 @@ export default function EmpresaPlanes() {
         setLoading(true);
         try {
             const listaObj = listas.find(l => l.id === planListId);
-            await saveConfigItem(inquilino, "planes", "planes", {
+            await saveConfigItem(inquilino, "planes", null, {
                 ...(editingItem || {}),
                 nombre: planName.trim(),
                 listaId: planListId,
@@ -84,7 +84,7 @@ export default function EmpresaPlanes() {
         if (!window.confirm(`⚠️ ¿Seguro que deseas eliminar el plan "${row.nombre}"?`)) return;
         setLoading(true);
         try {
-            await deleteConfigItem(inquilino, "planes", "planes", row.id);
+            await deleteConfigItem(inquilino, "planes", null, row.id);
             setRows(prev => prev.filter(r => r.id !== row.id));
             if (toast?.success) toast.success("Plan eliminado correctamente");
             else alert("✅ Plan eliminado correctamente");

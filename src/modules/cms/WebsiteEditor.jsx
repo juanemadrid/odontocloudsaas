@@ -50,7 +50,7 @@ export default function WebCms() {
     // DEBUG: Add tenant name for UI clarity
     const tenantName = isSuperAdmin ? "SITIO PRINCIPAL (MASTER)" : (userProfile?.tenant?.name || "MI CLÍNICA");
 
-    const [config, setConfig] = useState({ ...baseConfig });
+    const [config, setConfig] = useState({ ...baseConfig, isMaster: isSuperAdmin });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -140,6 +140,7 @@ export default function WebCms() {
             setConfig({
                 ...baseConfig,
                 ...data,
+                isMaster: isSuperAdmin,
                 name: clinicName,
                 heroTitle,
                 heroSubtitle,
@@ -421,13 +422,42 @@ export default function WebCms() {
                                         </h3>
                                         <div className="space-y-4">
                                             <div>
-                                                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre de la Clínica</label>
+                                                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre Comercial de la Clínica</label>
                                                 <input
                                                     className="w-full bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl outline-none focus:bg-white transition-all font-bold text-[13px] text-slate-800"
                                                     value={config.name || ""}
                                                     onChange={e => setConfig({ ...config, name: e.target.value })}
-                                                    placeholder="Ej: Clínica Dental Madrid"
+                                                    placeholder="Ej: ATM, Clínica Odontológica Madrid"
                                                 />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Eslogan / Subtítulo Corporativo (Encabezado)</label>
+                                                <input
+                                                    className="w-full bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl outline-none focus:bg-white transition-all font-semibold text-[12px] text-slate-700"
+                                                    value={config.slogan || ""}
+                                                    onChange={e => setConfig({ ...config, slogan: e.target.value })}
+                                                    placeholder="Ej: Salud Oral & Odontología Especializada"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Color del Nombre en Encabezado</label>
+                                                <div className="flex items-center gap-3">
+                                                    <input
+                                                        type="color"
+                                                        className="w-10 h-10 rounded-xl border border-slate-200 cursor-pointer p-0.5"
+                                                        value={config.brandTextColor || "#0f172a"}
+                                                        onChange={e => setConfig({ ...config, brandTextColor: e.target.value })}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        className="flex-1 bg-slate-50 border border-slate-100 px-3 py-2 rounded-xl text-xs font-mono font-bold text-slate-700"
+                                                        value={config.brandTextColor || "#0f172a"}
+                                                        onChange={e => setConfig({ ...config, brandTextColor: e.target.value })}
+                                                        placeholder="#0f172a"
+                                                    />
+                                                </div>
                                             </div>
 
                                             <div>
@@ -466,35 +496,55 @@ export default function WebCms() {
                                         </div>
                                     </div>
 
-                                    <div className="bg-slate-50/50 rounded-[32px] p-8 border border-slate-100/60 shadow-inner group/card hover:bg-white hover:shadow-xl transition-all duration-500">
-                                        <h3 className="text-[12px] font-black text-slate-800 uppercase tracking-[0.2em] mb-8 flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-2xl bg-white shadow-md flex items-center justify-center text-indigo-600 border border-slate-50 group-hover/card:rotate-12 transition-transform">
-                                                <FiZap size={18} />
+                                    <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+                                        <h3 className="text-[12px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2.5 pb-3 border-b border-slate-100">
+                                            <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm">
+                                                <FiZap size={16} />
                                             </div>
                                             Estética y Marca
                                         </h3>
-                                        <div className="space-y-6">
+                                        <div className="space-y-5 text-left">
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Color Principal</label>
-                                                    <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-slate-200">
-                                                        <input type="color" className="w-10 h-10 p-0 border-none bg-transparent cursor-pointer rounded-lg overflow-hidden shrink-0" value={config.primaryColor} onChange={e => setConfig({ ...config, primaryColor: e.target.value })} />
-                                                        <input className="flex-1 bg-transparent font-mono text-[11px] font-black uppercase text-slate-700 outline-none" value={config.primaryColor} readOnly />
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Color Principal</label>
+                                                    <div className="flex items-center gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors">
+                                                        <input 
+                                                            type="color" 
+                                                            className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer rounded-lg overflow-hidden shrink-0" 
+                                                            value={config.primaryColor || "#022a63"} 
+                                                            onChange={e => setConfig({ ...config, primaryColor: e.target.value })} 
+                                                        />
+                                                        <input 
+                                                            type="text" 
+                                                            className="w-full bg-transparent font-mono text-[11px] font-bold uppercase text-slate-800 outline-none" 
+                                                            value={config.primaryColor || "#022a63"} 
+                                                            onChange={e => setConfig({ ...config, primaryColor: e.target.value })} 
+                                                        />
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Color Acento (Botones)</label>
-                                                    <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-slate-200">
-                                                        <input type="color" className="w-10 h-10 p-0 border-none bg-transparent cursor-pointer rounded-lg overflow-hidden shrink-0" value={config.secondaryColor || "#022a63"} onChange={e => setConfig({ ...config, secondaryColor: e.target.value })} />
-                                                        <input className="flex-1 bg-transparent font-mono text-[11px] font-black uppercase text-slate-700 outline-none" value={config.secondaryColor || "#022a63"} readOnly />
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Color Acento (Botones)</label>
+                                                    <div className="flex items-center gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors">
+                                                        <input 
+                                                            type="color" 
+                                                            className="w-8 h-8 p-0 border-none bg-transparent cursor-pointer rounded-lg overflow-hidden shrink-0" 
+                                                            value={config.secondaryColor || config.accentColor || "#0d2a63"} 
+                                                            onChange={e => setConfig({ ...config, secondaryColor: e.target.value, accentColor: e.target.value })} 
+                                                        />
+                                                        <input 
+                                                            type="text" 
+                                                            className="w-full bg-transparent font-mono text-[11px] font-bold uppercase text-slate-800 outline-none" 
+                                                            value={config.secondaryColor || config.accentColor || "#0d2a63"} 
+                                                            onChange={e => setConfig({ ...config, secondaryColor: e.target.value, accentColor: e.target.value })} 
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>
                                             <div>
-                                                <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Tipografía Corporativa</label>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Tipografía Corporativa</label>
                                                 <select
-                                                    className="w-full bg-white px-6 py-4 rounded-2xl border border-slate-200 font-black text-[13px] text-slate-700 outline-none focus:ring-4 focus:ring-indigo-100 transition-all appearance-none cursor-pointer"
-                                                    value={config.fontFamily}
+                                                    className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-200 font-bold text-[12px] text-slate-800 outline-none focus:bg-white focus:border-indigo-500 transition-all cursor-pointer"
+                                                    value={config.fontFamily || "Inter"}
                                                     onChange={e => setConfig({ ...config, fontFamily: e.target.value })}
                                                 >
                                                     <option value="Inter">INTER (SUIZA MODERN)</option>
@@ -502,6 +552,18 @@ export default function WebCms() {
                                                     <option value="Playfair Display">PLAYFAIR (INSTITUTIONAL)</option>
                                                     <option value="Lato">LATO (SOFT GEOMETRIC)</option>
                                                 </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Video de Fondo Hero (Ruta o URL MP4)</label>
+                                                <input 
+                                                    type="text"
+                                                    className="w-full bg-slate-50 px-4 py-3 rounded-xl border border-slate-200 font-medium text-[12px] text-slate-800 outline-none focus:bg-white focus:border-indigo-500 transition-all" 
+                                                    placeholder="/assets/hero-video.mp4 o https://..." 
+                                                    value={config.heroVideoUrl || ""} 
+                                                    onChange={e => setConfig({ ...config, heroVideoUrl: e.target.value })} 
+                                                />
+                                                <p className="text-[10px] text-slate-400 mt-1">Coloque su archivo MP4 en la carpeta <code>public/assets/hero-video.mp4</code> del proyecto o ingrese una URL web.</p>
                                             </div>
                                         </div>
                                     </div>
@@ -841,16 +903,22 @@ export default function WebCms() {
                     </div>
                     {/* Device Switcher & Live Link */}
                     <div className="flex items-center gap-3">
-                        <a
-                            href={isSuperAdmin ? `${import.meta.env.BASE_URL}` : `${import.meta.env.BASE_URL}c/${userProfile?.tenant?.slug || ""}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 no-underline cursor-pointer border-0"
-                            title="Abrir sitio web de la clínica en vivo"
-                        >
-                            <FiExternalLink size={14} />
-                            <span>Ver Sitio en Vivo ↗</span>
-                        </a>
+                        {(() => {
+                            const liveSlug = config?.slug || userProfile?.tenant?.slug || (userProfile?.empresaNombre || config?.name || "atm").toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
+                            const liveUrl = isSuperAdmin ? `${import.meta.env.BASE_URL}` : `${import.meta.env.BASE_URL}c/${liveSlug}`;
+                            return (
+                                <a
+                                    href={liveUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 no-underline cursor-pointer border-0"
+                                    title={`Abrir página web pública de la clínica (${liveSlug})`}
+                                >
+                                    <FiExternalLink size={14} />
+                                    <span>Ver Sitio en Vivo ↗</span>
+                                </a>
+                            );
+                        })()}
 
                         <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
                             <div
@@ -897,27 +965,28 @@ export default function WebCms() {
                                             <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
                                         </svg>
                                         <span className="text-slate-400">https://</span>
-                                        <span className="font-semibold text-slate-800">portal.odontocloud.pro</span>
+                                        <span className="font-semibold text-slate-800">
+                                            {isSuperAdmin ? "portal.odontocloud.pro" : `portal.odontocloud.pro/c/${config?.slug || userProfile?.tenant?.slug || (userProfile?.empresaNombre || config?.name || "atm").toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')}`}
+                                        </span>
                                     </div>
                                 </div>
 
                                 {/* External Live Link Button */}
                                 <div className="flex items-center shrink-0">
-                                    {config.slug || config.isMaster ? (
-                                        <button
-                                            onClick={() => {
-                                                const baseUrl = import.meta.env.BASE_URL;
-                                                const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-                                                const url = config.isMaster ? `${cleanBase}/` : `${cleanBase}/c/${config.slug}`;
-                                                window.open(url, '_blank');
-                                            }}
-                                            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm cursor-pointer"
-                                            title="Abrir en pestaña independiente"
-                                        >
-                                            <span>Ver Sitio Real</span>
-                                            <FiExternalLink size={12} />
-                                        </button>
-                                    ) : null}
+                                    <button
+                                        onClick={() => {
+                                            const baseUrl = import.meta.env.BASE_URL;
+                                            const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+                                            const liveSlug = config?.slug || userProfile?.tenant?.slug || (userProfile?.empresaNombre || config?.name || "atm").toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
+                                            const url = isSuperAdmin ? `${cleanBase}/` : `${cleanBase}/c/${liveSlug}`;
+                                            window.open(url, '_blank');
+                                        }}
+                                        className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm cursor-pointer border-0"
+                                        title="Abrir en pestaña independiente"
+                                    >
+                                        <span>Ver Sitio Real</span>
+                                        <FiExternalLink size={12} />
+                                    </button>
                                 </div>
                             </div>
 

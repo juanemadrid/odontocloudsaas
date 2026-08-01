@@ -1,8 +1,10 @@
 export const DEFAULT_CONFIG = {
+    isMaster: false,
     name: "Nombre de tu Clínica",
     logo: "", // Leave empty for text-only by default
     heroTitle: 'Cuidamos de tu sonrisa con excelencia',
     heroSubtitle: 'La mejor atención odontológica con tecnología avanzada y un equipo especializado.',
+    heroVideoUrl: "/assets/hero-video.mp4",
     seoTitle: "Tu Clínica Dental | Odontología de Vanguardia",
     seoDesc: "Ofrecemos servicios integrales de odontología: ortodoncia, implantes, estética y salud oral para toda la familia.",
     servicesSectionTitle: "Servicios Especializados para tu Bienestar",

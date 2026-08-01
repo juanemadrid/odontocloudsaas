@@ -5,10 +5,12 @@ import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import CIE10Search from './CIE10Search';
 import MedicamentoSearch from './MedicamentoSearch';
+import MEDICAMENTOS_COLOMBIA from '../../../data/medicamentosColombia';
 import VIAS_ADMINISTRACION from '../../../data/viasAdministracionColombia';
 import COLOMBIAN_CUM_REGISTRY from '../../../data/cumCompleto';
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 import { PREDEFINED_TEMPLATES } from '../../../data/plantillasPredeterminadas';
+import { getConfigItems } from '../../../services/configPersistenceService';
 
 
 export default function DocClinicoModal({ isOpen, onClose, patient, docType, initialData = null, isViewOnly = false }) {
@@ -148,6 +150,46 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     const [prescripcionDuracionValor, setPrescripcionDuracionValor] = useState("");
     const [prescripcionDuracionUnidad, setPrescripcionDuracionUnidad] = useState("Días");
     const [prescripcionCantidad, setPrescripcionCantidad] = useState("");
+    const [recetaSearchFilter, setRecetaSearchFilter] = useState("");
+
+    // State for "Nuevo medicamento" modal (OralDrive 1:1)
+    const [newMedModalOpen, setNewMedModalOpen] = useState(false);
+    const [newMedTipo, setNewMedTipo] = useState("");
+    const [newMedCodigo, setNewMedCodigo] = useState("");
+    const [newMedPrincipioActivo, setNewMedPrincipioActivo] = useState("");
+    const [newMedDescripcion, setNewMedDescripcion] = useState("");
+    const [newMedMarca, setNewMedMarca] = useState("");
+    const [showNewMedCodeSuggestions, setShowNewMedCodeSuggestions] = useState(false);
+    const [showNewMedNameSuggestions, setShowNewMedNameSuggestions] = useState(false);
+
+    const handleOpenNewMedModal = () => {
+        setNewMedTipo("");
+        setNewMedCodigo("");
+        setNewMedPrincipioActivo(medSearchTerm.trim());
+        setNewMedDescripcion("");
+        setNewMedMarca("");
+        setShowNewMedCodeSuggestions(false);
+        setShowNewMedNameSuggestions(false);
+        setNewMedModalOpen(true);
+    };
+
+    const handleSaveNewMed = () => {
+        if (!newMedTipo || !newMedCodigo.trim() || !newMedPrincipioActivo.trim()) {
+            toast.error("Complete los campos obligatorios (*)");
+            return;
+        }
+        const customMed = {
+            cum: newMedCodigo.trim(),
+            principioActivo: newMedPrincipioActivo.trim(),
+            tipo: newMedTipo,
+            descripcion: newMedDescripcion.trim(),
+            marca: newMedMarca.trim(),
+            formaFarmaceutica: "TABLETA",
+            viaAdministracion: "ORAL"
+        };
+        setNewMedModalOpen(false);
+        handleSelectMedication(customMed);
+    };
 
     // Auto-calculate quantity when frequency or duration changes
     const calculateQuantity = (frecuencia, duracion, frecUnidad, durUnidad) => {
@@ -172,16 +214,22 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         }
         
         let durationDays = 1;
-        if (durUnidad === "Días") {
+        if (durUnidad === "Minutos") {
+            durationDays = dur / (24 * 60);
+        } else if (durUnidad === "Horas") {
+            durationDays = dur / 24;
+        } else if (durUnidad === "Días") {
             durationDays = dur;
         } else if (durUnidad === "Semanas") {
             durationDays = dur * 7;
         } else if (durUnidad === "Meses") {
             durationDays = dur * 30;
+        } else if (durUnidad === "Años") {
+            durationDays = dur * 365;
         }
         
         const totalQuantity = Math.ceil(dailyDoses * durationDays);
-        return totalQuantity.toString();
+        return totalQuantity > 0 ? totalQuantity.toString() : "1";
     };
 
     // Effect to auto-calculate quantity
@@ -214,7 +262,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 const { data: list } = await supabase
                     .from("treatment_plans")
                     .select("*")
-                    .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`);
+                    .eq("paciente_id", patient.id);
                 const formatted = (list || []).map(d => {
                     let dateStr = "";
                     if (d.created_at || d.createdAt) {
@@ -361,24 +409,53 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         }
     }, [isOpen, initialData, userProfile, docType]);
 
-    // Load configured clinical templates (Plantillas Clínicas) from Firestore
+    // Load configured clinical templates (Plantillas Clínicas)
     useEffect(() => {
         const loadTemplates = async () => {
-            if (!isOpen || !userProfile?.inquilino) return;
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
+            if (!isOpen || !inq) return;
             const isTemplateMode = docType === 'Plantilla';
             const isEditingTemplate = initialData?.isTemplateDoc;
             if (!isTemplateMode && !isEditingTemplate) return;
-            if (isTemplateMode) {
-                try {
-                    const q = query(
-                        collection(db, 'tenants', userProfile.inquilino, 'plantillas_clinicas'),
-                        orderBy('nombre', 'asc')
-                    );
-                    const snap = await getDocs(q);
-                    const dbTemplates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setTemplates([...PREDEFINED_TEMPLATES, ...dbTemplates]);
-                } catch (err) {
-                    console.error('Error loading templates:', err);
+            
+            try {
+                const dbTemplates = await getConfigItems(inq, "plantillas_clinicas", "plantillas_clinicas");
+                const merged = [...PREDEFINED_TEMPLATES];
+                
+                if (Array.isArray(dbTemplates)) {
+                    dbTemplates.forEach(t => {
+                        if (!merged.some(existing => existing.id === t.id || existing.nombre === t.nombre)) {
+                            merged.push(t);
+                        }
+                    });
+                }
+                
+                setTemplates(merged);
+                
+                // Auto-select template if none selected or when creating a new template document
+                if (!selectedTemplate) {
+                    let matched = null;
+                    if (initialData?.templateId || initialData?.nombrePlantilla || initialData?.tipoDocumento) {
+                        matched = merged.find(t => t.id === initialData.templateId || t.nombre === initialData.nombrePlantilla || t.nombre === initialData.tipoDocumento);
+                    }
+                    if (!matched && docType && docType !== 'Plantilla') {
+                        matched = merged.find(t => t.nombre?.toLowerCase() === docType?.toLowerCase() || t.id === docType);
+                    }
+                    if (!matched) {
+                        matched = merged.find(t => t.id === 'ficha_ttm') || merged.find(t => t.id === 'atm') || merged[0];
+                    }
+                    if (matched) {
+                        setSelectedTemplate(matched);
+                        if (initialData?.valoresCampos) {
+                            setTemplateValues(initialData.valoresCampos);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Error loading templates:', err);
+                setTemplates(PREDEFINED_TEMPLATES);
+                if (!selectedTemplate && PREDEFINED_TEMPLATES.length > 0) {
+                    setSelectedTemplate(PREDEFINED_TEMPLATES[0]);
                 }
             }
         };
@@ -388,32 +465,142 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     // Load active professionals
     useEffect(() => {
         const loadCatalog = async () => {
-            if (!userProfile?.inquilino) return;
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
+            if (!inq) return;
+            
             try {
+                const mapDoctors = new Map();
+
+                // 1. Cargar desde patient.profesionales (si el paciente ya tiene profesionales asociados)
                 if (patient?.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
-                    const list = patient.profesionales.map(p => ({
-                        id: p.id,
-                        nombreCompleto: p.nombreCompleto || p.nombre || ""
-                    }));
-                    setCatalogProfesionales(list.sort((a,b) => a.nombreCompleto?.localeCompare(b.nombreCompleto) || 0));
-                    return;
+                    patient.profesionales.forEach(p => {
+                        const name = p.nombreCompleto || p.nombre || "";
+                        if (name.trim()) {
+                            mapDoctors.set(p.id || name.toLowerCase(), {
+                                id: p.id || name.toLowerCase(),
+                                nombreCompleto: name
+                            });
+                        }
+                    });
                 }
 
-                const q = query(
-                    collection(db, "profesionales"),
-                    where("inquilino", "==", userProfile.inquilino),
-                    where("activo", "==", true)
+                // 2. Cargar desde la tabla profiles
+                try {
+                    const { data: profilesData } = await supabase
+                        .from("profiles")
+                        .select("*")
+                        .eq("tenant_id", inq);
+
+                    if (profilesData && Array.isArray(profilesData)) {
+                        profilesData.forEach(u => {
+                            if (u.activo !== false) {
+                                const roleStr = (u.role || u.rol || "").toLowerCase();
+                                const isDoc = u.esDoctor === true || u.esOdontologo === true || 
+                                              roleStr.includes("doctor") || roleStr.includes("odontolog") || 
+                                              roleStr.includes("especialista") || roleStr.includes("admin") || !!u.especialidad;
+                                if (isDoc) {
+                                    const name = u.full_name || u.nombreCompleto || u.nombre || u.email || "";
+                                    if (name.trim() && !mapDoctors.has(u.id || name.toLowerCase())) {
+                                        mapDoctors.set(u.id || name.toLowerCase(), {
+                                            id: u.id || name.toLowerCase(),
+                                            nombreCompleto: name
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {}
+
+                // 3. Cargar desde tabla profesionales
+                try {
+                    const { data: profData } = await supabase
+                        .from("profesionales")
+                        .select("*")
+                        .eq("tenant_id", inq);
+
+                    if (profData && Array.isArray(profData)) {
+                        profData.forEach(d => {
+                            if (d.activo !== false) {
+                                const name = d.nombre_completo || d.nombre || "";
+                                const docId = d.id || name.toLowerCase();
+                                if (name.trim() && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, {
+                                        id: docId,
+                                        nombreCompleto: name
+                                    });
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {}
+
+                // 4. Cargar desde website_config (user_details & usuarios)
+                try {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inq)
+                        .maybeSingle();
+
+                    if (cfgRow?.config) {
+                        const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
+                        const userDetails = cfgRow.config.user_details || {};
+
+                        usuarios.forEach(u => {
+                            const detail = userDetails[u.id || u.uid] || {};
+                            const roleStr = (u.rol || u.role || "").toLowerCase();
+                            const isDoc = u.esDoctor === true || detail.esDoctor === true || 
+                                          roleStr.includes("doctor") || roleStr.includes("odontolog");
+                            if (isDoc) {
+                                const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
+                                const docId = u.id || u.uid || name.toLowerCase();
+                                if (name.trim() && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, { id: docId, nombreCompleto: name });
+                                }
+                            }
+                        });
+
+                        Object.entries(userDetails).forEach(([uid, detail]) => {
+                            if (detail.esDoctor === true && !mapDoctors.has(uid)) {
+                                const docName = detail.nombreCompleto || detail.nombre || userProfile?.nombreCompleto || "Doctor(a) Registrado";
+                                mapDoctors.set(uid, { id: uid, nombreCompleto: docName });
+                            }
+                        });
+                    }
+                } catch (e) {}
+
+                // 5. Agregar usuario actual logueado (userProfile)
+                if (userProfile) {
+                    const myName = userProfile.nombreCompleto || userProfile.nombre || userProfile.displayName;
+                    const myId = userProfile.uid || userProfile.id || `user-${myName}`;
+                    if (myName && !mapDoctors.has(myId)) {
+                        mapDoctors.set(myId, { id: myId, nombreCompleto: myName });
+                    }
+                }
+
+                const list = Array.from(mapDoctors.values()).sort((a, b) => 
+                    (a.nombreCompleto || "").localeCompare(b.nombreCompleto || "")
                 );
-                const s = await getDocs(q);
-                const list = s.docs.map(d => {
-                    const data = d.data();
-                    return { id: d.id, nombreCompleto: data.nombreCompleto || data.nombre || "" };
-                });
-                setCatalogProfesionales(list.sort((a,b) => a.nombreCompleto?.localeCompare(b.nombreCompleto) || 0));
-            } catch (err) { }
+                setCatalogProfesionales(list);
+
+                // Autoselect single doctor or current doctor if professional field is empty
+                if (list.length > 0 && !profesional) {
+                    const myName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName;
+                    const matchMine = list.find(l => l.nombreCompleto === myName);
+                    if (matchMine) {
+                        setProfesional(matchMine.nombreCompleto);
+                    } else {
+                        setProfesional(list[0].nombreCompleto);
+                    }
+                }
+
+            } catch (err) {
+                console.error("Error loading doctor catalog in modal", err);
+            }
         };
         if (isOpen) loadCatalog();
-    }, [isOpen, userProfile]);
+    }, [isOpen, userProfile, patient]);
 
     const clearPrescriptionDetailFields = () => {
         setPrescripcionDescripcion("");
@@ -431,7 +618,8 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
 
     const handleSelectMedication = (m) => {
         setSelectedMed(m);
-        setMedSearchTerm(`${m.principioActivo} ${m.concentracion || ''}`.trim());
+        const displayTerm = `${m.cum ? m.cum + ' - ' : ''}${m.principioActivo}${m.marca ? ' - ' + m.marca : ''}`.trim();
+        setMedSearchTerm(displayTerm);
         setMedSuggestions([]);
         
         // Pre-fill prescription details sub-modal fields
@@ -462,7 +650,38 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         setPrescripcionCantidad("");
         setPrescripcionRecomendacion("");
         
-        setPrescriptionDetailOpen(true);
+        // Per OralDrive 1:1, selecting from catalog fills the input field.
+        // The Prescription Detail modal opens ONLY when clicking the "Añadir" button.
+    };
+
+    const handleAnadirClick = () => {
+        if (selectedMed) {
+            setPrescriptionDetailOpen(true);
+        } else if (medSearchTerm.trim()) {
+            const customMed = {
+                cum: `CUST-${Date.now().toString().slice(-4)}`,
+                principioActivo: medSearchTerm.trim(),
+                tipo: "POS",
+                concentracion: "",
+                formaFarmaceutica: "TABLETA",
+                viaAdministracion: "ORAL"
+            };
+            setSelectedMed(customMed);
+            setPrescripcionDescripcion("");
+            setPrescripcionMarca("");
+            setPrescripcionDosisValor("");
+            setPrescripcionDosisUnidad("mg");
+            setPrescripcionFrecuenciaValor("");
+            setPrescripcionFrecuenciaUnidad("Horas");
+            setPrescripcionVia("ORAL");
+            setPrescripcionDuracionValor("");
+            setPrescripcionDuracionUnidad("Días");
+            setPrescripcionCantidad("");
+            setPrescripcionRecomendacion("");
+            setPrescriptionDetailOpen(true);
+        } else {
+            toast.error("Ingrese o seleccione un medicamento para añadir");
+        }
     };
 
     const handleSavePrescriptionItem = () => {
@@ -552,6 +771,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         } else if (docType === 'Orden') {
             finalContent = generateOrdenSummary(tipoOrden, dxPrincipal, diagnosticosRelacionados, cupsItems, observacionesGenerales);
             if (dxPrincipal) diagVal = `${dxPrincipal.code} - ${dxPrincipal.name}`;
+        } else if (isTemplateDoc && selectedTemplate) {
+            finalContent = generateTemplateSummary(selectedTemplate.campos, templateValues);
+            if (!finalContent || !finalContent.trim()) {
+                finalContent = `Documento generado a partir de la plantilla: ${selectedTemplate.nombre}`;
+            }
         }
 
         if (!finalContent.trim()) {
@@ -632,133 +856,91 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
 
     if (!isOpen) return null;
 
-    if (docType === 'Orden' && ordenStep === 'profesional' && !initialData) {
-        return (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden text-left border border-slate-100">
-                    <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-white">
-                        <h2 className="text-lg font-black text-slate-800 tracking-tight">Seleccionar Profesional</h2>
-                        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors bg-white">
-                            <FiX size={16} />
-                        </button>
-                    </div>
-                    <div className="p-8 space-y-4">
-                        <div className="flex flex-col gap-2">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Profesional *</label>
-                            <select 
-                                value={profesional}
-                                onChange={(e) => setProfesional(e.target.value)}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none"
-                            >
-                                <option value="">Seleccione...</option>
-                                {(patient?.profesionales || []).map(p => {
-                                    const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
-                                    return (
-                                        <option key={p.id} value={name}>{name.toUpperCase()}</option>
-                                    );
-                                })}
-                            </select>
-                        </div>
-                    </div>
-                    <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 bg-white">
-                        <button onClick={onClose} className="px-6 py-2.5 rounded-full font-bold text-sm text-slate-500 hover:bg-slate-200 transition-colors border border-slate-200 bg-white">
-                            Cerrar
-                        </button>
-                        <button 
-                            onClick={() => {
-                                if (!profesional) {
-                                    toast.error("Debe seleccionar un profesional");
-                                    return;
-                                }
-                                setOrdenStep('details');
-                            }}
-                            className="px-8 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-all"
-                        >
-                            Continuar
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     // ── Load consultas for Asociar Consulta modal ───────────────────────────
     const handleOpenAsocConsulta = async () => {
         setAsocConsultaModal(true);
-        if (consultasList.length > 0) return;
         try {
-            const q = query(collection(db, `pacientes/${patient.id}/docClis`), where('tipoDocumento', '==', 'Consulta'));
-            const snap = await getDocs(q);
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            list.sort((a, b) => new Date(b.fechaIso) - new Date(a.fechaIso));
-            setConsultasList(list);
+            const { data: list } = await supabase
+                .from("documentos_clinicos")
+                .select("*")
+                .eq("paciente_id", patient.id)
+                .eq("tipoDocumento", "Consulta")
+                .order("created_at", { ascending: false });
+            setConsultasList(list || []);
         } catch (e) {
             toast.error('Error cargando consultas');
         }
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-            <div className={`bg-white rounded-2xl shadow-2xl w-full ${docType === 'Receta' || docType === 'Orden' || docType === 'Plantilla' || initialData?.isTemplateDoc ? 'max-w-5xl' : 'max-w-3xl'} flex flex-col max-h-[90vh] overflow-hidden`}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+            <div className={`bg-white rounded-2xl shadow-2xl w-full ${docType === 'Alerta' ? 'max-w-lg' : (docType === 'Plantilla' && !selectedTemplate && !initialData) ? 'max-w-lg' : (docType === 'Receta' || docType === 'Orden' || docType === 'Plantilla' || initialData?.isTemplateDoc) ? 'max-w-3xl md:max-w-4xl' : 'max-w-2xl'} flex flex-col max-h-[90vh] overflow-hidden`}>
                 
                 {/* Modal Header */}
-                <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50 bg-white">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
                     <div>
-                        <h2 className="text-xl font-black text-slate-800 tracking-tight">
-                            {isViewOnly ? `Detalle de ${initialData?.tipoDocumento || docType}` : (initialData ? `Editar ${initialData.tipoDocumento}` : `Nueva ${docType}`)}
+                        <h2 className="text-base font-black text-slate-800 tracking-tight">
+                            {docType === 'Alerta' ? "Nueva alerta" : 
+                             (docType === 'Plantilla' || initialData?.isTemplateDoc) ? 
+                                (isViewOnly ? `Detalle de ${selectedTemplate?.nombre || initialData?.tipoDocumento}` : 
+                                 (initialData ? `Editar ${initialData.tipoDocumento}` : `Nuevo documento: ${selectedTemplate?.nombre || "Plantilla clínica"}`)) :
+                             (isViewOnly ? `Detalle de ${initialData?.tipoDocumento || docType}` : 
+                              (initialData ? `Editar ${initialData.tipoDocumento}` : `Nueva ${docType}`))}
                         </h2>
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
-                            <span>Pacientes</span> <span className="text-slate-350">-</span>
-                            <span>Doc. Clínicos</span> <span className="text-slate-350">-</span>
-                            <span className="text-blue-500">{isViewOnly ? "Detalle" : (initialData ? `Editar ${docType.toLowerCase()}` : `Nueva ${docType.toLowerCase()}`)}</span>
-                        </div>
+                        {docType !== 'Alerta' && docType !== 'Plantilla' && (
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                <span>Pacientes</span> <span className="text-slate-350">-</span>
+                                <span>Doc. Clínicos</span> <span className="text-slate-350">-</span>
+                                <span className="text-indigo-600 font-black">{isViewOnly ? "Detalle" : (initialData ? `Editar ${docType.toLowerCase()}` : `Nueva ${docType.toLowerCase()}`)}</span>
+                            </div>
+                        )}
                     </div>
-                    <div className="flex items-center gap-3">
-                        {(docType === 'Receta' || docType === 'Orden' || docType === 'Plantilla' || initialData?.isTemplateDoc) && !isViewOnly && (
+                    <div className="flex items-center gap-2">
+                        {!isViewOnly && (
                             <button 
                                 onClick={handleSave}
                                 disabled={saving}
-                                className="px-6 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-bold text-xs shadow flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                                className="px-5 py-1.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-wider shadow flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                             >
-                                {saving ? "Guardando..." : `Guardar ${docType.toLowerCase()}`}
+                                {saving ? "Guardando..." : (docType === 'Receta' ? "Guardar receta" : docType === 'Orden' ? "Guardar orden" : "Guardar")}
                             </button>
                         )}
-                        <button onClick={onClose} disabled={saving} className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors border border-slate-200 bg-white">
-                            <FiX size={18} />
+                        <button onClick={onClose} disabled={saving} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors border border-slate-200 bg-white cursor-pointer">
+                            <FiX size={16} />
                         </button>
                     </div>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar text-left">
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 custom-scrollbar text-left">
                     
                     {/* General information blocks */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b border-slate-100">
-                        <div className="space-y-2">
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Odontólogo Prescriptor *</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-slate-100">
+                        <div className="space-y-1">
+                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Odontólogo Prescriptor *</label>
                             <select 
                                 value={profesional}
                                 onChange={(e) => setProfesional(e.target.value)}
                                 disabled={isViewOnly}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none disabled:opacity-75 disabled:cursor-not-allowed"
+                                className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                             >
-                                <option value="" disabled>Seleccione...</option>
-                                {(docType === 'Orden' ? (patient?.profesionales || []) : catalogProfesionales).map(p => {
+                                <option value="" disabled>Seleccione un profesional...</option>
+                                {catalogProfesionales.map(p => {
                                     const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
                                     return (
-                                        <option key={p.id} value={name}>{name.toUpperCase()}</option>
+                                        <option key={p.id || name} value={name}>{name.toUpperCase()}</option>
                                     );
                                 })}
                             </select>
                         </div>
                         
                         {docType === 'Receta' ? (
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Plan de Formulación</label>
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Plan de Formulación</label>
                                 <select 
                                     value={selectedPlan}
                                     onChange={(e) => setSelectedPlan(e.target.value)}
                                     disabled={isViewOnly}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none disabled:opacity-75 disabled:cursor-not-allowed"
+                                    className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                                 >
                                     <option value="">SELECCIONE...</option>
                                     {treatmentPlans.map(plan => (
@@ -767,25 +949,26 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                 </select>
                             </div>
                         ) : docType === 'Orden' ? (
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Tipo de orden *</label>
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Tipo de orden *</label>
                                 <select 
                                     value={tipoOrden}
                                     onChange={(e) => setTipoOrden(e.target.value)}
                                     disabled={isViewOnly}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none disabled:opacity-75 disabled:cursor-not-allowed"
+                                    className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                                 >
                                     <option value="Orden médica">Orden médica</option>
                                     <option value="Ayuda diagnóstica">Ayuda diagnóstica</option>
                                     <option value="Examen de laboratorio">Examen de laboratorio</option>
                                     <option value="Anexo 3">Anexo 3</option>
+                                    <option value="Fórmula de uso crónico">Fórmula de uso crónico</option>
                                 </select>
                             </div>
                         ) : (docType === 'Plantilla' || initialData?.isTemplateDoc) ? (
                             /* ── PLANTILLA: selector de plantilla ── */
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                                    {docType === 'Plantilla' && !initialData ? 'Seleccione la plantilla *' : 'Plantilla utilizada'}
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">
+                                    {docType === 'Plantilla' && !initialData ? 'Seleccione la plantilla' : 'Plantilla utilizada'}
                                 </label>
                                 {docType === 'Plantilla' && !initialData ? (
                                     <select
@@ -795,24 +978,24 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                             setSelectedTemplate(tmpl);
                                             setTemplateValues({});
                                         }}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none"
+                                        className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all"
                                     >
-                                        <option value="">-- Seleccione una plantilla --</option>
+                                        <option value="">Escriba el nombre de la plantilla</option>
                                         {templates.map(t => (
                                             <option key={t.id} value={t.id}>{t.nombre}</option>
                                         ))}
                                     </select>
                                 ) : (
-                                    <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700 opacity-75">
+                                    <div className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 flex items-center text-xs font-semibold text-slate-700 opacity-75">
                                         {selectedTemplate?.nombre || initialData?.tipoDocumento || '—'}
                                     </div>
                                 )}
                             </div>
                         ) : (
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Diagnóstico asoc. (Opcional)</label>
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Diagnóstico asoc. (Opcional)</label>
                                 {isViewOnly ? (
-                                    <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700 opacity-75 min-h-[50px]">
+                                    <div className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 flex items-center text-xs font-semibold text-slate-700 opacity-75">
                                         {diagnostico || <span className="text-slate-400 font-normal">Sin diagnóstico asociado</span>}
                                     </div>
                                 ) : (
@@ -966,170 +1149,245 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
 
                     {/* INTERACTIVE PRESCRIPTION EDITOR */}
                     {docType === 'Receta' ? (
-                        <div className="space-y-6">
-                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                                <FiList className="text-blue-500" /> Detalle de Receta Médica
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+                                Información básica
                             </h3>
 
-                            {/* Med Finder and suggestions */}
+                            {/* Row 1: Prescribe* & Plan de formulación */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Prescribe *</label>
+                                    <select 
+                                        value={profesional}
+                                        onChange={(e) => setProfesional(e.target.value)}
+                                        disabled={isViewOnly}
+                                        className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                                    >
+                                        <option value="" disabled>Seleccione...</option>
+                                        {catalogProfesionales.map(p => {
+                                            const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
+                                            return (
+                                                <option key={p.id || name} value={name}>{name.toUpperCase()}</option>
+                                            );
+                                        })}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Plan de formulación</label>
+                                    <div className="flex gap-2 items-center">
+                                        <select 
+                                            value={selectedPlan}
+                                            onChange={(e) => setSelectedPlan(e.target.value)}
+                                            disabled={isViewOnly}
+                                            className="flex-1 bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                                        >
+                                            <option value="">Seleccione...</option>
+                                            {treatmentPlans.map(plan => (
+                                                <option key={plan.id} value={plan.nombre}>{(plan.nombre || "").toUpperCase()}</option>
+                                            ))}
+                                        </select>
+                                        <button 
+                                            type="button"
+                                            onClick={() => toast.info("Planes de formulación")}
+                                            className="w-9 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-sm shrink-0"
+                                            title="Ver plan de formulación"
+                                        >
+                                            <FiList size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Row 2: Ingrese el medicamento a añadir, Añadir, + Nuevo medicamento, Asociar consulta */}
                             {!isViewOnly && (
-                                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                                <div className="relative w-full">
-                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-1.5">
-                                        Ingresar el medicamento a añadir
-                                        <span className="ml-2 text-blue-400 normal-case font-bold">(catálogo nacional CUM)</span>
-                                    </label>
-                                    <div className="relative group">
-                                        <FiSearch size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <div className="flex flex-wrap md:flex-nowrap gap-2 items-end pt-1">
+                                    <div className="flex-1 relative">
                                         <input 
                                             type="text"
-                                            placeholder="Buscar medicamento por principio activo, marca o código CUM..."
+                                            placeholder="Ingrese el medicamento a añadir"
                                             value={medSearchTerm}
                                             onChange={(e) => {
                                                 setMedSearchTerm(e.target.value);
                                                 if (selectedMed) setSelectedMed(null);
                                             }}
-                                            className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all shadow-sm"
+                                            className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all"
                                         />
-                                    </div>
-                                    {/* Suggestions Dropdown */}
-                                    {medSuggestions.length > 0 && (
-                                        <div className="absolute left-0 right-0 mt-2 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden divide-y divide-slate-50">
-                                            {medSuggestions.map(m => (
-                                                <div 
-                                                    key={m.cum}
-                                                    onClick={() => handleSelectMedication(m)}
-                                                    className="px-4 py-3 text-sm hover:bg-blue-50/50 cursor-pointer flex items-center justify-between transition-colors"
-                                                >
-                                                    <div className="text-left">
-                                                        <p className="font-bold text-slate-700 uppercase tracking-tight">
-                                                            {m.principioActivo} {m.concentracion}
-                                                        </p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-                                                            <span className="text-blue-500">{m.formaFarmaceutica}</span>
-                                                            {m.marca && <span className="text-slate-400"> · Marca: {m.marca}</span>}
-                                                            <span className="text-slate-400"> · CUM: {m.cum}</span>
-                                                        </p>
+                                        {/* Suggestions Dropdown */}
+                                        {medSuggestions.length > 0 && (
+                                            <div className="absolute left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden divide-y divide-slate-50 max-h-48 overflow-y-auto">
+                                                {medSuggestions.map(m => (
+                                                    <div 
+                                                        key={m.cum}
+                                                        onClick={() => handleSelectMedication(m)}
+                                                        className="px-3 py-2 text-xs hover:bg-indigo-50/50 cursor-pointer flex items-center justify-between transition-colors"
+                                                    >
+                                                        <div className="text-left">
+                                                            <p className="font-bold text-slate-700 uppercase tracking-tight">
+                                                                {m.principioActivo} {m.concentracion}
+                                                            </p>
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                                                                <span className="text-indigo-500">{m.formaFarmaceutica}</span>
+                                                                {m.marca && <span className="text-slate-400"> · Marca: {m.marca}</span>}
+                                                                <span className="text-slate-400"> · CUM: {m.cum}</span>
+                                                            </p>
+                                                        </div>
+                                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${m.tipo === 'POS' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                                                            {m.tipo}
+                                                        </span>
                                                     </div>
-                                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${m.tipo === 'POS' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                                                        {m.tipo}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <button 
+                                        type="button"
+                                        onClick={handleAnadirClick}
+                                        className="px-5 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 cursor-pointer shrink-0"
+                                    >
+                                        Añadir
+                                    </button>
+
+                                    <button 
+                                        type="button"
+                                        onClick={handleOpenNewMedModal}
+                                        className="px-5 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5"
+                                    >
+                                        <FiPlus size={14} /> Nuevo medicamento
+                                    </button>
+
+                                    <button 
+                                        type="button"
+                                        onClick={handleOpenAsocConsulta}
+                                        className="w-9 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-sm shrink-0"
+                                        title="Asociar consulta"
+                                    >
+                                        <FiSearch size={16} />
+                                    </button>
                                 </div>
                             )}
 
-                            {/* Structured Prescribed items Table */}
-                            <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="bg-slate-50">
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Tipo</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Código</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Principio Activo</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Dosis</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Frecuencia</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Vía</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Duración</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Cant</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider">Marca</th>
-                                            <th className="px-4 py-3 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-50">
-                                        {recetaItems.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={10} className="px-4 py-16 text-center text-slate-400 text-sm font-medium">
-                                                    Sin datos (Añada medicamentos arriba)
-                                                </td>
+                            {/* Row 3: Structured Prescribed items Table */}
+                            <div className="space-y-2 pt-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-bold text-slate-400 italic">
+                                        Arrastra una columna aquí para agrupar por ella
+                                    </span>
+                                    <div className="relative w-48">
+                                        <FiSearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <input 
+                                            type="text"
+                                            placeholder="Buscar..."
+                                            value={recetaSearchFilter}
+                                            onChange={(e) => setRecetaSearchFilter(e.target.value)}
+                                            className="w-full pl-7 pr-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:bg-white focus:border-indigo-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50">
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Tipo</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Código</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Principio Activo</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Dosis</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Frecuencia</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Vía de administración</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Duración</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Cantidad</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Descripción</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider">Marca</th>
+                                                <th className="px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-wider text-right">Acciones</th>
                                             </tr>
-                                        ) : (
-                                            recetaItems.map((item, idx) => (
-                                                <tr key={idx} className={`hover:bg-slate-50/30 transition-colors ${item.doctorSignature ? 'bg-green-50/50 border-l-4 border-green-400' : ''}`}>
-                                                    <td className="px-4 py-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-[9px] font-bold uppercase tracking-wider">{item.tipo}</span>
-                                                            {item.doctorSignature && (
-                                                                <span className="px-2 py-0.5 rounded bg-green-50 text-green-600 text-[8px] font-bold uppercase tracking-wider">Firmado</span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">{item.codigo}</td>
-                                                    <td className="px-4 py-3 text-xs font-bold text-slate-700 uppercase tracking-tight">{item.principioActivo}</td>
-                                                    <td className="px-4 py-3 text-xs text-slate-600">{item.dosis}</td>
-                                                    <td className="px-4 py-3 text-xs text-slate-600">{item.frecuencia}</td>
-                                                    <td className="px-4 py-3 text-xs text-slate-500">{item.viaAdministracion}</td>
-                                                    <td className="px-4 py-3 text-xs text-slate-500">{item.duracion}</td>
-                                                    <td className="px-4 py-3 text-xs font-black text-slate-800 text-center">{item.cantidad}</td>
-                                                    <td className="px-4 py-3 text-xs text-slate-500 uppercase">{item.marca || "-"}</td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            <button 
-                                                                type="button"
-                                                                onClick={async () => {
-                                                                    const updatedItems = [...recetaItems];
-                                                                    updatedItems[idx] = { 
-                                                                        ...item, 
-                                                                        doctorSignature: userProfile?.nombreCompleto || userProfile?.nombre || "Doctor",
-                                                                        signedAt: new Date().toISOString(),
-                                                                        signedBy: userProfile?.uid
-                                                                    };
-                                                                    setRecetaItems(updatedItems);
-                                                                    
-                                                                    // Si ya está guardado en base de datos, guardar firma inmediatamente
-                                                                    if (initialData?.id) {
-                                                                        try {
-                                                                            await setDoc(doc(db, `pacientes/${patient.id}/docClis`, initialData.id), {
-                                                                                recetaItems: updatedItems
-                                                                            }, { merge: true });
-                                                                            toast.success("Receta firmada en base de datos");
-                                                                        } catch (e) {
-                                                                            console.error(e);
-                                                                            toast.error("Error al guardar firma");
-                                                                        }
-                                                                    } else {
-                                                                        toast.success("Receta firmada por el doctor");
-                                                                    }
-                                                                }}
-                                                                className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
-                                                                title="Firmar receta"
-                                                                disabled={item.doctorSignature}
-                                                            >
-                                                                {item.doctorSignature ? (
-                                                                    <FiCheck size={14} className="text-green-600" />
-                                                                ) : (
-                                                                    <FiPenTool size={14} />
-                                                                )}
-                                                            </button>
-                                                            {!isViewOnly && (
-                                                                <button 
-                                                                    type="button"
-                                                                    onClick={() => handleRemoveItem(idx)}
-                                                                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                                                                    title="Eliminar ítem"
-                                                                >
-                                                                    <FiTrash2 size={14} />
-                                                                </button>
-                                                            )}
-                                                        </div>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {recetaItems.filter(item => {
+                                                if (!recetaSearchFilter.trim()) return true;
+                                                const q = recetaSearchFilter.toLowerCase();
+                                                return (
+                                                    (item.principioActivo || '').toLowerCase().includes(q) ||
+                                                    (item.codigo || '').toLowerCase().includes(q) ||
+                                                    (item.marca || '').toLowerCase().includes(q)
+                                                );
+                                            }).length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={11} className="px-4 py-12 text-center text-slate-400 text-xs font-medium">
+                                                        Sin datos
                                                     </td>
                                                 </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
+                                            ) : (
+                                                recetaItems.filter(item => {
+                                                    if (!recetaSearchFilter.trim()) return true;
+                                                    const q = recetaSearchFilter.toLowerCase();
+                                                    return (
+                                                        (item.principioActivo || '').toLowerCase().includes(q) ||
+                                                        (item.codigo || '').toLowerCase().includes(q) ||
+                                                        (item.marca || '').toLowerCase().includes(q)
+                                                    );
+                                                }).map((item, idx) => (
+                                                    <tr key={idx} className={`hover:bg-slate-50/30 transition-colors ${item.doctorSignature ? 'bg-green-50/50 border-l-4 border-green-400' : ''}`}>
+                                                        <td className="px-3 py-2 text-xs font-bold text-indigo-600">{item.tipo}</td>
+                                                        <td className="px-3 py-2 text-xs font-bold text-slate-500 font-mono">{item.codigo}</td>
+                                                        <td className="px-3 py-2 text-xs font-bold text-slate-700 uppercase">{item.principioActivo}</td>
+                                                        <td className="px-3 py-2 text-xs text-slate-600">{item.dosis}</td>
+                                                        <td className="px-3 py-2 text-xs text-slate-600">{item.frecuencia}</td>
+                                                        <td className="px-3 py-2 text-xs text-slate-500 uppercase">{item.viaAdministracion}</td>
+                                                        <td className="px-3 py-2 text-xs text-slate-500">{item.duracion}</td>
+                                                        <td className="px-3 py-2 text-xs font-black text-slate-800 text-center">{item.cantidad}</td>
+                                                        <td className="px-3 py-2 text-xs text-slate-500">{item.descripcion || "-"}</td>
+                                                        <td className="px-3 py-2 text-xs text-slate-500 uppercase">{item.marca || "-"}</td>
+                                                        <td className="px-3 py-2 text-right">
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <button 
+                                                                    type="button"
+                                                                    onClick={async () => {
+                                                                        const updatedItems = [...recetaItems];
+                                                                        updatedItems[idx] = { 
+                                                                            ...item, 
+                                                                            doctorSignature: userProfile?.nombreCompleto || userProfile?.nombre || "Doctor",
+                                                                            signedAt: new Date().toISOString(),
+                                                                            signedBy: userProfile?.uid
+                                                                        };
+                                                                        setRecetaItems(updatedItems);
+                                                                        toast.success("Receta firmada por el doctor");
+                                                                    }}
+                                                                    className="p-1 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                                                    title="Firmar receta"
+                                                                    disabled={item.doctorSignature}
+                                                                >
+                                                                    {item.doctorSignature ? <FiCheck size={14} className="text-green-600" /> : <FiPenTool size={14} />}
+                                                                </button>
+                                                                {!isViewOnly && (
+                                                                    <button 
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveItem(idx)}
+                                                                        className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                                                        title="Eliminar ítem"
+                                                                    >
+                                                                        <FiTrash2 size={14} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     ) : docType === 'Orden' ? (
-                        <div className="space-y-6">
-                            {/* Diagnóstico Principal */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
+                        <div className="space-y-4">
+                            {/* Diagnóstico Principal y Relacionado */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1">
                                     <div className="flex items-center justify-between">
-                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Diagnóstico Principal (CIE10)</label>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Diagnóstico Principal (CIE10)</label>
                                         {!isViewOnly && (
                                             <button
                                                 type="button"
@@ -1144,7 +1402,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         <p className="text-[10px] text-emerald-600 font-bold pl-1">✓ Consulta asociada</p>
                                     )}
                                     {isViewOnly ? (
-                                        <div className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-700">
+                                        <div className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 flex items-center">
                                             {dxPrincipal ? `${dxPrincipal.code} - ${dxPrincipal.name}` : '-'}
                                         </div>
                                     ) : (
@@ -1157,14 +1415,14 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                 </div>
 
                                 {/* Diagnósticos Relacionados (Buscador) */}
-                                <div className="space-y-2">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Diagnóstico relacionado (CIE10)</label>
+                                <div className="space-y-1">
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Diagnóstico relacionado (CIE10)</label>
                                     {isViewOnly ? (
                                         <div className="text-xs text-slate-400 italic font-medium pl-1">
                                             Lista de diagnósticos relacionados en la tabla de abajo
                                         </div>
                                     ) : (
-                                        <div className="flex gap-2 items-end">
+                                        <div className="flex gap-2 items-center">
                                             <CIE10Search 
                                                 value={tempDxRelacionado}
                                                 onSelect={(item) => setTempDxRelacionado(item)}
@@ -1184,9 +1442,10 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                     setDiagnosticosRelacionados(prev => [...prev, tempDxRelacionado]);
                                                     setTempDxRelacionado(null);
                                                 }}
-                                                className="p-3 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold transition-all active:scale-95 shadow-sm"
+                                                className="w-9 h-9 flex items-center justify-center bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
+                                                title="Agregar diagnóstico relacionado"
                                             >
-                                                <FiPlus size={18} />
+                                                <FiPlus size={16} />
                                             </button>
                                         </div>
                                     )}
@@ -1365,34 +1624,45 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                 <div className="space-y-8">
 
                                     {/* ── Antecedentes ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Antecedentes</h4>
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={antNoRefiere} onChange={e => setAntNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 accent-slate-400" />
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">No refiere</span>
+                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
+                                        <div className="flex items-center gap-3">
+                                            <h4 className="text-xs font-black text-slate-700">Antecedentes</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                <input type="checkbox" checked={antNoRefiere} onChange={e => setAntNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
+                                                <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
                                         </div>
                                         {!antNoRefiere && (
                                             <>
                                                 {!isViewOnly && (
-                                                    <div className="flex gap-2 items-end">
-                                                        <div className="flex-1">
-                                                            <CIE10Search value={tempAntCIE10} onSelect={setTempAntCIE10} className="w-full" />
+                                                    <div className="flex items-end gap-3">
+                                                        <div className="flex-1 space-y-2 text-left">
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">CIE10</label>
+                                                                <CIE10Search value={tempAntCIE10} onSelect={setTempAntCIE10} className="w-full" />
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
+                                                                <textarea
+                                                                    rows={2}
+                                                                    placeholder="Observación"
+                                                                    value={tempAntObs}
+                                                                    onChange={e => setTempAntObs(e.target.value)}
+                                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
+                                                                />
+                                                            </div>
                                                         </div>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="Observación"
-                                                            value={tempAntObs}
-                                                            onChange={e => setTempAntObs(e.target.value)}
-                                                            className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-500"
-                                                        />
-                                                        <button type="button" onClick={() => {
-                                                            if (!tempAntCIE10) { toast.error('Seleccione un código CIE10'); return; }
-                                                            setAntecedentes(prev => [...prev, { ...tempAntCIE10, obs: tempAntObs }]);
-                                                            setTempAntCIE10(null); setTempAntObs('');
-                                                        }} className="p-3 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold transition-all active:scale-95">
-                                                            <FiPlus size={16} />
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => {
+                                                                if (!tempAntCIE10) { toast.error('Seleccione un código CIE10'); return; }
+                                                                setAntecedentes(prev => [...prev, { ...tempAntCIE10, obs: tempAntObs }]);
+                                                                setTempAntCIE10(null); setTempAntObs('');
+                                                            }} 
+                                                            className="w-9 h-9 rounded-full bg-[#8CC63F] hover:bg-[#7bb335] text-white flex items-center justify-center shadow active:scale-95 transition-all cursor-pointer shrink-0 mb-1"
+                                                            title="Agregar Antecedente"
+                                                        >
+                                                            <FiPlus size={18} />
                                                         </button>
                                                     </div>
                                                 )}
@@ -1413,36 +1683,57 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </table>
                                                     </div>
                                                 )}
-                                                {antecedentes.length === 0 && <p className="text-xs text-slate-400 text-center py-2">Sin antecedentes agregados</p>}
                                             </>
                                         )}
-                                        {antNoRefiere && <p className="text-xs text-slate-400 italic">No refiere antecedentes</p>}
                                     </div>
 
                                     {/* ── Alergias ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Alergias</h4>
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={alerNoRefiere} onChange={e => setAlerNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 accent-slate-400" />
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">No refiere</span>
+                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
+                                        <div className="flex items-center gap-3">
+                                            <h4 className="text-xs font-black text-slate-700">Alergias</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                <input type="checkbox" checked={alerNoRefiere} onChange={e => setAlerNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
+                                                <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
                                         </div>
                                         {!alerNoRefiere && (
                                             <>
                                                 {!isViewOnly && (
-                                                    <div className="flex gap-2 items-end">
-                                                        <select value={tempAlerTipo} onChange={e => setTempAlerTipo(e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 appearance-none">
-                                                            <option value="">Seleccione tipo...</option>
-                                                            {['Medicamento','Alimento','Ambiental','Látex','Otro'].map(t => <option key={t} value={t}>{t}</option>)}
-                                                        </select>
-                                                        <input type="text" placeholder="Observación" value={tempAlerObs} onChange={e => setTempAlerObs(e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-500" />
-                                                        <button type="button" onClick={() => {
-                                                            if (!tempAlerTipo) { toast.error('Seleccione tipo de alergia'); return; }
-                                                            setAlergias(prev => [...prev, { tipo: tempAlerTipo, obs: tempAlerObs }]);
-                                                            setTempAlerTipo(''); setTempAlerObs('');
-                                                        }} className="p-3 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold transition-all active:scale-95">
-                                                            <FiPlus size={16} />
+                                                    <div className="flex items-end gap-3">
+                                                        <div className="flex-1 space-y-2 text-left">
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Tipo de alergia</label>
+                                                                <select 
+                                                                    value={tempAlerTipo} 
+                                                                    onChange={e => setTempAlerTipo(e.target.value)} 
+                                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 transition-all"
+                                                                >
+                                                                    <option value="">Seleccione...</option>
+                                                                    {['Medicamento','Alimento','Ambiental','Látex','Otro'].map(t => <option key={t} value={t}>{t}</option>)}
+                                                                </select>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
+                                                                <textarea
+                                                                    rows={2}
+                                                                    placeholder="Observación"
+                                                                    value={tempAlerObs}
+                                                                    onChange={e => setTempAlerObs(e.target.value)}
+                                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => {
+                                                                if (!tempAlerTipo) { toast.error('Seleccione tipo de alergia'); return; }
+                                                                setAlergias(prev => [...prev, { tipo: tempAlerTipo, obs: tempAlerObs }]);
+                                                                setTempAlerTipo(''); setTempAlerObs('');
+                                                            }} 
+                                                            className="w-9 h-9 rounded-full bg-[#8CC63F] hover:bg-[#7bb335] text-white flex items-center justify-center shadow active:scale-95 transition-all cursor-pointer shrink-0 mb-1"
+                                                            title="Agregar Alergia"
+                                                        >
+                                                            <FiPlus size={18} />
                                                         </button>
                                                     </div>
                                                 )}
@@ -1462,39 +1753,63 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </table>
                                                     </div>
                                                 )}
-                                                {alergias.length === 0 && <p className="text-xs text-slate-400 text-center py-2">Sin alergias agregadas</p>}
                                             </>
                                         )}
-                                        {alerNoRefiere && <p className="text-xs text-slate-400 italic">No refiere alergias</p>}
                                     </div>
 
                                     {/* ── Antecedentes Familiares ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Antecedentes Familiares</h4>
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={famNoRefiere} onChange={e => setFamNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 accent-slate-400" />
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">No refiere</span>
+                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
+                                        <div className="flex items-center gap-3">
+                                            <h4 className="text-xs font-black text-slate-700">Antecedentes Familiares</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                <input type="checkbox" checked={famNoRefiere} onChange={e => setFamNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
+                                                <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
                                         </div>
                                         {!famNoRefiere && (
                                             <>
                                                 {!isViewOnly && (
-                                                    <div className="flex gap-2 items-end flex-wrap">
-                                                        <select value={tempFamParentesco} onChange={e => setTempFamParentesco(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 appearance-none">
-                                                            <option value="">Parentesco...</option>
-                                                            {['Madre','Padre','Hermano(a)','Abuelo(a)','Tío(a)','Hijo(a)','Otro'].map(t => <option key={t} value={t}>{t}</option>)}
-                                                        </select>
-                                                        <div className="flex-1 min-w-[180px]">
-                                                            <CIE10Search value={tempFamCIE10} onSelect={setTempFamCIE10} className="w-full" />
+                                                    <div className="flex items-end gap-3">
+                                                        <div className="flex-1 space-y-2 text-left">
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                                <div className="space-y-1">
+                                                                    <label className="text-[10px] font-bold text-slate-500 pl-0.5">Parentesco</label>
+                                                                    <select 
+                                                                        value={tempFamParentesco} 
+                                                                        onChange={e => setTempFamParentesco(e.target.value)} 
+                                                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 transition-all"
+                                                                    >
+                                                                        <option value="">Seleccione...</option>
+                                                                        {['Madre','Padre','Hermano(a)','Abuelo(a)','Tío(a)','Hijo(a)','Otro'].map(t => <option key={t} value={t}>{t}</option>)}
+                                                                    </select>
+                                                                </div>
+                                                                <div className="space-y-1">
+                                                                    <label className="text-[10px] font-bold text-slate-500 pl-0.5">CIE10</label>
+                                                                    <CIE10Search value={tempFamCIE10} onSelect={setTempFamCIE10} className="w-full" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
+                                                                <textarea
+                                                                    rows={2}
+                                                                    placeholder="Observación"
+                                                                    value={tempFamObs}
+                                                                    onChange={e => setTempFamObs(e.target.value)}
+                                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
+                                                                />
+                                                            </div>
                                                         </div>
-                                                        <input type="text" placeholder="Observación" value={tempFamObs} onChange={e => setTempFamObs(e.target.value)} className="flex-1 min-w-[120px] bg-white border border-slate-200 rounded-xl px-3 py-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-500" />
-                                                        <button type="button" onClick={() => {
-                                                            if (!tempFamParentesco || !tempFamCIE10) { toast.error('Complete parentesco y diagnóstico'); return; }
-                                                            setAntFamiliares(prev => [...prev, { parentesco: tempFamParentesco, ...tempFamCIE10, obs: tempFamObs }]);
-                                                            setTempFamParentesco(''); setTempFamCIE10(null); setTempFamObs('');
-                                                        }} className="p-3 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold transition-all active:scale-95">
-                                                            <FiPlus size={16} />
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => {
+                                                                if (!tempFamParentesco || !tempFamCIE10) { toast.error('Complete parentesco y diagnóstico'); return; }
+                                                                setAntFamiliares(prev => [...prev, { parentesco: tempFamParentesco, ...tempFamCIE10, obs: tempFamObs }]);
+                                                                setTempFamParentesco(''); setTempFamCIE10(null); setTempFamObs('');
+                                                            }} 
+                                                            className="w-9 h-9 rounded-full bg-[#8CC63F] hover:bg-[#7bb335] text-white flex items-center justify-center shadow active:scale-95 transition-all cursor-pointer shrink-0 mb-1"
+                                                            title="Agregar Antecedente Familiar"
+                                                        >
+                                                            <FiPlus size={18} />
                                                         </button>
                                                     </div>
                                                 )}
@@ -1516,53 +1831,58 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </table>
                                                     </div>
                                                 )}
-                                                {antFamiliares.length === 0 && <p className="text-xs text-slate-400 text-center py-2">Sin antecedentes familiares agregados</p>}
                                             </>
                                         )}
-                                        {famNoRefiere && <p className="text-xs text-slate-400 italic">No refiere antecedentes familiares</p>}
                                     </div>
 
-                                    {/* ── Medicamentos en uso ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <div className="flex items-center justify-between">
-                                            <h4 className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Medicamentos en Uso</h4>
-                                            <label className="flex items-center gap-2 cursor-pointer">
-                                                <input type="checkbox" checked={medPrevNoRefiere} onChange={e => setMedPrevNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 accent-slate-400" />
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">No refiere</span>
+                                    {/* ── Medicamentos ── */}
+                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
+                                        <div className="flex items-center gap-3">
+                                            <h4 className="text-xs font-black text-slate-700">Medicamentos</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                <input type="checkbox" checked={medPrevNoRefiere} onChange={e => setMedPrevNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
+                                                <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
                                         </div>
                                         {!medPrevNoRefiere && (
                                             <>
                                                 {!isViewOnly && (
-                                                    <div className="flex gap-2 items-end">
-                                                        <div className="flex-1 text-left">
-                                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">DCI</label>
-                                                            <MedicamentoSearch 
-                                                                value={tempMedPrevItem} 
-                                                                onChange={setTempMedPrevItem} 
-                                                                disabled={isViewOnly} 
-                                                            />
+                                                    <div className="flex items-end gap-3">
+                                                        <div className="flex-1 space-y-2 text-left">
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">DCI</label>
+                                                                <MedicamentoSearch 
+                                                                    value={tempMedPrevItem} 
+                                                                    onChange={setTempMedPrevItem} 
+                                                                    disabled={isViewOnly} 
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
+                                                                <textarea
+                                                                    rows={2}
+                                                                    placeholder="Observación"
+                                                                    value={tempMedPrevObs}
+                                                                    onChange={e => setTempMedPrevObs(e.target.value)}
+                                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
+                                                                />
+                                                            </div>
                                                         </div>
-                                                        <div className="flex-1 text-left">
-                                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Observación (dosis, frecuencia...)</label>
-                                                            <input 
-                                                                type="text" 
-                                                                placeholder="Dosis, frecuencia, etc." 
-                                                                value={tempMedPrevObs} 
-                                                                onChange={e => setTempMedPrevObs(e.target.value)} 
-                                                                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-blue-500" 
-                                                            />
-                                                        </div>
-                                                        <button type="button" onClick={() => {
-                                                            if (!tempMedPrevItem) { toast.error('Seleccione un medicamento de la lista'); return; }
-                                                            setMedicamentosPrev(prev => [...prev, { 
-                                                                nombre: `${tempMedPrevItem.code} - ${tempMedPrevItem.name}`, 
-                                                                obs: tempMedPrevObs.trim() 
-                                                            }]);
-                                                            setTempMedPrevItem(null); 
-                                                            setTempMedPrevObs('');
-                                                        }} className="p-3 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold transition-all active:scale-95 mb-0.5">
-                                                            <FiPlus size={16} />
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => {
+                                                                if (!tempMedPrevItem) { toast.error('Seleccione un medicamento de la lista'); return; }
+                                                                setMedicamentosPrev(prev => [...prev, { 
+                                                                    nombre: `${tempMedPrevItem.code} - ${tempMedPrevItem.name}`, 
+                                                                    obs: tempMedPrevObs.trim() 
+                                                                }]);
+                                                                setTempMedPrevItem(null); 
+                                                                setTempMedPrevObs('');
+                                                            }} 
+                                                            className="w-9 h-9 rounded-full bg-[#8CC63F] hover:bg-[#7bb335] text-white flex items-center justify-center shadow active:scale-95 transition-all cursor-pointer shrink-0 mb-1"
+                                                            title="Agregar Medicamento"
+                                                        >
+                                                            <FiPlus size={18} />
                                                         </button>
                                                     </div>
                                                 )}
@@ -1582,39 +1902,37 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </table>
                                                     </div>
                                                 )}
-                                                {medicamentosPrev.length === 0 && <p className="text-xs text-slate-400 text-center py-2">Sin medicamentos registrados</p>}
                                             </>
                                         )}
-                                        {medPrevNoRefiere && <p className="text-xs text-slate-400 italic">No refiere medicamentos en uso</p>}
                                     </div>
-
                                 </div>
                             )}
                         </div>
                     ) : (
-                        // Muestra el textarea simple para documentos genéricos
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Detalle / Contenido *</label>
+                            {docType !== 'Alerta' && (
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Detalle / Contenido *</label>
+                            )}
                             <textarea 
-                                rows={8}
+                                rows={docType === 'Alerta' ? 6 : 8}
                                 required
                                 readOnly={isViewOnly}
-                                placeholder={`Escriba el detalle de la ${(initialData?.tipoDocumento || docType).toLowerCase()} aquí...`}
+                                placeholder={docType === 'Alerta' ? "Agregar alerta" : `Escriba el detalle de la ${(initialData?.tipoDocumento || docType).toLowerCase()} aquí...`}
                                 value={contenido}
                                 onChange={(e) => setContenido(e.target.value)}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 resize-none custom-scrollbar transition-all read-only:bg-slate-50 read-only:cursor-not-allowed" 
+                                className="w-full bg-white border border-slate-200 rounded-xl p-4 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 resize-none custom-scrollbar transition-all read-only:bg-slate-50 read-only:cursor-not-allowed" 
                             />
                         </div>
                     )}
                 </div>
 
                 <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 flex-none bg-white">
-                    <button onClick={onClose} disabled={saving} className="px-6 py-2.5 rounded-full font-bold text-sm text-slate-500 hover:bg-slate-200 transition-colors border border-slate-200 bg-white">
-                        {isViewOnly ? "Cerrar" : "Cancelar"}
+                    <button onClick={onClose} disabled={saving} className="px-6 py-2.5 rounded-full font-bold text-sm text-slate-500 hover:bg-slate-200 transition-colors border border-slate-200 bg-white cursor-pointer">
+                        {docType === 'Alerta' ? "Cerrar" : (isViewOnly ? "Cerrar" : "Cancelar")}
                     </button>
                     {!isViewOnly && (
-                        <button onClick={handleSave} disabled={saving} className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50">
-                            <FiCheck size={16} /> {saving ? "Guardando..." : "Guardar Documento"}
+                        <button onClick={handleSave} disabled={saving} className="px-8 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer">
+                            <FiCheck size={16} /> {saving ? "Guardando..." : (docType === 'Receta' ? "Guardar receta" : docType === 'Orden' ? "Guardar orden" : "Guardar")}
                         </button>
                     )}
                 </div>
@@ -1852,9 +2170,12 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                             onChange={e => setPrescripcionDuracionUnidad(e.target.value)} 
                                             className="w-1/2 bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 appearance-none"
                                         >
+                                            <option value="Minutos">Minutos</option>
+                                            <option value="Horas">Horas</option>
                                             <option value="Días">Días</option>
                                             <option value="Semanas">Semanas</option>
                                             <option value="Meses">Meses</option>
+                                            <option value="Años">Años</option>
                                             <option value="Única vez">Única vez</option>
                                         </select>
                                     </div>
@@ -1864,23 +2185,15 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                             {/* Cantidad */}
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                                    Cantidad * 
-                                    <span className="text-[8px] text-indigo-500 font-bold ml-1">(Auto-calculado)</span>
+                                    Cantidad *
                                 </label>
-                                <div className="relative">
-                                    <input 
-                                        type="number" 
-                                        placeholder="Se calcula automáticamente..."
-                                        value={prescripcionCantidad} 
-                                        onChange={e => setPrescripcionCantidad(e.target.value)} 
-                                        className="w-full bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-xs font-bold text-indigo-700 outline-none focus:bg-white focus:border-blue-500 placeholder:text-indigo-300"
-                                    />
-                                    {prescripcionCantidad && (
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] text-indigo-500 font-black">
-                                            AUTO
-                                        </div>
-                                    )}
-                                </div>
+                                <input 
+                                    type="text" 
+                                    placeholder="Ej: 1"
+                                    value={prescripcionCantidad} 
+                                    onChange={e => setPrescripcionCantidad(e.target.value)} 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 placeholder:text-slate-350 transition-all"
+                                />
                             </div>
 
                             {/* Recomendación */}
@@ -2035,6 +2348,169 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                 className="px-6 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white text-xs font-black rounded-full uppercase tracking-wider shadow"
                             >
                                 Agregar CUPS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* SUB-MODAL: NUEVO MEDICAMENTO (OralDrive 1:1) */}
+            {newMedModalOpen && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 bg-white flex items-center justify-between">
+                            <h4 className="text-sm font-black text-slate-800 tracking-tight text-left">
+                                Nuevo medicamento
+                            </h4>
+                            <button 
+                                onClick={() => setNewMedModalOpen(false)} 
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-all cursor-pointer"
+                            >
+                                <FiX size={16} />
+                            </button>
+                        </div>
+                        
+                        {/* Body */}
+                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left">
+                            {/* Tipo* */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Tipo *</label>
+                                <select 
+                                    value={newMedTipo}
+                                    onChange={(e) => setNewMedTipo(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all"
+                                >
+                                    <option value="">Seleccione...</option>
+                                    <option value="POS">POS</option>
+                                    <option value="NO POS">NO POS</option>
+                                    <option value="Otros">Otros</option>
+                                </select>
+                            </div>
+
+                            {/* Código* con Autocompletado CUM 1:1 OralDrive */}
+                            <div className="space-y-1 relative">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Código *</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Código del medicamento"
+                                    value={newMedCodigo} 
+                                    onChange={(e) => {
+                                        setNewMedCodigo(e.target.value);
+                                        setShowNewMedCodeSuggestions(true);
+                                    }} 
+                                    onFocus={() => setShowNewMedCodeSuggestions(true)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all"
+                                />
+
+                                {/* Dropdown de Sugerencias CUM (OralDrive 1:1) */}
+                                {showNewMedCodeSuggestions && newMedCodigo.trim().length >= 1 && (
+                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[300] max-h-52 overflow-y-auto divide-y divide-slate-100">
+                                        {MEDICAMENTOS_COLOMBIA.filter(m => 
+                                            m.code.toLowerCase().includes(newMedCodigo.trim().toLowerCase()) ||
+                                            m.name.toLowerCase().includes(newMedCodigo.trim().toLowerCase())
+                                        ).slice(0, 10).map((m, idx) => (
+                                            <div 
+                                                key={idx}
+                                                onClick={() => {
+                                                    setNewMedCodigo(m.code);
+                                                    setNewMedPrincipioActivo(m.name);
+                                                    setNewMedTipo(m.group || "POS");
+                                                    setShowNewMedCodeSuggestions(false);
+                                                    setShowNewMedNameSuggestions(false);
+                                                }}
+                                                className="px-3 py-2 text-xs hover:bg-indigo-50 cursor-pointer flex items-center justify-between transition-colors"
+                                            >
+                                                <span className="font-bold text-slate-700 uppercase tracking-tight">
+                                                    {m.name} - <span className="text-slate-500 font-normal">{m.code}</span>
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Principio activo* con Autocompletado CUM 1:1 OralDrive */}
+                            <div className="space-y-1 relative">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Principio activo *</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Principio activo del medicamento"
+                                    value={newMedPrincipioActivo} 
+                                    onChange={(e) => {
+                                        setNewMedPrincipioActivo(e.target.value);
+                                        setShowNewMedNameSuggestions(true);
+                                    }} 
+                                    onFocus={() => setShowNewMedNameSuggestions(true)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all"
+                                />
+
+                                {showNewMedNameSuggestions && newMedPrincipioActivo.trim().length >= 2 && (
+                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-[300] max-h-52 overflow-y-auto divide-y divide-slate-100">
+                                        {MEDICAMENTOS_COLOMBIA.filter(m => 
+                                            m.name.toLowerCase().includes(newMedPrincipioActivo.trim().toLowerCase()) ||
+                                            m.code.toLowerCase().includes(newMedPrincipioActivo.trim().toLowerCase())
+                                        ).slice(0, 10).map((m, idx) => (
+                                            <div 
+                                                key={idx}
+                                                onClick={() => {
+                                                    setNewMedCodigo(m.code);
+                                                    setNewMedPrincipioActivo(m.name);
+                                                    setNewMedTipo(m.group || "POS");
+                                                    setShowNewMedNameSuggestions(false);
+                                                    setShowNewMedCodeSuggestions(false);
+                                                }}
+                                                className="px-3 py-2 text-xs hover:bg-indigo-50 cursor-pointer flex items-center justify-between transition-colors"
+                                            >
+                                                <span className="font-bold text-slate-700 uppercase tracking-tight">
+                                                    {m.name} - <span className="text-slate-500 font-normal">{m.code}</span>
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Descripción */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Descripción</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Descripción para el medicamento"
+                                    value={newMedDescripcion} 
+                                    onChange={(e) => setNewMedDescripcion(e.target.value)} 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all"
+                                />
+                            </div>
+
+                            {/* Marca */}
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Marca</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Marca para el medicamento"
+                                    value={newMedMarca} 
+                                    onChange={(e) => setNewMedMarca(e.target.value)} 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all"
+                                />
+                            </div>
+                        </div>
+                        
+                        {/* Footer */}
+                        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+                            <button 
+                                type="button" 
+                                onClick={handleSaveNewMed}
+                                className="px-6 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white text-xs font-black rounded-full uppercase tracking-wider shadow active:scale-95 transition-all cursor-pointer"
+                            >
+                                Guardar
+                            </button>
+                            <button 
+                                type="button" 
+                                onClick={() => setNewMedModalOpen(false)}
+                                className="px-5 py-2 rounded-full font-bold text-xs text-slate-500 hover:bg-slate-200 transition-colors border border-slate-200 bg-white cursor-pointer"
+                            >
+                                Cerrar
                             </button>
                         </div>
                     </div>

@@ -31,7 +31,7 @@ export default function ConfigRecursosFisicos() {
     const loadItems = async () => {
         setLoading(true);
         try {
-            const data = await getConfigItems(inquilino, "recursos_fisicos", "recursos_fisicos");
+            const data = await getConfigItems(inquilino, "recursos_fisicos", "consultorios");
             setItems(data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         } catch (error) {
             console.error("Error loading resources:", error);
@@ -46,7 +46,7 @@ export default function ConfigRecursosFisicos() {
             setCurrentItem(item);
             setFormData({
                 nombre: item.nombre || "",
-                descripcion: item.descripcion || ""
+                descripcion: item.ubicacion || item.descripcion || ""
             });
         } else {
             setCurrentItem(null);
@@ -70,10 +70,11 @@ export default function ConfigRecursosFisicos() {
 
         setSaving(true);
         try {
-            await saveConfigItem(inquilino, "recursos_fisicos", "recursos_fisicos", {
+            await saveConfigItem(inquilino, "recursos_fisicos", "consultorios", {
                 ...(currentItem || {}),
                 nombre: formData.nombre.trim(),
-                descripcion: formData.descripcion.trim()
+                ubicacion: formData.descripcion.trim(),
+                activo: true
             });
 
             if (toast?.success) toast.success("Recurso guardado en Supabase");
@@ -92,7 +93,7 @@ export default function ConfigRecursosFisicos() {
 
         setLoading(true);
         try {
-            await deleteConfigItem(inquilino, "recursos_fisicos", "recursos_fisicos", item.id);
+            await deleteConfigItem(inquilino, "recursos_fisicos", "consultorios", item.id);
             setItems(prev => prev.filter(i => i.id !== item.id));
             if (toast?.success) toast.success("Recurso eliminado correctamente de Supabase");
             else alert("✅ Recurso eliminado correctamente");
@@ -106,6 +107,7 @@ export default function ConfigRecursosFisicos() {
 
     const filteredItems = items.filter(item =>
         (item.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.ubicacion && item.ubicacion.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
@@ -178,7 +180,7 @@ export default function ConfigRecursosFisicos() {
                                             <span className="font-bold text-slate-800 uppercase">{item.nombre}</span>
                                         </div>
                                     </td>
-                                    <td className="py-3 px-4 text-slate-500 font-medium">{item.descripcion || "-"}</td>
+                                    <td className="py-3 px-4 text-slate-500 font-medium">{item.ubicacion || item.descripcion || "-"}</td>
                                     <td className="py-3 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5">
                                             <button

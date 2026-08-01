@@ -95,13 +95,26 @@ export default function RipsGenerator() {
 
         const loadHistory = async () => {
             try {
-                const { data: files } = await supabase
-                    .from("rips_generados")
-                    .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
-                    .order("created_at", { ascending: false });
-                
-                setGeneratedFiles(files || []);
+                let files = [];
+                try {
+                    const { data } = await supabase
+                        .from("rips_generados")
+                        .select("*")
+                        .eq("tenant_id", inquilino)
+                        .order("created_at", { ascending: false });
+                    if (data && data.length > 0) files = data;
+                } catch (e) {}
+
+                if (files.length === 0) {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inquilino)
+                        .maybeSingle();
+                    files = cfgRow?.config?.rips_generados || [];
+                }
+
+                setGeneratedFiles(files);
             } catch (e) {
                 console.error("Error al cargar historial RIPS:", e);
             }
@@ -112,13 +125,13 @@ export default function RipsGenerator() {
                 const { data: snapS } = await supabase
                     .from("sucursales")
                     .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                    .eq("tenant_id", inquilino);
                 setSucursales(snapS || []);
 
                 const { data: snapE } = await supabase
                     .from("eps_catalogo")
                     .select("nombre")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                    .eq("tenant_id", inquilino);
                 const uniqueEps = [...new Set((snapE || []).map(doc => doc.nombre))].filter(Boolean).sort();
                 setEpsList(uniqueEps);
             } catch (e) {

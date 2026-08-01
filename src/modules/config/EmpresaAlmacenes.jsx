@@ -23,7 +23,7 @@ function AlmacenEditor({ item, onBack }) {
 
         setIsSaving(true);
         try {
-            await saveConfigItem(inquilino, "almacenes", "almacenes", {
+            await saveConfigItem(inquilino, "almacenes", null, {
                 ...(item || {}),
                 nombre: form.nombre.trim(),
                 activo: form.activo
@@ -127,7 +127,7 @@ export default function EmpresaAlmacenes() {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const data = await getConfigItems(inquilino, "almacenes", "almacenes");
+            const data = await getConfigItems(inquilino, "almacenes", null);
             setRows(data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         } catch (error) {
             console.error("Error fetching almacenes:", error);
@@ -143,7 +143,7 @@ export default function EmpresaAlmacenes() {
         if (!window.confirm(`⚠️ ¿Seguro que deseas eliminar el almacén "${row.nombre}"?`)) return;
         setLoading(true);
         try {
-            await deleteConfigItem(inquilino, "almacenes", "almacenes", row.id);
+            await deleteConfigItem(inquilino, "almacenes", null, row.id);
             setRows(prev => prev.filter(r => r.id !== row.id));
             if (toast?.success) toast.success("Almacén eliminado correctamente");
             else alert("✅ Almacén eliminado correctamente");

@@ -40,7 +40,7 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
       const { data: list } = await supabase
         .from("ordenes_compra")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+        .eq("tenant_id", inquilino)
         .order("created_at", { ascending: false });
       setOrders((list || []).map((doc, index) => ({
         id: doc.id,

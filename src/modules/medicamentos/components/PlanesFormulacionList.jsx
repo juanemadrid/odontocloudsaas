@@ -16,11 +16,25 @@ export default function PlanesFormulacionList({ onNew, onEdit }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const { data: list } = await supabase
-                .from("planes_formulacion")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setPlanes(list || []);
+            let list = [];
+            try {
+                const { data } = await supabase
+                    .from("planes_formulacion")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (data && data.length > 0) list = data;
+            } catch (e) {}
+
+            if (list.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                list = cfgRow?.config?.planes_formulacion || [];
+            }
+
+            setPlanes(list);
         } catch (e) {
             console.error("Error loading formulation plans:", e);
             toast.error("Error al cargar los planes de formulación");
@@ -36,7 +50,25 @@ export default function PlanesFormulacionList({ onNew, onEdit }) {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este plan de formulación?")) return;
         try {
-            await supabase.from("planes_formulacion").delete().eq("id", id);
+            try {
+                await supabase.from("planes_formulacion").delete().eq("id", id);
+            } catch (e) {}
+
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", inquilino)
+                .maybeSingle();
+
+            const currentConfig = cfgRow?.config || {};
+            const currentList = Array.isArray(currentConfig.planes_formulacion) ? currentConfig.planes_formulacion : planes;
+            const filteredList = currentList.filter(p => p.id !== id);
+
+            await supabase.from("website_config").upsert(
+                { tenant_id: inquilino, config: { ...currentConfig, planes_formulacion: filteredList } },
+                { onConflict: "tenant_id" }
+            );
+
             toast.success("Plan de formulación eliminado");
             setPlanes(prev => prev.filter(p => p.id !== id));
         } catch (e) {

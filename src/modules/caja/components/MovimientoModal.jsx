@@ -43,7 +43,7 @@ function usePatientSearch(inquilino) {
     setLoading(true);
     supabase.from("pacientes")
       .select("*")
-      .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+      .eq("tenant_id", inquilino)
       .then(({ data }) => {
         setPatients((data || []).map(d => ({
           id: d.id,
@@ -66,7 +66,7 @@ function useInvoiceSearch(inquilino, patientId) {
     if (!inquilino || !patientId) { setFacturas([]); return; }
     supabase.from("facturas")
       .select("*")
-      .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+      .eq("tenant_id", inquilino)
       .or(`pacienteId.eq.${patientId},paciente_id.eq.${patientId}`)
       .in("estado", ["Pendiente", "Parcial"])
       .then(({ data }) => {
@@ -164,12 +164,14 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
       const newIngresos = (caja.totalIngresos || 0) + (tipo === "ingreso" ? montoNum : 0);
       const newEgresos = (caja.totalEgresos || 0) + (tipo === "egreso" ? montoNum : 0);
 
-      await supabase.from("cajas").update({
-        saldoActual: newSaldo,
-        totalIngresos: newIngresos,
-        totalEgresos: newEgresos,
-        updated_at: new Date().toISOString()
-      }).eq("id", caja.id);
+      try {
+        await supabase.from("cajas").update({
+          saldo_actual: newSaldo,
+          total_ingresos: newIngresos,
+          total_egresos: newEgresos,
+          updated_at: new Date().toISOString()
+        }).eq("id", caja.id);
+      } catch (e) {}
 
       // 3. Si tiene factura vinculada, actualizar estado/saldo de la factura
       if (selectedFactura?.id && tipo === "ingreso") {
@@ -415,14 +417,10 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
               type="submit"
               disabled={saving}
               style={{
-                height: 40, padding: "0 24px", borderRadius: 10, border: "none",
-                background: tipo === "ingreso"
-                  ? "linear-gradient(135deg, #10b981, #059669)"
-                  : "linear-gradient(135deg, #f43f5e, #dc2626)",
-                color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer",
-                boxShadow: tipo === "ingreso"
-                  ? "0 4px 14px rgba(16,185,129,0.35)"
-                  : "0 4px 14px rgba(244,63,94,0.35)",
+                height: 36, padding: "0 20px", borderRadius: 8, border: "none",
+                background: tipo === "ingreso" ? "#8cc33f" : "#f43f5e",
+                color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer",
+                boxShadow: "none",
                 opacity: saving ? 0.7 : 1,
               }}
             >

@@ -15,12 +15,26 @@ export default function MovimientosInventario() {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const { data: list } = await supabase
-        .from("registro_movimientos_inventario")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
-        .order("created_at", { ascending: false });
-      setLogs(list || []);
+      let list = [];
+      try {
+        const { data } = await supabase
+          .from("registro_movimientos_inventario")
+          .select("*")
+          .eq("tenant_id", inquilino)
+          .order("created_at", { ascending: false });
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.registro_movimientos_inventario || [];
+      }
+
+      setLogs(list);
     } catch (e) {
       console.error("Error loading movement logs:", e);
     } finally {

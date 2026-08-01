@@ -364,7 +364,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                         </button>
                         <button 
                             onClick={() => handleOpenModal("GENERAL")}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-[12px] font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer border-0"
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[12px] font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer border-0"
                         >
                             <FiPlus size={16} /> <span>Agregar categoría</span>
                         </button>

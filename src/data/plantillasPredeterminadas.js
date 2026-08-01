@@ -96,5 +96,83 @@ export const PREDEFINED_TEMPLATES = [
       { id: 'fase_correctiva', label: 'FASE CORRECTIVA', type: 'textarea' },
       { id: 'fase_mantenimiento', label: 'FASE DE MANTENIMIENTO', type: 'textarea' }
     ]
+  },
+  {
+    id: 'cert_intraoral',
+    nombre: 'Certificado de uso del dispositivo intraoral',
+    isSystem: true,
+    createdBy: 'Sistema',
+    createdAt: '2026-07-09T12:00:00.000Z',
+    campos: [
+      { id: 'detalle_certificado', label: 'DETALLE DEL CERTIFICADO', type: 'textarea' },
+      { id: 'indicaciones', label: 'INDICACIONES Y CUIDADOS', type: 'textarea' }
+    ]
+  },
+  {
+    id: 'autorizacion_imagenes',
+    nombre: 'Autorización de Imágenes Publicitarias',
+    isSystem: true,
+    createdBy: 'Sistema',
+    createdAt: '2026-07-09T12:00:00.000Z',
+    campos: [
+      { id: 'alcance_autorizacion', label: 'ALCANCE DE LA AUTORIZACIÓN', type: 'textarea' },
+      { id: 'uso_medios', label: 'MEDIOS AUTORIZADOS', type: 'text' }
+    ]
+  },
+  {
+    id: 'consentimiento_botox',
+    nombre: 'Consentimiento Botox',
+    isSystem: true,
+    createdBy: 'Sistema',
+    createdAt: '2026-07-09T12:00:00.000Z',
+    campos: [
+      { id: 'zonas_aplicacion', label: 'ZONAS DE APLICACIÓN', type: 'textarea' },
+      { id: 'riesgos_advertidos', label: 'RIESGOS Y CUIDADOS POSTERIORES', type: 'textarea' }
+    ]
+  },
+  {
+    id: 'consentimiento_atm',
+    nombre: 'Consentimiento de ATM',
+    isSystem: true,
+    createdBy: 'Sistema',
+    createdAt: '2026-07-09T12:00:00.000Z',
+    campos: [
+      { id: 'procedimiento_atm', label: 'PROCEDIMIENTO ATM PLANIFICADO', type: 'textarea' },
+      { id: 'observaciones_paciente', label: 'OBSERVACIONES DEL PACIENTE', type: 'textarea' }
+    ]
+  },
+  {
+    id: 'ficha_ttm',
+    nombre: 'Ficha clínica Trastornos Temporomandibulares',
+    isSystem: true,
+    createdBy: 'Sistema',
+    createdAt: '2026-07-09T12:00:00.000Z',
+    campos: [
+      { id: 'sintomas_ttm', label: 'SÍNTOMAS PRINCIPALES', type: 'textarea' },
+      { id: 'hallazgos_palpacion', label: 'HALLAZGOS A LA PALPACIÓN', type: 'textarea' },
+      { id: 'plan_manejo', label: 'PLAN DE MANEJO DE TTM', type: 'textarea' }
+    ]
+  },
+  {
+    id: 'protocolo_domiciliario',
+    nombre: 'PROTOCOLO DE SEGUIMIENTO DOMICILIARIO',
+    isSystem: true,
+    createdBy: 'Sistema',
+    createdAt: '2026-07-09T12:00:00.000Z',
+    campos: [
+      { id: 'instrucciones_hogar', label: 'INSTRUCCIONES PARA EL HOGAR', type: 'textarea' },
+      { id: 'frecuencia_controles', label: 'FRECUENCIA DE CONTROLES', type: 'text' }
+    ]
+  },
+  {
+    id: 'consentimiento_odontologia',
+    nombre: 'CONSENTIMIENTO ODONTOLOGÍA GENERAL',
+    isSystem: true,
+    createdBy: 'Sistema',
+    createdAt: '2026-07-09T12:00:00.000Z',
+    campos: [
+      { id: 'tratam_general', label: 'TRATAMIENTOS A REALIZAR', type: 'textarea' },
+      { id: 'declaracion_aceptacion', label: 'DECLARACIÓN DE ACEPTACIÓN', type: 'textarea' }
+    ]
   }
 ];

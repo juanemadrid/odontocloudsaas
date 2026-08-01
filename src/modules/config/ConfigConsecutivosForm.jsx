@@ -74,10 +74,10 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
         }
 
         try {
+            const { inquilino: _, ...cleanData } = formData;
             const payload = {
-                ...formData,
+                ...cleanData,
                 tenant_id: userProfile.inquilino,
-                inquilino: userProfile.inquilino,
                 updated_at: new Date().toISOString()
             };
 

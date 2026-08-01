@@ -21,6 +21,45 @@ const Login = () => {
   const [forgotMsg, setForgotMsg] = useState({ type: "", text: "" });
   const [sendingReset, setSendingReset] = useState(false);
 
+  const [sendingResend, setSendingResend] = useState(false);
+  const [resendMsg, setResendMsg] = useState({ type: "", text: "" });
+
+  const handleResendVerification = async () => {
+    const targetEmail = email.trim();
+    if (!targetEmail) {
+      setError("Por favor ingresa tu correo electrónico.");
+      return;
+    }
+
+    setSendingResend(true);
+    setResendMsg({ type: "", text: "" });
+
+    try {
+      const { error: resendErr } = await supabase.auth.resend({
+        type: 'signup',
+        email: targetEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}`
+        }
+      });
+
+      if (resendErr) throw resendErr;
+
+      setResendMsg({
+        type: "success",
+        text: "¡Correo de verificación reenviado! Por favor revisa tu bandeja de entrada y la carpeta de Spam."
+      });
+    } catch (err) {
+      console.error("Error al reenviar correo de verificación:", err);
+      setResendMsg({
+        type: "error",
+        text: err.message || "No se pudo reenviar el correo. Intenta de nuevo más tarde."
+      });
+    } finally {
+      setSendingResend(false);
+    }
+  };
+
   const handleSendResetEmail = async (e) => {
     e.preventDefault();
     const targetEmail = (forgotEmail || email).trim();
@@ -250,7 +289,66 @@ const Login = () => {
               {loadingStatus ? "Iniciando..." : "Iniciar sesión"}
             </button>
 
-            {error && <p style={{ color: "red", marginTop: 10 }}>{error}</p>}
+            {error && (
+              <div
+                style={{
+                  marginTop: "1.25rem",
+                  padding: "0.875rem 1rem",
+                  borderRadius: "0.75rem",
+                  backgroundColor: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  textAlign: "center",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "0.5rem"
+                }}
+              >
+                <p style={{ color: "#991b1b", fontSize: "0.84rem", fontWeight: 600, margin: 0 }}>
+                  {error}
+                </p>
+                {error.includes("no verificado") && (
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={sendingResend}
+                    style={{
+                      marginTop: "0.25rem",
+                      padding: "0.45rem 1rem",
+                      borderRadius: "0.5rem",
+                      border: "1px solid #fca5a5",
+                      backgroundColor: "#ffffff",
+                      color: "#dc2626",
+                      fontSize: "0.78125rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                    }}
+                  >
+                    {sendingResend ? "Reenviando correo..." : "✉️ Reenviar correo de verificación"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {resendMsg.text && (
+              <div
+                style={{
+                  marginTop: "0.75rem",
+                  padding: "0.75rem 1rem",
+                  borderRadius: "0.75rem",
+                  backgroundColor: resendMsg.type === "success" ? "#f0fdf4" : "#fef2f2",
+                  border: `1px solid ${resendMsg.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+                  color: resendMsg.type === "success" ? "#166534" : "#991b1b",
+                  fontSize: "0.8125rem",
+                  fontWeight: 600,
+                  textAlign: "center"
+                }}
+              >
+                {resendMsg.text}
+              </div>
+            )}
           </form>
         </div>
       </div>

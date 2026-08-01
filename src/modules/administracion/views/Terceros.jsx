@@ -111,11 +111,25 @@ export default function Terceros() {
   const loadTerceros = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from("terceros")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-      setTerceros(data || []);
+      let list = [];
+      try {
+        const { data, error } = await supabase
+          .from("terceros")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (!error && data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.terceros || [];
+      }
+
+      setTerceros(list);
     } catch (e) {
       console.error("Error loading terceros:", e);
       toast?.error("Error al cargar los terceros");
@@ -181,7 +195,25 @@ export default function Terceros() {
   const handleToggleActivo = async (tercero) => {
     try {
       const newStatus = !tercero.activo;
-      await supabase.from("terceros").update({ activo: newStatus }).eq("id", tercero.id);
+      try {
+        await supabase.from("terceros").update({ activo: newStatus }).eq("id", tercero.id);
+      } catch (e) {}
+
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.terceros) ? currentConfig.terceros : terceros;
+      const updatedList = currentList.map(t => t.id === tercero.id ? { ...t, activo: newStatus } : t);
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, terceros: updatedList } },
+        { onConflict: "tenant_id" }
+      );
+
       toast?.success(`Tercero ${newStatus ? "activado" : "inactivado"} con éxito`);
       loadTerceros();
     } catch (e) {
@@ -196,12 +228,28 @@ export default function Terceros() {
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente al tercero "${name}"?`)) return;
     
     try {
-      await supabase.from("terceros").delete().eq("id", tercero.id);
-      if (tercero.isEps) {
-        try {
+      try {
+        await supabase.from("terceros").delete().eq("id", tercero.id);
+        if (tercero.isEps) {
           await supabase.from("eps_catalogo").delete().eq("id", tercero.id);
-        } catch {}
-      }
+        }
+      } catch (e) {}
+
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.terceros) ? currentConfig.terceros : terceros;
+      const filteredList = currentList.filter(t => t.id !== tercero.id);
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, terceros: filteredList } },
+        { onConflict: "tenant_id" }
+      );
+
       toast?.success("Tercero eliminado con éxito");
       loadTerceros();
     } catch (e) {
@@ -227,8 +275,11 @@ export default function Terceros() {
 
     setSaving(true);
     try {
+      const { inquilino: _, ...cleanFormData } = formData;
+      const terceroId = editingTercero?.id || (crypto.randomUUID ? crypto.randomUUID() : `terc_${Date.now()}`);
       const dataToSave = {
-        ...formData,
+        ...cleanFormData,
+        id: terceroId,
         nombre: formData.nombre.trim(),
         apellidos: formData.apellidos.trim(),
         nroDocumento: formData.nroDocumento.trim(),
@@ -240,36 +291,50 @@ export default function Terceros() {
         contrato: formData.contrato.trim(),
         codigoEntidadAdministradora: formData.isEps ? formData.codigoEntidadAdministradora.trim() : "",
         tenant_id: inquilino,
-        inquilino,
         updated_at: new Date().toISOString()
       };
 
-      let terceroId = editingTercero?.id;
-      if (terceroId) {
-        await supabase.from("terceros").update(dataToSave).eq("id", terceroId);
+      try {
+        if (editingTercero?.id) {
+          await supabase.from("terceros").update(dataToSave).eq("id", terceroId);
+        } else {
+          dataToSave.created_at = new Date().toISOString();
+          await supabase.from("terceros").insert([dataToSave]);
+        }
+
+        if (formData.isEps) {
+          const epsName = formData.razonSocial || `${formData.nombre} ${formData.apellidos}`.trim();
+          await supabase.from("eps_catalogo").upsert({
+            id: terceroId,
+            nombre: epsName,
+            tenant_id: inquilino,
+            terceroId,
+            codigoEps: formData.codigoEntidadAdministradora.trim(),
+            activo: formData.activo
+          });
+        }
+      } catch (err) {}
+
+      // Sincronizar en website_config
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.terceros) ? currentConfig.terceros : terceros;
+      let updatedList;
+      if (editingTercero?.id) {
+        updatedList = currentList.map(item => item.id === terceroId ? { ...item, ...dataToSave } : item);
       } else {
-        dataToSave.created_at = new Date().toISOString();
-        const { data: insData } = await supabase.from("terceros").insert([dataToSave]).select().single();
-        terceroId = insData?.id || `terc_${Date.now()}`;
+        updatedList = [dataToSave, ...currentList];
       }
 
-      // Sincronización con EPS Catálogo para módulo RIPS
-      if (formData.isEps) {
-        const epsName = formData.razonSocial || `${formData.nombre} ${formData.apellidos}`.trim();
-        await supabase.from("eps_catalogo").upsert({
-          id: terceroId,
-          nombre: epsName,
-          tenant_id: inquilino,
-          inquilino,
-          terceroId,
-          codigoEps: formData.codigoEntidadAdministradora.trim(),
-          activo: formData.activo
-        });
-      } else {
-        try {
-          await supabase.from("eps_catalogo").delete().eq("id", terceroId);
-        } catch {}
-      }
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, terceros: updatedList } },
+        { onConflict: "tenant_id" }
+      );
 
       toast?.success(editingTercero ? "Tercero actualizado correctamente" : "Tercero creado con éxito");
       setViewMode("LIST");

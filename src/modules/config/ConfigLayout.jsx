@@ -49,13 +49,15 @@ export default function ConfigLayout({ children }) {
                 try {
                     const { data } = await supabase
                         .from("tenants")
-                        .select("plan_tipo, has_website")
+                        .select("*")
                         .eq("id", userProfile.inquilino)
                         .maybeSingle();
                     // Activar acceso a Editor Web según plan
                     setHasWebsiteAccess(
                         data?.has_website === true ||
                         data?.plan_tipo === "PREMIUM" ||
+                        data?.plan === "pro" ||
+                        data?.plan === "enterprise" ||
                         true // Por ahora siempre true para demo
                     );
                 } catch (e) {

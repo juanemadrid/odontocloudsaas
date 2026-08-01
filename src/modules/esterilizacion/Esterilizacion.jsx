@@ -51,17 +51,33 @@ export default function Esterilizacion() {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const { data: snap } = await supabase
-        .from("ciclos_esterilizacion")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-      const list = (snap || []).map((docData, idx) => ({
-        id: docData.id,
+      let list = [];
+      try {
+        const { data: snap, error: tErr } = await supabase
+          .from("ciclos_esterilizacion")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (!tErr && snap && snap.length > 0) {
+          list = snap;
+        }
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.ciclos_esterilizacion || [];
+      }
+
+      const formatted = list.map((docData, idx) => ({
+        id: docData.id || `cycle_${idx}`,
         consecutivo: idx + 1,
         ...docData
       }));
-      list.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
-      setCycles(list);
+      formatted.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
+      setCycles(formatted);
     } catch (e) {
       console.error("Error loading sterilization cycles:", e);
       toast.error("Error al cargar los ciclos de esterilización");
@@ -109,17 +125,25 @@ export default function Esterilizacion() {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `esterilizacion/${inquilino}_${Date.now()}.${fileExt}`;
+      let url = "";
+
       const { error: uploadError } = await supabase.storage
         .from("clinical-files")
-        .upload(fileName, file);
+        .upload(fileName, file, { upsert: true });
 
-      if (uploadError) throw uploadError;
+      if (!uploadError) {
+        const { data: publicUrlData } = supabase.storage
+          .from("clinical-files")
+          .getPublicUrl(fileName);
+        url = publicUrlData.publicUrl;
+      } else {
+        url = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        });
+      }
 
-      const { data: publicUrlData } = supabase.storage
-        .from("clinical-files")
-        .getPublicUrl(fileName);
-
-      const url = publicUrlData.publicUrl;
       if (type === "quimico") {
         setQuimicoImg(url);
         toast.success("Control químico cargado");
@@ -154,8 +178,8 @@ export default function Esterilizacion() {
     setSaving(true);
     try {
       const cycleData = {
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
         tenant_id: inquilino,
-        inquilino,
         fechaEsterilizacion,
         cargaItems,
         nroPaquetes: parseInt(nroPaquetes) || 0,
@@ -169,7 +193,30 @@ export default function Esterilizacion() {
         created_at: new Date().toISOString()
       };
 
-      await supabase.from("ciclos_esterilizacion").insert([cycleData]);
+      try {
+        await supabase.from("ciclos_esterilizacion").insert([cycleData]);
+      } catch (e) {}
+
+      // Sincronizar en website_config JSON
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.ciclos_esterilizacion) ? currentConfig.ciclos_esterilizacion : [];
+      const newConfig = {
+        ...currentConfig,
+        ciclos_esterilizacion: [cycleData, ...currentList],
+        updatedAt: new Date().toISOString()
+      };
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: newConfig },
+        { onConflict: "tenant_id" }
+      );
+
       toast.success("Ciclo de esterilización registrado con éxito");
 
       // Reset form

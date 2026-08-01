@@ -3,12 +3,12 @@ export const MASTER_CONFIG = {
     name: "OdontoCloud",
     logo: "/assets/logo.png",
     heroTitle: "Lleva tu Clínica al Siguiente Nivel",
-    heroSubtitle: "El software de gestión dental más completo, moderno y fácil de usar. Agenda, pacientes, odontograma 3D y facturación en un solo lugar.",
+    heroSubtitle: "El software de gestión dental más completo, moderno y fácil de usar. Agenda, pacientes, odontograma digital e interactivo y facturación en un solo lugar.",
     heroBadgeText: "SOFTWARE ODONTOLÓGICO LÍDER",
 
     // SEO
     seoTitle: "OdontoCloud | El Mejor Software de Gestión Dental",
-    seoDesc: "Transforma tu práctica con la plataforma definitiva para odontólogos. Agenda inteligente, odontograma 3D y control financiero total. Comienza tu prueba gratuita hoy.",
+    seoDesc: "Transforma tu práctica con la plataforma definitiva para odontólogos. Agenda inteligente, odontograma digital interactivo y control financiero total. Comienza tu prueba gratuita hoy.",
 
     // Hero Buttons
     heroBtn1Text: "Comenzar Prueba Gratis",
@@ -34,8 +34,8 @@ export const MASTER_CONFIG = {
             id: 2,
             image: "https://images.unsplash.com/photo-1606811841689-23dfddce3e95?auto=format&fit=crop&q=80&w=1200",
             title: "Visualización Avanzada",
-            highlight: "Odontograma 3D",
-            desc: "Impresiona a tus pacientes con visualizaciones 3D en tiempo real de sus tratamientos y evoluciones clínicas."
+            highlight: "Odontograma Digital",
+            desc: "Impresiona a tus pacientes con odontogramas vectoriales e interactivos en tiempo real de sus tratamientos y evoluciones clínicas."
         },
         {
             id: 3,
@@ -69,7 +69,7 @@ export const MASTER_CONFIG = {
 
     identityValues: [
         { title: 'Nube 24/7', icon: '☁️' },
-        { title: 'Odontograma 3D', icon: '🦷' },
+        { title: 'Odontograma Digital', icon: '🦷' },
         { title: 'Pacientes Ilimitados', icon: '👥' },
         { title: 'Facturación Electrónica', icon: '🧾' },
         { title: 'Seguridad Bancaria', icon: '🛡️' },
@@ -102,7 +102,7 @@ export const MASTER_CONFIG = {
             icon: "📁",
             longDesc: "Lleva la explicación de tratamientos al siguiente nivel. Centraliza toda la información de tus pacientes en un solo lugar, accesible y seguro.",
             features: [
-                "Odontograma 3D interactivo con rotación y zoom completo.",
+                "Odontograma digital e interactivo con anatomía detallada.",
                 "Registro detallado de hallazgos y evoluciones clínicas.",
                 "Carga de radiografías, fotos y documentos adjuntos.",
                 "Firma digital de consentimientos informados."
@@ -201,7 +201,7 @@ export const MASTER_CONFIG = {
             id: 2,
             name: "Dra. Lucía Arias",
             role: "Especialista en Estética Dental",
-            text: "El odontograma 3D no tiene comparación. Mis pacientes entienden mucho mejor sus presupuestos y la tasa de aceptación de tratamientos subió notablemente.",
+            text: "El odontograma digital interactivo no tiene comparación. Mis pacientes entienden mucho mejor sus presupuestos y la tasa de aceptación de tratamientos subió notablemente.",
             avatar: "https://i.pravatar.cc/150?u=lucia"
         }
     ],
@@ -230,7 +230,7 @@ export const MASTER_CONFIG = {
             features: [
                 "Agenda Inteligente con recordatorios básicos",
                 "Historia Clínica Digital unificada y segura",
-                "Odontograma 3D Interactivo Basico",
+                "Odontograma Digital Interactivo Basico",
                 "Gestión de Pacientes y Base de Datos segura",
                 "Módulo de Facturación y RIPS integrados",
                 "Control de Inventarios y Suministros",
@@ -251,7 +251,7 @@ export const MASTER_CONFIG = {
                 "Personalización total de Página Web",
                 "Módulo de Sitio Web Profesional",
                 "Recordatorios WhatsApp Ilimitados",
-                "Odontograma 3D Avanzado (Evoluciones)",
+                "Odontograma Digital Avanzado (Evoluciones)",
                 "Facturación Electrónica y Cartera Total",
                 "RIPS y Normativa vigente automatizada",
                 "Soporte Prioritario y Asesoría VIP"

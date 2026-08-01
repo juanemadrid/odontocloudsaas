@@ -18,11 +18,25 @@ export default function MedicamentosList({ onNew, onEdit }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const { data: list } = await supabase
-                .from("medicamentos")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setMedicamentos(list || []);
+            let list = [];
+            try {
+                const { data } = await supabase
+                    .from("medicamentos")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (data && data.length > 0) list = data;
+            } catch (e) {}
+
+            if (list.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                list = cfgRow?.config?.medicamentos || [];
+            }
+
+            setMedicamentos(list);
         } catch (e) {
             console.error("Error loading medicines:", e);
             toast.error("Error al cargar los medicamentos");
@@ -38,7 +52,25 @@ export default function MedicamentosList({ onNew, onEdit }) {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este medicamento?")) return;
         try {
-            await supabase.from("medicamentos").delete().eq("id", id);
+            try {
+                await supabase.from("medicamentos").delete().eq("id", id);
+            } catch (e) {}
+
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", inquilino)
+                .maybeSingle();
+
+            const currentConfig = cfgRow?.config || {};
+            const currentList = Array.isArray(currentConfig.medicamentos) ? currentConfig.medicamentos : medicamentos;
+            const filteredList = currentList.filter(m => m.id !== id);
+
+            await supabase.from("website_config").upsert(
+                { tenant_id: inquilino, config: { ...currentConfig, medicamentos: filteredList } },
+                { onConflict: "tenant_id" }
+            );
+
             toast.success("Medicamento eliminado");
             setMedicamentos(prev => prev.filter(m => m.id !== id));
         } catch (e) {

@@ -65,14 +65,30 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                 const { data: payData } = await supabase
                     .from("pagos")
                     .select("*")
-                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`);
+                    .eq("paciente_id", patientId);
                 setPayments(payData || []);
 
                 const { data: evoData } = await supabase
                     .from("evoluciones")
                     .select("*")
-                    .or(`paciente_id.eq.${patientId},patientId.eq.${patientId}`);
-                setEvolutions(evoData || []);
+                    .eq("paciente_id", patientId);
+
+                const parsedEvos = (evoData || []).map(row => {
+                    let parsed = {};
+                    if (row.tratamiento && typeof row.tratamiento === 'string' && row.tratamiento.startsWith('{')) {
+                        try { parsed = JSON.parse(row.tratamiento); } catch (e) {}
+                    } else if (row.tratamiento && typeof row.tratamiento === 'object') {
+                        parsed = row.tratamiento;
+                    }
+                    return {
+                        ...row,
+                        ...parsed,
+                        id: row.id,
+                        planId: parsed.planId || row.planId,
+                        plantillaItems: parsed.plantillaItems || row.plantillaItems || {}
+                    };
+                });
+                setEvolutions(parsedEvos);
             }
         } catch (error) {
             console.error(error);
@@ -82,11 +98,12 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     };
 
     const loadProfesionales = async () => {
-        if (!userProfile?.inquilino) return;
+        const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
+        if (!tenantId) return;
         try {
             if (patient?.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
                 const profs = patient.profesionales.map(p => 
-                    p.nombreCompleto || `${p.nombre || ''} ${p.apellido || ''}`.trim() || p.displayName || p.email || ''
+                    p.nombreCompleto || p.nombre_completo || p.displayName || p.email || ''
                 ).filter(n => !!n);
                 setProfesionalesDropdown([...new Set(profs)]);
                 return;
@@ -94,10 +111,10 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
 
             const { data: profData } = await supabase
                 .from("profesionales")
-                .select("nombre_completo, nombre, apellido")
-                .eq("tenant_id", userProfile.inquilino);
+                .select("id, nombre_completo, email, tenant_id")
+                .eq("tenant_id", tenantId);
             const profs = (profData || []).map(data =>
-                data.nombre_completo || `${data.nombre || ''} ${data.apellido || ''}`.trim() || ''
+                data.nombre_completo || data.email || ''
             ).filter(n => !!n);
             setProfesionalesDropdown([...new Set(profs)]);
         } catch (e) {
@@ -253,7 +270,9 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
         // Start edit mode with initial data
         setEditingPlan({
             type: modalType,
+            status: modalType === 'plan' ? 'approved' : 'draft',
             title: formData.nombre,
+            profesional: formData.profesional,
             profesionalId: formData.profesional,
             vigencia: modalType === 'presupuesto' ? formData.vigencia : null,
             observaciones: formData.observaciones,
@@ -318,11 +337,11 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse">Cargando registros...</div>;
 
     return (
-        <div className="space-y-12 pb-20">
+        <div className="space-y-6 pb-6">
             {/* Tabla de Presupuestos */}
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 p-6 border-b border-slate-200">
-                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Presupuestos</h3>
+                <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 px-6 py-3.5 border-b border-slate-200">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Presupuestos</h3>
                     <button 
                         onClick={() => openModal('presupuesto')}
                         className="mt-4 sm:mt-0 px-6 py-2 bg-[#8CC63F] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 hover:bg-[#7bb335] transition-all flex items-center gap-2"
@@ -361,7 +380,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                         </div>
                                     </td>
                                     <td className="px-3 py-3.5 uppercase text-[10px] text-slate-400 font-black">{userProfile?.tenant?.nombre || "Sede Principal"}</td>
-                                    <td className="px-3 py-3.5 text-slate-500">{p.profesionalId || p.profesional || "No Asignado"}</td>
+                                    <td className="px-3 py-3.5 text-slate-500">{p.profesional || p.profesionalId || currentUserFullName || "No Asignado"}</td>
                                     <td className="px-3 py-3.5 align-middle">
                                         <div className="flex items-center gap-2 text-slate-500">
                                             <FiFileText className="text-slate-300"/> {createdAt.toLocaleDateString()}
@@ -415,8 +434,8 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
 
             {/* Tabla de Planes de Tratamiento */}
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 p-6 border-b border-slate-200">
-                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Planes de Tratamiento</h3>
+                <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 px-6 py-3.5 border-b border-slate-200">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Planes de Tratamiento</h3>
                     <button 
                         onClick={() => openModal('plan')}
                         className="mt-4 sm:mt-0 px-6 py-2 bg-[#8CC63F] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 hover:bg-[#7bb335] transition-all flex items-center gap-2"
@@ -462,7 +481,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                         </div>
                                     </td>
                                     <td className="px-3 py-3.5 uppercase text-[10px] text-slate-400 font-black">{userProfile?.tenant?.nombre || "Sede Principal"}</td>
-                                    <td className="px-3 py-3.5 text-slate-500">{p.profesionalId || p.profesional || "No Asignado"}</td>
+                                    <td className="px-3 py-3.5 text-slate-500">{p.profesional || p.profesionalId || currentUserFullName || "No Asignado"}</td>
                                     <td className="px-3 py-3.5 text-center text-slate-500">{createdAt.toLocaleDateString()}</td>
                                     <td className="px-3 py-3.5 text-center text-slate-500">
                                         {p.fechaFinalizacion ? new Date(p.fechaFinalizacion).toLocaleDateString() : '--'}

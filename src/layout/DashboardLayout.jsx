@@ -67,16 +67,27 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             } catch { setNotificaciones([]); }
 
             try {
-                const { data: tenantData } = await supabase
-                    .from("tenants")
-                    .select("*")
-                    .eq("id", inquilino)
-                    .maybeSingle();
-                if (tenantData) setClinicConfig(tenantData);
+                const [tRes, cRes] = await Promise.all([
+                    supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
+                    supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
+                ]);
+                const tData = tRes.data || {};
+                const cData = cRes.data?.config?.empresa_datos || {};
+
+                setClinicConfig({
+                    ...cData,
+                    ...tData,
+                    logo_url: tData.logo_url || tData.logo || cData.logoUrl || ""
+                });
             } catch { /* ignore */ }
         };
 
         fetchNotifsAndTenant();
+
+        const handleTenantUpdated = () => {
+            fetchNotifsAndTenant();
+        };
+        window.addEventListener("tenant-updated", handleTenantUpdated);
 
         const channel = supabase
             .channel(`admin-notifs-${inquilino}`)
@@ -85,11 +96,12 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
 
         return () => {
             supabase.removeChannel(channel);
+            window.removeEventListener("tenant-updated", handleTenantUpdated);
         };
     }, [inquilino]);
 
-    const displayLogo = clinicConfig?.logoUrl || clinicConfig?.logo || userProfile?.tenant?.logo || userProfile?.tenant?.logo_url || "";
-    const displayName = clinicConfig?.nombreComercial || clinicConfig?.name || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "OdontoCloud";
+    const displayLogo = clinicConfig?.logo_url || clinicConfig?.logoUrl || clinicConfig?.logo || userProfile?.tenant?.logo_url || userProfile?.tenant?.logo || "";
+    const displayName = clinicConfig?.nombreComercial || clinicConfig?.nombre || clinicConfig?.name || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "OdontoCloud";
     const displayNit = clinicConfig?.nit || userProfile?.tenant?.nit || "";
 
 

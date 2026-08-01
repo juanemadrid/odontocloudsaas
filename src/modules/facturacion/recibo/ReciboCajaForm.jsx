@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
+import { getActiveCaja } from "../../../services/supabaseServices";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -101,48 +102,101 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            // 1. Professionals
-            const { data: profs } = await supabase
-                .from("profesionales")
-                .select("*")
-                .eq("tenant_id", inquilino);
-            setProfesionales((profs || []).map(d => ({ 
+            // 1. Professionals (from profiles table, fallback to profesionales or website_config)
+            let profsList = [];
+            try {
+                const { data: profData } = await supabase
+                    .from("profiles")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (profData && profData.length > 0) profsList = profData;
+            } catch (e) {}
+
+            if (profsList.length === 0) {
+                try {
+                    const { data: profData2 } = await supabase
+                        .from("profesionales")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (profData2 && profData2.length > 0) profsList = profData2;
+                } catch (e) {}
+            }
+
+            if (profsList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                profsList = cfgRow?.config?.profesionales || cfgRow?.config?.profiles || [];
+            }
+
+            setProfesionales(profsList.map(d => ({ 
                 id: d.id, 
-                nombre: d.nombre_completo || d.nombreCompleto || d.nombre 
+                nombre: d.full_name || d.nombre_completo || d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim() || d.email 
             })));
 
-            // 2. Patients (Basic list for select)
-            const { data: pacs } = await supabase
-                .from("pacientes")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setPacientes((pacs || []).map(d => ({ 
+            // 2. Patients / Terceros
+            let pacsList = [];
+            try {
+                const { data: pacData } = await supabase
+                    .from("pacientes")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (pacData && pacData.length > 0) pacsList = pacData;
+            } catch (e) {}
+
+            if (pacsList.length === 0) {
+                try {
+                    const { data: tercData } = await supabase
+                        .from("terceros")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (tercData && tercData.length > 0) pacsList = tercData;
+                } catch (e) {}
+            }
+
+            if (pacsList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                pacsList = cfgRow?.config?.pacientes || cfgRow?.config?.terceros || [];
+            }
+
+            setPacientes(pacsList.map(d => ({ 
                 id: d.id, 
-                nombre: d.nombreCompleto || `${d.nombres || ""} ${d.apellidos || ""}`.trim(),
-                cedula: d.nroDocumento || d.cedula || ""
+                nombre: d.nombreCompleto || d.full_name || d.nombre || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim(),
+                cedula: d.nroDocumento || d.cedula || d.documento || ""
             })));
 
             // 3. Active Caja
-            const { data: cajas } = await supabase
-                .from("cajas")
-                .select("*")
-                .eq("tenant_id", inquilino)
-                .eq("estado", "abierta")
-                .eq("usuario_id", userProfile?.uid);
-            if (cajas && cajas.length > 0) {
-                setActiveCaja(cajas[0]);
+            const uId = userProfile?.uid || userProfile?.id || "";
+            const currentCaja = await getActiveCaja(inquilino, uId);
+            if (currentCaja) {
+                setActiveCaja(currentCaja);
             }
 
-            // 4. Dynamic payment methods
-            const { data: metodos } = await supabase
-                .from("metodos_pago")
-                .select("nombre")
+            // 4. Dynamic payment methods from website_config
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
                 .eq("tenant_id", inquilino)
-                .eq("activo", true);
-            if (metodos && metodos.length > 0) {
-                const metodosList = metodos.map(d => d.nombre);
-                setPaymentMethods(metodosList);
-                setMedioPago(metodosList[0] || "Efectivo");
+                .maybeSingle();
+
+            const rawMetodos = cfgRow?.config?.metodos_pago || [
+                { id: "1", nombre: "Efectivo", activo: true },
+                { id: "2", nombre: "Tarjeta", activo: true },
+                { id: "3", nombre: "Transferencia", activo: true },
+                { id: "4", nombre: "Nequi", activo: true },
+                { id: "5", nombre: "Bici-B", activo: true }
+            ];
+
+            const activeMetodos = rawMetodos.filter(m => m.activo !== false).map(m => m.nombre || m);
+            if (activeMetodos.length > 0) {
+                setPaymentMethods(activeMetodos);
+                setMedioPago(activeMetodos[0] || "Efectivo");
             }
 
          } catch (e) {
@@ -414,40 +468,41 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
     };
 
     if (loading) return (
-        <div className="flex flex-col items-center justify-center h-screen bg-slate-50">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
-            <span className="text-[13px] font-black text-slate-400 uppercase tracking-widest">Iniciando terminal financiera...</span>
+        <div className="flex flex-col items-center justify-center h-64 bg-slate-50">
+            <div className="w-8 h-8 border-4 border-[#8cc33f] border-t-transparent rounded-full animate-spin mb-3" />
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Cargando...</span>
         </div>
     );
 
     return (
-        <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500 pb-28">
-
+        <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4 animate-in fade-in duration-300">
 
             {/* Form Fields Stack */}
-            <div className="space-y-6">
-                
+            <div className="space-y-4">
+
                 {/* CARD 1: Datos generales */}
-                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                            <FiCalendar size={14} />
+                <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-blue-50 text-blue-500 flex items-center justify-center">
+                            <FiCalendar size={12} />
                         </div>
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Datos generales</h3>
+                        <h3 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Datos generales</h3>
                     </div>
-                    <div className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            <Field label="Fecha" required>
+                    <div className="p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fecha <span className="text-rose-500">*</span></label>
                                 <input
                                     type="date"
-                                    className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all"
+                                    className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
                                     value={fecha}
                                     onChange={e => setFecha(e.target.value)}
                                 />
-                            </Field>
-                            <Field label="Profesional">
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Profesional</label>
                                 <select
-                                    className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all cursor-pointer"
+                                    className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all cursor-pointer"
                                     value={profesional.id}
                                     onChange={e => {
                                         const p = profesionales.find(x => x.id === e.target.value);
@@ -457,23 +512,25 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                     <option value="">Seleccione...</option>
                                     {profesionales.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                                 </select>
-                            </Field>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* CARD 2: Datos tercero */}
-                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                            <FiUser size={14} />
+                <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-500 flex items-center justify-center">
+                            <FiUser size={12} />
                         </div>
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Datos tercero</h3>
+                        <h3 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Datos tercero</h3>
                     </div>
-                    <div className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            <Field label="Tercero" required colSpan={2}>
-                                <div ref={patientRef} className="relative flex items-center gap-3 w-full">
+                    <div className="p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {/* Tercero search - full width */}
+                            <div className="md:col-span-2">
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tercero <span className="text-rose-500">*</span></label>
+                                <div ref={patientRef} className="relative flex items-center gap-2 w-full">
                                     <div className="relative flex-1">
                                         <input
                                             type="text"
@@ -484,10 +541,10 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                                 setShowPatientDrop(true);
                                             }}
                                             onFocus={() => setShowPatientDrop(true)}
-                                            className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all"
+                                            className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
                                         />
                                         {showPatientDrop && filteredPatients.length > 0 && (
-                                            <div className="absolute left-0 right-0 top-12 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden max-h-60 overflow-y-auto">
+                                            <div className="absolute left-0 right-0 top-10 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-52 overflow-y-auto">
                                                 {filteredPatients.map(p => (
                                                     <div
                                                         key={p.id}
@@ -496,9 +553,9 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                                             setPatientSearch("");
                                                             setShowPatientDrop(false);
                                                         }}
-                                                        className="px-4 py-3 text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer border-b border-slate-50 last:border-0"
+                                                        className="px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer border-b border-slate-50 last:border-0"
                                                     >
-                                                        {p.nombre} <span className="text-xs text-slate-400 font-medium font-mono">(CC: {p.cedula})</span>
+                                                        {p.nombre} <span className="text-[10px] text-slate-400 font-medium font-mono">(CC: {p.cedula})</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -507,23 +564,24 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                     <button
                                         type="button"
                                         onClick={() => setShowNewTerceroModal(true)}
-                                        className="w-10 h-10 bg-[#8cc33f] text-white rounded-xl flex items-center justify-center hover:bg-[#7db02b] shadow transition-all shrink-0 font-extrabold text-xl"
+                                        className="h-9 px-3 bg-[#8cc33f] text-white rounded-lg flex items-center justify-center hover:bg-[#7db02b] transition-all shrink-0 font-extrabold text-sm"
                                         title="Nuevo tercero"
                                     >
-                                        +
+                                        <FiPlus size={14} />
                                     </button>
                                 </div>
                                 {paciente && (
-                                    <div className="mt-2 px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-2">
-                                        <FiUser size={13} className="text-emerald-600" />
+                                    <div className="mt-2 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
+                                        <FiUser size={11} className="text-emerald-600" />
                                         <span className="text-xs font-bold text-emerald-700">{paciente.nombre}</span>
                                         <span className="text-[10px] text-emerald-500 font-mono ml-auto">CC: {paciente.cedula}</span>
                                     </div>
                                 )}
-                            </Field>
-                            <Field label="Condición de pago" required>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Condición de pago <span className="text-rose-500">*</span></label>
                                 <select
-                                    className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all cursor-pointer"
+                                    className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all cursor-pointer"
                                     value={condicionPago}
                                     onChange={e => setCondicionPago(e.target.value)}
                                 >
@@ -532,10 +590,11 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                     <option value="30 días">30 días</option>
                                     <option value="60 días">60 días</option>
                                 </select>
-                            </Field>
-                            <Field label="Medio de pago" required>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Medio de pago <span className="text-rose-500">*</span></label>
                                 <select
-                                    className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all cursor-pointer"
+                                    className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all cursor-pointer"
                                     value={medioPago}
                                     onChange={e => setMedioPago(e.target.value)}
                                 >
@@ -543,72 +602,59 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                         <option key={m} value={m}>{m}</option>
                                     ))}
                                 </select>
-                            </Field>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* CARD 3: Detalle de Conceptos */}
-                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Conceptos</h3>
+                {/* CARD 3: Conceptos */}
+                <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                        <h3 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Conceptos</h3>
                         <button 
                             type="button"
                             onClick={handleOpenNewConcept}
-                            className="h-10 px-5 bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:bg-[#7db02b] transition-all shadow"
+                            className="h-8 px-3 bg-[#8cc33f] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-[#7db02b] transition-all shadow-xs"
                         >
-                            + Nuevo concepto
+                            <FiPlus size={13} /> Nuevo concepto
                         </button>
                     </div>
-                    <div className="p-6 overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="text-slate-400 border-b border-slate-100">
-                                    <th className="pb-3 font-bold uppercase tracking-widest pl-2">Concepto</th>
-                                    <th className="pb-3 font-bold uppercase tracking-widest">Descripción</th>
-                                    <th className="pb-3 font-bold uppercase tracking-widest text-right">Precio unitario</th>
-                                    <th className="pb-3 font-bold uppercase tracking-widest text-center w-20">Cantidad</th>
-                                    <th className="pb-3 font-bold uppercase tracking-widest text-right w-24">Descuento</th>
-                                    <th className="pb-3 font-bold uppercase tracking-widest text-right pr-2">Total</th>
-                                    <th className="pb-3 font-bold uppercase tracking-widest text-center w-16">Acciones</th>
+                                <tr className="bg-slate-50 border-b border-slate-200">
+                                    <th className="py-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Concepto</th>
+                                    <th className="py-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descripción</th>
+                                    <th className="py-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right">P. Unitario</th>
+                                    <th className="py-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-16">Cant.</th>
+                                    <th className="py-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right w-24">Descuento</th>
+                                    <th className="py-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right">Total</th>
+                                    <th className="py-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-12"></th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
+                            <tbody className="divide-y divide-slate-100">
                                 {conceptos.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7" className="py-8 text-center text-slate-400 italic">
-                                            No se han agregado conceptos. Haz clic en "+ Nuevo concepto" para agregar.
+                                        <td colSpan="7" className="py-6 text-center text-xs text-slate-400 italic">
+                                            No hay conceptos. Haz clic en "+ Nuevo concepto" para agregar.
                                         </td>
                                     </tr>
                                 ) : (
                                     conceptos.map(c => (
-                                        <tr key={c.id} className="hover:bg-slate-50/20 transition-colors">
-                                            <td className="py-4 pl-2 font-bold text-slate-800">
-                                                {c.concepto}
-                                            </td>
-                                            <td className="py-4 text-slate-500">
-                                                {c.descripcion || "—"}
-                                            </td>
-                                            <td className="py-4 text-right font-semibold text-slate-600 font-mono">
-                                                {fmt(c.precioUnitario)}
-                                            </td>
-                                            <td className="py-4 text-center font-bold text-slate-700 font-mono">
-                                                {c.cantidad}
-                                            </td>
-                                            <td className="py-4 text-right font-semibold text-rose-500 font-mono">
-                                                {fmt(c.descuento)}
-                                            </td>
-                                            <td className="py-4 text-right font-black text-slate-900 pr-2 font-mono">
-                                                {fmt(c.total)}
-                                            </td>
-                                            <td className="py-4 text-center">
+                                        <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="py-2.5 px-3 text-xs font-semibold text-slate-800">{c.concepto}</td>
+                                            <td className="py-2.5 px-3 text-xs text-slate-500">{c.descripcion || "—"}</td>
+                                            <td className="py-2.5 px-3 text-xs font-semibold text-slate-600 font-mono text-right">{fmt(c.precioUnitario)}</td>
+                                            <td className="py-2.5 px-3 text-xs font-bold text-slate-700 font-mono text-center">{c.cantidad}</td>
+                                            <td className="py-2.5 px-3 text-xs font-semibold text-rose-500 font-mono text-right">{fmt(c.descuento)}</td>
+                                            <td className="py-2.5 px-3 text-xs font-bold text-slate-900 font-mono text-right">{fmt(c.total)}</td>
+                                            <td className="py-2.5 px-3 text-center">
                                                 <button 
                                                     type="button"
                                                     onClick={() => removeConcept(c.id)}
-                                                    className="w-8 h-8 rounded-lg bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center mx-auto transition-all"
-                                                    title="Eliminar concepto"
+                                                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center mx-auto transition-all"
                                                 >
-                                                    <FiTrash2 size={15} />
+                                                    <FiTrash2 size={13} />
                                                 </button>
                                             </td>
                                         </tr>
@@ -616,331 +662,206 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                 )}
                             </tbody>
                         </table>
-                        <div className="flex justify-end pt-4 border-t border-slate-100 text-base font-black text-slate-800">
-                            Total: <span className="text-[#8cc33f] ml-2 font-mono">{fmt(totals.total)}</span>
-                        </div>
+                    </div>
+                    <div className="px-4 py-3 border-t border-slate-100 flex justify-end items-center gap-2 bg-slate-50/50">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total:</span>
+                        <span className="text-sm font-black text-[#8cc33f] font-mono">{fmt(totals.total)}</span>
                     </div>
                 </div>
 
-                {/* CARD 5: Observaciones */}
-                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100">
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Observaciones</h3>
+                {/* CARD 4: Observaciones */}
+                <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                        <h3 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Observaciones</h3>
                     </div>
-                    <div className="p-6">
+                    <div className="p-4">
                         <textarea 
-                            className="w-full h-32 p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-600 outline-none focus:border-blue-500 transition-all resize-none shadow-inner"
-                            placeholder="Observaciones"
+                            className="w-full h-24 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all resize-none"
+                            placeholder="Observaciones del recibo..."
                             value={observaciones}
                             onChange={e => setObservaciones(e.target.value)}
                         />
                     </div>
                 </div>
 
-            </div>
-
-            {/* Sticky Save Bar */}
-            <div className="fixed bottom-0 left-0 right-0 z-[100] bg-white/90 backdrop-blur-md border-t border-slate-200 px-6 py-3 flex items-center justify-between shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
-                <div className="flex items-center gap-3">
-                    {error && (
-                        <span className="flex items-center gap-2 text-rose-600 text-xs font-bold">
-                            <FiAlertCircle size={14} />
-                            {error}
-                        </span>
-                    )}
-                    {success && (
-                        <span className="flex items-center gap-2 text-emerald-600 text-xs font-bold">
-                            <FiCheckCircle size={14} />
-                            ¡Recibo guardado exitosamente!
-                        </span>
-                    )}
-                </div>
-                <div className="flex items-center gap-3">
-                    <button
-                        type="button"
-                        onClick={onCancel || (() => navigate(-1))}
-                        className="h-10 px-5 bg-white border border-slate-200 text-slate-600 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-50 transition-all"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={saving}
-                        className="h-10 px-8 flex items-center gap-2 justify-center bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95 disabled:opacity-60"
-                    >
-                        {saving ? (
-                            <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Guardando...</>
-                        ) : (
-                            <><FiSave size={14} /> Guardar recibo</>
+                {/* Action footer card */}
+                <div className="bg-white border border-slate-200 rounded-xl shadow-xs px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        {error && (
+                            <span className="flex items-center gap-1.5 text-rose-600 text-xs font-bold">
+                                <FiAlertCircle size={13} />
+                                {error}
+                            </span>
                         )}
-                    </button>
+                        {success && (
+                            <span className="flex items-center gap-1.5 text-emerald-600 text-xs font-bold">
+                                <FiCheckCircle size={13} />
+                                ¡Recibo guardado exitosamente!
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={onCancel || (() => navigate(-1))}
+                            className="h-9 px-4 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={handleSubmit}
+                            disabled={saving}
+                            className="h-9 px-5 flex items-center gap-1.5 justify-center bg-[#8cc33f] text-white rounded-lg text-xs font-bold hover:bg-[#7db02b] shadow-xs transition-all active:scale-95 disabled:opacity-60"
+                        >
+                            {saving ? (
+                                <><div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Guardando...</>
+                            ) : (
+                                <><FiSave size={13} /> Guardar recibo</>
+                            )}
+                        </button>
+                    </div>
                 </div>
+
             </div>
 
             {/* MODAL: NUEVO TERCERO */}
             {showNewTerceroModal && (
-                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div 
-                        className="bg-white w-full max-w-[600px] rounded-[32px] shadow-[0_20px_70px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]"
+                        className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Header */}
-                        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
-                                    Nuevo tercero *
-                                </h3>
-                            </div>
+                        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                            <h3 className="text-sm font-bold text-slate-800">Nuevo Tercero</h3>
                             <button 
                                 type="button"
                                 onClick={() => setShowNewTerceroModal(false)}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-rose-500 transition-all shadow-sm font-bold"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-rose-500 transition-all"
                             >
-                                ✕
+                                <FiX size={14} />
                             </button>
                         </div>
 
-                        {/* Form Content */}
-                        <div className="p-8 overflow-y-auto custom-scrollbar space-y-4">
+                        <div className="p-5 overflow-y-auto space-y-3">
                             {modalError && (
-                                <div className="bg-rose-50 border border-rose-100 p-4 rounded-xl text-rose-700 text-xs font-bold uppercase tracking-wider">
+                                <div className="bg-rose-50 border border-rose-200 p-3 rounded-lg text-rose-700 text-xs font-semibold">
                                     {modalError}
                                 </div>
                             )}
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Nombre *</label>
-                                    <input 
-                                        type="text"
-                                        value={newTercero.nombre}
-                                        onChange={e => setNewTercero({ ...newTercero, nombre: e.target.value })}
-                                        placeholder="Nombre del tercero"
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                    />
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nombre *</label>
+                                    <input type="text" value={newTercero.nombre} onChange={e => setNewTercero({ ...newTercero, nombre: e.target.value })} placeholder="Nombre" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Apellidos *</label>
-                                    <input 
-                                        type="text"
-                                        value={newTercero.apellidos}
-                                        onChange={e => setNewTercero({ ...newTercero, apellidos: e.target.value })}
-                                        placeholder="Apellidos del tercero"
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                    />
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Apellidos *</label>
+                                    <input type="text" value={newTercero.apellidos} onChange={e => setNewTercero({ ...newTercero, apellidos: e.target.value })} placeholder="Apellidos" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tipo de documento *</label>
-                                    <select
-                                        value={newTercero.tipoDocumento}
-                                        onChange={e => setNewTercero({ ...newTercero, tipoDocumento: e.target.value })}
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all cursor-pointer"
-                                    >
-                                        <option value="CC">Cédula de Cédula de Ciudadanía</option>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tipo doc. *</label>
+                                    <select value={newTercero.tipoDocumento} onChange={e => setNewTercero({ ...newTercero, tipoDocumento: e.target.value })} className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all cursor-pointer">
+                                        <option value="CC">Cédula de Ciudadanía</option>
                                         <option value="CE">Cédula de Extranjería</option>
                                         <option value="NIT">NIT</option>
                                         <option value="Pasaporte">Pasaporte</option>
                                     </select>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Número de documento *</label>
-                                    <input 
-                                        type="text"
-                                        value={newTercero.nroDocumento}
-                                        onChange={e => setNewTercero({ ...newTercero, nroDocumento: e.target.value })}
-                                        placeholder="Nro. de documento del tercero"
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                    />
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nro. documento *</label>
+                                    <input type="text" value={newTercero.nroDocumento} onChange={e => setNewTercero({ ...newTercero, nroDocumento: e.target.value })} placeholder="Número" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Razón social</label>
-                                    <input 
-                                        type="text"
-                                        value={newTercero.razonSocial}
-                                        onChange={e => setNewTercero({ ...newTercero, razonSocial: e.target.value })}
-                                        placeholder="Razón social del tercero"
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                    />
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Razón social</label>
+                                    <input type="text" value={newTercero.razonSocial} onChange={e => setNewTercero({ ...newTercero, razonSocial: e.target.value })} placeholder="Razón social" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Teléfono *</label>
-                                    <input 
-                                        type="text"
-                                        value={newTercero.telefono}
-                                        onChange={e => setNewTercero({ ...newTercero, telefono: e.target.value })}
-                                        placeholder="Teléfono del tercero"
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                    />
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Teléfono *</label>
+                                    <input type="text" value={newTercero.telefono} onChange={e => setNewTercero({ ...newTercero, telefono: e.target.value })} placeholder="Teléfono" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Dirección *</label>
-                                    <input 
-                                        type="text"
-                                        value={newTercero.direccion}
-                                        onChange={e => setNewTercero({ ...newTercero, direccion: e.target.value })}
-                                        placeholder="Dirección del tercero"
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                    />
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dirección *</label>
+                                    <input type="text" value={newTercero.direccion} onChange={e => setNewTercero({ ...newTercero, direccion: e.target.value })} placeholder="Dirección" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">País de domicilio</label>
-                                    <select
-                                        value={newTercero.pais}
-                                        onChange={e => setNewTercero({ ...newTercero, pais: e.target.value })}
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all cursor-pointer"
-                                    >
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">País</label>
+                                    <select value={newTercero.pais} onChange={e => setNewTercero({ ...newTercero, pais: e.target.value })} className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all cursor-pointer">
                                         <option value="Colombia">Colombia</option>
                                         <option value="Otro">Otro</option>
                                     </select>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Ciudad de domicilio</label>
-                                    <select
-                                        value={newTercero.ciudad}
-                                        onChange={e => setNewTercero({ ...newTercero, ciudad: e.target.value })}
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all cursor-pointer"
-                                    >
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ciudad</label>
+                                    <select value={newTercero.ciudad} onChange={e => setNewTercero({ ...newTercero, ciudad: e.target.value })} className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all cursor-pointer">
                                         <option value="">Seleccione...</option>
                                         {CIUDADES_COLOMBIA.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Correo electrónico</label>
-                                    <input 
-                                        type="email"
-                                        value={newTercero.email}
-                                        onChange={e => setNewTercero({ ...newTercero, email: e.target.value })}
-                                        placeholder="Correo del tercero"
-                                        className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                    />
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Email</label>
+                                    <input type="email" value={newTercero.email} onChange={e => setNewTercero({ ...newTercero, email: e.target.value })} placeholder="Email" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Footer */}
-                        <div className="px-8 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50 shrink-0">
-                            <button
-                                type="button"
-                                onClick={() => setShowNewTerceroModal(false)}
-                                className="h-10 px-5 bg-white border border-slate-200 text-slate-500 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-50 transition-all"
-                            >
-                                Cerrar
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleSaveTercero}
-                                disabled={savingModal}
-                                className="h-10 px-6 bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#7db02b] transition-all shadow"
-                            >
-                                {savingModal ? "Guardando..." : "Guardar"}
+                        <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                            <button type="button" onClick={() => setShowNewTerceroModal(false)} className="h-9 px-4 bg-white border border-slate-200 text-slate-500 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all">Cerrar</button>
+                            <button type="button" onClick={handleSaveTercero} disabled={savingModal} className="h-9 px-4 bg-[#8cc33f] text-white rounded-lg text-xs font-bold hover:bg-[#7db02b] transition-all shadow-xs disabled:opacity-60">
+                                {savingModal ? "Guardando..." : "Guardar tercero"}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+
             {/* MODAL: NUEVO CONCEPTO */}
             {showNewConceptModal && (
-                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div 
-                        className="bg-white w-full max-w-[500px] rounded-[32px] shadow-[0_20px_70px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]"
+                        className="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex flex-col"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Header */}
-                        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
-                                    Nuevo concepto
-                                </h3>
-                            </div>
-                            <button 
-                                type="button"
-                                onClick={() => setShowNewConceptModal(false)}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-rose-500 transition-all shadow-sm font-bold"
-                            >
-                                ✕
+                        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                            <h3 className="text-sm font-bold text-slate-800">Nuevo Concepto</h3>
+                            <button type="button" onClick={() => setShowNewConceptModal(false)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-rose-500 transition-all">
+                                <FiX size={14} />
                             </button>
                         </div>
 
-                        {/* Form Content */}
-                        <form onSubmit={handleAddConceptFromModal} className="flex flex-col flex-1 min-h-0">
-                            <div className="p-8 overflow-y-auto custom-scrollbar space-y-4">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Concepto *</label>
-                                    <input 
-                                        type="text"
-                                        required
-                                        value={newConcept.concepto}
-                                        onChange={e => setNewConcept({ ...newConcept, concepto: e.target.value })}
-                                        placeholder="Ingresa el nombre del concepto"
-                                        className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
-                                    />
+                        <form onSubmit={handleAddConceptFromModal}>
+                            <div className="p-5 space-y-3">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Concepto *</label>
+                                    <input type="text" required value={newConcept.concepto} onChange={e => setNewConcept({ ...newConcept, concepto: e.target.value })} placeholder="Nombre del concepto" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Cantidad *</label>
-                                    <input 
-                                        type="number"
-                                        required
-                                        min="1"
-                                        value={newConcept.cantidad}
-                                        onChange={e => setNewConcept({ ...newConcept, cantidad: e.target.value })}
-                                        placeholder="1"
-                                        className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all font-mono"
-                                    />
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Descripción</label>
+                                    <input type="text" value={newConcept.descripcion} onChange={e => setNewConcept({ ...newConcept, descripcion: e.target.value })} placeholder="Descripción (opcional)" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Descripción</label>
-                                    <input 
-                                        type="text"
-                                        value={newConcept.descripcion}
-                                        onChange={e => setNewConcept({ ...newConcept, descripcion: e.target.value })}
-                                        placeholder="Ingresa la descripción del concepto"
-                                        className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Precio Unitario *</label>
-                                    <div className="relative">
-                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">$</span>
-                                        <input 
-                                            type="text"
-                                            required
-                                            value={formatNumberWithDots(newConcept.precioUnitario)}
-                                            onChange={e => setNewConcept({ ...newConcept, precioUnitario: parseRawNumber(e.target.value) })}
-                                            placeholder="0"
-                                            className="w-full h-11 pl-8 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all font-mono"
-                                        />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Precio unitario *</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">$</span>
+                                            <input type="text" required value={formatNumberWithDots(newConcept.precioUnitario)} onChange={e => setNewConcept({ ...newConcept, precioUnitario: parseRawNumber(e.target.value) })} placeholder="0" className="w-full h-9 pl-6 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 font-mono outline-none focus:bg-white focus:border-blue-500 transition-all" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Cantidad *</label>
+                                        <input type="number" required min="1" value={newConcept.cantidad} onChange={e => setNewConcept({ ...newConcept, cantidad: e.target.value })} placeholder="1" className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 font-mono outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                     </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Descuento por unidad</label>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Descuento por unidad</label>
                                     <div className="relative">
-                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">$</span>
-                                        <input 
-                                            type="text"
-                                            value={formatNumberWithDots(newConcept.descuento)}
-                                            onChange={e => setNewConcept({ ...newConcept, descuento: parseRawNumber(e.target.value) })}
-                                            placeholder="0"
-                                            className="w-full h-11 pl-8 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-rose-500 outline-none focus:bg-white focus:border-blue-500 transition-all font-mono"
-                                        />
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">$</span>
+                                        <input type="text" value={formatNumberWithDots(newConcept.descuento)} onChange={e => setNewConcept({ ...newConcept, descuento: parseRawNumber(e.target.value) })} placeholder="0" className="w-full h-9 pl-6 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-rose-500 font-mono outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Footer */}
-                            <div className="px-8 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50 shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowNewConceptModal(false)}
-                                    className="h-10 px-5 bg-white border border-slate-200 text-slate-500 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-50 transition-all"
-                                >
-                                    Cerrar
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="h-10 px-6 bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#7db02b] transition-all shadow"
-                                >
-                                    Agregar
-                                </button>
+                            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                                <button type="button" onClick={() => setShowNewConceptModal(false)} className="h-9 px-4 bg-white border border-slate-200 text-slate-500 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all">Cerrar</button>
+                                <button type="submit" className="h-9 px-4 bg-[#8cc33f] text-white rounded-lg text-xs font-bold hover:bg-[#7db02b] transition-all shadow-xs">Agregar concepto</button>
                             </div>
                         </form>
                     </div>

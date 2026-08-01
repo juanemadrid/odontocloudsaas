@@ -40,12 +40,15 @@ export const AuthProvider = ({ children }) => {
 
       if (profile) {
         let permisosConfig = null;
+        let extraLogo = "";
         try {
           const { data: wData } = await supabase
             .from("website_config")
             .select("config")
             .eq("tenant_id", profile.tenant_id)
             .maybeSingle();
+
+          extraLogo = wData?.config?.empresa_datos?.logoUrl || "";
 
           const perfiles = wData?.config?.perfiles || [];
           const userRoleName = (profile.role || "").trim().toLowerCase();
@@ -87,16 +90,18 @@ export const AuthProvider = ({ children }) => {
 
         const activePlanObj = matchedMasterPlan || {
           id: rawPlanKey,
-          name: rawPlanKey.includes('pro') ? 'Clínica Profesional' : rawPlanKey.includes('enterp') ? 'IPS Enterprise Multi-Sede' : rawPlanKey.includes('basic') ? 'Consultorio Básico' : 'Gratuito (IPS / Clínica)',
-          monthlyPrice: rawPlanKey.includes('pro') ? 189000 : rawPlanKey.includes('enterp') ? 349000 : rawPlanKey.includes('basic') ? 89000 : 0,
-          yearlyPrice: rawPlanKey.includes('pro') ? 1890000 : rawPlanKey.includes('enterp') ? 3490000 : rawPlanKey.includes('basic') ? 890000 : 0,
-          maxUsers: rawPlanKey.includes('pro') ? 10 : rawPlanKey.includes('enterp') ? 50 : rawPlanKey.includes('basic') ? 3 : 5
+          name: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 'Clínica' : rawPlanKey.includes('enterp') ? 'Enterprise' : 'Consultorio',
+          monthlyPrice: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 99900 : rawPlanKey.includes('enterp') ? 165800 : 59900,
+          yearlyPrice: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 1190000 : rawPlanKey.includes('enterp') ? 1990000 : 599000,
+          maxUsers: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 12 : rawPlanKey.includes('enterp') ? 999 : 2
         };
 
         const createdAtDate = tenantData.created_at ? new Date(tenantData.created_at) : new Date();
         const subEndDate = tenantData.parametros?.subscription_end_date ||
                            tenantData.subscription_end_date ||
                            new Date(createdAtDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        const resolvedLogo = tenantData.logo_url || tenantData.logoUrl || tenantData.logo || extraLogo || "";
 
         const fullProfile = {
           ...profile,
@@ -113,7 +118,8 @@ export const AuthProvider = ({ children }) => {
             nombreComercial: tenantData.nombreComercial || tenantData.nombre || tenantData.name || "Clínica Dental",
             direccion: tenantData.direccion || tenantData.address || "No configurada",
             telefono: tenantData.telefono || tenantData.phone || "---",
-            logo: tenantData.logo_url || tenantData.logoUrl || tenantData.logo || "",
+            logo: resolvedLogo,
+            logo_url: resolvedLogo,
             nit: tenantData.nit || "",
             planId: activePlanObj.id || rawPlanKey,
             plan: activePlanObj,

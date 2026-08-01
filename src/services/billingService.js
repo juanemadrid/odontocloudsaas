@@ -1,23 +1,81 @@
 // src/services/billingService.js
 import supabase from "../lib/supabaseClient";
+import { getConfigCached } from "../hooks/useConfig";
 
 const s = (n) => Number(n || 0);
 
 export const getPatientFinancials = async (patientId, tenantId) => {
-    if (!patientId) return { facturas: [], pagos: [], totals: {} };
+    if (!patientId) return { facturas: [], pagos: [], plans: [], totals: {} };
 
     try {
-        const [resF, resP, resPlans] = await Promise.all([
-            supabase.from("facturas").select("*").eq("paciente_id", patientId).eq("tenant_id", tenantId),
-            supabase.from("pagos").select("*").eq("paciente_id", patientId).eq("tenant_id", tenantId),
-            supabase.from("treatment_plans").select("*").eq("paciente_id", patientId).eq("tenant_id", tenantId)
-        ]);
+        let pagos = [];
+        let facturas = [];
+        let plans = [];
 
-        if (resF.error || resP.error || resPlans.error) {
-            throw resF.error || resP.error || resPlans.error;
+        // 1. Load Pagos — columnas exactas que usa la UI
+        const PAGO_COLS = "id, paciente_id, tenant_id, monto, fecha, created_at, metodo, medio, referencia, concepto, notas, notes, estado, motivoAnulacion, anuladoPor, fechaAnulacion, nroConsecutivo, consecutivo, registradoPor, usuarioNombre";
+        
+        try {
+            const { data, error } = await supabase
+                .from("pagos")
+                .select(PAGO_COLS)
+                .eq("paciente_id", patientId)
+                .order("created_at", { ascending: false });
+            
+            if (!error && data && data.length > 0) {
+                pagos = data;
+            }
+        } catch (e) {}
+
+        // Fallback 1: filtrar por tenant en servidor (no en JS)
+        if (pagos.length === 0 && tenantId) {
+            try {
+                const { data: tenantPagos } = await supabase
+                    .from("pagos")
+                    .select(PAGO_COLS)
+                    .eq("tenant_id", tenantId)
+                    .or(`paciente_id.eq.${patientId},pacienteId.eq.${patientId}`);
+                
+                if (tenantPagos && tenantPagos.length > 0) {
+                    pagos = tenantPagos;
+                }
+            } catch (e) {}
         }
 
-        const facturas = (resF.data || []).map(f => ({
+        // Fallback 2: website_config — usando caché compartida
+        if (pagos.length === 0 && tenantId) {
+            try {
+                const cfg = await getConfigCached(tenantId);
+                const cfgPagos = cfg?.pagos || [];
+                pagos = cfgPagos.filter(p => 
+                    p.paciente_id === patientId || 
+                    p.pacienteId === patientId || 
+                    p.patient_id === patientId || 
+                    p.patientId === patientId
+                );
+            } catch (e) {}
+        }
+
+        // 2. Load Facturas — columnas necesarias
+        try {
+            const { data } = await supabase
+                .from("facturas")
+                .select("id, paciente_id, total, estado, fecha_emision, created_at")
+                .eq("paciente_id", patientId);
+            if (data) facturas = data;
+        } catch (e) {}
+
+        // 3. Load Treatment Plans — columnas necesarias
+        try {
+            const { data } = await supabase
+                .from("treatment_plans")
+                .select("id, paciente_id, total, estado")
+                .eq("paciente_id", patientId);
+            if (data) plans = data;
+        } catch (e) {}
+
+        // Format facturas
+        facturas = (facturas || []).map(f => ({
             id: f.id,
             ...f,
             total: s(f.total),
@@ -25,15 +83,32 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             fechaISO: f.fecha_emision || f.created_at
         })).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
 
-        const pagos = (resP.data || []).map(p => ({
-            id: p.id,
-            ...p,
-            monto: s(p.monto),
-            fechaISO: p.fecha || p.created_at,
-            medio: p.metodo || "—"
-        })).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
+        // Format pagos
+        pagos = (pagos || []).map(p => {
+            const isVoided = (p.estado || "").toLowerCase() === "anulado" || 
+                             (p.referencia || "").toUpperCase().includes("ANULADO") || 
+                             (p.notas || p.notes || "").toUpperCase().includes("ANULADO");
+            
+            let motivo = p.motivoAnulacion || p.motivo_anulacion || p.motivo || "";
+            if (!motivo && isVoided && (p.notas || p.notes)) {
+                motivo = (p.notas || p.notes).replace(/^ANULADO\s*-\s*/i, "").trim();
+            }
 
-        const plans = (resPlans.data || []).map(p => ({
+            return {
+                id: p.id,
+                ...p,
+                monto: s(p.monto),
+                fechaISO: p.fecha || p.fechaISO || p.created_at,
+                medio: p.medio || p.metodo_pago || p.metodo || "—",
+                concepto: p.referencia || p.concepto || "",
+                estado: isVoided ? "Anulado" : (p.estado || "Completado"),
+                motivoAnulacion: motivo,
+                notas: p.notas || p.notes || ""
+            };
+        }).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
+
+        // Format plans
+        plans = (plans || []).map(p => ({
             id: p.id,
             ...p,
             costoTotal: s(p.total),
@@ -44,39 +119,67 @@ export const getPatientFinancials = async (patientId, tenantId) => {
         let notasDebito = [];
 
         if (facturaIds.length > 0) {
-            const resND = await supabase
-                .from("notas_debito")
-                .select("*")
-                .in("factura_id", facturaIds)
-                .eq("tenant_id", tenantId);
-
-            if (resND.error) {
-                console.warn("Error loading notas_debito:", resND.error);
-            } else {
-                notasDebito = resND.data || [];
-            }
+            try {
+                const { data } = await supabase
+                    .from("notas_debito")
+                    .select("id, factura_id, monto, estado, referencia, notas")
+                    .in("factura_id", facturaIds);
+                if (data) notasDebito = data;
+            } catch (e) {}
         }
 
+        // Leer saldo_favor del paciente — columna específica (ya era correcto)
+        let patientSaldoFavor = 0;
+        try {
+            const { data: pacData } = await supabase
+                .from("pacientes")
+                .select("saldo_favor")
+                .eq("id", patientId)
+                .maybeSingle();
+            if (pacData) {
+                patientSaldoFavor = Number(pacData.saldo_favor || 0);
+            }
+        } catch (e) {}
+
+        const isNotAnulado = (p) => {
+            const estadoStr = (p.estado || "").toLowerCase();
+            const refStr = (p.referencia || "").toUpperCase();
+            const notesStr = (p.notas || p.notes || "").toUpperCase();
+            return estadoStr !== "anulado" && !refStr.includes("ANULADO") && !notesStr.includes("ANULADO");
+        };
+
+        const isCreditTopUp = (p) => {
+            const ref = (p.referencia || p.concepto || "").toUpperCase();
+            const notes = (p.notas || p.notes || "").toUpperCase();
+            const method = (p.metodo || p.medio || "").toLowerCase();
+            return method !== "saldo a favor" && (ref === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR")) && isNotAnulado(p);
+        };
+
+        const isCreditUsed = (p) => {
+            const m = (p.metodo || p.medio || "").toLowerCase();
+            return m === "saldo a favor" && isNotAnulado(p);
+        };
+
         const totalDebito = notasDebito
-            .filter(n => n.estado !== "Anulado")
+            .filter(n => isNotAnulado(n))
             .reduce((acc, n) => acc + s(n.monto), 0);
 
         const totalFacturado = facturas.reduce((acc, f) => acc + f.total, 0) + totalDebito;
         const totalPagado = pagos
-            .filter(p => (p.medio || "").toLowerCase() !== "saldo a favor" && p.estado !== "Anulado")
+            .filter(p => !isCreditUsed(p) && isNotAnulado(p))
             .reduce((acc, p) => acc + p.monto, 0);
 
         const totalCredits = pagos
-            .filter(p => p.concepto === "SALDO A FAVOR" && p.estado !== "Anulado")
+            .filter(p => isCreditTopUp(p))
             .reduce((acc, p) => acc + p.monto, 0);
 
         const usedCredits = pagos
-            .filter(p => (p.medio || "").toLowerCase() === "saldo a favor" && p.estado !== "Anulado")
+            .filter(p => isCreditUsed(p))
             .reduce((acc, p) => acc + p.monto, 0);
 
-        const totalSaldosAFavor = Math.max(0, totalCredits - usedCredits);
+        const totalSaldosAFavor = Math.max(0, Math.max(patientSaldoFavor, totalCredits) - usedCredits);
         const totalAbonosTratamiento = pagos
-            .filter(p => p.concepto !== "SALDO A FAVOR" && p.estado !== "Anulado")
+            .filter(p => !isCreditTopUp(p) && !isCreditUsed(p) && isNotAnulado(p))
             .reduce((acc, p) => acc + p.monto, 0);
 
         const facturasPagadas = facturas.filter((f) => ["pagada", "pagado", "paid"].includes(f.estado));
@@ -108,3 +211,5 @@ export const getPatientFinancials = async (patientId, tenantId) => {
         return { facturas: [], pagos: [], plans: [], totals: {} };
     }
 };
+
+

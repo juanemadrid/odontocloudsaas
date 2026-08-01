@@ -13,7 +13,7 @@ const defaultTestimonials = [
     {
         name: "Dra. Lucia Arias",
         role: "Ortodoncista",
-        text: "El odontograma 3D no tiene comparación. Mis pacientes entienden mucho mejor sus presupuestos y la tasa de aceptación de tratamientos subió notablemente.",
+        text: "El odontograma digital interactivo no tiene comparación. Mis pacientes entienden mucho mejor sus presupuestos y la tasa de aceptación de tratamientos subió notablemente.",
         image: "https://randomuser.me/api/portraits/women/44.jpg",
         stars: 5
     },

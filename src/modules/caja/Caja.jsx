@@ -54,9 +54,9 @@ const MENU_ITEMS = [
 /* ─── Main Component ─── */
 export default function Caja() {
   const { userProfile } = useAuth();
-  const inquilino = userProfile?.inquilino || "";
-  const userId = userProfile?.uid || "";
-  const userName = userProfile?.nombre || userProfile?.email || "Usuario";
+  const inquilino = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || userProfile?.tenant?.inquilino || userProfile?.tenant?.id || "";
+  const userId = userProfile?.uid || userProfile?.id || "";
+  const userName = userProfile?.nombre || userProfile?.full_name || userProfile?.email || "Usuario";
 
   const [activeMenu, setActiveMenu] = useState("abiertas");
   const [allCajas, setAllCajas] = useState([]);
@@ -86,33 +86,59 @@ export default function Caja() {
   }, []);
 
   /* ─── Load ALL cajas ─── */
-  useEffect(() => {
+  const fetchCajas = React.useCallback(async () => {
     if (!inquilino) { setLoading(false); return; }
     setLoading(true);
 
-    const fetchCajas = async () => {
+    try {
+      let list = [];
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from("cajas")
           .select("*")
           .eq("tenant_id", inquilino)
           .order("created_at", { ascending: false });
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
 
-        if (error) {
-          console.warn("Caja: tabla 'cajas' no disponible todavía:", error.message);
-          setAllCajas([]);
-        } else {
-          setAllCajas(data || []);
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const cfgCajas = cfgRow?.config?.cajas || [];
+
+      // Combinar cajas de DB y website_config
+      const mergedMap = new Map();
+      [...list, ...cfgCajas].forEach(c => {
+        if (c && c.id && !mergedMap.has(c.id)) {
+          mergedMap.set(c.id, {
+            ...c,
+            baseInicial: c.base_inicial ?? c.baseInicial ?? 0,
+            saldoInicial: c.saldo_inicial ?? c.saldoInicial ?? 0,
+            saldoActual: c.saldo_actual ?? c.saldoActual ?? 0,
+            totalIngresos: c.total_ingresos ?? c.totalIngresos ?? 0,
+            totalEgresos: c.total_egresos ?? c.totalEgresos ?? 0,
+            usuarioId: c.usuario_id ?? c.usuarioId ?? "",
+            usuarioNombre: c.usuario_nombre ?? c.usuarioNombre ?? "Usuario",
+            fechaApertura: c.fecha_apertura ?? c.fechaApertura ?? c.created_at
+          });
         }
-      } catch (e) {
-        console.warn("Caja fetchCajas error:", e);
-        setAllCajas([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+      });
 
+      setAllCajas(Array.from(mergedMap.values()));
+    } catch (e) {
+      console.warn("Caja fetchCajas error:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [inquilino]);
+
+  useEffect(() => {
     fetchCajas();
+
+    if (!inquilino) return;
 
     const channel = supabase
       .channel(`cajas-${inquilino}`)
@@ -120,20 +146,26 @@ export default function Caja() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [inquilino]);
+  }, [inquilino, fetchCajas]);
 
   /* ─── Filter by active menu ─── */
   const cajasFiltradas = (() => {
     let list = allCajas;
-    if (activeMenu === "abiertas") list = allCajas.filter(c => c.estado === "abierta");
-    else if (activeMenu === "cerradas") list = allCajas.filter(c => c.estado === "cerrada");
-    else if (activeMenu === "mi-caja") list = allCajas.filter(c => c.usuarioId === userId || c.usuarioNombre === userName);
+    if (activeMenu === "abiertas") list = allCajas.filter(c => (c.estado || "").toLowerCase() === "abierta");
+    else if (activeMenu === "cerradas") list = allCajas.filter(c => (c.estado || "").toLowerCase() === "cerrada");
+    else if (activeMenu === "mi-caja") list = allCajas.filter(c => 
+      c.usuarioId === userId || 
+      c.usuario_id === userId || 
+      c.usuarioId === userProfile?.id ||
+      c.usuario_id === userProfile?.id ||
+      (c.usuarioNombre || c.usuario_nombre || "").toLowerCase() === userName.toLowerCase()
+    );
     else if (activeMenu === "bancos") list = allCajas.filter(c => (c.tipo || "").toLowerCase() === "banco");
 
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(c =>
-        (c.usuarioNombre || "").toLowerCase().includes(q) ||
+        (c.usuarioNombre || c.usuario_nombre || "").toLowerCase().includes(q) ||
         (c.nombre || "").toLowerCase().includes(q) ||
         (c.tipo || "").toLowerCase().includes(q)
       );
@@ -181,7 +213,7 @@ export default function Caja() {
         <div className="px-3 pb-3">
           <button
             onClick={() => handleMenuClick("abrir")}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg text-[12px] font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0"
+            className="w-full bg-[#8cc33f] hover:bg-[#7db02b] text-white px-3 py-2 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
           >
             <FiPlus size={15} />
             <span>Abrir Caja</span>
@@ -396,7 +428,7 @@ export default function Caja() {
           inquilino={inquilino}
           userProfile={userProfile}
           onClose={() => setShowAbrirModal(false)}
-          onSuccess={() => { setShowAbrirModal(false); setActiveMenu("abiertas"); }}
+          onSuccess={() => { setShowAbrirModal(false); setActiveMenu("abiertas"); fetchCajas(); }}
         />
       )}
 
@@ -406,7 +438,7 @@ export default function Caja() {
           inquilino={inquilino}
           userProfile={userProfile}
           onClose={() => { setShowCerrar(false); setSelectedCaja(null); }}
-          onSuccess={() => { setShowCerrar(false); setSelectedCaja(null); }}
+          onSuccess={() => { setShowCerrar(false); setSelectedCaja(null); fetchCajas(); }}
         />
       )}
 
@@ -416,7 +448,7 @@ export default function Caja() {
           inquilino={inquilino}
           userProfile={userProfile}
           onClose={() => { setShowMovimiento(false); setSelectedCaja(null); }}
-          onSuccess={() => { setShowMovimiento(false); setSelectedCaja(null); }}
+          onSuccess={() => { setShowMovimiento(false); setSelectedCaja(null); fetchCajas(); }}
         />
       )}
 

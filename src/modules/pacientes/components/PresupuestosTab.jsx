@@ -41,25 +41,21 @@ export default function PresupuestosTab({ patient: dbPatient }) {
         <div className="flex flex-col h-full bg-slate-50/20 animate-fadeIn min-h-0 relative overflow-hidden">
             {mode === 'list' ? (
                 <>
-                    {/* Elite Header Actions */}
-                    <div className="flex-none p-6 md:p-10 flex flex-col md:flex-row justify-between items-center gap-6 border-b border-slate-100 bg-white/40 backdrop-blur-md sticky top-0 z-20">
-                        <div className="flex items-center gap-5">
-                            <div className="w-14 h-14 bg-indigo-600 rounded-[22px] flex items-center justify-center text-white shadow-xl shadow-indigo-100">
-                                <FiFileText size={28} />
+                    {/* Compact Header Actions */}
+                    <div className="flex-none px-6 py-2.5 flex justify-between items-center border-b border-slate-100 bg-white shadow-xs sticky top-0 z-20">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-[#8CC63F]/10 text-[#8CC63F] rounded-xl flex items-center justify-center">
+                                <FiFileText size={16} />
                             </div>
                             <div>
-                                <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none mb-1 uppercase">Planes & <span className="text-indigo-600 underline decoration-indigo-100 decoration-8 underline-offset-4">Presupuestos</span></h2>
-                                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                   <span>Propuestas económicas para el paciente</span>
-                                   <FiArrowRight size={10} className="text-slate-200" />
-                                   <span className="text-slate-500">{patient?.nombreCompleto}</span>
-                                </div>
+                                <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider leading-none">Planes & Presupuestos</h2>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Propuestas económicas &middot; {patient?.nombreCompleto}</p>
                             </div>
                         </div>
                     </div>
 
                     {/* Content View */}
-                    <div className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
                         <PlanList
                             patient={patient}
                             refreshKey={refreshKey}

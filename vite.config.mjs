@@ -56,7 +56,7 @@ export default defineConfig({
   base: '/odontocloudsaas/',
   server: {
     port: 3000,
-    strictPort: true,
+    strictPort: false,
     open: '/odontocloudsaas/',
   },
   build: {

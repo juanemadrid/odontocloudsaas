@@ -26,18 +26,44 @@ export default function IndicadoresResiduos() {
             setLoading(true);
             try {
                 // Load types
-                const { data: tSnap } = await supabase
-                    .from("tipos_residuos")
-                    .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-                setTypes(tSnap || []);
+                let tList = [];
+                try {
+                    const { data: tSnap } = await supabase
+                        .from("tipos_residuos")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (tSnap && tSnap.length > 0) tList = tSnap;
+                } catch (e) {}
+
+                if (tList.length === 0) {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inquilino)
+                        .maybeSingle();
+                    tList = cfgRow?.config?.tipos_residuos || [];
+                }
+                setTypes(tList);
 
                 // Load logs
-                const { data: snap } = await supabase
-                    .from("registro_residuos")
-                    .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-                setLogs(snap || []);
+                let lList = [];
+                try {
+                    const { data: snap } = await supabase
+                        .from("registro_residuos")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (snap && snap.length > 0) lList = snap;
+                } catch (e) {}
+
+                if (lList.length === 0) {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inquilino)
+                        .maybeSingle();
+                    lList = cfgRow?.config?.registro_residuos || [];
+                }
+                setLogs(lList);
             } catch (e) {
                 console.error("Error loading data for indicators:", e);
             } finally {

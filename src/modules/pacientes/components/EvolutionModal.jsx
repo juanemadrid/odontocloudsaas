@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiCheck, FiTrash2, FiPlus } from 'react-icons/fi';
+import { FiX, FiCheck, FiTrash2, FiPlus, FiActivity, FiLock } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { getPlansByPatient } from '../../../services/planService';
 import { useAuth } from '../../../context/AuthContext';
@@ -40,7 +40,7 @@ const inferRIPSFields = (servicesList) => {
     return { finalidad: inferredFinalidad, dxPrincipal: inferredDx };
 };
 
-export default function EvolutionModal({ isOpen, onClose, patient, initialData = null }) {
+export default function EvolutionModal({ isOpen, onClose, onSave, patient, initialData = null }) {
     const { userProfile } = useAuth();
     const esDoctor = userProfile?.esDoctor ||
         userProfile?.rol === 'doctor' ||
@@ -211,6 +211,11 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
         setTempCantidad(1);
 
         if (initialData) {
+            if (initialData.type === 'nota') {
+                setActiveTab('nota');
+            } else {
+                setActiveTab('evolucion');
+            }
             const safeDate = initialData.date?.toDate ? initialData.date.toDate() : new Date(initialData.date || Date.now());
             const tzoffset = safeDate.getTimezoneOffset() * 60000;
             const localISOTime = (new Date(safeDate.getTime() - tzoffset)).toISOString();
@@ -219,7 +224,9 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                 fecha: localISOTime.slice(0, 10),
                 horaInicio: localISOTime.slice(11, 16),
                 horaFin: localISOTime.slice(11, 16),
-                doctorId: initialData.doctorId || '',
+                doctorId: initialData.doctorId || initialData.profesionalId || '',
+                comentario: initialData.comentario || initialData.description || '',
+                estadoEvolucion: initialData.estadoEvolucion || (initialData.isFinalized ? 'finalizado' : 'en_proceso'),
                 medicamentos: initialData.medicamentos || [],
                 esterilizaciones: initialData.esterilizaciones || []
             });
@@ -231,6 +238,7 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                 horaInicio: currentLocalTime,
                 horaFin: currentLocalTime,
                 doctorId: autoDoctor || '',
+                estadoEvolucion: 'en_proceso',
                 medicamentos: [],
                 esterilizaciones: []
             });
@@ -243,91 +251,154 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
 
         const fetchData = async () => {
             try {
-                // ─── Cargar doctores desde colección 'profesionales' (datos normalizados) ───
-                let loadedDoctors = [];
-                const inquilino = userProfile?.inquilino || patient?.inquilino;
+                // ─── Cargar doctores des-normalizados (profesionales, profiles, website_config, patient, userProfile) ───
+                const mapDoctors = new Map();
+                const inquilino = userProfile?.inquilino || userProfile?.tenantId || patient?.inquilino || patient?.tenant_id;
 
-                if (inquilino) {
-                    try {
-                        const { data: profData } = await supabase
-                            .from('profesionales')
-                            .select('*')
-                            .eq('tenant_id', inquilino)
-                            .eq('activo', true);
-                        if (profData && profData.length > 0) {
-                            loadedDoctors = profData.map(d => ({
-                                id: d.id,
-                                nombre: d.nombre_completo || d.nombre || '',
-                                nombreCompleto: d.nombre_completo || d.nombre || '',
-                                email: d.correo || d.email || '',
-                            }));
-                        } else {
-                            const { data: usrData } = await supabase
-                                .from('usuarios')
-                                .select('*')
-                                .eq('tenant_id', inquilino)
-                                .eq('es_doctor', true);
-                            loadedDoctors = (usrData || []).map(d => ({
-                                id: d.id,
-                                nombre: d.nombre_completo || `${d.nombre || ''} ${d.apellido || ''}`.trim() || d.email || d.id,
-                                nombreCompleto: d.nombre_completo || `${d.nombre || ''} ${d.apellido || ''}`.trim() || '',
-                                email: d.correo || d.email || '',
-                            }));
+                // A. Doctores asignados al paciente
+                if (patient?.profesionales && Array.isArray(patient.profesionales)) {
+                    patient.profesionales.forEach(d => {
+                        const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+                        const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+                        if (name.trim() && docId) {
+                            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
                         }
-                    } catch (e) {
-                        console.warn('Error cargando doctores desde Supabase:', e);
+                    });
+                }
+
+                // B. Cargar desde tabla profesionales
+                try {
+                    let query = supabase.from('profesionales').select('*');
+                    if (inquilino) {
+                        query = query.eq('tenant_id', inquilino);
+                    }
+                    const { data: profData } = await query;
+                    if (profData && Array.isArray(profData)) {
+                        profData.forEach(d => {
+                            if (d.activo !== false) {
+                                const name = d.nombre_completo || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+                                if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, {
+                                        id: docId,
+                                        nombre: name,
+                                        nombreCompleto: name,
+                                        email: d.correo || d.email || '',
+                                        raw: d
+                                    });
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error cargando profesionales:', e);
+                }
+
+                // C. Cargar desde tabla profiles
+                try {
+                    let query = supabase.from('profiles').select('*');
+                    if (inquilino) query = query.eq('tenant_id', inquilino);
+                    const { data: profsData } = await query;
+                    if (profsData && Array.isArray(profsData)) {
+                        profsData.forEach(u => {
+                            const name = u.full_name || u.nombreCompleto || u.nombre || u.email || '';
+                            const docId = String(u.id || (name ? name.toLowerCase() : ''));
+                            if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error cargando profiles:', e);
+                }
+
+                // D. Cargar desde website_config (usuarios / user_details / doctores)
+                try {
+                    if (inquilino) {
+                        const { data: cfgRow } = await supabase
+                            .from("website_config")
+                            .select("config")
+                            .eq("tenant_id", inquilino)
+                            .maybeSingle();
+
+                        if (cfgRow?.config) {
+                            const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
+                            const userDetails = cfgRow.config.user_details || {};
+                            const doctores = cfgRow.config.doctores || cfgRow.config.profesionales || [];
+
+                            usuarios.forEach(u => {
+                                const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
+                                const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
+                                if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
+                                }
+                            });
+
+                            doctores.forEach(d => {
+                                const name = d.nombreCompleto || d.nombre || d.displayName || d.email || "";
+                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+                                if (name.trim() && docId && !mapDoctors.has(docId)) {
+                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
+                                }
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Error cargando website_config:', e);
+                }
+
+                // E. SIEMPRE incluir al usuario actual en sesión (ej. Carlos Madrid / Doctor)
+                if (userProfile) {
+                    const myId = String(userProfile.uid || userProfile.id || 'current_user');
+                    const myName = userProfile.nombreCompleto ||
+                        userProfile.nombre ||
+                        `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() ||
+                        userProfile.displayName ||
+                        userProfile.email ||
+                        "Doctor Principal";
+
+                    if (myName.trim() && !mapDoctors.has(myId)) {
+                        mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' });
                     }
                 }
 
-                // ─── Si el usuario logueado ES doctor, asegurar que aparezca y esté seleccionado ───
-                const esDoctor = userProfile?.esDoctor ||
-                    userProfile?.rol === 'doctor' ||
-                    userProfile?.rol === 'odontologo';
+                // F. Fallback por si la clínica es completamente nueva
+                if (mapDoctors.size === 0) {
+                    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '' });
+                }
 
-                if (esDoctor && userProfile?.uid) {
-                    // Buscar por UID primero, luego por email (para el bypass de desarrollo)
-                    const byUid = loadedDoctors.find(
-                        d => d.id === userProfile.uid || d.uid === userProfile.uid
-                    );
-                    const byEmail = !byUid && userProfile.email
-                        ? loadedDoctors.find(d =>
-                            (d.email || d.correo || '').toLowerCase() === userProfile.email.toLowerCase()
-                          )
-                        : null;
+                let loadedDoctors = Array.from(mapDoctors.values());
 
-                    const myDoctorEntry = byUid || byEmail;
-
-                    if (myDoctorEntry) {
-                        // Encontrado en la lista → seleccionarlo por su ID real
-                        setValue('doctorId', myDoctorEntry.id);
-                    } else {
-                        // No está en la lista → inyectarlo y seleccionarlo
-                        const myName = userProfile.nombreCompleto ||
-                            `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() ||
-                            userProfile.displayName ||
-                            userProfile.email || 'Doctor';
-                        const myEntry = { id: userProfile.uid, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' };
-                        loadedDoctors = [myEntry, ...loadedDoctors];
-                        setValue('doctorId', userProfile.uid);
-                    }
+                // Auto-seleccionar el primer doctor o el usuario actual si no hay nada seleccionado aún
+                if (loadedDoctors.length > 0 && !watch("doctorId")) {
+                    const currentUid = String(userProfile?.uid || userProfile?.id || '');
+                    const matchedMyEntry = loadedDoctors.find(d => String(d.id) === currentUid);
+                    setValue('doctorId', matchedMyEntry ? matchedMyEntry.id : loadedDoctors[0].id);
                 }
 
                 setDoctors(loadedDoctors);
 
-                // Cargar medicamentos registrados de la clínica
+                // Cargar medicamentos registrados de la clínica (con fallback silencioso)
+                const DEFAULT_MEDS = ["Amoxicilina 500mg", "Ibuprofeno 600mg", "Paracetamol 500mg", "Clorhexidina 0.12%", "Naproxeno 500mg", "Azitromicina 500mg", "Clindamicina 300mg", "Ketorolaco 10mg", "Dexametasona 4mg"];
                 try {
                     if (userProfile?.inquilino) {
-                        const { data: invData } = await supabase
+                        const { data: invData, error: mErr } = await supabase
                             .from("medicamentos")
                             .select("nombre, name, principio_activo")
                             .eq("tenant_id", userProfile.inquilino);
-                        const invList = (invData || [])
-                            .map(d => d.nombre || d.name || d.principio_activo)
-                            .filter(Boolean);
-                        setInventarioMeds(invList);
+                        if (!mErr && invData && invData.length > 0) {
+                            const invList = (invData || [])
+                                .map(d => d.nombre || d.name || d.principio_activo)
+                                .filter(Boolean);
+                            setInventarioMeds(invList);
+                        } else {
+                            setInventarioMeds(DEFAULT_MEDS);
+                        }
+                    } else {
+                        setInventarioMeds(DEFAULT_MEDS);
                     }
                 } catch (e) {
-                    console.warn("Error cargando medicamentos para autocompletado:", e);
+                    setInventarioMeds(DEFAULT_MEDS);
                 }
 
                 // Planes de tratamiento
@@ -366,15 +437,10 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                  srvs.forEach(s => {
                      if (initialData?.plantillaItems?.[s.id]) {
                          const saved = initialData.plantillaItems[s.id];
-                         // Compatibilidad retroactiva: en el formato antiguo, checked=true significaba
-                         // tanto "seleccionado" como "realizado". Ahora los separamos:
-                         // checked = seleccionado para esta sesión (visible en tabla)
-                         // realizado = procedimiento completamente terminado
                          initDetails[s.id] = { 
                              checked: saved.checked !== undefined ? saved.checked : false,
                              realizado: saved.realizado !== undefined ? saved.realizado : (saved.checked || false),
                              observation: saved.observation || '',
-                             // Guardar nombre y dientes para mostrarlo en el historial
                              desc: saved.desc || s.desc || s.procedimiento || s.nombre || '',
                              dientes: saved.dientes || s.dientes || ''
                          };
@@ -391,12 +457,11 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                  setPlantillaDetails(initDetails);
                  setAllChecked(false);
 
-                 // Auto-inferir y pre-rellenar campos RIPS si es una evolución nueva
                  if (!initialData) {
                      const { finalidad, dxPrincipal } = inferRIPSFields(srvs);
                      setValue('finalidad', finalidad);
                      setValue('dxPrincipal', dxPrincipal);
-                     setValue('ambito', 'Ambulatorio'); // Valor estándar por defecto
+                     setValue('ambito', 'Ambulatorio');
                  }
              } else {
                  setServicios([]);
@@ -407,34 +472,39 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
         loadServicios();
     }, [watchPlanId, planes, initialData, setValue]);
 
-    // Load payments for selected plan to show status dots
+    // Load payments for selected plan to show status dots (Supabase native)
     useEffect(() => {
         const loadPlanPayments = async () => {
             if (!watchPlanId || !patient?.id) { setPlanPayments([]); return; }
             try {
-                const q = query(
-                    collection(db, "pagos"),
-                    where("patientId", "==", patient.id),
-                    where("planId", "==", watchPlanId)
-                );
-                const snap = await getDocs(q);
-                setPlanPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.estado !== 'Anulado'));
-            } catch (e) { console.error(e); }
+                const { data: payData, error } = await supabase
+                    .from("pagos")
+                    .select("*")
+                    .eq("paciente_id", patient.id);
+
+                if (!error && payData) {
+                    setPlanPayments(payData.filter(p => (p.plan_id === watchPlanId || p.planId === watchPlanId || p.tratamiento_id === watchPlanId || !p.planId) && p.estado !== 'Anulado'));
+                } else {
+                    setPlanPayments([]);
+                }
+            } catch (e) { console.error("Error loading plan payments:", e); }
         };
         loadPlanPayments();
     }, [watchPlanId, patient?.id]);
 
-    // Load past evolutions to determine which items are already completed
+    // Load past evolutions using Supabase native query
     useEffect(() => {
         const loadPastEvolutions = async () => {
             if (!patient?.id) return;
             try {
-                const q = query(
-                    collection(db, "clinical_evolutions"),
-                    where("patientId", "==", patient.id)
-                );
-                const snap = await getDocs(q);
-                setPastEvolutions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const { data: pastData, error } = await supabase
+                    .from("evoluciones")
+                    .select("*")
+                    .eq("paciente_id", patient.id);
+
+                if (!error && pastData) {
+                    setPastEvolutions(pastData);
+                }
             } catch (e) {
                 console.error("Error loading past evolutions:", e);
             }
@@ -506,11 +576,14 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
             const isEditing = !!initialData;
             
             // Reconstruct full doctor details to store flat data
-            const docObj = doctors.find(d => d.id === data.doctorId);
-            const docName = docObj ? `${docObj.nombre || docObj.nombres || ''} ${docObj.apellido || docObj.apellidos || ''}`.trim() : "Doctor";
+            const docObj = doctors.find(d => String(d.id) === String(data.doctorId));
+            const docName = docObj
+                ? (docObj.nombreCompleto || docObj.nombre || `${docObj.nombres || ''} ${docObj.apellidos || ''}`.trim())
+                : (userProfile?.nombreCompleto || userProfile?.nombre || "Doctor");
 
             const selectedPlan = planes.find(p => p.id === data.planId);
             const treatmentName = selectedPlan?.title || selectedPlan?.nombre || '';
+            const recordType = activeTab === 'nota' ? 'nota' : 'evolution';
 
             // Robust date construction
             let finalDate = new Date(`${data.fecha}T00:00:00`);
@@ -522,46 +595,65 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
             } else {
                 finalDate.setHours(0, 0);
             }
+            
+            const hasRealizedItems = Object.values(plantillaDetails || {}).some(
+                item => item?.realizado === true
+            );
 
             const evolutionData = {
-                type: 'evolution',
+                type: recordType,
                 paciente_id: patient.id,
                 patientId: patient.id,
                 patientName: patient.nombreCompleto || patient.nombre || 'Paciente',
                 profesional: docName,
-                profesionalId: data.doctorId,
-                treatment: treatmentName,
+                profesionalId: data.doctorId || docObj?.id || userProfile?.uid || "",
+                treatment: recordType === 'nota' ? 'Nota aclaratoria' : treatmentName,
                 description: data.comentario, 
+                comentario: data.comentario,
+                isFinalized: hasRealizedItems,
                 ...data,
-                plantillaItems: plantillaDetails,
-                date: finalDate, 
-                tenant_id: userProfile?.inquilino || userProfile?.tenantId || "",
-                inquilino: userProfile?.inquilino || userProfile?.tenantId || "",
+                plantillaItems: recordType === 'nota' ? {} : plantillaDetails,
+                date: finalDate.toISOString(), 
+                tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
+                inquilino: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
                 updated_at: new Date().toISOString(),
                 registeredBy: userProfile?.uid || "",
+            };
+
+            // DB Payload containing strictly existing table columns
+            const dbPayload = {
+                paciente_id: patient.id,
+                tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
+                profesional_id: data.doctorId || docObj?.id || userProfile?.uid || null,
+                fecha: finalDate.toISOString(),
+                tratamiento: JSON.stringify(evolutionData)
             };
 
             if (isEditing) {
                 const { error: updateError } = await supabase
                     .from("evoluciones")
-                    .update(evolutionData)
+                    .update(dbPayload)
                     .eq("id", initialData.id);
                 if (updateError) throw updateError;
             } else {
                 const { error: insertError } = await supabase
                     .from("evoluciones")
                     .insert([{
-                        ...evolutionData,
+                        ...dbPayload,
                         created_at: new Date().toISOString()
                     }]);
                 if (insertError) throw insertError;
             }
 
-            toast.success(isEditing ? "Evolución actualizada" : "Evolución registrada");
+            const successMsg = isEditing 
+                ? (recordType === 'nota' ? "Nota aclaratoria actualizada" : "Evolución actualizada")
+                : (recordType === 'nota' ? "Nota aclaratoria registrada" : "Evolución registrada");
+            toast.success(successMsg);
+            if (onSave) onSave();
             onClose();
         } catch (error) {
             console.error("Error saving evolution:", error);
-            toast.error("Error al guardar la evolución");
+            toast.error("Error al guardar el registro");
         } finally {
             setSaving(false);
         }
@@ -581,27 +673,64 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 md:p-10 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-            <div className={`bg-white sm:rounded-[24px] rounded-t-[24px] shadow-2xl w-full flex flex-col h-[95vh] sm:h-full sm:max-h-[90vh] overflow-hidden transition-all duration-300 ${showAIAssistant ? 'max-w-7xl' : 'max-w-6xl'}`}>
-                <div className="flex flex-col h-full">
-                    {/* Header Custom Tabs like design */}
-                    <div className="flex border-b border-slate-100/60 sticky top-0 bg-white z-10 shrink-0">
-                        <div 
+        <>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white w-full max-w-5xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+                
+                {/* Modal Header */}
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#8dc63f]/10 text-[#8dc63f] flex items-center justify-center font-bold">
+                            <FiActivity size={20} />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                                {initialData 
+                                    ? (activeTab === 'nota' ? 'Editar Nota Aclaratoria' : 'Editar Evolución') 
+                                    : (activeTab === 'nota' ? 'Nueva Nota Aclaratoria' : 'Nueva Evolución Clínica')
+                                }
+                            </h3>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                Paciente: <span className="text-slate-600">{patient?.nombreCompleto || patient?.nombre || 'General'}</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Selector de Pestaña: Evolución vs Nota Aclaratoria */}
+                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                        <button
+                            type="button"
                             onClick={() => setActiveTab('evolucion')}
-                            className={`w-1/2 flex items-center justify-center font-black text-[13px] py-4 cursor-pointer transition-colors ${activeTab === 'evolucion' ? 'border-b-[3px] border-[#8dc63f] text-[#8dc63f]' : 'text-slate-300 bg-slate-50/50 hover:bg-slate-50'}`}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                                activeTab === 'evolucion' 
+                                    ? 'bg-white text-slate-800 shadow-sm' 
+                                    : 'text-slate-400 hover:text-slate-600'
+                            }`}
                         >
                             Evolución
-                        </div>
-                        <div 
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setActiveTab('nota')}
-                            className={`w-1/2 flex items-center justify-center font-black text-[13px] py-4 cursor-pointer transition-colors ${activeTab === 'nota' ? 'border-b-[3px] border-[#8dc63f] text-[#8dc63f]' : 'text-slate-300 bg-slate-50/50 hover:bg-slate-50'}`}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                                activeTab === 'nota' 
+                                    ? 'bg-purple-600 text-white shadow-sm' 
+                                    : 'text-slate-400 hover:text-slate-600'
+                            }`}
                         >
-                            Nota aclaratoria
-                        </div>
-                        <button type="button" onClick={onClose} disabled={saving} className="absolute right-4 top-4 text-slate-400 hover:text-rose-500">
-                            <FiX size={20} />
+                            Nota Aclaratoria
                         </button>
                     </div>
+
+                    <button 
+                        onClick={onClose}
+                        className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-500 flex items-center justify-center transition-all"
+                    >
+                        <FiX size={16} />
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col min-h-0">
                     
                     {/* Body Form Content (Scrollable) */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-8 flex flex-col lg:flex-row gap-6">
@@ -617,13 +746,12 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                                 <select 
                                     {...register("doctorId")} 
                                     value={watch("doctorId") || ""}
-                                    disabled={esDoctor}
-                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 disabled:bg-slate-50 disabled:text-slate-400"
+                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
                                 >
                                     <option value="">Seleccione...</option>
                                     {doctors.map(d => (
                                         <option key={d.id} value={d.id}>
-                                            {d.nombre || d.nombreCompleto || d.displayName || d.email || d.id}
+                                            {d.nombreCompleto || d.nombre || d.displayName || d.email || d.id}
                                         </option>
                                     ))}
                                 </select>
@@ -1224,23 +1352,24 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                             />
                         </div>
                     )}
-                </div>
-
-                {/* Footer Fixed */}
-                <div className="p-4 sm:p-6 border-t border-slate-100/60 bg-white shrink-0 flex justify-between sm:justify-end gap-3 sm:gap-6 items-center">
-                    <button type="button" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none py-3 px-4 border-2 border-slate-200 rounded-xl font-black text-[12px] uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-colors text-center">
-                        Cerrar
-                    </button>
-                    <button 
-                        type="button"
-                        onClick={handleSubmit(onSubmit)}
-                        disabled={saving} 
-                        className="flex-1 sm:flex-none px-8 sm:px-10 py-3 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md shadow-lime-500/20"
-                    >
-                        {saving ? "Guardando..." : "Guardar"}
-                    </button>
-                </div>
+                    </div>
+                    
+                    {/* Footer Fixed */}
+                    <div className="p-4 sm:p-6 border-t border-slate-100/60 bg-white shrink-0 flex justify-between sm:justify-end gap-3 sm:gap-6 items-center">
+                        <button type="button" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none py-3 px-4 border-2 border-slate-200 rounded-xl font-black text-[12px] uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-colors text-center">
+                            Cerrar
+                        </button>
+                        <button 
+                            type="submit"
+                            disabled={saving} 
+                            className="flex-1 sm:flex-none px-8 sm:px-10 py-3 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md shadow-lime-500/20"
+                        >
+                            {saving ? "Guardando..." : "Guardar"}
+                        </button>
+                    </div>
+                </form>
             </div>
+        </div>
 
             {/* Procedure Selector Overlay Modal */}
             {showProcedureSelector && (
@@ -1378,7 +1507,6 @@ export default function EvolutionModal({ isOpen, onClose, patient, initialData =
                     </div>
                 </div>
             )}
-        </div>
-    </div>
-);
+        </>
+    );
 }

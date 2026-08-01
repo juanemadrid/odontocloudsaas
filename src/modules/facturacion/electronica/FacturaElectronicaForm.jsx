@@ -83,7 +83,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
       const { data: snap } = await supabase
         .from("pacientes")
         .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+        .eq("tenant_id", inquilino);
       const all = snap || [];
       const q = term.toLowerCase();
       setPatients(
@@ -177,17 +177,12 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
     setNoCredsWarning(false);
     try {
       // Load tenant credentials
-      const { data: tSnap } = await supabase
-        .from("tenants")
-        .select("*")
-        .eq("id", inquilino)
-        .maybeSingle();
-      const tenantData = tSnap || {};
-      const hasCredentials =
+      const { getFactusCredentialsForTenant } = await import("../../../services/factusAdminService");
+      const tenantData = await getFactusCredentialsForTenant(inquilino) || {};
+      const hasCredentials = Boolean(
         tenantData.factusClientId &&
-        tenantData.factusClientSecret &&
-        tenantData.factusUsername &&
-        tenantData.factusPassword;
+        tenantData.factusClientSecret
+      );
 
       if (!hasCredentials) setNoCredsWarning(true);
 

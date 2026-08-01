@@ -165,10 +165,12 @@ export const createTenant = async (tenantData) => {
 
         if (targetEmail) {
             try {
+                const redirectUrl = `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}`;
                 const { error: signUpError } = await supabase.auth.signUp({
                     email: targetEmail,
                     password: targetPassword,
                     options: {
+                        emailRedirectTo: redirectUrl,
                         data: {
                             full_name: tenantData.name || tenantData.adminName || "Admin Clínica",
                             tenant_id: tenantId,
@@ -352,58 +354,69 @@ export const getPlans = async () => {
 
         const defaultPlans = [
             {
-                id: "plan-basico-cop",
-                name: "Consultorio Básico",
-                description: "Ideal para odontólogos independientes y pequeños consultorios particulares.",
-                maxUsers: 3,
-                monthlyPrice: 89000,
-                yearlyPrice: 890000,
+                id: "consultorio",
+                name: "Consultorio",
+                description: "Ideal para dentistas independientes o consultorios pequeños.",
+                maxUsers: 2,
+                monthlyPrice: 59900,
+                yearlyPrice: 599000,
                 includeFacturacion: false,
                 facturasIncluidas: 0,
                 recommended: false,
                 features: [
-                    "Hasta 3 Usuarios (Odontólogo + Asistentes)",
-                    "Agenda Inteligente con Recordatorios WhatsApp",
-                    "Gestión de Pacientes e Historia Clínica Digital",
-                    "Odontograma 3D Interactivo",
-                    "Control de Citas y Estado de Consultas"
+                    "🌐 Sitio Web Corporativo GRATIS Incluido",
+                    "Agenda inteligente con recordatorios",
+                    "Historia clínica digital ilimitada",
+                    "Gestión de pacientes ilimitada",
+                    "Módulo de pagos y recibos de caja",
+                    "Saldo a favor del paciente",
+                    "Presupuestos y planes de tratamiento",
+                    "Reportes financieros básicos"
                 ]
             },
             {
-                id: "plan-pro-cop",
-                name: "Clínica Profesional",
-                description: "La solución completa preferida por clínicas dentales en crecimiento.",
-                maxUsers: 10,
-                monthlyPrice: 189000,
-                yearlyPrice: 1890000,
+                id: "clinica",
+                name: "Clínica",
+                description: "Para clínicas en crecimiento que necesitan escalar sin pagar más.",
+                maxUsers: 12,
+                monthlyPrice: 99900,
+                yearlyPrice: 1190000,
                 includeFacturacion: true,
-                facturasIncluidas: 400,
+                facturasIncluidas: 500,
                 recommended: true,
                 features: [
-                    "Hasta 10 Usuarios (Odontólogos + Recepción)",
-                    "⚡ Facturación Electrónica DIAN (500 facturas/mes)",
-                    "RIPS y Normativa Minsalud Vigente",
-                    "Control de Inventarios e Insumos Dentales",
-                    "Liquidación y Porcentajes para Odontólogos"
+                    "🌐 Sitio Web Corporativo GRATIS Incluido (CMS)",
+                    "Todo lo del plan Consultorio",
+                    "Múltiples sedes y sucursales incluidas",
+                    "Hasta 12 usuarios activos",
+                    "Historia clínica digital ilimitada",
+                    "Facturación electrónica DIAN (RIPS)",
+                    "Reportes financieros avanzados",
+                    "Soporte directo por WhatsApp"
                 ]
             },
             {
-                id: "plan-enterprise-cop",
-                name: "IPS Enterprise Multi-Sede",
-                description: "Diseñado para redes de clínicas, IPS odontológicas y alta demanda.",
-                maxUsers: 50,
-                monthlyPrice: 349000,
-                yearlyPrice: 3490000,
+                id: "enterprise",
+                name: "Enterprise",
+                description: "Sin límites para redes de clínicas o cadenas odontológicas.",
+                maxUsers: 999,
+                monthlyPrice: 165800,
+                yearlyPrice: 1990000,
                 includeFacturacion: true,
                 facturasIncluidas: 2000,
                 recommended: false,
                 features: [
-                    "Usuarios y Sillas Odontológicas Ampliadas",
-                    "⚡ Facturación Electrónica DIAN (2.000 facturas/mes)",
-                    "Gestión Multi-Sucursal y Multi-Sede",
-                    "Sitio Web Corporativo Personalizado (CMS)",
-                    "Reportes Financieros Avanzados e IA",
-                    "Soporte Técnico Prioritario 24/7"
+                    "🌐 Sitio Web Corporativo GRATIS Personalizado",
+                    "Todo lo del plan Clínica",
+                    "Sedes y sucursales ilimitadas",
+                    "Usuarios ILIMITADOS",
+                    "Roles y permisos avanzados",
+                    "Facturación electrónica DIAN (RIPS)",
+                    "Reportes y analíticas avanzadas",
+                    "API de integración disponible",
+                    "Account Manager personal",
+                    "Soporte prioritario 24/7",
+                    "Migración de datos incluida"
                 ]
             }
         ];

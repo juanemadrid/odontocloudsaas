@@ -37,11 +37,25 @@ export default function Campanas() {
   const loadCampanas = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from("campanas")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-      setCampanas(data || []);
+      let list = [];
+      try {
+        const { data, error } = await supabase
+          .from("campanas")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (!error && data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.campanas || [];
+      }
+
+      setCampanas(list);
     } catch (e) {
       console.error("Error loading campanas:", e);
       toast?.error("Error al cargar campañas");
@@ -71,7 +85,23 @@ export default function Campanas() {
   const handleToggleActivo = async (campana) => {
     try {
       const newStatus = !campana.activo;
-      await supabase.from("campanas").update({ activo: newStatus }).eq("id", campana.id);
+      try {
+        await supabase.from("campanas").update({ activo: newStatus }).eq("id", campana.id);
+      } catch (e) {}
+
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.campanas) ? currentConfig.campanas : [];
+      const updatedList = currentList.map(c => c.id === campana.id ? { ...c, activo: newStatus } : c);
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, campanas: updatedList } },
+        { onConflict: "tenant_id" }
+      );
+
       toast?.success(`Campaña ${newStatus ? "activada" : "inactivada"} con éxito`);
       loadCampanas();
     } catch (e) {
@@ -83,7 +113,23 @@ export default function Campanas() {
   const handleDelete = async (campana) => {
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente la campaña "${campana.nombre}"?`)) return;
     try {
-      await supabase.from("campanas").delete().eq("id", campana.id);
+      try {
+        await supabase.from("campanas").delete().eq("id", campana.id);
+      } catch (e) {}
+
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.campanas) ? currentConfig.campanas : [];
+      const filteredList = currentList.filter(c => c.id !== campana.id);
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, campanas: filteredList } },
+        { onConflict: "tenant_id" }
+      );
+
       toast?.success("Campaña eliminada con éxito");
       loadCampanas();
     } catch (e) {
@@ -98,20 +144,44 @@ export default function Campanas() {
 
     setSaving(true);
     try {
+      const campanaId = editingCampana?.id || (crypto.randomUUID ? crypto.randomUUID() : `camp_${Date.now()}`);
       const dataToSave = {
         ...formData,
+        id: campanaId,
         nombre: formData.nombre.trim(),
         tenant_id: inquilino,
-        inquilino,
         updated_at: new Date().toISOString()
       };
 
+      try {
+        if (editingCampana?.id) {
+          await supabase.from("campanas").update(dataToSave).eq("id", editingCampana.id);
+        } else {
+          dataToSave.created_at = new Date().toISOString();
+          await supabase.from("campanas").insert([dataToSave]);
+        }
+      } catch (e) {}
+
+      // Sincronizar en website_config JSON
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const currentList = Array.isArray(currentConfig.campanas) ? currentConfig.campanas : [];
+      let updatedList;
       if (editingCampana?.id) {
-        await supabase.from("campanas").update(dataToSave).eq("id", editingCampana.id);
+        updatedList = currentList.map(item => item.id === editingCampana.id ? { ...item, ...dataToSave } : item);
       } else {
-        dataToSave.created_at = new Date().toISOString();
-        await supabase.from("campanas").insert([dataToSave]);
+        updatedList = [dataToSave, ...currentList];
       }
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, campanas: updatedList, updatedAt: new Date().toISOString() } },
+        { onConflict: "tenant_id" }
+      );
 
       toast?.success(editingCampana ? "Campaña actualizada correctamente" : "Campaña creada con éxito");
       setViewMode("LIST");

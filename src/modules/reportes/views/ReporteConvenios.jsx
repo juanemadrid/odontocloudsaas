@@ -80,7 +80,7 @@ export default function ReporteConvenios() {
         setPacientesList(listPacs);
 
         // Cargar Planes / Facturas asociadas a Convenios
-        const { data: snapPlanes } = await supabase.from("planes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const { data: snapPlanes } = await supabase.from("treatment_plans").select("*").eq("tenant_id", userProfile.inquilino);
         const listRecords = [];
 
         (snapPlanes || []).forEach(p => {

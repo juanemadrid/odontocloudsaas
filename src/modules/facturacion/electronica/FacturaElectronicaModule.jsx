@@ -69,12 +69,26 @@ export default function FacturaElectronicaModule() {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from("facturas_electronicas")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
-        .order("created_at", { ascending: false });
-      setFacturas(data || []);
+      let list = [];
+      try {
+        const { data } = await supabase
+          .from("facturas_electronicas")
+          .select("*")
+          .eq("tenant_id", inquilino)
+          .order("created_at", { ascending: false });
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.facturas_electronicas || [];
+      }
+
+      setFacturas(list);
     } catch (err) {
       console.error(err);
       toast.error("Error al cargar facturas electrónicas.");
@@ -114,13 +128,13 @@ export default function FacturaElectronicaModule() {
     }
     setDownloadingId(factura.id);
     try {
-      const { data: creds } = await supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle();
-      const tenantCreds = creds || {};
+      const { getFactusCredentialsForTenant } = await import("../../../services/factusAdminService");
+      const tenantCreds = await getFactusCredentialsForTenant(inquilino) || {};
       const token = await factusService.getToken({
         factusClientId: tenantCreds.factusClientId,
         factusClientSecret: tenantCreds.factusClientSecret,
-        factusUsername: tenantCreds.factusUsername,
-        factusPassword: tenantCreds.factusPassword,
+        factusUsername: tenantCreds.factusUsername || tenantCreds.username,
+        factusPassword: tenantCreds.factusPassword || tenantCreds.password,
         factusTestMode: tenantCreds.factusTestMode ?? true,
       });
       const blob = await factusService.downloadInvoicePDF(
@@ -143,10 +157,10 @@ export default function FacturaElectronicaModule() {
   const handleResend = async (factura) => {
     setResendingId(factura.id);
     try {
-      const { data: creds } = await supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle();
-      const tenantCredsData = creds || {};
+      const { getFactusCredentialsForTenant } = await import("../../../services/factusAdminService");
+      const tenantCredsData = await getFactusCredentialsForTenant(inquilino) || {};
 
-      if (!tenantCredsData.factusClientId || !tenantCredsData.factusClientSecret || !tenantCredsData.factusUsername || !tenantCredsData.factusPassword) {
+      if (!tenantCredsData.factusClientId || !tenantCredsData.factusClientSecret) {
         toast.error("No hay credenciales Factus configuradas. Ve a Configuración → Facturación Electrónica.");
         return;
       }

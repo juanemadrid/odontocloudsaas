@@ -74,21 +74,30 @@ export default function Inventario() {
     if (!inquilino) return;
     const loadAlmacenes = async () => {
       try {
-        const { data: list } = await supabase
-          .from("almacenes")
-          .select("*")
-          .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-        let almList = list || [];
+        let almList = [];
+        try {
+          const { data: list } = await supabase
+            .from("almacenes")
+            .select("*")
+            .eq("tenant_id", inquilino);
+          if (list && list.length > 0) almList = list;
+        } catch (e) {}
+
+        if (almList.length === 0) {
+          const { data: cfgRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", inquilino)
+            .maybeSingle();
+          almList = cfgRow?.config?.almacenes || [];
+        }
 
         // Auto-populate default warehouses if empty
         if (almList.length === 0) {
-          const default1 = { nombre: "ALMACÉN PRINCIPAL", tenant_id: inquilino, inquilino, created_at: new Date().toISOString() };
-          const default2 = { nombre: "BODEGA SECUNDARIA", tenant_id: inquilino, inquilino, created_at: new Date().toISOString() };
-          const { data: inserted } = await supabase
-            .from("almacenes")
-            .insert([default1, default2])
-            .select();
-          almList = inserted || [];
+          almList = [
+            { id: `alm_1_${Date.now()}`, nombre: "ALMACÉN PRINCIPAL", tenant_id: inquilino },
+            { id: `alm_2_${Date.now()}`, nombre: "BODEGA SECUNDARIA", tenant_id: inquilino }
+          ];
         }
         setAlmacenes(almList.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         if (almList.length > 0) setTempAlmacenId(almList[0].id);
@@ -104,12 +113,26 @@ export default function Inventario() {
     if (!inquilino) return;
     const loadItems = async () => {
       try {
-        const { data } = await supabase
-          .from("inventario")
-          .select("*")
-          .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
-          .order("nombre", { ascending: true });
-        setItems(data || []);
+        let itemList = [];
+        try {
+          const { data } = await supabase
+            .from("inventario")
+            .select("*")
+            .eq("tenant_id", inquilino)
+            .order("nombre", { ascending: true });
+          if (data && data.length > 0) itemList = data;
+        } catch (e) {}
+
+        if (itemList.length === 0) {
+          const { data: cfgRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", inquilino)
+            .maybeSingle();
+          itemList = cfgRow?.config?.inventario || [];
+        }
+
+        setItems(itemList);
         setLoading(false);
       } catch (err) {
         console.error("Error loading inventory:", err);

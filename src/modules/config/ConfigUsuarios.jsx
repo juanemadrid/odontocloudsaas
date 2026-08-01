@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import { getConfigItems } from "../../services/configPersistenceService";
 import { FiTrash2, FiEdit2 } from "react-icons/fi";
 
 export default function ConfigUsuarios() {
@@ -47,22 +48,21 @@ export default function ConfigUsuarios() {
         try {
             const tenantId = userProfile.inquilino;
 
-            const { data: uSnap } = await supabase
-                .from("usuarios")
-                .select("*")
-                .or(`tenant_id.eq.${tenantId},inquilino.eq.${tenantId}`);
+            const [uRes, pData, sRes, eRes] = await Promise.all([
+                supabase.from("profiles").select("*").eq("tenant_id", tenantId),
+                getConfigItems(tenantId, "perfiles", "perfiles"),
+                supabase.from("sucursales").select("*").eq("tenant_id", tenantId),
+                supabase.from("especialidades").select("*").eq("tenant_id", tenantId)
+            ]);
 
-            const { data: pSnap } = await supabase.from("perfiles").select("*").order("nombre", { ascending: true });
-            const { data: sSnap } = await supabase.from("sucursales").select("*").order("nombre", { ascending: true });
-            const { data: eSnap } = await supabase
-                .from("especialidades")
-                .select("*")
-                .or(`tenant_id.eq.${tenantId},inquilino.eq.${tenantId}`);
-
-            setUsers(uSnap || []);
-            setRolesDisponibles(pSnap || []);
-            setSucursales(sSnap || []);
-            setEspecialidades(eSnap || []);
+            setUsers(uRes.data || []);
+            setRolesDisponibles(pData.length > 0 ? pData : [
+                { id: "admin", nombre: "Administrador" },
+                { id: "doctor", nombre: "Doctor" },
+                { id: "recepcion", nombre: "Recepcionista" }
+            ]);
+            setSucursales(sRes.data || []);
+            setEspecialidades(eRes.data || []);
         } catch (e) {
             console.error(e);
         } finally {
@@ -105,9 +105,13 @@ export default function ConfigUsuarios() {
             let uid = "";
             try {
                 // Create auth user via Supabase (uses admin-level signUp; falls back to generated id)
+                const redirectUrl = `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}`;
                 const { data: authData, error: authErr } = await supabase.auth.signUp({
                     email: formData.email,
                     password: formData.password,
+                    options: {
+                        emailRedirectTo: redirectUrl
+                    }
                 });
                 if (authErr && authErr.message?.includes("already registered")) {
                     alert("Correo ya registrado.");
@@ -179,7 +183,7 @@ export default function ConfigUsuarios() {
         <div className="card shadow-md p-6 bg-white rounded-xl">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-slate-800">Gestión de Usuarios</h2>
-                <button onClick={() => setModalOpen(true)} className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-bold shadow hover:bg-indigo-700">
+                <button onClick={() => setModalOpen(true)} className="bg-blue-600 text-white px-5 py-2 rounded-lg font-bold shadow hover:bg-blue-700">
                     + Nuevo Usuario
                 </button>
             </div>

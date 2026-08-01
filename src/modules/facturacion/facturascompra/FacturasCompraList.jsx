@@ -33,10 +33,23 @@ export default function FacturasCompraList({ onNew }) {
     if (!inquilino) return;
     setLoading(true);
     try {
-      const { data: list } = await supabase
-        .from("facturas_compra")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      let list = [];
+      try {
+        const { data } = await supabase
+          .from("facturas_compra")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (data && data.length > 0) list = data;
+      } catch (e) {}
+
+      if (list.length === 0) {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+        list = cfgRow?.config?.facturas_compra || [];
+      }
 
       const start = parseLocalDate(fechaInicio); start.setHours(0,0,0,0);
       const end = parseLocalDate(fechaFin); end.setHours(23,59,59,999);

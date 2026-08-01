@@ -3,6 +3,7 @@ import supabase from '../../../lib/supabaseClient';
 import { FiSearch, FiPlus, FiX, FiInfo, FiTrash2, FiPercent, FiCheckCircle, FiPlusCircle } from 'react-icons/fi';
 import { useToast } from '../../../context/ToastContext';
 import ToothSelectorModal from './ToothSelectorModal';
+import { CUPS_DENTAL_CODES } from '../../../data/cupsCodes';
 
 export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseListId, inquilino, convenioDescuentos = {} }) {
     const toast = useToast();
@@ -37,42 +38,84 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
     const [loadingAllItems, setLoadingAllItems] = useState(false);
 
     useEffect(() => {
-        if (isOpen && baseListId) {
-            const loadAllItems = async () => {
-                setLoadingAllItems(true);
-                try {
-                    const { data: listData } = await supabase
-                        .from("lista_precios_items")
-                        .select("*")
-                        .eq("lista_id", baseListId);
-                    const list = (listData || []).map(d => ({
-                        id: d.id,
-                        ...d,
-                        amount: d.valor || d.precio || d.amount || 0,
-                        desc: d.nombre || d.descripcion || d.desc || ""
-                    }));
-                    setAllItems(list);
-                    
-                    // Extraer categorías únicas
-                    const cats = list.map(item => item.categoria).filter(c => !!c);
-                    setCategories(['TODAS', ...new Set(cats)]);
-                } catch (e) {
-                    console.error("Error al cargar los ítems de la lista de precios:", e);
-                    toast?.error("Error al cargar los productos");
-                } finally {
-                    setLoadingAllItems(false);
-                }
-            };
-            loadAllItems();
-        } else {
+        if (!isOpen) {
             setAllItems([]);
             setCategories(['TODAS']);
+            return;
         }
+
+        const loadAllItems = async () => {
+            setLoadingAllItems(true);
+            try {
+                let list = [];
+                if (baseListId) {
+                    const { data: listRow } = await supabase
+                        .from("listas_precios")
+                        .select("descripcion")
+                        .eq("id", baseListId)
+                        .maybeSingle();
+
+                    if (listRow?.descripcion) {
+                        try {
+                            const parsed = JSON.parse(listRow.descripcion);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                list = parsed.map((d, idx) => ({
+                                    id: d.id || `item_${idx}`,
+                                    ...d,
+                                    precio: Number(d.precio || d.valor || d.amount || 0),
+                                    amount: Number(d.precio || d.valor || d.amount || 0),
+                                    nombre: d.nombre || d.descripcion || d.desc || "",
+                                    desc: d.nombre || d.descripcion || d.desc || "",
+                                    categoria: d.categoria || "GENERAL"
+                                }));
+                            }
+                        } catch (_) {}
+                    }
+                }
+
+                // FALLBACK: Si no hay ítems en la lista de precios seleccionada o está vacía, usar el catálogo maestro CUPS
+                if (list.length === 0) {
+                    list = CUPS_DENTAL_CODES.map((c, idx) => ({
+                        id: `cups_${c.code}_${idx}`,
+                        codigo: c.code,
+                        nombre: c.name,
+                        desc: c.name,
+                        precio: Number(c.precio || 0),
+                        amount: Number(c.precio || 0),
+                        categoria: c.category || "CATÁLOGO CUPS"
+                    }));
+                }
+
+                setAllItems(list);
+                const cats = list.map(item => item.categoria).filter(Boolean);
+                setCategories(['TODAS', ...new Set(cats)]);
+            } catch (e) {
+                console.error("Error al cargar los ítems de la lista de precios:", e);
+                const list = CUPS_DENTAL_CODES.map((c, idx) => ({
+                    id: `cups_${c.code}_${idx}`,
+                    codigo: c.code,
+                    nombre: c.name,
+                    desc: c.name,
+                    precio: Number(c.precio || 0),
+                    amount: Number(c.precio || 0),
+                    categoria: c.category || "CATÁLOGO CUPS"
+                }));
+                setAllItems(list);
+                setCategories(['TODAS', 'CATÁLOGO CUPS']);
+            } finally {
+                setLoadingAllItems(false);
+            }
+        };
+        loadAllItems();
     }, [isOpen, baseListId]);
 
     const handleSearch = () => {
         if (!searchTerm.trim()) {
-            setSearchResults([]);
+            let results = allItems;
+            if (category !== 'TODAS') {
+                results = results.filter(r => r.categoria === category);
+            }
+            setSearchResults(results.slice(0, 30));
             return;
         }
 
@@ -83,7 +126,6 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
             const codeLower = (item.codigo || "").toLowerCase();
             const categoryLower = (item.categoria || "").toLowerCase();
 
-            // Todas las palabras escritas deben coincidir en el nombre, código o categoría
             return searchWords.every(word => 
                 nameLower.includes(word) || 
                 codeLower.includes(word) || 

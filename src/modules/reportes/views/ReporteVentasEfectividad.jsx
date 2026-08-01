@@ -54,7 +54,7 @@ export default function ReporteVentasEfectividad() {
         });
 
         // Cargar Planes/Presupuestos
-        const { data: snapPlanes } = await supabase.from("planes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        const { data: snapPlanes } = await supabase.from("treatment_plans").select("*").eq("tenant_id", userProfile.inquilino);
 
         (snapPlanes || []).forEach(p => {
           const profId = p.profesionalId || p.odontologoId || p.doctorId || p.profesional;

@@ -153,14 +153,150 @@ export const getFactusAdminStats = async () => {
   }
 };
 
-export const getSucursalQuota = async () => ({
-  facturacionCuota: 0,
-  facturacionUsadas: 0,
-  disponibles: 0
-});
+export const getFactusCredentialsForTenant = async (tenantId) => {
+  try {
+    const tenants = await getTenants();
+    if (Array.isArray(tenants) && tenants.length > 0) {
+      if (tenantId) {
+        const found = tenants.find(t => t.id === tenantId);
+        if (found && found.factusClientId && found.factusClientSecret) {
+          return {
+            factusClientId:         found.factusClientId,
+            factusClientSecret:     found.factusClientSecret,
+            factusUsername:         found.factusUsername,
+            factusPassword:         found.factusPassword,
+            factusTestMode:         found.factusTestMode !== undefined ? found.factusTestMode : true,
+            factusNumberingRangeId: found.factusNumberingRangeId || null,
+          };
+        }
+      }
+
+      // Si no se encuentra el ID exacto o la clínica no tiene credenciales únicas, usar las credenciales registradas activas
+      const anyWithCreds = tenants.find(t => t.factusClientId && t.factusClientSecret);
+      if (anyWithCreds) {
+        return {
+          factusClientId:         anyWithCreds.factusClientId,
+          factusClientSecret:     anyWithCreds.factusClientSecret,
+          factusUsername:         anyWithCreds.factusUsername,
+          factusPassword:         anyWithCreds.factusPassword,
+          factusTestMode:         anyWithCreds.factusTestMode !== undefined ? anyWithCreds.factusTestMode : true,
+          factusNumberingRangeId: anyWithCreds.factusNumberingRangeId || null,
+        };
+      }
+    }
+
+    // Fallback: website_config propio del tenant
+    if (tenantId) {
+      const { data: row } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+
+      const d = row?.config?.facturacion || row?.config || {};
+      if (d.factusClientId && d.factusClientSecret) {
+        return {
+          factusClientId:         d.factusClientId,
+          factusClientSecret:     d.factusClientSecret,
+          factusUsername:         d.factusUsername,
+          factusPassword:         d.factusPassword,
+          factusTestMode:         d.factusTestMode !== undefined ? d.factusTestMode : true,
+          factusNumberingRangeId: d.factusNumberingRangeId || null,
+        };
+      }
+    }
+
+    // Fallback: credenciales centralizadas globales
+    return await getFactusAdminCredentials();
+  } catch (e) {
+    console.error("Error al obtener credenciales de Factus para el inquilino:", e);
+    return await getFactusAdminCredentials();
+  }
+};
+
+export const canTenantEmit = async (tenantId) => {
+  try {
+    const creds = await getFactusCredentialsForTenant(tenantId);
+    if (!creds) return false;
+
+    const tenants = await getTenants();
+    const tenant = tenants.find(t => t.id === tenantId);
+    if (tenant && tenant.facturacionCuota > 0) {
+      const usadas = tenant.facturacionUsadas || 0;
+      if (usadas >= tenant.facturacionCuota) {
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    console.error("Error al verificar cuota del inquilino:", e);
+    return true;
+  }
+};
+
+export const getSucursalQuota = async (sucursalId, tenantId) => {
+  try {
+    const tenants = await getTenants();
+    const tenant = tenants.find(t => t.id === tenantId) || tenants[0];
+    if (tenant) {
+      const cuota = tenant.facturacionCuota || 500;
+      const usadas = tenant.facturacionUsadas || 0;
+      return {
+        facturacionCuota: cuota,
+        facturacionUsadas: usadas,
+        disponibles: Math.max(0, cuota - usadas),
+        facturacionPlan: tenant.planId || "Clínica Profesional"
+      };
+    }
+  } catch (e) {
+    console.error("Error al obtener cuota de sucursal/tenant:", e);
+  }
+  return {
+    facturacionCuota: 500,
+    facturacionUsadas: 0,
+    disponibles: 500,
+    facturacionPlan: "Clínica Profesional"
+  };
+};
+
+export const consumeOneInvoice = async (tenantId) => {
+  try {
+    const { data: existingRow } = await supabase
+      .from("website_config")
+      .select("config")
+      .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+      .maybeSingle();
+
+    const registeredTenants = existingRow?.config?.registered_tenants || [];
+    const updatedTenants = registeredTenants.map(t => {
+      if (t.id === tenantId) {
+        return {
+          ...t,
+          facturacionUsadas: (t.facturacionUsadas || 0) + 1
+        };
+      }
+      return t;
+    });
+
+    await supabase
+      .from("website_config")
+      .upsert({
+        tenant_id: GLOBAL_CONFIG_TENANT_ID,
+        config: {
+          ...(existingRow?.config || {}),
+          registered_tenants: updatedTenants,
+          updatedAt: new Date().toISOString()
+        },
+        updated_at: new Date().toISOString()
+      });
+  } catch (e) {
+    console.error("Error al descontar cuota de factura:", e);
+  }
+};
 
 export const saveTenantFactusConfig = saveClinicFactusConfig;
 export const assignQuotaToTenant = async (tenantId, quota) => {
   return saveClinicFactusConfig(tenantId, { facturacionCuota: quota });
 };
-export const consumeInvoiceQuota = async () => true;
+export const consumeInvoiceQuota = consumeOneInvoice;
+

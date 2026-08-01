@@ -118,7 +118,7 @@ export default function AIInsightsTab({ patient }) {
                 const { data: evos } = await supabase
                     .from("evoluciones")
                     .select("*")
-                    .or(`paciente_id.eq.${patient.id},patientId.eq.${patient.id}`)
+                    .eq("paciente_id", patient.id)
                     .order("created_at", { ascending: false })
                     .limit(3);
                 evolutionsText = (evos || []).map((e, idx) => `Evolución ${idx+1}: ${e.description || e.comentario || ''}`).join('\n');
@@ -239,8 +239,8 @@ export default function AIInsightsTab({ patient }) {
             let odontogramaData = null;
             try { anamnesisData = await getAnamnesis(patient.id); } catch (_) {}
             try {
-                const odoSnap = await getDocs(query(collection(db, 'odontogramas'), where('pacienteId', '==', patient.id), limit(1)));
-                if (!odoSnap.empty) odontogramaData = odoSnap.docs[0].data()?.dientes || odoSnap.docs[0].data();
+                const { data: odoSnap } = await supabase.from('odontogramas').select('data').eq('paciente_id', patient.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+                if (odoSnap?.data) odontogramaData = odoSnap.data;
             } catch (_) {}
 
             const result = await suggestTreatmentPlan(odontogramaData, anamnesisData, patient, key);

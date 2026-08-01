@@ -29,7 +29,7 @@ const STEPS = [
         icon: FiMapPin,
         path: buildDashboardPath('config/sucursales'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("sucursales").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const { data } = await supabase.from("sucursales").select("id").eq("tenant_id", inquilino);
             return data && data.length > 0;
         }
     },
@@ -40,7 +40,7 @@ const STEPS = [
         icon: FiMonitor,
         path: buildDashboardPath('config/recursos-fisicos'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("recursos_fisicos").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const { data } = await supabase.from("consultorios").select("id").eq("tenant_id", inquilino);
             return data && data.length > 0;
         }
     },
@@ -51,7 +51,7 @@ const STEPS = [
         icon: FiAward,
         path: buildDashboardPath('config/especialidades'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("especialidades").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const { data } = await supabase.from("especialidades").select("id").eq("tenant_id", inquilino);
             return data && data.length > 0;
         }
     },
@@ -62,7 +62,7 @@ const STEPS = [
         icon: FiUsers,
         path: buildDashboardPath('config/usuarios'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("usuarios").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const { data } = await supabase.from("usuarios").select("id").eq("tenant_id", inquilino);
             return data && data.length > 1;
         }
     },
@@ -73,7 +73,7 @@ const STEPS = [
         icon: FiList,
         path: buildDashboardPath('config/listas-precios'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("listas_precios").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const { data } = await supabase.from("listas_precios").select("id").eq("tenant_id", inquilino);
             return data && data.length > 0;
         }
     },
@@ -84,7 +84,7 @@ const STEPS = [
         icon: FiFileText,
         path: buildDashboardPath('config/consecutivos'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("consecutivos").select("id").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const { data } = await supabase.from("consecutivos").select("id").eq("tenant_id", inquilino);
             return data && data.length > 0;
         }
     }

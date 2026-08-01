@@ -31,11 +31,25 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
         if (!inquilino) return;
         const loadCatalog = async () => {
             try {
-                const { data: list } = await supabase
-                    .from("medicamentos")
-                    .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-                setMedicamentosList(list || []);
+                let list = [];
+                try {
+                    const { data } = await supabase
+                        .from("medicamentos")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (data && data.length > 0) list = data;
+                } catch (err) {}
+
+                if (list.length === 0) {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inquilino)
+                        .maybeSingle();
+                    list = cfgRow?.config?.medicamentos || [];
+                }
+
+                setMedicamentosList(list);
             } catch (err) {
                 console.error("Error loading medicines catalog:", err);
             }
@@ -49,11 +63,26 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
         const loadPlan = async () => {
             setLoading(true);
             try {
-                const { data } = await supabase
-                    .from("planes_formulacion")
-                    .select("*")
-                    .eq("id", id)
-                    .maybeSingle();
+                let data = null;
+                try {
+                    const { data: dbData } = await supabase
+                        .from("planes_formulacion")
+                        .select("*")
+                        .eq("id", id)
+                        .maybeSingle();
+                    data = dbData;
+                } catch (e) {}
+
+                if (!data) {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inquilino)
+                        .maybeSingle();
+                    const list = cfgRow?.config?.planes_formulacion || [];
+                    data = list.find(p => p.id === id);
+                }
+
                 if (data) {
                     setNombre(data.nombre || "");
                     setDescripcion(data.descripcion || "");
@@ -67,7 +96,7 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
             }
         };
         loadPlan();
-    }, [id]);
+    }, [id, inquilino]);
 
     // Autocomplete filter
     const suggestedMeds = searchMedText.trim()
@@ -163,7 +192,9 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
         setError("");
 
         try {
+            const planId = id || (crypto.randomUUID ? crypto.randomUUID() : `pf_${Date.now()}`);
             const planData = {
+                id: planId,
                 nombre: nombre.trim(),
                 descripcion: descripcion.trim(),
                 medicamentos: planMeds.map(m => ({
@@ -180,20 +211,40 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
                     marca: (m.marca || "").trim()
                 })),
                 tenant_id: inquilino,
-                inquilino,
                 updated_at: new Date().toISOString()
             };
 
+            try {
+                if (id) {
+                    await supabase.from("planes_formulacion").update(planData).eq("id", id);
+                } else {
+                    planData.created_at = new Date().toISOString();
+                    await supabase.from("planes_formulacion").insert([planData]);
+                }
+            } catch (err) {}
+
+            // Sincronizar en website_config
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", inquilino)
+                .maybeSingle();
+
+            const currentConfig = cfgRow?.config || {};
+            const currentList = Array.isArray(currentConfig.planes_formulacion) ? currentConfig.planes_formulacion : [];
+            let updatedList;
             if (id) {
-                await supabase.from("planes_formulacion").update(planData).eq("id", id);
-                toast.success("Plan de formulación actualizado correctamente");
+                updatedList = currentList.map(item => item.id === id ? { ...item, ...planData } : item);
             } else {
-                await supabase.from("planes_formulacion").insert([{
-                    ...planData,
-                    created_at: new Date().toISOString()
-                }]);
-                toast.success("Plan de formulación creado correctamente");
+                updatedList = [planData, ...currentList];
             }
+
+            await supabase.from("website_config").upsert(
+                { tenant_id: inquilino, config: { ...currentConfig, planes_formulacion: updatedList } },
+                { onConflict: "tenant_id" }
+            );
+
+            toast.success(id ? "Plan de formulación actualizado correctamente" : "Plan de formulación creado correctamente");
             if (onSuccess) onSuccess();
         } catch (err) {
             console.error("Error saving formulation plan:", err);

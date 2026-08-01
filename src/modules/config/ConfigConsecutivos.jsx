@@ -29,7 +29,7 @@ export default function ConfigConsecutivos() {
         
         setLoading(true);
         try {
-            const { data } = await supabase.from("consecutivos").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+            const { data } = await supabase.from("consecutivos").select("*").eq("tenant_id", userProfile.inquilino);
             const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", undefined, { sensitivity: "base" }));
             setConsecutivos(sorted);
         } catch (error) {

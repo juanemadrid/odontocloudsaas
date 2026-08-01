@@ -10,18 +10,16 @@ import { FaWhatsapp } from "react-icons/fa";
 import "../styles/modern.css";
 
 
+import { fetchTenantConfigBySlug } from "../utils/tenantConfigHelper";
+
 export default function ModernLayout() {
     const { pathname } = useLocation();
     const { clinicSlug } = useParams();
     const { userProfile } = useAuth();
 
-    const masterRoutes = ['/', '/nosotros', '/servicios', '/sedes', '/planes', '/faq'];
-    const isMaster = masterRoutes.includes(pathname) || pathname.startsWith('/funcionalidades/');
+    const isMaster = !clinicSlug && !pathname.startsWith('/c/');
 
-    const [config, setConfig] = useState(isMaster ? MASTER_CONFIG : {
-        ...DEFAULT_CONFIG,
-        name: "OdontoCloud"
-    });
+    const [config, setConfig] = useState(isMaster ? MASTER_CONFIG : DEFAULT_CONFIG);
 
     useEffect(() => {
         if (isMaster) {
@@ -29,42 +27,24 @@ export default function ModernLayout() {
             return;
         }
 
-        const safetyTimer = setTimeout(() => {
-            console.warn("⚠️ Layout Data Timeout - Forcing Default");
-            setConfig(prev => ({ ...prev, name: "OdontoCloud (Offline Mode)" }));
-        }, 3000);
-
+        let isMounted = true;
         const loadData = async () => {
             try {
-                if (clinicSlug) {
-                    const { data: tenantData } = await supabase.from("tenants").select("*").eq("slug", clinicSlug).maybeSingle();
-                    if (tenantData) {
-                        const inquilino = tenantData.id;
-                        const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle();
-                        if (webSnap?.config) {
-                            setConfig({ ...DEFAULT_CONFIG, ...webSnap.config, name: tenantData.nombre || tenantData.name, slug: clinicSlug });
-                        } else {
-                            setConfig({ ...DEFAULT_CONFIG, name: tenantData.nombre || tenantData.name, slug: clinicSlug });
-                        }
-                    }
-                } else {
-                    const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", "general").maybeSingle();
-                    if (webSnap?.config) {
-                        setConfig((prev) => ({ ...prev, ...webSnap.config }));
-                    }
+                const fetchedConfig = await fetchTenantConfigBySlug(clinicSlug || "atm", false);
+                if (isMounted && fetchedConfig) {
+                    setConfig(fetchedConfig);
                 }
             } catch (e) {
                 console.error("Error loading Layout Config:", e);
-            } finally {
-                clearTimeout(safetyTimer);
             }
         };
         loadData();
+        return () => { isMounted = false; };
     }, [isMaster, clinicSlug]);
 
-    const displayConfig = {
+    const displayConfig = isMaster ? MASTER_CONFIG : {
         ...config,
-        name: userProfile?.tenant?.name || config.name || "OdontoCloud"
+        name: config.name || userProfile?.tenant?.name || "Clínica Dental"
     };
 
     // Header styling: Use clean, crisp light mode navigation

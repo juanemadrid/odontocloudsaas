@@ -74,7 +74,7 @@ export default function CmsPreview() {
         <div className="min-h-screen bg-white">
             <VivaHeader config={config} isPreview={true} />
             <div className="p-0">
-                <ModernLanding previewConfig={config} isMaster={isMaster} activeTab={activeTab} />
+                <ModernLanding previewConfig={{ ...config, isMaster }} isMaster={isMaster} activeTab={activeTab} />
             </div>
             <VivaFooter config={{ ...config, isMaster: isMaster }} isPreview={true} />
         </div>

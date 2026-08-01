@@ -19,10 +19,12 @@ export const registerTrialClinic = async ({ adminEmail, adminPassword, adminName
 
         if (tenantErr) throw tenantErr;
 
+        const redirectUrl = `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}`;
         const { data: authData, error: authErr } = await supabase.auth.signUp({
             email: adminEmail.trim(),
             password: adminPassword,
             options: {
+                emailRedirectTo: redirectUrl,
                 data: {
                     full_name: adminName,
                     tenant_id: tenant.id

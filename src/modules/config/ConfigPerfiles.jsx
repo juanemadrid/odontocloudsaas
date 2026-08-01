@@ -251,7 +251,7 @@ export default function ConfigPerfiles() {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const list = await getConfigItems(inquilino, "perfiles", "perfiles");
+            const list = await getConfigItems(inquilino, "perfiles", null);
             const sortedList = (list || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
             setProfiles(sortedList);
         } catch (e) {
@@ -268,7 +268,7 @@ export default function ConfigPerfiles() {
     const handleDelete = async (profile) => {
         if (!window.confirm(`⚠️ ¿Eliminar perfil "${profile.nombre}"?`)) return;
         try {
-            await deleteConfigItem(inquilino, "perfiles", "perfiles", profile.id);
+            await deleteConfigItem(inquilino, "perfiles", null, profile.id);
             setProfiles(prev => prev.filter(p => p.id !== profile.id));
             if (toast?.success) toast.success("Perfil eliminado correctamente");
         } catch (e) {
@@ -321,7 +321,7 @@ export default function ConfigPerfiles() {
 
                     <button
                         onClick={() => setEditingId("new")}
-                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
                     >
                         <FiPlus size={16} />
                         <span>Nuevo Perfil</span>
@@ -475,7 +475,7 @@ function EditorPerfil({ profileId, existingProfile, onBack, permissionMap, inqui
                 nombre: nombre.trim(),
                 permisos: perms
             };
-            await saveConfigItem(inquilino, "perfiles", "perfiles", itemData);
+            await saveConfigItem(inquilino, "perfiles", null, itemData);
             if (toast?.success) toast.success("Perfil guardado correctamente en Supabase");
             onBack();
         } catch (e) {

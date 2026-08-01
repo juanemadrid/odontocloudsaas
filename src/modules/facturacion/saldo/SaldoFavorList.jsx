@@ -28,7 +28,7 @@ const formatDateOnly = (dObj) => {
 export default function SaldoFavorList({ onNew }) {
     const navigate = useNavigate();
     const { userProfile } = useAuth();
-    const inquilino = userProfile?.inquilino || "";
+    const inquilino = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || userProfile?.tenant?.inquilino || userProfile?.tenant?.id || "";
 
     const [loading, setLoading] = useState(true);
     const [pagos, setPagos] = useState([]);
@@ -50,12 +50,31 @@ export default function SaldoFavorList({ onNew }) {
         return () => document.removeEventListener("click", handleClickOutside);
     }, []);
 
+    const isNotAnulado = (p) => {
+        const estadoStr = (p.estado || "").toLowerCase();
+        const refStr = (p.referencia || "").toUpperCase();
+        const notesStr = (p.notas || p.notes || "").toUpperCase();
+        return estadoStr !== "anulado" && !refStr.includes("ANULADO") && !notesStr.includes("ANULADO");
+    };
+
+    const isCreditTopUp = (p) => {
+        const ref = (p.referencia || p.concepto || "").toUpperCase();
+        const notes = (p.notas || p.notes || "").toUpperCase();
+        const method = (p.metodo || p.medio || "").toLowerCase();
+        return method !== "saldo a favor" && (ref === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR")) && isNotAnulado(p);
+    };
+
+    const isCreditUsed = (p) => {
+        const m = (p.metodo || p.medio || "").toLowerCase();
+        return m === "saldo a favor" && isNotAnulado(p);
+    };
+
     const filteredTerceros = useMemo(() => {
         if (!searchTermTercero.trim()) return pacientes.slice(0, 50);
         const q = searchTermTercero.toLowerCase();
         return pacientes.filter(p => {
             const name = (p.nombreCompleto || `${p.nombres || ""} ${p.apellidos || ""}`).toLowerCase();
-            const doc = (p.nroDocumento || p.cedula || "").toLowerCase();
+            const doc = (p.documento || p.nroDocumento || p.nro_documento || p.cedula || p.identificacion || "").toLowerCase();
             return name.includes(q) || doc.includes(q);
         });
     }, [pacientes, searchTermTercero]);
@@ -64,16 +83,29 @@ export default function SaldoFavorList({ onNew }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const { data: pList } = await supabase
-                .from("pagos")
-                .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
-            setPagos(pList || []);
+            let pList = [];
+            try {
+                const { data } = await supabase
+                    .from("pagos")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (data && data.length > 0) pList = data;
+            } catch (e) {}
+
+            if (pList.length === 0) {
+                const { data: cfgRow } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", inquilino)
+                    .maybeSingle();
+                pList = cfgRow?.config?.pagos || [];
+            }
+            setPagos(pList);
 
             const { data: pacList } = await supabase
                 .from("pacientes")
                 .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                .eq("tenant_id", inquilino);
             setPacientes(pacList || []);
         } catch (e) {
             console.error("Error loading credit balances:", e);
@@ -89,30 +121,33 @@ export default function SaldoFavorList({ onNew }) {
     // Aggregate credit balance per patient
     const creditBalances = useMemo(() => {
         return pacientes.map(pac => {
-            const pacPayments = pagos.filter(p => (p.pacienteId === pac.id || p.patientId === pac.id) && p.estado !== "Anulado");
+            const pacPayments = pagos.filter(p => 
+                (p.paciente_id === pac.id || p.pacienteId === pac.id || p.patient_id === pac.id || p.patientId === pac.id) && 
+                isNotAnulado(p)
+            );
             
             // Total credit added
             const totalCredits = pacPayments
-                .filter(p => p.concepto === "SALDO A FAVOR")
+                .filter(p => isCreditTopUp(p))
                 .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
             // Total credit used
             const usedCredits = pacPayments
-                .filter(p => p.medio === "Saldo a favor")
+                .filter(p => isCreditUsed(p))
                 .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
-            // Available credit
-            const availableCredit = Math.max(0, totalCredits - usedCredits);
+            // Available credit (takes into account patient profile saldo_favor and total topup payments)
+            const patientSaldoFavor = Number(pac.saldo_favor || pac.saldoFavor || 0);
+            const availableCredit = Math.max(0, Math.max(patientSaldoFavor, totalCredits) - usedCredits);
 
             // Get date of the latest credit top-up
             const creditDates = pacPayments
-                .filter(p => p.concepto === "SALDO A FAVOR")
-                .map(p => p.fecha || p.createdAt)
+                .filter(p => isCreditTopUp(p))
+                .map(p => p.fecha || p.createdAt || p.created_at)
                 .filter(Boolean);
             
             let latestDate = null;
             if (creditDates.length > 0) {
-                // Find latest timestamp
                 latestDate = creditDates.reduce((latest, current) => {
                     const timeL = latest.seconds || new Date(latest).getTime() / 1000;
                     const timeC = current.seconds || new Date(current).getTime() / 1000;
@@ -123,7 +158,7 @@ export default function SaldoFavorList({ onNew }) {
             return {
                 id: pac.id,
                 nombre: pac.nombreCompleto || `${pac.nombres || ""} ${pac.apellidos || ""}`.trim(),
-                documento: pac.nroDocumento || pac.cedula || "—",
+                documento: pac.documento || pac.nroDocumento || pac.nro_documento || pac.cedula || pac.identificacion || "—",
                 fecha: latestDate,
                 valorDisponible: availableCredit,
                 valorUsado: usedCredits,
@@ -166,38 +201,76 @@ export default function SaldoFavorList({ onNew }) {
     // Reactive calculations for selected patient in detailed view
     const selectedTotals = useMemo(() => {
         if (!selectedPaciente) return { disponible: 0, usado: 0, total: 0 };
-        const pacPayments = pagos.filter(p => (p.pacienteId === selectedPaciente.id || p.patientId === selectedPaciente.id) && p.estado !== "Anulado");
+        const pacPayments = pagos.filter(p => 
+            (p.paciente_id === selectedPaciente.id || p.pacienteId === selectedPaciente.id || p.patient_id === selectedPaciente.id || p.patientId === selectedPaciente.id) && 
+            isNotAnulado(p)
+        );
         
         const total = pacPayments
-            .filter(p => p.concepto === "SALDO A FAVOR")
+            .filter(p => isCreditTopUp(p))
             .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
         const usado = pacPayments
-            .filter(p => p.medio === "Saldo a favor")
+            .filter(p => isCreditUsed(p))
             .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
-        const disponible = Math.max(0, total - usado);
-        return { disponible, usado, total };
+        const patientSaldoFavor = Number(selectedPaciente.saldo_favor || selectedPaciente.saldoFavor || 0);
+        const totalBase = Math.max(patientSaldoFavor, total);
+        const disponible = Math.max(0, totalBase - usado);
+        return { disponible, usado, total: totalBase };
     }, [selectedPaciente, pagos]);
 
     const selectedMovements = useMemo(() => {
-        if (!selectedPaciente) return [];
-        const pacPayments = pagos.filter(p => (p.pacienteId === selectedPaciente.id || p.patientId === selectedPaciente.id));
+        let listPayments = pagos;
+
+        if (selectedPaciente) {
+            listPayments = pagos.filter(p => 
+                p.paciente_id === selectedPaciente.id || 
+                p.pacienteId === selectedPaciente.id || 
+                p.patient_id === selectedPaciente.id || 
+                p.patientId === selectedPaciente.id
+            );
+        }
+
+        const creditPayments = listPayments.filter(p => {
+            const ref = (p.referencia || p.concepto || "").toUpperCase();
+            const notes = (p.notas || p.notes || "").toUpperCase();
+            const m = (p.metodo || p.medio || "").toLowerCase();
+            return ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR") || m === "saldo a favor" || !isNotAnulado(p);
+        });
         
-        const list = pacPayments.map(p => {
-            const isTopUp = p.concepto === "SALDO A FAVOR";
+        const list = creditPayments.map(p => {
+            const isTopUp = isCreditTopUp(p);
+            const isVoid = !isNotAnulado(p);
+            const motivo = p.motivoAnulacion || p.motivo_anulacion || (p.notas && p.notas.includes("ANULADO") ? p.notas.replace(/^ANULADO\s*-\s*/i, "") : "");
+            
+            const pId = p.paciente_id || p.pacienteId || p.patient_id || p.patientId;
+            const pacObj = pacientes.find(pac => pac.id === pId);
+            const pacName = p.paciente_nombre || p.pacienteNombre || (pacObj ? (pacObj.nombreCompleto || `${pacObj.nombres || ""} ${pacObj.apellidos || ""}`).trim() : "Tercero");
+
             return {
                 id: p.id,
-                fecha: p.fecha || p.createdAt,
+                fecha: p.fecha || p.createdAt || p.created_at,
+                tercero: pacName,
                 tipoMovimiento: isTopUp ? "Abono a saldo a favor" : "Consumo s. a favor",
-                valor: p.monto || 0,
+                valor: Number(p.monto || 0),
                 tipoDocumento: isTopUp ? "Recibo de saldo" : "Recibo de caja",
-                documento: p.nroConsecutivo || "S/N",
-                planTratamiento: p.planTitle || "—",
-                estado: p.estado || "Activo",
+                documento: p.nroConsecutivo || p.referencia || "S/N",
+                planTratamiento: p.planTitle || p.notas || "—",
+                estado: isVoid ? "Anulado" : "Activo",
+                motivoAnulacion: motivo,
                 pagoOriginal: p
             };
         });
+
+        if (searchTermTercero.trim()) {
+            const q = searchTermTercero.toLowerCase();
+            return list.filter(m => 
+                (m.tercero || "").toLowerCase().includes(q) ||
+                (m.planTratamiento || "").toLowerCase().includes(q) ||
+                (m.motivoAnulacion || "").toLowerCase().includes(q)
+            );
+        }
 
         list.sort((a, b) => {
             const timeA = a.fecha?.seconds || new Date(a.fecha).getTime() / 1000;
@@ -206,7 +279,7 @@ export default function SaldoFavorList({ onNew }) {
         });
 
         return list;
-    }, [selectedPaciente, pagos]);
+    }, [selectedPaciente, pagos, pacientes, searchTermTercero]);
 
     const handlePrint = async (pago) => {
         try {
@@ -235,83 +308,65 @@ export default function SaldoFavorList({ onNew }) {
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
+        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4 animate-in fade-in duration-300">
 
-            {/* Filter Toggle Cards */}
-            <div className="bg-white p-8 rounded-[28px] border border-slate-100 shadow-sm flex flex-col gap-6 max-w-xl">
-                
-                {/* Toggle 1: Detalle movimientos */}
-                <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-slate-500 uppercase tracking-widest text-right w-44">
-                        Detalle de movimientos por tercero
-                    </span>
+            {/* Top Bar: Header & Main Action */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                <div>
+                    <h2 className="text-base font-bold text-slate-800 tracking-tight">Saldo a Favor</h2>
+                    <p className="text-xs text-slate-500 font-medium">Gestión y control de saldos a favor de terceros y pacientes</p>
+                </div>
+                {/* Only show button when rendered standalone (not from FacturacionHub which already has it in toolbar) */}
+                {!onNew && (
                     <button
                         type="button"
-                        onClick={() => {
-                            setDetalleMovimientos(!detalleMovimientos);
-                            setSelectedPaciente(null);
-                        }}
-                        className={`w-14 h-8 flex items-center rounded-full p-1 transition-all duration-300 ${
-                            detalleMovimientos ? "bg-[#8cc33f]" : "bg-slate-200"
-                        }`}
+                        onClick={() => navigate(buildDashboardPath("facturacion/saldo/nuevo"))}
+                        className="h-9 px-4 bg-[#8cc33f] text-white rounded-lg text-xs font-bold hover:bg-[#7db02b] shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                     >
-                        <div
-                            className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-all duration-300 ${
-                                detalleMovimientos ? "translate-x-6" : "translate-x-0"
-                            }`}
-                        />
+                        <FiPlus size={16} />
+                        <span>Nuevo Saldo a Favor</span>
                     </button>
-                </div>
-
-                {/* Toggle 2: ¿Con saldo? */}
-                {!detalleMovimientos && (
-                    <div className="flex items-center justify-between animate-fadeIn">
-                        <span className="text-xs font-extrabold text-slate-500 uppercase tracking-widest text-right w-44">
-                            ¿Con saldo?
-                        </span>
-                        <button
-                            type="button"
-                            onClick={() => setConSaldo(!conSaldo)}
-                            className={`w-14 h-8 flex items-center rounded-full p-1 transition-all duration-300 ${
-                                conSaldo ? "bg-[#8cc33f]" : "bg-slate-200"
-                            }`}
-                        >
-                            <div
-                                className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-all duration-300 ${
-                                    conSaldo ? "translate-x-6" : "translate-x-0"
-                                }`}
-                            />
-                        </button>
-                    </div>
                 )}
-
             </div>
 
-            {/* Selector and Financial stats for detailed view */}
-            {detalleMovimientos ? (
-                <div className="bg-white p-8 rounded-[28px] border border-slate-100 shadow-sm flex flex-col gap-6 max-w-xl animate-fadeIn">
-                    <div className="flex flex-col gap-2 relative" onClick={e => e.stopPropagation()}>
-                        <label className="text-xs font-extrabold text-slate-500 uppercase tracking-widest">Tercero *</label>
+            {/* Filter & Toolbar Card */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+                
+                {/* Search Bar */}
+                {!detalleMovimientos ? (
+                    <div className="relative flex-1 max-w-sm">
+                        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                        <input 
+                            type="text" 
+                            placeholder="Buscar por tercero o documento..."
+                            className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                ) : (
+                    <div className="flex-1 max-w-md relative" onClick={e => e.stopPropagation()}>
                         {selectedPaciente ? (
-                            <div className="flex items-center gap-3 w-full h-11 px-4 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700">
-                                <FiUser className="text-slate-400 shrink-0" />
+                            <div className="flex items-center gap-2 w-full h-9 px-3 border border-slate-200 rounded-lg bg-slate-50 text-xs font-semibold text-slate-700">
+                                <FiUser className="text-slate-400 shrink-0" size={14} />
                                 <span className="flex-1 truncate uppercase">
-                                    {(selectedPaciente.nombreCompleto || `${selectedPaciente.nombres || ""} ${selectedPaciente.apellidos || ""}`).trim()} (CC: {selectedPaciente.nroDocumento || selectedPaciente.cedula || ""})
+                                    {(selectedPaciente.nombreCompleto || `${selectedPaciente.nombres || ""} ${selectedPaciente.apellidos || ""}`).trim()} (CC: {selectedPaciente.documento || selectedPaciente.nroDocumento || selectedPaciente.nro_documento || selectedPaciente.cedula || selectedPaciente.identificacion || "—"})
                                 </span>
                                 <button
                                     type="button"
                                     onClick={() => setSelectedPaciente(null)}
-                                    className="text-xs font-black text-rose-500 hover:text-rose-700 uppercase tracking-wider bg-white border border-slate-200 px-3 py-1 rounded-lg shadow-sm"
+                                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-xs"
                                 >
                                     Cambiar
                                 </button>
                             </div>
                         ) : (
                             <div className="relative">
+                                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                                 <input
                                     type="text"
-                                    placeholder="Escriba nombre o cédula para buscar..."
-                                    className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all"
+                                    placeholder="Buscar tercero por nombre o cédula..."
+                                    className="w-full h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
                                     value={searchTermTercero}
                                     onChange={(e) => {
                                         setSearchTermTercero(e.target.value);
@@ -320,9 +375,9 @@ export default function SaldoFavorList({ onNew }) {
                                     onFocus={() => setShowTerceroDropdown(true)}
                                 />
                                 {showTerceroDropdown && (
-                                    <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-50">
+                                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto divide-y divide-slate-100">
                                         {filteredTerceros.length === 0 ? (
-                                            <div className="px-4 py-3 text-xs text-slate-400 italic">No se encontraron resultados</div>
+                                            <div className="px-3 py-2 text-xs text-slate-400 italic">No se encontraron resultados</div>
                                         ) : (
                                             filteredTerceros.map(p => (
                                                 <button
@@ -333,12 +388,12 @@ export default function SaldoFavorList({ onNew }) {
                                                         setSearchTermTercero("");
                                                         setShowTerceroDropdown(false);
                                                     }}
-                                                    className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                                                    className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
                                                 >
-                                                    <span className="text-xs font-black text-slate-800 uppercase">
+                                                    <span className="text-xs font-bold text-slate-800 uppercase">
                                                         {(p.nombreCompleto || `${p.nombres || ""} ${p.apellidos || ""}`).trim()}
                                                     </span>
-                                                    <span className="text-[10px] text-slate-400 font-bold">CC: {p.nroDocumento || p.cedula || "—"}</span>
+                                                    <span className="text-[10px] text-slate-500 font-mono">CC: {p.documento || p.nroDocumento || p.nro_documento || p.cedula || p.identificacion || "—"}</span>
                                                 </button>
                                             ))
                                         )}
@@ -347,179 +402,192 @@ export default function SaldoFavorList({ onNew }) {
                             </div>
                         )}
                     </div>
+                )}
 
-                    {selectedPaciente && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4 animate-fadeIn">
-                            <div className="flex flex-col bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Saldo total</span>
-                                <span className="text-lg font-black text-slate-800 font-mono">{fmt(selectedTotals.total)}</span>
-                            </div>
-                            <div className="flex flex-col bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Saldo usado</span>
-                                <span className="text-lg font-black text-rose-500 font-mono">{fmt(selectedTotals.usado)}</span>
-                            </div>
-                            <div className="flex flex-col bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Saldo a favor</span>
-                                <span className="text-lg font-black text-emerald-600 font-mono">{fmt(selectedTotals.disponible)}</span>
-                            </div>
-                        </div>
+                {/* Compact Toggle Controls */}
+                <div className="flex items-center gap-5">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                        <input
+                            type="checkbox"
+                            checked={detalleMovimientos}
+                            onChange={() => {
+                                setDetalleMovimientos(!detalleMovimientos);
+                                setSelectedPaciente(null);
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                        />
+                        <span>Detalle de movimientos</span>
+                    </label>
+
+                    {!detalleMovimientos && (
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                            <input
+                                type="checkbox"
+                                checked={conSaldo}
+                                onChange={() => setConSaldo(!conSaldo)}
+                                className="w-4 h-4 text-[#8cc33f] rounded border-slate-300 focus:ring-[#8cc33f]"
+                            />
+                            <span>Solo con saldo disponible</span>
+                        </label>
                     )}
                 </div>
-            ) : (
-                /* Search Input */
-                <div className="bg-white p-4 rounded-[20px] border border-slate-100 shadow-sm max-w-md animate-fadeIn">
-                    <div className="relative">
-                        <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input 
-                            type="text" 
-                            placeholder="Buscar por tercero o documento..."
-                            className="w-full h-10 pl-11 pr-4 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
+
+            </div>
+
+            {/* Selected Patient Stats in Detailed View */}
+            {detalleMovimientos && selectedPaciente && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 animate-fadeIn">
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Saldo Total</span>
+                        <span className="text-sm font-bold text-slate-800 font-mono">{fmt(selectedTotals.total)}</span>
+                    </div>
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Saldo Usado</span>
+                        <span className="text-sm font-bold text-rose-600 font-mono">{fmt(selectedTotals.usado)}</span>
+                    </div>
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Saldo Disponible</span>
+                        <span className="text-sm font-bold text-emerald-600 font-mono">{fmt(selectedTotals.disponible)}</span>
                     </div>
                 </div>
             )}
 
-            {/* Balances Table */}
-            <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
+            {/* Balances Data Table */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                                 {detalleMovimientos ? (
                                     <>
-                                        <th className="px-6 py-4 pl-8">Fecha</th>
-                                        <th className="px-6 py-4">Tipo de movimiento</th>
-                                        <th className="px-6 py-4 text-right">Valor</th>
-                                        <th className="px-6 py-4">Tipo documento</th>
-                                        <th className="px-6 py-4">Documento</th>
-                                        <th className="px-6 py-4">F. de trat</th>
-                                        <th className="px-6 py-4">Estado</th>
-                                        <th className="px-6 py-4 text-center pr-8 w-24">Acciones</th>
+                                        <th className="py-3 px-4">Fecha</th>
+                                        <th className="py-3 px-4">Tipo Movimiento</th>
+                                        <th className="py-3 px-4 text-right">Valor</th>
+                                        <th className="py-3 px-4">Tipo Documento</th>
+                                        <th className="py-3 px-4">Documento</th>
+                                        <th className="py-3 px-4">Plan Tratamiento</th>
+                                        <th className="py-3 px-4">Estado</th>
+                                        <th className="py-3 px-4 text-center w-20">Acciones</th>
                                     </>
                                 ) : (
                                     <>
-                                        <th className="px-6 py-4 pl-8">Fecha</th>
-                                        <th className="px-6 py-4">Tercero</th>
-                                        <th className="px-6 py-4">Documento</th>
-                                        <th className="px-6 py-4 text-right">Valor disponible</th>
-                                        <th className="px-6 py-4 text-right">Valor usado</th>
-                                        <th className="px-6 py-4 text-right">Valor total</th>
-                                        <th className="px-6 py-4 text-center pr-8 w-24">Acciones</th>
+                                        <th className="py-3 px-4">Fecha</th>
+                                        <th className="py-3 px-4">Tercero</th>
+                                        <th className="py-3 px-4">Documento</th>
+                                        <th className="py-3 px-4 text-right">Valor Disponible</th>
+                                        <th className="py-3 px-4 text-right">Valor Usado</th>
+                                        <th className="py-3 px-4 text-right">Valor Total</th>
+                                        <th className="py-3 px-4 text-center w-20">Acciones</th>
                                     </>
                                 )}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
+                        <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={detalleMovimientos ? 8 : 7} className="px-8 py-20 text-center">
-                                        <div className="flex flex-col items-center gap-4">
-                                            <div className="w-10 h-10 border-4 border-[#8cc33f] border-t-transparent rounded-full animate-spin" />
-                                            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Cargando saldos...</span>
+                                    <td colSpan={detalleMovimientos ? 8 : 7} className="py-12 text-center">
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="w-6 h-6 border-2 border-[#8cc33f] border-t-transparent rounded-full animate-spin" />
+                                            <span className="text-xs font-bold text-slate-400">Cargando saldos...</span>
                                         </div>
                                     </td>
                                 </tr>
                             ) : detalleMovimientos ? (
-                                // Detailed Patient View
-                                !selectedPaciente ? (
+                                selectedMovements.length === 0 ? (
                                     <tr>
-                                        <td colSpan="8" className="px-8 py-20 text-center text-slate-400 italic">
-                                            Seleccione un tercero para ver el detalle de movimientos.
-                                        </td>
-                                    </tr>
-                                ) : selectedMovements.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="8" className="px-8 py-20 text-center text-slate-400 italic">
-                                            No se registran movimientos para el tercero seleccionado.
+                                        <td colSpan="8" className="py-12 text-center text-slate-400 italic">
+                                            No se registran movimientos de saldo a favor.
                                         </td>
                                     </tr>
                                 ) : (
                                     selectedMovements.map(mov => (
-                                        <tr key={mov.id} className="hover:bg-slate-50/30 transition-colors">
-                                            <td className="px-6 py-4 pl-8 font-semibold text-slate-500">
+                                        <tr key={mov.id} className="hover:bg-slate-50/60 transition-colors">
+                                            <td className="py-2.5 px-4 font-medium text-slate-500">
                                                 {formatDateOnly(mov.fecha)}
                                             </td>
-                                            <td className="px-6 py-4 font-bold text-slate-800 uppercase tracking-tight">
+                                            <td className="py-2.5 px-4 font-semibold text-slate-800 uppercase">
                                                 {mov.tipoMovimiento}
                                             </td>
-                                            <td className={`px-6 py-4 text-right font-black font-mono ${mov.tipoMovimiento.includes("Abono") ? "text-emerald-600" : "text-rose-500"}`}>
+                                            <td className={`py-2.5 px-4 text-right font-bold font-mono ${mov.tipoMovimiento.includes("Abono") ? "text-emerald-600" : "text-rose-600"}`}>
                                                 {fmt(mov.valor)}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-500 font-semibold uppercase">
+                                            <td className="py-2.5 px-4 text-slate-500 font-medium uppercase">
                                                 {mov.tipoDocumento}
                                             </td>
-                                            <td className="px-6 py-4 font-bold text-slate-500">
-                                                # {mov.documento}
+                                            <td className="py-2.5 px-4 font-mono font-bold text-slate-600">
+                                                #{mov.documento}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-500 font-semibold uppercase">
-                                                {mov.planTratamiento}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${mov.estado === "Anulado" ? "bg-rose-50 text-rose-500" : "bg-emerald-50 text-emerald-600"}`}>
+                                             <td className="py-2.5 px-4 text-slate-600 font-medium">
+                                                 <div>{mov.planTratamiento}</div>
+                                                 {mov.estado === "Anulado" && mov.motivoAnulacion && (
+                                                     <div className="text-[10px] font-semibold text-rose-600 italic mt-0.5">
+                                                         ⚠️ Motivo: {mov.motivoAnulacion}
+                                                     </div>
+                                                 )}
+                                             </td>
+                                            <td className="py-2.5 px-4">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${mov.estado === "Anulado" ? "bg-rose-50 text-rose-600 border border-rose-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
                                                     {mov.estado}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-center pr-8">
+                                            <td className="py-2.5 px-4 text-center">
                                                 <button 
-                                                    className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all shadow-sm mx-auto"
+                                                    className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-colors mx-auto"
                                                     title="Imprimir Recibo"
                                                     onClick={() => handlePrint(mov.pagoOriginal)}
                                                 >
-                                                    <FiPrinter size={14} />
+                                                    <FiPrinter size={13} />
                                                 </button>
                                             </td>
                                         </tr>
                                     ))
                                 )
                             ) : (
-                                // General Balances View
                                 filteredBalances.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7" className="px-8 py-20 text-center text-slate-400 italic">
+                                        <td colSpan="7" className="py-12 text-center text-slate-400 italic">
                                             No se encontraron terceros con saldo a favor registrado.
                                         </td>
                                     </tr>
                                 ) : (
                                     <>
                                         {filteredBalances.map(item => (
-                                            <tr key={item.id} className="hover:bg-slate-50/30 transition-colors">
-                                                <td className="px-6 py-4 pl-8 font-semibold text-slate-500">
+                                            <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                                                <td className="py-2.5 px-4 font-medium text-slate-500">
                                                     {formatDateOnly(item.fecha)}
                                                 </td>
-                                                <td className="px-6 py-4 font-bold text-slate-800 uppercase tracking-tight">
+                                                <td className="py-2.5 px-4 font-bold text-slate-800 uppercase">
                                                     {item.nombre}
                                                 </td>
-                                                <td className="px-6 py-4 font-bold text-slate-500">
+                                                <td className="py-2.5 px-4 font-mono text-slate-600 font-medium">
                                                     {item.documento}
                                                 </td>
-                                                <td className="px-6 py-4 text-right font-black text-emerald-600 font-mono">
+                                                <td className="py-2.5 px-4 text-right font-bold text-emerald-600 font-mono">
                                                     {fmt(item.valorDisponible)}
                                                 </td>
-                                                <td className="px-6 py-4 text-right font-bold text-rose-500 font-mono">
+                                                <td className="py-2.5 px-4 text-right font-semibold text-rose-600 font-mono">
                                                     {fmt(item.valorUsado)}
                                                 </td>
-                                                <td className="px-6 py-4 text-right font-black text-slate-900 font-mono">
+                                                <td className="py-2.5 px-4 text-right font-bold text-slate-800 font-mono">
                                                     {fmt(item.valorTotal)}
                                                 </td>
-                                                <td className="px-6 py-4 text-center pr-8">
+                                                <td className="py-2.5 px-4 text-center">
                                                     <button 
-                                                        className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all shadow-sm mx-auto"
+                                                        className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-colors mx-auto"
                                                         title="Ver historial en Ficha"
                                                         onClick={() => navigate(buildDashboardPath(`pacientes?id=${item.id}&tab=saldo`))}
                                                     >
-                                                        <FiUser size={14} />
+                                                        <FiUser size={13} />
                                                     </button>
                                                 </td>
                                             </tr>
                                         ))}
                                         {/* Totals Row */}
-                                        <tr className="bg-slate-50 font-black text-slate-800 text-[13px] border-t border-slate-200">
-                                            <td colSpan="3" className="px-6 py-4 pl-8 text-right uppercase">Totales</td>
-                                            <td className="px-6 py-4 text-right text-emerald-600 font-mono">{fmt(columnTotals.disponible)}</td>
-                                            <td className="px-6 py-4 text-right text-rose-500 font-mono">{fmt(columnTotals.usado)}</td>
-                                            <td className="px-6 py-4 text-right text-slate-900 font-mono">{fmt(columnTotals.total)}</td>
+                                        <tr className="bg-slate-50 font-bold text-slate-800 text-xs border-t-2 border-slate-200">
+                                            <td colSpan="3" className="py-3 px-4 text-right uppercase tracking-wider">Totales</td>
+                                            <td className="py-3 px-4 text-right text-emerald-600 font-mono font-bold">{fmt(columnTotals.disponible)}</td>
+                                            <td className="py-3 px-4 text-right text-rose-600 font-mono font-bold">{fmt(columnTotals.usado)}</td>
+                                            <td className="py-3 px-4 text-right text-slate-900 font-mono font-bold">{fmt(columnTotals.total)}</td>
                                             <td></td>
                                         </tr>
                                     </>

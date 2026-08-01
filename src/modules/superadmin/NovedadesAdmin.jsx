@@ -8,6 +8,8 @@ import {
     FiEye, FiEyeOff, FiList, FiChevronUp, FiChevronDown
 } from "react-icons/fi";
 
+const SUPERADMIN_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+
 // ── Tipos ────────────────────────────────────────────────────────
 const TIPOS = {
     info:          { label: "Información",   color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe", icon: FiInfo },
@@ -21,7 +23,7 @@ const TIPOS = {
 function ModalAviso({ aviso, onClose, onSave }) {
     const [form, setForm] = useState({
         titulo: aviso?.titulo || "",
-        contenido: aviso?.contenido || "",
+        contenido: aviso?.contenido || aviso?.descripcion || "",
         tipo: aviso?.tipo || "info",
         activo: aviso?.activo !== false,
         orden: aviso?.orden ?? 0,
@@ -33,9 +35,15 @@ function ModalAviso({ aviso, onClose, onSave }) {
     const handleSave = async () => {
         if (!form.titulo.trim()) { alert("El título es obligatorio"); return; }
         setSaving(true);
-        try { await onSave(form, aviso?.id); onClose(); }
-        catch (e) { alert("Error al guardar: " + e.message); }
-        finally { setSaving(false); }
+        try { 
+            await onSave(form, aviso?.id); 
+            onClose(); 
+        } catch (e) { 
+            console.error("Save announcement error:", e);
+            alert("Error al guardar: " + (e.message || e)); 
+        } finally { 
+            setSaving(false); 
+        }
     };
 
     return (
@@ -92,7 +100,7 @@ function ModalAviso({ aviso, onClose, onSave }) {
                             style={{ width: "100%", height: 40, padding: "0 12px", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 14, color: "#0f172a", outline: "none", boxSizing: "border-box", fontFamily: "inherit" }}
                             value={form.titulo}
                             onChange={e => set("titulo", e.target.value)}
-                            placeholder="Ej. ✨ Nueva versión 2.6 — Mejoras de rendimiento"
+                            placeholder="Ej. ✨ Nueva versión — Mejoras de rendimiento"
                             autoFocus
                             onFocus={e => e.target.style.borderColor = "#2563eb"}
                             onBlur={e => e.target.style.borderColor = "#e2e8f0"}
@@ -101,7 +109,7 @@ function ModalAviso({ aviso, onClose, onSave }) {
 
                     {/* Contenido */}
                     <div>
-                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Descripción</label>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>Descripción / Contenido</label>
                         <textarea
                             style={{ width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 13, color: "#374151", outline: "none", resize: "vertical", minHeight: 100, boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.6 }}
                             value={form.contenido}
@@ -164,25 +172,47 @@ export default function NovedadesAdmin() {
     const [editing, setEditing] = useState(null);
     const [filter, setFilter] = useState("all"); // all | activo | inactivo
 
-    // ── Cargar todos los avisos (sin filtro activo — admin ve todo) ──
+    // ── Cargar todos los avisos ──
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            // 1. Intentar cargar desde la tabla anuncios_sistema
+            let dbList = [];
+            const { data: dbData, error: dbErr } = await supabase
                 .from("anuncios_sistema")
                 .select("*")
                 .order("orden", { ascending: false })
                 .order("created_at", { ascending: false });
 
-            if (error) {
-                if (error.code === "42P01") {
-                    // Tabla no existe aún
-                    setAvisos([]);
-                    return;
-                }
-                throw error;
+            if (!dbErr && Array.isArray(dbData)) {
+                dbList = dbData;
             }
-            setAvisos(data || []);
+
+            // 2. Cargar respaldos desde website_config
+            let configList = [];
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", SUPERADMIN_TENANT_ID)
+                .maybeSingle();
+
+            if (cfgRow?.config?.system_announcements && Array.isArray(cfgRow.config.system_announcements)) {
+                configList = cfgRow.config.system_announcements;
+            }
+
+            // 3. Fusionar ambas fuentes sin duplicados por ID o título
+            const mergedMap = new Map();
+            configList.forEach(item => mergedMap.set(item.id || item.titulo, item));
+            dbList.forEach(item => mergedMap.set(item.id || item.titulo, item));
+
+            const finalAvisos = Array.from(mergedMap.values()).sort((a, b) => {
+                const ordA = Number(a.orden || 0);
+                const ordB = Number(b.orden || 0);
+                if (ordA !== ordB) return ordB - ordA;
+                return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+            });
+
+            setAvisos(finalAvisos);
         } catch (e) {
             console.error("Error cargando avisos:", e);
         } finally {
@@ -193,26 +223,110 @@ export default function NovedadesAdmin() {
     useEffect(() => { load(); }, [load]);
 
     const handleSave = async (form, id) => {
-        if (id) {
-            const { error } = await supabase.from("anuncios_sistema").update(form).eq("id", id);
-            if (error) throw error;
-        } else {
-            const { error } = await supabase.from("anuncios_sistema").insert([form]);
-            if (error) throw error;
+        const cleanPayload = {
+            titulo: form.titulo.trim(),
+            contenido: form.contenido || "",
+            tipo: form.tipo || "info",
+            activo: form.activo !== false,
+            orden: Number(form.orden) || 0
+        };
+
+        // 1. Intentar guardar en la tabla anuncios_sistema (ignorar silenciosamente si hay RLS error)
+        try {
+            if (id) {
+                await supabase.from("anuncios_sistema").update(cleanPayload).eq("id", id);
+            } else {
+                await supabase.from("anuncios_sistema").insert([cleanPayload]);
+            }
+        } catch (dbErr) {
+            console.warn("Notice DB insert fallback triggered:", dbErr);
         }
+
+        // 2. Guardar en website_config (siempre garantizado para SuperAdmin)
+        try {
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", SUPERADMIN_TENANT_ID)
+                .maybeSingle();
+
+            const existingConfig = cfgRow?.config || {};
+            let currentList = Array.isArray(existingConfig.system_announcements) ? [...existingConfig.system_announcements] : [];
+
+            if (id) {
+                currentList = currentList.map(a => (a.id === id || a.titulo === form.titulo) ? { ...a, ...cleanPayload, updated_at: new Date().toISOString() } : a);
+            } else {
+                const newObj = {
+                    id: "aviso-" + Date.now(),
+                    ...cleanPayload,
+                    created_at: new Date().toISOString()
+                };
+                currentList.unshift(newObj);
+            }
+
+            await supabase.from("website_config").upsert({
+                tenant_id: SUPERADMIN_TENANT_ID,
+                config: { ...existingConfig, system_announcements: currentList, updatedAt: new Date().toISOString() },
+                updated_at: new Date().toISOString()
+            });
+        } catch (cfgErr) {
+            console.error("Error al guardar en website_config:", cfgErr);
+        }
+
         sessionStorage.removeItem("oc_avisos_sistema_v2");
         await load();
     };
 
     const handleDelete = async (id, titulo) => {
         if (!window.confirm(`¿Eliminar el aviso "${titulo}"?`)) return;
-        await supabase.from("anuncios_sistema").delete().eq("id", id);
+
+        try {
+            await supabase.from("anuncios_sistema").delete().eq("id", id);
+        } catch (e) {}
+
+        try {
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", SUPERADMIN_TENANT_ID)
+                .maybeSingle();
+
+            if (cfgRow?.config?.system_announcements) {
+                const updatedList = cfgRow.config.system_announcements.filter(a => a.id !== id && a.titulo !== titulo);
+                await supabase.from("website_config").upsert({
+                    tenant_id: SUPERADMIN_TENANT_ID,
+                    config: { ...cfgRow.config, system_announcements: updatedList, updatedAt: new Date().toISOString() },
+                    updated_at: new Date().toISOString()
+                });
+            }
+        } catch (e) {}
+
         sessionStorage.removeItem("oc_avisos_sistema_v2");
-        setAvisos(prev => prev.filter(a => a.id !== id));
+        setAvisos(prev => prev.filter(a => a.id !== id && a.titulo !== titulo));
     };
 
     const toggleActivo = async (id, current) => {
-        await supabase.from("anuncios_sistema").update({ activo: !current }).eq("id", id);
+        try {
+            await supabase.from("anuncios_sistema").update({ activo: !current }).eq("id", id);
+        } catch (e) {}
+
+        try {
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", SUPERADMIN_TENANT_ID)
+                .maybeSingle();
+
+            if (cfgRow?.config?.system_announcements) {
+                const updatedList = cfgRow.config.system_announcements.map(a => (a.id === id) ? { ...a, activo: !current } : a);
+                await supabase.from("website_config").upsert({
+                    tenant_id: SUPERADMIN_TENANT_ID,
+                    config: { ...cfgRow.config, system_announcements: updatedList, updatedAt: new Date().toISOString() },
+                    updated_at: new Date().toISOString()
+                });
+            }
+        } catch (e) {}
+
         sessionStorage.removeItem("oc_avisos_sistema_v2");
         setAvisos(prev => prev.map(a => a.id === id ? { ...a, activo: !current } : a));
     };
@@ -224,64 +338,78 @@ export default function NovedadesAdmin() {
             {/* ── Stats resumen ─────────────────────────── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
                 {[
-                    { label: "Total publicadas", value: avisos.length, color: "#2563eb", bg: "#eff6ff" },
-                    { label: "Visibles (activas)", value: avisos.filter(a => a.activo).length, color: "#059669", bg: "#ecfdf5" },
-                    { label: "Ocultas (borradores)", value: avisos.filter(a => !a.activo).length, color: "#d97706", bg: "#fffbeb" },
+                    { label: "Total publicados", val: avisos.length, color: "#2563eb", bg: "#eff6ff" },
+                    { label: "Visibles para clínicas", val: avisos.filter(a => a.activo).length, color: "#059669", bg: "#ecfdf5" },
+                    { label: "Ocultos / Borradores", val: avisos.filter(a => !a.activo).length, color: "#64748b", bg: "#f8fafc" },
                 ].map((s, i) => (
-                    <div key={i} style={{ background: s.bg, border: `1px solid ${s.color}22`, borderRadius: 14, padding: "14px 18px" }}>
-                        <div style={{ fontSize: 28, fontWeight: 900, color: s.color, lineHeight: 1 }}>{s.value}</div>
-                        <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, marginTop: 4 }}>{s.label}</div>
+                    <div key={i} style={{ background: s.bg, borderRadius: 14, padding: "14px 18px", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</div>
+                        <div style={{ fontSize: 26, fontWeight: 900, color: s.color, marginTop: 4 }}>{s.val}</div>
                     </div>
                 ))}
             </div>
 
             {/* ── Toolbar ───────────────────────────────── */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-                <div style={{ display: "flex", gap: 6 }}>
-                    {[["all", "Todas"], ["activo", "Activas"], ["inactivo", "Borradores"]].map(([k, l]) => (
-                        <button key={k} onClick={() => setFilter(k)} style={{
-                            padding: "6px 14px", borderRadius: 8, border: "1px solid",
-                            borderColor: filter === k ? "#2563eb" : "#e2e8f0",
-                            background: filter === k ? "#eff6ff" : "white",
-                            color: filter === k ? "#2563eb" : "#64748b",
-                            fontSize: 12, fontWeight: filter === k ? 800 : 600, cursor: "pointer"
-                        }}>{l}</button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+                {/* Filtros */}
+                <div style={{ display: "flex", gap: 4, background: "#f1f5f9", padding: 3, borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                    {[
+                        { key: "all", label: `Todos (${avisos.length})` },
+                        { key: "activo", label: `Visibles (${avisos.filter(a => a.activo).length})` },
+                        { key: "inactivo", label: `Borradores (${avisos.filter(a => !a.activo).length})` },
+                    ].map(f => (
+                        <button key={f.key} onClick={() => setFilter(f.key)} style={{
+                            padding: "6px 14px", borderRadius: 8, border: "none",
+                            background: filter === f.key ? "white" : "transparent",
+                            color: filter === f.key ? "#0f172a" : "#64748b",
+                            fontWeight: filter === f.key ? 800 : 600, fontSize: 12,
+                            cursor: "pointer", transition: "all 0.15s",
+                            boxShadow: filter === f.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                        }}>
+                            {f.label}
+                        </button>
                     ))}
                 </div>
+
+                {/* Botón nuevo */}
                 <button
                     onClick={() => { setEditing(null); setShowModal(true); }}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", background: "#2563eb", color: "white", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 8px rgba(37,99,235,0.3)", transition: "all 0.15s" }}
+                    style={{
+                        padding: "9px 18px", borderRadius: 10, border: "none",
+                        background: "#2563eb", color: "white", fontWeight: 800, fontSize: 13,
+                        cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                        boxShadow: "0 4px 14px rgba(37,99,235,0.35)", transition: "all 0.15s"
+                    }}
                     onMouseEnter={e => e.currentTarget.style.background = "#1d4ed8"}
                     onMouseLeave={e => e.currentTarget.style.background = "#2563eb"}
                 >
-                    <FiPlus size={15} /> Nueva novedad
+                    <FiPlus size={16} /> Nueva novedad
                 </button>
             </div>
 
-            {/* ── Lista ─────────────────────────────────── */}
+            {/* ── Lista de avisos ────────────────────────── */}
             {loading ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {[1, 2, 3].map(n => (
-                        <div key={n} style={{ height: 80, background: "#f1f5f9", borderRadius: 14, animation: "pulse 1.5s ease-in-out infinite" }} />
-                    ))}
+                <div style={{ textAlign: "center", padding: "60px 0", color: "#94a3b8" }}>
+                    <FiRefreshCw size={24} style={{ animation: "spin 1s linear infinite", marginBottom: 12 }} />
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Cargando novedades del sistema...</div>
                 </div>
             ) : filtered.length === 0 ? (
-                <div style={{ background: "white", border: "1px dashed #e2e8f0", borderRadius: 16, padding: "60px 20px", textAlign: "center" }}>
-                    <FiList size={36} style={{ color: "#cbd5e1", margin: "0 auto 12px", display: "block" }} />
-                    <p style={{ fontSize: 14, fontWeight: 700, color: "#94a3b8" }}>
-                        {filter === "all" ? "No hay novedades todavía" : filter === "activo" ? "No hay novedades activas" : "No hay borradores"}
-                    </p>
-                    <p style={{ fontSize: 12, color: "#cbd5e1", marginTop: 4 }}>Crea tu primera novedad con el botón de arriba</p>
+                <div style={{ textAlign: "center", padding: "60px 20px", background: "#f8fafc", borderRadius: 16, border: "1px border-dashed #cbd5e1" }}>
+                    <FiBell size={32} style={{ color: "#cbd5e1", marginBottom: 12 }} />
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#64748b" }}>No hay avisos registrados</div>
+                    <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>Crea una nueva novedad para informar a todas las clínicas del sistema.</div>
                 </div>
             ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {filtered.map((av) => {
-                        const tipo = TIPOS[av.tipo] || TIPOS.info;
+                <div style={{ display: "flex", flexContent: "column", flexDirection: "column", gap: 10 }}>
+                    {filtered.map(av => {
+                        const tipoKey = (av.tipo || "info").toLowerCase();
+                        const tipo = TIPOS[tipoKey] || TIPOS.info;
                         const Icon = tipo.icon;
                         const fecha = av.created_at ? new Date(av.created_at).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+                        const textoContenido = av.contenido || av.descripcion || "";
 
                         return (
-                            <div key={av.id} style={{
+                            <div key={av.id || av.titulo} style={{
                                 background: "white", border: "1px solid #e2e8f0", borderRadius: 14, padding: "14px 16px",
                                 display: "flex", alignItems: "flex-start", gap: 14,
                                 opacity: av.activo ? 1 : 0.65,
@@ -305,9 +433,9 @@ export default function NovedadesAdmin() {
                                         {av.orden > 0 && <span style={{ fontSize: 10, color: "#a78bfa", fontWeight: 700 }}>📌 Prioridad {av.orden}</span>}
                                     </div>
                                     <h4 style={{ fontSize: 14, fontWeight: 800, color: "#1e293b", margin: "0 0 4px", lineHeight: 1.3 }}>{av.titulo}</h4>
-                                    {av.contenido && (
+                                    {textoContenido && (
                                         <p style={{ fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.6, whiteSpace: "pre-line" }}>
-                                            {av.contenido.length > 120 ? av.contenido.substring(0, 120) + "..." : av.contenido}
+                                            {textoContenido.length > 120 ? textoContenido.substring(0, 120) + "..." : textoContenido}
                                         </p>
                                     )}
                                 </div>

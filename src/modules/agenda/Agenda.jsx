@@ -40,6 +40,8 @@ export default function Agenda() {
         }
     });
 
+    const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
     React.useEffect(() => {
         try {
             localStorage.setItem("odontocloud_agenda_sidebar", JSON.stringify(sidebarVisible));
@@ -549,7 +551,7 @@ export default function Agenda() {
                 <div className={`
                     transition-all duration-500 ease-in-out overflow-hidden no-print shrink-0
                     ${sidebarVisible ? 'w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'}
-                    hidden md:flex flex-col h-full
+                    hidden lg:flex flex-col h-full
                 `}>
                     <div className="w-64 shrink-0">
                         <AgendaSidebar
@@ -567,19 +569,19 @@ export default function Agenda() {
                     </div>
                 </div>
 
-                {/* Mobile Drawer Overlay (screens < md) */}
-                {sidebarVisible && (
-                    <div className="md:hidden fixed inset-0 z-[150] flex no-print animate-fadeIn">
+                {/* Mobile Drawer Overlay (screens < lg, solo cuando el usuario lo abre manualmente) */}
+                {mobileDrawerOpen && (
+                    <div className="lg:hidden fixed inset-0 z-[150] flex no-print animate-fadeIn">
                         <div 
                             className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs" 
-                            onClick={() => setSidebarVisible(false)} 
+                            onClick={() => setMobileDrawerOpen(false)} 
                         />
                         <div className="relative bg-white w-72 h-full shadow-2xl p-4 overflow-y-auto z-10 flex flex-col justify-between">
                             <div>
                                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
                                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Calendario y Filtros</h3>
                                     <button 
-                                        onClick={() => setSidebarVisible(false)}
+                                        onClick={() => setMobileDrawerOpen(false)}
                                         className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
                                     >
                                         <FiX size={18} />
@@ -587,7 +589,7 @@ export default function Agenda() {
                                 </div>
                                 <AgendaSidebar
                                     selectedDate={selectedDate}
-                                    onDateChange={(d) => { setSelectedDate(d); setSidebarVisible(false); }}
+                                    onDateChange={(d) => { setSelectedDate(d); setMobileDrawerOpen(false); }}
                                     doctors={doctors}
                                     selectedDoctor={filters.filterDocId}
                                     onSelectDoctor={filters.setFilterDocId}
@@ -609,7 +611,10 @@ export default function Agenda() {
                         <div className="flex items-center gap-2 pl-2">
                             {/* Hamburger Button */}
                             <button 
-                                onClick={() => setSidebarVisible(!sidebarVisible)}
+                                onClick={() => {
+                                    setSidebarVisible(!sidebarVisible);
+                                    setMobileDrawerOpen(!mobileDrawerOpen);
+                                }}
                                 className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-90 mr-2
                                     ${sidebarVisible 
                                         ? 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200' 

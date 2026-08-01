@@ -42,7 +42,7 @@ export default function ReporteUsoPlataforma() {
       const { count: countCitas } = await supabase.from("citas").select("id", { count: "exact", head: true }).or(filter);
 
       // 3. Presupuestos & Planes de tratamiento
-      const { count: countPlanes } = await supabase.from("planes").select("id", { count: "exact", head: true }).or(filter);
+      const { count: countPlanes } = await supabase.from("treatment_plans").select("id", { count: "exact", head: true }).or(filter);
 
       // 4. Pagos / Recibos de caja
       const { count: countRecibosCaja } = await supabase.from("pagos").select("id", { count: "exact", head: true }).or(filter);

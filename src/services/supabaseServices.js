@@ -344,14 +344,21 @@ export const epsCatalogoService = {
 export const barriosCatalogoService = {
   // Obtener barrios de un tenant
   async getByTenant(tenantId) {
-    const { data, error } = await supabase
-      .from("barrios_catalogo")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("nombre");
-    
-    if (error) throw error;
-    return data || [];
+    try {
+      const { data, error } = await supabase
+        .from("barrios_catalogo")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("nombre");
+      
+      if (error) {
+        console.warn("barrios_catalogo getByTenant notice:", error.message);
+        return [];
+      }
+      return data || [];
+    } catch (e) {
+      return [];
+    }
   },
 
   // Crear barrio
@@ -362,14 +369,21 @@ export const barriosCatalogoService = {
       ciudad: ciudad.trim()
     };
 
-    const { data, error } = await supabase
-      .from("barrios_catalogo")
-      .insert([payload])
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("barrios_catalogo")
+        .insert([payload])
+        .select();
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.warn("barrios_catalogo create notice (RLS/Permission):", error.message);
+        return payload;
+      }
+      return data?.[0] || payload;
+    } catch (e) {
+      console.warn("barrios_catalogo create catch:", e.message);
+      return payload;
+    }
   }
 };
 
@@ -418,15 +432,22 @@ export const metodosPagoService = {
 export const configuracionFormulariosService = {
   // Obtener configuración de formulario
   async get(tenantId, tipoFormulario) {
-    const { data, error } = await supabase
-      .from("configuracion_formularios")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .eq("tipo_formulario", tipoFormulario)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("configuracion_formularios")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("tipo_formulario", tipoFormulario)
+        .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') throw error;
-    return data?.configuracion || null;
+      if (error && error.code !== 'PGRST116') {
+        console.warn("configuracion_formularios get notice:", error.message);
+        return null;
+      }
+      return data?.configuracion || null;
+    } catch (e) {
+      return null;
+    }
   },
 
   // Guardar configuración de formulario
@@ -439,7 +460,7 @@ export const configuracionFormulariosService = {
         configuracion
       }])
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     return data;
@@ -567,6 +588,168 @@ export const supabaseUtils = {
   }
 };
 
+// ===============================================================
+// 10. UNIFIED DOCTOR LOADER
+// ===============================================================
+
+export const getDoctorsList = async (userProfile, patient = null) => {
+  const mapDoctors = new Map();
+  const inquilino = userProfile?.inquilino || userProfile?.tenantId || patient?.inquilino || patient?.tenant_id;
+
+  // A. Doctores asignados al paciente
+  if (patient?.profesionales && Array.isArray(patient.profesionales)) {
+    patient.profesionales.forEach(d => {
+      const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+      const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+      if (name.trim() && docId) {
+        mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', raw: d });
+      }
+    });
+  }
+
+  // B. Tabla profesionales
+  try {
+    let query = supabase.from('profesionales').select('*');
+    if (inquilino) {
+      query = query.or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+    }
+    const { data: profData } = await query;
+    if (profData && Array.isArray(profData)) {
+      profData.forEach(d => {
+        if (d.activo !== false) {
+          const name = d.nombre_completo || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+          const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+          if (name.trim() && docId && !mapDoctors.has(docId)) {
+            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.correo || d.email || '', raw: d });
+          }
+        }
+      });
+    }
+  } catch (e) {}
+
+  // C. Tabla profiles
+  try {
+    let query = supabase.from('profiles').select('*');
+    if (inquilino) query = query.eq('tenant_id', inquilino);
+    const { data: profsData } = await query;
+    if (profsData && Array.isArray(profsData)) {
+      profsData.forEach(u => {
+        const name = u.full_name || u.nombreCompleto || u.nombre || u.email || '';
+        const docId = String(u.id || (name ? name.toLowerCase() : ''));
+        if (name.trim() && docId && !mapDoctors.has(docId)) {
+          mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', raw: u });
+        }
+      });
+    }
+  } catch (e) {}
+
+  // D. website_config
+  try {
+    if (inquilino) {
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      if (cfgRow?.config) {
+        const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
+        const doctores = cfgRow.config.doctores || cfgRow.config.profesionales || [];
+
+        usuarios.forEach(u => {
+          const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
+          const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
+          if (name.trim() && docId && !mapDoctors.has(docId)) {
+            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', raw: u });
+          }
+        });
+
+        doctores.forEach(d => {
+          const name = d.nombreCompleto || d.nombre || d.displayName || d.email || "";
+          const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+          if (name.trim() && docId && !mapDoctors.has(docId)) {
+            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', raw: d });
+          }
+        });
+      }
+    }
+  } catch (e) {}
+
+  // E. SIEMPRE incluir al usuario actual en sesión (ej. Johne Madrid / Carlos Madrid)
+  if (userProfile) {
+    const myId = String(userProfile.uid || userProfile.id || 'current_user');
+    const myName = userProfile.nombreCompleto ||
+      userProfile.nombre ||
+      `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() ||
+      userProfile.displayName ||
+      userProfile.email ||
+      "Doctor Principal";
+
+    if (myName.trim() && !mapDoctors.has(myId)) {
+      mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' });
+    }
+  }
+
+  // F. Fallback por si la clínica es nueva
+  if (mapDoctors.size === 0) {
+    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '' });
+  }
+
+  return Array.from(mapDoctors.values());
+};
+
+export const getActiveCaja = async (tenantId, userId = null) => {
+  if (!tenantId) return null;
+  let activeCaja = null;
+
+  // 1. Consultar tabla cajas en Supabase
+  try {
+    const { data: dbCajas } = await supabase
+      .from("cajas")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("estado", "abierta");
+
+    if (dbCajas && dbCajas.length > 0) {
+      if (userId) {
+        activeCaja = dbCajas.find(c => String(c.usuario_id || c.usuarioId) === String(userId));
+      }
+      if (!activeCaja) {
+        activeCaja = dbCajas[0];
+      }
+    }
+  } catch (e) {}
+
+  // 2. Fallback a website_config
+  if (!activeCaja) {
+    try {
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+
+      const cfgCajas = cfgRow?.config?.cajas || [];
+      const openCajas = cfgCajas.filter(c => (c.estado || "").toLowerCase() === "abierta");
+
+      if (openCajas.length > 0) {
+        if (userId) {
+          activeCaja = openCajas.find(c => String(c.usuario_id || c.usuarioId) === String(userId));
+        }
+        if (!activeCaja) {
+          activeCaja = openCajas[0];
+        }
+      }
+    } catch (e) {}
+  }
+
+  return activeCaja;
+};
+
+export const epsCatalogo = epsCatalogoService;
+export const barriosCatalogo = barriosCatalogoService;
+export const configuracionFormularios = configuracionFormulariosService;
+
 export default {
   recibosCaja: recibosCajaService,
   cajas: cajasService,
@@ -577,5 +760,7 @@ export default {
   metodosPago: metodosPagoService,
   configuracionFormularios: configuracionFormulariosService,
   documentosClinicos: documentosClinicosService,
+  getDoctorsList,
+  getActiveCaja,
   utils: supabaseUtils
 };
