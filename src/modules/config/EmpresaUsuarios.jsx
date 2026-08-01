@@ -692,7 +692,11 @@ export default function EmpresaUsuarios() {
 
                         {/* Cuerpo del modal */}
                         <div className="flex-1 overflow-hidden relative bg-slate-50">
-                            <form onSubmit={handleSave} className="h-full overflow-y-auto custom-scrollbar p-4 pb-20 space-y-3">
+                            <form onSubmit={handleSave} autoComplete="off" className="h-full overflow-y-auto custom-scrollbar p-4 pb-20 space-y-3">
+                                {/* Campos ocultos para evitar autofill agresivo del navegador */}
+                                <input type="text" name="prevent_autofill_username" style={{ display: 'none' }} tabIndex={-1} readOnly />
+                                <input type="password" name="prevent_autofill_password" style={{ display: 'none' }} tabIndex={-1} readOnly />
+
                                 {/* BLOQUE 1: INFORMACIÓN BÁSICA */}
                                 <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
                                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-3 border-b border-slate-100">
@@ -1027,6 +1031,8 @@ export default function EmpresaUsuarios() {
                                                 <FiMail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                                                 <input 
                                                     type="email" 
+                                                    name="new_user_email_field"
+                                                    autoComplete="new-password"
                                                     value={formData.email} 
                                                     onChange={e => setFormData({ ...formData, email: e.target.value })} 
                                                     required 
@@ -1054,6 +1060,8 @@ export default function EmpresaUsuarios() {
                                             <div className="relative">
                                                 <input 
                                                     type={showPassword ? "text" : "password"} 
+                                                    name="new_user_password_field"
+                                                    autoComplete="new-password"
                                                     value={formData.password} 
                                                     onChange={e => setFormData({ ...formData, password: e.target.value })} 
                                                     required={!editId} 

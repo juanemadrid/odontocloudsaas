@@ -375,11 +375,11 @@ export default function ConfigUsuarios() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
                                     <div>
                                         <label className="label">Nombre de usuario (Email) *</label>
-                                        <input type="email" className="input bg-white" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required />
+                                        <input type="email" name="new_user_email_cfg" autoComplete="new-password" className="input bg-white" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} required />
                                     </div>
                                     <div>
                                         <label className="label">Contraseña *</label>
-                                        <input type="text" className="input font-mono" placeholder="******" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} required={!formData.uid} minLength={6} />
+                                        <input type="password" name="new_user_password_cfg" autoComplete="new-password" className="input font-mono" placeholder="******" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} required={!formData.uid} minLength={6} />
                                     </div>
                                 </div>
                             </div>
