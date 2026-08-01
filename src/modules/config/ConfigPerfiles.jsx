@@ -254,7 +254,26 @@ export default function ConfigPerfiles() {
         try {
             const list = await getConfigItems(inquilino, "perfiles", null);
             if (list && Array.isArray(list) && list.length > 0) {
-                const sortedList = (list || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+                // Fusionar con los permisos por defecto para garantizar que todas las funciones médicas y administrativas estén activadas
+                const mergedList = list.map(item => {
+                    const normExisting = normalizePermisos(item.permisos);
+                    const defaultMatch = DEFAULT_PERFILES.find(dp =>
+                        dp.id === item.id ||
+                        dp.nombre.toLowerCase() === (item.nombre || "").toLowerCase() ||
+                        (item.baseRole && dp.baseRole === item.baseRole) ||
+                        (item.nombre && dp.nombre.toLowerCase().includes(item.nombre.toLowerCase()))
+                    );
+                    if (defaultMatch) {
+                        return {
+                            ...defaultMatch,
+                            ...item,
+                            permisos: { ...defaultMatch.permisos, ...normExisting }
+                        };
+                    }
+                    return item;
+                });
+
+                const sortedList = mergedList.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
                 setProfiles(sortedList);
             } else {
                 // Si la clínica aún no tiene perfiles guardados, mostramos y sincronizamos los perfiles base
