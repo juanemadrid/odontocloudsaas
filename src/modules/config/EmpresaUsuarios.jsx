@@ -305,71 +305,23 @@ export default function EmpresaUsuarios() {
             const fullName = `${formData.nombre} ${formData.apellido}`.trim();
             const roleName = editId && users.find(u => u.id === editId)?.rol === "administrador" ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Usuario");
 
-            let targetId = editId;
+            let targetId = editId || crypto.randomUUID();
 
-            // Si es nuevo usuario, crear cuenta Auth usando el endpoint público de signup (anon key)
             if (!editId) {
                 if (!formData.password || formData.password.length < 8) {
                     setSaving(false);
                     return toast.error('La contraseña debe tener mínimo 8 caracteres para crear el usuario');
                 }
-                try {
-                    const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || 'https://jhdflchyhkwpedtbkusp.supabase.co';
-                    const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-                    const authResp = await fetch(`${SUPA_URL}/auth/v1/signup`, {
-                        method: 'POST',
-                        headers: {
-                            'apikey': ANON_KEY,
-                            'Authorization': `Bearer ${ANON_KEY}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            email: targetEmail,
-                            password: formData.password,
-                            options: {
-                                data: {
-                                    full_name: fullName,
-                                    role: roleName,
-                                    tenant_id: userProfile.inquilino
-                                }
-                            }
-                        })
-                    });
-                    const authData = await authResp.json();
-                    if (authData?.id) {
-                        targetId = authData.id;
-                        console.log('✅ Auth user created:', authData.id);
-                    } else if (authData?.user?.id) {
-                        targetId = authData.user.id;
-                        console.log('✅ Auth user created:', authData.user.id);
-                    } else {
-                        console.warn('⚠️ Auth signup response:', authData?.message || authData?.error_description || authData);
-                        toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
-                        setSaving(false);
-                        return;
-                    }
-                } catch (authErr) {
-                    console.warn('⚠️ Auth user create warning:', authErr);
-                    toast.error(`⚠️ Error al verificar credenciales del usuario: ${authErr.message || authErr}`);
-                    setSaving(false);
-                    return;
-                }
             }
 
-            if (!targetId) {
-                toast.error("⚠️ No se pudo obtener el identificador del usuario para registrarlo.");
-                setSaving(false);
-                return;
-            }
-
-            // Usar RPC SECURITY DEFINER para actualizar profiles + auth.users
+            // Usar RPC SECURITY DEFINER para crear/actualizar profiles + auth.users directamente
             let saveSuccess = false;
             try {
                 const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_upsert_profile', {
                     p_id: targetId,
                     p_tenant_id: userProfile.inquilino,
                     p_full_name: fullName,
-                    p_email: formData.email.trim(),
+                    p_email: targetEmail,
                     p_role: roleName,
                     p_especialidad: (formData.especialidades || []).join(', ') || null,
                     p_registro_medico: formData.numeroDocumento || null,
@@ -379,19 +331,35 @@ export default function EmpresaUsuarios() {
                 });
 
                 if (rpcErr) throw rpcErr;
-                if (rpcResult && rpcResult.success === false) throw new Error(rpcResult.error || 'Error al guardar perfil');
+                if (rpcResult && rpcResult.success === false) {
+                    const errStr = (rpcResult.error || '').toLowerCase();
+                    if (errStr.includes('registrado') || errStr.includes('exists') || errStr.includes('duplicado')) {
+                        toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
+                        setSaving(false);
+                        return;
+                    }
+                    throw new Error(rpcResult.error || 'Error al guardar perfil');
+                }
+                if (rpcResult?.data?.id) {
+                    targetId = rpcResult.data.id;
+                }
                 saveSuccess = true;
             } catch (rpcError) {
-                console.warn('⚠️ admin_upsert_profile RPC error, realizando fallback directo a tabla profiles:', rpcError);
-                
-                // Fallback directo a la tabla profiles si falla el RPC de Auth
+                console.warn('⚠️ admin_upsert_profile RPC error, realizando fallback:', rpcError);
+                if (rpcError.message && (rpcError.message.toLowerCase().includes('registrado') || rpcError.message.toLowerCase().includes('exists'))) {
+                    toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
+                    setSaving(false);
+                    return;
+                }
+
+                // Fallback directo a la tabla profiles
                 const { error: profileErr } = await supabase
                     .from('profiles')
                     .upsert({
                         id: targetId,
                         tenant_id: userProfile.inquilino,
                         full_name: fullName,
-                        email: formData.email.trim(),
+                        email: targetEmail,
                         role: roleName,
                         especialidad: (formData.especialidades || []).join(', ') || null,
                         registro_medico: formData.numeroDocumento || null,
@@ -400,7 +368,7 @@ export default function EmpresaUsuarios() {
                     }, { onConflict: 'id' });
 
                 if (profileErr) {
-                    throw rpcError || profileErr;
+                    console.error('Error al guardar en tabla profiles:', profileErr);
                 }
             }
 
