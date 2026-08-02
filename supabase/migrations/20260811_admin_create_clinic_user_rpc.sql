@@ -1,9 +1,12 @@
--- Migration: Automatic clinic user & tenant provisioning RPC
+-- Migration: Automatic clinic user & tenant provisioning RPC with email column check
 -- Run this in Supabase Dashboard -> SQL Editor
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 1. Función RPC para crear/aprovisionar usuario de la clínica en auth.users y public.profiles
+-- 1. Agregar columna email a la tabla tenants si no existe
+ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS email text;
+
+-- 2. Función RPC para crear/aprovisionar usuario de la clínica en auth.users y public.profiles
 CREATE OR REPLACE FUNCTION public.admin_create_clinic_user(
   p_email text,
   p_password text,
@@ -110,60 +113,6 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.admin_create_clinic_user(text, text, text, uuid) TO authenticated, anon;
-
-
--- 2. Función RPC para verificar estado previo al inicio de sesión
-CREATE OR REPLACE FUNCTION public.check_user_tenant_active(p_email text)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, auth, extensions
-AS $$
-DECLARE
-  v_role text;
-  v_profile_activo boolean;
-  v_tenant_id uuid;
-  v_tenant_activo boolean;
-BEGIN
-  IF lower(trim(p_email)) = 'madridsystem@outlook.es' THEN
-    RETURN jsonb_build_object('allowed', true);
-  END IF;
-
-  SELECT role, activo, tenant_id
-  INTO v_role, v_profile_activo, v_tenant_id
-  FROM public.profiles
-  WHERE lower(trim(email)) = lower(trim(p_email))
-  LIMIT 1;
-
-  -- Si NO existe perfil creado aún (solicitud no aprobada)
-  IF v_role IS NULL THEN
-    RETURN jsonb_build_object('allowed', false, 'reason', 'pending_approval');
-  END IF;
-
-  -- Si el perfil existe pero está inactivo
-  IF v_profile_activo IS NOT TRUE THEN
-    RETURN jsonb_build_object('allowed', false, 'reason', 'profile_inactive');
-  END IF;
-
-  -- Si no tiene clínica asignada
-  IF v_tenant_id IS NULL THEN
-    RETURN jsonb_build_object('allowed', false, 'reason', 'no_tenant');
-  END IF;
-
-  SELECT activo
-  INTO v_tenant_activo
-  FROM public.tenants
-  WHERE id = v_tenant_id;
-
-  IF v_tenant_activo IS NOT TRUE THEN
-    RETURN jsonb_build_object('allowed', false, 'reason', 'tenant_inactive');
-  END IF;
-
-  RETURN jsonb_build_object('allowed', true);
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.check_user_tenant_active(text) TO authenticated, anon;
 
 
 -- 3. Aprovisionar de forma inmediata a ATM centro del dolor para activar su ingreso
