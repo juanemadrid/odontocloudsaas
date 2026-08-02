@@ -173,6 +173,7 @@ export const createTenant = async (tenantData) => {
             id: tenantId,
             nombre: clinicName,
             nit: tenantData.nit || "",
+            email: adminEmail,
             plan: planId,
             activo: true
         }])
@@ -336,7 +337,18 @@ export const updateTenantDetails = async (tenantId, updates) => {
                 updated_at: new Date().toISOString()
             });
 
-        // Solo se persiste en website_config JSONB para evitar errores RLS en tenants.
+        // Sincronizar en la tabla nativa 'tenants' de PostgreSQL
+        const targetAdminEmail = updates.adminEmail || updates.contactEmail;
+        if (targetAdminEmail) {
+            await supabase
+                .from("tenants")
+                .update({
+                    nombre: updates.name || updates.nombre,
+                    email: targetAdminEmail,
+                    nit: updates.nit
+                })
+                .eq("id", tenantId);
+        }
 
         return true;
     } catch (error) {
