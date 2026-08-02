@@ -225,56 +225,17 @@ export const createTenant = async (tenantData) => {
         throw new Error(`No fue posible registrar la clínica: ${dbErr?.message || wcErr?.message}`);
     }
 
-    // c) Creación de la cuenta de acceso Auth y perfil de administrador para la clínica
+    // c) Creación y aprovisionamiento de la cuenta Auth y perfil de administrador para la clínica
     if (adminEmail && adminPassword) {
         try {
-            const authClient = supabase.auth;
-            const { data: signUpData } = await authClient["signUp"]({
-                email: adminEmail.trim(),
-                password: adminPassword,
-                options: {
-                    data: {
-                        full_name: tenantData.adminName || `Administrador ${clinicName}`,
-                        tenant_id: tenantId,
-                        role: "administrador"
-                    }
-                }
+            await supabase.rpc("admin_create_clinic_user", {
+                p_email: adminEmail.trim(),
+                p_password: adminPassword,
+                p_full_name: tenantData.adminName || `Administrador ${clinicName}`,
+                p_tenant_id: tenantId
             });
-
-            let newUserId = signUpData?.user?.id;
-
-            // Sincronizar y forzar la clave elegida en auth.users
-            try {
-                await supabase.rpc("admin_force_change_password", {
-                    p_email: adminEmail.trim(),
-                    p_new_password: adminPassword
-                });
-            } catch (rpcErr) {
-                console.warn("Nota al forzar clave de admin en RPC:", rpcErr?.message);
-            }
-
-            if (!newUserId) {
-                const { data: profRow } = await supabase
-                    .from("profiles")
-                    .select("id")
-                    .eq("email", adminEmail.trim())
-                    .maybeSingle();
-                newUserId = profRow?.id;
-            }
-
-            if (newUserId) {
-                await supabase.from("profiles").upsert([{
-                    id: newUserId,
-                    email: adminEmail.trim(),
-                    full_name: tenantData.adminName || `Administrador ${clinicName}`,
-                    role: "administrador",
-                    tenant_id: tenantId,
-                    activo: true,
-                    updated_at: new Date().toISOString()
-                }], { onConflict: "id" });
-            }
-        } catch (authErr) {
-            console.warn("Advertencia al registrar usuario administrador en Supabase Auth:", authErr?.message);
+        } catch (rpcErr) {
+            console.warn("Nota al aprovisionar usuario mediante RPC:", rpcErr?.message);
         }
     }
 
