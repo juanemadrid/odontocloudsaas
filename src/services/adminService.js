@@ -938,21 +938,21 @@ export const getSubscriptionRequests = async () => {
 
 export const approveSubscriptionRequest = async (requestId) => {
     try {
-        const { data: existingRow } = await supabase
+        // 1. Obtener la solicitud destino
+        const { data: rowBefore } = await supabase
             .from("website_config")
             .select("config")
             .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
             .maybeSingle();
 
-        const currentConfig = existingRow?.config || {};
-        const requests = currentConfig.subscription_requests || [];
-        const targetReq = requests.find(r => r.id === requestId);
+        const requestsBefore = rowBefore?.config?.subscription_requests || [];
+        const targetReq = requestsBefore.find(r => r.id === requestId);
 
         if (!targetReq) {
             throw new Error("No se encontró la solicitud especificada.");
         }
 
-        // 1. Crear la clínica oficialmente en el sistema
+        // 2. Crear la clínica oficialmente en el sistema
         await createTenant({
             name: targetReq.tenantName,
             adminName: targetReq.adminName,
@@ -962,15 +962,24 @@ export const approveSubscriptionRequest = async (requestId) => {
             planDuration: "monthly"
         });
 
-        // 2. Marcar solicitud como aprobada
-        const updatedRequests = requests.map(r => r.id === requestId ? { ...r, status: "approved", approvedAt: new Date().toISOString() } : r);
+        // 3. Re-consultar la configuración fresca para no sobrescribir registered_tenants creados por createTenant
+        const { data: rowAfter } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+            .maybeSingle();
+
+        const freshConfig = rowAfter?.config || {};
+        const freshRequests = freshConfig.subscription_requests || [];
+
+        const updatedRequests = freshRequests.map(r => r.id === requestId ? { ...r, status: "approved", approvedAt: new Date().toISOString() } : r);
 
         await supabase
             .from("website_config")
             .upsert({
                 tenant_id: GLOBAL_CONFIG_TENANT_ID,
                 config: {
-                    ...currentConfig,
+                    ...freshConfig,
                     subscription_requests: updatedRequests
                 },
                 updated_at: new Date().toISOString()

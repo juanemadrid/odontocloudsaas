@@ -248,12 +248,28 @@ export default function TenantsPanelV2() {
 
     const handleApprove = async (id) => {
         setProcessing(true);
-        try { await approveSubscriptionRequest(id); loadData(); } finally { setProcessing(false); }
+        try {
+            await approveSubscriptionRequest(id);
+            await loadData();
+            alert("✅ Clínica aprobada y activada exitosamente. Ya aparece en tu lista de clínicas activas.");
+        } catch (err) {
+            console.error("Error al aprobar solicitud:", err);
+            alert("❌ Error al aprobar la solicitud: " + (err.message || "Intenta nuevamente."));
+        } finally {
+            setProcessing(false);
+        }
     };
 
     const handleReject = async (id) => {
-        const reason = window.prompt("Motivo del rechazo (opcional):"); if (reason === null) return;
-        try { await rejectSubscriptionRequest(id, reason); } catch { alert("Error"); }
+        const reason = window.prompt("Motivo del rechazo (opcional):");
+        if (reason === null) return;
+        try {
+            await rejectSubscriptionRequest(id, reason);
+            await loadData();
+            alert("ℹ️ Solicitud rechazada.");
+        } catch (err) {
+            alert("Error al rechazar solicitud: " + err.message);
+        }
     };
 
     const getPlanName = (id) => id === "trial" ? "Prueba" : plans.find(p => p.id === id)?.name || "N/A";
