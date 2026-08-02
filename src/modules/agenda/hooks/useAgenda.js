@@ -143,25 +143,39 @@ export function useAgenda() {
                 ]);
 
                 // Doctors — from profiles table (only doctors/odontologists, exclude admins)
+                const userDetailsMap = cfgRes.data?.config?.user_details || {};
+
                 const docsList = (profRes.data || [])
                     .filter(u => u.activo !== false)
                     .filter(u => {
                         const roleLower = (u.role || '').toLowerCase();
-                        return roleLower === 'doctor' || 
-                               roleLower === 'odontologo' || 
-                               roleLower === 'especialista' ||
-                               !!u.especialidad; // Include if they have a medical specialty
+                        const detail = userDetailsMap[u.id] || {};
+                        return roleLower.includes('doctor') || 
+                               roleLower.includes('odontólog') || 
+                               roleLower.includes('odontolog') || 
+                               roleLower.includes('especialista') ||
+                               detail.esDoctor === true ||
+                               !!u.especialidad;
                     })
-                    .map(u => ({
-                        id: u.id,
-                        nombre: (u.full_name || '').split(' ')[0] || '',
-                        apellido: (u.full_name || '').split(' ').slice(1).join(' ') || '',
-                        nombreCompleto: u.full_name || '',
-                        email: u.email,
-                        rol: u.role,
-                        especialidad: u.especialidad || '',
-                        activo: u.activo !== false
-                    }));
+                    .map(u => {
+                        const detail = userDetailsMap[u.id] || {};
+                        const userNombre = detail.nombre || (u.full_name || '').split(' ')[0] || '';
+                        const userApellido = detail.apellido || (u.full_name || '').split(' ').slice(1).join(' ') || '';
+                        const updatedFullName = (detail.nombre || detail.apellido) 
+                            ? `${detail.nombre || ''} ${detail.apellido || ''}`.trim() 
+                            : (u.full_name || '');
+
+                        return {
+                            id: u.id,
+                            nombre: userNombre,
+                            apellido: userApellido,
+                            nombreCompleto: updatedFullName,
+                            email: u.email,
+                            rol: u.role,
+                            especialidad: u.especialidad || (detail.especialidades ? detail.especialidades.join(', ') : ''),
+                            activo: u.activo !== false
+                        };
+                    });
                 if (docsList.length > 0) setDoctors(docsList);
 
                 // Branches — sucursales table

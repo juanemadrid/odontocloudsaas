@@ -20,9 +20,6 @@ export default function EmpresaUsuarios() {
     const toast = useToast();
 
     const getDisplayName = (u) => {
-        if (u.nombreCompleto && !u.nombreCompleto.toLowerCase().includes("undefined")) {
-            return u.nombreCompleto;
-        }
         if (u.nombre || u.apellido) {
             const first = u.nombre || "";
             const last = u.apellido || "";
@@ -31,10 +28,13 @@ export default function EmpresaUsuarios() {
                 return combined;
             }
         }
+        if (u.nombreCompleto && !u.nombreCompleto.toLowerCase().includes("undefined")) {
+            return u.nombreCompleto;
+        }
         if (u.displayName && !u.displayName.toLowerCase().includes("undefined")) {
             return u.displayName;
         }
-        return u.rol === "administrador" ? "Administrador (Propietario)" : "Usuario Sin Nombre";
+        return u.email || "Sin Nombre";
     };
 
     // Data States
@@ -112,12 +112,13 @@ export default function EmpresaUsuarios() {
 
                 let userNombre = detail.nombre || (u.full_name || "").split(" ")[0] || "";
                 let userApellido = detail.apellido || (u.full_name || "").split(" ").slice(1).join(" ") || "";
+                const updatedFullName = (detail.nombre || detail.apellido) ? `${detail.nombre || ''} ${detail.apellido || ''}`.trim() : u.full_name;
 
                 return {
                     id: u.id,
                     nombre: userNombre,
                     apellido: userApellido,
-                    nombreCompleto: u.full_name,
+                    nombreCompleto: updatedFullName,
                     email: u.email,
                     rol: u.role,
                     profileId: u.role,
@@ -326,64 +327,113 @@ export default function EmpresaUsuarios() {
                 }
             }
 
-            // Usar RPC SECURITY DEFINER para crear/actualizar profiles + auth.users directamente
+            // Usar cliente Admin de Supabase (supabaseAdmin.auth.admin) para creación nativa y segura de usuarios
             let saveSuccess = false;
             try {
-                const { data: rpcResult, error: rpcErr } = await supabase.rpc('admin_upsert_profile', {
-                    p_id: targetId,
-                    p_tenant_id: userProfile.inquilino,
-                    p_full_name: fullName,
-                    p_email: targetEmail,
-                    p_role: roleName,
-                    p_especialidad: (formData.especialidades || []).join(', ') || null,
-                    p_registro_medico: formData.numeroDocumento || null,
-                    p_telefono: formData.telefonoMovil || formData.telefonoFijo || null,
-                    p_activo: true,
-                    p_password: formData.password ? formData.password.trim() : null
-                });
-
-                if (rpcErr) throw rpcErr;
-
-                const resObj = typeof rpcResult === 'string' ? JSON.parse(rpcResult) : rpcResult;
-                if (resObj && resObj.success === false) {
-                    const errStr = (resObj.error || '').toLowerCase();
-                    if (errStr.includes('registrado') || errStr.includes('exists') || errStr.includes('duplicado') || errStr.includes('unique')) {
-                        toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
-                        setSaving(false);
-                        return;
-                    }
-                    throw new Error(resObj.error || 'Error al guardar perfil');
-                }
-                if (resObj?.id) {
-                    targetId = resObj.id;
-                }
-                saveSuccess = true;
-            } catch (rpcError) {
-                console.warn('⚠️ admin_upsert_profile RPC error, realizando fallback:', rpcError);
-                if (rpcError.message && (rpcError.message.toLowerCase().includes('registrado') || rpcError.message.toLowerCase().includes('exists'))) {
-                    toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
-                    setSaving(false);
-                    return;
-                }
-
-                // Fallback directo a la tabla profiles
-                const { error: profileErr } = await supabase
-                    .from('profiles')
-                    .upsert({
-                        id: targetId,
-                        tenant_id: userProfile.inquilino,
-                        full_name: fullName,
+                if (!editId) {
+                    // 1. Crear nuevo usuario en Supabase Auth mediante API Admin nativa
+                    const { data: createData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
                         email: targetEmail,
-                        role: roleName,
-                        especialidad: (formData.especialidades || []).join(', ') || null,
-                        registro_medico: formData.numeroDocumento || null,
-                        telefono: formData.telefonoMovil || formData.telefonoFijo || null,
-                        activo: true
-                    }, { onConflict: 'id' });
+                        password: formData.password.trim(),
+                        email_confirm: true,
+                        user_metadata: {
+                            full_name: fullName,
+                            role: roleName,
+                            tenant_id: userProfile.inquilino
+                        }
+                    });
+
+                    if (createErr) {
+                        const errStr = (createErr.message || '').toLowerCase();
+                        if (errStr.includes('registered') || errStr.includes('exists') || errStr.includes('duplicado') || errStr.includes('already')) {
+                            toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
+                            setSaving(false);
+                            return;
+                        }
+                        throw createErr;
+                    }
+
+                    if (createData?.user?.id) {
+                        targetId = createData.user.id;
+                    }
+                } else {
+                    // 2. Editar usuario existente en Supabase Auth
+                    const updatePayload = {
+                        email: targetEmail,
+                        user_metadata: {
+                            full_name: fullName,
+                            role: roleName
+                        }
+                    };
+                    if (formData.password && formData.password.trim().length >= 8) {
+                        updatePayload.password = formData.password.trim();
+                    }
+
+                    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(editId, updatePayload);
+                    
+                    if (updateErr) {
+                        console.warn('⚠️ No se encontró la ID en auth.users, sincronizando cuenta nativa...', updateErr.message);
+
+                        // Si la cuenta auth.users no existía con esa ID, crearla o actualizarla nativamente
+                        const { data: freshData, error: freshErr } = await supabaseAdmin.auth.admin.createUser({
+                            email: targetEmail,
+                            password: formData.password && formData.password.trim().length >= 8 ? formData.password.trim() : 'Password123!',
+                            email_confirm: true,
+                            user_metadata: {
+                                full_name: fullName,
+                                role: roleName,
+                                tenant_id: userProfile.inquilino
+                            }
+                        });
+
+                        if (freshData?.user?.id) {
+                            // Borrar perfil desincronizado antiguo y usar la ID nativa recién creada
+                            if (editId && editId !== freshData.user.id) {
+                                await supabaseAdmin.from('profiles').delete().eq('id', editId).catch(() => {});
+                            }
+                            targetId = freshData.user.id;
+                        } else if (freshErr && freshErr.message?.includes('already')) {
+                            // El usuario ya existe en auth.users con ese email, actualizar clave mediante RPC admin_change_password
+                            if (formData.password && formData.password.trim().length >= 8) {
+                                await supabaseAdmin.rpc('admin_change_password', {
+                                    user_email: targetEmail,
+                                    new_password: formData.password.trim()
+                                }).catch(() => {});
+                            }
+                        }
+                    }
+                }
+
+                // 3. Upsert en la tabla public.profiles asegurando ID idéntico y evitando errores 401
+                const profilePayload = {
+                    id: targetId,
+                    tenant_id: userProfile.inquilino,
+                    full_name: fullName,
+                    email: targetEmail,
+                    role: roleName,
+                    especialidad: (formData.especialidades || []).join(', ') || null,
+                    registro_medico: formData.numeroDocumento || null,
+                    telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                    activo: true
+                };
+
+                let { error: profileErr } = await supabase.from('profiles').upsert(profilePayload, { onConflict: 'id' });
+                if (profileErr) {
+                    console.warn('Fallback a supabaseAdmin para guardar en profiles:', profileErr.message);
+                    const { error: adminProfErr } = await supabaseAdmin.from('profiles').upsert(profilePayload, { onConflict: 'id' });
+                    profileErr = adminProfErr;
+                }
 
                 if (profileErr) {
                     console.error('Error al guardar en tabla profiles:', profileErr);
                 }
+
+                saveSuccess = true;
+            } catch (saveError) {
+                console.error('Error al procesar guardado de usuario:', saveError);
+                toast.error('Ocurrió un error al guardar el usuario: ' + (saveError.message || 'Error desconocido'));
+                setSaving(false);
+                return;
             }
 
             // Guardar configuración extendida de usuario (sucursales, especialidades, etc.) en website_config

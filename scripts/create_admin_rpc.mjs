@@ -1,19 +1,12 @@
-/**
- * create_admin_rpc.mjs
- * Crea/actualiza las funciones RPC con SECURITY DEFINER en Supabase para que el admin
- * pueda crear/editar/eliminar usuarios y actualizar su contraseña de Auth sin service key.
- */
-import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://jhdflchyhkwpedtbkusp.supabase.co';
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_G87lxtV9IRKBUA71AFGzmA_8c5qz8wB';
+const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY;
 
-const SQL_CREATE_FUNCTIONS = `
--- ============================================================
--- Función: admin_upsert_profile (Actualiza auth.users + profiles)
--- ============================================================
-CREATE OR REPLACE FUNCTION admin_upsert_profile(
+const SQL_RPC = `
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+CREATE OR REPLACE FUNCTION public.admin_upsert_profile(
   p_id UUID,
   p_tenant_id UUID,
   p_full_name TEXT,
@@ -28,37 +21,52 @@ CREATE OR REPLACE FUNCTION admin_upsert_profile(
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth, extensions
+SET search_path = extensions, public, auth
 AS $$
 DECLARE
   v_user_id UUID;
   v_target_auth_id UUID;
-  v_email_exists BOOLEAN;
+  v_clean_email TEXT;
 BEGIN
-  v_user_id := p_id;
+  v_clean_email := lower(trim(p_email));
 
-  -- 1. Buscar si el usuario existe en auth.users por ID primero, luego por email
-  SELECT id INTO v_target_auth_id FROM auth.users WHERE id = p_id LIMIT 1;
-  
-  IF v_target_auth_id IS NULL THEN
-    SELECT id INTO v_target_auth_id FROM auth.users WHERE lower(email) = lower(p_email) LIMIT 1;
+  -- 1. Buscar SIEMPRE primero por email en auth.users para evitar violaciones de clave única
+  SELECT id INTO v_target_auth_id FROM auth.users WHERE lower(trim(email)) = v_clean_email LIMIT 1;
+
+  -- 2. Si no se encontró por email pero se pasó un p_id, verificar por p_id
+  IF v_target_auth_id IS NULL AND p_id IS NOT NULL THEN
+    SELECT id INTO v_target_auth_id FROM auth.users WHERE id = p_id LIMIT 1;
   END IF;
 
-  -- 2. Si no existe en auth.users, verificar si el email ya está tomado por OTRO usuario
-  IF v_target_auth_id IS NULL THEN
-    SELECT EXISTS(SELECT 1 FROM auth.users WHERE lower(email) = lower(p_email)) INTO v_email_exists;
-    IF v_email_exists THEN
-      RETURN json_build_object('success', false, 'error', 'Este correo electrónico ya está registrado en otra cuenta del sistema.');
-    END IF;
+  IF v_target_auth_id IS NOT NULL THEN
+    -- Usuario existente: Usar su ID real de auth.users
+    v_user_id := v_target_auth_id;
 
-    -- Crear nuevo usuario en auth.users
+    IF p_password IS NOT NULL AND p_password != '' THEN
+      UPDATE auth.users
+      SET encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf', 10)),
+          email = v_clean_email,
+          email_confirmed_at = COALESCE(email_confirmed_at, NOW()),
+          raw_app_meta_data = '{"provider":"email","providers":["email"]}'::jsonb,
+          updated_at = NOW()
+      WHERE id = v_target_auth_id;
+    ELSE
+      UPDATE auth.users
+      SET email = v_clean_email,
+          updated_at = NOW()
+      WHERE id = v_target_auth_id;
+    END IF;
+  ELSE
+    -- Nuevo usuario: usar p_id o generar un UUID nuevo si p_id es null
+    v_user_id := COALESCE(p_id, gen_random_uuid());
+
     INSERT INTO auth.users (
       id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
-      raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+      raw_app_meta_data, raw_user_meta_data, is_sso_user, is_anonymous, created_at, updated_at
     ) VALUES (
       v_user_id,
       '00000000-0000-0000-0000-000000000000',
-      'authenticated', 'authenticated', p_email,
+      'authenticated', 'authenticated', v_clean_email,
       CASE 
         WHEN p_password IS NOT NULL AND p_password != '' 
         THEN extensions.crypt(p_password, extensions.gen_salt('bf', 10))
@@ -67,43 +75,16 @@ BEGIN
       NOW(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       json_build_object('full_name', p_full_name, 'role', p_role, 'tenant_id', p_tenant_id)::jsonb,
-      NOW(), NOW()
+      false, false, NOW(), NOW()
     );
-  ELSE
-    -- El usuario existe en auth.users (ID = v_target_auth_id).
-    -- Verificar si se está intentando cambiar el email a uno que ya pertenece a OTRO usuario distinto
-    IF p_email IS NOT NULL AND p_email != '' THEN
-      SELECT EXISTS(
-        SELECT 1 FROM auth.users 
-        WHERE lower(email) = lower(p_email) 
-          AND id != v_target_auth_id
-      ) INTO v_email_exists;
-
-      IF v_email_exists THEN
-        RETURN json_build_object('success', false, 'error', 'Este correo electrónico ya está registrado en otra cuenta del sistema.');
-      END IF;
-    END IF;
-
-    -- Actualizar auth.users para v_target_auth_id
-    v_user_id := v_target_auth_id;
-
-    IF p_password IS NOT NULL AND p_password != '' THEN
-      UPDATE auth.users
-      SET encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf', 10)),
-          email = COALESCE(p_email, email),
-          updated_at = NOW()
-      WHERE id = v_target_auth_id;
-    ELSIF p_email IS NOT NULL AND p_email != '' THEN
-      UPDATE auth.users
-      SET email = p_email,
-          updated_at = NOW()
-      WHERE id = v_target_auth_id;
-    END IF;
   END IF;
 
-  -- 3. Upsert en tabla profiles
-  INSERT INTO profiles (id, tenant_id, full_name, email, role, especialidad, registro_medico, telefono, activo)
-  VALUES (v_user_id, p_tenant_id, p_full_name, p_email, p_role, p_especialidad, p_registro_medico, p_telefono, p_activo)
+  -- 3. Limpiar cualquier perfil desincronizado previa con el mismo email que tenga ID diferente
+  DELETE FROM public.profiles WHERE lower(trim(email)) = v_clean_email AND id != v_user_id;
+
+  -- 4. Guardar en la tabla public.profiles asegurando coincidencia de ID de autenticación
+  INSERT INTO public.profiles (id, tenant_id, full_name, email, role, especialidad, registro_medico, telefono, activo)
+  VALUES (v_user_id, p_tenant_id, p_full_name, v_clean_email, p_role, p_especialidad, p_registro_medico, p_telefono, p_activo)
   ON CONFLICT (id) DO UPDATE SET
     full_name       = EXCLUDED.full_name,
     email           = EXCLUDED.email,
@@ -120,8 +101,8 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION admin_upsert_profile TO authenticated;
-GRANT EXECUTE ON FUNCTION admin_upsert_profile TO anon;
+GRANT EXECUTE ON FUNCTION public.admin_upsert_profile TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_upsert_profile TO anon;
 `;
 
 console.log("SQL generated for admin_upsert_profile");
