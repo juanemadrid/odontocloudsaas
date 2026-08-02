@@ -150,13 +150,16 @@ export default function TenantsPanelV2() {
 
     const openEdit = (tenant) => {
         setSelectedTenant(tenant);
+        const rawAdminEmail = tenant.adminEmail || tenant.contactEmail || tenant.email || "";
+        const cleanAdminEmail = rawAdminEmail.toLowerCase() === "madridsystem@outlook.es" ? "" : rawAdminEmail;
+
         setEditForm({
             name: tenant.name || tenant.nombre || "",
             nit: tenant.nit || "",
-            contactEmail: tenant.contactEmail || tenant.email || "",
+            contactEmail: tenant.contactEmail && tenant.contactEmail.toLowerCase() !== "madridsystem@outlook.es" ? tenant.contactEmail : cleanAdminEmail,
             address: tenant.address || tenant.direccion || "",
             telefono: tenant.telefono || tenant.phone || "",
-            adminEmail: tenant.adminEmail || tenant.contactEmail || tenant.email || "",
+            adminEmail: cleanAdminEmail,
             newPassword: "",
             showPwd: false,
         });

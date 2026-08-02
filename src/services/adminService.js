@@ -10,14 +10,29 @@ const isUUID = (str) => typeof str === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-
  */
 export const getTenants = async () => {
     try {
-        const [{ data: dbTenants, error: tErr }, { data: row }] = await Promise.all([
+        const [{ data: dbTenants, error: tErr }, { data: row }, { data: dbProfiles }] = await Promise.all([
             supabase.from("tenants").select("*").order("created_at", { ascending: false }),
-            supabase.from("website_config").select("config").eq("tenant_id", GLOBAL_CONFIG_TENANT_ID).maybeSingle()
+            supabase.from("website_config").select("config").eq("tenant_id", GLOBAL_CONFIG_TENANT_ID).maybeSingle(),
+            supabase.from("profiles").select("id, email, full_name, role, tenant_id")
         ]);
 
         if (tErr) {
             console.warn("Advertencia al consultar tabla tenants:", tErr.message);
         }
+
+        // Crear mapa de perfiles administradores por tenant_id
+        const profileMap = new Map();
+        (dbProfiles || []).forEach(p => {
+            if (p.tenant_id && p.email && p.email.toLowerCase() !== "madridsystem@outlook.es") {
+                const tId = String(p.tenant_id);
+                if (!profileMap.has(tId) || (p.role || "").toLowerCase().includes("admin")) {
+                    profileMap.set(tId, {
+                        adminEmail: p.email,
+                        adminName: p.full_name || ""
+                    });
+                }
+            }
+        });
 
         const savedTenants = Array.isArray(row?.config?.registered_tenants) ? row.config.registered_tenants : [];
         const tenantsMap = new Map();
@@ -27,17 +42,21 @@ export const getTenants = async () => {
             if (t.id === GLOBAL_CONFIG_TENANT_ID) return;
             const createdDate = t.created_at ? new Date(t.created_at) : new Date();
             const endDate = new Date(createdDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-            tenantsMap.set(String(t.id), {
-                id: String(t.id),
+            const idKey = String(t.id);
+            const prof = profileMap.get(idKey);
+            const initialEmail = prof?.adminEmail || (t.email && t.email.toLowerCase() !== "madridsystem@outlook.es" ? t.email : "");
+
+            tenantsMap.set(idKey, {
+                id: idKey,
                 name: t.nombre || "Clínica sin nombre",
                 nombre: t.nombre || "Clínica sin nombre",
                 nit: t.nit || "",
                 telefono: t.telefono || "",
                 address: t.direccion || "",
                 ciudad: t.ciudad || "",
-                contactEmail: t.email || "",
-                adminName: "",
-                adminEmail: t.email || "",
+                contactEmail: initialEmail,
+                adminName: prof?.adminName || "",
+                adminEmail: initialEmail,
                 planId: t.plan || "free",
                 planDuration: "monthly",
                 status: t.activo !== false ? "active" : "suspended",
@@ -55,11 +74,16 @@ export const getTenants = async () => {
             if (!t || !t.id) return;
             const idKey = String(t.id);
             const existing = tenantsMap.get(idKey) || {};
+            const prof = profileMap.get(idKey);
             const createdDate = t.created_at || t.createdAt ? new Date(t.created_at || t.createdAt) : new Date();
             const daysToAdd = t.planDuration === "yearly" ? 365 : 30;
             const endDate = t.subscriptionEndDate 
                 ? new Date(t.subscriptionEndDate) 
                 : new Date(createdDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+
+            const candidateEmail = prof?.adminEmail || t.adminEmail || t.contactEmail || t.email || existing.adminEmail || "";
+            const resolvedAdminEmail = candidateEmail.toLowerCase() === "madridsystem@outlook.es" ? (prof?.adminEmail || existing.adminEmail || "") : candidateEmail;
+            const resolvedAdminName = prof?.adminName || t.adminName || existing.adminName || "";
 
             tenantsMap.set(idKey, {
                 ...existing,
@@ -70,9 +94,9 @@ export const getTenants = async () => {
                 telefono: t.telefono || existing.telefono || "",
                 address: t.direccion || t.address || existing.address || "",
                 ciudad: t.ciudad || existing.ciudad || "",
-                contactEmail: t.contactEmail || t.email || t.adminEmail || existing.contactEmail || "",
-                adminName: t.adminName || existing.adminName || "",
-                adminEmail: t.adminEmail || existing.adminEmail || "",
+                contactEmail: resolvedAdminEmail || existing.contactEmail || "",
+                adminName: resolvedAdminName,
+                adminEmail: resolvedAdminEmail,
                 planId: t.plan || t.planId || existing.planId || "free",
                 planDuration: t.planDuration || existing.planDuration || "monthly",
                 status: t.activo !== false ? "active" : "suspended",
