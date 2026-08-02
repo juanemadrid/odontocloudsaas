@@ -145,7 +145,11 @@ const Login = () => {
         });
 
         if (checkRes && checkRes.allowed === false) {
-          setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+          if (checkRes.reason === "pending_approval") {
+            setError("⏳ Tu solicitud de clínica aún está pendiente de aprobación por el SuperAdmin. Te avisaremos cuando sea activada.");
+          } else {
+            setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+          }
           setLoadingStatus(false);
           return;
         }
@@ -192,7 +196,7 @@ const Login = () => {
         if (!profile || profile.activo === false || !profile.tenant_id || !profile.tenant || profile.tenant.activo === false) {
           await supabase.auth.signOut();
           try { sessionStorage.clear(); } catch {}
-          setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+          setError("⏳ Tu solicitud de clínica aún está pendiente de aprobación por el SuperAdmin o la cuenta está inactiva.");
           setLoadingStatus(false);
           return;
         }

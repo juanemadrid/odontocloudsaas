@@ -23,8 +23,13 @@ BEGIN
   WHERE lower(trim(email)) = lower(trim(p_email))
   LIMIT 1;
 
-  -- Si el perfil existe pero está marcado como inactivo
-  IF v_profile_activo IS FALSE THEN
+  -- Si NO existe ningún perfil registrado para este correo (solicitud aún pendiente o no existente)
+  IF v_role IS NULL THEN
+    RETURN jsonb_build_object('allowed', false, 'reason', 'pending_approval');
+  END IF;
+
+  -- Si el perfil existe pero está inactivo
+  IF v_profile_activo IS NOT TRUE THEN
     RETURN jsonb_build_object('allowed', false, 'reason', 'profile_inactive');
   END IF;
 
@@ -38,7 +43,7 @@ BEGIN
   FROM public.tenants
   WHERE id = v_tenant_id;
 
-  -- Si la clínica fue eliminada (no existe en tenants) o está inactiva
+  -- Si la clínica no existe en la tabla tenants o está inactiva
   IF v_tenant_activo IS NOT TRUE THEN
     RETURN jsonb_build_object('allowed', false, 'reason', 'tenant_inactive');
   END IF;
