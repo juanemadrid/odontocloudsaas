@@ -680,21 +680,28 @@ export default function TenantsPanelV2() {
                             {requests.length === 0 ? (
                                 <p className="text-center text-slate-300 text-sm py-8">No hay solicitudes pendientes.</p>
                             ) : requests.map(req=>(
-                                <div key={req.id} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                                    <div className="flex items-center justify-between mb-3">
+                                <div key={req.id} className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                                    <div className="flex items-start justify-between">
                                         <div>
-                                            <p className="font-semibold text-slate-800 text-sm">{req.tenantName}</p>
-                                            <p className="text-[11px] text-slate-400">Solicita: <strong>{req.requestedPlanName}</strong></p>
+                                            <p className="font-bold text-slate-800 text-sm">{req.tenantName}</p>
+                                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-[10px] font-black uppercase">
+                                                Plan: {req.requestedPlanName}
+                                            </span>
                                         </div>
                                         <p className="text-[10px] text-slate-400">{fmt(req.createdAt)}</p>
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="bg-white p-3 rounded-lg border border-slate-100 space-y-1 text-xs text-slate-600">
+                                        <p>👤 <strong>Solicitante:</strong> {req.adminName || 'Sin especificar'}</p>
+                                        <p>✉️ <strong>Email de acceso:</strong> <span className="font-semibold text-blue-600">{req.adminEmail}</span></p>
+                                        <p>🔑 <strong>Contraseña elegida:</strong> <span className="font-mono font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded">{req.adminPassword}</span></p>
+                                    </div>
+                                    <div className="flex gap-2 pt-1">
                                         <button onClick={()=>handleReject(req.id)} className="flex-1 py-2 rounded-lg text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-all">Rechazar</button>
-                                        <button onClick={()=>{ const msg=`Hola ${req.tenantName}, recibimos tu solicitud para el plan ${req.requestedPlanName}. Por favor adjunta el soporte de pago.`; window.open(`https://wa.me/${req.tenantPhone||""}?text=${encodeURIComponent(msg)}`, "_blank");}}
+                                        <button onClick={()=>{ const msg=`Hola ${req.adminName || req.tenantName}, recibimos tu solicitud de demostración para ${req.tenantName}.\n\nTu usuario de acceso es: ${req.adminEmail}`; window.open(`https://wa.me/${req.tenantPhone||""}?text=${encodeURIComponent(msg)}`, "_blank");}}
                                             className="flex-1 py-2 rounded-lg text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 transition-all">WhatsApp</button>
                                         <button onClick={()=>handleApprove(req.id)} disabled={processing}
                                             className="flex-1 py-2 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-all">
-                                            {processing?"...":"Aprobar"}
+                                            {processing?"...":"Aprobar y Activar"}
                                         </button>
                                     </div>
                                 </div>

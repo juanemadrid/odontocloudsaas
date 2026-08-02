@@ -216,21 +216,37 @@ export const createTenant = async (tenantData) => {
                 }
             });
 
-            const newUserId = signUpData?.user?.id;
+            let newUserId = signUpData?.user?.id;
+
+            // Sincronizar y forzar la clave elegida en auth.users
+            try {
+                await supabase.rpc("admin_force_change_password", {
+                    p_email: adminEmail.trim(),
+                    p_new_password: adminPassword
+                });
+            } catch (rpcErr) {
+                console.warn("Nota al forzar clave de admin en RPC:", rpcErr?.message);
+            }
+
+            if (!newUserId) {
+                const { data: profRow } = await supabase
+                    .from("profiles")
+                    .select("id")
+                    .eq("email", adminEmail.trim())
+                    .maybeSingle();
+                newUserId = profRow?.id;
+            }
+
             if (newUserId) {
-                try {
-                    await supabase.from("profiles").upsert([{
-                        id: newUserId,
-                        email: adminEmail.trim(),
-                        full_name: tenantData.adminName || `Administrador ${clinicName}`,
-                        role: "administrador",
-                        tenant_id: tenantId,
-                        activo: true,
-                        created_at: new Date().toISOString()
-                    }], { onConflict: "id" });
-                } catch (pErr) {
-                    console.warn("Nota: El perfil se creará automáticamente en la primera sesión:", pErr?.message);
-                }
+                await supabase.from("profiles").upsert([{
+                    id: newUserId,
+                    email: adminEmail.trim(),
+                    full_name: tenantData.adminName || `Administrador ${clinicName}`,
+                    role: "administrador",
+                    tenant_id: tenantId,
+                    activo: true,
+                    updated_at: new Date().toISOString()
+                }], { onConflict: "id" });
             }
         } catch (authErr) {
             console.warn("Advertencia al registrar usuario administrador en Supabase Auth:", authErr?.message);
