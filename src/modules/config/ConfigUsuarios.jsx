@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getConfigItems } from "../../services/configPersistenceService";
 import { DEFAULT_PERFILES } from "../../constants/DefaultProfiles";
 import { FiTrash2, FiEdit2 } from "react-icons/fi";
+import { deleteManagedUser, upsertManagedUser } from "../../services/userAdminService";
 
 export default function ConfigUsuarios() {
     const { userProfile } = useAuth();
@@ -99,32 +100,24 @@ export default function ConfigUsuarios() {
         try {
             const selectedProfile = rolesDisponibles.find(p => p.id === formData.profileId);
 
-            let uid = "";
-            try {
-                // Create auth user via Supabase (uses admin-level signUp; falls back to generated id)
-                const redirectUrl = `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}`;
-                const { data: authData, error: authErr } = await supabase.auth.signUp({
-                    email: formData.email,
-                    password: formData.password,
-                    options: {
-                        emailRedirectTo: redirectUrl
-                    }
-                });
-                if (authErr && authErr.message?.includes("already registered")) {
-                    alert("Correo ya registrado.");
-                    setSaving(false);
-                    return;
-                }
-                uid = authData?.user?.id || `user_${Date.now()}`;
-            } catch (inner) {
-                uid = `user_${Date.now()}`;
-            }
-
             const rolFromProfile = (selectedProfile?.baseRole || selectedProfile?.rol || "").trim().toLowerCase();
             const rolByName = (selectedProfile?.nombre || "").toLowerCase().includes("doctor") || 
                               (selectedProfile?.nombre || "").toLowerCase().includes("odont") ? "doctor" : null;
             const finalRol = rolFromProfile || rolByName || "recepcionista";
 
+            const fullName = [formData.nombre, formData.apellido].filter(Boolean).join(" ").trim();
+            const { user: managedUser } = await upsertManagedUser({
+                tenantId: userProfile.inquilino,
+                email: formData.email.trim().toLowerCase(),
+                password: formData.password,
+                fullName,
+                role: finalRol,
+                especialidad: (formData.especialidades || []).join(", ") || null,
+                registroMedico: formData.numeroDocumento || null,
+                telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                activo: true
+            });
+            const uid = managedUser.id;
             const userObj = {
                 id: uid,
                 uid,
@@ -133,7 +126,7 @@ export default function ConfigUsuarios() {
                 email: formData.email,
                 nombre: formData.nombre,
                 apellido: formData.apellido,
-                nombreCompleto: `${formData.nombre} ${formData.apellido}`.trim(),
+                nombreCompleto: fullName,
                 tipoDocumento: formData.tipoDocumento,
                 numeroDocumento: formData.numeroDocumento,
                 telefonoMovil: formData.telefonoMovil,
@@ -172,8 +165,13 @@ export default function ConfigUsuarios() {
     const handleDelete = async (u) => {
         if (u.rol === "administrador") return alert("⛔ Protegido.");
         if (!window.confirm("¿Eliminar usuario?")) return;
-        await supabase.from("usuarios").delete().eq("id", u.id);
-        loadData();
+        try {
+            await deleteManagedUser(u.id);
+            await supabase.from("usuarios").delete().eq("id", u.id);
+            await loadData();
+        } catch (error) {
+            alert("Error: " + error.message);
+        }
     };
 
     return (
@@ -199,7 +197,7 @@ export default function ConfigUsuarios() {
                     {users.map(u => (
                         <tr key={u.id} className="hover:bg-slate-50">
                             <td className="p-4">
-                                <div className="font-bold">{u.nombreCompleto || u.nombre}</div>
+                                <div className="font-bold">{u.full_name || u.nombreCompleto || u.nombre}</div>
                                 <div className="text-xs text-slate-500">{u.email}</div>
                             </td>
                             <td className="p-4"><span className="tag">{u.profileName || u.rol || "Sin Perfil"}</span></td>

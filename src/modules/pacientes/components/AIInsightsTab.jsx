@@ -4,6 +4,11 @@ import { getAnamnesis } from '../../../services/clinicalService';
 import supabase from '../../../lib/supabaseClient';
 import { toast } from 'sonner';
 import { suggestTreatmentPlan, predictAbsenteeism } from '../../../services/intelligenceService';
+import {
+    generateGeminiContent,
+    getGeminiApiKey,
+    saveGeminiApiKey
+} from '../../../services/geminiKeyService';
 
 // Simple markdown renderer
 function MdBlock({ text }) {
@@ -42,12 +47,9 @@ export default function AIInsightsTab({ patient }) {
     const [riskLoading, setRiskLoading] = useState(false);
 
     useEffect(() => {
-        const storedKey = localStorage.getItem('odontovox_gemini_api_key');
-        if (storedKey) {
-            setApiKey(storedKey);
-        } else if (import.meta.env.VITE_GEMINI_API_KEY) {
-            setApiKey(import.meta.env.VITE_GEMINI_API_KEY);
-        }
+        getGeminiApiKey()
+            .then(setApiKey)
+            .catch(() => setApiKey(''));
     }, []);
 
     // Auto-load absenteeism risk on mount
@@ -61,42 +63,30 @@ export default function AIInsightsTab({ patient }) {
         }
     }, [patient?.id]);
 
-    const handleSaveApiKey = (e) => {
-        e.preventDefault();
-        localStorage.setItem('odontovox_gemini_api_key', apiKey.trim());
-        toast.success('Clave API de Gemini guardada correctamente');
-        setShowSettings(false);
-    };
-
-    const getEffectiveApiKey = () => {
-        return apiKey.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
+    const handleSaveApiKey = async (event) => {
+        event.preventDefault();
+        try {
+            await saveGeminiApiKey(patient?.inquilino, apiKey);
+            setApiKey(await getGeminiApiKey());
+            toast.success('Clave API de Gemini guardada correctamente');
+            setShowSettings(false);
+        } catch (error) {
+            toast.error(error.message || 'No fue posible guardar la clave.');
+        }
     };
 
     const callGemini = async (prompt) => {
-        const key = getEffectiveApiKey();
-        if (!key) {
-            toast.error('Configure su clave API de Gemini gratuita en los ajustes.');
+        if (!apiKey) {
+            toast.error('Configure su clave API de Gemini en los ajustes.');
             setShowSettings(true);
             throw new Error('API Key missing');
         }
 
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }]
-                })
-            }
+        const data = await generateGeminiContent(
+            [{ parts: [{ text: prompt }] }],
+            {},
+            'gemini-2.5-flash'
         );
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData?.error?.message || `HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
         return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     };
 
@@ -230,7 +220,7 @@ export default function AIInsightsTab({ patient }) {
 
     // 4. Treatment plan suggestion from odontogram
     const handleSuggestTreatmentPlan = async () => {
-        const key = getEffectiveApiKey();
+        const key = apiKey;
         if (!key) { toast.error('Configure la API Key de Gemini.'); setShowSettings(true); return; }
         setPlanLoading(true);
         try {
@@ -288,7 +278,7 @@ export default function AIInsightsTab({ patient }) {
                         <div>
                             <h4 className="text-xs font-black text-indigo-600 uppercase tracking-widest leading-none">Clave API de Gemini (Uso Gratuito)</h4>
                             <p className="text-[10px] text-slate-400 font-bold mt-1.5 leading-relaxed">
-                                El Copiloto IA de Nova utiliza Gemini 1.5 Flash. Obtenga su clave API gratis en Google AI Studio. Su clave no se comparte y se guarda únicamente en este navegador.
+                                La clave se cifra en tránsito y se usa únicamente desde el backend de la clínica; nunca se expone al navegador.
                             </p>
                         </div>
                         <a 

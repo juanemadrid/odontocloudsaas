@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiX, FiShield, FiActivity, FiCheckCircle, FiArrowRight } from 'react-icons/fi';
+import { FiX, FiShield, FiActivity, FiCheckCircle, FiArrowRight, FiEye, FiEyeOff } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { registerTrialClinic } from '../../services/registrationService';
 
 export default function TrialModal({ isOpen, onClose, initialPlan }) {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
         clinicName: '',
         adminName: '',
@@ -25,8 +26,7 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                 requestedPlanFeatures: formData.features
             });
             onClose();
-            alert("¡Registro exitoso! Ya puedes iniciar sesión con tus credenciales.");
-            navigate("/login");
+            alert(`¡Solicitud enviada exitosamente!\n\nTu solicitud para "${formData.clinicName || 'tu clínica'}" ha sido registrada. Nuestro equipo revisará la información y te notificará cuando tu cuenta sea activada.`);
         } catch (error) {
             console.error(error);
             alert("Error al registrar: " + (error.message || "Intenta con otro correo."));
@@ -124,15 +124,25 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña</label>
-                                    <input
-                                        required
-                                        type="password"
-                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium"
-                                        placeholder="Mínimo 6 caracteres"
-                                        minLength={6}
-                                        value={formData.adminPassword}
-                                        onChange={e => setFormData({ ...formData, adminPassword: e.target.value })}
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            required
+                                            type={showPassword ? "text" : "password"}
+                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium pr-11"
+                                            placeholder="Mínimo 6 caracteres"
+                                            minLength={6}
+                                            value={formData.adminPassword}
+                                            onChange={e => setFormData({ ...formData, adminPassword: e.target.value })}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                                            title={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                                        >
+                                            {showPassword ? <FiEyeOff size={18}/> : <FiEye size={18}/>}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <button

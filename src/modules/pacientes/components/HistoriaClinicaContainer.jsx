@@ -14,7 +14,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { getAnamnesis } from "../../../services/clinicalService";
-import DocClinicoModal from "./DocClinicoModal";
+const DocClinicoModal = React.lazy(() => import("./DocClinicoModal"));
 
 const printHTMLInHiddenIframe = (htmlContent) => {
     let iframe = document.getElementById("oc-print-iframe");
@@ -1320,17 +1320,21 @@ export default function HistoriaClinicaContainer({ patient }) {
                 </div>
             </div>
 
-            <DocClinicoModal 
-                isOpen={modalOpen} 
-                onClose={() => {
-                    setModalOpen(false);
-                    setEditingDoc(null);
-                }} 
-                patient={patient} 
-                docType={selectedDocType} 
-                initialData={editingDoc}
-                isViewOnly={isViewOnly}
-            />
+            {modalOpen && (
+                <React.Suspense fallback={<div className="fixed inset-0 z-[9999] bg-slate-900/40 flex items-center justify-center text-white font-bold">Cargando editor clinico...</div>}>
+                    <DocClinicoModal
+                        isOpen={modalOpen}
+                        onClose={() => {
+                            setModalOpen(false);
+                            setEditingDoc(null);
+                        }}
+                        patient={patient}
+                        docType={selectedDocType}
+                        initialData={editingDoc}
+                        isViewOnly={isViewOnly}
+                    />
+                </React.Suspense>
+            )}
 
             {/* Modal: Confirmar Firma Digital de Receta */}
             {signModal.isOpen && (

@@ -1,7 +1,7 @@
 export const MASTER_CONFIG = {
     isMaster: true,
     name: "OdontoCloud",
-    logo: "/assets/logo.png",
+    logo: `${import.meta.env.BASE_URL}assets/logo.png`,
     heroTitle: "Lleva tu Clínica al Siguiente Nivel",
     heroSubtitle: "El software de gestión dental más completo, moderno y fácil de usar. Agenda, pacientes, odontograma digital e interactivo y facturación en un solo lugar.",
     heroBadgeText: "SOFTWARE ODONTOLÓGICO LÍDER",

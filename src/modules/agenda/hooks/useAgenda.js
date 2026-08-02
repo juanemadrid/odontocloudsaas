@@ -3,6 +3,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { createOrUpdatePatient } from "../../../services/patientService";
 import { useAudit } from "../../../hooks/useAudit";
 import supabase from "../../../lib/supabaseClient";
+import { assertAppointmentAvailability } from "../../../services/agendaAvailabilityService";
 
 const DEFAULT_SPECIALTIES = [
     { id: "Ortodoncia", nombre: "Ortodoncia" },
@@ -14,15 +15,6 @@ const DEFAULT_SPECIALTIES = [
     { id: "Odontología General", nombre: "Odontología General" },
     { id: "Implantología", nombre: "Implantología" },
     { id: "Rehabilitación Oral", nombre: "Rehabilitación Oral" }
-];
-
-const DEFAULT_BRANCHES = [
-    { id: "principal", nombre: "Sede Principal" }
-];
-
-const DEFAULT_CHAIRS = [
-    { id: "consultorio-1", nombre: "Consultorio 1" },
-    { id: "consultorio-2", nombre: "Consultorio 2" }
 ];
 
 // Utils
@@ -142,6 +134,14 @@ export function useAgenda() {
                     supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
                 ]);
 
+                const requiredCatalogError = [profRes, sucRes, conRes, entRes, pacRes]
+                    .map(result => result.error)
+                    .find(Boolean);
+                if (requiredCatalogError) throw requiredCatalogError;
+                if (cfgRes.error) {
+                    console.warn("No fue posible cargar la configuración opcional de agenda:", cfgRes.error.message);
+                }
+
                 // Doctors — from profiles table (only doctors/odontologists, exclude admins)
                 const userDetailsMap = cfgRes.data?.config?.user_details || {};
 
@@ -180,13 +180,10 @@ export function useAgenda() {
 
                 // Branches — sucursales table
                 const supSuc = (sucRes.data || []);
-                if (supSuc.length > 0) setBranches(supSuc);
-                else setBranches(DEFAULT_BRANCHES);
+                setBranches(supSuc);
 
-                // Chairs — consultorios table
-                const supChairs = (conRes.data || []);
-                if (supChairs.length > 0) setChairs(supChairs);
-                else setChairs(DEFAULT_CHAIRS);
+                // Nunca ofrecer IDs ficticios: las citas requieren un consultorio real.
+                setChairs((conRes.data || []).filter(consultorio => consultorio.activo !== false));
 
                 // Specialties — from website_config or defaults
                 const rawCfgSpecs = cfgRes.data?.config?.especialidades || [];
@@ -287,7 +284,16 @@ export function useAgenda() {
                         'cancelled': 'CANCELADO',
                         'waiting': 'EN ESPERA'
                     };
-                    const normStatus = (c.estado || "").toLowerCase().includes("cancel") ? "cancelled" : (statusMap[c.estado] ? c.estado : "confirmed");
+                    const stateKey = String(c.estado || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+                    const statusAliases = {
+                        "sin confirmar": "pending", "pendiente": "pending", "programada": "pending",
+                        "confirmada": "confirmed", "confirmado": "confirmed",
+                        "atendido": "attended", "completada": "attended", "completado": "attended",
+                        "urgencia": "urgencia", "sin cont. web": "sin-cont-web",
+                        "no asiste": "no-show", "cancelada": "cancelled", "cancelado": "cancelled",
+                        "cancelled": "cancelled", "en espera": "waiting"
+                    };
+                    const normStatus = statusAliases[stateKey] || (statusMap[stateKey] ? stateKey : "confirmed");
 
                     return {
                         id: c.id,
@@ -341,6 +347,14 @@ export function useAgenda() {
 
     // Actions
     const createAppointment = async (data) => {
+        await assertAppointmentAvailability({
+            tenantId: inquilino,
+            professionalId: data.doctorId,
+            roomId: data.consultorioId,
+            start: data.start,
+            end: data.end || new Date(data.start.getTime() + (data.duracion || 30) * 60000)
+        });
+
         const y = data.start.getFullYear();
         const m = String(data.start.getMonth() + 1).padStart(2, '0');
         const d = String(data.start.getDate()).padStart(2, '0');
@@ -463,306 +477,48 @@ export function useAgenda() {
             finalPatch.horaInicio = `${hh}:${mm}`;
         }
 
-        // ✅ VALIDACIÓN: Prevenir conflictos de solapamiento al mover citas y verificar disponibilidad del doctor
-        if (finalPatch.fecha && finalPatch.horaInicio) {
-        // Get current appointment from Supabase for validation
-        const { data: currentDbData } = await supabase.from("citas").select("*").eq("id", id).maybeSingle();
-        const currentData = currentDbData || {};
-            
-            // Si la cita se está cancelando o ya estaba cancelada, no requiere validación de horarios ni solapamientos
-            const isCancelled = finalPatch.status === 'cancelled' || 
-                                ['cancelada', 'cancelado'].includes((finalPatch.estado || '').toLowerCase()) ||
-                                currentData.status === 'cancelled' ||
-                                ['cancelada', 'cancelado'].includes((currentData.estado || '').toLowerCase());
+        const { data: currentData, error: currentError } = await supabase
+            .from("citas")
+            .select("*")
+            .eq("tenant_id", inquilino)
+            .eq("id", id)
+            .single();
+        if (currentError) throw currentError;
 
+        const isCancelled = finalPatch.status === "cancelled" ||
+            ["cancelada", "cancelado", "cancelled"].includes((finalPatch.estado || "").toLowerCase());
+        const timeChanged = ["start", "end", "fecha", "horaInicio", "duracion"]
+            .some((field) => Object.prototype.hasOwnProperty.call(patch, field));
+        const scheduleChanged = ["start", "end", "fecha", "horaInicio", "duracion", "doctorId", "consultorioId"]
+            .some((field) => Object.prototype.hasOwnProperty.call(patch, field));
+        let validatedStart = null;
+        let validatedEnd = null;
+
+        if (scheduleChanged) {
+            const professionalId = finalPatch.doctorId ?? currentData.profesional_id;
+            const roomId = finalPatch.consultorioId ?? currentData.consultorio_id;
+            validatedStart = finalPatch.start ? new Date(finalPatch.start) : new Date(currentData.fecha_inicio);
+            if (finalPatch.fecha || finalPatch.horaInicio) {
+                const localDate = finalPatch.fecha || `${validatedStart.getFullYear()}-${String(validatedStart.getMonth() + 1).padStart(2, "0")}-${String(validatedStart.getDate()).padStart(2, "0")}`;
+                const localTime = finalPatch.horaInicio || `${String(validatedStart.getHours()).padStart(2, "0")}:${String(validatedStart.getMinutes()).padStart(2, "0")}`;
+                validatedStart = new Date(`${localDate}T${localTime}:00`);
+            }
+            validatedEnd = finalPatch.end ? new Date(finalPatch.end) : new Date(currentData.fecha_fin);
+            if (!finalPatch.end && (finalPatch.start || finalPatch.fecha || finalPatch.horaInicio || finalPatch.duracion)) {
+                const duration = Number(finalPatch.duracion) || Math.max(5, Math.round((new Date(currentData.fecha_fin) - new Date(currentData.fecha_inicio)) / 60000)) || 30;
+                validatedEnd = new Date(validatedStart.getTime() + duration * 60000);
+            }
             if (!isCancelled) {
-                const doctorId = patch.doctorId || currentData.doctorId;
-            const consultorioId = patch.consultorioId || currentData.consultorioId;
-            const duracion = patch.duracion || currentData.duracion || 30;
-            
-            // Calcular rango de tiempo de la cita movida
-            const [hh, mm] = finalPatch.horaInicio.split(':').map(Number);
-            const [y, m, d] = finalPatch.fecha.split('-').map(Number);
-            const nuevaInicio = new Date(y, m - 1, d, hh, mm).getTime();
-            const nuevaFin = nuevaInicio + (duracion * 60000);
-            
-            // 1. ✅ VALIDACIÓN DE DISPONIBILIDAD DEL DOCTOR (Horarios Predefinidos, Aperturas, No Disponibles)
-            if (doctorId) {
-                // Fetch doctor schedule from Supabase
-                const [predRes, openRes, unavailRes] = await Promise.all([
-                    supabase.from("horarios_predefinidos").select("*").eq("usuario_id", doctorId).eq("tenant_id", inquilino),
-                    supabase.from("agenda_abierta").select("*").eq("usuario_id", doctorId).eq("tenant_id", inquilino),
-                    supabase.from("no_disponibles").select("*").eq("usuario_id", doctorId).eq("tenant_id", inquilino)
-                ]);
-
-                const predefined = predRes.data || [];
-                const openAgenda = openRes.data || [];
-                const unavailable = unavailRes.data || [];
-
-                const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-                const dateObj = new Date(y, m - 1, d);
-                const dayName = days[dateObj.getDay()];
-
-                const parseTimeToMinutes = (timeStr) => {
-                    if (!timeStr) return 0;
-                    const match12 = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-                    if (match12) {
-                        let [_, hStr, mStr, ampm] = match12;
-                        let h = parseInt(hStr, 10);
-                        const m = parseInt(mStr, 10);
-                        if (ampm.toUpperCase() === "PM" && h < 12) h += 12;
-                        if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
-                        return h * 60 + m;
-                    }
-                    const match24 = timeStr.match(/^(\d{1,2}):(\d{2})$/);
-                    if (match24) {
-                        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
-                    }
-                    return 0;
-                };
-
-                const apptStartMin = hh * 60 + mm;
-                const apptEndMin = apptStartMin + duracion;
-
-                // Check unavailable slots first
-                for (const slot of unavailable) {
-                    if (slot.fecha === finalPatch.fecha && slot.active !== false) {
-                        const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                        const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                        if (apptStartMin < slotEndMin && apptEndMin > slotStartMin) {
-                            const motivoStr = slot.motivo ? ` por motivo de: "${slot.motivo}"` : "";
-                            throw new Error(`El doctor no está disponible en este horario${motivoStr}.`);
-                        }
-                    }
-                }
-
-                // Solo validar si el doctor tiene horarios configurados (opt-in)
-                const hasScheduleConfig = predefined.length > 0 || openAgenda.length > 0;
-
-                if (hasScheduleConfig) {
-                    let isAvailable = false;
-
-                    // Check open agenda custom dates
-                    for (const slot of openAgenda) {
-                        if (slot.fecha === finalPatch.fecha && slot.active !== false) {
-                            const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                            const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                            if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                isAvailable = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Check predefined weekly schedule slots
-                    if (!isAvailable) {
-                        const compareDays = (d1, d2) => {
-                            if (!d1 || !d2) return false;
-                            return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-                                   d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                        };
-
-                        for (const slot of predefined) {
-                            if (compareDays(slot.dia, dayName) && slot.activo !== false) {
-                                const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                                const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                                if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                    // Time matches predefined slot. Check physical resource:
-                                    if (slot.recursoId === "todos" || slot.recursoId === consultorioId) {
-                                        isAvailable = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (!isAvailable) {
-                        let hasPredefinedTimeButWrongResource = false;
-                        let scheduledResourceName = "";
-                        
-                        const compareDays = (d1, d2) => {
-                            if (!d1 || !d2) return false;
-                            return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-                                   d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                        };
-
-                        for (const slot of predefined) {
-                            if (compareDays(slot.dia, dayName) && slot.activo !== false) {
-                                const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                                const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                                if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                    hasPredefinedTimeButWrongResource = true;
-                                    scheduledResourceName = slot.recursoNombre || "otro consultorio";
-                                    break;
-                                }
-                            }
-                        }
-
-                        const doctorName = doctors.find(d => d.id === doctorId)?.nombreCompleto || 
-                                          `${doctors.find(d => d.id === doctorId)?.nombre || ''} ${doctors.find(d => d.id === doctorId)?.apellido || ''}`.trim() || 
-                                          'El doctor';
-
-                        if (hasPredefinedTimeButWrongResource) {
-                            throw new Error(`${doctorName} no está programado para atender en este consultorio en ese horario. Está asignado a: ${scheduledResourceName}.`);
-                        } else {
-                            const formattedEndTime = new Date(nuevaFin);
-                            const endTimeStr = `${String(formattedEndTime.getHours()).padStart(2, '0')}:${String(formattedEndTime.getMinutes()).padStart(2, '0')}`;
-                            throw new Error(`${doctorName} no tiene agenda habilitada para el día ${dayName} en el horario de ${finalPatch.horaInicio} a ${endTimeStr}.`);
-                        }
-                    }
-                }
-            }
-
-            // 1.5 ✅ VALIDACIÓN DE DISPONIBILIDAD DEL CONSULTORIO (Recurso Físico)
-            if (consultorioId) {
-                // Fetch consultorio schedule from Supabase
-                const [resPredRes, resOpenRes, resUnavailRes] = await Promise.all([
-                    supabase.from("horarios_predefinidos").select("*").eq("consultorio_id", consultorioId).eq("tenant_id", inquilino),
-                    supabase.from("agenda_abierta").select("*").eq("consultorio_id", consultorioId).eq("tenant_id", inquilino),
-                    supabase.from("no_disponibles").select("*").eq("consultorio_id", consultorioId).eq("tenant_id", inquilino)
-                ]);
-
-                const resPredefined = resPredRes.data || [];
-                const resOpenAgenda = resOpenRes.data || [];
-                const resUnavailable = resUnavailRes.data || [];
-
-                const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-                const dateObj = new Date(y, m - 1, d);
-                const dayName = days[dateObj.getDay()];
-
-                const parseTimeToMinutes = (timeStr) => {
-                    if (!timeStr) return 0;
-                    const match12 = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-                    if (match12) {
-                        let [_, hStr, mStr, ampm] = match12;
-                        let h = parseInt(hStr, 10);
-                        const m = parseInt(mStr, 10);
-                        if (ampm.toUpperCase() === "PM" && h < 12) h += 12;
-                        if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
-                        return h * 60 + m;
-                    }
-                    const match24 = timeStr.match(/^(\d{1,2}):(\d{2})$/);
-                    if (match24) {
-                        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
-                    }
-                    return 0;
-                };
-
-                const apptStartMin = hh * 60 + mm;
-                const apptEndMin = apptStartMin + duracion;
-
-                // Check unavailable slots first
-                for (const slot of resUnavailable) {
-                    if (slot.fecha === finalPatch.fecha && slot.active !== false) {
-                        const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                        const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                        if (apptStartMin < slotEndMin && apptEndMin > slotStartMin) {
-                            const motivoStr = slot.motivo ? ` por motivo de: "${slot.motivo}"` : "";
-                            throw new Error(`El consultorio no está disponible en este horario${motivoStr}.`);
-                        }
-                    }
-                }
-
-                // If schedules are configured, check availability
-                if (resPredefined.length > 0 || resOpenAgenda.length > 0) {
-                    let isResAvailable = false;
-
-                    // Check open agenda
-                    for (const slot of resOpenAgenda) {
-                        if (slot.fecha === finalPatch.fecha && slot.active !== false) {
-                            const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                            const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                            if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                isResAvailable = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Check predefined slots
-                    if (!isResAvailable) {
-                        const compareDays = (d1, d2) => {
-                            if (!d1 || !d2) return false;
-                            return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-                                   d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                        };
-
-                        for (const slot of resPredefined) {
-                            if (compareDays(slot.dia, dayName) && slot.activo !== false) {
-                                const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                                const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                                if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                    isResAvailable = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!isResAvailable) {
-                        const consultorioName = chairs.find(c => c.id === consultorioId)?.nombre || 'El consultorio seleccionado';
-                        const formattedEndTime = new Date(nuevaFin);
-                        const endTimeStr = `${String(formattedEndTime.getHours()).padStart(2, '0')}:${String(formattedEndTime.getMinutes()).padStart(2, '0')}`;
-                        throw new Error(`${consultorioName} no tiene horario de atención habilitado para el día ${dayName} de ${finalPatch.horaInicio} a ${endTimeStr}.`);
-                    }
-                }
-            }
-
-            // 2. ✅ VALIDACIÓN: Prevenir solapamiento con otras citas del mismo Doctor (excluyendo la cita actual)
-            if (doctorId) {
-                const { data: doctorCitas } = await supabase
-                    .from("citas")
-                    .select("*")
-                    .eq("tenant_id", inquilino)
-                    .eq("profesional_id", doctorId)
-                    .gte("fecha_inicio", new Date(y, m - 1, d).toISOString())
-                    .lt("fecha_inicio", new Date(y, m - 1, d + 1).toISOString());
-                
-                for (const citaExistente of (doctorCitas || [])) {
-                    if (citaExistente.id === id) continue;
-                    if (['cancelada', 'cancelado', 'cancelled'].includes((citaExistente.estado || '').toLowerCase())) continue;
-                    
-                    const citaInicio = new Date(citaExistente.fecha_inicio).getTime();
-                    const citaFin = new Date(citaExistente.fecha_fin).getTime();
-                    
-                    if (nuevaInicio < citaFin && nuevaFin > citaInicio) {
-                        const doctorName = doctors.find(d => d.id === doctorId)?.nombreCompleto || 'El doctor';
-                        const horaFinStr = new Date(citaFin).toTimeString().substring(0, 5);
-                        const horaIniStr = new Date(citaInicio).toTimeString().substring(0, 5);
-                        throw new Error(`${doctorName} ya tiene una cita desde las ${horaIniStr} hasta las ${horaFinStr}.`);
-                    }
-                }
-            }
-            
-            // Validar que el consultorio no tenga solapamiento (excluyendo la cita actual)
-            if (consultorioId) {
-                const { data: consulCitas } = await supabase
-                    .from("citas")
-                    .select("*")
-                    .eq("tenant_id", inquilino)
-                    .eq("consultorio_id", consultorioId)
-                    .gte("fecha_inicio", new Date(y, m - 1, d).toISOString())
-                    .lt("fecha_inicio", new Date(y, m - 1, d + 1).toISOString());
-                
-                for (const citaExistente of (consulCitas || [])) {
-                    if (citaExistente.id === id) continue;
-                    if (['cancelada', 'cancelado', 'cancelled'].includes((citaExistente.estado || '').toLowerCase())) continue;
-                    
-                    const citaInicio = new Date(citaExistente.fecha_inicio).getTime();
-                    const citaFin = new Date(citaExistente.fecha_fin).getTime();
-                    
-                    if (nuevaInicio < citaFin && nuevaFin > citaInicio) {
-                        const consultorioName = chairs.find(c => c.id === consultorioId)?.nombre || 'El consultorio';
-                        const horaFinStr = new Date(citaFin).toTimeString().substring(0, 5);
-                        const horaIniStr = new Date(citaInicio).toTimeString().substring(0, 5);
-                        throw new Error(`${consultorioName} está ocupado desde las ${horaIniStr} hasta las ${horaFinStr}.`);
-                    }
-                }
+                await assertAppointmentAvailability({
+                    tenantId: inquilino,
+                    professionalId,
+                    roomId,
+                    start: validatedStart,
+                    end: validatedEnd,
+                    excludeId: id
+                });
             }
         }
-    }
-
         const cleanPatch = Object.fromEntries(
             Object.entries(finalPatch).filter(([_, v]) => v !== undefined)
         );
@@ -775,16 +531,16 @@ export function useAgenda() {
         if (finalPatch.estado !== undefined) supPatch.estado = finalPatch.estado;
         if (finalPatch.status !== undefined) supPatch.estado = statusMap[finalPatch.status] || finalPatch.status.toUpperCase();
         if (finalPatch.comentario !== undefined) supPatch.notas = finalPatch.comentario;
-        if (finalPatch.start) supPatch.fecha_inicio = new Date(finalPatch.start).toISOString();
-        if (finalPatch.end) supPatch.fecha_fin = new Date(finalPatch.end).toISOString();
-        if (finalPatch.fecha && finalPatch.horaInicio) {
-            supPatch.fecha_inicio = new Date(`${finalPatch.fecha}T${finalPatch.horaInicio}:00`).toISOString();
+        if (timeChanged) {
+            supPatch.fecha_inicio = validatedStart.toISOString();
+            supPatch.fecha_fin = validatedEnd.toISOString();
         }
 
         if (Object.keys(supPatch).length > 0) {
-            await supabase.from("citas").update(supPatch).eq("id", id);
+            const { error: updateError } = await supabase.from("citas").update(supPatch)
+                .eq("tenant_id", inquilino).eq("id", id);
+            if (updateError) throw updateError;
         }
-
         // Notify patient if status/date changed
         try {
             const pacienteId = currentData.paciente_id;
@@ -834,21 +590,20 @@ export function useAgenda() {
     };
 
     const deleteAppointment = async (id) => {
-        try {
-            // Fetch from Supabase for audit
-            const { data: currentData } = await supabase.from("citas").select("*").eq("id", id).maybeSingle();
-            await supabase.from("citas").delete().eq("id", id);
-            await logAction(currentData?.paciente_id || "unknown", "DELETE_APPOINTMENT", {
-                fecha: currentData?.fecha_inicio ? currentData.fecha_inicio.split("T")[0] : "",
-                horaInicio: currentData?.fecha_inicio ? new Date(currentData.fecha_inicio).toTimeString().substring(0, 5) : "",
-                doctor: currentData?.profesional_id || "No asignado",
-                citaId: id
-            });
-        } catch (err) {
-            console.error("Error in deleteAppointment:", err);
-        }
+        const { data: currentData, error: readError } = await supabase.from("citas").select("*")
+            .eq("tenant_id", inquilino).eq("id", id).maybeSingle();
+        if (readError) throw readError;
+        if (!currentData) throw new Error("La cita no existe o no pertenece a esta clínica.");
+        const { error: deleteError } = await supabase.from("citas").delete()
+            .eq("tenant_id", inquilino).eq("id", id);
+        if (deleteError) throw deleteError;
+        await logAction(currentData.paciente_id || "unknown", "DELETE_APPOINTMENT", {
+            fecha: currentData.fecha_inicio ? currentData.fecha_inicio.split("T")[0] : "",
+            horaInicio: currentData.fecha_inicio ? new Date(currentData.fecha_inicio).toTimeString().substring(0, 5) : "",
+            doctor: currentData.profesional_id || "No asignado",
+            citaId: id
+        });
     };
-
     return {
         selectedDate, setSelectedDate,
         viewMode, setViewMode,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import supabase, { supabaseAdmin } from "../../../lib/supabaseClient";
+import supabase from "../../../lib/supabaseClient";
+import { normalizeScheduleRow } from "../../../services/agendaAvailabilityService";
 import { useAuth } from "../../../context/AuthContext";
 import { 
   FiSearch, FiEdit2, FiPlus, FiSave, FiX, FiCheck, FiUsers, FiPhone, FiInfo, FiTrash2, FiActivity, FiClock, FiChevronLeft, FiCalendar 
@@ -222,72 +223,84 @@ export default function GestionAgenda() {
       });
   }, [inquilino]);
 
-  // Reactive listeners for selected doctor's schedule subcollections
-  useEffect(() => {
-    if (!selectedProfForSchedule) return;
-
+  const reloadSchedule = async () => {
+    const activeEntity = selectedProfForSchedule || selectedResForSchedule;
+    if (!activeEntity || !inquilino) return;
     setLoadingSchedule(true);
-    const docId = selectedProfForSchedule.id;
-
-    Promise.all([
-      supabase.from("horarios_predefinidos").select("*").eq("usuario_id", docId),
-      supabase.from("agenda_abierta").select("*").eq("usuario_id", docId),
-      supabase.from("no_disponibles").select("*").eq("usuario_id", docId),
-    ]).then(([pred, open, unavail]) => {
-      setPredefinedSlots(pred.data || []);
-      setOpenAgendaSlots(open.data || []);
-      setUnavailableSlots(unavail.data || []);
+    const isResource = !!selectedResForSchedule;
+    const filterKey = isResource ? "consultorio_id" : "usuario_id";
+    const mapForUi = (row) => {
+      const normalized = normalizeScheduleRow(row);
+      return {
+        ...row,
+        dia: normalized.day || (normalized.date ? getDayNameSpanish(normalized.date) : ""),
+        fecha: normalized.date,
+        horaInicio: normalized.startTime,
+        horaFin: normalized.endTime,
+        recursoId: normalized.roomId || "todos",
+        recursoNombre: row.recurso_nombre || row.recursoNombre || (normalized.roomId ? resources.find(r => r.id === normalized.roomId)?.nombre : "Todos") || "Todos"
+      };
+    };
+    const fetchRows = async (table) => {
+      let query = supabase.from(table).select("*")
+        .eq("tenant_id", inquilino).eq(filterKey, activeEntity.id);
+      if (isResource) query = query.is("usuario_id", null);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []).map(mapForUi);
+    };
+    try {
+      const [weekly, open, unavailable] = await Promise.all([
+        fetchRows("horarios_predefinidos"), fetchRows("agenda_abierta"), fetchRows("no_disponibles")
+      ]);
+      setPredefinedSlots(weekly);
+      setOpenAgendaSlots(open);
+      setUnavailableSlots(unavailable);
+    } catch (error) {
+      console.error("Error reloading schedules:", error);
+      alert("No fue posible cargar los horarios: " + error.message);
+    } finally {
       setLoadingSchedule(false);
-    });
-  }, [selectedProfForSchedule]);
-
-  // Reactive listeners for selected resource's schedule subcollections
+    }
+  };
+  // Reload the selected professional or resource schedule from canonical tables.
   useEffect(() => {
-    if (!selectedResForSchedule || !inquilino) return;
-
-    setLoadingSchedule(true);
-    const resId = selectedResForSchedule.id;
-
-    Promise.all([
-      supabase.from("horarios_predefinidos").select("*").eq("consultorio_id", resId),
-      supabase.from("agenda_abierta").select("*").eq("consultorio_id", resId),
-      supabase.from("no_disponibles").select("*").eq("consultorio_id", resId),
-    ]).then(([pred, open, unavail]) => {
-      setPredefinedSlots(pred.data || []);
-      setOpenAgendaSlots(open.data || []);
-      setUnavailableSlots(unavail.data || []);
-      setLoadingSchedule(false);
-    }).catch(err => {
-      console.error("Error loading resource schedule:", err);
-      setLoadingSchedule(false);
-    });
-  }, [selectedResForSchedule, inquilino]);
+    if ((!selectedProfForSchedule && !selectedResForSchedule) || !inquilino) return;
+    reloadSchedule();
+  }, [selectedProfForSchedule, selectedResForSchedule, inquilino]);
 
   // Save Professional basic info
   const handleSaveProf = async (e) => {
     e.preventDefault();
-    if (!selectedProf) return;
+    if (!selectedProf || !inquilino) return;
 
     setSaving(true);
     try {
-      await supabase.from("usuarios").update({
+      const { error } = await supabase.from("profiles").update({
+        full_name: `${profForm.nombre.trim()} ${profForm.apellido.trim()}`.trim(),
+        telefono: profForm.telefonoMovil.trim(),
+        activo: profForm.activo,
+        updated_at: new Date().toISOString()
+      }).eq("tenant_id", inquilino).eq("id", selectedProf.id);
+      if (error) throw error;
+      setProfessionals(current => current.map(prof => prof.id === selectedProf.id ? {
+        ...prof,
         nombre: profForm.nombre.trim(),
         apellido: profForm.apellido.trim(),
         nombreCompleto: `${profForm.nombre.trim()} ${profForm.apellido.trim()}`.trim(),
+        telefono: profForm.telefonoMovil.trim(),
         telefonoMovil: profForm.telefonoMovil.trim(),
-        activo: profForm.activo,
-        updated_at: new Date().toISOString()
-      }).eq("id", selectedProf.id);
+        activo: profForm.activo
+      } : prof));
       setProfModalOpen(false);
       setSelectedProf(null);
     } catch (err) {
       console.error("Error updating professional:", err);
-      alert("Error al actualizar el profesional");
+      alert("Error al actualizar el profesional: " + err.message);
     } finally {
       setSaving(false);
     }
   };
-
   // Open resource edit modal
   const handleOpenResModal = (res = null) => {
     if (res) {
@@ -320,16 +333,15 @@ export default function GestionAgenda() {
     setSaving(true);
     try {
       if (selectedRes) {
-        // Update existing consultorio
-        await supabase.from("consultorios").update({
+        const { error } = await supabase.from("consultorios").update({
           nombre: resForm.nombre.trim(),
-          ubicacion: resForm.descripcion.trim(), // Supabase uses 'ubicacion' not 'descripcion'
+          ubicacion: resForm.descripcion.trim(),
           activo: resForm.active,
           updated_at: new Date().toISOString()
-        }).eq("id", selectedRes.id);
+        }).eq("tenant_id", inquilino).eq("id", selectedRes.id);
+        if (error) throw error;
       } else {
-        // Create new consultorio
-        await supabase.from("consultorios").insert([{
+        const { error } = await supabase.from("consultorios").insert([{
           tenant_id: inquilino,
           nombre: resForm.nombre.trim(),
           ubicacion: resForm.descripcion.trim(),
@@ -337,11 +349,12 @@ export default function GestionAgenda() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }]);
+        if (error) throw error;
       }
       setResModalOpen(false);
       setSelectedRes(null);
-      // Reload resources
-      const { data } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true });
+      const { data, error: reloadError } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true });
+      if (reloadError) throw reloadError;
       setResources(data || []);
     } catch (err) {
       console.error("Error saving resource:", err);
@@ -350,16 +363,17 @@ export default function GestionAgenda() {
       setSaving(false);
     }
   };
-
   // Delete Resource (consultorio)
   const handleDeleteRes = async (id) => {
     if (!inquilino) return;
     if (!window.confirm("¿Está seguro de eliminar este consultorio? Las citas asociadas podrían perder su referencia.")) return;
 
     try {
-      await supabase.from("consultorios").delete().eq("id", id);
+      const { error } = await supabase.from("consultorios").delete().eq("tenant_id", inquilino).eq("id", id);
+      if (error) throw error;
       // Reload resources after delete
-      const { data } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true });
+      const { data, error: reloadError } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true });
+      if (reloadError) throw reloadError;
       setResources(data || []);
     } catch (err) {
       console.error("Error deleting resource:", err);
@@ -409,107 +423,63 @@ export default function GestionAgenda() {
     setPredModalOpen(true);
   };
 
-  const reloadSchedule = async () => {
-    const activeEntity = selectedProfForSchedule || selectedResForSchedule;
-    if (!activeEntity) return;
 
-    setLoadingSchedule(true);
-    const isResource = !!selectedResForSchedule;
-    const filterKey = isResource ? "consultorio_id" : "usuario_id";
-    const filterVal = activeEntity.id;
-
-    try {
-      const [pred, open, unavail] = await Promise.all([
-        supabaseAdmin.from("horarios_predefinidos").select("*").eq(filterKey, filterVal),
-        supabaseAdmin.from("agenda_abierta").select("*").eq(filterKey, filterVal),
-        supabaseAdmin.from("no_disponibles").select("*").eq(filterKey, filterVal),
-      ]);
-
-      const mapSlot = (s) => ({
-        ...s,
-        dia: s.dia || (s.fecha ? getDayNameSpanish(s.fecha) : ""),
-        horaInicio: s.hora_inicio || s.horaInicio,
-        horaFin: s.hora_fin || s.horaFin,
-        recursoNombre: s.recurso_nombre || s.recursoNombre
-      });
-
-      setPredefinedSlots((pred.data || []).map(mapSlot));
-      setOpenAgendaSlots((open.data || []).map(mapSlot));
-      setUnavailableSlots((unavail.data || []).map(mapSlot));
-    } catch (err) {
-      console.error("Error reloading schedule:", err);
-    } finally {
-      setLoadingSchedule(false);
-    }
-  };
 
   const handleSavePred = async (e) => {
     e.preventDefault();
     const activeEntity = selectedProfForSchedule || selectedResForSchedule;
     if (!activeEntity || !inquilino) return;
-
     const selectedDays = Object.keys(predForm.dias).filter(d => predForm.dias[d]);
-    if (selectedDays.length === 0) {
-      alert("Debe seleccionar al menos un día de la semana");
-      return;
-    }
-
+    if (!selectedDays.length) return alert("Debe seleccionar al menos un día de la semana");
+    if (predForm.horaInicio >= predForm.horaFin) return alert("La hora final debe ser posterior a la hora inicial");
     setSaving(true);
     try {
       const isResource = !!selectedResForSchedule;
-      const entityId = activeEntity.id;
-      const selectedResource = resources.find(r => r.id === predForm.recursoId);
-      const recursoNombre = predForm.recursoId === "todos" ? "Todos" : (selectedResource?.nombre || "Todos");
-
-      const rowsToInsert = selectedDays.map(day => ({
+      const roomId = isResource ? activeEntity.id : (predForm.recursoId === "todos" ? null : predForm.recursoId);
+      const selectedResource = resources.find(r => r.id === roomId);
+      const rowForDay = (day) => ({
         tenant_id: inquilino,
-        usuario_id: isResource ? null : entityId,
-        consultorio_id: isResource ? entityId : (predForm.recursoId === "todos" ? null : predForm.recursoId),
+        usuario_id: isResource ? null : activeEntity.id,
+        consultorio_id: roomId,
         dia: day,
-        hora_inicio: format12h(predForm.horaInicio),
-        hora_fin: format12h(predForm.horaFin),
-        recurso_nombre: recursoNombre
-      }));
-
+        hora_inicio: predForm.horaInicio,
+        hora_fin: predForm.horaFin,
+        recurso_nombre: roomId ? (selectedResource?.nombre || "Consultorio") : "Todos",
+        activo: true
+      });
       if (selectedPredSlot?.id) {
-        await supabaseAdmin.from("horarios_predefinidos").update({
-          dia: selectedDays[0],
-          hora_inicio: format12h(predForm.horaInicio),
-          hora_fin: format12h(predForm.horaFin),
-          recurso_nombre: recursoNombre
-        }).eq("id", selectedPredSlot.id);
-
+        const { error } = await supabase.from("horarios_predefinidos").update(rowForDay(selectedDays[0]))
+          .eq("tenant_id", inquilino).eq("id", selectedPredSlot.id);
+        if (error) throw error;
         if (selectedDays.length > 1) {
-          await supabaseAdmin.from("horarios_predefinidos").insert(rowsToInsert.slice(1));
+          const { error: insertError } = await supabase.from("horarios_predefinidos").insert(selectedDays.slice(1).map(rowForDay));
+          if (insertError) throw insertError;
         }
       } else {
-        const { error: insertErr } = await supabaseAdmin.from("horarios_predefinidos").insert(rowsToInsert);
-        if (insertErr) throw insertErr;
+        const { error } = await supabase.from("horarios_predefinidos").insert(selectedDays.map(rowForDay));
+        if (error) throw error;
       }
-
       setPredModalOpen(false);
       setScheduleActiveTab("predefinido");
       await reloadSchedule();
-    } catch (err) {
-      console.error("Error saving predefined schedule:", err);
-      alert("Error al guardar horario predefinido: " + (err.message || ''));
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) {
+      console.error("Error saving predefined schedule:", error);
+      alert("Error al guardar horario: " + error.message);
+    } finally { setSaving(false); }
   };
-
-  const handleDeletePred = async (slotId) => {
-    if (!window.confirm("¿Desea eliminar este horario predefinido?")) return;
+  const handleDeletePred = async (slotParam) => {
+    const slotId = typeof slotParam === "object" ? slotParam?.id : slotParam;
+    if (!slotId || !window.confirm("¿Desea eliminar este horario predefinido?")) return;
+    setSaving(true);
     try {
-      await supabaseAdmin.from("horarios_predefinidos").delete().eq("id", slotId);
+      const { error } = await supabase.from("horarios_predefinidos").delete()
+        .eq("tenant_id", inquilino).eq("id", slotId);
+      if (error) throw error;
       await reloadSchedule();
-    } catch (err) {
-      console.error(err);
-      alert("Error al eliminar horario predefinido: " + err.message);
-    }
+    } catch (error) {
+      alert("Error al eliminar el horario: " + error.message);
+    } finally { setSaving(false); }
   };
-
-  // Open Agenda Add/Edit
   const handleOpenOpenModal = (slot = null) => {
     if (slot) {
       setSelectedOpenSlot(slot);
@@ -533,50 +503,42 @@ export default function GestionAgenda() {
     e.preventDefault();
     const activeEntity = selectedProfForSchedule || selectedResForSchedule;
     if (!activeEntity || !openForm.fecha || !inquilino) return;
-
+    if (openForm.horaInicio >= openForm.horaFin) return alert("La hora final debe ser posterior a la hora inicial");
     setSaving(true);
     try {
       const isResource = !!selectedResForSchedule;
-      const entityId = activeEntity.id;
-
       const payload = {
         tenant_id: inquilino,
-        usuario_id: isResource ? null : entityId,
-        consultorio_id: isResource ? entityId : null,
+        usuario_id: isResource ? null : activeEntity.id,
+        consultorio_id: isResource ? activeEntity.id : null,
         fecha: openForm.fecha,
-        hora_inicio: format12h(openForm.horaInicio),
-        hora_fin: format12h(openForm.horaFin)
+        hora_inicio: openForm.horaInicio,
+        hora_fin: openForm.horaFin,
+        activo: true
       };
-
-      if (selectedOpenSlot?.id) {
-        const { error: updateErr } = await supabaseAdmin.from("agenda_abierta").update(payload).eq("id", selectedOpenSlot.id);
-        if (updateErr) throw updateErr;
-      } else {
-        const { error: insertErr } = await supabaseAdmin.from("agenda_abierta").insert([payload]);
-        if (insertErr) throw insertErr;
-      }
+      const result = selectedOpenSlot?.id
+        ? await supabase.from("agenda_abierta").update(payload).eq("tenant_id", inquilino).eq("id", selectedOpenSlot.id)
+        : await supabase.from("agenda_abierta").insert([payload]);
+      if (result.error) throw result.error;
       setOpenModalOpen(false);
       setScheduleActiveTab("abrir");
       await reloadSchedule();
-    } catch (err) {
-      console.error(err);
-      alert("Error al guardar horario de apertura: " + (err.message || ''));
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) {
+      alert("Error al guardar apertura: " + error.message);
+    } finally { setSaving(false); }
   };
-
-  const handleDeleteOpen = async (slotId) => {
-    if (!window.confirm("¿Desea eliminar esta fecha de apertura?")) return;
+  const handleDeleteOpen = async (slotParam) => {
+    const slotId = typeof slotParam === "object" ? slotParam?.id : slotParam;
+    if (!slotId || !window.confirm("¿Desea eliminar esta fecha de apertura?")) return;
+    setSaving(true);
     try {
-      await supabaseAdmin.from("agenda_abierta").delete().eq("id", slotId);
+      const { error } = await supabase.from("agenda_abierta").delete()
+        .eq("tenant_id", inquilino).eq("id", slotId);
+      if (error) throw error;
       await reloadSchedule();
-    } catch (err) {
-      console.error(err);
-      alert("Error al eliminar fecha de apertura: " + err.message);
-    }
+    } catch (error) { alert("Error al eliminar la apertura: " + error.message); }
+    finally { setSaving(false); }
   };
-
   // Unavailable Schedule Add/Edit
   const handleOpenUnavailModal = (slot = null) => {
     if (slot) {
@@ -603,52 +565,42 @@ export default function GestionAgenda() {
     e.preventDefault();
     const activeEntity = selectedProfForSchedule || selectedResForSchedule;
     if (!activeEntity || !unavailForm.fecha || !inquilino) return;
-
+    if (unavailForm.horaInicio >= unavailForm.horaFin) return alert("La hora final debe ser posterior a la hora inicial");
     setSaving(true);
     try {
       const isResource = !!selectedResForSchedule;
-      const entityId = activeEntity.id;
-
       const payload = {
         tenant_id: inquilino,
-        usuario_id: isResource ? null : entityId,
-        consultorio_id: isResource ? entityId : null,
+        usuario_id: isResource ? null : activeEntity.id,
+        consultorio_id: isResource ? activeEntity.id : null,
         fecha: unavailForm.fecha,
-        hora_inicio: format12h(unavailForm.horaInicio),
-        hora_fin: format12h(unavailForm.horaFin),
-        motivo: unavailForm.motivo.trim()
+        hora_inicio: unavailForm.horaInicio,
+        hora_fin: unavailForm.horaFin,
+        motivo: unavailForm.motivo.trim(),
+        activo: true
       };
-
-      if (selectedUnavailSlot?.id) {
-        const { error: updateErr } = await supabaseAdmin.from("no_disponibles").update(payload).eq("id", selectedUnavailSlot.id);
-        if (updateErr) throw updateErr;
-      } else {
-        const { error: insertErr } = await supabaseAdmin.from("no_disponibles").insert([payload]);
-        if (insertErr) throw insertErr;
-      }
+      const result = selectedUnavailSlot?.id
+        ? await supabase.from("no_disponibles").update(payload).eq("tenant_id", inquilino).eq("id", selectedUnavailSlot.id)
+        : await supabase.from("no_disponibles").insert([payload]);
+      if (result.error) throw result.error;
       setUnavailModalOpen(false);
       setScheduleActiveTab("nodisponible");
       await reloadSchedule();
-    } catch (err) {
-      console.error(err);
-      alert("Error al guardar horario no disponible: " + (err.message || ''));
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) { alert("Error al guardar bloqueo: " + error.message); }
+    finally { setSaving(false); }
   };
-
-  const handleDeleteUnavail = async (slotId) => {
-    if (!window.confirm("¿Desea eliminar esta fecha no disponible?")) return;
+  const handleDeleteUnavail = async (slotParam) => {
+    const slotId = typeof slotParam === "object" ? slotParam?.id : slotParam;
+    if (!slotId || !window.confirm("¿Desea eliminar este bloqueo?")) return;
+    setSaving(true);
     try {
-      await supabaseAdmin.from("no_disponibles").delete().eq("id", slotId);
+      const { error } = await supabase.from("no_disponibles").delete()
+        .eq("tenant_id", inquilino).eq("id", slotId);
+      if (error) throw error;
       await reloadSchedule();
-    } catch (err) {
-      console.error(err);
-      alert("Error al eliminar bloqueo: " + err.message);
-    }
+    } catch (error) { alert("Error al eliminar el bloqueo: " + error.message); }
+    finally { setSaving(false); }
   };
-
-  // Checkbox select toggle handlers
   const handleToggleSelectAllPred = () => {
     if (selectedPredIds.length === filteredPredSlots.length) {
       setSelectedPredIds([]);
@@ -693,42 +645,21 @@ export default function GestionAgenda() {
 
   // Bulk delete handler using Supabase
   const handleBulkDelete = async () => {
-    const activeEntity = selectedProfForSchedule || selectedResForSchedule;
-    if (!activeEntity) return;
-
     let targetIds = [];
     let tableName = "";
-    if (scheduleActiveTab === "predefinido") {
-      targetIds = selectedPredIds;
-      tableName = "horarios_predefinidos";
-    } else if (scheduleActiveTab === "abrir") {
-      targetIds = selectedOpenIds;
-      tableName = "agenda_abierta";
-    } else if (scheduleActiveTab === "nodisponible") {
-      targetIds = selectedUnavailIds;
-      tableName = "no_disponibles";
-    }
-
-    if (targetIds.length === 0) return;
-    if (!window.confirm(`¿Está seguro de eliminar los ${targetIds.length} horarios seleccionados?`)) return;
-
+    if (scheduleActiveTab === "predefinido") { targetIds = selectedPredIds; tableName = "horarios_predefinidos"; }
+    if (scheduleActiveTab === "abrir") { targetIds = selectedOpenIds; tableName = "agenda_abierta"; }
+    if (scheduleActiveTab === "nodisponible") { targetIds = selectedUnavailIds; tableName = "no_disponibles"; }
+    if (!targetIds.length || !window.confirm(`¿Está seguro de eliminar los ${targetIds.length} horarios seleccionados?`)) return;
+    setSaving(true);
     try {
-      setSaving(true);
-      await supabaseAdmin.from(tableName).delete().in("id", targetIds);
-
-      if (scheduleActiveTab === "predefinido") setSelectedPredIds([]);
-      else if (scheduleActiveTab === "abrir") setSelectedOpenIds([]);
-      else if (scheduleActiveTab === "nodisponible") setSelectedUnavailIds([]);
-
+      const { error } = await supabase.from(tableName).delete().eq("tenant_id", inquilino).in("id", targetIds);
+      if (error) throw error;
+      setSelectedPredIds([]); setSelectedOpenIds([]); setSelectedUnavailIds([]);
       await reloadSchedule();
-    } catch (err) {
-      console.error("Error in bulk delete:", err);
-      alert("Error al eliminar los horarios seleccionados: " + (err.message || ''));
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) { alert("Error al eliminar los horarios: " + error.message); }
+    finally { setSaving(false); }
   };
-
   // Filter main lists based on search term
   const filteredProfs = professionals.filter(p => {
     const fullName = `${p.nombre || ""} ${p.apellido || ""}`.toLowerCase();
@@ -1022,7 +953,7 @@ export default function GestionAgenda() {
                             <FiEdit2 size={13} />
                           </button>
                           <button
-                            onClick={() => handleDeletePred(slot.id)}
+                            onClick={() => handleDeletePred(slot)}
                             className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
                             title="Eliminar slot"
                           >
@@ -1091,7 +1022,7 @@ export default function GestionAgenda() {
                             <FiEdit2 size={13} />
                           </button>
                           <button
-                            onClick={() => handleDeleteOpen(slot.id)}
+                            onClick={() => handleDeleteOpen(slot)}
                             className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
                             title="Eliminar"
                           >
@@ -1162,7 +1093,7 @@ export default function GestionAgenda() {
                             <FiEdit2 size={13} />
                           </button>
                           <button
-                            onClick={() => handleDeleteUnavail(slot.id)}
+                            onClick={() => handleDeleteUnavail(slot)}
                             className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
                             title="Eliminar"
                           >
@@ -1661,8 +1592,12 @@ export default function GestionAgenda() {
                   </tr>
                 ) : (
                   filteredProfs.map((prof) => (
-                    <tr key={prof.id} className="hover:bg-slate-50/40 transition-colors duration-150">
-                      <td className="px-6 py-4 text-[12px] font-bold text-slate-700 uppercase">
+                    <tr
+                      key={prof.id}
+                      onClick={() => setSelectedProfForSchedule(prof)}
+                      className="hover:bg-slate-50/60 cursor-pointer transition-colors duration-150 group"
+                    >
+                      <td className="px-6 py-4 text-[12px] font-bold text-slate-700 uppercase group-hover:text-blue-600 transition-colors">
                         {prof.nombre || "—"}
                       </td>
                       <td className="px-6 py-4 text-[12px] font-bold text-slate-700 uppercase">
@@ -1686,13 +1621,13 @@ export default function GestionAgenda() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => setSelectedProfForSchedule(prof)}
                           className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90 ml-auto"
-                          title="Editar Horarios y Configuración"
+                          title="Configurar Horarios y Agenda del Profesional"
                         >
-                          <FiEdit2 size={13} />
+                          <FiCalendar size={13} />
                         </button>
                       </td>
                     </tr>
@@ -1733,8 +1668,12 @@ export default function GestionAgenda() {
                   </tr>
                 ) : (
                   filteredResources.map((res) => (
-                    <tr key={res.id} className="hover:bg-slate-50/40 transition-colors duration-150">
-                      <td className="px-6 py-4 text-[12px] font-bold text-slate-700 uppercase">
+                    <tr
+                      key={res.id}
+                      onClick={() => setSelectedResForSchedule(res)}
+                      className="hover:bg-slate-50/60 cursor-pointer transition-colors duration-150 group"
+                    >
+                      <td className="px-6 py-4 text-[12px] font-bold text-slate-700 uppercase group-hover:text-blue-600 transition-colors">
                         {res.nombre}
                       </td>
                       <td className="px-6 py-4 text-[12px] font-medium text-slate-500 uppercase max-w-xs truncate">
@@ -1752,11 +1691,18 @@ export default function GestionAgenda() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setSelectedResForSchedule(res)}
+                          className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
+                          title="Configurar Horarios de Atención del Consultorio"
+                        >
+                          <FiCalendar size={13} />
+                        </button>
                         <button
                           onClick={() => handleOpenResModal(res)}
-                          className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90 ml-auto"
-                          title="Editar consultorio"
+                          className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-700 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
+                          title="Editar Datos del Consultorio (Nombre/Ubicación)"
                         >
                           <FiEdit2 size={13} />
                         </button>

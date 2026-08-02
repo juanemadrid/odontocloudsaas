@@ -147,7 +147,7 @@ export default function RipsGenerator() {
     // Normaliza cualquier campo de fecha (Timestamp, Date, string YYYY-MM-DD) a string "YYYY-MM-DD"
     const normalizeFecha = (val) => {
         if (!val) return null;
-        // Firestore Timestamp
+        // Timestamp normalizado
         if (typeof val === 'object' && typeof val.toDate === 'function') {
             return val.toDate().toISOString().substring(0, 10);
         }

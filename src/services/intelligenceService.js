@@ -1,27 +1,15 @@
 // src/services/intelligenceService.js
 import supabase from "../lib/supabaseClient";
+import { generateGeminiContent } from "./geminiKeyService";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
-async function callGemini(prompt, apiKey, maxTokens = 2000) {
-    const key = apiKey || import.meta.env.VITE_GEMINI_API_KEY || "";
-    if (!key) throw new Error("API Key de Gemini no configurada.");
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
-    const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens }
-        })
-    });
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err?.error?.message || `HTTP ${response.status}`);
-    }
-    const data = await response.json();
+async function callGemini(prompt, _apiKey, maxTokens = 2000) {
+    const data = await generateGeminiContent(
+        [{ parts: [{ text: prompt }] }],
+        { temperature: 0.3, maxOutputTokens: maxTokens },
+        GEMINI_MODEL
+    );
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
 

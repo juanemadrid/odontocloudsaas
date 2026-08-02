@@ -1,4 +1,5 @@
 // src/services/geminiService.js
+import { generateGeminiContent } from "./geminiKeyService";
 
 // ─── Modelos en orden de preferencia (fallback automático) ──────────────────
 // PROBADO con cuenta joshuastream27@gmail.com:
@@ -22,102 +23,32 @@ const MAX_TOKENS_REFINE = 2000;
  * - Usa backoff exponencial entre reintentos.
  */
 async function fetchGeminiWithRetry(contents, apiKey, maxRetries = 3, maxTokens = MAX_TOKENS_GUIDED) {
-    const delay = (ms) => new Promise(res => setTimeout(res, ms));
-
-    const parseRetryAfter = (errMsg) => {
-        const match = errMsg?.match(/retry in ([\d.]+)s/i);
-        if (match) return Math.ceil(parseFloat(match[1]) * 1000);
-        return 15000;
-    };
-
-    // Detectar tipo de key:
-    // - AQ. = nuevo formato Auth Key → header x-goog-api-key
-    // - AIzaSy = key clásica → query param ?key=
-    const isAuthKey = apiKey.startsWith('AQ.');
+    if (!apiKey) {
+        throw new Error('La clínica no tiene Gemini configurado.');
+    }
 
     let lastError = null;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
         const model = GEMINI_MODELS[Math.min(attempt, GEMINI_MODELS.length - 1)];
-        
-        const url = isAuthKey
-            ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-            : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        
-        const headers = isAuthKey
-            ? { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }
-            : { 'Content-Type': 'application/json' };
-
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ 
-                    contents,
-                    generationConfig: {
-                        temperature: 0,
-                        maxOutputTokens: maxTokens,
-                        responseMimeType: "application/json"
-                    }
-                })
-            });
-
-            // Éxito → retornar directamente
-            if (response.ok) {
-                const data = await response.json();
-                return data;
+            return await generateGeminiContent(
+                contents,
+                {
+                    temperature: 0,
+                    maxOutputTokens: maxTokens,
+                    responseMimeType: "application/json"
+                },
+                model
+            );
+        } catch (error) {
+            lastError = error;
+            if (attempt + 1 < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
             }
-
-            const errData = await response.json().catch(() => ({}));
-            const errMsg = errData?.error?.message || `HTTP ${response.status} - ${response.statusText}`;
-            lastError = new Error(errMsg);
-
-            // Errores recuperables: alta demanda (503), límites de cuota (429) y modelo no soportado (404)
-            if (response.status === 503 || response.status === 429 || response.status === 404) {
-                console.warn(`[GeminiService] Intento ${attempt + 1}/${maxRetries} con modelo "${model}" falló (${response.status}): ${errMsg}.`);
-                
-                if (attempt + 1 < maxRetries) {
-                    if (response.status === 429) {
-                        // Esperar el tiempo exacto que Google recomienda
-                        const waitMs = parseRetryAfter(errMsg);
-                        if (waitMs > 3000) {
-                            // Si la espera supera los 3 segundos, lanzamos el error inmediatamente
-                            // para no congelar la UI esperando un reintento largo en segundo plano.
-                            console.warn(`[GeminiService] Espera de ${(waitMs/1000).toFixed(1)}s excede el límite razonable. Cancelando reintentos.`);
-                            throw lastError;
-                        }
-                        console.warn(`[GeminiService] Esperando ${(waitMs/1000).toFixed(1)}s antes de reintentar...`);
-                        await delay(waitMs);
-                    } else if (response.status === 503) {
-                        await delay(2000);
-                    }
-                    // 404: cambiar de modelo sin delay
-                }
-                continue;
-            }
-
-        } catch (fetchError) {
-            // Si ya lo lanzamos nosotros (error terminal), propagarlo directamente
-            if (fetchError === lastError) throw fetchError;
-            // Error de red puro (TypeError: failed to fetch)
-            if (fetchError.name === 'TypeError') {
-                lastError = fetchError;
-                console.warn(`[GeminiService] Error de red en intento ${attempt + 1}/${maxRetries} con modelo "${model}".`);
-                if (attempt + 1 < maxRetries) {
-                    const nextModel = GEMINI_MODELS[Math.min(attempt + 1, GEMINI_MODELS.length - 1)];
-                    if (nextModel === model) {
-                        await delay(1000 * Math.pow(2, attempt));
-                    } else {
-                        await delay(50); // Pequeño delay de transición para estabilización de red
-                    }
-                }
-                continue;
-            }
-            throw fetchError;
         }
     }
 
-    throw lastError || new Error('El servicio de IA no está disponible. Intente de nuevo en unos momentos.');
+    throw lastError || new Error('El servicio de IA no está disponible.');
 }
 
 /** Extrae y limpia el texto JSON de una respuesta de Gemini */

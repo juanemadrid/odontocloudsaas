@@ -7,7 +7,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 async function verify() {
   await supabase.auth.signInWithPassword({
     email: "madridsystem@outlook.es",
-    password: "@Joshuamadrid27"
+    password: process.env.ODONTOCLOUD_TEST_PASSWORD
   });
 
   const { data: paciente } = await supabase

@@ -416,7 +416,7 @@ Pasos:
 **Solución:**
 1. Verificar que NO estés EDITANDO una cita (solo valida en creación)
 2. Verificar que uses mismo doctor, fecha Y hora
-3. Revisar consola (F12) por errores de Firebase
+3. Revisar consola (F12) por errores de Supabase
 
 ---
 

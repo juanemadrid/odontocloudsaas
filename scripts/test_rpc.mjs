@@ -7,7 +7,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 async function testRpc() {
   await supabase.auth.signInWithPassword({
     email: "madridsystem@outlook.es",
-    password: "@Joshuamadrid27"
+    password: process.env.ODONTOCLOUD_TEST_PASSWORD
   });
 
   const { data, error } = await supabase.rpc('exec_sql', { sql: 'SELECT 1' });

@@ -199,7 +199,7 @@ export default function Pacientes() {
     } catch (err) {
       console.error("Error eliminando paciente:", err?.code, err?.message, err);
       if (err?.code === "permission-denied") {
-        toast.error("No tienes permisos para eliminar pacientes. Verifica las reglas de Firestore.");
+        toast.error("No tienes permisos para eliminar pacientes. Verifica las políticas RLS de Supabase.");
       } else {
         toast.error(`Error al eliminar el paciente: ${err?.message || "Error desconocido"}`);
       }

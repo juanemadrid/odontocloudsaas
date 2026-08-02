@@ -43,10 +43,7 @@ export const EvolutionPrintService = {
             }
 
             const rawLogoUrl = dbLogoUrl || clinic?.logo || clinic?.logoUrl || userProfile?.tenant?.logo || "";
-            const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-            const logoUrl = (isLocalDev && rawLogoUrl && rawLogoUrl.includes('firebasestorage.googleapis.com'))
-                ? `${import.meta.env.BASE_URL || '/odontocloudsaas/'}api/proxy-logo?url=${encodeURIComponent(rawLogoUrl)}`
-                : rawLogoUrl;
+            const logoUrl = rawLogoUrl;
 
             const clinicName = dbClinicName || clinic?.nombreComercial || clinic?.nombre || clinic?.name || userProfile?.tenant?.nombreComercial || "Clínica Dental";
             const clinicNit = dbClinicNit || clinic?.nit || clinic?.NIT || userProfile?.tenant?.nit || "---";

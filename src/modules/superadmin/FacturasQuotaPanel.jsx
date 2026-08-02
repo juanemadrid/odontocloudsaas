@@ -4,6 +4,7 @@ import { useToast } from "../../context/ToastContext";
 import factusService from "../../services/factusService";
 import { getTenants } from "../../services/adminService";
 import { saveClinicFactusConfig } from "../../services/factusAdminService";
+import { getFactusStatus } from "../../services/factusProxyService";
 import {
   FiSave, FiZap, FiPlus, FiRefreshCw, FiEye, FiEyeOff,
   FiFileText, FiAlertCircle, FiCheckCircle, FiMapPin, FiSettings, FiLock, FiCheck
@@ -50,27 +51,33 @@ export default function FacturasQuotaPanel() {
     setLoading(true);
     try {
       const data = await getTenants();
-      const list = (data || []).map(t => {
-        const cuota = t.facturacionCuota || 0;
-        const usadas = t.facturacionUsadas || 0;
+      const list = await Promise.all((data || []).map(async t => {
+        let status = {};
+        try {
+          status = await getFactusStatus(t.id);
+        } catch (error) {
+          console.warn("No se pudo consultar el estado Factus:", error.message);
+        }
+        const cuota = Number(status.facturacionCuota || 0);
+        const usadas = Number(status.facturacionUsadas || 0);
         return {
           id: t.id,
           nombre: t.name || t.nombre || "Clínica Dental",
           nit: t.nit || "Sin NIT",
           facturacionCuota: cuota,
           facturacionUsadas: usadas,
-          facturacionPlan: t.planId || "Sin plan",
+          facturacionPlan: status.facturacionPlan || t.planId || "Sin plan",
           disponibles: Math.max(0, cuota - usadas),
-          hasFactusCreds: Boolean(t.hasFactusCreds),
-          factusClientId: t.factusClientId || "",
-          factusClientSecret: t.factusClientSecret || "",
-          factusUsername: t.factusUsername || "",
-          factusPassword: t.factusPassword || "",
-          factusNumberingRangeId: t.factusNumberingRangeId || "",
-          factusTestMode: t.factusTestMode ?? true,
+          hasFactusCreds: status.configured === true,
+          factusClientId: "",
+          factusClientSecret: "",
+          factusUsername: "",
+          factusPassword: "",
+          factusNumberingRangeId: status.factusNumberingRangeId || "",
+          factusTestMode: status.factusTestMode !== false,
           sucursales: [],
         };
-      });
+      }));
       setTenants(list);
     } catch (e) {
       console.error(e);

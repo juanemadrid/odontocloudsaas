@@ -4,6 +4,7 @@ import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { FiPlus, FiSearch, FiFileText, FiImage, FiTrash2, FiDownload, FiUploadCloud, FiEdit, FiEye, FiX } from "react-icons/fi";
 import { getDoctorsList } from "../../../services/supabaseServices";
+import { removePrivateFile, resolvePrivateFileUrl, uploadPrivateFile } from "../../../services/privateStorageService";
 
 
 export default function PatientRxTab({ patient, onUpdate }) {
@@ -27,6 +28,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
     const [beforeImg, setBeforeImg] = useState(null);
     const [afterImg, setAfterImg] = useState(null);
     const [sliderPos, setSliderPos] = useState(50);
+    const [signedUrls, setSignedUrls] = useState({});
     
     // Form States
     const [selectedFile, setSelectedFile] = useState(null);
@@ -57,14 +59,37 @@ export default function PatientRxTab({ patient, onUpdate }) {
         loadCatalog();
     }, [userProfile, patient]);
 
+    React.useEffect(() => {
+        let cancelled = false;
+        const refreshUrls = async () => {
+            const entries = await Promise.all(
+                (patient?.rxImagenes || []).map(async item => {
+                    if (!item?.path && !item?.url) return null;
+                    const signedUrl = await resolvePrivateFileUrl(item.url, item.path);
+                    return signedUrl ? [item.path || item.url, signedUrl] : null;
+                })
+            );
+            if (!cancelled) {
+                setSignedUrls(Object.fromEntries(entries.filter(Boolean)));
+            }
+        };
+        refreshUrls();
+        return () => {
+            cancelled = true;
+        };
+    }, [patient?.rxImagenes]);
+
     const images = useMemo(() => {
-        let list = Array.isArray(patient?.rxImagenes) ? patient.rxImagenes : [];
+        let list = Array.isArray(patient?.rxImagenes) ? patient.rxImagenes.map(item => ({
+            ...item,
+            url: signedUrls[item.path || item.url] || item.url
+        })) : [];
         if (filter.trim()) {
             const q = filter.toLowerCase();
             list = list.filter(i => (i.title || "").toLowerCase().includes(q) || (i.name || "").toLowerCase().includes(q));
         }
         return [...list].sort((a, b) => (b.uploadedAtMS || b.created || 0) - (a.uploadedAtMS || a.created || 0));
-    }, [patient?.rxImagenes, filter]);
+    }, [patient?.rxImagenes, filter, signedUrls]);
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
@@ -90,31 +115,25 @@ export default function PatientRxTab({ patient, onUpdate }) {
                 
                 if (selectedFile) {
                     const safe = (selectedFile.name || "archivo").replace(/\s+/g, "_");
-                    path = `pacientes/${patient.id}/rx/${Date.now()}_${safe}`;
-                    
-                    const { error: uploadErr } = await supabase.storage
-                        .from("adjuntos")
-                        .upload(path, selectedFile, { upsert: true });
-                    if (uploadErr) throw uploadErr;
-
-                    const { data: urlData } = supabase.storage
-                        .from("adjuntos")
-                        .getPublicUrl(path);
-                    url = urlData.publicUrl;
+                    const uploaded = await uploadPrivateFile({
+                        tenantId: userProfile?.inquilino || patient?.tenant_id || patient?.inquilino,
+                        relativePath: `pacientes/${patient.id}/rx/${Date.now()}_${safe}`,
+                        file: selectedFile,
+                        upsert: true
+                    });
+                    path = uploaded.path;
+                    url = uploaded.signedUrl;
                 }
             } else {
                 const safe = (selectedFile.name || "archivo").replace(/\s+/g, "_");
-                path = `pacientes/${patient.id}/rx/${Date.now()}_${safe}`;
-                
-                const { error: uploadErr } = await supabase.storage
-                    .from("adjuntos")
-                    .upload(path, selectedFile, { upsert: true });
-                if (uploadErr) throw uploadErr;
-
-                const { data: urlData } = supabase.storage
-                    .from("adjuntos")
-                    .getPublicUrl(path);
-                url = urlData.publicUrl;
+                const uploaded = await uploadPrivateFile({
+                    tenantId: userProfile?.inquilino || patient?.tenant_id || patient?.inquilino,
+                    relativePath: `pacientes/${patient.id}/rx/${Date.now()}_${safe}`,
+                    file: selectedFile,
+                    upsert: true
+                });
+                path = uploaded.path;
+                url = uploaded.signedUrl;
             }
 
             const itemData = {
@@ -175,6 +194,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
         const newList = currentList.filter(x => x.path !== item.path && x.url !== item.url);
 
         try {
+            if (item.path) await removePrivateFile(item.path);
             await supabase
                 .from("pacientes")
                 .update({

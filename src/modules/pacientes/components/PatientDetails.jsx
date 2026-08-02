@@ -1209,7 +1209,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                 setProfesionales(doctorsFormatted);
 
                 // TODO: Migrate convenios to Supabase when ready
-                // For now, set empty array to avoid Firestore dependency
+                // For now, set empty array to avoid an unnecessary data dependency
                 setConveniosList([]);
                 console.log("💡 Convenios temporalmente vacío - pendiente migración a Supabase");
             } catch (e) {

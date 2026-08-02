@@ -1,5 +1,5 @@
 // src/services/supabaseServices.js
-// Servicios centralizados para reemplazar todas las operaciones de Firestore con Supabase
+// Servicios centralizados para centralizar todas las operaciones de datos en Supabase
 
 import supabase from "../lib/supabaseClient";
 
@@ -553,7 +553,7 @@ export const supabaseUtils = {
     return data;
   },
 
-  // Búsqueda de pacientes (para reemplazar las búsquedas de Firestore)
+  // Búsqueda de pacientes (mediante consultas de Supabase)
   async searchPacientes(tenantId, searchTerm, limit = 20) {
     const { data, error } = await supabase
       .from("pacientes")

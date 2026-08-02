@@ -8,7 +8,7 @@ async function main() {
   console.log("Autenticando usuario...");
   const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
     email: "madridsystem@outlook.es",
-    password: "@Joshuamadrid27"
+    password: process.env.ODONTOCLOUD_TEST_PASSWORD
   });
 
   if (authError) {

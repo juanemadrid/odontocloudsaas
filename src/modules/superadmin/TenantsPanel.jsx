@@ -96,6 +96,10 @@ export default function TenantsPanel({ hideTitle }) {
     // ... (logic functions handleCreate etc) ...
     const handleCreate = async (e) => {
         e.preventDefault();
+        if ((newTenant.adminPassword || "").length < 8) {
+            alert("La contrasena inicial debe tener al menos 8 caracteres.");
+            return;
+        }
         try {
             await createTenant(newTenant);
             setShowModal(false);
@@ -182,12 +186,12 @@ export default function TenantsPanel({ hideTitle }) {
     };
 
     const handleDeleteTenant = async (id, name) => {
-        if (!window.confirm(`⚠️ ADVERTENCIA CRÍTICA: ¿Estás ABSOLUTAMENTE SEGURO de eliminar la clínica "${name}"? \n\nEsto borrará permanentemente la configuración, consultorios y perfiles de usuario en la base de datos Firestore. \n\nNOTA: El usuario de autenticación (Email) permanecerá en Firebase Auth. Deberás borrarlo manualmente desde la consola de Firebase si deseas volver a usar el mismo correo para una nueva clínica.`)) return;
+        if (!window.confirm(`⚠️ ADVERTENCIA CRÍTICA: ¿Estás ABSOLUTAMENTE SEGURO de eliminar la clínica "${name}"? \n\nEsto borrará permanentemente la configuración, consultorios, perfiles y accesos asociados en Supabase.`)) return;
 
         try {
             setProcessing(true);
             await deleteTenant(id);
-            alert("✅ Clínica y datos asociados eliminados de Firestore exitosamente.");
+            alert("✅ Clínica y datos asociados eliminados de Supabase exitosamente.");
             loadData();
         } catch (error) {
             console.error(error);

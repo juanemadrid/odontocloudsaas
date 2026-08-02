@@ -1,5 +1,6 @@
 // src/services/patientService.js
 import supabase from "../lib/supabaseClient";
+import { resolvePrivateFileUrl, uploadPrivateFile } from "./privateStorageService";
 
 // Utils
 const normalize = (s) =>
@@ -59,7 +60,8 @@ export const getPatientsPage = async (tenantId, pageIndex = 0, pageSize = 20) =>
             fecha_nacimiento: p.fecha_nacimiento || p.fechaNacimiento || "",
             sexo: p.genero || p.sexo || "No especificado",
             genero: p.genero || p.sexo || "No especificado",
-            actualizado: p.created_at || p.updated_at
+            actualizado: p.created_at || p.updated_at,
+            fotoUrl: ""
         }));
 
         return {
@@ -74,7 +76,11 @@ export const getPatientsPage = async (tenantId, pageIndex = 0, pageSize = 20) =>
 };
 
 export const searchPatients = async (tenantId, searchTerm, maxResults = 30) => {
-    if (!tenantId) return [];
+    console.log("🔍 searchPatients llamado con tenantId:", tenantId, "| term:", searchTerm);
+    if (!tenantId) {
+        console.warn("⚠️ searchPatients: tenantId es null/undefined — el usuario no tiene inquilino asignado");
+        return [];
+    }
     const term = (searchTerm || "").trim();
     if (!term) return [];
 
@@ -86,6 +92,7 @@ export const searchPatients = async (tenantId, searchTerm, maxResults = 30) => {
             .or(`nombres.ilike.%${term}%,apellidos.ilike.%${term}%,documento.ilike.%${term}%,telefono.ilike.%${term}%,email.ilike.%${term}%`)
             .limit(maxResults);
 
+        console.log("📦 Resultado búsqueda pacientes:", { tenantId, term, count: data?.length, error: error?.message });
         if (error) throw error;
 
         return (data || []).map(p => ({
@@ -100,7 +107,8 @@ export const searchPatients = async (tenantId, searchTerm, maxResults = 30) => {
             fechaNacimiento: p.fecha_nacimiento || p.fechaNacimiento || "",
             fecha_nacimiento: p.fecha_nacimiento || p.fechaNacimiento || "",
             sexo: p.genero || p.sexo || "No especificado",
-            genero: p.genero || p.sexo || "No especificado"
+            genero: p.genero || p.sexo || "No especificado",
+            fotoUrl: ""  // Se carga lazy si se necesita
         }));
     } catch (err) {
         console.error("Error en searchPatients de Supabase:", err);
@@ -210,7 +218,7 @@ export const getPatientById = async (id) => {
             alertas: data.alertas || "",
             notas: data.notas || "",
             // Foto
-            fotoUrl: data.foto_url || data.fotoUrl || ""
+            fotoUrl: await resolvePrivateFileUrl(data.foto_url || data.fotoUrl || "")
         };
     } catch (e) {
         console.error("❌ Error al obtener paciente por ID:", e);
@@ -388,21 +396,12 @@ export const togglePatientActive = async (id, isActive) => {
 // --- Storage de Supabase ---
 
 export const uploadPatientPhoto = async (tenantId, patientId, file) => {
-    const fileExt = file.name.split(".").pop();
-    const filePath = `pacientes/${tenantId}/${patientId}_${Date.now()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-        .from("adjuntos")
-        .upload(filePath, file, { upsert: true });
-
-    if (uploadError) {
-        console.error("Error al subir imagen a Supabase Storage:", uploadError);
-        throw uploadError;
-    }
-
-    const { data: { publicUrl } } = supabase.storage
-        .from("adjuntos")
-        .getPublicUrl(filePath);
-
-    return publicUrl;
+    const fileExt = file.name?.split(".").pop() || "jpg";
+    const uploaded = await uploadPrivateFile({
+        tenantId,
+        relativePath: `pacientes/${patientId}_${Date.now()}.${fileExt}`,
+        file,
+        upsert: true
+    });
+    return uploaded.reference;
 };

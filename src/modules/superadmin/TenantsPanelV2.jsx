@@ -32,6 +32,7 @@ export default function TenantsPanelV2() {
 
     // Modals
     const [showCreate,     setShowCreate]     = useState(false);
+    const [showCreatePwd,  setShowCreatePwd]  = useState(false);
     const [showPlan,       setShowPlan]       = useState(false);
     const [showRequests,   setShowRequests]   = useState(false);
     const [showDetail,     setShowDetail]     = useState(null); // tenant object
@@ -67,9 +68,10 @@ export default function TenantsPanelV2() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [tData, pData] = await Promise.all([getTenants(), getPlans()]);
+            const [tData, pData, rData] = await Promise.all([getTenants(), getPlans(), getSubscriptionRequests()]);
             setTenants(tData);
             setPlans(pData);
+            setRequests(rData || []);
             if (pData.length > 0) setNewTenant(p => ({ ...p, planId: p.planId || pData[0].id }));
         } finally { setLoading(false); }
     };
@@ -114,8 +116,8 @@ export default function TenantsPanelV2() {
             alert("⚠️ La clínica no tiene email de administrador registrado.\nEdita la clínica y agrega el email primero.");
             return;
         }
-        if (newPassword.length < 6) {
-            alert("❌ La contraseña debe tener al menos 6 caracteres.");
+        if (newPassword.length < 8) {
+            alert("❌ La contraseña debe tener al menos 8 caracteres.");
             return;
         }
         if (newPassword !== confirm) {
@@ -173,18 +175,18 @@ export default function TenantsPanelV2() {
             let msg = "✅ Datos de la clínica actualizados exitosamente.";
 
             // Si además se escribió una nueva contraseña para el administrador
-            if (editForm.newPassword && editForm.newPassword.trim().length >= 6) {
+            if (editForm.newPassword && editForm.newPassword.trim().length >= 8) {
                 const adminEmail = editForm.adminEmail || showEditTenant.adminEmail || showEditTenant.contactEmail;
                 if (adminEmail) {
                     const res = await adminChangePassword(adminEmail, editForm.newPassword.trim());
                     if (res?.message) {
                         msg += `\n\nℹ️ ${res.message}`;
                     } else {
-                        msg += `\n\n🔑 Nueva contraseña establecida para ${adminEmail}: ${editForm.newPassword.trim()}`;
+                        msg += `\n\n🔑 Nueva contraseña establecida para ${adminEmail}.`;
                     }
                 }
-            } else if (editForm.newPassword && editForm.newPassword.trim().length < 6) {
-                alert("⚠️ La contraseña debe tener al menos 6 caracteres. No se cambió la contraseña.");
+            } else if (editForm.newPassword && editForm.newPassword.trim().length < 8) {
+                alert("⚠️ La contraseña debe tener al menos 8 caracteres. No se cambió la contraseña.");
             }
 
             alert(msg);
@@ -199,12 +201,16 @@ export default function TenantsPanelV2() {
 
     const handleCreate = async (e) => {
         e.preventDefault();
+        if ((newTenant.adminPassword || "").length < 8) {
+            alert("La contrasena inicial debe tener al menos 8 caracteres.");
+            return;
+        }
         try {
             await createTenant(newTenant);
             setShowCreate(false);
             setNewTenant({ name:"",nit:"",ciudad:"",address:"",contactEmail:"",planId:plans[0]?.id||"",adminName:"",adminEmail:"",adminPassword:"",planDuration:"monthly" });
             loadData();
-        } catch (err) { alert("Error al crear clínica: " + err.message); }
+        } catch (err) { alert("Error al crear clinica: " + err.message); }
     };
 
     const handleStatusToggle = async (id, current) => {
@@ -212,7 +218,7 @@ export default function TenantsPanelV2() {
         if (!window.confirm(`¿${action} esta clínica? ${current === "active" ? "Los usuarios no podrán iniciar sesión mientras esté suspendida." : ""}`)) return;
         try { 
             await toggleTenantStatus(id, current);
-            // Force full reload to get fresh data from Firestore
+            // Force full reload to get fresh data from Supabase
             await loadData();
         } catch(err) { 
             console.error("Error al cambiar estado:", err);
@@ -599,9 +605,26 @@ export default function TenantsPanelV2() {
                             <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nombre completo *</label><input required className={inp} value={newTenant.adminName} onChange={e=>setNewTenant(p=>({...p,adminName:e.target.value}))}/></div>
                             <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email de acceso *</label><input type="email" required className={inp} value={newTenant.adminEmail} onChange={e=>setNewTenant(p=>({...p,adminEmail:e.target.value}))}/></div>
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Contraseña inicial</label>
-                                <input type="password" className={inp} placeholder="(Opcional — créala manualmente en Supabase Dashboard)" value={newTenant.adminPassword} onChange={e=>setNewTenant(p=>({...p,adminPassword:e.target.value}))}/>
-                                <p className="text-[10px] text-amber-600 mt-1">⚠️ Por seguridad, crea el usuario admin manualmente en el panel de Supabase &rarr; Authentication &rarr; Users.</p>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Contraseña inicial *</label>
+                                <div className="relative">
+                                    <input
+                                        type={showCreatePwd ? "text" : "password"}
+                                        required
+                                        minLength={8}
+                                        className={inp}
+                                        placeholder="Mínimo 8 caracteres"
+                                        value={newTenant.adminPassword}
+                                        onChange={e=>setNewTenant(p=>({...p,adminPassword:e.target.value}))}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCreatePwd(!showCreatePwd)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                        title={showCreatePwd ? "Ocultar contraseña" : "Ver contraseña"}
+                                    >
+                                        {showCreatePwd ? <FiEyeOff size={16}/> : <FiEye size={16}/>}
+                                    </button>
+                                </div>
                             </div>
                             <div className="col-span-2 flex gap-3 pt-2">
                                 <button type="button" onClick={()=>setShowCreate(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Cancelar</button>
@@ -774,7 +797,7 @@ export default function TenantsPanelV2() {
                                             <input
                                                 type={editForm.showPwd ? "text" : "password"}
                                                 className={inp}
-                                                placeholder="Ingresa una nueva contraseña (mín. 6 caract.)"
+                                                placeholder="Ingresa una nueva contraseña (mín. 8 caract.)"
                                                 value={editForm.newPassword || ""}
                                                 onChange={e=>setEditForm({...editForm, newPassword: e.target.value})}
                                             />
@@ -863,7 +886,7 @@ export default function TenantsPanelV2() {
                                         required
                                         minLength={6}
                                         className={inp}
-                                        placeholder="Mínimo 6 caracteres"
+                                        placeholder="Mínimo 8 caracteres"
                                         value={pwdForm.newPassword}
                                         onChange={e=>setPwdForm({...pwdForm, newPassword: e.target.value})}
                                     />

@@ -41,7 +41,7 @@ export default function ConfigFormularioPacientes() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("standard"); // standard | custom
 
-    // Load standard config from Firestore
+    // Load standard config from Supabase
     useEffect(() => {
         const load = async () => {
             try {

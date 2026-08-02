@@ -64,7 +64,7 @@ export const BudgetPrintService = {
             };
 
             // 2.5 Resolve Patient Info with extreme robustness
-            // Sometimes patient comes from Firestore doc, sometimes from form watch, sometimes from list search
+            // Sometimes patient comes from the database, sometimes from form watch, sometimes from list search
             const pName = (patient?.nombreCompleto || patient?.NombreCompleto || patient?.paciente || patient?.Paciente || "").toString().trim() || 
                          (patient?.nombres ? `${patient.nombres} ${patient.apellidos || ""}`.trim() : "") ||
                          (patient?.Nombres ? `${patient.Nombres} ${patient.Apellidos || ""}`.trim() : "") ||
@@ -115,10 +115,7 @@ export const BudgetPrintService = {
 
             // Resolve values
             const rawLogoUrl = dbLogoUrl || clinic?.logo || clinic?.logoUrl || "";
-            const isLocalDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-            const logoUrl = (isLocalDev && rawLogoUrl && rawLogoUrl.includes('firebasestorage.googleapis.com'))
-                ? `${import.meta.env.BASE_URL || '/odontocloudsaas/'}api/proxy-logo?url=${encodeURIComponent(rawLogoUrl)}`
-                : rawLogoUrl;
+            const logoUrl = rawLogoUrl;
             const clinicName = dbClinicName || clinic?.nombreComercial || clinic?.nombre || clinic?.name || "Clínica Odontológica";
             const clinicNit = dbClinicNit || clinic?.nit || clinic?.NIT || "---";
             const clinicAddress = dbClinicAddress || clinic?.direccion || "---";

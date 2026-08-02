@@ -10,85 +10,84 @@ const isUUID = (str) => typeof str === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-
  */
 export const getTenants = async () => {
     try {
-        const { data: row } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-            .maybeSingle();
+        const [{ data: dbTenants, error: tErr }, { data: row }] = await Promise.all([
+            supabase.from("tenants").select("*").order("created_at", { ascending: false }),
+            supabase.from("website_config").select("config").eq("tenant_id", GLOBAL_CONFIG_TENANT_ID).maybeSingle()
+        ]);
 
-        const savedTenants = row?.config?.registered_tenants;
-        if (Array.isArray(savedTenants)) {
-            return savedTenants.map(t => {
-                const createdDate = t.created_at || t.createdAt ? new Date(t.created_at || t.createdAt) : new Date();
-                const daysToAdd = t.planDuration === "yearly" ? 365 : 30;
-                const endDate = t.subscriptionEndDate 
-                    ? new Date(t.subscriptionEndDate) 
-                    : new Date(createdDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-
-                const planId = t.plan || t.planId || "free";
-                const hasCreds = Boolean(t.factusClientId && t.factusClientSecret);
-                const cuotaFacturas = t.facturacionCuota ?? 0;
-
-                return {
-                    id: t.id,
-                    name: t.nombre || t.name || "Sin nombre",
-                    nombre: t.nombre || t.name || "Sin nombre",
-                    nit: t.nit || "",
-                    telefono: t.telefono || "",
-                    address: t.direccion || t.address || "",
-                    ciudad: t.ciudad || "",
-                    contactEmail: t.contactEmail || t.email || t.adminEmail || "",
-                    adminName: t.adminName || "",
-                    adminEmail: t.adminEmail || "",
-                    planId: planId,
-                    planDuration: t.planDuration || "monthly",
-                    status: t.activo !== false ? "active" : "suspended",
-                    subscriptionStatus: t.activo !== false ? "active" : "suspended",
-                    hasFactusCreds: hasCreds,
-                    factusClientId: t.factusClientId || "",
-                    factusClientSecret: t.factusClientSecret || "",
-                    factusUsername: t.factusUsername || "",
-                    factusPassword: t.factusPassword || "",
-                    factusNumberingRangeId: t.factusNumberingRangeId || "",
-                    factusTestMode: t.factusTestMode ?? true,
-                    facturacionCuota: cuotaFacturas,
-                    facturacionUsadas: t.facturacionUsadas || 0,
-                    createdAt: createdDate.toISOString(),
-                    subscriptionEndDate: endDate.toISOString()
-                };
-            });
+        if (tErr) {
+            console.warn("Advertencia al consultar tabla tenants:", tErr.message);
         }
 
-        const { data: dbTenants } = await supabase
-            .from("tenants")
-            .select("*")
-            .order("created_at", { ascending: false });
+        const savedTenants = Array.isArray(row?.config?.registered_tenants) ? row.config.registered_tenants : [];
+        const tenantsMap = new Map();
 
-        return (dbTenants || [])
-            .filter(t => t.id !== GLOBAL_CONFIG_TENANT_ID && t.nombre !== "Clínica Principal OdontoCloud")
-            .map(t => {
-                const createdDate = t.created_at ? new Date(t.created_at) : new Date();
-                const endDate = new Date(createdDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-                return {
-                    id: t.id,
-                    name: t.nombre,
-                    nombre: t.nombre,
-                    nit: t.nit,
-                    telefono: t.telefono,
-                    address: t.direccion,
-                    ciudad: t.ciudad,
-                    contactEmail: "",
-                    planId: t.plan || "free",
-                    planDuration: "monthly",
-                    status: t.activo ? "active" : "suspended",
-                    subscriptionStatus: t.activo ? "active" : "suspended",
-                    hasFactusCreds: false,
-                    facturacionCuota: 0,
-                    facturacionUsadas: 0,
-                    createdAt: createdDate.toISOString(),
-                    subscriptionEndDate: endDate.toISOString()
-                };
+        // 1. Mapear primero las clínicas encontradas en la tabla 'tenants' de PostgreSQL
+        (dbTenants || []).forEach(t => {
+            if (t.id === GLOBAL_CONFIG_TENANT_ID) return;
+            const createdDate = t.created_at ? new Date(t.created_at) : new Date();
+            const endDate = new Date(createdDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+            tenantsMap.set(String(t.id), {
+                id: String(t.id),
+                name: t.nombre || "Clínica sin nombre",
+                nombre: t.nombre || "Clínica sin nombre",
+                nit: t.nit || "",
+                telefono: t.telefono || "",
+                address: t.direccion || "",
+                ciudad: t.ciudad || "",
+                contactEmail: t.email || "",
+                adminName: "",
+                adminEmail: t.email || "",
+                planId: t.plan || "free",
+                planDuration: "monthly",
+                status: t.activo !== false ? "active" : "suspended",
+                subscriptionStatus: t.activo !== false ? "active" : "suspended",
+                hasFactusCreds: false,
+                facturacionCuota: 0,
+                facturacionUsadas: 0,
+                createdAt: createdDate.toISOString(),
+                subscriptionEndDate: endDate.toISOString()
             });
+        });
+
+        // 2. Fusionar/Sobrescribir con la información detallada guardada en website_config (si existe)
+        savedTenants.forEach(t => {
+            if (!t || !t.id) return;
+            const idKey = String(t.id);
+            const existing = tenantsMap.get(idKey) || {};
+            const createdDate = t.created_at || t.createdAt ? new Date(t.created_at || t.createdAt) : new Date();
+            const daysToAdd = t.planDuration === "yearly" ? 365 : 30;
+            const endDate = t.subscriptionEndDate 
+                ? new Date(t.subscriptionEndDate) 
+                : new Date(createdDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+
+            tenantsMap.set(idKey, {
+                ...existing,
+                id: idKey,
+                name: t.nombre || t.name || existing.name || "Sin nombre",
+                nombre: t.nombre || t.name || existing.nombre || "Sin nombre",
+                nit: t.nit || existing.nit || "",
+                telefono: t.telefono || existing.telefono || "",
+                address: t.direccion || t.address || existing.address || "",
+                ciudad: t.ciudad || existing.ciudad || "",
+                contactEmail: t.contactEmail || t.email || t.adminEmail || existing.contactEmail || "",
+                adminName: t.adminName || existing.adminName || "",
+                adminEmail: t.adminEmail || existing.adminEmail || "",
+                planId: t.plan || t.planId || existing.planId || "free",
+                planDuration: t.planDuration || existing.planDuration || "monthly",
+                status: t.activo !== false ? "active" : "suspended",
+                subscriptionStatus: t.activo !== false ? "active" : "suspended",
+                hasFactusCreds: Boolean(t.hasFactusCreds ?? existing.hasFactusCreds),
+                factusNumberingRangeId: t.factusNumberingRangeId || existing.factusNumberingRangeId || "",
+                factusTestMode: t.factusTestMode ?? existing.factusTestMode ?? true,
+                facturacionCuota: t.facturacionCuota ?? existing.facturacionCuota ?? 0,
+                facturacionUsadas: t.facturacionUsadas ?? existing.facturacionUsadas ?? 0,
+                createdAt: createdDate.toISOString(),
+                subscriptionEndDate: endDate.toISOString()
+            });
+        });
+
+        return Array.from(tenantsMap.values());
     } catch (error) {
         console.error("Error al obtener clínicas desde Supabase:", error);
         return [];
@@ -99,98 +98,152 @@ export const getTenants = async () => {
  * Registrar una nueva Clínica (Tenant) en Supabase PostgreSQL sin bloqueos RLS
  */
 export const createTenant = async (tenantData) => {
+    const adminPassword = String(tenantData.adminPassword || "");
+    if (adminPassword.length < 8) {
+        throw new Error("La contrasena inicial debe tener al menos 8 caracteres.");
+    }
+
+    const clinicName = tenantData.name || tenantData.nombre || "Nueva Clínica";
+    const adminEmail = tenantData.adminEmail || tenantData.contactEmail || "";
+    const planId = tenantData.planId || "free";
+    const planDuration = tenantData.planDuration || "monthly";
+
+    // 1. Intentar registrar vía Edge Function si se encuentra disponible en la nube
     try {
-        const tenantId = typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : "a0000000-0000-4000-8000-" + Date.now().toString(16).padStart(12, "0");
+        const { data, error } = await supabase.functions.invoke("register-clinic", {
+            body: {
+                adminEmail,
+                adminPassword,
+                adminName: tenantData.adminName,
+                clinicName,
+                requestedPlan: planId,
+                planDuration,
+                nit: tenantData.nit || "",
+                telefono: tenantData.telefono || "",
+                direccion: tenantData.address || tenantData.direccion || "",
+                ciudad: tenantData.ciudad || "",
+                contactEmail: tenantData.contactEmail || tenantData.email || adminEmail
+            }
+        });
 
-        const createdDate = new Date();
-        const daysToAdd = tenantData.planDuration === "yearly" ? 365 : 30;
-        const endDate = new Date(createdDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+        if (!error && data?.success && data?.tenantId) {
+            return {
+                id: data.tenantId,
+                nombre: clinicName,
+                adminEmail,
+                planId,
+                activo: true
+            };
+        }
+    } catch (edgeErr) {
+        console.warn("Edge function 'register-clinic' no disponible o con bloqueo CORS, ejecutando fallback de creación directa:", edgeErr);
+    }
 
-        const planId = tenantData.planId || "pro";
-        let cuotaFacturas = 500;
-        if (planId.includes("basic") || planId.includes("basico")) cuotaFacturas = 100;
-        if (planId.includes("enterprise") || planId.includes("ips") || planId.includes("349")) cuotaFacturas = 2000;
+    // 2. Fallback de Creación Directa en PostgreSQL & website_config
+    const tenantId = crypto.randomUUID();
 
-        const payload = {
+    // a) Inserción en la tabla de PostgreSQL 'tenants'
+    const { data: dbTenant, error: dbErr } = await supabase
+        .from("tenants")
+        .insert([{
             id: tenantId,
-            nombre: tenantData.name || tenantData.nombre,
+            nombre: clinicName,
             nit: tenantData.nit || "",
-            telefono: tenantData.telefono || "",
-            direccion: tenantData.address || tenantData.direccion || "",
-            ciudad: tenantData.ciudad || "",
-            contactEmail: tenantData.contactEmail || tenantData.email || tenantData.adminEmail || "",
-            adminName: tenantData.adminName || "",
-            adminEmail: tenantData.adminEmail || "",
             plan: planId,
-            planId: planId,
-            planDuration: tenantData.planDuration || "monthly",
-            activo: true,
-            facturacionCuota: cuotaFacturas,
-            facturacionUsadas: 0,
-            created_at: createdDate.toISOString(),
-            subscriptionEndDate: endDate.toISOString()
-        };
+            activo: true
+        }])
+        .select()
+        .maybeSingle();
 
-        // 1. Persistir la clínica en website_config JSONB
-        const { data: existingRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-            .maybeSingle();
+    if (dbErr) {
+        console.warn("Advertencia al insertar en tabla tenants:", dbErr.message);
+    }
 
-        const currentTenants = existingRow?.config?.registered_tenants || [];
-        const updatedTenants = [payload, ...currentTenants];
+    // b) Sincronización en website_config global
+    const { data: existingRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+        .maybeSingle();
 
-        const updatedConfig = {
-            ...(existingRow?.config || {}),
-            registered_tenants: updatedTenants,
-            updatedAt: new Date().toISOString()
-        };
+    const currentConfig = existingRow?.config || {};
+    const registeredTenants = Array.isArray(currentConfig.registered_tenants) ? currentConfig.registered_tenants : [];
 
-        const { error: upsertErr } = await supabase
-            .from("website_config")
-            .upsert({
-                tenant_id: GLOBAL_CONFIG_TENANT_ID,
-                config: updatedConfig,
-                updated_at: new Date().toISOString()
+    const newTenantObj = {
+        id: tenantId,
+        nombre: clinicName,
+        name: clinicName,
+        nit: tenantData.nit || "",
+        telefono: tenantData.telefono || "",
+        direccion: tenantData.address || tenantData.direccion || "",
+        ciudad: tenantData.ciudad || "",
+        contactEmail: tenantData.contactEmail || tenantData.email || adminEmail,
+        adminName: tenantData.adminName || "",
+        adminEmail: adminEmail,
+        plan: planId,
+        planId: planId,
+        planDuration: planDuration,
+        activo: true,
+        createdAt: new Date().toISOString()
+    };
+
+    const updatedTenants = [...registeredTenants.filter(t => t?.id !== tenantId), newTenantObj];
+
+    const { error: wcErr } = await supabase
+        .from("website_config")
+        .upsert({
+            tenant_id: GLOBAL_CONFIG_TENANT_ID,
+            config: { ...currentConfig, registered_tenants: updatedTenants }
+        });
+
+    if (wcErr && dbErr) {
+        throw new Error(`No fue posible registrar la clínica: ${dbErr?.message || wcErr?.message}`);
+    }
+
+    // c) Creación de la cuenta de acceso Auth y perfil de administrador para la clínica
+    if (adminEmail && adminPassword) {
+        try {
+            const authClient = supabase.auth;
+            const { data: signUpData } = await authClient["signUp"]({
+                email: adminEmail.trim(),
+                password: adminPassword,
+                options: {
+                    data: {
+                        full_name: tenantData.adminName || `Administrador ${clinicName}`,
+                        tenant_id: tenantId,
+                        role: "administrador"
+                    }
+                }
             });
 
-        if (upsertErr) throw upsertErr;
-
-        // 2. Registrar el usuario administrador en Supabase Auth para que pueda iniciar sesión
-        const targetEmail = (tenantData.adminEmail || tenantData.contactEmail || "").trim();
-        const targetPassword = tenantData.adminPassword || "@OdontoCloud2026";
-
-        if (targetEmail) {
-            try {
-                const redirectUrl = `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}`;
-                const { error: signUpError } = await supabase.auth.signUp({
-                    email: targetEmail,
-                    password: targetPassword,
-                    options: {
-                        emailRedirectTo: redirectUrl,
-                        data: {
-                            full_name: tenantData.name || tenantData.adminName || "Admin Clínica",
-                            tenant_id: tenantId,
-                            role: "administrador"
-                        }
-                    }
-                });
-                if (signUpError && !signUpError.message?.includes("already registered")) {
-                    console.warn("Aviso al crear usuario en Supabase Auth:", signUpError.message);
+            const newUserId = signUpData?.user?.id;
+            if (newUserId) {
+                try {
+                    await supabase.from("profiles").upsert([{
+                        id: newUserId,
+                        email: adminEmail.trim(),
+                        full_name: tenantData.adminName || `Administrador ${clinicName}`,
+                        role: "administrador",
+                        tenant_id: tenantId,
+                        activo: true,
+                        created_at: new Date().toISOString()
+                    }], { onConflict: "id" });
+                } catch (pErr) {
+                    console.warn("Nota: El perfil se creará automáticamente en la primera sesión:", pErr?.message);
                 }
-            } catch (authErr) {
-                console.warn("Excepción al crear usuario Auth para la clínica:", authErr);
             }
+        } catch (authErr) {
+            console.warn("Advertencia al registrar usuario administrador en Supabase Auth:", authErr?.message);
         }
-
-        return payload;
-    } catch (error) {
-        console.error("Error al crear clínica en Supabase:", error);
-        throw error;
     }
+
+    return {
+        id: tenantId,
+        nombre: clinicName,
+        adminEmail,
+        planId,
+        activo: true
+    };
 };
 
 /**
@@ -302,6 +355,7 @@ export const toggleTenantStatus = async (tenantId, currentActive) => {
  */
 export const deleteTenant = async (tenantId) => {
     try {
+        // 1. Eliminar de website_config JSONB
         const { data: existingRow } = await supabase
             .from("website_config")
             .select("config")
@@ -309,7 +363,7 @@ export const deleteTenant = async (tenantId) => {
             .maybeSingle();
 
         const currentTenants = existingRow?.config?.registered_tenants || [];
-        const updatedTenants = currentTenants.filter(t => t.id !== tenantId);
+        const updatedTenants = currentTenants.filter(t => String(t.id) !== String(tenantId));
 
         const updatedConfig = {
             ...(existingRow?.config || {}),
@@ -325,7 +379,17 @@ export const deleteTenant = async (tenantId) => {
                 updated_at: new Date().toISOString()
             });
 
-        // Solo se persiste en website_config JSONB para evitar errores RLS en tenants.
+        // 2. Desactivar perfiles de usuarios vinculados a esta clínica
+        await supabase
+            .from("profiles")
+            .update({ activo: false, role: "inactivo", tenant_id: null })
+            .eq("tenant_id", tenantId);
+
+        // 3. Eliminar también de la tabla nativa 'tenants' de PostgreSQL
+        await supabase
+            .from("tenants")
+            .delete()
+            .eq("id", tenantId);
 
         return true;
     } catch (error) {
@@ -341,11 +405,13 @@ const SUPERADMIN_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 
 export const getPlans = async () => {
     try {
-        const { data: row } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", SUPERADMIN_TENANT_ID)
-            .maybeSingle();
+        const { data: publicConfigs, error } = await supabase
+            .rpc("get_public_website_configs");
+        if (error) throw error;
+        const row = publicConfigs?.find(configRow =>
+            configRow.tenant_id === SUPERADMIN_TENANT_ID ||
+            configRow.tenant_id === "general"
+        );
 
         const plans = row?.config?.plans;
         if (Array.isArray(plans)) {
@@ -738,9 +804,9 @@ export const updateGlobalConfig = async (configData) => {
 export const uploadFile = async (file, folder = "general") => {
     const fileExt = file.name ? file.name.split(".").pop() : "jpg";
     const filePath = `${folder}/${Date.now()}.${fileExt}`;
-    const { error } = await supabase.storage.from("adjuntos").upload(filePath, file);
+    const { error } = await supabase.storage.from("public-assets").upload(filePath, file);
     if (error) throw error;
-    const { data: { publicUrl } } = supabase.storage.from("adjuntos").getPublicUrl(filePath);
+    const { data: { publicUrl } } = supabase.storage.from("public-assets").getPublicUrl(filePath);
     return publicUrl;
 };
 
@@ -752,14 +818,146 @@ export const grantFreeMonth = async () => {
     return true;
 };
 
+export const createSubscriptionRequest = async ({
+    adminEmail,
+    adminPassword,
+    adminName,
+    clinicName,
+    requestedPlan
+}) => {
+    try {
+        const { data: existingRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+            .maybeSingle();
+
+        const currentConfig = existingRow?.config || {};
+        const requests = Array.isArray(currentConfig.subscription_requests) ? currentConfig.subscription_requests : [];
+
+        const newRequest = {
+            id: "req-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5),
+            tenantName: clinicName || "Nueva Clínica",
+            adminName: adminName || "",
+            adminEmail: adminEmail || "",
+            adminPassword: adminPassword || "",
+            requestedPlanName: typeof requestedPlan === "object" ? (requestedPlan?.name || "Trial") : (requestedPlan || "Trial"),
+            requestedPlanId: typeof requestedPlan === "object" ? (requestedPlan?.id || "trial") : (requestedPlan || "trial"),
+            createdAt: new Date().toISOString(),
+            status: "pending"
+        };
+
+        const updatedRequests = [newRequest, ...requests.filter(r => r.adminEmail !== adminEmail || r.status !== "pending")];
+
+        const { error } = await supabase
+            .from("website_config")
+            .upsert({
+                tenant_id: GLOBAL_CONFIG_TENANT_ID,
+                config: {
+                    ...currentConfig,
+                    subscription_requests: updatedRequests
+                },
+                updated_at: new Date().toISOString()
+            });
+
+        if (error) throw error;
+        return newRequest;
+    } catch (err) {
+        console.error("Error al guardar solicitud de demostración:", err);
+        throw err;
+    }
+};
+
 export const getSubscriptionRequests = async () => {
-    return [];
+    try {
+        const { data: existingRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+            .maybeSingle();
+
+        const requests = existingRow?.config?.subscription_requests || [];
+        return requests.filter(r => r.status === "pending");
+    } catch (err) {
+        console.error("Error al obtener solicitudes:", err);
+        return [];
+    }
 };
 
-export const approveSubscriptionRequest = async () => {
-    return true;
+export const approveSubscriptionRequest = async (requestId) => {
+    try {
+        const { data: existingRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+            .maybeSingle();
+
+        const currentConfig = existingRow?.config || {};
+        const requests = currentConfig.subscription_requests || [];
+        const targetReq = requests.find(r => r.id === requestId);
+
+        if (!targetReq) {
+            throw new Error("No se encontró la solicitud especificada.");
+        }
+
+        // 1. Crear la clínica oficialmente en el sistema
+        await createTenant({
+            name: targetReq.tenantName,
+            adminName: targetReq.adminName,
+            adminEmail: targetReq.adminEmail,
+            adminPassword: targetReq.adminPassword,
+            planId: targetReq.requestedPlanId || "consultorio",
+            planDuration: "monthly"
+        });
+
+        // 2. Marcar solicitud como aprobada
+        const updatedRequests = requests.map(r => r.id === requestId ? { ...r, status: "approved", approvedAt: new Date().toISOString() } : r);
+
+        await supabase
+            .from("website_config")
+            .upsert({
+                tenant_id: GLOBAL_CONFIG_TENANT_ID,
+                config: {
+                    ...currentConfig,
+                    subscription_requests: updatedRequests
+                },
+                updated_at: new Date().toISOString()
+            });
+
+        return true;
+    } catch (err) {
+        console.error("Error al aprobar solicitud:", err);
+        throw err;
+    }
 };
 
-export const rejectSubscriptionRequest = async () => {
-    return true;
+export const rejectSubscriptionRequest = async (requestId, reason = "") => {
+    try {
+        const { data: existingRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+            .maybeSingle();
+
+        const currentConfig = existingRow?.config || {};
+        const requests = currentConfig.subscription_requests || [];
+
+        const updatedRequests = requests.map(r => r.id === requestId ? { ...r, status: "rejected", rejectReason: reason, rejectedAt: new Date().toISOString() } : r);
+
+        await supabase
+            .from("website_config")
+            .upsert({
+                tenant_id: GLOBAL_CONFIG_TENANT_ID,
+                config: {
+                    ...currentConfig,
+                    subscription_requests: updatedRequests
+                },
+                updated_at: new Date().toISOString()
+            });
+
+        return true;
+    } catch (err) {
+        console.error("Error al rechazar solicitud:", err);
+        throw err;
+    }
 };

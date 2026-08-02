@@ -4,7 +4,7 @@ import { MASTER_CONFIG } from '../../constants/MasterConfig';
 import PricingSection from './PricingSection';
 import { getPlans } from '../../services/adminService';
 import FAQSection from './FAQSection';
-import supabase from "../../lib/supabaseClient";
+import { fetchTenantConfigBySlug } from "../../utils/tenantConfigHelper";
 import TrialModal from "../../components/landing/TrialModal";
 import SubscriptionModal from "../../components/landing/SubscriptionModal";
 
@@ -19,16 +19,8 @@ export default function PricingPage() {
         window.scrollTo(0, 0);
         const loadData = async () => {
             try {
-                // 1. Load general config from Supabase
-                const { data: row } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
-                    .maybeSingle();
-
-                if (row?.config) {
-                    setConfig({ ...MASTER_CONFIG, ...row.config });
-                }
+                const publicConfig = await fetchTenantConfigBySlug(null, true);
+                setConfig(publicConfig);
 
                 // 2. Load plans
                 const dbPlans = await getPlans();

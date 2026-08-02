@@ -11,7 +11,7 @@ import factusService from "./factusService";
  *
  * @param {Object} factura        - Invoice data (items, total, medioPago, etc.)
  * @param {Object} patient        - Patient data (documento, tipoDocumento, email, etc.)
- * @param {Object|null} tenantCredentials - Factus credentials from Firestore tenants doc
+ * @param {Object|null} tenantCredentials - Factus credentials supplied by the secure backend
  */
 export const emitirFacturaDian = async (
   factura,

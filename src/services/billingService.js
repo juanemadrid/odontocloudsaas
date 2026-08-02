@@ -12,8 +12,8 @@ export const getPatientFinancials = async (patientId, tenantId) => {
         let facturas = [];
         let plans = [];
 
-        // 1. Load Pagos — columnas exactas que usa la UI
-        const PAGO_COLS = "id, paciente_id, tenant_id, monto, fecha, created_at, metodo, medio, referencia, concepto, notas, notes, estado, motivoAnulacion, anuladoPor, fechaAnulacion, nroConsecutivo, consecutivo, registradoPor, usuarioNombre";
+        // 1. Load Pagos — solo columnas que existen en el schema de Supabase
+        const PAGO_COLS = "id, paciente_id, tenant_id, monto, fecha, created_at, metodo, referencia, notas, estado";
         
         try {
             const { data, error } = await supabase
@@ -34,7 +34,7 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                     .from("pagos")
                     .select(PAGO_COLS)
                     .eq("tenant_id", tenantId)
-                    .or(`paciente_id.eq.${patientId},pacienteId.eq.${patientId}`);
+                    .eq("paciente_id", patientId);
                 
                 if (tenantPagos && tenantPagos.length > 0) {
                     pagos = tenantPagos;
@@ -83,27 +83,40 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             fechaISO: f.fecha_emision || f.created_at
         })).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
 
-        // Format pagos
+        // Format pagos — los campos extra se leen desde notas (guardados como JSON)
         pagos = (pagos || []).map(p => {
-            const isVoided = (p.estado || "").toLowerCase() === "anulado" || 
-                             (p.referencia || "").toUpperCase().includes("ANULADO") || 
-                             (p.notas || p.notes || "").toUpperCase().includes("ANULADO");
-            
-            let motivo = p.motivoAnulacion || p.motivo_anulacion || p.motivo || "";
-            if (!motivo && isVoided && (p.notas || p.notes)) {
-                motivo = (p.notas || p.notes).replace(/^ANULADO\s*-\s*/i, "").trim();
+            // Intentar parsear notas como JSON para extraer campos extra
+            let notasParsed = {};
+            try {
+                if (p.notas && p.notas.startsWith("{")) {
+                    notasParsed = JSON.parse(p.notas);
+                }
+            } catch (e) {}
+
+            const isVoided = (p.estado || "").toLowerCase() === "anulado" ||
+                             (p.referencia || "").toUpperCase().includes("ANULADO") ||
+                             (p.notas || "").toUpperCase().includes("ANULADO");
+
+            let motivo = notasParsed.motivoAnulacion || p.motivo_anulacion || "";
+            if (!motivo && isVoided && p.notas && !p.notas.startsWith("{")) {
+                motivo = p.notas.replace(/^ANULADO\s*-\s*/i, "").trim();
             }
 
             return {
                 id: p.id,
                 ...p,
                 monto: s(p.monto),
-                fechaISO: p.fecha || p.fechaISO || p.created_at,
-                medio: p.medio || p.metodo_pago || p.metodo || "—",
-                concepto: p.referencia || p.concepto || "",
+                fechaISO: p.fecha || p.created_at,
+                medio: p.metodo || "—",
+                concepto: notasParsed.concepto || p.referencia || "",
                 estado: isVoided ? "Anulado" : (p.estado || "Completado"),
                 motivoAnulacion: motivo,
-                notas: p.notas || p.notes || ""
+                notas: notasParsed.notas || (p.notas && !p.notas.startsWith("{") ? p.notas : "") || "",
+                notes: notasParsed.notas || "",
+                nroConsecutivo: notasParsed.nroConsecutivo || "",
+                consecutivo: notasParsed.nroConsecutivo || "",
+                registradoPor: notasParsed.registradoPor || "Sistema",
+                usuarioNombre: notasParsed.registradoPor || "Sistema"
             };
         }).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
 
@@ -128,18 +141,20 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             } catch (e) {}
         }
 
-        // Leer saldo_favor del paciente — columna específica (ya era correcto)
+        // Leer saldo_favor del paciente (si la columna existe)
         let patientSaldoFavor = 0;
         try {
-            const { data: pacData } = await supabase
+            const { data: pacData, error: pacErr } = await supabase
                 .from("pacientes")
                 .select("saldo_favor")
                 .eq("id", patientId)
                 .maybeSingle();
-            if (pacData) {
+            if (!pacErr && pacData) {
                 patientSaldoFavor = Number(pacData.saldo_favor || 0);
             }
-        } catch (e) {}
+        } catch (e) {
+            // columna puede no existir, ignorar
+        }
 
         const isNotAnulado = (p) => {
             const estadoStr = (p.estado || "").toLowerCase();

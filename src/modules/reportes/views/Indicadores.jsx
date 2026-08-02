@@ -16,7 +16,7 @@ export default function Indicadores() {
 
   const [activeTooltip, setActiveTooltip] = useState(null);
 
-  // Stats State calculados con Firestore
+  // Stats State calculados con Supabase
   const [metrics, setMetrics] = useState({
     recaudoActual: 0,
     recaudoAnterior: 0,
@@ -65,7 +65,7 @@ export default function Indicadores() {
     fetchBranches();
   }, [userProfile?.inquilino]);
 
-  // Cargar Métricas reales de Firebase Firestore
+  // Cargar Métricas reales de Supabase
   const loadRealMetrics = async () => {
     if (!userProfile?.inquilino) return;
     setLoading(true);
@@ -202,7 +202,7 @@ export default function Indicadores() {
       const deltaPres = presPrv > 0 ? ((presCur - presPrv) / presPrv) * 100 : (presCur > 0 ? 100 : 0);
       const deltaPlanes = planVendPrv > 0 ? ((planVendCur - planVendPrv) / planVendPrv) * 100 : (planVendCur > 0 ? 100 : 0);
 
-      // Resumen Anual 12 meses (Cálculo real mensual de Firestore del año seleccionado)
+      // Resumen Anual 12 meses (Cálculo real mensual de Supabase del año seleccionado)
       const mesNombres = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
       const recaudoPorMesArr = new Array(12).fill(0);
 

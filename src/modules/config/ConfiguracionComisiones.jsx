@@ -26,7 +26,7 @@ export default function ConfiguracionComisiones() {
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState(null);
 
-    // Load doctors from Firestore
+    // Load doctors from Supabase
     useEffect(() => {
         if (!userProfile?.inquilino) return;
         const loadData = async () => {

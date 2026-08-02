@@ -170,7 +170,7 @@ export default function ConfigEmpresa() {
         setUploading(true);
         try {
             const fileExt = file.name.split('.').pop();
-            const fileName = `tenants/${userProfile.inquilino}_logo_${Date.now()}.${fileExt}`;
+            const fileName = `${userProfile.inquilino}/tenants/logo_${Date.now()}.${fileExt}`;
             
             let finalUrl = "";
 

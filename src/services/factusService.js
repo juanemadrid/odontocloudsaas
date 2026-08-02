@@ -1,7 +1,15 @@
+import {
+  downloadFactusPdf,
+  getFactusRanges,
+  getFactusStatus,
+  sendFactusBill,
+  testFactusCredentials,
+} from "./factusProxyService";
+
 /**
  * factusService.js
  * Robust Factus electronic invoicing service for OdontoCloud.
- * Credentials are loaded from Firestore at runtime — never from VITE_ env.
+ * Credentials are loaded from the secure backend at runtime — never from VITE_ env.
  */
 
 // ─────────────────────────────────────────────
@@ -138,53 +146,17 @@ export const getDocTypeCode = (tipoDocumento) => {
 // ─────────────────────────────────────────────
 // 1. getToken — cached OAuth2 token
 // ─────────────────────────────────────────────
-export const getToken = async (credentials) => {
-  const key = credKey(credentials);
-  const cached = tokenCache[key];
-
-  if (cached && Date.now() < cached.expiresAt) {
-    return cached.accessToken;
+export const getToken = async () => {
+  const status = await getFactusStatus();
+  if (!status.configured) {
+    throw new Error("La clínica no tiene credenciales Factus configuradas.");
   }
-
-  const baseUrl = getBaseUrl(credentials.factusTestMode);
-  const params = new URLSearchParams({
-    grant_type: "password",
-    client_id: credentials.factusClientId,
-    client_secret: credentials.factusClientSecret,
-    username: credentials.factusUsername,
-    password: credentials.factusPassword,
-  });
-
-  const response = await fetch(`${baseUrl}/oauth/token`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(parseFactusError(data, response.status));
-  }
-
-  if (!data.access_token) {
-    throw new Error("No se recibió access_token de Factus.");
-  }
-
-  // Cache with 60-second safety margin
-  const expiresIn = (data.expires_in || 3600) - 60;
-  tokenCache[key] = {
-    accessToken: data.access_token,
-    expiresAt: Date.now() + expiresIn * 1000,
-  };
-
-  return data.access_token;
+  return "server-managed";
 };
 
 // ─────────────────────────────────────────────
-// 2. getAccessToken — legacy / direct (no cache)
+// 2. getAccessToken — compatibilidad: el token nunca sale del backend
+// ─────────────────────────────────────────────
 // ─────────────────────────────────────────────
 export const getAccessToken = async (
   clientId,
@@ -193,122 +165,55 @@ export const getAccessToken = async (
   password,
   testMode = true
 ) => {
-  const baseUrl = getBaseUrl(testMode);
-  const params = new URLSearchParams({
-    grant_type: "password",
-    client_id: clientId,
-    client_secret: clientSecret,
-    username,
-    password,
+  await testFactusCredentials({
+    factusClientId: clientId,
+    factusClientSecret: clientSecret,
+    factusUsername: username,
+    factusPassword: password,
+    factusTestMode: testMode,
   });
-
-  const response = await fetch(`${baseUrl}/oauth/token`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(parseFactusError(data, response.status));
-  }
-  return data;
+  return { access_token: "server-managed" };
 };
 
 // ─────────────────────────────────────────────
 // 3. testConnection
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
 export const testConnection = async (credentials) => {
-  const {
-    factusClientId,
-    factusClientSecret,
-    factusUsername,
-    factusPassword,
-    username,
-    password,
-    factusTestMode,
-  } = credentials;
-
-  const user = factusUsername || username;
-  const pass = factusPassword || password;
-
-  if (!factusClientId || !factusClientSecret || !user || !pass) {
-    throw new Error(
-      "Faltan credenciales requeridas (Client ID, Client Secret, Usuario, Contraseña)."
-    );
-  }
-
-  const normalized = {
-    factusClientId,
-    factusClientSecret,
-    factusUsername: user,
-    factusPassword: pass,
-    factusTestMode,
-  };
-
-  const accessToken = await getToken(normalized);
-
+  await testFactusCredentials(credentials);
   return {
     success: true,
     message: "Conexión establecida con éxito.",
-    accessToken,
+    accessToken: "server-managed",
   };
 };
 
 // ─────────────────────────────────────────────
 // 4. getNumberingRanges
 // ─────────────────────────────────────────────
-export const getNumberingRanges = async (accessToken, testMode = true) => {
-  const baseUrl = getBaseUrl(testMode);
-  const response = await fetch(`${baseUrl}/v2/numbering-ranges`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(parseFactusError(data, response.status));
-  }
-  return data;
+// ─────────────────────────────────────────────
+export const getNumberingRanges = async () => {
+  const data = await getFactusRanges();
+  return data.result;
 };
 
 // ─────────────────────────────────────────────
 // 5. downloadInvoicePDF
 // ─────────────────────────────────────────────
-export const downloadInvoicePDF = async (
-  billNumber,
-  accessToken,
-  testMode = true
-) => {
-  const baseUrl = getBaseUrl(testMode);
-  const response = await fetch(
-    `${baseUrl}/v2/bills/${billNumber}/download-pdf`,
-    {
-      headers: {
-        Accept: "application/pdf",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  if (!response.ok) {
-    let errorMsg = `Error HTTP ${response.status}`;
-    try {
-      const errData = await response.json();
-      errorMsg = parseFactusError(errData, response.status);
-    } catch (_) {}
-    throw new Error(errorMsg);
+// ─────────────────────────────────────────────
+export const downloadInvoicePDF = async (billNumber) => {
+  const data = await downloadFactusPdf(billNumber);
+  const binary = atob(data.base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
   }
-
-  return response.blob();
+  return new Blob([bytes], { type: data.mimeType || "application/pdf" });
 };
 
 // ─────────────────────────────────────────────
 // 6. sendInvoice — full payload builder + send
+// ─────────────────────────────────────────────
 // ─────────────────────────────────────────────
 export const sendInvoice = async (invoiceData, patientData, tenantCredentials) => {
   // ── Load credentials: check sucursal / tenant specific credentials, fallback to superadmin central ──
@@ -423,7 +328,7 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   const address =
     patientData.direccion || patientData.address || "Dirección no registrada";
   const cityName =
-    patientData.ciudad || patientData.municipio || "Bogotá D.C.";
+    patientData.ciudad || patientData.municipio || "Bogotá D.r.";
   const municipalityCode = getMunicipalityCode(cityName) || "11001"; // default Bogotá if not found
 
   const fullName = [patientData.nombre, patientData.apellido]
@@ -529,24 +434,8 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
 
   console.log("📤 Factus payload:", JSON.stringify(payload, null, 2));
 
-  const baseUrl = getBaseUrl(testMode);
-  const response = await fetch(`${baseUrl}/v2/bills/validate`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    console.error("❌ Factus error response:", JSON.stringify(data, null, 2));
-    throw new Error(parseFactusError(data, response.status));
-  }
-
-  return { ...data, _referenceCode: referenceCode };
+  const proxyResponse = await sendFactusBill(payload);
+  return { ...proxyResponse.result, _referenceCode: referenceCode };
 };
 
 // ─────────────────────────────────────────────

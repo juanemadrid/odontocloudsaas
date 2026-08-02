@@ -9,7 +9,7 @@ function ensureXLSX() {
     return new Promise((resolve) => {
         if (typeof window !== "undefined" && window.XLSX) return resolve(window.XLSX);
         const s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+        s.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
         s.onload = () => resolve(window.XLSX || null);
         s.onerror = () => resolve(null);
         document.head.appendChild(s);

@@ -67,13 +67,17 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf-utils';
             if (id.includes('recharts')) return 'charts-vendor';
-            if (id.includes('firebase')) return 'firebase-vendor';
             if (id.includes('@supabase')) return 'supabase-vendor';
             if (id.includes('react-icons')) return 'icons-vendor';
             if (id.includes('xlsx')) return 'xlsx-vendor';
             return 'vendor';
           }
           if (id.includes('src/modules/odontograma')) return 'module-odontograma';
+          if (
+            id.includes('src/modules/pacientes/components/DocClinicoModal') ||
+            id.includes('src/modules/pacientes/components/MedicamentoSearch')
+          ) return 'clinical-document-modal';
+          if (id.includes('src/data/cumCompleto') || id.includes('src/data/medicamentosColombia')) return 'clinical-catalogs';
           if (id.includes('src/modules/pacientes')) return 'module-pacientes';
           if (id.includes('src/modules/agenda')) return 'module-agenda';
           if (id.includes('src/modules/financiero') || id.includes('src/modules/caja')) return 'module-financiero';

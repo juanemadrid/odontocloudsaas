@@ -7,12 +7,20 @@ import { MASTER_CONFIG } from "../constants/MasterConfig";
  * or return MASTER_CONFIG if isMaster is true.
  */
 export async function fetchTenantConfigBySlug(clinicSlug, isMaster = false) {
-    if (isMaster) return MASTER_CONFIG;
-
-    if (!clinicSlug) return DEFAULT_CONFIG;
+    if (!clinicSlug && !isMaster) return DEFAULT_CONFIG;
 
     try {
-        const { data: rows, error } = await supabase.from("website_config").select("*");
+        const { data: rows, error } = await supabase.rpc("get_public_website_configs");
+
+        if (isMaster) {
+            const masterRow = rows?.find(row =>
+                row.tenant_id === "general" ||
+                row.tenant_id === "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            );
+            return masterRow?.config
+                ? { ...MASTER_CONFIG, ...masterRow.config, isMaster: true }
+                : MASTER_CONFIG;
+        }
         
         if (!error && rows && Array.isArray(rows) && rows.length > 0) {
             const normSlug = clinicSlug.toLowerCase().trim();
@@ -34,10 +42,6 @@ export async function fetchTenantConfigBySlug(clinicSlug, isMaster = false) {
                 });
             }
 
-            // 3. Fallback to first non-master row if there is a client tenant row available
-            if (!matchedRow) {
-                matchedRow = rows.find(r => r.tenant_id !== "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11") || rows[0];
-            }
 
             if (matchedRow && matchedRow.config) {
                 const data = matchedRow.config;

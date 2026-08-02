@@ -54,7 +54,7 @@ export function useAppointments(inquilino, selectedDate, viewType = 'day') {
 
     const removeAppointment = async (id) => {
         try {
-            await deleteAppointment(id);
+            await deleteAppointment(inquilino, id);
             toast.success("Cita eliminada");
             return true;
         } catch (error) {

@@ -65,7 +65,7 @@ export function useOdontograma(selectedPatient) {
         // 2. Optimistic Update (Local State) is handled by the subscription callback mostly, 
         // but for instant feedback we could update state. 
         // However, since we have real-time listeners, if we update state here AND get listener update, it might conflict or be redundant.
-        // Best practice with Firestore generic listeners: Optimistic update local state, then let listener confirm.
+        // Best practice with realtime data listeners: Optimistic update local state, then let listener confirm.
         const newWholeData = {
             ...wholeOdontogramaData,
             [viewMode]: updatedLayer

@@ -22,7 +22,17 @@ export const AuthProvider = ({ children }) => {
     if (!forceRefresh) {
       try {
         const cached = sessionStorage.getItem(cacheKey);
-        if (cached) return JSON.parse(cached);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          // Descartar caché si no tiene inquilino válido
+          if (parsed && parsed.inquilino) {
+            console.log("AuthContext - Usando caché con inquilino:", parsed.inquilino);
+            return parsed;
+          } else {
+            console.warn("AuthContext - Caché inválido (sin inquilino), recargando...");
+            sessionStorage.removeItem(cacheKey);
+          }
+        }
       } catch (e) {}
     }
 
@@ -39,6 +49,17 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (profile) {
+        // Para usuarios no superadmin, verificar que el perfil y el tenant estén activos
+        const isSuperAdmin = authUser.email?.toLowerCase() === "madridsystem@outlook.es" || (profile.role || "").toLowerCase() === "superadmin";
+        if (!isSuperAdmin) {
+          if (profile.activo === false || !profile.tenant_id || !profile.tenant || profile.tenant.activo === false) {
+            console.warn("AuthContext - Perfil o clínica inactiva/eliminada, cerrando sesión...");
+            try { sessionStorage.removeItem(cacheKey); } catch {}
+            await supabase.auth.signOut();
+            return null;
+          }
+        }
+
         let permisosConfig = null;
         let extraLogo = "";
         try {
@@ -69,12 +90,13 @@ export const AuthProvider = ({ children }) => {
 
         let masterPlans = [];
         try {
-          const { data: superConfig } = await supabase
+          // Leer planes maestros directamente (sin RPC que puede no existir)
+          const { data: masterCfg } = await supabase
             .from("website_config")
             .select("config")
             .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
             .maybeSingle();
-          masterPlans = superConfig?.config?.plans || [];
+          masterPlans = masterCfg?.config?.plans || [];
         } catch (e) {}
 
         const tenantData = profile.tenant || {};
@@ -128,62 +150,70 @@ export const AuthProvider = ({ children }) => {
           }
         };
 
-
-
-        if (authUser.email === "madridsystem@outlook.es") {
-          fullProfile.rol = "superadmin";
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(fullProfile));
+        } catch {
+          // El almacenamiento de sesión puede no estar disponible.
         }
-
-        try { sessionStorage.setItem(cacheKey, JSON.stringify(fullProfile)); } catch (e) {}
         return fullProfile;
       }
 
+      // Fallback: leer tenant_id y rol desde el JWT (user_metadata)
+      // Esto funciona cuando RLS aún no permite leer profiles pero el JWT ya tiene los datos
+      const meta = authUser.user_metadata || {};
+      const jwtTenantId = meta.tenant_id || null;
+      const jwtRole = meta.role || "recepcionista";
+      const jwtName = meta.full_name || authUser.email?.split("@")[0]?.toUpperCase() || "Usuario";
 
-      // 2. Profile fallback: Buscar si el usuario pertenece a una clínica registrada en website_config JSONB
-      try {
-        const { data: webConfig } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
-          .maybeSingle();
+      if (jwtTenantId) {
+        console.log("AuthContext - Usando fallback JWT para tenant_id:", jwtTenantId);
 
-        const registeredTenants = webConfig?.config?.registered_tenants || [];
-        const userEmail = (authUser.email || "").toLowerCase();
-        const matchingTenant = registeredTenants.find(t => 
-          (t.adminEmail && t.adminEmail.toLowerCase() === userEmail) ||
-          (t.contactEmail && t.contactEmail.toLowerCase() === userEmail)
-        );
-
-        if (matchingTenant) {
-          return {
-            uid: authUser.id,
-            email: authUser.email,
-            rol: "administrador",
-            inquilino: matchingTenant.id,
-            nombre: matchingTenant.nombre || matchingTenant.name || authUser.email.split("@")[0],
-            tenant: {
-              id: matchingTenant.id,
-              nombre: matchingTenant.nombre || matchingTenant.name,
-              nombreComercial: matchingTenant.nombre || matchingTenant.name,
-              direccion: matchingTenant.direccion || matchingTenant.address || "---",
-              telefono: matchingTenant.telefono || "---",
-              logo: matchingTenant.logo_url || matchingTenant.logoUrl || matchingTenant.logo || "",
-              nit: matchingTenant.nit || ""
-            }
-          };
+        // Intentar cargar datos del tenant
+        let tenantInfo = { id: jwtTenantId, nombre: "Mi Clínica", nombreComercial: "Mi Clínica" };
+        try {
+          const { data: tenantRow } = await supabase
+            .from("tenants")
+            .select("id, nombre, nit, telefono, direccion, logo_url, plan, activo")
+            .eq("id", jwtTenantId)
+            .maybeSingle();
+          if (tenantRow) {
+            tenantInfo = {
+              id: tenantRow.id,
+              nombre: tenantRow.nombre || "Mi Clínica",
+              nombreComercial: tenantRow.nombre || "Mi Clínica",
+              nit: tenantRow.nit || "",
+              telefono: tenantRow.telefono || "",
+              direccion: tenantRow.direccion || "",
+              logo: tenantRow.logo_url || "",
+              logo_url: tenantRow.logo_url || "",
+              plan: { id: tenantRow.plan || "free" },
+              activo: tenantRow.activo
+            };
+          }
+        } catch (e) {
+          console.warn("AuthContext - No se pudo cargar tenant desde fallback JWT:", e);
         }
-      } catch (tErr) {
-        console.warn("AuthContext - Error buscando tenant en website_config:", tErr);
+
+        const fallbackProfile = {
+          uid: authUser.id,
+          id: authUser.id,
+          email: authUser.email,
+          rol: jwtRole.trim().toLowerCase(),
+          role: jwtRole,
+          inquilino: jwtTenantId,
+          tenant_id: jwtTenantId,
+          nombre: jwtName,
+          nombreCompleto: jwtName,
+          tenant: tenantInfo
+        };
+
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(fallbackProfile)); } catch (e) {}
+        return fallbackProfile;
       }
 
-      // Profile fallback por defecto
-      return {
-        uid: authUser.id,
-        email: authUser.email,
-        rol: authUser.email === "madridsystem@outlook.es" ? "superadmin" : "recepcionista",
-        inquilino: authUser.email === "madridsystem@outlook.es" ? "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" : null,
-        nombre: authUser.email ? authUser.email.split("@")[0].toUpperCase() : "Usuario",
-      };
+      // Sin tenant_id no se puede operar
+      console.warn("AuthContext - No se pudo obtener tenant_id para el usuario:", authUser.email);
+      return null;
     } catch (e) {
       console.error("AuthContext - Error en fetchUserProfile:", e);
       return null;
@@ -192,6 +222,14 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let isMounted = true;
+
+    // Timeout de seguridad: si en 8 segundos no terminó de cargar, desbloquear
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        console.warn("AuthContext - Timeout de seguridad: forzando loading=false");
+        setLoading(false);
+      }
+    }, 8000);
 
     // Inicializar sesión Supabase
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -204,10 +242,16 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setUserProfile(null);
       }
-      if (isMounted) setLoading(false);
+      if (isMounted) {
+        clearTimeout(safetyTimeout);
+        setLoading(false);
+      }
     }).catch(err => {
       console.error("AuthContext - Error obteniendo sesión de Supabase:", err);
-      if (isMounted) setLoading(false);
+      if (isMounted) {
+        clearTimeout(safetyTimeout);
+        setLoading(false);
+      }
     });
 
     // Escuchar cambios de autenticación en tiempo real en Supabase
@@ -237,6 +281,7 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimeout);
       subscription?.unsubscribe();
       window.removeEventListener("tenant-updated", handleTenantUpdated);
     };

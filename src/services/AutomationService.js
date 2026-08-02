@@ -4,7 +4,7 @@
  * ⚠️ NOTA: Sistema de webhooks n8n NO SE UTILIZARÁ en esta implementación.
  * Este servicio se mantiene para compatibilidad pero está deshabilitado por defecto.
  * 
- * Para activarlo en el futuro, configurar: VITE_N8N_WEBHOOK_URL en .env
+ * Cualquier reactivacion futura debe implementarse mediante una Edge Function autenticada.
  *
  * Eventos disponibles (documentados para referencia):
  *   APPOINTMENT_CREATED | APPOINTMENT_UPDATED | APPOINTMENT_CANCELLED
@@ -15,8 +15,7 @@
  *   PATIENT_NO_VISIT_30_DAYS | PATIENT_NO_VISIT_60_DAYS
  */
 
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || "";
-const N8N_ENABLED = false; // ⚠️ Deshabilitado - cambiar a true si se desea activar
+const N8N_ENABLED = false; // Integracion retirada del cliente por seguridad.
 
 // Catálogo de eventos con metadatos
 export const AUTOMATION_EVENTS = {
@@ -47,45 +46,9 @@ export const AUTOMATION_EVENTS = {
  * @param {Object} payload   - Datos del evento
  * @param {string} [webhookUrl] - URL alternativa (opcional, sobreescribe la variable de entorno)
  */
-export async function dispatchAutomationEvent(eventName, payload, webhookUrl = "") {
-    // ⚠️ Sistema n8n deshabilitado - return early
-    if (!N8N_ENABLED) {
-        console.log(`[AutomationService] Evento ${eventName} registrado (n8n deshabilitado)`);
-        return { success: true, reason: "n8n_disabled", eventName };
-    }
-
-    const url = webhookUrl || N8N_WEBHOOK_URL;
-
-    if (!url) {
-        console.warn(`[AutomationService] Sin webhook configurado. Evento ${eventName} omitido.`);
-        return { success: false, reason: "missing_webhook_url" };
-    }
-
-    try {
-        console.log(`[AutomationService] → ${eventName}`);
-
-        const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                event: eventName,
-                timestamp: new Date().toISOString(),
-                data: payload
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        let responseData = null;
-        try { responseData = await response.json(); } catch (_) { /* vacío es válido */ }
-
-        return { success: true, responseData };
-    } catch (error) {
-        console.error(`[AutomationService] Error en ${eventName}:`, error);
-        return { success: false, error: error.message };
-    }
+export async function dispatchAutomationEvent(eventName, _payload, _webhookUrl = "") {
+    console.log(`[AutomationService] Evento ${eventName} registrado (n8n deshabilitado)`);
+    return { success: true, reason: "n8n_disabled", eventName };
 }
 
 /**

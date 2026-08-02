@@ -135,10 +135,43 @@ const Login = () => {
     setError("");
     setLoadingStatus(true);
 
+    const emailClean = email.trim().toLowerCase();
+
     try {
-      // Iniciar Sesión con Supabase Auth
+      // 1. Verificación previa del estado de la clínica mediante RPC autorizado SECURITY DEFINER
+      if (emailClean !== "madridsystem@outlook.es") {
+        const { data: checkRes } = await supabase.rpc("check_user_tenant_active", {
+          p_email: emailClean
+        });
+
+        if (checkRes && checkRes.allowed === false) {
+          setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+          setLoadingStatus(false);
+          return;
+        }
+
+        // Fallback directo a consulta de perfil por si el RPC no se ha ejecutado en Supabase aún
+        const { data: profileCheck } = await supabase
+          .from("profiles")
+          .select("role, activo, tenant_id, tenant:tenants(id, nombre, activo)")
+          .eq("email", emailClean)
+          .maybeSingle();
+
+        if (profileCheck) {
+          const roleLower = (profileCheck.role || "").toLowerCase();
+          if (roleLower !== "superadmin") {
+            if (profileCheck.activo === false || !profileCheck.tenant_id || !profileCheck.tenant || profileCheck.tenant.activo === false) {
+              setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+              setLoadingStatus(false);
+              return;
+            }
+          }
+        }
+      }
+
+      // 2. Iniciar Sesión con Supabase Auth solo si la verificación fue aprobada
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: emailClean,
         password: password
       });
 
@@ -147,15 +180,22 @@ const Login = () => {
       const user = data.user;
       let normalizedRol = "recepcionista";
 
-      // Determinar Rol del Usuario
-      if (email.trim().toLowerCase() === "madridsystem@outlook.es") {
+      if (emailClean === "madridsystem@outlook.es") {
         normalizedRol = "superadmin";
       } else {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role, activo, tenant_id, tenant:tenants(id, nombre, activo)")
           .eq("id", user.id)
           .maybeSingle();
+
+        if (!profile || profile.activo === false || !profile.tenant_id || !profile.tenant || profile.tenant.activo === false) {
+          await supabase.auth.signOut();
+          try { sessionStorage.clear(); } catch {}
+          setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+          setLoadingStatus(false);
+          return;
+        }
 
         if (profile?.role) {
           normalizedRol = profile.role.trim().toLowerCase();
@@ -165,8 +205,6 @@ const Login = () => {
       redirectByRole(normalizedRol);
     } catch (err) {
       setLoadingStatus(false);
-      console.error("Error login Supabase:", err);
-
       const msg = (err.message || "").toLowerCase();
       if (msg.includes("invalid login credentials")) {
         setError("Correo o contraseña incorrectos.");

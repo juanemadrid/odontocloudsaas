@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { getPaymentMethods, addPaymentMethod, updatePaymentMethod, deletePaymentMethod, getGlobalConfig, updateGlobalConfig, uploadFile } from "../../services/adminService";
+import { resolvePrivateFileUrl } from "../../services/privateStorageService";
 import { FiPlus, FiEdit2, FiTrash2, FiSmartphone, FiCreditCard, FiCheckCircle, FiSave, FiAlertCircle, FiUpload, FiLoader } from "react-icons/fi";
 import { FaWhatsapp, FaUniversity, FaSave } from "react-icons/fa";
 import { useToast } from "../../context/ToastContext";
@@ -32,7 +33,11 @@ export default function PaymentManagement() {
         try {
             setLoading(true);
             const [m, c] = await Promise.all([getPaymentMethods(), getGlobalConfig()]);
-            setMethods(m);
+            const displayMethods = await Promise.all((m || []).map(async method => ({
+                ...method,
+                displayLogoUrl: await resolvePrivateFileUrl(method.logoUrl || "")
+            })));
+            setMethods(displayMethods);
             setConfig(c);
         } catch (error) {
             console.error(error);
@@ -198,8 +203,8 @@ export default function PaymentManagement() {
                                     <div className="flex items-center gap-4">
                                         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border-2 overflow-hidden shadow-sm p-2 bg-white
                                             ${m.type === 'Billetera Digital' ? 'border-purple-50' : 'border-blue-50'}`}>
-                                            {m.logoUrl ? (
-                                                <img src={m.logoUrl} alt={m.name} className="w-full h-full object-contain" />
+                                            {m.displayLogoUrl || m.logoUrl ? (
+                                                <img src={m.displayLogoUrl || m.logoUrl} alt={m.name} className="w-full h-full object-contain" />
                                             ) : (
                                                 m.type === 'Billetera Digital' ? <FiSmartphone className="text-purple-600" size={24} /> : <FaUniversity className="text-blue-600" size={24} />
                                             )}

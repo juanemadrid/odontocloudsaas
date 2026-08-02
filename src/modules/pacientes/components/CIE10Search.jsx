@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import CIE10_COMPLETO from '../../../data/cie10Completo.js';
-import { useCombobox } from 'downshift'; // Optional, but usually better. Or raw input for minimal deps.
 // Vamos a usar raw input + lista filtrada para no añadir dependencias si no es necesario, o podemos usar un datalist simple.
 
 export default function CIE10Search({ onSelect, className, value, label }) {
     const [query, setQuery] = useState(value ? `${value.code} - ${value.name}` : "");
     const [isOpen, setIsOpen] = useState(false);
+    const [catalog, setCatalog] = useState(null);
+
+    const loadCatalog = async () => {
+        if (catalog) return;
+        const module = await import('../../../data/cie10Completo.js');
+        setCatalog(module.default || module.CIE10_COMPLETO || []);
+    };
 
     useEffect(() => {
         if (value) {
@@ -18,11 +23,11 @@ export default function CIE10Search({ onSelect, className, value, label }) {
     const filteredItems = useMemo(() => {
         if (!query || query.length < 2) return [];
         const lower = query.toLowerCase();
-        return CIE10_COMPLETO.filter(item =>
+        return (catalog || []).filter(item =>
             item.code.toLowerCase().includes(lower) ||
             item.name.toLowerCase().includes(lower)
         ).slice(0, 8); // Show up to 8 results for better coverage
-    }, [query]);
+    }, [query, catalog]);
 
     const handleSelect = (item) => {
         setQuery(`${item.code} - ${item.name}`);
@@ -41,8 +46,12 @@ export default function CIE10Search({ onSelect, className, value, label }) {
                 onChange={(e) => {
                     setQuery(e.target.value);
                     setIsOpen(true);
+                    if (e.target.value.length >= 2) loadCatalog();
                 }}
-                onFocus={() => setIsOpen(true)}
+                onFocus={() => {
+                    loadCatalog();
+                    setIsOpen(true);
+                }}
                 onBlur={() => setTimeout(() => setIsOpen(false), 200)} // Delay to allow click
             />
 
@@ -60,7 +69,7 @@ export default function CIE10Search({ onSelect, className, value, label }) {
                 </ul>
             )}
 
-            {isOpen && query && filteredItems.length === 0 && (
+            {isOpen && catalog && query && filteredItems.length === 0 && (
                 <div className="absolute z-50 w-full bg-white border border-slate-200 rounded-lg shadow-lg mt-1 p-3 text-sm text-slate-400">
                     No se encontraron resultados
                 </div>

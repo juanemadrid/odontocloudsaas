@@ -3,6 +3,7 @@ import { FiCalendar, FiPlus, FiSearch, FiTrash2, FiEye, FiArrowLeft, FiSave, FiU
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
+import { resolvePrivateFileUrl, uploadPrivateFile } from "../../services/privateStorageService";
 
 export default function Esterilizacion() {
   const { userProfile } = useAuth();
@@ -37,6 +38,8 @@ export default function Esterilizacion() {
 
   const [quimicoImg, setQuimicoImg] = useState("");
   const [biologicoImg, setBiologicoImg] = useState("");
+  const [quimicoPreview, setQuimicoPreview] = useState("");
+  const [biologicoPreview, setBiologicoPreview] = useState("");
   const [uploadingQuimico, setUploadingQuimico] = useState(false);
   const [uploadingBiologico, setUploadingBiologico] = useState(false);
 
@@ -71,11 +74,13 @@ export default function Esterilizacion() {
         list = cfgRow?.config?.ciclos_esterilizacion || [];
       }
 
-      const formatted = list.map((docData, idx) => ({
+      const formatted = await Promise.all(list.map(async (docData, idx) => ({
         id: docData.id || `cycle_${idx}`,
         consecutivo: idx + 1,
-        ...docData
-      }));
+        ...docData,
+        quimicoImg: await resolvePrivateFileUrl(docData.quimicoImg || ""),
+        biologicoImg: await resolvePrivateFileUrl(docData.biologicoImg || docData.biologcioImg || "")
+      })));
       formatted.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
       setCycles(formatted);
     } catch (e) {
@@ -124,31 +129,20 @@ export default function Esterilizacion() {
 
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `esterilizacion/${inquilino}_${Date.now()}.${fileExt}`;
-      let url = "";
-
-      const { error: uploadError } = await supabase.storage
-        .from("clinical-files")
-        .upload(fileName, file, { upsert: true });
-
-      if (!uploadError) {
-        const { data: publicUrlData } = supabase.storage
-          .from("clinical-files")
-          .getPublicUrl(fileName);
-        url = publicUrlData.publicUrl;
-      } else {
-        url = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.readAsDataURL(file);
-        });
-      }
+      const uploaded = await uploadPrivateFile({
+        tenantId: inquilino,
+        relativePath: `esterilizacion/${Date.now()}.${fileExt}`,
+        file,
+        upsert: true
+      });
 
       if (type === "quimico") {
-        setQuimicoImg(url);
+        setQuimicoImg(uploaded.reference);
+        setQuimicoPreview(uploaded.signedUrl);
         toast.success("Control químico cargado");
       } else {
-        setBiologicoImg(url);
+        setBiologicoImg(uploaded.reference);
+        setBiologicoPreview(uploaded.signedUrl);
         toast.success("Control biológico cargado");
       }
     } catch (error) {
@@ -229,6 +223,8 @@ export default function Esterilizacion() {
       setPresion(15);
       setQuimicoImg("");
       setBiologicoImg("");
+      setQuimicoPreview("");
+      setBiologicoPreview("");
       setResponsableTipo("usuario");
       setResponsableOtro("");
 
@@ -740,8 +736,8 @@ export default function Esterilizacion() {
             />
             {uploadingQuimico ? (
               <span className="text-xs text-slate-400 animate-pulse font-black uppercase tracking-widest">Subiendo...</span>
-            ) : quimicoImg ? (
-              <img src={quimicoImg} alt="Quimico" className="max-h-[120px] object-contain rounded-lg" />
+            ) : quimicoPreview ? (
+              <img src={quimicoPreview} alt="Quimico" className="max-h-[120px] object-contain rounded-lg" />
             ) : (
               <div className="text-center space-y-2">
                 <FiUploadCloud size={24} className="text-slate-300 mx-auto group-hover:scale-105 transition-transform" />
@@ -765,8 +761,8 @@ export default function Esterilizacion() {
             />
             {uploadingBiologico ? (
               <span className="text-xs text-slate-400 animate-pulse font-black uppercase tracking-widest">Subiendo...</span>
-            ) : biologicoImg ? (
-              <img src={biologicoImg} alt="Biologico" className="max-h-[120px] object-contain rounded-lg" />
+            ) : biologicoPreview ? (
+              <img src={biologicoPreview} alt="Biologico" className="max-h-[120px] object-contain rounded-lg" />
             ) : (
               <div className="text-center space-y-2">
                 <FiUploadCloud size={24} className="text-slate-300 mx-auto group-hover:scale-105 transition-transform" />

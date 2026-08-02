@@ -178,7 +178,7 @@ export default function ClinicalAIAssistant({
         };
     }, []);
 
-    // Cargar la API key desde Firestore (admin) o fallback a localStorage/env
+    // Consultar únicamente si la clínica tiene una clave configurada en el backend.
     useEffect(() => {
         const loadKey = async () => {
             const key = await getGeminiApiKey(userProfile?.inquilino);
@@ -343,7 +343,7 @@ export default function ClinicalAIAssistant({
             isLoadingRef.current = true;
 
             try {
-                const effectiveKey = apiKeyRef.current.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
+                const effectiveKey = apiKeyRef.current.trim();
                 if (!effectiveKey) {
                     toast.error('Debe configurar su Clave API de Gemini.');
                     setShowSettings(true);
@@ -630,7 +630,7 @@ export default function ClinicalAIAssistant({
             return;
         }
 
-        const effectiveKey = apiKey.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
+        const effectiveKey = apiKey.trim();
         if (!effectiveKey) {
             toast.error('Debe configurar su Clave API de Gemini.');
             setShowSettings(true);

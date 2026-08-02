@@ -190,7 +190,7 @@ export default function WebCms() {
         if (!file) return;
 
         try {
-            const fileName = `website_uploads/${Date.now()}_${file.name}`;
+            const fileName = `${configDocId}/website_uploads/${Date.now()}_${file.name}`;
             const { data, error } = await supabase.storage.from("clinical-files").upload(fileName, file);
             if (error) throw error;
             const { data: pubUrl } = supabase.storage.from("clinical-files").getPublicUrl(fileName);
@@ -206,7 +206,7 @@ export default function WebCms() {
         if (!file) return;
 
         try {
-            const fileName = `website_uploads/${Date.now()}_${file.name}`;
+            const fileName = `${configDocId}/website_uploads/${Date.now()}_${file.name}`;
             const { data, error } = await supabase.storage.from("clinical-files").upload(fileName, file);
             if (error) throw error;
             const { data: pubUrl } = supabase.storage.from("clinical-files").getPublicUrl(fileName);

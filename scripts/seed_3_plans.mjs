@@ -10,7 +10,7 @@ async function seedThreePlans() {
   console.log("Iniciando sesión como SuperAdmin...");
   const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
     email: "madridsystem@outlook.es",
-    password: "@Joshuamadrid27"
+    password: process.env.ODONTOCLOUD_TEST_PASSWORD
   });
 
   if (authError) {

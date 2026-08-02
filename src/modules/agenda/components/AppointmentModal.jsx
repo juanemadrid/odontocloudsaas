@@ -14,6 +14,8 @@ import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { sendConfirmation } from "../../../services/WhatsAppService";
 import { dispatchAutomationEvent } from "../../../services/AutomationService";
 import { usePermissions } from "../../../hooks/usePermissions";
+import supabase from "../../../lib/supabaseClient";
+import { assertAppointmentAvailability, generateAvailableSlots, loadSchedules } from "../../../services/agendaAvailabilityService";
 
 // Basic schema for appointment info
 const baseSchema = z.object({
@@ -54,156 +56,18 @@ const appointmentSchema = z.discriminatedUnion("isNewPatient", [
     })
 ]);
 
-const parseTimeToMinutes = (timeStr) => {
-    if (!timeStr) return 0;
-    const str = String(timeStr).trim();
-    const match12 = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (match12) {
-        let h = parseInt(match12[1], 10);
-        const m = parseInt(match12[2], 10);
-        const ampm = match12[3].toUpperCase();
-        if (ampm === "PM" && h < 12) h += 12;
-        if (ampm === "AM" && h === 12) h = 0;
-        return h * 60 + m;
-    }
-    const match24 = str.match(/^(\d{1,2}):(\d{2})/);
-    if (match24) {
-        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
-    }
-    return 0;
+const EMPTY_SCHEDULES = {
+    professionalWeekly: [], professionalOpen: [], professionalBlocked: [],
+    roomWeekly: [], roomOpen: [], roomBlocked: [], busyAppointments: []
 };
 
-const compareDays = (d1, d2) => {
-    if (!d1 || !d2) return false;
-    return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-           d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-};
-
-const getWorkingIntervalsForDate = (columnDateObj, columnDateStr, schedulesData, consultorioId) => {
-    const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-    const dayName = days[columnDateObj.getDay()];
-
-    const {
-        docPredefined = [],
-        docOpenAgenda = [],
-        docUnavailable = [],
-        resPredefined = [],
-        resOpenAgenda = [],
-        resUnavailable = []
-    } = schedulesData;
-
-    let docIntervals = [];
-    const openDoc = docOpenAgenda.filter(s => s.fecha === columnDateStr && s.active !== false);
-    if (openDoc.length > 0) {
-        docIntervals = openDoc.map(s => ({
-            start: parseTimeToMinutes(s.horaInicio),
-            end: parseTimeToMinutes(s.horaFin)
-        }));
-    } else {
-        const predDoc = docPredefined.filter(s => compareDays(s.dia, dayName) && s.activo !== false && (s.recursoId === "todos" || !consultorioId || s.recursoId === consultorioId));
-        if (predDoc.length > 0) {
-            docIntervals = predDoc.map(s => ({
-                start: parseTimeToMinutes(s.horaInicio),
-                end: parseTimeToMinutes(s.horaFin)
-            }));
-        }
-    }
-
-    let resIntervals = [];
-    const openRes = resOpenAgenda.filter(s => s.fecha === columnDateStr && s.active !== false);
-    if (openRes.length > 0) {
-        resIntervals = openRes.map(s => ({
-            start: parseTimeToMinutes(s.horaInicio),
-            end: parseTimeToMinutes(s.horaFin)
-        }));
-    } else {
-        const predRes = resPredefined.filter(s => compareDays(s.dia, dayName) && s.activo !== false);
-        if (predRes.length > 0) {
-            resIntervals = predRes.map(s => ({
-                start: parseTimeToMinutes(s.horaInicio),
-                end: parseTimeToMinutes(s.horaFin)
-            }));
-        }
-    }
-
-    let rawIntervals = [];
-    const hasDocConfig = docPredefined.length > 0 || docOpenAgenda.length > 0;
-    const hasResConfig = resPredefined.length > 0 || resOpenAgenda.length > 0;
-
-    if (hasDocConfig && hasResConfig) {
-        for (const dInt of docIntervals) {
-            for (const rInt of resIntervals) {
-                const start = Math.max(dInt.start, rInt.start);
-                const end = Math.min(dInt.end, rInt.end);
-                if (start < end) {
-                    rawIntervals.push({ start, end });
-                }
-            }
-        }
-    } else if (hasDocConfig) {
-        rawIntervals = docIntervals;
-    } else if (hasResConfig) {
-        rawIntervals = resIntervals;
-    } else {
-        if (columnDateObj.getDay() === 0) {
-            rawIntervals = [];
-        } else if (columnDateObj.getDay() === 6) {
-            rawIntervals = [{ start: 8 * 60, end: 14 * 60 }];
-        } else {
-            rawIntervals = [{ start: 7 * 60, end: 20 * 60 }];
-        }
-    }
-
-    const unavailables = [
-        ...docUnavailable.filter(u => u.fecha === columnDateStr && u.active !== false),
-        ...resUnavailable.filter(u => u.fecha === columnDateStr && u.active !== false)
-    ].map(u => ({
-        start: parseTimeToMinutes(u.horaInicio),
-        end: parseTimeToMinutes(u.horaFin)
-    }));
-
-    if (unavailables.length === 0) return rawIntervals;
-
-    let finalIntervals = [];
-    for (const interval of rawIntervals) {
-        let currentSegments = [interval];
-        for (const unavail of unavailables) {
-            let nextSegments = [];
-            for (const seg of currentSegments) {
-                if (unavail.end <= seg.start || unavail.start >= seg.end) {
-                    nextSegments.push(seg);
-                } else {
-                    if (unavail.start > seg.start) {
-                        nextSegments.push({ start: seg.start, end: unavail.start });
-                    }
-                    if (unavail.end < seg.end) {
-                        nextSegments.push({ start: unavail.end, end: seg.end });
-                    }
-                }
-            }
-            currentSegments = nextSegments;
-        }
-        finalIntervals.push(...currentSegments);
-    }
-
-    return finalIntervals;
-};
-
-const generateSlotsForDay = (columnDateObj, columnDateStr, schedulesData, consultorioId, durationMinutes) => {
-    const step = durationMinutes && durationMinutes >= 5 ? durationMinutes : 30;
-    const intervals = getWorkingIntervalsForDate(columnDateObj, columnDateStr, schedulesData, consultorioId);
-    
-    const slots = [];
-    for (const interval of intervals) {
-        for (let m = interval.start; m + step <= interval.end; m += step) {
-            const hh = String(Math.floor(m / 60)).padStart(2, '0');
-            const mm = String(m % 60).padStart(2, '0');
-            slots.push(`${hh}:${mm}`);
-        }
-    }
-    return slots;
-};
-
+const generateSlotsForDay = (columnDateObj, _columnDateStr, schedulesData, consultorioId, durationMinutes) =>
+    generateAvailableSlots({
+        date: columnDateObj,
+        roomId: consultorioId,
+        durationMinutes,
+        schedules: schedulesData
+    }).slots;
 export default function AppointmentModal({
     isOpen,
     onClose,
@@ -222,7 +86,8 @@ export default function AppointmentModal({
     const { userProfile } = useAuth();
     const { can } = usePermissions();
     const hasWritePermission = initialData?.id ? can("Agenda", "Agenda", "editar") : can("Agenda", "Agenda", "crear");
-    const inquilino = userProfile?.inquilino;    const [patientResults, setPatientResults] = useState([]);
+    const inquilino = userProfile?.inquilino;
+    const [patientResults, setPatientResults] = useState([]);
     const [searching, setSearching] = useState(false);
     const [term, setTerm] = useState("");
     const [selectedPatientPhone, setSelectedPatientPhone] = useState("");
@@ -326,7 +191,7 @@ export default function AppointmentModal({
                 console.error("Search error:", e);
                 // If it's the index error, we want the user to see it
                 if (e.message.includes("index")) {
-                    toast.error("Falta crear el índice en Firebase. Revisa el enlace enviado.");
+                    toast.error("Falta crear el índice requerido en la base de datos.");
                 } else {
                     toast.error("Error buscando pacientes: " + e.message);
                 }
@@ -351,76 +216,40 @@ export default function AppointmentModal({
         }
     }, [patientResults]);
 
-    const [schedulesData, setSchedulesData] = useState({
-        docPredefined: [],
-        docOpenAgenda: [],
-        docUnavailable: [],
-        resPredefined: [],
-        resOpenAgenda: [],
-        resUnavailable: []
-    });
+    const [schedulesData, setSchedulesData] = useState(EMPTY_SCHEDULES);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
 
     const watchedDoctorId = watch("doctorId");
     const watchedConsultorioId = watch("consultorioId");
+    const watchedDate = watch("fecha");
     const watchedDuracion = watch("duracion");
 
     useEffect(() => {
-        if (!isOpen || !inquilino) return;
+        if (!isOpen || !inquilino || !watchedDoctorId || !watchedConsultorioId) {
+            setSchedulesData(EMPTY_SCHEDULES);
+            return;
+        }
         let isMounted = true;
+        const anchor = new Date(`${watchedDate || new Date().toISOString().split("T")[0]}T00:00:00`);
+        const rangeStart = new Date(anchor);
+        const day = rangeStart.getDay();
+        rangeStart.setDate(rangeStart.getDate() + (day === 0 ? -6 : 1 - day));
+        rangeStart.setHours(0, 0, 0, 0);
+        const rangeEnd = new Date(rangeStart);
+        rangeEnd.setDate(rangeEnd.getDate() + 7);
         setLoadingSchedules(true);
-
-        const fetchSchedules = async () => {
-            try {
-                const { collection: firestoreCollection, getDocs } = await import('firebase/firestore');
-                const { db } = await import('../../../firebase/firebaseConfig');
-
-                let dp = [], doa = [], du = [];
-                let rp = [], roa = [], ru = [];
-
-                if (watchedDoctorId) {
-                    const [predSnap, openSnap, unavailSnap] = await Promise.all([
-                        getDocs(firestoreCollection(db, "usuarios", watchedDoctorId, "horarios_predefinidos")),
-                        getDocs(firestoreCollection(db, "usuarios", watchedDoctorId, "agenda_abierta")),
-                        getDocs(firestoreCollection(db, "usuarios", watchedDoctorId, "no_disponibles"))
-                    ]);
-                    dp = predSnap.docs.map(d => d.data());
-                    doa = openSnap.docs.map(d => d.data());
-                    du = unavailSnap.docs.map(d => d.data());
-                }
-
-                if (watchedConsultorioId) {
-                    const [resPredSnap, resOpenSnap, resUnavailSnap] = await Promise.all([
-                        getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", watchedConsultorioId, "horarios_predefinidos")),
-                        getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", watchedConsultorioId, "agenda_abierta")),
-                        getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", watchedConsultorioId, "no_disponibles"))
-                    ]);
-                    rp = resPredSnap.docs.map(d => d.data());
-                    roa = resOpenSnap.docs.map(d => d.data());
-                    ru = resUnavailSnap.docs.map(d => d.data());
-                }
-
+        loadSchedules({ tenantId: inquilino, professionalId: watchedDoctorId, roomId: watchedConsultorioId, rangeStart, rangeEnd, excludeId: initialData?.id || null })
+            .then((result) => { if (isMounted) setSchedulesData(result); })
+            .catch((error) => {
+                console.error("Error loading appointment availability:", error);
                 if (isMounted) {
-                    setSchedulesData({
-                        docPredefined: dp,
-                        docOpenAgenda: doa,
-                        docUnavailable: du,
-                        resPredefined: rp,
-                        resOpenAgenda: roa,
-                        resUnavailable: ru
-                    });
+                    setSchedulesData(EMPTY_SCHEDULES);
+                    toast.error(error.message || "No fue posible consultar la disponibilidad.");
                 }
-            } catch (e) {
-                console.error("Error loading schedules for grid:", e);
-            } finally {
-                if (isMounted) setLoadingSchedules(false);
-            }
-        };
-
-        fetchSchedules();
+            })
+            .finally(() => { if (isMounted) setLoadingSchedules(false); });
         return () => { isMounted = false; };
-    }, [isOpen, inquilino, watchedDoctorId, watchedConsultorioId]);
-
+    }, [isOpen, inquilino, watchedDoctorId, watchedConsultorioId, watchedDate, initialData?.id, toast]);
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
     const handleClose = () => {
@@ -465,337 +294,6 @@ export default function AppointmentModal({
             // Asegurar que horaInicio esté siempre presente para que la agenda lo muestre
             data.horaInicio = data.hora;
 
-            // Import Firebase Firestore dynamically
-            const { collection: firestoreCollection, query: firestoreQuery, where, getDocs } = await import('firebase/firestore');
-            const { db } = await import('../../../firebase/firebaseConfig');
-
-            // Si la cita se está guardando como cancelada, no requiere validación de horarios ni solapamientos
-            const isCancelled = data.status === 'cancelled';
-
-            // Helper robusto: detecta citas canceladas sin importar capitalización ni idioma
-            const esCitaCancelada = (cita) => {
-                const s = (cita.status || '').toLowerCase();
-                const e = (cita.estado || '').toLowerCase();
-                return s === 'cancelled' || s === 'cancelado' || s === 'cancelada' ||
-                       e === 'cancelado' || e === 'cancelada' || e === 'cancelled';
-            };
-
-            if (!isCancelled) {
-                // 1. ✅ VALIDACIÓN DE DISPONIBILIDAD DEL DOCTOR (Horarios Predefinidos, Aperturas, No Disponibles)
-                if (data.doctorId) {
-                const docId = data.doctorId;
-                
-                // Fetch doctor schedule configurations in real-time
-                const [predSnap, openSnap, unavailSnap] = await Promise.all([
-                    getDocs(firestoreCollection(db, "usuarios", docId, "horarios_predefinidos")),
-                    getDocs(firestoreCollection(db, "usuarios", docId, "agenda_abierta")),
-                    getDocs(firestoreCollection(db, "usuarios", docId, "no_disponibles"))
-                ]);
-
-                const predefined = predSnap.docs.map(doc => doc.data());
-                const openAgenda = openSnap.docs.map(doc => doc.data());
-                const unavailable = unavailSnap.docs.map(doc => doc.data());
-
-                const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-                const dayName = days[start.getDay()];
-
-                const parseTimeToMinutes = (timeStr) => {
-                    if (!timeStr) return 0;
-                    const match12 = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-                    if (match12) {
-                        let [_, hStr, mStr, ampm] = match12;
-                        let h = parseInt(hStr, 10);
-                        const m = parseInt(mStr, 10);
-                        if (ampm.toUpperCase() === "PM" && h < 12) h += 12;
-                        if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
-                        return h * 60 + m;
-                    }
-                    const match24 = timeStr.match(/^(\d{1,2}):(\d{2})$/);
-                    if (match24) {
-                        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
-                    }
-                    return 0;
-                };
-
-                const apptStartMin = hh * 60 + mm;
-                const apptEndMin = apptStartMin + data.duracion;
-
-                // Check unavailable slots first
-                for (const slot of unavailable) {
-                    if (slot.fecha === data.fecha && slot.active !== false) {
-                        const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                        const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                        if (apptStartMin < slotEndMin && apptEndMin > slotStartMin) {
-                            const motivoStr = slot.motivo ? ` por motivo de: "${slot.motivo}"` : "";
-                            toast.error(`El doctor no está disponible en este horario${motivoStr}.`);
-                            return;
-                        }
-                    }
-                }
-
-                // Solo validar disponibilidad si el doctor tiene horarios configurados (opt-in)
-                // Si no tiene ningún horario configurado, se permite cualquier hora
-                const hasScheduleConfig = predefined.length > 0 || openAgenda.length > 0;
-
-                // ✅ EXCEPCIÓN: Si existe una cita cancelada del mismo doctor, mismo consultorio,
-                // misma fecha y misma hora, significa que el slot fue previamente validado como válido.
-                // Permitir la nueva cita sin restricción de asignación de consultorio.
-                let hasFreedSlotFromCancellation = false;
-                if (hasScheduleConfig && data.consultorioId) {
-                    const cancelledQuery = firestoreQuery(
-                        firestoreCollection(db, 'citas'),
-                        where('inquilino', '==', inquilino),
-                        where('doctorId', '==', data.doctorId),
-                        where('consultorioId', '==', data.consultorioId),
-                        where('fecha', '==', data.fecha),
-                        where('horaInicio', '==', data.hora)
-                    );
-                    const cancelledSnap = await getDocs(cancelledQuery);
-                    hasFreedSlotFromCancellation = cancelledSnap.docs.some(d => {
-                        const c = d.data();
-                        return esCitaCancelada(c);
-                    });
-                }
-
-                if (hasScheduleConfig && !hasFreedSlotFromCancellation) {
-                    let isAvailable = false;
-
-                    // Check open agenda custom dates
-                    for (const slot of openAgenda) {
-                        if (slot.fecha === data.fecha && slot.active !== false) {
-                            const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                            const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                            if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                isAvailable = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Check predefined weekly schedule slots
-                    if (!isAvailable) {
-                        const compareDays = (d1, d2) => {
-                            if (!d1 || !d2) return false;
-                            return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-                                   d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                        };
-
-                        for (const slot of predefined) {
-                            if (compareDays(slot.dia, dayName) && slot.activo !== false) {
-                                const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                                const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                                if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                    // Time matches predefined slot. Check physical resource:
-                                    if (slot.recursoId === "todos" || slot.recursoId === data.consultorioId) {
-                                        isAvailable = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (!isAvailable) {
-                        let hasPredefinedTimeButWrongResource = false;
-                        let scheduledResourceName = "";
-                        
-                        const compareDays = (d1, d2) => {
-                            if (!d1 || !d2) return false;
-                            return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-                                   d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                        };
-
-                        for (const slot of predefined) {
-                            if (compareDays(slot.dia, dayName) && slot.activo !== false) {
-                                const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                                const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                                if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                    hasPredefinedTimeButWrongResource = true;
-                                    scheduledResourceName = slot.recursoNombre || "otro consultorio";
-                                    break;
-                                }
-                            }
-                        }
-
-                        const doctorName = doctors.find(d => d.id === data.doctorId)?.nombreCompleto || 
-                                          `${doctors.find(d => d.id === data.doctorId)?.nombre || ''} ${doctors.find(d => d.id === data.doctorId)?.apellido || ''}`.trim() || 
-                                          'El doctor';
-
-                        if (hasPredefinedTimeButWrongResource) {
-                            toast.error(`${doctorName} no está programado para atender en este consultorio en ese horario. Está asignado a: ${scheduledResourceName}.`);
-                        } else {
-                            const endTimeStr = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
-                            toast.error(`${doctorName} no tiene agenda habilitada para el día ${dayName} en el horario de ${data.hora} a ${endTimeStr}.`);
-                        }
-                        return;
-                    }
-                }
-            }
-
-            // 1.5 ✅ VALIDACIÓN DE DISPONIBILIDAD DEL CONSULTORIO (Recurso Físico)
-            if (data.consultorioId) {
-                const resId = data.consultorioId;
-                
-                // Fetch consultorio schedule configurations in real-time
-                const [resPredSnap, resOpenSnap, resUnavailSnap] = await Promise.all([
-                    getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", resId, "horarios_predefinidos")),
-                    getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", resId, "agenda_abierta")),
-                    getDocs(firestoreCollection(db, "tenants", inquilino, "recursos_fisicos", resId, "no_disponibles"))
-                ]);
-
-                const resPredefined = resPredSnap.docs.map(doc => doc.data());
-                const resOpenAgenda = resOpenSnap.docs.map(doc => doc.data());
-                const resUnavailable = resUnavailSnap.docs.map(doc => doc.data());
-
-                const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-                const dayName = days[start.getDay()];
-
-                const parseTimeToMinutes = (timeStr) => {
-                    if (!timeStr) return 0;
-                    const match12 = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-                    if (match12) {
-                        let [_, hStr, mStr, ampm] = match12;
-                        let h = parseInt(hStr, 10);
-                        const m = parseInt(mStr, 10);
-                        if (ampm.toUpperCase() === "PM" && h < 12) h += 12;
-                        if (ampm.toUpperCase() === "AM" && h === 12) h = 0;
-                        return h * 60 + m;
-                    }
-                    const match24 = timeStr.match(/^(\d{1,2}):(\d{2})$/);
-                    if (match24) {
-                        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
-                    }
-                    return 0;
-                };
-
-                const apptStartMin = hh * 60 + mm;
-                const apptEndMin = apptStartMin + data.duracion;
-
-                // Check unavailable slots first
-                for (const slot of resUnavailable) {
-                    if (slot.fecha === data.fecha && slot.active !== false) {
-                        const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                        const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                        if (apptStartMin < slotEndMin && apptEndMin > slotStartMin) {
-                            const motivoStr = slot.motivo ? ` por motivo de: "${slot.motivo}"` : "";
-                            toast.error(`El consultorio no está disponible en este horario${motivoStr}.`);
-                            return;
-                        }
-                    }
-                }
-
-                // If schedules are configured, check availability
-                if (resPredefined.length > 0 || resOpenAgenda.length > 0) {
-                    let isResAvailable = false;
-
-                    // Check open agenda
-                    for (const slot of resOpenAgenda) {
-                        if (slot.fecha === data.fecha && slot.active !== false) {
-                            const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                            const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                            if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                isResAvailable = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Check predefined slots
-                    if (!isResAvailable) {
-                        const compareDays = (d1, d2) => {
-                            if (!d1 || !d2) return false;
-                            return d1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") ===
-                                   d2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                        };
-
-                        for (const slot of resPredefined) {
-                            if (compareDays(slot.dia, dayName) && slot.activo !== false) {
-                                const slotStartMin = parseTimeToMinutes(slot.horaInicio);
-                                const slotEndMin = parseTimeToMinutes(slot.horaFin);
-                                if (apptStartMin >= slotStartMin && apptEndMin <= slotEndMin) {
-                                    isResAvailable = true;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!isResAvailable) {
-                        const consultorioName = chairs.find(c => c.id === resId)?.nombre || 'el consultorio seleccionado';
-                        const endTimeStr = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
-                        toast.error(`${consultorioName} no tiene horario de atención habilitado para el día ${dayName} de ${data.hora} a ${endTimeStr}.`);
-                        return;
-                    }
-                }
-            }
-
-            // 2. ✅ VALIDACIÓN: Prevenir solapamiento con otras citas del mismo Doctor o del mismo Consultorio
-            const nuevaInicio = start.getTime();
-            const nuevaFin = end.getTime();
-            
-            // Obtener todas las citas del doctor en esa fecha
-            const doctorCheck = firestoreQuery(
-                firestoreCollection(db, 'citas'),
-                where('inquilino', '==', inquilino),
-                where('doctorId', '==', data.doctorId),
-                where('fecha', '==', data.fecha)
-            );
-            
-            const doctorSnap = await getDocs(doctorCheck);
-            
-
-            // Verificar solapamiento de horarios con citas del doctor
-            for (const docSnap of doctorSnap.docs) {
-                if (data.id && docSnap.id === data.id) continue; // Excluir la cita actual que se está editando
-                
-                const citaExistente = docSnap.data();
-                if (esCitaCancelada(citaExistente)) continue;
-                
-                const [citaHh, citaMm] = (citaExistente.horaInicio || "00:00").split(":").map(Number);
-                const citaInicio = new Date(start);
-                citaInicio.setHours(citaHh, citaMm, 0, 0);
-                const citaFin = new Date(citaInicio.getTime() + (citaExistente.duracion || 30) * 60000);
-                
-                if (nuevaInicio < citaFin.getTime() && nuevaFin > citaInicio.getTime()) {
-                    const doctorName = doctors.find(d => d.id === data.doctorId)?.nombreCompleto || 
-                                      `${doctors.find(d => d.id === data.doctorId)?.nombre || ''} ${doctors.find(d => d.id === data.doctorId)?.apellido || ''}`.trim() || 
-                                      'el doctor seleccionado';
-                    const horaFinExistente = `${String(citaFin.getHours()).padStart(2, '0')}:${String(citaFin.getMinutes()).padStart(2, '0')}`;
-                    toast.error(`${doctorName} ya tiene una cita programada desde las ${citaExistente.horaInicio} hasta las ${horaFinExistente}.`);
-                    return;
-                }
-            }
-            
-            // Obtener todas las citas del consultorio en esa fecha
-            const consultorioCheck = firestoreQuery(
-                firestoreCollection(db, 'citas'),
-                where('inquilino', '==', inquilino),
-                where('consultorioId', '==', data.consultorioId),
-                where('fecha', '==', data.fecha)
-            );
-            
-            const consultorioSnap = await getDocs(consultorioCheck);
-            
-            // Verificar solapamiento de horarios con citas del consultorio
-            for (const docSnap of consultorioSnap.docs) {
-                if (data.id && docSnap.id === data.id) continue; // Excluir la cita actual que se está editando
-                
-                const citaExistente = docSnap.data();
-                if (esCitaCancelada(citaExistente)) continue;
-                
-                const [citaHh, citaMm] = (citaExistente.horaInicio || "00:00").split(":").map(Number);
-                const citaInicio = new Date(start);
-                citaInicio.setHours(citaHh, citaMm, 0, 0);
-                const citaFin = new Date(citaInicio.getTime() + (citaExistente.duracion || 30) * 60000);
-                
-                if (nuevaInicio < citaFin.getTime() && nuevaFin > citaInicio.getTime()) {
-                    const consultorioName = chairs.find(c => c.id === data.consultorioId)?.nombre || 'el consultorio seleccionado';
-                    const horaFinExistente = `${String(citaFin.getHours()).padStart(2, '0')}:${String(citaFin.getMinutes()).padStart(2, '0')}`;
-                    toast.error(`${consultorioName} está ocupado por otra cita desde las ${citaExistente.horaInicio} hasta las ${horaFinExistente}.`);
-                    return;
-                }
-            }
-            }
 
             const statusMap = {
                 'pending': 'SIN CONFIRMAR',
@@ -807,11 +305,20 @@ export default function AppointmentModal({
                 'cancelled': 'CANCELADO',
                 'waiting': 'EN ESPERA'
             };
-            const finalStatus = (data.status === 'cancelled' && initialData?.start && new Date(initialData.start).getTime() !== start.getTime()) 
-                ? 'confirmed' 
+            const finalStatus = (data.status === 'cancelled' && initialData?.start && new Date(initialData.start).getTime() !== start.getTime())
+                ? 'confirmed'
                 : (data.status || 'confirmed');
+            if (finalStatus !== 'cancelled') {
+                await assertAppointmentAvailability({
+                    tenantId: inquilino,
+                    professionalId: data.doctorId,
+                    roomId: data.consultorioId,
+                    start,
+                    end,
+                    excludeId: data.id || initialData?.id || null
+                });
+            }
             const finalEstado = statusMap[finalStatus] || 'CONFIRMADA';
-
             const payload = {
                 ...data,
                 status: finalStatus,

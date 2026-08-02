@@ -9,7 +9,7 @@ async function seedSuperAdmin() {
   console.log("Intentando crear/verificar SuperAdmin en Supabase...");
   
   const email = "madridsystem@outlook.es";
-  const password = "@Joshuamadrid27";
+  const password = process.env.ODONTOCLOUD_TEST_PASSWORD;
 
   // Intentar SignUp
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({

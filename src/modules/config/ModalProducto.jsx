@@ -75,7 +75,7 @@ export default function ModalProducto({ item = null, categoria = "", onClose, on
         
         setIsUploading(true);
         try {
-            const filePath = `productos/${inquilino}_${Date.now()}_${file.name}`;
+            const filePath = `${inquilino}/productos/${Date.now()}_${file.name}`;
             const { error } = await supabase.storage.from("clinical-files").upload(filePath, file, { upsert: true });
             if (error) throw error;
             const { data: { publicUrl } } = supabase.storage.from("clinical-files").getPublicUrl(filePath);

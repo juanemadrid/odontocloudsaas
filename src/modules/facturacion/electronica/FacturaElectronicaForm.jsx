@@ -207,7 +207,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
         hasCredentials ? tenantData : null
       );
 
-      const firestoreDoc = {
+      const invoiceRow = {
         tenant_id: inquilino,
         inquilino,
         paciente_id: paciente.id,
@@ -232,7 +232,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess }) {
         creadoPor: userProfile?.uid || "",
       };
 
-      await supabase.from("facturas_electronicas").insert([firestoreDoc]);
+      await supabase.from("facturas_electronicas").insert([invoiceRow]);
 
       if (result.success && result.cufe) {
         setSuccessData(result);

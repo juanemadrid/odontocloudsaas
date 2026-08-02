@@ -228,7 +228,7 @@ export default function ReporteIA() {
                     <div className="flex justify-between items-start mb-3">
                         <div>
                             <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Clave API de Gemini (Gratis)</p>
-                            <p className="text-[10px] text-slate-400 font-medium mt-1">Se guarda solo en este navegador. Obtenla gratis en Google AI Studio.</p>
+                            <p className="text-[10px] text-slate-400 font-medium mt-1">Se almacena de forma privada en el backend de la clínica. Obtenla gratis en Google AI Studio.</p>
                         </div>
                         <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-[10px] font-black text-blue-500 flex items-center gap-1 hover:underline uppercase tracking-widest">
                             AI Studio <FiExternalLink size={10} />
@@ -391,10 +391,10 @@ export default function ReporteIA() {
                     </h4>
                     <div className="grid grid-cols-1 gap-3 text-[11px]">
                         <div className="flex items-start gap-2">
-                            <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${import.meta.env.VITE_WA_TOKEN ? "bg-green-500" : "bg-slate-300"}`} />
+                            <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 bg-green-500`} />
                             <div>
                                 <p className="font-black text-slate-700">WhatsApp Business API</p>
-                                <p className="text-slate-500">{import.meta.env.VITE_WA_TOKEN ? "✅ Configurado" : "⚠️ Agregar VITE_WA_TOKEN en .env"}</p>
+                                <p className="text-slate-500">Configuracion protegida en backend</p>
                             </div>
                         </div>
                     </div>

@@ -7,7 +7,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 async function testFix() {
   const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
     email: "madridsystem@outlook.es",
-    password: "@Joshuamadrid27"
+    password: process.env.ODONTOCLOUD_TEST_PASSWORD
   });
 
   console.log("Logged in user:", authData?.user?.email);

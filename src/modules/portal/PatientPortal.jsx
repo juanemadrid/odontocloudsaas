@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import supabase from "../../lib/supabaseClient";
+import {
+    loginPatientPortal,
+    logoutPatientPortal,
+    requestPatientAppointment,
+    resumePatientPortal
+} from "../../services/patientPortalService";
 import { useParams, useNavigate } from "react-router-dom";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
 import { fetchTenantConfigBySlug } from "../../utils/tenantConfigHelper";
@@ -98,25 +103,15 @@ export default function PatientPortal() {
 
     useEffect(() => {
         const checkActiveSession = async () => {
+            setLoading(true);
             try {
-                const sessionStr = localStorage.getItem("odc_patient_session");
-                if (!sessionStr) return;
-                const session = JSON.parse(sessionStr);
-                if (session && session.patientId) {
-                    if (clinicSlug && session.clinicSlug !== clinicSlug) return;
-                    
-                    setLoading(true);
-                    const { data: docSnap } = await supabase.from("pacientes").select("*").eq("id", session.patientId).maybeSingle();
-                    if (docSnap) {
-                        const patientData = { ...docSnap };
-                        setUser(patientData);
-                        setNuevaCitaForm(f => ({ ...f, nombre: patientData.nombreCompleto || "", celular: patientData.celular || "" }));
-                        setAuth(true);
-                        await loadPatientData(patientData.id, patientData.inquilino || session.inquilinoId);
-                    }
+                const portalData = await resumePatientPortal(clinicSlug);
+                if (portalData) {
+                    applyPortalData(portalData);
+                    setAuth(true);
                 }
-            } catch (err) {
-                console.error("Error cargando sesión activa de paciente:", err);
+            } catch (error) {
+                console.warn("La sesión anterior del portal no pudo reanudarse:", error.message);
             } finally {
                 setLoading(false);
             }
@@ -147,120 +142,92 @@ export default function PatientPortal() {
         return () => { isMounted = false; };
     }, [clinicSlug]);
 
-    const handleLogin = async (e) => {
-        e.preventDefault();
-        if (docInput.length < 5) return toast.error("Ingrese un documento válido (mínimo 5 dígitos).");
+    const handleLogin = async (event) => {
+        event.preventDefault();
+        if (docInput.replace(/\D/g, "").length < 5) {
+            return toast.error("Ingrese un documento válido (mínimo 5 dígitos).");
+        }
         if (!birthDate) return toast.error("Ingrese su fecha de nacimiento.");
+        if (!inquilinoId) return toast.error("No fue posible identificar la clínica.");
+
         setLoading(true);
         try {
-            let { data: snap } = await supabase.from("pacientes").select("*").eq("nroDocumento", docInput);
-            if (!snap || snap.length === 0) {
-                const { data: snap2 } = await supabase.from("pacientes").select("*").eq("documento", docInput);
-                snap = snap2;
-            }
-            if (!snap || snap.length === 0) { toast.error("No encontramos un paciente con ese documento."); setLoading(false); return; }
-
-            const patientData = { id: snap[0].id, ...snap[0] };
-            const nacimiento = patientData.nacimiento || patientData.fechaNacimiento || "";
-            if (nacimiento !== birthDate) {
-                toast.error("La fecha de nacimiento no coincide con nuestros registros."); setLoading(false); return;
-            }
-            setUser(patientData);
-            setNuevaCitaForm(f => ({ ...f, nombre: patientData.nombreCompleto || "", celular: patientData.celular || "" }));
-            
-            localStorage.setItem("odc_patient_session", JSON.stringify({
-                patientId: patientData.id,
-                clinicSlug: clinicSlug || "",
-                inquilinoId: patientData.inquilino || ""
-            }));
-
-            setAuth(true);
-            await loadPatientData(patientData.id, patientData.inquilino);
-        } catch (error) { toast.error("Error al iniciar sesión: " + error.message); }
-        finally { setLoading(false); }
-    };
-
-    const loadPatientData = async (patientId, inq) => {
-        setLoadingData(true);
-        try {
-            const { data: snapCitas } = await supabase.from("citas").select("*").or(`paciente_id.eq.${patientId},pacienteId.eq.${patientId}`);
-            const citasArr = (snapCitas || []).map(c => ({
-                id: c.id,
-                fecha: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : (c.fecha || ""),
-                horaInicio: c.fecha_inicio ? new Date(c.fecha_inicio).toTimeString().substring(0, 5) : (c.horaInicio || ""),
-                estado: c.estado || "confirmada",
-                motivo: c.motivo || "",
-                dentista: c.profesional_nombre || "—",
-                ...c
-            })).sort((a, b) => new Date(`${b.fecha}T${b.horaInicio || "00:00"}`) - new Date(`${a.fecha}T${a.horaInicio || "00:00"}`));
-            setTodasCitas(citasArr);
-
-            // Próxima cita
-            const hoy = new Date().toISOString().slice(0, 10);
-            const proxima = citasArr.find(c => c.fecha >= hoy && !["cancelada", "no asistio"].includes((c.estado || "").toLowerCase()));
-            setNextAppt(proxima || null);
-
-            // Pagos / facturas
-            const { data: snapPagos } = await supabase.from("pagos").select("*").or(`patient_id.eq.${patientId},paciente_id.eq.${patientId}`);
-            const { data: snapRecibos } = await supabase.from("recibos_caja").select("*").eq("paciente_id", patientId);
-            const allPagos = [...(snapPagos || []), ...(snapRecibos || [])];
-            const seenIds = new Set();
-            const dedupedPagos = allPagos.filter(p => {
-                if (seenIds.has(p.id)) return false;
-                seenIds.add(p.id);
-                return true;
+            const portalData = await loginPatientPortal({
+                document: docInput,
+                birthDate,
+                tenantId: inquilinoId,
+                clinicSlug
             });
-            setPagos(dedupedPagos.sort((a, b) => new Date(b.created_at || b.fecha || 0).getTime() - new Date(a.created_at || a.fecha || 0).getTime()));
-
-            // Planes de tratamiento
-            const { data: snapPlanes } = await supabase.from("treatment_plans").select("*").eq("paciente_id", patientId);
-            setPlanes(snapPlanes || []);
-
-            // Notificaciones para paciente
-            const { data: snapNotifs } = await supabase.from("notificaciones").select("*").or(`paciente_id.eq.${patientId},pacienteId.eq.${patientId}`).eq("target", "patient").order("created_at", { ascending: false }).limit(20);
-            setNotificaciones(snapNotifs || []);
-        } catch (err) { console.error(err); }
-        finally { setLoadingData(false); }
-    };
-
-    const handleSolicitarCita = async (e) => {
-        e.preventDefault();
-        
-        try {
-            await supabase.from("notificaciones").insert([
-                {
-                    tenant_id: user.inquilino || user.tenant_id,
-                    target: "admin",
-                    title: "Nueva Solicitud de Cita 📅",
-                    message: `${user.nombreCompleto || user.nombres || user.nombre} ha solicitado una cita para el ${nuevaCitaForm.fecha} por motivo: ${nuevaCitaForm.motivo || "Limpieza/Revisión"}.`,
-                    type: "appointment_request",
-                    paciente_id: user.id,
-                    paciente_nombre: user.nombreCompleto || user.nombres || user.nombre || "",
-                    paciente_celular: nuevaCitaForm.celular || user.celular || "",
-                    fecha_solicitada: nuevaCitaForm.fecha || "",
-                    motivo: nuevaCitaForm.motivo || "Limpieza/Revisión",
-                    estado: "pendiente",
-                    read: false,
-                    created_at: new Date().toISOString()
-                },
-                {
-                    tenant_id: user.inquilino || user.tenant_id,
-                    target: "patient",
-                    title: "Solicitud Recibida ✅",
-                    message: `Hemos recibido tu solicitud de cita para el ${nuevaCitaForm.fecha}. La clínica revisará tu solicitud y te notificará pronto.`,
-                    type: "appointment_request_sent",
-                    paciente_id: user.id,
-                    read: false,
-                    created_at: new Date().toISOString()
-                }
-            ]);
-        } catch (err) {
-            console.error("Error creating notification for admin:", err);
+            applyPortalData(portalData);
+            setAuth(true);
+        } catch (error) {
+            toast.error("Error al iniciar sesión: " + error.message);
+        } finally {
+            setLoading(false);
         }
+    };
+    const applyPortalData = (portalData) => {
+        const patientData = portalData?.patient;
+        if (!patientData) throw new Error("El portal no devolvió los datos del paciente.");
 
-        setCitaEnviada(true);
+        setUser(patientData);
+        setNuevaCitaForm(form => ({
+            ...form,
+            nombre: patientData.nombreCompleto || "",
+            celular: patientData.celular || ""
+        }));
+
+        const citasArr = (portalData.appointments || []).map(appointment => ({
+            id: appointment.id,
+            fecha: appointment.fecha_inicio
+                ? appointment.fecha_inicio.split("T")[0]
+                : (appointment.fecha || ""),
+            horaInicio: appointment.fecha_inicio
+                ? new Date(appointment.fecha_inicio).toTimeString().substring(0, 5)
+                : (appointment.horaInicio || ""),
+            estado: appointment.estado || "confirmada",
+            motivo: appointment.motivo || "",
+            dentista: appointment.profesional_nombre || "—",
+            ...appointment
+        })).sort((first, second) =>
+            new Date((second.fecha || "") + "T" + (second.horaInicio || "00:00")) -
+            new Date((first.fecha || "") + "T" + (first.horaInicio || "00:00"))
+        );
+        setTodasCitas(citasArr);
+
+        const today = new Date().toISOString().slice(0, 10);
+        setNextAppt(citasArr.find(appointment =>
+            appointment.fecha >= today &&
+            !["cancelada", "no asistio"].includes((appointment.estado || "").toLowerCase())
+        ) || null);
+
+        const seenIds = new Set();
+        const paymentRows = (portalData.payments || []).filter(payment => {
+            if (seenIds.has(payment.id)) return false;
+            seenIds.add(payment.id);
+            return true;
+        });
+        setPagos(paymentRows.sort((first, second) =>
+            new Date(second.created_at || second.fecha || 0).getTime() -
+            new Date(first.created_at || first.fecha || 0).getTime()
+        ));
+        setPlanes(portalData.plans || []);
+        setNotificaciones(portalData.notifications || []);
     };
 
+    const handleSolicitarCita = async (event) => {
+        event.preventDefault();
+        try {
+            await requestPatientAppointment({
+                preferredDate: nuevaCitaForm.fecha,
+                reason: nuevaCitaForm.motivo || "Limpieza/Revisión",
+                phone: nuevaCitaForm.celular || user.celular || ""
+            });
+            setCitaEnviada(true);
+        } catch (error) {
+            toast.error("No fue posible enviar la solicitud: " + error.message);
+        }
+    };
     const handleEnviarWhatsApp = () => {
         const phone = config.phone ? config.phone.replace(/\D/g, "") : "";
         const msg = `Hola, soy *${user.nombreCompleto || user.nombres}*, quisiera agendar una cita odontológica.\n📅 Fecha preferida: ${nuevaCitaForm.fecha || "por definir"}\n📋 Motivo: ${nuevaCitaForm.motivo || "Consulta general"}\n📱 Mi celular: ${nuevaCitaForm.celular}`;
@@ -269,15 +236,15 @@ export default function PatientPortal() {
         }
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         if (unsubRef.current) {
             try {
                 unsubRef.current();
-            } catch (e) {}
+            } catch {
+                // No hay una suscripción activa en la implementación actual.
+            }
         }
-        try {
-            localStorage.removeItem("odc_patient_session");
-        } catch (e) {}
+        await logoutPatientPortal();
         setAuth(false);
         setUser(null);
         setTodasCitas([]);
@@ -286,7 +253,6 @@ export default function PatientPortal() {
         setPlanes([]);
         setNotificaciones([]);
     };
-
     // ── Suspension/Expiration Block check ──
     if (clinicSlug && tenantInfo && isAccessBlocked(tenantInfo)) {
         return (

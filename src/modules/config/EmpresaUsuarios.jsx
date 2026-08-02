@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from "react";
-import supabase, { supabaseAdmin } from "../../lib/supabaseClient";
+import supabase from "../../lib/supabaseClient";
 import ReactDOM from "react-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { DEFAULT_PERFILES } from "../../constants/DefaultProfiles";
+import {
+    upsertManagedUser,
+    setManagedUserActive,
+    deleteManagedUser
+} from "../../services/userAdminService";
 
-// Singleton secondary Firebase app — prevents duplicate-app crashes
-// firebaseConfig debe estar importado antes de esta función
-const getSecondaryAuth = () => {
-    const existing = getApps().find(app => app.name === "SecondaryAppEmpresa");
-    const app = existing || initializeApp(firebaseConfig, "SecondaryAppEmpresa");
-    return getAuth(app);
-};
 import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiX, FiCheck, FiFilter, FiUser, FiArrowLeft, FiArrowRight, FiSave, FiInfo, FiMail, FiPhone, FiCreditCard, FiMapPin, FiActivity, FiLayers, FiChevronRight, FiChevronLeft, FiChevronsRight, FiChevronsLeft, FiEye, FiEyeOff, FiHelpCircle } from "react-icons/fi";
 import Input from "../../components/ui/Input";
 
@@ -134,11 +132,10 @@ export default function EmpresaUsuarios() {
                     direccion: detail.direccion || "",
                     genero: detail.genero || "Femenino",
                     fechaNacimiento: detail.fechaNacimiento || "",
-                    password: detail.password || "",
-
+                    ...detail,
+                    password: "",
                     esDoctor,
-                    activo: u.activo !== false,
-                    ...detail
+                    activo: u.activo !== false
                 };
             });
 
@@ -318,124 +315,24 @@ export default function EmpresaUsuarios() {
             const fullName = `${formData.nombre} ${formData.apellido}`.trim();
             const roleName = editId && users.find(u => u.id === editId)?.rol === "administrador" ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Usuario");
 
-            let targetId = editId || crypto.randomUUID();
-
-            if (!editId) {
-                if (!formData.password || formData.password.length < 8) {
-                    setSaving(false);
-                    return toast.error('La contraseña debe tener mínimo 8 caracteres para crear el usuario');
-                }
-            }
-
-            // Usar cliente Admin de Supabase (supabaseAdmin.auth.admin) para creación nativa y segura de usuarios
-            let saveSuccess = false;
-            try {
-                if (!editId) {
-                    // 1. Crear nuevo usuario en Supabase Auth mediante API Admin nativa
-                    const { data: createData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-                        email: targetEmail,
-                        password: formData.password.trim(),
-                        email_confirm: true,
-                        user_metadata: {
-                            full_name: fullName,
-                            role: roleName,
-                            tenant_id: userProfile.inquilino
-                        }
-                    });
-
-                    if (createErr) {
-                        const errStr = (createErr.message || '').toLowerCase();
-                        if (errStr.includes('registered') || errStr.includes('exists') || errStr.includes('duplicado') || errStr.includes('already')) {
-                            toast.error(`⚠️ El correo "${targetEmail}" ya tiene una cuenta registrada en el sistema. No se pueden duplicar usuarios.`);
-                            setSaving(false);
-                            return;
-                        }
-                        throw createErr;
-                    }
-
-                    if (createData?.user?.id) {
-                        targetId = createData.user.id;
-                    }
-                } else {
-                    // 2. Editar usuario existente en Supabase Auth
-                    const updatePayload = {
-                        email: targetEmail,
-                        user_metadata: {
-                            full_name: fullName,
-                            role: roleName
-                        }
-                    };
-                    if (formData.password && formData.password.trim().length >= 8) {
-                        updatePayload.password = formData.password.trim();
-                    }
-
-                    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(editId, updatePayload);
-                    
-                    if (updateErr) {
-                        console.warn('⚠️ No se encontró la ID en auth.users, sincronizando cuenta nativa...', updateErr.message);
-
-                        // Si la cuenta auth.users no existía con esa ID, crearla o actualizarla nativamente
-                        const { data: freshData, error: freshErr } = await supabaseAdmin.auth.admin.createUser({
-                            email: targetEmail,
-                            password: formData.password && formData.password.trim().length >= 8 ? formData.password.trim() : 'Password123!',
-                            email_confirm: true,
-                            user_metadata: {
-                                full_name: fullName,
-                                role: roleName,
-                                tenant_id: userProfile.inquilino
-                            }
-                        });
-
-                        if (freshData?.user?.id) {
-                            // Borrar perfil desincronizado antiguo y usar la ID nativa recién creada
-                            if (editId && editId !== freshData.user.id) {
-                                await supabaseAdmin.from('profiles').delete().eq('id', editId).catch(() => {});
-                            }
-                            targetId = freshData.user.id;
-                        } else if (freshErr && freshErr.message?.includes('already')) {
-                            // El usuario ya existe en auth.users con ese email, actualizar clave mediante RPC admin_change_password
-                            if (formData.password && formData.password.trim().length >= 8) {
-                                await supabaseAdmin.rpc('admin_change_password', {
-                                    user_email: targetEmail,
-                                    new_password: formData.password.trim()
-                                }).catch(() => {});
-                            }
-                        }
-                    }
-                }
-
-                // 3. Upsert en la tabla public.profiles asegurando ID idéntico y evitando errores 401
-                const profilePayload = {
-                    id: targetId,
-                    tenant_id: userProfile.inquilino,
-                    full_name: fullName,
-                    email: targetEmail,
-                    role: roleName,
-                    especialidad: (formData.especialidades || []).join(', ') || null,
-                    registro_medico: formData.numeroDocumento || null,
-                    telefono: formData.telefonoMovil || formData.telefonoFijo || null,
-                    activo: true
-                };
-
-                let { error: profileErr } = await supabase.from('profiles').upsert(profilePayload, { onConflict: 'id' });
-                if (profileErr) {
-                    console.warn('Fallback a supabaseAdmin para guardar en profiles:', profileErr.message);
-                    const { error: adminProfErr } = await supabaseAdmin.from('profiles').upsert(profilePayload, { onConflict: 'id' });
-                    profileErr = adminProfErr;
-                }
-
-                if (profileErr) {
-                    console.error('Error al guardar en tabla profiles:', profileErr);
-                }
-
-                saveSuccess = true;
-            } catch (saveError) {
-                console.error('Error al procesar guardado de usuario:', saveError);
-                toast.error('Ocurrió un error al guardar el usuario: ' + (saveError.message || 'Error desconocido'));
+            if (!editId && (!formData.password || formData.password.length < 8)) {
                 setSaving(false);
-                return;
+                return toast.error('La contraseña debe tener mínimo 8 caracteres para crear el usuario');
             }
 
+            const { user: savedUser } = await upsertManagedUser({
+                id: editId || null,
+                tenantId: userProfile.inquilino,
+                email: targetEmail,
+                password: formData.password?.trim() || undefined,
+                fullName,
+                role: roleName,
+                especialidad: (formData.especialidades || []).join(', ') || null,
+                registroMedico: formData.numeroDocumento || null,
+                telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                activo: true
+            });
+            const targetId = savedUser.id;
             // Guardar configuración extendida de usuario (sucursales, especialidades, etc.) en website_config
             try {
                 const { data: cfgData } = await supabase
@@ -457,7 +354,6 @@ export default function EmpresaUsuarios() {
                     direccion: formData.direccion || "",
                     genero: formData.genero || "Femenino",
                     fechaNacimiento: formData.fechaNacimiento || "",
-                    password: formData.password || userDetails[targetId]?.password || "",
                     sucursales: formData.sucursales || [],
                     especialidades: formData.especialidades || [],
                     esDoctor: formData.esDoctor || false,
@@ -503,23 +399,17 @@ export default function EmpresaUsuarios() {
 
 
     const handleDisable = async (u) => {
-        if (!window.confirm(`¿${u.activo ? 'Deshabilitar' : 'Habilitar'} usuario "${u.nombreCompleto || u.email}"?`)) return;
+        const actionLabel = u.activo ? 'Deshabilitar' : 'Habilitar';
+        if (!window.confirm(actionLabel + ' usuario "' + (u.nombreCompleto || u.email) + '"?')) return;
         try {
-            const { data: rpcResult, error } = await supabase.rpc('admin_toggle_profile_active', {
-                p_id: u.id,
-                p_activo: !u.activo
-            });
-            if (error) throw error;
-            if (rpcResult?.success === false) throw new Error(rpcResult.error);
+            await setManagedUserActive(u.id, !u.activo);
             toast.success('Estado de usuario actualizado correctamente');
             loadData();
-        } catch (e) {
-            console.error('Error al cambiar estado:', e);
-            toast.error('Error al cambiar estado de usuario: ' + (e.message || ''));
+        } catch (error) {
+            console.error('Error al cambiar estado:', error);
+            toast.error('Error al cambiar estado de usuario: ' + (error.message || ''));
         }
     };
-
-
     const handleDelete = async (u) => {
         if (u.rol === "administrador") {
             return toast.error("⛔ No se puede eliminar un usuario administrador");
@@ -529,24 +419,19 @@ export default function EmpresaUsuarios() {
 
     const confirmDelete = async () => {
         if (!deleteConfirmModal) return;
-        const u = deleteConfirmModal;
-        
-        try {
-            const { data: rpcResult, error } = await supabase.rpc('admin_delete_profile', { p_id: u.id });
-            if (error) throw error;
-            if (rpcResult?.success === false) throw new Error(rpcResult.error);
+        const userToDelete = deleteConfirmModal;
 
-            toast.success(`Usuario "${u.nombreCompleto || u.email}" eliminado correctamente`);
-            setUsers(prev => prev.filter(usr => String(usr.id) !== String(u.id)));
+        try {
+            await deleteManagedUser(userToDelete.id);
+            toast.success('Usuario "' + (userToDelete.nombreCompleto || userToDelete.email) + '" eliminado correctamente');
+            setUsers(previous => previous.filter(user => String(user.id) !== String(userToDelete.id)));
             setDeleteConfirmModal(null);
             loadData();
-        } catch (e) {
-            console.error('Error al eliminar usuario:', e);
-            toast.error('Error al eliminar usuario: ' + (e.message || ''));
+        } catch (error) {
+            console.error('Error al eliminar usuario:', error);
+            toast.error('Error al eliminar usuario: ' + (error.message || ''));
         }
     };
-
-
     const cancelDelete = () => {
         console.log("❌ Usuario canceló la eliminación");
         setDeleteConfirmModal(null);

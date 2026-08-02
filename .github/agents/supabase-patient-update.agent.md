@@ -6,8 +6,6 @@ applyTo:
   - "assets/**/*.js"
   - "scripts/**/*.mjs"
   - "supabase/**/*.{js,mjs}"
-  - "firebase.json"
-  - "firestore.rules"
 ---
 
 Use this custom agent when the task is:

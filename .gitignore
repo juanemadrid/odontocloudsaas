@@ -2,7 +2,6 @@ node_modules
 dist
 dev-dist
 .vite
-.firebase
 assets/*.js
 assets/*.css
 scratch
@@ -10,3 +9,6 @@ taxi_sabana
 .env
 .env.local
 .DS_Store
+*.log
+.codex-agenda-preview-1.patch
+scripts/*.mjs

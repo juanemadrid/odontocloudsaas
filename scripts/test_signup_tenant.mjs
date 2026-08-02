@@ -10,7 +10,7 @@ async function testSignupTenant() {
 
   const { data: authData, error: authErr } = await supabase.auth.signUp({
     email: testEmail,
-    password: "@Password123!",
+    password: process.env.ODONTOCLOUD_TEST_PASSWORD,
     options: {
       data: {
         full_name: "Dr. Admin Prueba",

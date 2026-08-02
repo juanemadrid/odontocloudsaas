@@ -56,7 +56,7 @@ export default function ProductoForm({ item, categories, inquilino, onSave, onCa
     
     setIsUploading(true);
     try {
-      const filePath = `inventario/${inquilino}_${Date.now()}_${file.name}`;
+      const filePath = `${inquilino}/inventario/${Date.now()}_${file.name}`;
       const { error } = await supabase.storage.from("clinical-files").upload(filePath, file, { upsert: true });
       if (error) throw error;
       const { data: { publicUrl } } = supabase.storage.from("clinical-files").getPublicUrl(filePath);

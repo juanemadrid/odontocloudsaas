@@ -227,10 +227,12 @@ export default function FacturaElectronicaModule() {
       await loadFacturas();
     } catch (err) {
       console.error("Error al reenviar factura:", err);
-      await supabase.from("facturas_electronicas").update({
-        dianStatus: "RECHAZADA",
-        updated_at: new Date().toISOString(),
-      }).eq("id", factura.id).catch(() => {});
+      try {
+        await supabase.from("facturas_electronicas").update({
+          dianStatus: "RECHAZADA",
+          updated_at: new Date().toISOString(),
+        }).eq("id", factura.id);
+      } catch (_) {}
       toast.error(`Error al reenviar: ${err.message}`);
     } finally {
       setResendingId(null);

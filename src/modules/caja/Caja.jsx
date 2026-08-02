@@ -1,7 +1,7 @@
 // src/modules/caja/Caja.jsx
 // ============================================================
 // 🏦 Módulo de Caja - OdontoCloud
-// Conectado en tiempo real con Firebase, pacientes y facturas.
+// Conectado en tiempo real con Supabase, pacientes y facturas.
 // Sin índices compuestos (sort client-side).
 // ============================================================
 import React, { useState, useEffect } from "react";

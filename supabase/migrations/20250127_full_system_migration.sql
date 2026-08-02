@@ -1,7 +1,7 @@
 -- ===============================================================
 -- MIGRACIÓN COMPLETA DEL SISTEMA ODONTOCLOUD A SUPABASE
 -- Fecha: 2025-01-27
--- Descripción: Crea todas las tablas necesarias para migrar de Firestore a Supabase
+-- Descripción: Crea todas las tablas necesarias para consolidar el sistema en Supabase
 -- IMPORTANTE: No migra datos históricos, solo prepara estructura para datos nuevos
 -- ===============================================================
 
