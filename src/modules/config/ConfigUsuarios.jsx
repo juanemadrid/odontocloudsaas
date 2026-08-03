@@ -144,7 +144,18 @@ export default function ConfigUsuarios() {
                 inquilino: userProfile?.inquilino || null,
             };
 
-            await supabase.from("usuarios").upsert(userObj);
+            try {
+                await supabase.from("profiles").upsert({
+                    id: userObj.id,
+                    email: userObj.email,
+                    full_name: userObj.nombreCompleto,
+                    role: userObj.rol,
+                    tenant_id: userProfile?.inquilino || null,
+                    updated_at: new Date().toISOString()
+                });
+            } catch (e) {
+                console.warn("Aviso al guardar en profiles:", e);
+            }
 
             alert("✅ Usuario creado exitosamente.");
             setModalOpen(false);
@@ -167,7 +178,9 @@ export default function ConfigUsuarios() {
         if (!window.confirm("¿Eliminar usuario?")) return;
         try {
             await deleteManagedUser(u.id);
-            await supabase.from("usuarios").delete().eq("id", u.id);
+            try {
+                await supabase.from("profiles").delete().eq("id", u.id);
+            } catch (e) {}
             await loadData();
         } catch (error) {
             alert("Error: " + error.message);

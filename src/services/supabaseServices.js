@@ -648,7 +648,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
   try {
     let query = supabase.from('profesionales').select('*');
     if (inquilino) {
-      query = query.or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      query = query.eq('tenant_id', inquilino);
     }
     const { data: profData } = await query;
     if (profData && Array.isArray(profData)) {

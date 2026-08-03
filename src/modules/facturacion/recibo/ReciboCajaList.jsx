@@ -454,7 +454,7 @@ export default function ReciboCajaList({ onNew }) {
                 const { data: pacsData } = await supabase
                     .from("pacientes")
                     .select("id, nombres, apellidos, nombre, apellido, nombre_completo, nombreCompleto")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                    .eq("tenant_id", inquilino);
                 
                 (pacsData || []).forEach(p => {
                     const full = p.nombreCompleto || p.nombre_completo || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim();
@@ -485,7 +485,7 @@ export default function ReciboCajaList({ onNew }) {
                 const { data } = await supabase
                     .from("recibos_caja")
                     .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                    .eq("tenant_id", inquilino);
                 if (data && data.length > 0) dataRecibos = data;
             } catch (e) {}
 
@@ -513,7 +513,7 @@ export default function ReciboCajaList({ onNew }) {
                 const { data } = await supabase
                     .from("pagos")
                     .select("*")
-                    .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                    .eq("tenant_id", inquilino);
                 if (data && data.length > 0) dataPagosRaw = data;
             } catch (e) {}
 

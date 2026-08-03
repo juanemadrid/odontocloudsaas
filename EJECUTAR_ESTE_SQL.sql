@@ -192,12 +192,17 @@ CREATE TRIGGER trigger_sync_inquilino
 -- =====================================================
 
 -- =====================================================
--- 🔧 FIX RÁPIDO: Solo arreglar políticas de audit_logs
+-- 🔧 FIX COMPLETO: audit_logs, profiles y usuarios
 -- =====================================================
--- Si ya ejecutaste la migración anterior pero aún tienes
--- el error 400 al crear citas, ejecuta SOLO este bloque:
+-- Si tienes errores 400 al:
+-- - Crear citas (audit_logs)
+-- - Cambiar contraseñas (profiles, usuarios)
+-- - Actualizar usuarios (profiles, usuarios)
+-- Ejecuta TODO este bloque:
 -- =====================================================
 
+-- 1. FIX AUDIT_LOGS (Error 400 en INSERT)
+-- =====================================================
 DROP POLICY IF EXISTS "Users can insert audit logs for their tenant" ON public.audit_logs;
 DROP POLICY IF EXISTS "Users can insert audit logs" ON public.audit_logs;
 
@@ -206,13 +211,68 @@ CREATE POLICY "Users can insert audit logs" ON public.audit_logs
     auth.uid() IS NOT NULL
   );
 
--- Verificar que la política fue creada correctamente
-SELECT 
-    schemaname,
-    tablename,
-    policyname,
-    cmd
-FROM pg_policies 
-WHERE tablename = 'audit_logs' AND cmd = 'INSERT';
+-- 2. FIX PROFILES (Error 400 en UPDATE)
+-- =====================================================
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update profiles from their tenant" ON public.profiles;
+DROP POLICY IF EXISTS "Admins can update profiles" ON public.profiles;
 
--- Deberías ver una fila con policyname = 'Users can insert audit logs'
+-- Política SELECT
+DROP POLICY IF EXISTS "Users can view profiles from their tenant" ON public.profiles;
+CREATE POLICY "Users can view profiles from their tenant" ON public.profiles
+  FOR SELECT USING (
+    tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+  );
+
+-- Política UPDATE permisiva
+CREATE POLICY "Users can update profiles from their tenant" ON public.profiles
+  FOR UPDATE USING (
+    tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+  )
+  WITH CHECK (
+    tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+  );
+
+-- Política INSERT
+DROP POLICY IF EXISTS "Users can insert profiles for their tenant" ON public.profiles;
+CREATE POLICY "Users can insert profiles for their tenant" ON public.profiles
+  FOR INSERT WITH CHECK (
+    tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+  );
+
+-- 3. FIX USUARIOS (Error 400 en UPDATE) - Si la tabla existe
+-- =====================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'usuarios') THEN
+    ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
+    
+    DROP POLICY IF EXISTS "Users can view usuarios from their tenant" ON public.usuarios;
+    DROP POLICY IF EXISTS "Users can update usuarios from their tenant" ON public.usuarios;
+    DROP POLICY IF EXISTS "Users can insert usuarios for their tenant" ON public.usuarios;
+    
+    EXECUTE 'CREATE POLICY "Users can view usuarios from their tenant" ON public.usuarios
+      FOR SELECT USING (
+        tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+      )';
+    
+    EXECUTE 'CREATE POLICY "Users can update usuarios from their tenant" ON public.usuarios
+      FOR UPDATE USING (
+        tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+      )
+      WITH CHECK (
+        tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+      )';
+    
+    EXECUTE 'CREATE POLICY "Users can insert usuarios for their tenant" ON public.usuarios
+      FOR INSERT WITH CHECK (
+        tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+      )';
+  END IF;
+END $$;
+
+-- Verificar que las políticas fueron creadas correctamente
+SELECT tablename, policyname, cmd
+FROM pg_policies 
+WHERE tablename IN ('audit_logs', 'profiles', 'usuarios')
+ORDER BY tablename, cmd, policyname;

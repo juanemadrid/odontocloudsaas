@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import { isDoctorUser } from "../../utils/doctorHelpers";
 import { FiUsers, FiPercent, FiShield, FiRefreshCw, FiCheck, FiMoreHorizontal } from "react-icons/fi";
 
 const Avatar = ({ name }) => {
@@ -32,8 +33,8 @@ export default function ConfiguracionComisiones() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const { data } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
-                setDoctores((data || []).filter(u => u.esDoctor === true || u.rol === "odontologo" || u.rol === "doctor"));
+                const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+                setDoctores((data || []).filter(isDoctorUser));
             } catch (err) {
                 console.error("Error cargando profesionales:", err);
             } finally {
@@ -47,7 +48,7 @@ export default function ConfiguracionComisiones() {
         const numVal = Math.min(100, Math.max(0, Number(value)));
         setSavingId(`${id}-${field}`);
         try {
-            await supabase.from("usuarios").update({ [field]: numVal }).eq("id", id);
+            await supabase.from("profiles").update({ [field]: numVal }).eq("id", id);
 
             // Optimistic update
             setDoctores(prev => prev.map(d => d.id === id ? { ...d, [field]: numVal } : d));

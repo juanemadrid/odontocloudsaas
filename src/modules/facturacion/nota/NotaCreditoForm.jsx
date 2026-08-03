@@ -185,7 +185,7 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
             const { count } = await supabase
                 .from("notas_credito")
                 .select("*", { count: "exact", head: true })
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                .eq("tenant_id", inquilino);
             const consecutive = `NC${(count || 0) + 1}`;
 
             // 2. If generating balance in favor, insert into "pagos"

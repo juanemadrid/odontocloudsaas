@@ -6,24 +6,7 @@ import supabase from "../lib/supabaseClient";
  * Incluye tolerancia a fallos y fallback automático a RPC/Tablas si la Edge Function no está desplegada o falla por CORS en entorno local.
  */
 const invokeAdminUsers = async (action, payload = {}) => {
-  // Intentar invocar primero la Edge Function si está disponible
-  try {
-    const { data, error } = await supabase.functions.invoke("admin-users", {
-      body: { action, ...payload },
-    });
-
-    if (!error && data?.success) {
-      return data;
-    }
-
-    if (error) {
-      console.warn("Servicio Edge Function admin-users no disponible o retornó error, activando fallback local:", error.message);
-    }
-  } catch (err) {
-    console.warn("CORS/Red en Edge Function admin-users, activando fallback nativo:", err.message);
-  }
-
-  // ── FALLBACK 1: Crear / Editar Usuario (upsert_user) ──
+  // ── FALLBACK DIRECTO RPC / TABLAS ──
   if (action === "upsert_user") {
     const user = payload.user || {};
     const tenantId = user.tenantId || user.inquilino;
@@ -79,7 +62,7 @@ const invokeAdminUsers = async (action, payload = {}) => {
       }
     }
 
-    // C. Fallback a tabla pública de perfiles (public.profiles)
+    // C. Guardar en tabla pública de perfiles (public.profiles)
     const userId = createdAuthUserId || user.id || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
 
     const profilePayload = {
@@ -88,7 +71,6 @@ const invokeAdminUsers = async (action, payload = {}) => {
       full_name: fullName,
       role: role,
       tenant_id: tenantId,
-      inquilino: tenantId,
       activo: user.activo ?? true,
       updated_at: new Date().toISOString()
     };

@@ -41,7 +41,7 @@ export default function ConfigFacturacionElectronica() {
     const initLoad = async () => {
         setLoading(true);
         try {
-            const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+            const { data: snapSuc } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
             const listSuc = (snapSuc || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
             setSucursales(listSuc);
 

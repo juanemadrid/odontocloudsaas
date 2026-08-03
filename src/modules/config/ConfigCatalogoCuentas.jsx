@@ -59,7 +59,7 @@ export default function ConfigCatalogoCuentas() {
             const { data: fetchedAccounts } = await supabase
                 .from("catalogo_cuentas")
                 .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .eq("tenant_id", inquilino)
                 .order("codigo", { ascending: true });
 
             const combined = [...(fetchedAccounts || [])];

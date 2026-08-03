@@ -1,6 +1,6 @@
 # 👋 LEE ESTO PRIMERO
 
-**Si estás viendo este archivo es porque hay un fix pendiente de aplicar**
+**Si estás viendo este archivo es porque hay fixes pendientes de aplicar**
 
 ---
 
@@ -8,14 +8,16 @@
 
 ### LO BUENO ✅
 - El sistema está funcionando
-- Las citas se crean perfectamente
+- Las citas se crean correctamente
+- Las contraseñas se cambian correctamente
 - Todas las tablas están creadas
 - La validación de horarios funciona
 
 ### LO PENDIENTE 🔴
-- Hay un error 400 en la consola después de crear citas
-- Es por el log de auditoría que no se guarda
-- **NO rompe nada**, pero hay que arreglarlo
+Hay errores 400 en la consola que NO rompen la funcionalidad pero hay que arreglar:
+
+1. **Al crear citas**: Error 400 en `audit_logs`
+2. **Al cambiar contraseñas**: Error 400 en `profiles` y `usuarios`
 
 ---
 
@@ -28,7 +30,7 @@ INSTRUCCIONES_RAPIDAS.md
 
 ### 2. Sigue los 4 pasos
 
-### 3. Listo
+### 3. Listo - Todos los errores 400 desaparecen
 
 ---
 
@@ -74,9 +76,9 @@ Si quieres ver cómo está todo:
 **Causa**: El código del frontend no está actualizado  
 **Solución**: Revisa que `src/modules/agenda/hooks/useAgenda.js` tenga la función (líneas 62-118)
 
-### Síntoma 3: Error 400 en audit_logs
-**Causa**: Las políticas RLS de audit_logs están mal  
-**Solución**: Ejecuta la sección "FIX RÁPIDO" de `EJECUTAR_ESTE_SQL.sql`
+### Síntoma 3: Error 400 en audit_logs, profiles o usuarios
+**Causa**: Las políticas RLS están bloqueando INSERT/UPDATE  
+**Solución**: Ejecuta el SQL completo de `INSTRUCCIONES_RAPIDAS.md` o la sección "FIX COMPLETO" de `EJECUTAR_ESTE_SQL.sql`
 
 ### Síntoma 4: Error "column a.activo does not exist"
 **Causa**: El trigger `citas_enforce_availability` sigue activo  

@@ -113,7 +113,7 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
             const { data: rawData } = await supabase
                 .from("pagos")
                 .select("*")
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                .eq("tenant_id", inquilino)
                 .eq("profesionalId", selectedDoctorId);
 
             const rawList = (rawData || []).map(data => {

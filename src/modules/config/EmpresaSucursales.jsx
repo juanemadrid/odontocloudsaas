@@ -249,7 +249,7 @@ function SucursalEditor({ item, onBack, inquilino }) {
                     getConfigItems(inquilino, "consecutivos", "consecutivos"),
                     getConfigItems(inquilino, "listas_precios", "listas_precios"),
                     getConfigItems(inquilino, "almacenes", "almacenes"),
-                    supabase.from("profiles").select("*").or(`inquilino.eq.${inquilino},tenant_id.eq.${inquilino}`),
+                    supabase.from("profiles").select("*").eq("tenant_id", inquilino),
                     getConfigItems(inquilino, "usuarios", "usuarios")
                 ]);
 

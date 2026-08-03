@@ -24,7 +24,7 @@ export default function SmartAlerts() {
                 sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
                 // 1. CRM Check: Dormant Patients (Fetch and filter in memory)
-                const { data: snapDormant } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`).limit(20);
+                const { data: snapDormant } = await supabase.from("pacientes").select("*").eq("tenant_id", userProfile.inquilino).limit(20);
                 const dormantDocs = (snapDormant || []).filter(data => {
                     return data.updated_at && new Date(data.updated_at) < sixMonthsAgo;
                 }).slice(0, 3);
@@ -41,7 +41,7 @@ export default function SmartAlerts() {
                 }
 
                 // 2. Inventory Check: Predict low stock (Fetch and filter in memory)
-                const { data: snapInv } = await supabase.from("inventario").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`).limit(20);
+                const { data: snapInv } = await supabase.from("inventario").select("*").eq("tenant_id", userProfile.inquilino).limit(20);
                 const lowStockDocs = (snapInv || []).filter(data => {
                     return data.cantidad !== undefined && data.cantidad < 5;
                 }).slice(0, 2);

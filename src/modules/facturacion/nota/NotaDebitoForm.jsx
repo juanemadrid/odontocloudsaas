@@ -185,7 +185,7 @@ export default function NotaDebitoForm({ onCancel, onSuccess }) {
             const { count } = await supabase
                 .from("notas_debito")
                 .select("*", { count: "exact", head: true })
-                .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+                .eq("tenant_id", inquilino);
             const consecutive = `ND${(count || 0) + 1}`;
 
             // 2. Save debit note document

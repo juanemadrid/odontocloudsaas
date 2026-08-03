@@ -204,7 +204,7 @@ export default function RipsGenerator() {
 
             const snapshots = await Promise.all(
                 colecciones.map(({ nombre }) =>
-                    supabase.from(nombre).select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`)
+                    supabase.from(nombre).select("*").eq("tenant_id", inquilino)
                         .then(res => res.data || [])
                         .catch(() => [])
                 )
@@ -236,7 +236,7 @@ export default function RipsGenerator() {
             }
 
             // 2. Cargar Pacientes y mapear por ID, Documento y Nombre
-            const { data: patData } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+            const { data: patData } = await supabase.from("pacientes").select("*").eq("tenant_id", inquilino);
             const pacientesById = {};
             const pacientesByDoc = {};
             const pacientesByName = {};

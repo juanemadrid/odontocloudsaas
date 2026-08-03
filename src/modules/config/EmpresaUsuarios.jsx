@@ -94,7 +94,7 @@ export default function EmpresaUsuarios() {
         setLoading(true);
         try {
             const [uRes, sData, cRes, configUsersData] = await Promise.all([
-                supabase.from("profiles").select("*").or(`inquilino.eq.${userProfile.inquilino},tenant_id.eq.${userProfile.inquilino}`),
+                supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
                 getConfigItems(userProfile.inquilino, "sucursales", "sucursales"),
                 supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle(),
                 getConfigItems(userProfile.inquilino, "usuarios", "usuarios")

@@ -177,20 +177,14 @@ export default function UserProfileModal({ isOpen, onClose }) {
 
             const userId = userProfile?.uid || userProfile?.id || user?.uid || user?.id;
             if (userId) {
-                await supabase.from("usuarios").update({
-                    nombre: nombre.trim(),
-                    apellido: apellido.trim(),
-                    nombreCompleto: `${nombre.trim()} ${apellido.trim()}`.trim(),
-                    telefono: telefono.trim(),
-                    telefonoMovil: telefono.trim(),
-                    registroMedico: registroMedico.trim(),
-                    tarjetaProfesional: registroMedico.trim(),
-                    fotoPerfil: fotoPerfil || "",
-                    firmaElectronica: currentSignature,
-                    firma: currentSignature,
-                    huellaDigital: huellaDigital || "",
-                    updated_at: new Date().toISOString()
-                }).eq("id", userId);
+                try {
+                    await supabase.from("profiles").update({
+                        full_name: `${nombre.trim()} ${apellido.trim()}`.trim(),
+                        updated_at: new Date().toISOString()
+                    }).eq("id", userId);
+                } catch (e) {
+                    console.warn("Aviso al actualizar profiles en UserProfileModal:", e);
+                }
             }
 
             // Sync local Auth state
