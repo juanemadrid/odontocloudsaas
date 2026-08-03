@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { FiChevronDown, FiFilter, FiSearch, FiMapPin, FiUser, FiX } from 'react-icons/fi';
+import { FiChevronDown, FiFilter, FiSearch, FiMapPin, FiUser, FiX, FiBox } from 'react-icons/fi';
 import MiniCalendar from './MiniCalendar';
 
 // Acordeón colapsable - cerrado por defecto
@@ -40,10 +40,11 @@ export default function AgendaSidebar({
     branches = [],
     selectedBranch, onSelectBranch,
     chairs = [],
+    selectedChair, onSelectChair,
     appointments = []
 }) {
-    // Ambas secciones CERRADAS por defecto
-    const [openSections, setOpenSections] = useState({ sucursal: false, profesionales: false });
+    // Secciones CERRADAS por defecto
+    const [openSections, setOpenSections] = useState({ sucursal: false, profesionales: false, recursos: false });
     const [doctorSearch, setDoctorSearch] = useState('');
     const [branchSearch, setBranchSearch] = useState('');
 
@@ -92,8 +93,10 @@ export default function AgendaSidebar({
 
     // Build the name robustly directly from the node
     const getFullName = (u) => {
-        if (!u) return "?";
-        return `${u.nombre || u.nombres || ''} ${u.apellido || u.apellidos || ''}`.trim() || u.nombreCompleto || u.email || "Doctor";
+        if (!u) return "";
+        const name = u.nombreCompleto || u.full_name || `${u.nombre || u.nombres || ''} ${u.apellido || u.apellidos || ''}`.trim() || u.email;
+        if (name && !name.toLowerCase().includes("undefined")) return name;
+        return "Doctor";
     };
 
     const selectedBranchName = branches.find(b => b.id === selectedBranch)?.nombre;
@@ -261,6 +264,46 @@ export default function AgendaSidebar({
                             </div>
                         )}
                     </FilterAccordion>
+
+                    {/* ─── RECURSOS FÍSICOS / CONSULTORIOS ─── */}
+                    {chairs && chairs.length > 0 && (
+                        <FilterAccordion
+                            title={selectedChair ? (chairs.find(c => c.id === selectedChair)?.nombre || "Recurso Físico") : "Recursos Físicos"}
+                            icon={FiBox}
+                            isOpen={openSections.recursos}
+                            onToggle={() => toggleSection('recursos')}
+                            count={selectedChair ? 1 : 0}
+                        >
+                            <div className="flex flex-col gap-1 mt-1 max-h-[200px] overflow-y-auto custom-scrollbar">
+                                <button
+                                    onClick={() => { if (onSelectChair) onSelectChair(''); toggleSection('recursos'); }}
+                                    className={`text-left text-[10px] py-2 px-3 rounded-xl transition-all font-black uppercase tracking-tight flex items-center gap-2 ${
+                                        !selectedChair
+                                            ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                                            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                                    }`}
+                                >
+                                    <FiBox size={11} />
+                                    Todos los recursos
+                                </button>
+
+                                {chairs.map(c => (
+                                    <button
+                                        key={c.id}
+                                        onClick={() => { if (onSelectChair) onSelectChair(c.id); toggleSection('recursos'); }}
+                                        className={`text-left text-[10px] py-2 px-3 rounded-xl transition-all font-black uppercase tracking-tight flex items-center gap-2 ${
+                                            selectedChair === c.id
+                                                ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                                                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        <FiBox size={11} />
+                                        <span className="truncate">{c.nombre}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </FilterAccordion>
+                    )}
 
                 </div>
 

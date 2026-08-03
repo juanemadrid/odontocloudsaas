@@ -58,11 +58,19 @@ export default function ReporteLogWhatsApp() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapSuc = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapSuc = data;
+        } catch (e) {}
         setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
         // 2. Cargar Logs de WhatsApp Business API en Supabase
-        const { data: snapLogs } = await supabase.from("whatsapp_logs").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapLogs = [];
+        try {
+          const { data } = await supabase.from("whatsapp_logs").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapLogs = data;
+        } catch (e) {}
         const listData = [];
 
         (snapLogs || []).forEach(l => {
@@ -368,39 +376,27 @@ export default function ReporteLogWhatsApp() {
                     )}
                     {visibleColumns.destinatario && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Paciente / Destinatario</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Paciente / Destinatario</div>                      </th>
                     )}
                     {visibleColumns.celular && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Número celular</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Número celular</div>                      </th>
                     )}
                     {visibleColumns.plantilla && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Plantilla HSM / Tipo</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Plantilla HSM / Tipo</div>                      </th>
                     )}
                     {visibleColumns.mensaje && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Contenido del mensaje</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Contenido del mensaje</div>                      </th>
                     )}
                     {visibleColumns.estado && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-center">
-                        <div>Estado envío</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Estado envío</div>                      </th>
                     )}
                     {visibleColumns.codigoRespuesta && (
                       <th className="px-3 py-2 whitespace-nowrap">
-                        <div>Código Respuesta API</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Código Respuesta API</div>                      </th>
                     )}
                   </tr>
                 </thead>

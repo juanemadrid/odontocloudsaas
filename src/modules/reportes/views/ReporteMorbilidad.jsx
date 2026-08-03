@@ -56,10 +56,18 @@ export default function ReporteMorbilidad() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapSuc = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapSuc = data;
+        } catch (e) {}
         setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        const { data: snapEvo } = await supabase.from("evoluciones").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapEvo = [];
+        try {
+          const { data } = await supabase.from("evoluciones").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapEvo = data;
+        } catch (e) {}
         
         const diagCounter = {};
         let totalCasos = 0;
@@ -320,33 +328,23 @@ export default function ReporteMorbilidad() {
                   <tr>
                     {visibleColumns.codigoDiagnostico && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Código Diagnóstico (CIE-10)</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Código Diagnóstico (CIE-10)</div>                      </th>
                     )}
                     {visibleColumns.diagnostico && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Diagnóstico / Patología</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Diagnóstico / Patología</div>                      </th>
                     )}
                     {visibleColumns.frecuencia && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-center">
-                        <div>Frecuencia / Casos</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Frecuencia / Casos</div>                      </th>
                     )}
                     {visibleColumns.porcentaje && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-center">
-                        <div>Porcentaje (%)</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Porcentaje (%)</div>                      </th>
                     )}
                     {visibleColumns.oficina && (
                       <th className="px-3 py-2 whitespace-nowrap">
-                        <div>Oficina / Sucursal</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Oficina / Sucursal</div>                      </th>
                     )}
                   </tr>
                 </thead>

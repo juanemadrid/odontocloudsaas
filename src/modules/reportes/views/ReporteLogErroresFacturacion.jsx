@@ -63,13 +63,21 @@ export default function ReporteLogErroresFacturacion() {
       setLoading(true);
       try {
         // 1. Cargar Sucursales reales
-        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapSuc = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapSuc = data;
+        } catch (e) {}
         const listSuc = (snapSuc || []).map(doc => ({ id: doc.id, nombre: doc.nombre || doc.id }));
         setSucursalesList(listSuc);
         if (listSuc.length > 0) setOficina(listSuc[0].nombre);
 
         // 2. Cargar Logs de Errores de Facturación
-        const { data: snapLogs } = await supabase.from("facturas_errores").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapLogs = [];
+        try {
+          const { data } = await supabase.from("facturas_errores").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapLogs = data;
+        } catch (e) {}
         const listData = [];
 
         (snapLogs || []).forEach(l => {
@@ -394,21 +402,15 @@ export default function ReporteLogErroresFacturacion() {
                   <tr>
                     {visibleColumns.documento && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Documento</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Documento</div>                      </th>
                     )}
                     {visibleColumns.tipoDocumento && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Tipo de documento</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Tipo de documento</div>                      </th>
                     )}
                     {visibleColumns.pacienteTercero && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Paciente/Tercero</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Paciente/Tercero</div>                      </th>
                     )}
                     {visibleColumns.fecha && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
@@ -430,27 +432,19 @@ export default function ReporteLogErroresFacturacion() {
                     )}
                     {visibleColumns.documentosAsociados && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Documentos asociados</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Documentos asociados</div>                      </th>
                     )}
                     {visibleColumns.consecutivo && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Consecutivo</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Consecutivo</div>                      </th>
                     )}
                     {visibleColumns.tipoDocAsociados && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>T. Doc. Asociados</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>T. Doc. Asociados</div>                      </th>
                     )}
                     {visibleColumns.acciones && (
                       <th className="px-3 py-2 whitespace-nowrap text-center">
-                        <div>Acciones</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Acciones</div>                      </th>
                     )}
                   </tr>
                 </thead>

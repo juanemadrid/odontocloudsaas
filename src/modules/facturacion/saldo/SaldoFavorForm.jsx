@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { 
     FiArrowLeft, FiCalendar, FiBriefcase, FiUser, 
-    FiSave, FiAlertCircle, FiCheckCircle 
+    FiSave, FiAlertCircle, FiCheckCircle, FiX, FiPlus
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { useAuth } from "../../../context/AuthContext";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const CIUDADES_COLOMBIA = [
     "Abejorral", "Acacías", "Aguachica", "Agustín Codazzi", "Anapoima", "Andes", "Apartadó", "Aracataca", "Arauca", "Armenia",
@@ -108,7 +109,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                 profsList = cfgRow?.config?.profesionales || cfgRow?.config?.profiles || [];
             }
 
-            setProfesionales(profsList.map(d => ({ 
+            setProfesionales(profsList.filter(d => isDoctorUser(d)).map(d => ({ 
                 id: d.id, 
                 nombre: d.full_name || d.nombre_completo || d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim() || d.email 
             })));

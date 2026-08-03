@@ -76,40 +76,77 @@ export const recibosCajaService = {
     return data;
   },
 
-  // Obtener siguiente consecutivo
-  async getNextConsecutivo(tenantId) {
-    const { data, error } = await supabase
-      .from("consecutivos")
-      .select("valor_actual")
-      .eq("tenant_id", tenantId)
-      .eq("nombre", "recibo_caja")
-      .single();
+  // Obtener siguiente consecutivo sincronizado desde la configuración de la clínica
+  async getNextConsecutivo(tenantId, tipoField = "contReciboCaja") {
+    try {
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
 
-    if (error && error.code === 'PGRST116') {
-      // No existe, crear consecutivo
-      await supabase
-        .from("consecutivos")
-        .insert([{
-          tenant_id: tenantId,
-          nombre: "recibo_caja",
-          valor_actual: 1
-        }]);
+      const config = cfgRow?.config || {};
+      const list = Array.isArray(config.consecutivos) ? config.consecutivos : [];
+      const activeCons = list[0] || {};
+
+      let val = Number(activeCons[tipoField] ?? 0);
+
+      // Fallback a conteo de tabla si el valor es 0
+      if (!val || val === 0) {
+        try {
+          const { data: maxRow } = await supabase
+            .from("recibos_caja")
+            .select("nro_consecutivo")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (maxRow?.nro_consecutivo) {
+            val = parseInt(maxRow.nro_consecutivo, 10) || 0;
+          }
+        } catch (e) {}
+      }
+
+      return (val > 0 ? val : 0) + 1;
+    } catch (err) {
+      console.warn("Error leyendo consecutivo desde website_config:", err.message);
       return 1;
     }
-    
-    if (error) throw error;
-    return (data?.valor_actual || 0) + 1;
   },
 
-  // Actualizar consecutivo
-  async updateConsecutivo(tenantId, nuevoValor) {
-    const { error } = await supabase
-      .from("consecutivos")
-      .update({ valor_actual: nuevoValor })
-      .eq("tenant_id", tenantId)
-      .eq("nombre", "recibo_caja");
+  // Actualizar consecutivo en website_config para sincronización inmediata
+  async updateConsecutivo(tenantId, nuevoValor, tipoField = "contReciboCaja") {
+    try {
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
 
-    if (error) throw error;
+      const currentConfig = cfgRow?.config || {};
+      const list = Array.isArray(currentConfig.consecutivos) ? currentConfig.consecutivos : [];
+
+      let updatedList;
+      if (list.length > 0) {
+        updatedList = list.map((item, idx) => idx === 0 ? { ...item, [tipoField]: nuevoValor } : item);
+      } else {
+        updatedList = [{ id: "consecutivo-principal", nombre: "Consecutivo Principal", [tipoField]: nuevoValor }];
+      }
+
+      await supabase
+        .from("website_config")
+        .upsert({
+          tenant_id: tenantId,
+          config: {
+            ...currentConfig,
+            consecutivos: updatedList,
+            updatedAt: new Date().toISOString()
+          }
+        }, { onConflict: "tenant_id" });
+    } catch (err) {
+      console.warn("Advertencia al actualizar consecutivo en website_config:", err.message);
+    }
   }
 };
 

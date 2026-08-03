@@ -156,9 +156,9 @@ export default function ConfigEmpresa() {
         const file = e.target.files[0];
         if (!file) return;
 
-        const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
         if (!validTypes.includes(file.type)) {
-            toast.error("Seleccione una imagen (JPG, PNG o WEBP)");
+            toast.error("Seleccione una imagen (JPG, PNG, WEBP o SVG)");
             return;
         }
 
@@ -169,32 +169,17 @@ export default function ConfigEmpresa() {
 
         setUploading(true);
         try {
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${userProfile.inquilino}/tenants/logo_${Date.now()}.${fileExt}`;
-            
-            let finalUrl = "";
-
-            const { error: uploadError } = await supabase.storage
-                .from("clinical-files")
-                .upload(fileName, file, { upsert: true });
-
-            if (!uploadError) {
-                const { data: publicUrlData } = supabase.storage
-                    .from("clinical-files")
-                    .getPublicUrl(fileName);
-                finalUrl = publicUrlData.publicUrl;
-            } else {
-                console.warn("Storage upload note (RLS policy active), fall-backing to DataURL preview:", uploadError.message);
-                finalUrl = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(file);
-                });
-            }
+            // Convertir la imagen directamente a DataURL Base64 para almacenamiento autónomo instantáneo
+            const finalUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error("Error leyendo archivo"));
+                reader.readAsDataURL(file);
+            });
 
             setFormData(prev => ({ ...prev, logoUrl: finalUrl }));
 
-            // Guardar automáticamente en Supabase para durabilidad absoluta en F5
+            // Guardar automáticamente en Supabase (tenants y website_config)
             if (userProfile?.inquilino && finalUrl) {
                 await supabase.from("tenants").update({ logo_url: finalUrl }).eq("id", userProfile.inquilino);
 
@@ -229,7 +214,7 @@ export default function ConfigEmpresa() {
                 window.dispatchEvent(new CustomEvent("tenant-updated"));
             }
 
-            toast.success("Logo guardado correctamente.");
+            toast.success("Logo actualizado correctamente.");
         } catch (error) {
             console.error("Error al procesar el logo:", error);
             toast.error(error.message || "Error al procesar la imagen");
@@ -275,7 +260,7 @@ export default function ConfigEmpresa() {
                 </button>
             </div>
 
-            <form onSubmit={handleSave} className="space-y-4">
+            <form onSubmit={handleSave} autoComplete="off" className="space-y-4">
                 {/* Hidden File Input */}
                 <input
                     type="file"
@@ -295,7 +280,12 @@ export default function ConfigEmpresa() {
                                     <span className="text-[10px] text-blue-600 font-bold">Subiendo...</span>
                                 </div>
                             ) : formData.logoUrl ? (
-                                <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
+                                <img
+                                    src={formData.logoUrl}
+                                    alt="Logo"
+                                    className="w-full h-full object-contain p-2"
+                                    onError={() => setFormData(prev => ({ ...prev, logoUrl: "" }))}
+                                />
                             ) : (
                                 <div className="flex flex-col items-center gap-1 text-slate-400">
                                     <FiImage size={24} />

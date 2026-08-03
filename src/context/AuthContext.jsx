@@ -38,7 +38,7 @@ export const AuthProvider = ({ children }) => {
 
     try {
       // Consultar perfil e información completa del tenant en Supabase
-      const { data: profile, error } = await supabase
+      let { data: profile, error } = await supabase
         .from("profiles")
         .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
         .eq("id", authUser.id)
@@ -46,6 +46,49 @@ export const AuthProvider = ({ children }) => {
 
       if (error) {
         console.warn("AuthContext - Error al obtener perfil desde Supabase:", error.message);
+      }
+
+      // Auto-recuperación de perfil si el usuario está en auth.users pero no tiene fila en public.profiles
+      if (!profile && authUser.email) {
+        console.warn("AuthContext - Perfil no encontrado para el usuario autenticado, iniciando auto-recuperación...");
+        const meta = authUser.user_metadata || {};
+        const tenantId = meta.tenant_id;
+        const fullName = meta.full_name || authUser.email;
+        const userRole = meta.role || "admin";
+
+        if (tenantId) {
+          try {
+            // 1. Asegurar la clínica en public.tenants
+            await supabase.from("tenants").upsert([{
+              id: tenantId,
+              nombre: `Clínica ${fullName}`,
+              activo: true
+            }]);
+
+            // 2. Crear el perfil en public.profiles
+            await supabase.from("profiles").upsert([{
+              id: authUser.id,
+              email: authUser.email.toLowerCase().trim(),
+              full_name: fullName,
+              role: userRole,
+              tenant_id: tenantId,
+              activo: true
+            }]);
+
+            // 3. Re-consultar perfil recién sanado
+            const { data: healedProfile } = await supabase
+              .from("profiles")
+              .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
+              .eq("id", authUser.id)
+              .maybeSingle();
+
+            if (healedProfile) {
+              profile = healedProfile;
+            }
+          } catch (healErr) {
+            console.error("AuthContext - Error durante auto-recuperación de perfil:", healErr);
+          }
+        }
       }
 
       if (profile) {

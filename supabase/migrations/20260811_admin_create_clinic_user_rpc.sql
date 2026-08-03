@@ -11,7 +11,8 @@ CREATE OR REPLACE FUNCTION public.admin_create_clinic_user(
   p_email text,
   p_password text,
   p_full_name text,
-  p_tenant_id uuid
+  p_tenant_id uuid,
+  p_role text DEFAULT 'Doctor'
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -20,6 +21,7 @@ SET search_path = public, auth, extensions
 AS $$
 DECLARE
   v_uid uuid;
+  v_role_normalized text;
 BEGIN
   IF p_email IS NULL OR trim(p_email) = '' THEN
     RAISE EXCEPTION 'El correo electrónico es requerido.';
@@ -29,18 +31,15 @@ BEGIN
     RAISE EXCEPTION 'La contraseña debe tener al menos 6 caracteres.';
   END IF;
 
-  -- A) Asegurar que la clínica exista en la tabla nativa tenants de PostgreSQL
-  INSERT INTO public.tenants (id, nombre, email, plan, activo)
-  VALUES (
-    p_tenant_id,
-    coalesce(p_full_name, 'Clínica Registrada'),
-    lower(trim(p_email)),
-    'consultorio',
-    true
-  )
+  -- Normalizar el rol recibido manteniendo la etiqueta ingresada
+  v_role_normalized := coalesce(nullif(trim(p_role), ''), 'Doctor');
+
+  -- A) Asegurar que la clínica exista y esté activa en la tabla public.tenants
+  INSERT INTO public.tenants (id, nombre, email, activo)
+  VALUES (p_tenant_id, coalesce(p_full_name, 'Clínica OdontoCloud'), lower(trim(p_email)), true)
   ON CONFLICT (id) DO UPDATE SET
-    email = lower(trim(p_email)),
-    activo = true;
+    activo = true,
+    email = coalesce(tenants.email, EXCLUDED.email);
 
   -- B) Buscar si la cuenta de Auth ya existe en auth.users
   SELECT id INTO v_uid
@@ -69,17 +68,18 @@ BEGIN
       crypt(p_password, gen_salt('bf', 10)),
       now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
-      jsonb_build_object('full_name', p_full_name, 'tenant_id', p_tenant_id, 'role', 'administrador'),
+      jsonb_build_object('full_name', p_full_name, 'tenant_id', p_tenant_id, 'role', v_role_normalized),
       now(),
       now(),
       'authenticated',
       'authenticated'
     );
   ELSE
-    -- Si ya existe, actualizar su clave encriptada
+    -- Si ya existe, actualizar su clave encriptada y metadata
     UPDATE auth.users
     SET encrypted_password = crypt(p_password, gen_salt('bf', 10)),
         email_confirmed_at = coalesce(email_confirmed_at, now()),
+        raw_user_meta_data = jsonb_build_object('full_name', p_full_name, 'tenant_id', p_tenant_id, 'role', v_role_normalized),
         updated_at = now()
     WHERE id = v_uid;
   END IF;
@@ -89,8 +89,8 @@ BEGIN
   VALUES (
     v_uid,
     lower(trim(p_email)),
-    coalesce(p_full_name, 'Administrador de Clínica'),
-    'administrador',
+    coalesce(p_full_name, 'Usuario de Clínica'),
+    v_role_normalized,
     p_tenant_id,
     true,
     now(),
@@ -99,7 +99,7 @@ BEGIN
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
     full_name = coalesce(EXCLUDED.full_name, profiles.full_name),
-    role = 'administrador',
+    role = EXCLUDED.role,
     tenant_id = EXCLUDED.tenant_id,
     activo = true,
     updated_at = now();
@@ -107,18 +107,12 @@ BEGIN
   RETURN jsonb_build_object(
     'success', true,
     'user_id', v_uid,
-    'message', format('Usuario %s y clínica aprovisionados exitosamente.', p_email)
+    'email', lower(trim(p_email)),
+    'role', v_role_normalized,
+    'tenant_id', p_tenant_id,
+    'message', format('Usuario %s (%s) aprovisionado exitosamente para la clínica.', p_email, v_role_normalized)
   );
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.admin_create_clinic_user(text, text, text, uuid) TO authenticated, anon;
-
-
--- 3. Aprovisionar de forma inmediata a ATM centro del dolor para activar su ingreso
-SELECT public.admin_create_clinic_user(
-  'atmcentrodeldolor@gmail.com',
-  'XiomarATM1',
-  'Guillermo Rodriguez - ATM centro del dolor',
-  '60cd9690-b1ba-46d6-a6e7-1f5cf9f6797f'::uuid
-);
+GRANT EXECUTE ON FUNCTION public.admin_create_clinic_user(text, text, text, uuid, text) TO authenticated, anon;

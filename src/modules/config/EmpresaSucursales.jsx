@@ -1,8 +1,17 @@
+// src/modules/config/EmpresaSucursales.jsx
+// ============================================================
+// 🏢 Gestión de Sucursales y Sedes - OdontoCloud
+// Réplica exacta de los campos de OralDrive
+// ============================================================
 import React, { useState, useEffect } from "react";
-import { FiSearch, FiEdit2, FiTrash2, FiPlus, FiArrowLeft, FiMapPin, FiCheckCircle, FiSave, FiPhoneCall, FiCheck } from "react-icons/fi";
+import { 
+    FiSearch, FiEdit2, FiTrash2, FiPlus, FiArrowLeft, FiMapPin, 
+    FiCheckCircle, FiSave, FiPhoneCall, FiCheck, FiHelpCircle, FiUsers, FiBox
+} from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
 
 const CIUDADES_COLOMBIA = [
     "Abejorral", "Acacías", "Aguachica", "Agustín Codazzi", "Anapoima", "Andes", "Apartadó", "Aracataca", "Arauca", "Armenia",
@@ -20,7 +29,7 @@ const CIUDADES_COLOMBIA = [
     "Villeta", "Yopal", "Yumbo", "Zipaquirá"
 ].sort();
 
-// Componente Personalizado para Selección / Autocompletado Elegante de Ciudades
+// Componente Seleccionar / Autocompletado Elegante de Ciudades
 function CitySelect({ value, onChange }) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState(value || "");
@@ -42,7 +51,7 @@ function CitySelect({ value, onChange }) {
                     required
                     autoComplete="off"
                     className="w-full h-10 pl-9 pr-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                    placeholder="Escribe o busca la ciudad (Ej. Bogotá)..."
+                    placeholder="Seleccione o busque la ciudad..."
                     value={query}
                     onChange={(e) => {
                         setQuery(e.target.value);
@@ -84,39 +93,186 @@ function CitySelect({ value, onChange }) {
     );
 }
 
+// Selector Dual de Almacenes (Dual Listbox)
+function AlmacenesDualList({ available, selected, onChange }) {
+    const [leftSelected, setLeftSelected] = useState([]);
+    const [rightSelected, setRightSelected] = useState([]);
+
+    const moveRight = () => {
+        if (leftSelected.length === 0) return;
+        const newSelected = [...new Set([...selected, ...leftSelected])];
+        onChange(newSelected);
+        setLeftSelected([]);
+    };
+
+    const moveAllRight = () => {
+        onChange(available.map(a => a.nombre || a.id));
+        setLeftSelected([]);
+    };
+
+    const moveLeft = () => {
+        if (rightSelected.length === 0) return;
+        const newSelected = selected.filter(id => !rightSelected.includes(id));
+        onChange(newSelected);
+        setRightSelected([]);
+    };
+
+    const moveAllLeft = () => {
+        onChange([]);
+        setRightSelected([]);
+    };
+
+    const availableItems = available.filter(a => !selected.includes(a.nombre || a.id));
+    const selectedItems = available.filter(a => selected.includes(a.nombre || a.id));
+
+    return (
+        <div className="space-y-1.5 md:col-span-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-200/80">
+            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <FiBox className="text-blue-600" size={14} />
+                <span>Almacenes *</span>
+            </label>
+
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_45px_1fr] gap-3 items-center pt-1">
+                {/* Almacenes disponibles */}
+                <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Almacenes disponibles</span>
+                    <select
+                        multiple
+                        className="w-full h-36 p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 custom-scrollbar shadow-inner"
+                        value={leftSelected}
+                        onChange={(e) => setLeftSelected(Array.from(e.target.selectedOptions, o => o.value))}
+                    >
+                        {availableItems.map(item => (
+                            <option key={item.id || item.nombre} value={item.nombre || item.id} className="p-1.5 rounded hover:bg-blue-50">
+                                {item.nombre}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Botones de transferencia */}
+                <div className="flex md:flex-col justify-center items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={moveRight}
+                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
+                        title="Mover seleccionado a la derecha"
+                    >
+                        &gt;
+                    </button>
+                    <button
+                        type="button"
+                        onClick={moveAllRight}
+                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
+                        title="Mover todos a la derecha"
+                    >
+                        &gt;&gt;
+                    </button>
+                    <button
+                        type="button"
+                        onClick={moveLeft}
+                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
+                        title="Mover seleccionado a la izquierda"
+                    >
+                        &lt;
+                    </button>
+                    <button
+                        type="button"
+                        onClick={moveAllLeft}
+                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
+                        title="Mover todos a la izquierda"
+                    >
+                        &lt;&lt;
+                    </button>
+                </div>
+
+                {/* Almacenes seleccionados */}
+                <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Almacenes seleccionados</span>
+                    <select
+                        multiple
+                        className="w-full h-36 p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 custom-scrollbar shadow-inner"
+                        value={rightSelected}
+                        onChange={(e) => setRightSelected(Array.from(e.target.selectedOptions, o => o.value))}
+                    >
+                        {selectedItems.map(item => (
+                            <option key={item.id || item.nombre} value={item.nombre || item.id} className="p-1.5 rounded hover:bg-blue-50">
+                                {item.nombre}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // Editor Component for Sucursal
 function SucursalEditor({ item, onBack, inquilino }) {
     const toast = useToast();
     const [form, setForm] = useState({
         nombre: item?.nombre || "",
-        telefono: item?.telefono || "",
-        celular: item?.celular || "",
         ciudad: item?.ciudad || "",
         direccion: item?.direccion || "",
         codigoPostal: item?.codigoPostal || "",
         email: item?.email || "",
+        telefono: item?.telefono || "",
+        celular: item?.celular || "",
         consecutivoId: item?.consecutivoId || "",
         listaPrecioId: item?.listaPrecioId || "",
-        mostrarPie: item?.mostrarPie || false,
+        almacenes: item?.almacenes || ["Principal"],
+        mostrarPie: item?.mostrarPie ?? false,
         piePersonalizado: item?.piePersonalizado || "",
         codigoPrestador: item?.codigoPrestador || "",
+        entidadExtranjeras: item?.entidadExtranjeras || "",
+        entidadNacionales: item?.entidadNacionales || "",
+        centroCostos: item?.centroCostos || "",
+        usuarioSoporte: item?.usuarioSoporte || "Ninguno",
+        codigoPrestadorPropio: item?.codigoPrestadorPropio ?? false,
+        codigoPrestadorDetalle: item?.codigoPrestadorDetalle || "",
     });
 
     const [consecutivos, setConsecutivos] = useState([]);
     const [listasPrecios, setListasPrecios] = useState([]);
+    const [availableAlmacenes, setAvailableAlmacenes] = useState([
+        { id: "principal", nombre: "Principal" },
+        { id: "general", nombre: "Almacén General" }
+    ]);
+    const [usuarios, setUsuarios] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         const loadDeps = async () => {
             if (!inquilino) return;
             try {
-                const [cRes, lRes] = await Promise.all([
-                    supabase.from("consecutivos").select("*").eq("tenant_id", inquilino),
-                    supabase.from("listas_precios").select("*").eq("tenant_id", inquilino)
+                const [cData, lData, aData, uProfRes, uConfigData] = await Promise.all([
+                    getConfigItems(inquilino, "consecutivos", "consecutivos"),
+                    getConfigItems(inquilino, "listas_precios", "listas_precios"),
+                    getConfigItems(inquilino, "almacenes", "almacenes"),
+                    supabase.from("profiles").select("*").or(`inquilino.eq.${inquilino},tenant_id.eq.${inquilino}`),
+                    getConfigItems(inquilino, "usuarios", "usuarios")
                 ]);
-                if (cRes.data) setConsecutivos(cRes.data);
-                if (lRes.data) setListasPrecios(lRes.data);
-            } catch (e) { console.error(e); }
+
+                if (Array.isArray(cData) && cData.length > 0) setConsecutivos(cData);
+                if (Array.isArray(lData) && lData.length > 0) setListasPrecios(lData);
+                if (Array.isArray(aData) && aData.length > 0) {
+                    setAvailableAlmacenes(aData);
+                }
+
+                // Sincronización completa de usuarios creados en el sistema
+                const userMap = new Map();
+                (uProfRes.data || []).forEach(u => {
+                    const name = u.full_name || u.nombreCompleto || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
+                    if (name) userMap.set(u.id || u.email, name);
+                });
+                (uConfigData || []).forEach(u => {
+                    const name = u.nombreCompleto || u.displayName || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
+                    if (name) userMap.set(u.id || u.email, name);
+                });
+
+                const userList = Array.from(userMap.entries()).map(([id, name]) => ({ id, name }));
+                setUsuarios(userList);
+            } catch (e) { console.error("Error cargando dependencias sucursal:", e); }
         };
         loadDeps();
     }, [inquilino]);
@@ -125,55 +281,37 @@ function SucursalEditor({ item, onBack, inquilino }) {
 
     const handleSave = async (e) => {
         if (e) e.preventDefault();
-        if (!form.nombre.trim()) return alert("El nombre es obligatorio");
-        if (!form.ciudad) return alert("La ciudad es obligatoria");
+        if (!form.nombre.trim()) {
+            if (toast?.error) toast.error("El nombre de la sede es obligatorio");
+            else alert("El nombre es obligatorio");
+            return;
+        }
 
         setIsSaving(true);
         try {
-            const fullDireccion = form.direccion
-                ? `${form.direccion}${form.ciudad ? ` (${form.ciudad})` : ''}`
-                : (form.ciudad || "");
+            await saveConfigItem(inquilino, "sucursales", "sucursales", {
+                ...form,
+                ...(item?.id ? { id: item.id } : {})
+            });
 
-            const fullTelefono = form.telefono
-                ? `${form.telefono}${form.celular ? ` / ${form.celular}` : ''}`
-                : (form.celular || "");
-
-            const payload = {
-                nombre: form.nombre.trim(),
-                direccion: fullDireccion,
-                telefono: fullTelefono,
-                tenant_id: inquilino,
-            };
-
-            if (item?.id) {
-                const { error } = await supabase
-                    .from("sucursales")
-                    .update(payload)
-                    .eq("id", item.id);
-                if (error) throw error;
-            } else {
-                const { error } = await supabase
-                    .from("sucursales")
-                    .insert([payload]);
-                if (error) throw error;
-            }
-
-            if (toast?.success) toast.success("Sucursal guardada correctamente en Supabase");
+            if (toast?.success) toast.success(item?.id ? "Sucursal actualizada correctamente" : "Sucursal creada correctamente");
             onBack();
         } catch (e) {
-            console.error(e);
-            alert("Error al guardar en Supabase: " + e.message);
+            console.error("Error guardando sucursal:", e);
+            if (toast?.error) toast.error("Error al guardar: " + e.message);
+            else alert("Error al guardar: " + e.message);
         } finally {
             setIsSaving(false);
         }
     };
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-md max-w-4xl mx-auto overflow-hidden animate-fade-in">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-md max-w-4xl mx-auto overflow-hidden animate-fade-in mb-12">
             {/* Header */}
             <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                 <div className="flex items-center gap-2.5">
                     <button
+                        type="button"
                         onClick={onBack}
                         className="w-8 h-8 rounded-lg text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors border-0 cursor-pointer bg-transparent"
                     >
@@ -189,20 +327,23 @@ function SucursalEditor({ item, onBack, inquilino }) {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSave} className="p-6 space-y-4">
+            <form onSubmit={handleSave} autoComplete="off" className="p-6 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    {/* Nombre de la Sede */}
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Nombre de la Sede *</label>
                         <input
                             required
-                            className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                             value={form.nombre}
                             onChange={e => handleChange("nombre", e.target.value)}
-                            placeholder="Ej. Sede Principal"
                             autoFocus
                         />
                     </div>
 
+                    {/* Ciudad */}
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Ciudad *</label>
                         <CitySelect
@@ -211,46 +352,232 @@ function SucursalEditor({ item, onBack, inquilino }) {
                         />
                     </div>
 
+                    {/* Teléfono Fijo */}
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Teléfono Fijo</label>
                         <input
-                            className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                             value={form.telefono}
                             onChange={e => handleChange("telefono", e.target.value)}
-                            placeholder="Ej. (601) 555-1234"
                         />
                     </div>
 
+                    {/* Celular */}
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Celular</label>
                         <input
-                            className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                             value={form.celular}
                             onChange={e => handleChange("celular", e.target.value)}
-                            placeholder="Ej. 300 123 4567"
                         />
                     </div>
 
+                    {/* Dirección Exacta */}
                     <div className="space-y-1 md:col-span-2">
-                        <label className="text-[11px] font-bold text-slate-600">Dirección Exacta</label>
+                        <label className="text-[11px] font-bold text-slate-600">Dirección *</label>
                         <input
-                            className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            autoComplete="off"
+                            required
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                             value={form.direccion}
                             onChange={e => handleChange("direccion", e.target.value)}
-                            placeholder="Ej. Carrera 42C # 17A - 35"
                         />
                     </div>
 
-                    <div className="space-y-1 md:col-span-2">
-                        <label className="text-[11px] font-bold text-slate-600">Correo Electrónico de la Sede</label>
+                    {/* Código postal */}
+                    <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600">Código postal</label>
                         <input
-                            type="email"
-                            className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                            value={form.email}
-                            onChange={e => handleChange("email", e.target.value)}
-                            placeholder="Ej. sede.principal@clinica.com"
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            value={form.codigoPostal}
+                            onChange={e => handleChange("codigoPostal", e.target.value)}
                         />
                     </div>
+
+                    {/* Correo Electrónico */}
+                    <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600">Correo electrónico *</label>
+                        <input
+                            type="email"
+                            required
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            value={form.email}
+                            onChange={e => handleChange("email", e.target.value)}
+                        />
+                    </div>
+
+                    {/* Consecutivo */}
+                    <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600">Consecutivo *</label>
+                        <select
+                            value={form.consecutivoId}
+                            onChange={e => handleChange("consecutivoId", e.target.value)}
+                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                        >
+                            <option value="">Seleccione consecutivo...</option>
+                            {consecutivos.map(c => (
+                                <option key={c.id} value={c.id || c.nombre}>{c.nombre}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Lista de precios */}
+                    <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-600">Lista de precios *</label>
+                        <select
+                            value={form.listaPrecioId}
+                            onChange={e => handleChange("listaPrecioId", e.target.value)}
+                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                        >
+                            <option value="">Seleccione lista de precios...</option>
+                            {listasPrecios.map(l => (
+                                <option key={l.id} value={l.id || l.nombre}>{l.nombre}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Dual Listbox: Almacenes */}
+                    <AlmacenesDualList
+                        available={availableAlmacenes}
+                        selected={form.almacenes}
+                        onChange={(newSel) => handleChange("almacenes", newSel)}
+                    />
+
+                    {/* Toggle: Datos de sucursal en pie de página */}
+                    <div className="md:col-span-2 py-3 px-4 bg-slate-50/80 rounded-xl border border-slate-200/80 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-700">Datos de sucursal en pie de pág. doc. clínicos</span>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={14} title="Imprime el pie de página de la sucursal en documentos clínicos" />
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={form.mostrarPie}
+                                onChange={(e) => handleChange("mostrarPie", e.target.checked)}
+                            />
+                            <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 shadow-inner"></div>
+                        </label>
+                    </div>
+
+                    {form.mostrarPie && (
+                        <div className="space-y-1 md:col-span-2">
+                            <label className="text-[11px] font-bold text-slate-600">Pie de página personalizado</label>
+                            <textarea
+                                rows={2}
+                                value={form.piePersonalizado}
+                                onChange={e => handleChange("piePersonalizado", e.target.value)}
+                                className="w-full p-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                            />
+                        </div>
+                    )}
+
+                    {/* Código del prestador de servicio */}
+                    <div className="space-y-1 md:col-span-2">
+                        <label className="text-[11px] font-bold text-slate-600">Código del prestador de servicio</label>
+                        <input
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            value={form.codigoPrestador}
+                            onChange={e => handleChange("codigoPrestador", e.target.value)}
+                        />
+                    </div>
+
+                    {/* Entidad Administradora extranjeras */}
+                    <div className="space-y-1 md:col-span-2">
+                        <div className="flex items-center gap-1">
+                            <label className="text-[11px] font-bold text-slate-600">Entidad Administradora extranjeras</label>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Código o datos de entidad extranjera prestadora" />
+                        </div>
+                        <input
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            value={form.entidadExtranjeras}
+                            onChange={e => handleChange("entidadExtranjeras", e.target.value)}
+                        />
+                    </div>
+
+                    {/* Entidad Administradora Nacionales */}
+                    <div className="space-y-1 md:col-span-2">
+                        <div className="flex items-center gap-1">
+                            <label className="text-[11px] font-bold text-slate-600">Entidad Administradora Nacionales</label>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Código o datos de entidad nacional prestadora" />
+                        </div>
+                        <input
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            value={form.entidadNacionales}
+                            onChange={e => handleChange("entidadNacionales", e.target.value)}
+                        />
+                    </div>
+
+                    {/* Centro de costos */}
+                    <div className="space-y-1 md:col-span-2">
+                        <label className="text-[11px] font-bold text-slate-600">Centro de costos</label>
+                        <input
+                            autoComplete="off"
+                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                            value={form.centroCostos}
+                            onChange={e => handleChange("centroCostos", e.target.value)}
+                        />
+                    </div>
+
+                    {/* Usuario para soporte */}
+                    <div className="space-y-1 md:col-span-2">
+                        <div className="flex items-center gap-1">
+                            <label className="text-[11px] font-bold text-slate-600">Usuario para soporte</label>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Usuario asignado para soporte de esta sucursal" />
+                        </div>
+                        <select
+                            value={form.usuarioSoporte}
+                            onChange={e => handleChange("usuarioSoporte", e.target.value)}
+                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                        >
+                            <option value="Ninguno">Ninguno</option>
+                            {usuarios.map(u => (
+                                <option key={u.id} value={u.name}>{u.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Toggle: Código de prestador propio */}
+                    <div className="md:col-span-2 py-3 px-4 bg-slate-50/80 rounded-xl border border-slate-200/80 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold text-slate-700">Código de prestador propio</span>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={14} title="Habilita un código de prestador específico para esta sucursal" />
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={form.codigoPrestadorPropio}
+                                onChange={(e) => handleChange("codigoPrestadorPropio", e.target.checked)}
+                            />
+                            <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 shadow-inner"></div>
+                        </label>
+                    </div>
+
+                    {/* Campo condicional: Código de prestador */}
+                    {form.codigoPrestadorPropio && (
+                        <div className="space-y-1 md:col-span-2 animate-fadeIn">
+                            <div className="flex items-center gap-1">
+                                <label className="text-[11px] font-bold text-slate-600">Código de prestador</label>
+                                <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Ingrese el código de prestador específico para esta sucursal" />
+                            </div>
+                            <input
+                                type="text"
+                                autoComplete="off"
+                                className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                value={form.codigoPrestadorDetalle}
+                                onChange={e => handleChange("codigoPrestadorDetalle", e.target.value)}
+                            />
+                        </div>
+                    )}
+
                 </div>
 
                 {/* Footer */}
@@ -298,12 +625,7 @@ export default function EmpresaSucursales() {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from("sucursales")
-                .select("*")
-                .eq("tenant_id", inquilino);
-
-            if (error) throw error;
+            const data = await getConfigItems(inquilino, "sucursales", "sucursales");
             const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
             setRows(sorted);
         } catch (error) {
@@ -333,14 +655,9 @@ export default function EmpresaSucursales() {
 
         setLoading(true);
         try {
-            const { error } = await supabase
-                .from("sucursales")
-                .delete()
-                .eq("id", row.id);
-
-            if (error) throw error;
+            await deleteConfigItem(inquilino, "sucursales", "sucursales", row.id);
             setRows(prev => prev.filter(r => String(r.id) !== String(row.id)));
-            if (toast?.success) toast.success("Sucursal eliminada correctamente de Supabase");
+            if (toast?.success) toast.success("Sucursal eliminada correctamente");
             else alert("✅ Sucursal eliminada correctamente");
         } catch (e) {
             console.error("Error al eliminar sucursal:", e);

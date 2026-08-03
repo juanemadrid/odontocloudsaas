@@ -5,6 +5,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { 
   FiSearch, FiEdit2, FiPlus, FiSave, FiX, FiCheck, FiUsers, FiPhone, FiInfo, FiTrash2, FiActivity, FiClock, FiChevronLeft, FiCalendar 
 } from "react-icons/fi";
+import { getConfigItems, saveConfigItem } from "../../../services/configPersistenceService";
 
 export default function GestionAgenda() {
   const { userProfile } = useAuth();
@@ -155,52 +156,79 @@ export default function GestionAgenda() {
     return `${d}/${m}/${y}`;
   };
 
-  // Fetch Professionals (Doctors/Odontologists only) - Using profiles table from Supabase
+  // Fetch Professionals (Doctors/Odontologists/Professionals)
   useEffect(() => {
     if (!inquilino) return;
 
     setLoadingProfs(true);
     Promise.all([
-      supabase.from("profiles").select("*").eq("tenant_id", inquilino).eq("activo", true),
-      supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
+      supabase.from("profiles").select("*").eq("tenant_id", inquilino),
+      supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle(),
+      getConfigItems(inquilino, "usuarios", "usuarios")
     ])
-      .then(([profRes, cfgRes]) => {
+      .then(([profRes, cfgRes, configUsersData]) => {
         const userDetailsMap = cfgRes.data?.config?.user_details || {};
-        const docs = profRes.data || [];
+        const profMap = new Map();
 
-        // Filter ONLY doctors/odontologists (exclude admins and receptionists)
-        const filtered = docs.filter(u => {
-          const roleLower = (u.role || "").toLowerCase();
+        (profRes.data || []).forEach(u => {
+          if (u.activo !== false) profMap.set(u.id, u);
+        });
+
+        (configUsersData || []).forEach(u => {
+          if (u.id && u.activo !== false) {
+            const existing = profMap.get(u.id) || {};
+            profMap.set(u.id, { ...existing, ...u });
+          }
+        });
+
+        const allUsersList = Array.from(profMap.values());
+
+        // Filter ONLY doctors/odontologists/professionals
+        const filtered = allUsersList.filter(u => {
+          const roleLower = (u.role || u.rol || u.profileId || "").toLowerCase();
           const detail = userDetailsMap[u.id] || {};
           return roleLower.includes('odontólog') || 
                  roleLower.includes('odontolog') || 
                  roleLower.includes('doctor') ||
                  roleLower.includes('especialista') ||
+                 roleLower.includes('profesional') ||
                  detail.esDoctor === true ||
+                 u.esDoctor === true ||
                  !!u.especialidad;
         }).map(u => {
           const detail = userDetailsMap[u.id] || {};
-          const userNombre = detail.nombre || (u.full_name || '').split(' ')[0] || '';
-          const userApellido = detail.apellido || (u.full_name || '').split(' ').slice(1).join(' ') || '';
-          const updatedFullName = (detail.nombre || detail.apellido) 
-            ? `${detail.nombre || ''} ${detail.apellido || ''}`.trim() 
-            : (u.full_name || '');
+          const nombreCompleto = u.nombreCompleto || u.full_name || (u.nombre ? `${u.nombre} ${u.apellido || ''}`.trim() : '') || (detail.nombre ? `${detail.nombre} ${detail.apellido || ''}`.trim() : '') || u.email;
+          const userNombre = u.nombre || detail.nombre || nombreCompleto.split(' ')[0] || '';
+          const userApellido = u.apellido || detail.apellido || nombreCompleto.split(' ').slice(1).join(' ') || '';
 
           return {
             id: u.id,
             nombre: userNombre,
             apellido: userApellido,
-            nombreCompleto: updatedFullName,
+            nombreCompleto: nombreCompleto,
             email: u.email,
             telefono: detail.telefonoMovil || detail.telefonoFijo || u.telefono || '',
             telefonoMovil: detail.telefonoMovil || u.telefono || '',
-            rol: u.role,
+            rol: u.role || u.rol || "Doctor",
             especialidad: u.especialidad || (detail.especialidades ? detail.especialidades.join(', ') : ''),
             activo: u.activo !== false
           };
         });
-        console.log('🔍 Profesionales filtrados (solo doctores):', filtered);
-        setProfessionals(filtered);
+
+        const finalProfs = filtered.length > 0 ? filtered : allUsersList.map(u => ({
+          id: u.id,
+          nombre: u.nombre || (u.full_name || u.nombreCompleto || '').split(' ')[0] || '',
+          apellido: u.apellido || (u.full_name || u.nombreCompleto || '').split(' ').slice(1).join(' ') || '',
+          nombreCompleto: u.nombreCompleto || u.full_name || u.nombre || u.email,
+          email: u.email,
+          telefono: u.telefono || '',
+          telefonoMovil: u.telefono || '',
+          rol: u.role || u.rol || "Doctor",
+          especialidad: u.especialidad || '',
+          activo: u.activo !== false
+        }));
+
+        setProfessionals(finalProfs);
         setLoadingProfs(false);
       }).catch(err => {
         console.error("Error fetching professionals:", err);
@@ -208,14 +236,34 @@ export default function GestionAgenda() {
       });
   }, [inquilino]);
 
-  // Fetch Physical Resources
+  // Fetch Physical Resources (from consultorios and website_config via getConfigItems)
   useEffect(() => {
     if (!inquilino) return;
 
     setLoadingRes(true);
-    supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true })
-      .then(({ data }) => {
-        setResources(data || []);
+    Promise.all([
+      supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true }),
+      getConfigItems(inquilino, "recursos_fisicos", "consultorios")
+    ])
+      .then(([dbRes, cfgRes]) => {
+        const resMap = new Map();
+        (dbRes.data || []).forEach(r => {
+          if (r.activo !== false) resMap.set(r.id, r);
+        });
+        (cfgRes || []).forEach(r => {
+          if (r.id && r.activo !== false) {
+            const existing = resMap.get(r.id) || {};
+            resMap.set(r.id, {
+              ...existing,
+              id: r.id,
+              nombre: r.nombre || r.name || existing.nombre || "Recurso",
+              ubicacion: r.ubicacion || r.descripcion || existing.ubicacion || "",
+              activo: true
+            });
+          }
+        });
+        const merged = Array.from(resMap.values()).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+        setResources(merged);
         setLoadingRes(false);
       }).catch(err => {
         console.error("Error fetching resources:", err);
@@ -437,6 +485,56 @@ export default function GestionAgenda() {
       const isResource = !!selectedResForSchedule;
       const roomId = isResource ? activeEntity.id : (predForm.recursoId === "todos" ? null : predForm.recursoId);
       const selectedResource = resources.find(r => r.id === roomId);
+
+      // CRITICAL FIX: Ensure consultorio exists in database before creating schedule
+      if (roomId) {
+        const { data: existingRoom, error: checkError } = await supabase
+          .from("consultorios")
+          .select("id")
+          .eq("id", roomId)
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        if (checkError) throw checkError;
+
+        // If consultorio doesn't exist in database, create it first
+        if (!existingRoom) {
+          const resourceToCreate = resources.find(r => r.id === roomId);
+          if (!resourceToCreate) {
+            throw new Error("No se encontró el consultorio seleccionado");
+          }
+
+          const { error: createError } = await supabase
+            .from("consultorios")
+            .insert([{
+              id: roomId,
+              tenant_id: inquilino,
+              nombre: resourceToCreate.nombre || "Consultorio",
+              ubicacion: resourceToCreate.ubicacion || resourceToCreate.descripcion || "",
+              activo: true,
+              created_at: new Date().toISOString()
+            }]);
+
+          if (createError) throw createError;
+        }
+      }
+
+      // For professional schedules, ensure usuario_id exists in profiles table
+      if (!isResource && activeEntity.id) {
+        const { data: existingUser, error: checkUserError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", activeEntity.id)
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        if (checkUserError) throw checkUserError;
+
+        if (!existingUser) {
+          throw new Error("El profesional seleccionado no existe en la base de datos");
+        }
+      }
+
       const rowForDay = (day) => ({
         tenant_id: inquilino,
         usuario_id: isResource ? null : activeEntity.id,
@@ -507,10 +605,61 @@ export default function GestionAgenda() {
     setSaving(true);
     try {
       const isResource = !!selectedResForSchedule;
+      const roomId = isResource ? activeEntity.id : null;
+
+      // CRITICAL FIX: Ensure consultorio exists in database before creating schedule
+      if (roomId) {
+        const { data: existingRoom, error: checkError } = await supabase
+          .from("consultorios")
+          .select("id")
+          .eq("id", roomId)
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        if (checkError) throw checkError;
+
+        // If consultorio doesn't exist in database, create it first
+        if (!existingRoom) {
+          const resourceToCreate = resources.find(r => r.id === roomId);
+          if (!resourceToCreate) {
+            throw new Error("No se encontró el consultorio seleccionado");
+          }
+
+          const { error: createError } = await supabase
+            .from("consultorios")
+            .insert([{
+              id: roomId,
+              tenant_id: inquilino,
+              nombre: resourceToCreate.nombre || "Consultorio",
+              ubicacion: resourceToCreate.ubicacion || resourceToCreate.descripcion || "",
+              activo: true,
+              created_at: new Date().toISOString()
+            }]);
+
+          if (createError) throw createError;
+        }
+      }
+
+      // For professional schedules, ensure usuario_id exists in profiles table
+      if (!isResource && activeEntity.id) {
+        const { data: existingUser, error: checkUserError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", activeEntity.id)
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        if (checkUserError) throw checkUserError;
+
+        if (!existingUser) {
+          throw new Error("El profesional seleccionado no existe en la base de datos");
+        }
+      }
+
       const payload = {
         tenant_id: inquilino,
         usuario_id: isResource ? null : activeEntity.id,
-        consultorio_id: isResource ? activeEntity.id : null,
+        consultorio_id: roomId,
         fecha: openForm.fecha,
         hora_inicio: openForm.horaInicio,
         hora_fin: openForm.horaFin,
@@ -569,10 +718,61 @@ export default function GestionAgenda() {
     setSaving(true);
     try {
       const isResource = !!selectedResForSchedule;
+      const roomId = isResource ? activeEntity.id : null;
+
+      // CRITICAL FIX: Ensure consultorio exists in database before creating schedule
+      if (roomId) {
+        const { data: existingRoom, error: checkError } = await supabase
+          .from("consultorios")
+          .select("id")
+          .eq("id", roomId)
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        if (checkError) throw checkError;
+
+        // If consultorio doesn't exist in database, create it first
+        if (!existingRoom) {
+          const resourceToCreate = resources.find(r => r.id === roomId);
+          if (!resourceToCreate) {
+            throw new Error("No se encontró el consultorio seleccionado");
+          }
+
+          const { error: createError } = await supabase
+            .from("consultorios")
+            .insert([{
+              id: roomId,
+              tenant_id: inquilino,
+              nombre: resourceToCreate.nombre || "Consultorio",
+              ubicacion: resourceToCreate.ubicacion || resourceToCreate.descripcion || "",
+              activo: true,
+              created_at: new Date().toISOString()
+            }]);
+
+          if (createError) throw createError;
+        }
+      }
+
+      // For professional schedules, ensure usuario_id exists in profiles table
+      if (!isResource && activeEntity.id) {
+        const { data: existingUser, error: checkUserError } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", activeEntity.id)
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        if (checkUserError) throw checkUserError;
+
+        if (!existingUser) {
+          throw new Error("El profesional seleccionado no existe en la base de datos");
+        }
+      }
+
       const payload = {
         tenant_id: inquilino,
         usuario_id: isResource ? null : activeEntity.id,
-        consultorio_id: isResource ? activeEntity.id : null,
+        consultorio_id: roomId,
         fecha: unavailForm.fecha,
         hora_inicio: unavailForm.horaInicio,
         hora_fin: unavailForm.horaFin,

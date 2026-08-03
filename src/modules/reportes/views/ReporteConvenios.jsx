@@ -66,12 +66,20 @@ export default function ReporteConvenios() {
       setLoading(true);
       try {
         // Cargar Convenios registrados
-        const { data: snapConvenios } = await supabase.from("convenios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapConvenios = [];
+        try {
+          const { data } = await supabase.from("convenios").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapConvenios = data;
+        } catch (e) {}
         const listConv = (snapConvenios || []).map(c => ({ id: c.id, nombre: c.nombre || c.name || "Sin nombre" }));
         setConveniosList(listConv);
 
         // Cargar Pacientes
-        const { data: snapPacientes } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapPacientes = [];
+        try {
+          const { data } = await supabase.from("pacientes").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapPacientes = data;
+        } catch (e) {}
         const listPacs = (snapPacientes || []).map(p => ({
           id: p.id,
           nombre: `${p.nombre || p.nombres || ''} ${p.apellido || p.apellidos || ''}`.trim() || p.nombreCompleto || 'Sin nombre',
@@ -446,57 +454,39 @@ export default function ReporteConvenios() {
                 <tr>
                   {visibleColumns.fecha && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Fecha hora</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Fecha hora</div>                    </th>
                   )}
                   {visibleColumns.convenio && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Convenio</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Convenio</div>                    </th>
                   )}
                   {visibleColumns.paciente && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Paciente</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Paciente</div>                    </th>
                   )}
                   {visibleColumns.documento && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>No. Documento / Historia</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>No. Documento / Historia</div>                    </th>
                   )}
                   {visibleColumns.servicio && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Tratamiento / Servicio</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Tratamiento / Servicio</div>                    </th>
                   )}
                   {visibleColumns.montoOriginal && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-right">
-                      <div>Monto tarifa base</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Monto tarifa base</div>                    </th>
                   )}
                   {visibleColumns.descuentoConvenio && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-right">
-                      <div>Descuento convenio</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Descuento convenio</div>                    </th>
                   )}
                   {visibleColumns.totalPagar && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-right">
-                      <div>Total a pagar</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Total a pagar</div>                    </th>
                   )}
                   {visibleColumns.estado && (
                     <th className="px-3 py-2 whitespace-nowrap text-center">
-                      <div>Estado</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Estado</div>                    </th>
                   )}
                 </tr>
               </thead>

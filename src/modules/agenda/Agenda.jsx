@@ -561,6 +561,8 @@ export default function Agenda() {
                             selectedBranch={filters.filterBranchId}
                             onSelectBranch={filters.setFilterBranchId}
                             chairs={chairs}
+                            selectedChair={filters.filterChairId}
+                            onSelectChair={filters.setFilterChairId}
                             appointments={appointments}
                         />
                     </div>
@@ -594,6 +596,8 @@ export default function Agenda() {
                                     selectedBranch={filters.filterBranchId}
                                     onSelectBranch={filters.setFilterBranchId}
                                     chairs={chairs}
+                                    selectedChair={filters.filterChairId}
+                                    onSelectChair={filters.setFilterChairId}
                                     appointments={appointments}
                                 />
                             </div>

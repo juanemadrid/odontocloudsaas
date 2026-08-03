@@ -53,10 +53,11 @@ export default function Indicadores() {
     if (!userProfile?.inquilino) return;
     const fetchBranches = async () => {
       try {
-        const { data: bList } = await supabase
-          .from("sucursales")
-          .select("*")
-          .or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let bList = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) bList = data;
+        } catch (e) {}
         setBranches((bList || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
       } catch (err) {
         console.error("Error cargando sucursales:", err);
@@ -87,10 +88,11 @@ export default function Indicadores() {
       const labelPrv = format(prevDateStart, "MMM. yyyy");
 
       // 1. Pacientes (Nuevos y Origen)
-      const { data: snapPacientes } = await supabase
-        .from("pacientes")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      let snapPacientes = [];
+      try {
+        const { data } = await supabase.from("pacientes").select("*").eq("tenant_id", inquilino);
+        if (data) snapPacientes = data;
+      } catch (e) {}
 
       let pacCur = 0;
       let pacPrv = 0;
@@ -119,10 +121,11 @@ export default function Indicadores() {
       });
 
       // 2. Presupuestos / Planes de Tratamiento
-      const { data: snapPlanes } = await supabase
-        .from("treatment_plans")
-        .select("*")
-        .eq("tenant_id", inquilino);
+      let snapPlanes = [];
+      try {
+        const { data } = await supabase.from("treatment_plans").select("*").eq("tenant_id", inquilino);
+        if (data) snapPlanes = data;
+      } catch (e) {}
 
       let presCur = 0;
       let presPrv = 0;
@@ -154,10 +157,11 @@ export default function Indicadores() {
       });
 
       // 3. Pagos / Recaudo
-      const { data: snapPagos } = await supabase
-        .from("pagos")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      let snapPagos = [];
+      try {
+        const { data } = await supabase.from("pagos").select("*").eq("tenant_id", inquilino);
+        if (data) snapPagos = data;
+      } catch (e) {}
 
       let recCur = 0;
       let recPrv = 0;
@@ -175,10 +179,11 @@ export default function Indicadores() {
       });
 
       // 4. Citas / Asistencia
-      const { data: snapCitas } = await supabase
-        .from("agenda")
-        .select("*")
-        .or(`tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`);
+      let snapCitas = [];
+      try {
+        const { data } = await supabase.from("citas").select("*").eq("tenant_id", inquilino);
+        if (data) snapCitas = data;
+      } catch (e) {}
 
       let citasTotal = 0;
       let citasAsistidas = 0;
@@ -202,15 +207,14 @@ export default function Indicadores() {
       const deltaPres = presPrv > 0 ? ((presCur - presPrv) / presPrv) * 100 : (presCur > 0 ? 100 : 0);
       const deltaPlanes = planVendPrv > 0 ? ((planVendCur - planVendPrv) / planVendPrv) * 100 : (planVendCur > 0 ? 100 : 0);
 
-      // Resumen Anual 12 meses (Cálculo real mensual de Supabase del año seleccionado)
+      // Resumen Anual 12 meses
       const mesNombres = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
       const recaudoPorMesArr = new Array(12).fill(0);
 
-      snapPagos.forEach(doc => {
-        const pg = doc.data();
-        if (pg.estado !== "Anulado") {
-          const fPago = pg.fecha?.toDate ? pg.fecha.toDate() : (pg.fechaPago ? new Date(pg.fechaPago) : null);
-          if (fPago && fPago.getFullYear() === yearVal) {
+      (snapPagos || []).forEach(pg => {
+        if (pg && pg.estado !== "Anulado") {
+          const fPago = pg.fecha?.toDate ? pg.fecha.toDate() : (pg.fechaPago || pg.fecha || pg.created_at ? new Date(pg.fechaPago || pg.fecha || pg.created_at) : null);
+          if (fPago && !isNaN(fPago.getTime()) && fPago.getFullYear() === yearVal) {
             const mIndex = fPago.getMonth();
             recaudoPorMesArr[mIndex] += Number(pg.monto || pg.valor || 0);
           }

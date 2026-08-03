@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FiSearch, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
-import { useAuth } from '../../../context/AuthContext';
+import { isDoctorUser } from '../../../utils/doctorHelpers';
 
 export default function ProfesionalesTab({ patient, onUpdate }) {
     const toast = useToast();
@@ -49,10 +49,7 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
                     if (profilesData && Array.isArray(profilesData)) {
                         profilesData.forEach(u => {
                             if (u.activo !== false) {
-                                const roleStr = (u.role || u.rol || "").toLowerCase();
-                                const isDoc = u.esDoctor === true || u.esOdontologo === true || 
-                                              roleStr.includes("doctor") || roleStr.includes("odontolog") || 
-                                              roleStr.includes("especialista") || roleStr.includes("admin") || !!u.especialidad;
+                                const isDoc = isDoctorUser(u);
                                 if (isDoc) {
                                     const name = u.full_name || u.nombreCompleto || u.nombre || u.email || "";
                                     if (name.trim()) {

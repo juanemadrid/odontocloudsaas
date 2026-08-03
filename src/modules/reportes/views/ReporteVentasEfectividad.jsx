@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { FiPieChart, FiBarChart2, FiDollarSign, FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -28,17 +29,24 @@ export default function ReporteVentasEfectividad() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapSuc = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapSuc = data;
+        } catch (e) {}
         setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
         // Cargar Doctores
-        const { data: snapUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapUsuarios = [];
+        try {
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapUsuarios = data;
+        } catch (e) {}
         const doctoresMap = {};
 
         (snapUsuarios || []).forEach(u => {
-          const role = (u.rol || u.role || "").toLowerCase();
-          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
-            const primerNombre = u.nombre || u.nombres || u.displayName || "";
+          if (isDoctorUser(u)) {
+            const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
             doctoresMap[u.id] = {
@@ -54,7 +62,11 @@ export default function ReporteVentasEfectividad() {
         });
 
         // Cargar Planes/Presupuestos
-        const { data: snapPlanes } = await supabase.from("treatment_plans").select("*").eq("tenant_id", userProfile.inquilino);
+        let snapPlanes = [];
+        try {
+          const { data } = await supabase.from("treatment_plans").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapPlanes = data;
+        } catch (e) {}
 
         (snapPlanes || []).forEach(p => {
           const profId = p.profesionalId || p.odontologoId || p.doctorId || p.profesional;

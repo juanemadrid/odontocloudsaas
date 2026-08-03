@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -62,18 +63,30 @@ export default function ReporteConsultas() {
       setLoading(true);
       try {
         // 1. Cargar Sucursales reales
-        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapSuc = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapSuc = data;
+        } catch (e) {}
         const listSuc = (snapSuc || []).map(doc => ({ id: doc.id, nombre: doc.nombre || doc.id }));
         setSucursalesList(listSuc);
         if (listSuc.length > 0) setOficina(listSuc[0].nombre);
 
         // 2. Cargar Profesionales/Odontólogos reales
-        const { data: snapUsers } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
-        const listProf = (snapUsers || []).map(u => ({ id: u.id, nombre: u.nombre || u.nombres || u.displayName || u.id }));
+        let snapUsers = [];
+        try {
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapUsers = data;
+        } catch (e) {}
+        const listProf = (snapUsers || []).filter(isDoctorUser).map(u => ({ id: u.id, nombre: u.full_name || u.nombreCompleto || u.nombre || u.email }));
         setProfesionalesList(listProf);
 
         // 3. Cargar Consultas / Citas / Atenciones de la Agenda
-        const { data: snapCitas } = await supabase.from("agenda").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapCitas = [];
+        try {
+          const { data } = await supabase.from("citas").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapCitas = data;
+        } catch (e) {}
         const listCitas = [];
 
         (snapCitas || []).forEach(c => {
@@ -363,39 +376,27 @@ export default function ReporteConsultas() {
                     )}
                     {visibleColumns.profesional && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>↑ Profesional</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>↑ Profesional</div>                      </th>
                     )}
                     {visibleColumns.sucursal && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Sucursal</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Sucursal</div>                      </th>
                     )}
                     {visibleColumns.tipoDocPaciente && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>T. Doc. Paciente</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>T. Doc. Paciente</div>                      </th>
                     )}
                     {visibleColumns.numDocPaciente && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Num. Doc. Paciente</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Num. Doc. Paciente</div>                      </th>
                     )}
                     {visibleColumns.nombrePaciente && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Nombre paciente</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Nombre paciente</div>                      </th>
                     )}
                     {visibleColumns.acciones && (
                       <th className="px-3 py-2 whitespace-nowrap text-center">
-                        <div>Acciones</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Acciones</div>                      </th>
                     )}
                   </tr>
                 </thead>

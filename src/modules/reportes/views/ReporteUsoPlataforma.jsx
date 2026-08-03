@@ -33,22 +33,42 @@ export default function ReporteUsoPlataforma() {
     setLoading(true);
     try {
       const inquilino = userProfile.inquilino;
-      const filter = `tenant_id.eq.${inquilino},inquilino.eq.${inquilino}`;
 
       // 1. Pacientes
-      const { count: countPacientes } = await supabase.from("pacientes").select("id", { count: "exact", head: true }).or(filter);
+      let countPacientes = 0;
+      try {
+        const { count } = await supabase.from("pacientes").select("id", { count: "exact", head: true }).eq("tenant_id", inquilino);
+        if (count) countPacientes = count;
+      } catch (e) {}
 
       // 2. Citas
-      const { count: countCitas } = await supabase.from("citas").select("id", { count: "exact", head: true }).or(filter);
+      let countCitas = 0;
+      try {
+        const { count } = await supabase.from("citas").select("id", { count: "exact", head: true }).eq("tenant_id", inquilino);
+        if (count) countCitas = count;
+      } catch (e) {}
 
       // 3. Presupuestos & Planes de tratamiento
-      const { count: countPlanes } = await supabase.from("treatment_plans").select("id", { count: "exact", head: true }).or(filter);
+      let countPlanes = 0;
+      try {
+        const { count } = await supabase.from("treatment_plans").select("id", { count: "exact", head: true }).eq("tenant_id", inquilino);
+        if (count) countPlanes = count;
+      } catch (e) {}
 
       // 4. Pagos / Recibos de caja
-      const { count: countRecibosCaja } = await supabase.from("pagos").select("id", { count: "exact", head: true }).or(filter);
+      let countRecibosCaja = 0;
+      try {
+        const { count } = await supabase.from("pagos").select("id", { count: "exact", head: true }).eq("tenant_id", inquilino);
+        if (count) countRecibosCaja = count;
+      } catch (e) {}
 
       // 5. Facturas / Transacciones
-      const { data: snapFacturas } = await supabase.from("facturas").select("tipo,isElectronic").or(filter);
+      let snapFacturas = [];
+      try {
+        const { data } = await supabase.from("facturas").select("tipo,isElectronic").eq("tenant_id", inquilino);
+        if (data) snapFacturas = data;
+      } catch (e) {}
+
       let countFacturasVenta = 0;
       let countFacturasElectronicas = 0;
       (snapFacturas || []).forEach(f => {
@@ -57,7 +77,11 @@ export default function ReporteUsoPlataforma() {
       });
 
       // 6. Egresos
-      const { count: countEgresos } = await supabase.from("egresos").select("id", { count: "exact", head: true }).or(filter);
+      let countEgresos = 0;
+      try {
+        const { count } = await supabase.from("egresos").select("id", { count: "exact", head: true }).eq("tenant_id", inquilino);
+        if (count) countEgresos = count;
+      } catch (e) {}
 
       setMetrics({
         pacientes: countPacientes || 11,

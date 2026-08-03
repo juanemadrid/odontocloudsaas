@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -14,22 +15,22 @@ export default function ReportePlanesTratamiento() {
   const [loading, setLoading] = useState(true);
 
   // Filtros idénticos a OralDrive
-  const [fechaInicial, setFechaInicial] = useState("2025-09-22");
+  const [fechaInicial, setFechaInicial] = useState("");
   const [fechaFinal, setFechaFinal] = useState(format(new Date(), "yyyy-MM-dd"));
   const [selectedProfesional, setSelectedProfesional] = useState("");
   const [selectedPaciente, setSelectedPaciente] = useState("");
   const [showPacienteDropdown, setShowPacienteDropdown] = useState(false);
-  const [tipoPlan, setTipoPlan] = useState("Plan de tratamiento"); // "Plan de tratamiento" | "Presupuesto"
+  const [tipoPlan, setTipoPlan] = useState("TODOS"); // "TODOS" | "Plan de tratamiento" | "Presupuesto"
   const [filtroFechaTipo, setFiltroFechaTipo] = useState("creacion"); // "creacion" | "realizado"
   const [pendientesFacturar, setPendientesFacturar] = useState(false);
 
   // Estado de filtros aplicados
   const [appliedFilters, setAppliedFilters] = useState({
-    fechaInicial: "2025-09-22",
+    fechaInicial: "",
     fechaFinal: format(new Date(), "yyyy-MM-dd"),
     profesional: "",
     paciente: "",
-    tipoPlan: "Plan de tratamiento",
+    tipoPlan: "TODOS",
     fechaTipo: "creacion",
     pendientesFacturar: false
   });
@@ -83,12 +84,16 @@ export default function ReportePlanesTratamiento() {
         setAllPlans(listPlanes);
 
         // Cargar Doctores / Profesionales
-        const { data: snapUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapUsuarios = [];
+        try {
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapUsuarios = data;
+        } catch (e) {}
+
         const listProfs = [];
         (snapUsuarios || []).forEach(u => {
-          const role = (u.rol || u.role || "").toLowerCase();
-          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
-            const primerNombre = u.nombre || u.nombres || u.displayName || "";
+          if (isDoctorUser(u)) {
+            const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
             listProfs.push({ id: u.id, nombre: nombreCompleto });
@@ -97,7 +102,12 @@ export default function ReportePlanesTratamiento() {
         setProfesionales(listProfs);
 
         // Cargar Pacientes
-        const { data: snapPacientes } = await supabase.from("pacientes").select("id,nombre,nombres,apellido,apellidos,nombreCompleto").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapPacientes = [];
+        try {
+          const { data } = await supabase.from("pacientes").select("id,nombre,nombres,apellido,apellidos,nombreCompleto").eq("tenant_id", userProfile.inquilino);
+          if (data) snapPacientes = data;
+        } catch (e) {}
+
         const listPacs = (snapPacientes || []).map(p => {
           const nom = `${p.nombre || p.nombres || ''} ${p.apellido || p.apellidos || ''}`.trim() || p.nombreCompleto || 'Sin nombre';
           return { id: p.id, nombre: nom };
@@ -118,40 +128,48 @@ export default function ReportePlanesTratamiento() {
   }, [userProfile?.inquilino]);
 
   const filterPlans = (sourceList, filters, quickSearch) => {
-    let result = sourceList.filter(p => {
-      // Tipo de plan ("Plan de tratamiento" => p.type === 'plan', "Presupuesto" => p.type === 'presupuesto' o no definido)
-      if (filters.tipoPlan === "Plan de tratamiento" && p.type && p.type !== "plan") {
-        return false;
-      }
-      if (filters.tipoPlan === "Presupuesto" && p.type === "plan") {
-        return false;
+    let result = (sourceList || []).filter(p => {
+      // Tipo de plan ("Plan de tratamiento" => p.type === 'plan' o 'Plan de Tratamiento', "Presupuesto" => p.type === 'presupuesto')
+      if (filters.tipoPlan && filters.tipoPlan !== "TODOS") {
+        const pType = (p.type || p.tipo || "").toLowerCase();
+        if (filters.tipoPlan === "Plan de tratamiento" && pType.includes("presupuesto")) {
+          return false;
+        }
+        if (filters.tipoPlan === "Presupuesto" && pType.includes("plan") && !pType.includes("presupuesto")) {
+          return false;
+        }
       }
 
       // Filtro por Fechas
-      const targetDate = p.date ? new Date(p.date) : (p.createdAt?.toDate ? p.createdAt.toDate() : null);
-      if (targetDate) {
-        const init = new Date(filters.fechaInicial + "T00:00:00");
-        const end = new Date(filters.fechaFinal + "T23:59:59");
-        if (targetDate < init || targetDate > end) return false;
+      if (filters.fechaInicial && filters.fechaInicial.trim() !== "") {
+        const rawDate = p.created_at || p.createdAt || p.date || p.fecha_creacion || p.fecha;
+        if (rawDate) {
+          const targetDate = rawDate.toDate ? rawDate.toDate() : new Date(rawDate);
+          if (!isNaN(targetDate.getTime())) {
+            const init = new Date(filters.fechaInicial + "T00:00:00");
+            const end = new Date((filters.fechaFinal || format(new Date(), "yyyy-MM-dd")) + "T23:59:59");
+            if (targetDate < init || targetDate > end) return false;
+          }
+        }
       }
 
       // Filtro por Profesional
-      if (filters.profesional) {
+      if (filters.profesional && filters.profesional !== "TODOS") {
         const profTarget = filters.profesional.toLowerCase();
-        const pProf = (p.profesionalId || p.profesional || "").toLowerCase();
+        const pProf = (p.profesionalId || p.profesional || p.odontologo || p.doctor || "").toLowerCase();
         if (!pProf.includes(profTarget) && !profTarget.includes(pProf)) return false;
       }
 
       // Filtro por Paciente
       if (filters.paciente) {
         const pacTarget = filters.paciente.toLowerCase();
-        const pPac = (p.patientName || p.nombrePaciente || p.patientId || "").toLowerCase();
+        const pPac = (p.patientName || p.nombrePaciente || p.patientId || p.paciente || "").toLowerCase();
         if (!pPac.includes(pacTarget) && !pacTarget.includes(pPac)) return false;
       }
 
       // Pendientes por facturar
       if (filters.pendientesFacturar) {
-        const total = Number(p.total || 0);
+        const total = Number(p.total || p.valorTotal || 0);
         const pagado = Number(p.pagado || p.montoPagado || 0);
         if (total - pagado <= 0) return false;
       }
@@ -482,55 +500,46 @@ export default function ReportePlanesTratamiento() {
                   {visibleColumns.fechaHoraCreacion && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Fecha hora creación</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.paciente && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Paciente</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.profesional && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Profesional</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.titulo && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Título / Nombre Plan</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.tipo && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Tipo</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.total && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-right">
                       <div>Total</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.pagado && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-right">
                       <div>Pagado</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.saldo && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-right">
                       <div>Saldo</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.estado && (
                     <th className="px-3 py-2 whitespace-nowrap text-center">
                       <div>Estado</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                 </tr>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -13,14 +14,14 @@ export default function ReportePacientes() {
   const [loading, setLoading] = useState(true);
   
   // Filtros de estado de los inputs
-  const [selectedYearMonth, setSelectedYearMonth] = useState(format(new Date(), "yyyy/MM"));
+  const [selectedYearMonth, setSelectedYearMonth] = useState("");
   const [selectedProfesional, setSelectedProfesional] = useState("TODOS");
   const [filtroFechaTipo, setFiltroFechaTipo] = useState("creacion"); // "creacion" | "ingreso"
   const [filtroUltimaCitaEstado, setFiltroUltimaCitaEstado] = useState("atendida"); // "atendida" | "cualquiera"
   
   // Filtros aplicados al presionar el botón "Buscar"
   const [appliedFilters, setAppliedFilters] = useState({
-    yearMonth: format(new Date(), "yyyy/MM"),
+    yearMonth: "",
     profesional: "TODOS",
     fechaTipo: "creacion",
     ultimaCitaEstado: "atendida"
@@ -33,17 +34,25 @@ export default function ReportePacientes() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: dataPacientes } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
-        const sortedPacientes = (dataPacientes || []).sort((a, b) => new Date(b.created_at || b.fechaCreacion || 0) - new Date(a.created_at || a.fechaCreacion || 0));
+        let dataPacientes = [];
+        try {
+          const { data } = await supabase.from("pacientes").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) dataPacientes = data;
+        } catch (e) {}
+
+        const sortedPacientes = (dataPacientes || []).sort((a, b) => new Date(b.created_at || b.fechaCreacion || b.createdAt || 0) - new Date(a.created_at || a.fechaCreacion || a.createdAt || 0));
         setAllPacientes(sortedPacientes);
 
-        const { data: snapshotUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapshotUsuarios = [];
+        try {
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapshotUsuarios = data;
+        } catch (e) {}
+
         const listProfs = [];
         (snapshotUsuarios || []).forEach(u => {
-          const role = (u.rol || u.role || "").toLowerCase();
-          // Filtrar estrictamente solo si es doctor u odontólogo
-          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true || u.esDoctor === true) {
-            const primerNombre = u.nombre || u.nombres || u.displayName || "";
+          if (isDoctorUser(u)) {
+            const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || u.email || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
             
@@ -57,17 +66,16 @@ export default function ReportePacientes() {
                 nombreCompleto.toLowerCase(),
                 primerNombre.toLowerCase(),
                 primerApellido.toLowerCase(),
-                (u.email || "").toLowerCase(),
-                (u.displayName || "").toLowerCase()
+                (u.email || "").toLowerCase()
               ].filter(Boolean)
             });
           }
         });
         setProfesionales(listProfs);
 
-        // Aplicar filtrado inicial
-        filterData(dataPacientes, {
-          yearMonth: format(new Date(), "yyyy/MM"),
+        // Aplicar filtrado inicial (mostrar todos los pacientes)
+        filterData(sortedPacientes, {
+          yearMonth: "",
           profesional: "TODOS",
           fechaTipo: "creacion"
         }, "");
@@ -84,21 +92,26 @@ export default function ReportePacientes() {
 
   // Función encargada de filtrar los pacientes con los criterios confirmados
   const filterData = (sourceList, filters, quickSearch) => {
-    let result = sourceList.filter(p => {
-      // Filtro por fecha (Año/Mes)
-      const targetDateRaw = filters.fechaTipo === "creacion" ? (p.fechaCreacion || p.createdAt) : (p.fechaIngreso || p.fechaCreacion);
-      if (filters.yearMonth && targetDateRaw) {
-        let dObj = null;
-        if (targetDateRaw?.toDate) dObj = targetDateRaw.toDate();
-        else dObj = new Date(targetDateRaw);
-        if (!isNaN(dObj.getTime())) {
-          const pYm = format(dObj, "yyyy/MM");
-          if (pYm !== filters.yearMonth) return false;
+    let result = (sourceList || []).filter(p => {
+      // Filtro por fecha (Año/Mes) - Solo si se especifica un filtro explícito distinto de TODOS / vacío
+      if (filters.yearMonth && filters.yearMonth.trim() !== "" && filters.yearMonth.toUpperCase() !== "TODOS") {
+        const targetDateRaw = filters.fechaTipo === "creacion" 
+          ? (p.created_at || p.fechaCreacion || p.createdAt || p.fecha_creacion) 
+          : (p.fechaIngreso || p.created_at || p.fechaCreacion || p.createdAt);
+
+        if (targetDateRaw) {
+          let dObj = null;
+          if (targetDateRaw?.toDate) dObj = targetDateRaw.toDate();
+          else dObj = new Date(targetDateRaw);
+          if (!isNaN(dObj.getTime())) {
+            const pYm = format(dObj, "yyyy/MM");
+            if (pYm !== filters.yearMonth) return false;
+          }
         }
       }
 
       // Filtro por Profesional (Doctor)
-      if (filters.profesional !== "TODOS") {
+      if (filters.profesional && filters.profesional !== "TODOS") {
         const profObj = profesionales.find(pr => pr.nombre === filters.profesional || pr.id === filters.profesional);
         
         // Extraer todos los valores posibles de profesional dentro del registro del paciente
@@ -325,7 +338,7 @@ export default function ReportePacientes() {
               onChange={(e) => setSelectedProfesional(e.target.value)}
               className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-sky-500 transition-all uppercase"
             >
-              <option value="TODOS">Seleccione...</option>
+              <option value="TODOS">Todos los profesionales</option>
               {profesionales.map(prof => (
                 <option key={prof.id} value={prof.nombre}>{prof.nombre}</option>
               ))}
@@ -483,15 +496,11 @@ export default function ReportePacientes() {
                 <tr>
                   {visibleColumns.documento && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Documento</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Documento</div>                    </th>
                   )}
                   {visibleColumns.correo && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Correo</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Correo</div>                    </th>
                   )}
                   {visibleColumns.fechaIngreso && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
@@ -513,45 +522,31 @@ export default function ReportePacientes() {
                   )}
                   {visibleColumns.tipoDocumento && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Tipo de documento</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Tipo de documento</div>                    </th>
                   )}
                   {visibleColumns.numeroHistoria && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Número Historia</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Número Historia</div>                    </th>
                   )}
                   {visibleColumns.nombre && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Nombre</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Nombre</div>                    </th>
                   )}
                   {visibleColumns.apellido && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Apellido</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Apellido</div>                    </th>
                   )}
                   {visibleColumns.genero && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Genero</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Genero</div>                    </th>
                   )}
                   {visibleColumns.rh && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>RH</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>RH</div>                    </th>
                   )}
                   {visibleColumns.estadoCivil && (
                     <th className="px-3 py-2 whitespace-nowrap">
-                      <div>Estado civil</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Estado civil</div>                    </th>
                   )}
                 </tr>
               </thead>

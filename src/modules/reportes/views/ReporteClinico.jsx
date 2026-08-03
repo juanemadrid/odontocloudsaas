@@ -33,10 +33,11 @@ export default function ReporteClinico() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapshot } = await supabase
-          .from("agenda")
-          .select("*")
-          .or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapshot = [];
+        try {
+          const { data } = await supabase.from("citas").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapshot = data;
+        } catch (e) {}
         
         const data = [];
         let completadas = 0;

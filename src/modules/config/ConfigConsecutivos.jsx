@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 import Input from "../../components/ui/Input";
 
+import { getConfigItems, deleteConfigItem } from "../../services/configPersistenceService";
 import ConfigConsecutivosForm from "./ConfigConsecutivosForm";
 
 export default function ConfigConsecutivos() {
@@ -29,7 +30,7 @@ export default function ConfigConsecutivos() {
         
         setLoading(true);
         try {
-            const { data } = await supabase.from("consecutivos").select("*").eq("tenant_id", userProfile.inquilino);
+            const data = await getConfigItems(userProfile.inquilino, "consecutivos", "consecutivos");
             const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", undefined, { sensitivity: "base" }));
             setConsecutivos(sorted);
         } catch (error) {
@@ -49,7 +50,7 @@ export default function ConfigConsecutivos() {
         if (!window.confirm("¿Está seguro de eliminar este consecutivo?")) return;
         
         try {
-            await supabase.from("consecutivos").delete().eq("id", id);
+            await deleteConfigItem(userProfile.inquilino, "consecutivos", "consecutivos", id);
             toast.success("Consecutivo eliminado");
             loadConsecutivos();
         } catch (error) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FiCalendar, FiSearch, FiLayers, FiEye } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -63,7 +64,7 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                 profsList = cfgRow?.config?.profesionales || cfgRow?.config?.profiles || [];
             }
 
-            const list = profsList.map(d => ({
+            const list = profsList.filter(d => isDoctorUser(d)).map(d => ({
                 id: d.id,
                 nombre: d.full_name || d.nombreCompleto || d.nombre_completo || d.nombre || "Doctor",
                 cedula: d.cedula || d.documento || ""

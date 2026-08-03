@@ -105,16 +105,20 @@ export default function ReporteSistema() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapshot } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapshot = [];
+        try {
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapshot = data;
+        } catch (e) {}
         
         const data = snapshot || [];
         let admins = 0;
         let activos = 0;
 
         data.forEach(u => {
-          const rol = (u.rol || "").toLowerCase();
+          const rol = (u.rol || u.role || "").toLowerCase();
           if (rol === "admin" || rol === "superadmin") admins++;
-          if (u.estado !== "inactivo") activos++;
+          if (u.activo !== false) activos++;
         });
 
         setUsuarios(data);
@@ -135,12 +139,16 @@ export default function ReporteSistema() {
       if (!userProfile?.inquilino || activeTab !== "auditoria") return;
       setLoadingLogs(true);
       try {
-        const { data: logsRaw } = await supabase
-          .from("audit_logs")
-          .select("*")
-          .or(`tenant_id.eq.${userProfile.inquilino},tenantId.eq.${userProfile.inquilino}`)
-          .order("timestamp", { ascending: false })
-          .limit(150);
+        let logsRaw = [];
+        try {
+          const { data } = await supabase
+            .from("audit_logs")
+            .select("*")
+            .eq("tenant_id", userProfile.inquilino)
+            .order("timestamp", { ascending: false })
+            .limit(150);
+          if (data) logsRaw = data;
+        } catch (e) {}
 
         const logsData = (logsRaw || []).map(log => ({
           ...log,

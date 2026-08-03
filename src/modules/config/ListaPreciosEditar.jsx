@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { 
     FiArrowLeft, FiPlus, FiTrash2, FiEdit3, FiSave, FiX, FiSearch, FiCheck, 
-    FiChevronDown, FiChevronRight, FiPercent, FiPlusCircle, FiDownload 
+    FiChevronDown, FiChevronRight, FiPercent, FiPlusCircle, FiDownload, FiFolder
 } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
@@ -39,6 +39,11 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
     const [showModal, setShowModal] = useState(false);
     const [currentItem, setCurrentItem] = useState(null); // null for new, item object for edit
     const [targetCat, setTargetCat] = useState(null);
+
+    // Category Modal State
+    const [showCategoryModal, setShowCategoryModal] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState("");
+    const [customCategories, setCustomCategories] = useState([]);
     
     const initialItemState = {
         nombre: "",
@@ -139,7 +144,23 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         return groups;
     }, [items]);
 
-    const categories = useMemo(() => Object.keys(groupedData).sort(), [groupedData]);
+    const categories = useMemo(() => {
+        const setOfCats = new Set([...Object.keys(groupedData), ...customCategories]);
+        return Array.from(setOfCats).filter(Boolean).sort();
+    }, [groupedData, customCategories]);
+
+    const handleSaveCategory = (e) => {
+        if (e) e.preventDefault();
+        const trimmed = newCategoryName.trim().toUpperCase();
+        if (!trimmed) return;
+
+        if (!categories.includes(trimmed)) {
+            setCustomCategories(prev => [...prev, trimmed]);
+        }
+        setExpandedCats(prev => new Set([...prev, trimmed]));
+        setNewCategoryName("");
+        setShowCategoryModal(false);
+    };
 
     const toggleCat = (cat) => {
         const next = new Set(expandedCats);
@@ -363,7 +384,10 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                             <FiPercent size={14} /> <span>Ajuste global %</span>
                         </button>
                         <button 
-                            onClick={() => handleOpenModal("GENERAL")}
+                            onClick={() => {
+                                setNewCategoryName("");
+                                setShowCategoryModal(true);
+                            }}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-[12px] font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer border-0"
                         >
                             <FiPlus size={16} /> <span>Agregar categoría</span>
@@ -375,7 +399,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                 <div className="p-4 space-y-3">
                     {categories.map(cat => {
                         const isExpanded = expandedCats.has(cat);
-                        const catItems = groupedData[cat];
+                        const catItems = groupedData[cat] || [];
                         
                         return (
                             <div key={cat} className="rounded-lg border border-slate-200 overflow-hidden bg-white">
@@ -409,6 +433,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                                     if (window.confirm(`¿Seguro que deseas eliminar la categoría "${cat}" y todos sus ítems de esta lista?`)) {
                                                         const updatedItems = items.filter(item => (item.categoria || "GENERAL") !== cat);
                                                         saveItemsToSupabase(updatedItems);
+                                                        setCustomCategories(prev => prev.filter(c => c !== cat));
                                                     }
                                                 }} 
                                                 className="w-7 h-7 rounded-md bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" 
@@ -423,41 +448,47 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                 {/* Expanded Content (Items Table) */}
                                 {isExpanded && (
                                     <div className="bg-white">
-                                        <table className="w-full text-left border-collapse text-[12px]">
-                                            <thead>
-                                                <tr className="border-b border-slate-200 bg-slate-50/30">
-                                                    <th className="py-2.5 px-4 font-bold text-slate-600 w-32">Código</th>
-                                                    <th className="py-2.5 px-4 font-bold text-slate-600">Producto</th>
-                                                    <th className="py-2.5 px-4 font-bold text-slate-600 w-32 text-center">Permite desc.</th>
-                                                    <th className="py-2.5 px-4 font-bold text-slate-600 w-36">Precio</th>
-                                                    <th className="py-2.5 px-4 font-bold text-slate-600 w-28 text-right">Acciones</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {catItems.map(item => (
-                                                    <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-                                                        <td className="py-2.5 px-4 text-slate-600 font-mono">
-                                                            {item.codigo || '-'}
-                                                        </td>
-                                                        <td className="py-2.5 px-4 text-slate-800 font-semibold">
-                                                            {item.nombre}
-                                                        </td>
-                                                        <td className="py-2.5 px-4 text-center text-slate-600">
-                                                            {item.permite_descuento ? 'Sí' : 'No'}
-                                                        </td>
-                                                        <td className="py-2.5 px-4 font-bold text-slate-700">
-                                                            ${Number(item.precio || 0).toLocaleString('es-CO')}
-                                                        </td>
-                                                        <td className="py-2.5 px-4 text-right">
-                                                            <div className="flex justify-end gap-1.5">
-                                                                <button onClick={() => handleOpenModal(cat, item)} className="w-7 h-7 rounded-md bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" title="Editar"><FiEdit3 size={13} /></button>
-                                                                <button onClick={() => handleDeleteItem(item.id)} className="w-7 h-7 rounded-md bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" title="Eliminar"><FiTrash2 size={13} /></button>
-                                                            </div>
-                                                        </td>
+                                        {catItems.length === 0 ? (
+                                            <div className="p-6 text-center text-slate-400 text-[13px] font-medium italic">
+                                                Esta categoría no contiene ítems aún. Utiliza el botón de abajo o el botón verde arriba para agregar un producto.
+                                            </div>
+                                        ) : (
+                                            <table className="w-full text-left border-collapse text-[12px]">
+                                                <thead>
+                                                    <tr className="border-b border-slate-200 bg-slate-50/30">
+                                                        <th className="py-2.5 px-4 font-bold text-slate-600 w-32">Código</th>
+                                                        <th className="py-2.5 px-4 font-bold text-slate-600">Producto</th>
+                                                        <th className="py-2.5 px-4 font-bold text-slate-600 w-32 text-center">Permite desc.</th>
+                                                        <th className="py-2.5 px-4 font-bold text-slate-600 w-36">Precio</th>
+                                                        <th className="py-2.5 px-4 font-bold text-slate-600 w-28 text-right">Acciones</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody>
+                                                    {catItems.map(item => (
+                                                        <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                                                            <td className="py-2.5 px-4 text-slate-600 font-mono">
+                                                                {item.codigo || '-'}
+                                                            </td>
+                                                            <td className="py-2.5 px-4 text-slate-800 font-semibold">
+                                                                {item.nombre}
+                                                            </td>
+                                                            <td className="py-2.5 px-4 text-center text-slate-600">
+                                                                {item.permite_descuento ? 'Sí' : 'No'}
+                                                            </td>
+                                                            <td className="py-2.5 px-4 font-bold text-slate-700">
+                                                                ${Number(item.precio || 0).toLocaleString('es-CO')}
+                                                            </td>
+                                                            <td className="py-2.5 px-4 text-right">
+                                                                <div className="flex justify-end gap-1.5">
+                                                                    <button onClick={() => handleOpenModal(cat, item)} className="w-7 h-7 rounded-md bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" title="Editar"><FiEdit3 size={13} /></button>
+                                                                    <button onClick={() => handleDeleteItem(item.id)} className="w-7 h-7 rounded-md bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" title="Eliminar"><FiTrash2 size={13} /></button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
 
                                         {/* Nested Add Link */}
                                         <div className="p-3 flex justify-center border-t border-slate-100">
@@ -774,6 +805,67 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                             </button>
                         </div>
 
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Agregar Categoría */}
+            {showCategoryModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 flex flex-col">
+                        
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200">
+                                    <FiFolder size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-extrabold text-slate-800 tracking-tight">Agregar Categoría</h3>
+                                    <p className="text-[12px] font-medium text-slate-400">Crea una nueva categoría para agrupar ítems</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setShowCategoryModal(false)} 
+                                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors border-0 bg-transparent cursor-pointer"
+                            >
+                                <FiX size={20} className="text-slate-400" />
+                            </button>
+                        </div>
+
+                        {/* Modal Form */}
+                        <form onSubmit={handleSaveCategory} className="p-6 space-y-5">
+                            <div className="space-y-2">
+                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-wider ml-1">
+                                    Nombre de la categoría *
+                                </label>
+                                <input 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-[14px] font-bold text-slate-800 uppercase outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
+                                    value={newCategoryName}
+                                    onChange={e => setNewCategoryName(e.target.value)}
+                                    placeholder="EJ: CIRUGÍA ORAL, ENDODONCIA..."
+                                    autoFocus
+                                />
+                            </div>
+
+                            {/* Footer Buttons */}
+                            <div className="flex gap-3 pt-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowCategoryModal(false)}
+                                    className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl font-bold text-[12px] transition-all cursor-pointer"
+                                >
+                                    Cancelar
+                                </button>
+                                <button 
+                                    type="submit"
+                                    disabled={!newCategoryName.trim()}
+                                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-[12px] shadow-md shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer border-0"
+                                >
+                                    <FiCheck size={16} /> Guardar
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

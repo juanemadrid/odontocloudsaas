@@ -11,6 +11,7 @@ import {
 } from "../../services/userAdminService";
 
 import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiX, FiCheck, FiFilter, FiUser, FiArrowLeft, FiArrowRight, FiSave, FiInfo, FiMail, FiPhone, FiCreditCard, FiMapPin, FiActivity, FiLayers, FiChevronRight, FiChevronLeft, FiChevronsRight, FiChevronsLeft, FiEye, FiEyeOff, FiHelpCircle } from "react-icons/fi";
+import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
 import Input from "../../components/ui/Input";
 
 export default function EmpresaUsuarios() {
@@ -92,15 +93,18 @@ export default function EmpresaUsuarios() {
         if (!userProfile?.inquilino) return;
         setLoading(true);
         try {
-            const [uRes, sRes, cRes] = await Promise.all([
-                supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
-                supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino),
-                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle()
+            const [uRes, sData, cRes, configUsersData] = await Promise.all([
+                supabase.from("profiles").select("*").or(`inquilino.eq.${userProfile.inquilino},tenant_id.eq.${userProfile.inquilino}`),
+                getConfigItems(userProfile.inquilino, "sucursales", "sucursales"),
+                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle(),
+                getConfigItems(userProfile.inquilino, "usuarios", "usuarios")
             ]);
 
             const userDetailsMap = cRes.data?.config?.user_details || {};
+            const profilesMap = new Map();
 
-            const profilesList = (uRes.data || []).map(u => {
+            // A. Cargar usuarios desde public.profiles
+            (uRes.data || []).forEach(u => {
                 const detail = userDetailsMap[u.id] || {};
                 const rawEsp = u.especialidad || (detail.especialidades ? detail.especialidades.join(", ") : "");
                 const especialidadesArr = detail.especialidades || (rawEsp ? rawEsp.split(',').map(e => e.trim()).filter(Boolean) : []);
@@ -112,7 +116,7 @@ export default function EmpresaUsuarios() {
                 let userApellido = detail.apellido || (u.full_name || "").split(" ").slice(1).join(" ") || "";
                 const updatedFullName = (detail.nombre || detail.apellido) ? `${detail.nombre || ''} ${detail.apellido || ''}`.trim() : u.full_name;
 
-                return {
+                profilesMap.set(u.id, {
                     id: u.id,
                     nombre: userNombre,
                     apellido: userApellido,
@@ -123,8 +127,6 @@ export default function EmpresaUsuarios() {
                     especialidad: rawEsp,
                     especialidades: especialidadesArr,
                     sucursales: userSucursales,
-
-                    // Campos personales y de identificación
                     tipoDocumento: detail.tipoDocumento || u.tipo_documento || "CC",
                     numeroDocumento: detail.numeroDocumento || u.registro_medico || "",
                     telefonoMovil: detail.telefonoMovil || u.telefono || "",
@@ -136,8 +138,41 @@ export default function EmpresaUsuarios() {
                     password: "",
                     esDoctor,
                     activo: u.activo !== false
-                };
+                });
             });
+
+            // B. Cargar/fusionar usuarios desde website_config usuarios
+            (configUsersData || []).forEach(u => {
+                if (!u.id) return;
+                const existing = profilesMap.get(u.id) || {};
+                const nombreCompleto = u.nombreCompleto || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
+                profilesMap.set(u.id, {
+                    id: u.id,
+                    nombre: u.nombre || existing.nombre || "",
+                    apellido: u.apellido || existing.apellido || "",
+                    nombreCompleto: nombreCompleto || existing.nombreCompleto || u.email,
+                    email: u.email || existing.email,
+                    rol: u.role || u.rol || existing.rol || "Doctor",
+                    profileId: u.role || u.rol || existing.profileId || "Doctor",
+                    especialidad: u.especialidad || existing.especialidad || "",
+                    especialidades: u.especialidades || existing.especialidades || [],
+                    sucursales: u.sucursales || existing.sucursales || [],
+                    tipoDocumento: u.tipoDocumento || existing.tipoDocumento || "CC",
+                    numeroDocumento: u.numeroDocumento || existing.numeroDocumento || "",
+                    telefonoMovil: u.telefonoMovil || existing.telefonoMovil || "",
+                    telefonoFijo: u.telefonoFijo || existing.telefonoFijo || "",
+                    direccion: u.direccion || existing.direccion || "",
+                    genero: u.genero || existing.genero || "Masculino",
+                    fechaNacimiento: u.fechaNacimiento || existing.fechaNacimiento || "",
+                    ...existing,
+                    ...u,
+                    password: "",
+                    esDoctor: u.esDoctor ?? existing.esDoctor ?? true,
+                    activo: u.activo !== false
+                });
+            });
+
+            const mergedUsersList = Array.from(profilesMap.values());
 
             const rolesList = (cRes.data?.config?.perfiles || []).map(p => ({
                 id: p.nombre || p.id,
@@ -158,11 +193,10 @@ export default function EmpresaUsuarios() {
 
             const especialidadesList = toObj(rawEspecialidades);
 
-            setUsers(profilesList);
+            setUsers(mergedUsersList);
             setRolesDisponibles(rolesList.length > 0 ? rolesList : DEFAULT_PERFILES);
-            setSucursales(sRes.data || []);
+            setSucursales(sData || []);
             setSpecialties(especialidadesList.length > 0 ? especialidadesList : toObj(defaultEspecialidades));
-
 
         } catch (e) {
             console.error("Error al cargar usuarios desde Supabase:", e);
@@ -313,14 +347,18 @@ export default function EmpresaUsuarios() {
 
             const selectedProfile = rolesDisponibles.find(r => r.id === formData.profileId || r.nombre === formData.profileId);
             const fullName = `${formData.nombre} ${formData.apellido}`.trim();
-            const roleName = editId && users.find(u => u.id === editId)?.rol === "administrador" ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Usuario");
+            const primaryEmail = (userProfile?.email || "atmcentrodeldolor@gmail.com").toLowerCase().trim();
+            const isPrimaryAccount = targetEmail === primaryEmail;
+            
+            // Asignar rol respetando la elección del usuario (Doctor, Odontólogo, etc.)
+            let roleName = isPrimaryAccount ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Doctor");
 
             if (!editId && (!formData.password || formData.password.length < 8)) {
                 setSaving(false);
                 return toast.error('La contraseña debe tener mínimo 8 caracteres para crear el usuario');
             }
 
-            const { user: savedUser } = await upsertManagedUser({
+            const res = await upsertManagedUser({
                 id: editId || null,
                 tenantId: userProfile.inquilino,
                 email: targetEmail,
@@ -332,7 +370,7 @@ export default function EmpresaUsuarios() {
                 telefono: formData.telefonoMovil || formData.telefonoFijo || null,
                 activo: true
             });
-            const targetId = savedUser.id;
+            const targetId = res?.user?.id || editId || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
             // Guardar configuración extendida de usuario (sucursales, especialidades, etc.) en website_config
             try {
                 const { data: cfgData } = await supabase
@@ -375,6 +413,35 @@ export default function EmpresaUsuarios() {
                             user_details: userDetails
                         }
                     }, { onConflict: "tenant_id" });
+
+                // Persistencia unificada a través de configPersistenceService
+                await saveConfigItem(userProfile.inquilino, "usuarios", "usuarios", {
+                    id: targetId,
+                    nombre: formData.nombre,
+                    apellido: formData.apellido,
+                    nombreCompleto: fullName,
+                    email: targetEmail,
+                    rol: roleName,
+                    profileId: roleName,
+                    tipoDocumento: formData.tipoDocumento || "CC",
+                    numeroDocumento: formData.numeroDocumento || "",
+                    telefonoMovil: formData.telefonoMovil || "",
+                    telefonoFijo: formData.telefonoFijo || "",
+                    direccion: formData.direccion || "",
+                    genero: formData.genero || "Femenino",
+                    fechaNacimiento: formData.fechaNacimiento || "",
+                    sucursales: formData.sucursales || [],
+                    especialidades: formData.especialidades || [],
+                    esDoctor: formData.esDoctor || false,
+                    esLaboratory: formData.esLaboratory || false,
+                    seeOtherDoctorsData: formData.seeOtherDoctorsData || false,
+                    comisionPorcentaje: formData.comisionPorcentaje || 0,
+                    clinicalDocsWithLogo: formData.clinicalDocsWithLogo !== undefined ? formData.clinicalDocsWithLogo : true,
+                    clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
+                    encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
+                    formaPago: formData.formaPago || "Realizadas y pagadas",
+                    activo: true
+                });
             } catch (cfgErr) {
                 console.warn("Error guardando detalles extendidos en website_config:", cfgErr);
             }
@@ -411,8 +478,10 @@ export default function EmpresaUsuarios() {
         }
     };
     const handleDelete = async (u) => {
-        if (u.rol === "administrador") {
-            return toast.error("⛔ No se puede eliminar un usuario administrador");
+        const primaryEmail = (userProfile?.email || "atmcentrodeldolor@gmail.com").toLowerCase().trim();
+        const targetEmail = (u.email || "").toLowerCase().trim();
+        if (targetEmail && targetEmail === primaryEmail) {
+            return toast.error("⛔ No se puede eliminar el usuario administrador principal de la clínica (" + primaryEmail + ")");
         }
         setDeleteConfirmModal(u);
     };
@@ -423,6 +492,33 @@ export default function EmpresaUsuarios() {
 
         try {
             await deleteManagedUser(userToDelete.id);
+            await deleteConfigItem(userProfile.inquilino, "usuarios", "usuarios", userToDelete.id);
+
+            // También limpiar user_details de website_config si aplica
+            try {
+                const { data: cfgData } = await supabase
+                    .from("website_config")
+                    .select("config")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .maybeSingle();
+
+                if (cfgData?.config?.user_details) {
+                    const updatedDetails = { ...cfgData.config.user_details };
+                    delete updatedDetails[userToDelete.id];
+                    await supabase
+                        .from("website_config")
+                        .update({
+                            config: {
+                                ...cfgData.config,
+                                user_details: updatedDetails
+                            }
+                        })
+                        .eq("tenant_id", userProfile.inquilino);
+                }
+            } catch (e) {
+                console.warn("Aviso al limpiar user_details:", e);
+            }
+
             toast.success('Usuario "' + (userToDelete.nombreCompleto || userToDelete.email) + '" eliminado correctamente');
             setUsers(previous => previous.filter(user => String(user.id) !== String(userToDelete.id)));
             setDeleteConfirmModal(null);
@@ -552,12 +648,12 @@ export default function EmpresaUsuarios() {
                                     </td>
                                     <td className="py-2.5 px-4">
                                         {u.esDoctor ? (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                                <FiCheck size={10} /> Médico / Profesional
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">
+                                                <FiCheck size={10} /> {u.profileName || u.rol || (u.especialidades?.[0]) || "Odontólogo"}
                                             </span>
                                         ) : (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500">
-                                                No Asistencial
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 uppercase">
+                                                {u.profileName || u.rol || "No Asistencial"}
                                             </span>
                                         )}
                                     </td>

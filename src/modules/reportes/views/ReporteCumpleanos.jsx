@@ -11,14 +11,27 @@ export default function ReporteCumpleanos() {
   const [filteredCumpleanos, setFilteredCumpleanos] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Calcular rango por defecto: primer día del mes actual hasta fin del mes actual
+  const getDefaultDateRange = () => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return {
+      inicio: format(firstDay, "yyyy-MM-dd"),
+      fin: format(lastDay, "yyyy-MM-dd")
+    };
+  };
+
+  const defaultRange = getDefaultDateRange();
+
   // Filtros idénticos a OralDrive
-  const [fechaInicial, setFechaInicial] = useState("2025-07-21");
-  const [fechaFinal, setFechaFinal] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [fechaInicial, setFechaInicial] = useState(defaultRange.inicio);
+  const [fechaFinal, setFechaFinal] = useState(defaultRange.fin);
 
   // Estado de filtros aplicados
   const [appliedFilters, setAppliedFilters] = useState({
-    fechaInicial: "2025-07-21",
-    fechaFinal: format(new Date(), "yyyy-MM-dd")
+    fechaInicial: defaultRange.inicio,
+    fechaFinal: defaultRange.fin
   });
 
   const [tableSearchTerm, setTableSearchTerm] = useState("");
@@ -51,12 +64,22 @@ export default function ReporteCumpleanos() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapPacientes } = await supabase.from("pacientes").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapPacientes = [];
+        try {
+          const { data } = await supabase.from("pacientes").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapPacientes = data;
+          console.log(`[Cumpleaños] Total pacientes cargados: ${snapPacientes.length}`);
+        } catch (e) {
+          console.error('[Cumpleaños] Error cargando pacientes:', e);
+        }
         const listCumple = [];
 
         (snapPacientes || []).forEach(p => {
-          if (p.fechaNacimiento) {
-            const dateBirth = new Date(p.fechaNacimiento);
+          // Intentar obtener fecha de nacimiento de diferentes campos posibles
+          const fechaNac = p.fechaNacimiento || p.fecha_nacimiento || p.fechaNac || p.birthDate;
+          
+          if (fechaNac) {
+            const dateBirth = new Date(fechaNac);
             if (!isNaN(dateBirth.getTime())) {
               const today = new Date();
               let age = today.getFullYear() - dateBirth.getFullYear();
@@ -73,7 +96,7 @@ export default function ReporteCumpleanos() {
                 fechaCumpleanos: format(dateBirth, "dd/MM/yyyy"),
                 edad: `${age} años`,
                 paciente: nom,
-                documento: p.identificacion || p.nroDocumento || "—",
+                documento: p.identificacion || p.documento || p.nroDocumento || "—",
                 telefono: p.celular || p.telefono || "—",
                 correo: p.email || p.correo || "—",
                 monthDay: format(dateBirth, "MM-dd")
@@ -83,6 +106,10 @@ export default function ReporteCumpleanos() {
         });
 
         listCumple.sort((a, b) => a.monthDay.localeCompare(b.monthDay));
+        console.log(`[Cumpleaños] Pacientes con fecha de nacimiento: ${listCumple.length}`);
+        if (listCumple.length > 0) {
+          console.log('[Cumpleaños] Ejemplo de cumpleaños procesado:', listCumple[0]);
+        }
         setAllCumpleanos(listCumple);
         filterData(listCumple, appliedFilters, "");
 
@@ -137,9 +164,10 @@ export default function ReporteCumpleanos() {
     }
 
     setFilteredCumpleanos(result);
+    console.log(`[Cumpleaños] Después de filtrar: ${result.length} cumpleaños mostrados`);
   };
 
-  const [hasSearched, setHasSearched] = useState(false);
+  const [hasSearched, setHasSearched] = useState(true); // Cambiado a true para mostrar resultados inmediatamente
 
   const handleSearchClick = () => {
     setHasSearched(true);
@@ -313,37 +341,31 @@ export default function ReporteCumpleanos() {
                   {visibleColumns.fechaCumpleanos && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Fecha de cumpleaños</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.edad && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-center">
                       <div>Edad</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.paciente && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Paciente</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.documento && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Documento</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.telefono && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
                       <div>Teléfono</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                   {visibleColumns.correo && (
                     <th className="px-3 py-2 whitespace-nowrap">
                       <div>Correo</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
                     </th>
                   )}
                 </tr>

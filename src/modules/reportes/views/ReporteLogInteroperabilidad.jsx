@@ -66,10 +66,18 @@ export default function ReporteLogInteroperabilidad() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapSuc = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapSuc = data;
+        } catch (e) {}
         setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        const { data: snapLogs } = await supabase.from("ihce_logs").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapLogs = [];
+        try {
+          const { data } = await supabase.from("ihce_logs").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapLogs = data;
+        } catch (e) {}
         const listData = (snapLogs || []).map(l => {
           const dateObj = l.created_at ? new Date(l.created_at) : (l.fecha ? new Date(l.fecha) : new Date());
           return {
@@ -326,65 +334,43 @@ export default function ReporteLogInteroperabilidad() {
                     )}
                     {visibleColumns.operacion && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Operación</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Operación</div>                      </th>
                     )}
                     {visibleColumns.sucursal && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Sucursal</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Sucursal</div>                      </th>
                     )}
                     {visibleColumns.profesional && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Profesional</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Profesional</div>                      </th>
                     )}
                     {visibleColumns.paciente && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Paciente</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Paciente</div>                      </th>
                     )}
                     {visibleColumns.numDocumento && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Número de documento</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Número de documento</div>                      </th>
                     )}
                     {visibleColumns.estado && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Estado</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Estado</div>                      </th>
                     )}
                     {visibleColumns.exito && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Éxito</div>
-                        <select className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal">
-                          <option>(Todo)</option>
-                        </select>
-                      </th>
+                        <div>Éxito</div>                      </th>
                     )}
                     {visibleColumns.identificadorRDA && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Identificador del RDA</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Identificador del RDA</div>                      </th>
                     )}
                     {visibleColumns.error && (
                       <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                        <div>Error</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Error</div>                      </th>
                     )}
                     {visibleColumns.acciones && (
                       <th className="px-3 py-2 whitespace-nowrap text-center">
-                        <div>Acciones</div>
-                        <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                      </th>
+                        <div>Acciones</div>                      </th>
                     )}
                   </tr>
                 </thead>

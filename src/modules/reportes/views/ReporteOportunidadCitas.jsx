@@ -60,10 +60,18 @@ export default function ReporteOportunidadCitas() {
       if (!userProfile?.inquilino) return;
       setLoading(true);
       try {
-        const { data: snapSuc } = await supabase.from("sucursales").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapSuc = [];
+        try {
+          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapSuc = data;
+        } catch (e) {}
         setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        const { data: snapCitas } = await supabase.from("citas").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapCitas = [];
+        try {
+          const { data } = await supabase.from("citas").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapCitas = data;
+        } catch (e) {}
         const listCitas = [];
 
         (snapCitas || []).forEach(c => {
@@ -340,57 +348,39 @@ export default function ReporteOportunidadCitas() {
                 <tr>
                   {visibleColumns.paciente && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Paciente</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Paciente</div>                    </th>
                   )}
                   {visibleColumns.documento && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Documento</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Documento</div>                    </th>
                   )}
                   {visibleColumns.fechaSolicitud && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Fecha solicitud cita</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Fecha solicitud cita</div>                    </th>
                   )}
                   {visibleColumns.fechaAsignada && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Fecha cita asignada</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Fecha cita asignada</div>                    </th>
                   )}
                   {visibleColumns.diasOportunidad && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-center">
-                      <div>Días de oportunidad</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Días de oportunidad</div>                    </th>
                   )}
                   {visibleColumns.especialidad && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Especialidad / Motivo</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Especialidad / Motivo</div>                    </th>
                   )}
                   {visibleColumns.profesional && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Profesional</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Profesional</div>                    </th>
                   )}
                   {visibleColumns.sucursal && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Oficina / Sucursal</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Oficina / Sucursal</div>                    </th>
                   )}
                   {visibleColumns.estado && (
                     <th className="px-3 py-2 whitespace-nowrap text-center">
-                      <div>Estado</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Estado</div>                    </th>
                   )}
                 </tr>
               </thead>

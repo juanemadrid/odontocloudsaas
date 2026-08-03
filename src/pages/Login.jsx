@@ -146,9 +146,9 @@ const Login = () => {
 
         if (checkRes && checkRes.allowed === false) {
           if (checkRes.reason === "pending_approval") {
-            setError("⏳ Tu solicitud de clínica aún está pendiente de aprobación por el SuperAdmin. Te avisaremos cuando sea activada.");
+            setError("⏳ Tu solicitud de prueba aún está pendiente de aprobación por el Administrador. Te avisaremos tan pronto sea activada.");
           } else {
-            setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+            setError("🚫 Esta clínica o cuenta ha sido suspendida o inhabilitada del sistema.");
           }
           setLoadingStatus(false);
           return;
@@ -165,7 +165,7 @@ const Login = () => {
           const roleLower = (profileCheck.role || "").toLowerCase();
           if (roleLower !== "superadmin") {
             if (profileCheck.activo === false || !profileCheck.tenant_id || !profileCheck.tenant || profileCheck.tenant.activo === false) {
-              setError("🚫 Esta clínica o cuenta ha sido eliminada o suspendida del sistema.");
+              setError("🚫 Esta clínica o cuenta ha sido suspendida o inhabilitada del sistema.");
               setLoadingStatus(false);
               return;
             }
@@ -190,13 +190,21 @@ const Login = () => {
         const { data: profile } = await supabase
           .from("profiles")
           .select("role, activo, tenant_id, tenant:tenants(id, nombre, activo)")
-          .eq("id", user.id)
+          .or(`id.eq.${user.id},email.eq.${emailClean}`)
           .maybeSingle();
 
-        if (!profile || profile.activo === false || !profile.tenant_id || !profile.tenant || profile.tenant.activo === false) {
+        if (!profile) {
           await supabase.auth.signOut();
           try { sessionStorage.clear(); } catch {}
-          setError("⏳ Tu solicitud de clínica aún está pendiente de aprobación por el SuperAdmin o la cuenta está inactiva.");
+          setError("⏳ Tu solicitud de prueba aún está pendiente de aprobación por el Administrador.");
+          setLoadingStatus(false);
+          return;
+        }
+
+        if (profile.activo === false || !profile.tenant_id || !profile.tenant || profile.tenant.activo === false) {
+          await supabase.auth.signOut();
+          try { sessionStorage.clear(); } catch {}
+          setError("🚫 Esta clínica o cuenta ha sido suspendida o inhabilitada del sistema.");
           setLoadingStatus(false);
           return;
         }

@@ -2,24 +2,27 @@
 import supabase from "../lib/supabaseClient";
 import { getConfigItems, saveConfigItem, deleteConfigItem } from "./configPersistenceService";
 
+import { isDoctorUser } from "../utils/doctorHelpers";
+
 export const getDoctors = async (tenantId) => {
     if (!tenantId) return [];
     try {
         const { data, error } = await supabase
             .from("profiles")
             .select("*")
-            .eq("tenant_id", tenantId)
-            .in("role", ["odontologo", "administrador", "superadmin"]);
+            .eq("tenant_id", tenantId);
 
         if (error) throw error;
 
-        return (data || []).map(d => ({
-            id: d.id,
-            nombre: d.full_name,
-            name: d.full_name,
-            role: d.role,
-            activo: true
-        }));
+        return (data || [])
+            .filter(d => isDoctorUser(d))
+            .map(d => ({
+                id: d.id,
+                nombre: d.full_name || d.nombreCompleto || d.email,
+                name: d.full_name || d.nombreCompleto || d.email,
+                role: d.role,
+                activo: true
+            }));
     } catch (e) {
         console.error("Error al obtener doctores de Supabase:", e);
         return [];

@@ -132,38 +132,7 @@ export const createTenant = async (tenantData) => {
     const planId = tenantData.planId || "free";
     const planDuration = tenantData.planDuration || "monthly";
 
-    // 1. Intentar registrar vía Edge Function si se encuentra disponible en la nube
-    try {
-        const { data, error } = await supabase.functions.invoke("register-clinic", {
-            body: {
-                adminEmail,
-                adminPassword,
-                adminName: tenantData.adminName,
-                clinicName,
-                requestedPlan: planId,
-                planDuration,
-                nit: tenantData.nit || "",
-                telefono: tenantData.telefono || "",
-                direccion: tenantData.address || tenantData.direccion || "",
-                ciudad: tenantData.ciudad || "",
-                contactEmail: tenantData.contactEmail || tenantData.email || adminEmail
-            }
-        });
-
-        if (!error && data?.success && data?.tenantId) {
-            return {
-                id: data.tenantId,
-                nombre: clinicName,
-                adminEmail,
-                planId,
-                activo: true
-            };
-        }
-    } catch (edgeErr) {
-        console.warn("Edge function 'register-clinic' no disponible o con bloqueo CORS, ejecutando fallback de creación directa:", edgeErr);
-    }
-
-    // 2. Fallback de Creación Directa en PostgreSQL & website_config
+    // 1. Creación Directa y Aprovisionamiento en PostgreSQL & website_config
     const tenantId = crypto.randomUUID();
 
     // a) Inserción en la tabla de PostgreSQL 'tenants'
@@ -173,7 +142,6 @@ export const createTenant = async (tenantData) => {
             id: tenantId,
             nombre: clinicName,
             nit: tenantData.nit || "",
-            email: adminEmail,
             plan: planId,
             activo: true
         }])
@@ -225,17 +193,64 @@ export const createTenant = async (tenantData) => {
         throw new Error(`No fue posible registrar la clínica: ${dbErr?.message || wcErr?.message}`);
     }
 
-    // c) Creación y aprovisionamiento de la cuenta Auth y perfil de administrador para la clínica
+    // c) Creación y aprovisionamiento automático de la cuenta Auth y perfil de administrador para cualquier clínica
     if (adminEmail && adminPassword) {
+        let rpcSuccess = false;
         try {
-            await supabase.rpc("admin_create_clinic_user", {
+            const { data: rpcRes, error: rpcErr } = await supabase.rpc("admin_create_clinic_user", {
                 p_email: adminEmail.trim(),
                 p_password: adminPassword,
                 p_full_name: tenantData.adminName || `Administrador ${clinicName}`,
                 p_tenant_id: tenantId
             });
+
+            if (!rpcErr && rpcRes?.success) {
+                rpcSuccess = true;
+            } else if (rpcErr) {
+                console.warn("Nota al aprovisionar usuario mediante RPC:", rpcErr?.message);
+            }
         } catch (rpcErr) {
             console.warn("Nota al aprovisionar usuario mediante RPC:", rpcErr?.message);
+        }
+
+        // Fallback automático si la función RPC aún no está creada en Supabase
+        if (!rpcSuccess) {
+            try {
+                // 1. Asegurar la inserción/actualización de la clínica en la tabla nativa public.tenants
+                await supabase.from("tenants").upsert([{
+                    id: tenantId,
+                    nombre: clinicName,
+                    plan: planId,
+                    activo: true
+                }]);
+
+                // 2. Crear cuenta en Supabase Auth
+                const { data: signUpData } = await supabase.auth.signUp({
+                    email: adminEmail.trim(),
+                    password: adminPassword,
+                    options: {
+                        data: {
+                            full_name: tenantData.adminName || `Administrador ${clinicName}`,
+                            tenant_id: tenantId,
+                            role: 'admin'
+                        }
+                    }
+                });
+
+                const createdUserId = signUpData?.user?.id;
+                if (createdUserId) {
+                    await supabase.from("profiles").upsert([{
+                        id: createdUserId,
+                        email: adminEmail.trim(),
+                        full_name: tenantData.adminName || `Administrador ${clinicName}`,
+                        role: 'admin',
+                        tenant_id: tenantId,
+                        activo: true
+                    }]);
+                }
+            } catch (fallbackErr) {
+                console.warn("Error en fallback de aprovisionamiento automático:", fallbackErr?.message);
+            }
         }
     }
 
@@ -299,17 +314,13 @@ export const updateTenantDetails = async (tenantId, updates) => {
             });
 
         // Sincronizar en la tabla nativa 'tenants' de PostgreSQL
-        const targetAdminEmail = updates.adminEmail || updates.contactEmail;
-        if (targetAdminEmail) {
-            await supabase
-                .from("tenants")
-                .update({
-                    nombre: updates.name || updates.nombre,
-                    email: targetAdminEmail,
-                    nit: updates.nit
-                })
-                .eq("id", tenantId);
-        }
+        await supabase
+            .from("tenants")
+            .update({
+                nombre: updates.name || updates.nombre,
+                nit: updates.nit
+            })
+            .eq("id", tenantId);
 
         return true;
     } catch (error) {
@@ -354,7 +365,24 @@ export const toggleTenantStatus = async (tenantId, currentActive) => {
                 updated_at: new Date().toISOString()
             });
 
-        // Solo se persiste en website_config JSONB para evitar errores RLS en tenants.
+        // Sincronizar en las tablas nativas de PostgreSQL: 'tenants' y 'profiles'
+        try {
+            await supabase
+                .from("tenants")
+                .update({ activo: newActiveState })
+                .eq("id", tenantId);
+        } catch (tErr) {
+            console.warn("Advertencia al actualizar activo en tabla tenants:", tErr?.message);
+        }
+
+        try {
+            await supabase
+                .from("profiles")
+                .update({ activo: newActiveState })
+                .eq("tenant_id", tenantId);
+        } catch (pErr) {
+            console.warn("Advertencia al actualizar activo en tabla profiles:", pErr?.message);
+        }
 
         return true;
     } catch (error) {

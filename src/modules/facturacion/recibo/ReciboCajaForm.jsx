@@ -8,6 +8,8 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { getActiveCaja } from "../../../services/supabaseServices";
+import { getConfigItems, saveConfigItem } from "../../../services/configPersistenceService";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -131,7 +133,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 profsList = cfgRow?.config?.profesionales || cfgRow?.config?.profiles || [];
             }
 
-            setProfesionales(profsList.map(d => ({ 
+            setProfesionales(profsList.filter(d => isDoctorUser(d)).map(d => ({ 
                 id: d.id, 
                 nombre: d.full_name || d.nombre_completo || d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim() || d.email 
             })));
@@ -363,38 +365,13 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         setError("");
 
         try {
-            // Fetch and increment consecutive number
-            const { data: consDataList } = await supabase
-                .from("consecutivos")
-                .select("*")
-                .eq("tenant_id", inquilino);
+            // Leer la configuración activa de consecutivos desde website_config (configPersistenceService)
+            const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
+            const activeConsDoc = (Array.isArray(consList) && consList.length > 0) ? consList[0] : {};
 
-            let finalConsecutivo = "";
-            let consDocId = null;
-            let nextCount = 1;
-
-            if (consDataList && consDataList.length > 0) {
-                const consDoc = consDataList[0];
-                consDocId = consDoc.id;
-                const currentCount = parseInt(String(consDoc.contReciboCaja || consDoc.cont_recibo_caja || 1), 10) || 1;
-                nextCount = currentCount + 1;
-                finalConsecutivo = String(currentCount).padStart(2, '0');
-            } else {
-                const { data: newConsDoc } = await supabase
-                    .from("consecutivos")
-                    .insert([{
-                        tenant_id: inquilino,
-                        inquilino,
-                        nombre: "Consecutivo Principal",
-                        cont_recibo_caja: 2,
-                        created_at: new Date().toISOString()
-                    }])
-                    .select()
-                    .single();
-                if (newConsDoc) consDocId = newConsDoc.id;
-                nextCount = 2;
-                finalConsecutivo = "01";
-            }
+            const currentCount = parseInt(String(activeConsDoc.contReciboCaja || activeConsDoc.cont_recibo_caja || 1), 10) || 1;
+            const nextCount = currentCount + 1;
+            const finalConsecutivo = String(currentCount).padStart(4, '0');
 
             const reciboData = {
                 tenant_id: inquilino,
@@ -424,12 +401,14 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 .single();
             if (recErr) throw recErr;
 
-            if (consDocId) {
-                await supabase
-                    .from("consecutivos")
-                    .update({ cont_recibo_caja: nextCount, contReciboCaja: nextCount })
-                    .eq("id", consDocId);
-            }
+            // Incrementar el consecutivo en website_config y en la base de datos
+            const updatedConsDoc = {
+                ...activeConsDoc,
+                nombre: activeConsDoc.nombre || "Consecutivo Principal",
+                contReciboCaja: nextCount,
+                cont_recibo_caja: nextCount
+            };
+            await saveConfigItem(inquilino, "consecutivos", "consecutivos", updatedConsDoc);
 
             if (activeCaja) {
                 const movData = {

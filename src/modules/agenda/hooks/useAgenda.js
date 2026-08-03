@@ -3,7 +3,8 @@ import { useAuth } from "../../../context/AuthContext";
 import { createOrUpdatePatient } from "../../../services/patientService";
 import { useAudit } from "../../../hooks/useAudit";
 import supabase from "../../../lib/supabaseClient";
-import { assertAppointmentAvailability } from "../../../services/agendaAvailabilityService";
+import { getConfigItems } from "../../../services/configPersistenceService";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const DEFAULT_SPECIALTIES = [
     { id: "Ortodoncia", nombre: "Ortodoncia" },
@@ -58,6 +59,76 @@ const calculateAgeStr = (birthDateStr) => {
     return numStr;
 };
 
+/**
+ * Verifica disponibilidad de un profesional y consultorio en un rango de tiempo
+ * Lanza error si hay conflicto de horarios
+ */
+const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId, start, end, excludeId = null }) => {
+    if (!tenantId || !start || !end) {
+        throw new Error("Datos insuficientes para verificar disponibilidad");
+    }
+
+    // Verificar que la fecha de inicio sea anterior a la fecha de fin
+    if (start >= end) {
+        throw new Error("La hora de inicio debe ser anterior a la hora de fin");
+    }
+
+    // Construir query base
+    let query = supabase
+        .from("citas")
+        .select("id, fecha_inicio, fecha_fin, profesional_id, consultorio_id")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "CANCELADO")
+        .not("estado", "in", '("CANCELADA","CANCELADO","NO ASISTE")');
+
+    // Si hay un ID a excluir (para updates), excluirlo de la búsqueda
+    if (excludeId) {
+        query = query.neq("id", excludeId);
+    }
+
+    const { data: existingAppointments, error } = await query;
+
+    if (error) {
+        console.error("Error al verificar disponibilidad:", error);
+        throw new Error("Error al verificar disponibilidad de horarios");
+    }
+
+    // Verificar conflictos
+    const conflicts = (existingAppointments || []).filter(apt => {
+        const aptStart = new Date(apt.fecha_inicio);
+        const aptEnd = new Date(apt.fecha_fin);
+
+        // Verificar solapamiento de horarios
+        const hasTimeOverlap = (start < aptEnd && end > aptStart);
+        
+        if (!hasTimeOverlap) return false;
+
+        // Verificar si hay conflicto con el mismo profesional o consultorio
+        const sameProfessional = professionalId && apt.profesional_id === professionalId;
+        const sameRoom = roomId && apt.consultorio_id === roomId;
+
+        return sameProfessional || sameRoom;
+    });
+
+    if (conflicts.length > 0) {
+        const conflict = conflicts[0];
+        const conflictStart = new Date(conflict.fecha_inicio);
+        const conflictEnd = new Date(conflict.fecha_fin);
+        
+        let errorMsg = "Ya existe una cita programada en este horario";
+        
+        if (professionalId && conflict.profesional_id === professionalId) {
+            errorMsg += ` para este profesional (${conflictStart.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })} - ${conflictEnd.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})`;
+        } else if (roomId && conflict.consultorio_id === roomId) {
+            errorMsg += ` para este consultorio (${conflictStart.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })} - ${conflictEnd.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})`;
+        }
+
+        throw new Error(errorMsg);
+    }
+
+    return true;
+};
+
 export function useAgenda() {
     const { userProfile } = useAuth();
     const { logAction } = useAudit();
@@ -80,6 +151,7 @@ export function useAgenda() {
     // Filters
     const [filterDocId, setFilterDocId] = useState("");
     const [filterBranchId, setFilterBranchId] = useState("");
+    const [filterChairId, setFilterChairId] = useState("");
 
     // === Role & Permission Check for Doctor Isolation ===
     const rolActual = (userProfile?.rol || "").trim().toLowerCase();
@@ -125,68 +197,132 @@ export function useAgenda() {
 
         const loadCatalogs = async () => {
             try {
-                const [profRes, sucRes, conRes, entRes, pacRes, cfgRes] = await Promise.all([
-                    supabase.from("profiles").select("*").eq("tenant_id", inquilino),
-                    supabase.from("sucursales").select("*").eq("tenant_id", inquilino),
-                    supabase.from("consultorios").select("*").eq("tenant_id", inquilino),
-                    supabase.from("entidades").select("*").eq("tenant_id", inquilino),
-                    supabase.from("pacientes").select("id,documento,nombres,apellidos,telefono").eq("tenant_id", inquilino),
-                    supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
+                const fetchProfiles = async () => {
+                    try {
+                        const { data } = await supabase.from("profiles").select("*").eq("tenant_id", inquilino);
+                        return data || [];
+                    } catch (e) { return []; }
+                };
+
+                const fetchConsultorios = async () => {
+                    try {
+                        const { data } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino);
+                        return data || [];
+                    } catch (e) { return []; }
+                };
+
+                const fetchEntidades = async () => {
+                    try {
+                        const { data } = await supabase.from("entidades").select("*").eq("tenant_id", inquilino);
+                        return data || [];
+                    } catch (e) { return []; }
+                };
+
+                const fetchPacientes = async () => {
+                    try {
+                        const { data } = await supabase.from("pacientes").select("id,documento,nombres,apellidos,telefono").eq("tenant_id", inquilino);
+                        return data || [];
+                    } catch (e) { return []; }
+                };
+
+                const fetchWebsiteConfig = async () => {
+                    try {
+                        const { data } = await supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle();
+                        return data?.config || {};
+                    } catch (e) { return {}; }
+                };
+
+                const [profData, sucursalesData, conData, recFisicosData, entData, pacData, cfgConfig, configUsersData] = await Promise.all([
+                    fetchProfiles(),
+                    getConfigItems(inquilino, "sucursales", "sucursales"),
+                    fetchConsultorios(),
+                    getConfigItems(inquilino, "recursos_fisicos", "consultorios"),
+                    fetchEntidades(),
+                    fetchPacientes(),
+                    fetchWebsiteConfig(),
+                    getConfigItems(inquilino, "usuarios", "usuarios")
                 ]);
 
-                const requiredCatalogError = [profRes, sucRes, conRes, entRes, pacRes]
-                    .map(result => result.error)
-                    .find(Boolean);
-                if (requiredCatalogError) throw requiredCatalogError;
-                if (cfgRes.error) {
-                    console.warn("No fue posible cargar la configuración opcional de agenda:", cfgRes.error.message);
-                }
+                // Fusionar usuarios de profiles y configUsersData
+                const userDetailsMap = cfgConfig?.user_details || {};
+                const allUsersMap = new Map();
 
-                // Doctors — from profiles table (only doctors/odontologists, exclude admins)
-                const userDetailsMap = cfgRes.data?.config?.user_details || {};
+                (profData || []).forEach(u => {
+                    if (u.activo !== false) {
+                        allUsersMap.set(u.id, u);
+                    }
+                });
 
-                const docsList = (profRes.data || [])
-                    .filter(u => u.activo !== false)
+                (configUsersData || []).forEach(u => {
+                    if (u.id && u.activo !== false) {
+                        const existing = allUsersMap.get(u.id) || {};
+                        allUsersMap.set(u.id, { ...existing, ...u });
+                    }
+                });
+
+                const allUsersList = Array.from(allUsersMap.values());
+
+                // Filtrar doctores / profesionales
+                const docsList = allUsersList
                     .filter(u => {
-                        const roleLower = (u.role || '').toLowerCase();
                         const detail = userDetailsMap[u.id] || {};
-                        return roleLower.includes('doctor') || 
-                               roleLower.includes('odontólog') || 
-                               roleLower.includes('odontolog') || 
-                               roleLower.includes('especialista') ||
-                               detail.esDoctor === true ||
-                               !!u.especialidad;
+                        const mergedUser = { ...u, ...detail };
+                        return isDoctorUser(mergedUser);
                     })
                     .map(u => {
                         const detail = userDetailsMap[u.id] || {};
-                        const userNombre = detail.nombre || (u.full_name || '').split(' ')[0] || '';
-                        const userApellido = detail.apellido || (u.full_name || '').split(' ').slice(1).join(' ') || '';
-                        const updatedFullName = (detail.nombre || detail.apellido) 
-                            ? `${detail.nombre || ''} ${detail.apellido || ''}`.trim() 
-                            : (u.full_name || '');
+                        const nombreCompleto = u.nombreCompleto || u.full_name || (u.nombre ? `${u.nombre} ${u.apellido || ''}`.trim() : '') || (detail.nombre ? `${detail.nombre} ${detail.apellido || ''}`.trim() : '') || u.email;
+                        const userNombre = u.nombre || detail.nombre || nombreCompleto.split(' ')[0] || '';
+                        const userApellido = u.apellido || detail.apellido || nombreCompleto.split(' ').slice(1).join(' ') || '';
 
                         return {
                             id: u.id,
                             nombre: userNombre,
                             apellido: userApellido,
-                            nombreCompleto: updatedFullName,
+                            nombreCompleto: nombreCompleto,
                             email: u.email,
-                            rol: u.role,
-                            especialidad: u.especialidad || (detail.especialidades ? detail.especialidades.join(', ') : ''),
+                            rol: u.role || u.rol || "Doctor",
+                            especialidad: u.especialidad || (detail.especialidades ? detail.especialidades.join(', ') : 'Odontología General'),
                             activo: u.activo !== false
                         };
                     });
-                if (docsList.length > 0) setDoctors(docsList);
 
-                // Branches — sucursales table
-                const supSuc = (sucRes.data || []);
-                setBranches(supSuc);
+                // Solo mostrar doctores/profesionales legítimos (excluyendo administradores)
+                setDoctors(docsList);
 
-                // Nunca ofrecer IDs ficticios: las citas requieren un consultorio real.
-                setChairs((conRes.data || []).filter(consultorio => consultorio.activo !== false));
+                // Branches — sucursales
+                setBranches(sucursalesData || []);
+
+                // Recursos físicos / Consultorios — fusionar tabla PostgreSQL y website_config
+                const chairsMap = new Map();
+                (conData || []).forEach(c => {
+                    if (c.activo !== false) {
+                        chairsMap.set(c.id, {
+                            id: c.id,
+                            nombre: c.nombre || c.name || "Sillón",
+                            ubicacion: c.ubicacion || c.descripcion || "",
+                            sucursalId: c.sucursal_id || c.sucursalId || "",
+                            activo: true
+                        });
+                    }
+                });
+                (recFisicosData || []).forEach(c => {
+                    if (c.id && c.activo !== false) {
+                        const existing = chairsMap.get(c.id) || {};
+                        chairsMap.set(c.id, {
+                            ...existing,
+                            id: c.id,
+                            nombre: c.nombre || c.name || existing.nombre || "Sillón",
+                            ubicacion: c.ubicacion || c.descripcion || existing.ubicacion || "",
+                            sucursalId: c.sucursal_id || c.sucursalId || existing.sucursalId || "",
+                            activo: true
+                        });
+                    }
+                });
+                setChairs(Array.from(chairsMap.values()));
 
                 // Specialties — from website_config or defaults
-                const rawCfgSpecs = cfgRes.data?.config?.especialidades || [];
+                const rawCfgSpecs = cfgConfig?.especialidades || [];
                 const cfgSpecs = rawCfgSpecs
                     .map(e => typeof e === 'string' ? { id: e, nombre: e } : { id: e.id || e.nombre, nombre: e.nombre || e.id })
                     .filter(e => e.id && e.nombre);
@@ -194,11 +330,11 @@ export function useAgenda() {
                 else setSpecialties(DEFAULT_SPECIALTIES);
 
                 // Entities
-                setEntities(entRes.data || []);
+                setEntities(entData || []);
 
                 // Patients map
                 const map = {};
-                (pacRes.data || []).forEach(p => {
+                (pacData || []).forEach(p => {
                     map[p.id] = p;
                     if (p.documento) map[String(p.documento).trim()] = p;
                     const nameKey = `${p.nombres || ''} ${p.apellidos || ''}`.trim().toLowerCase();
@@ -253,7 +389,8 @@ export function useAgenda() {
                 const activeDocFilter = isDoctorOnly ? loggedInDoctorId : filterDocId;
                 const matchDoc = !activeDocFilter || ev.doctorId === activeDocFilter || ev.resourceId === activeDocFilter || ev.profesional_id === activeDocFilter;
                 const matchBranch = !filterBranchId || ev.sucursalId === filterBranchId || ev.sucursal_id === filterBranchId;
-                return inRange && matchDoc && matchBranch;
+                const matchChair = !filterChairId || ev.consultorioId === filterChairId || ev.consultorio_id === filterChairId || ev.sillonId === filterChairId || ev.recursoId === filterChairId;
+                return inRange && matchDoc && matchBranch && matchChair;
             }).sort((a, b) => (a.start || 0) - (b.start || 0));
 
             console.log("useAgenda - Combined visible appointments:", visible.length);
@@ -612,6 +749,6 @@ export function useAgenda() {
         specialties, entities, priceList, patientsMap,
         isDoctorOnly, loggedInDoctorId,
         createAppointment, updateAppointment, deleteAppointment,
-        filters: { filterDocId: isDoctorOnly ? loggedInDoctorId : filterDocId, setFilterDocId, filterBranchId, setFilterBranchId }
+        filters: { filterDocId: isDoctorOnly ? loggedInDoctorId : filterDocId, setFilterDocId, filterBranchId, setFilterBranchId, filterChairId, setFilterChairId }
     };
 }

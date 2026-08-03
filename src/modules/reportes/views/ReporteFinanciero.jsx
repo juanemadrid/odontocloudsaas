@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
-import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { FiDollarSign, FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
@@ -80,15 +81,24 @@ export default function ReporteFinanciero() {
       setLoading(true);
       try {
         // Cargar Facturas / Transacciones
-        const { data: snapFacturas } = await supabase.from("facturas").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapFacturas = [];
+        try {
+          const { data } = await supabase.from("facturas").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapFacturas = data;
+        } catch (e) {}
         const listFacturas = (snapFacturas || []).map(d => ({ ...d }));
 
         // Cargar Pagos / Recibos de caja adicionales si existen
-        const { data: snapPagos } = await supabase.from("pagos").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapPagos = [];
+        try {
+          const { data } = await supabase.from("pagos").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapPagos = data;
+        } catch (e) {}
+
         (snapPagos || []).forEach(p => {
           listFacturas.push({
             id: p.id,
-            idFactura: p.nroRecibo || `REC-${p.id.slice(0, 6)}`,
+            idFactura: p.nroRecibo || `REC-${(p.id || "").slice(0, 6)}`,
             pacienteNombre: p.patientName || p.nombrePaciente || "—",
             descripcion: p.concepto || "Recibo de caja",
             monto: p.monto || p.valor || 0,
@@ -103,12 +113,16 @@ export default function ReporteFinanciero() {
         setAllFacturas(listFacturas);
 
         // Cargar Profesionales / Doctores
-        const { data: snapUsuarios } = await supabase.from("usuarios").select("*").or(`tenant_id.eq.${userProfile.inquilino},inquilino.eq.${userProfile.inquilino}`);
+        let snapUsuarios = [];
+        try {
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          if (data) snapUsuarios = data;
+        } catch (e) {}
+
         const listProfs = [];
         (snapUsuarios || []).forEach(u => {
-          const role = (u.rol || u.role || "").toLowerCase();
-          if (role === "odontologo" || role === "doctor" || role === "odontóloga" || role === "doctores" || u.esOdontologo === true) {
-            const primerNombre = u.nombre || u.nombres || u.displayName || "";
+          if (isDoctorUser(u)) {
+            const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
             const primerApellido = u.apellido || u.apellidos || "";
             const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
             listProfs.push({ id: u.id, nombre: nombreCompleto });
@@ -409,51 +423,35 @@ export default function ReporteFinanciero() {
                 <tr>
                   {visibleColumns.fecha && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Fecha</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Fecha</div>                    </th>
                   )}
                   {visibleColumns.documento && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>No. Documento / Factura</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>No. Documento / Factura</div>                    </th>
                   )}
                   {visibleColumns.paciente && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Paciente</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Paciente</div>                    </th>
                   )}
                   {visibleColumns.profesional && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Profesional</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Profesional</div>                    </th>
                   )}
                   {visibleColumns.tipoMovimiento && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Tipo de movimiento</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Tipo de movimiento</div>                    </th>
                   )}
                   {visibleColumns.descripcion && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap">
-                      <div>Descripción</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Descripción</div>                    </th>
                   )}
                   {visibleColumns.monto && (
                     <th className="px-3 py-2 border-r border-slate-200 whitespace-nowrap text-right">
-                      <div>Monto</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Monto</div>                    </th>
                   )}
                   {visibleColumns.estado && (
                     <th className="px-3 py-2 whitespace-nowrap text-center">
-                      <div>Estado</div>
-                      <input type="text" className="mt-1 w-full h-5 px-1 text-[10px] border border-slate-200 rounded font-normal" />
-                    </th>
+                      <div>Estado</div>                    </th>
                   )}
                 </tr>
               </thead>

@@ -8,6 +8,7 @@ import {
     FiMessageSquare, FiCheck, FiLoader, FiBriefcase, FiPlusCircle
 } from 'react-icons/fi';
 import { formatCurrency } from '../../../utils/formatters';
+import { isDoctorUser } from '../../../utils/doctorHelpers';
 
 export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
     const { userProfile } = useAuth();
@@ -66,10 +67,11 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                         .eq("tenant_id", userProfile.inquilino)
                         .eq("activo", true);
                     
-                    setDoctors((docsData || []).map(d => ({
+                    setDoctors((docsData || []).filter(d => isDoctorUser(d)).map(d => ({
                         id: d.id,
-                        nombre: d.full_name || d.nombre || ""
-                    })).filter(d => d.nombre));
+                        nombre: d.full_name || d.nombre || "",
+                        role: d.role
+                    })));
                 } catch (e) {
                     console.warn("No se pudieron cargar profesionales:", e.message);
                 }
