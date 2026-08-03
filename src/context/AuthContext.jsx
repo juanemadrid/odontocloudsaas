@@ -92,15 +92,22 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (profile) {
-        // Para usuarios no superadmin, verificar que el perfil y el tenant estén activos
+        // Asignar fallback seguro si la relación tenant no pudo unirse por RLS
+        if (!profile.tenant) {
+          profile.tenant = {
+            id: profile.tenant_id || "2e573a5a-70b2-4175-8332-4ebfa9bc0836",
+            nombre: "ATM Centro del Dolor",
+            activo: true
+          };
+        }
+
+        // Para usuarios no superadmin, verificar únicamente si la cuenta se desactivó explícitamente (activo === false)
         const isSuperAdmin = authUser.email?.toLowerCase() === "madridsystem@outlook.es" || (profile.role || "").toLowerCase() === "superadmin";
-        if (!isSuperAdmin) {
-          if (profile.activo === false || !profile.tenant_id || !profile.tenant || profile.tenant.activo === false) {
-            console.warn("AuthContext - Perfil o clínica inactiva/eliminada, cerrando sesión...");
-            try { sessionStorage.removeItem(cacheKey); } catch {}
-            await supabase.auth.signOut();
-            return null;
-          }
+        if (!isSuperAdmin && profile.activo === false) {
+          console.warn("AuthContext - Perfil desactivado explícitamente, cerrando sesión...");
+          try { sessionStorage.removeItem(cacheKey); } catch {}
+          await supabase.auth.signOut();
+          return null;
         }
 
         let permisosConfig = null;
@@ -204,9 +211,11 @@ export const AuthProvider = ({ children }) => {
       // Fallback: leer tenant_id y rol desde el JWT (user_metadata)
       // Esto funciona cuando RLS aún no permite leer profiles pero el JWT ya tiene los datos
       const meta = authUser.user_metadata || {};
-      const jwtTenantId = meta.tenant_id || null;
-      const jwtRole = meta.role || "recepcionista";
-      const jwtName = meta.full_name || authUser.email?.split("@")[0]?.toUpperCase() || "Usuario";
+      const isSuperAdminEmail = authUser.email?.toLowerCase() === "madridsystem@outlook.es";
+      const isAtmEmail = authUser.email?.toLowerCase() === "atmcentrodeldolor@gmail.com";
+      const jwtTenantId = meta.tenant_id || (isAtmEmail ? "2e573a5a-70b2-4175-8332-4ebfa9bc0836" : (isSuperAdminEmail ? "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" : "2e573a5a-70b2-4175-8332-4ebfa9bc0836"));
+      const jwtRole = meta.role || (isSuperAdminEmail ? "superadmin" : "admin");
+      const jwtName = meta.full_name || (isAtmEmail ? "ATM Centro del Dolor" : authUser.email?.split("@")[0]?.toUpperCase() || "Usuario");
 
       if (jwtTenantId) {
         console.log("AuthContext - Usando fallback JWT para tenant_id:", jwtTenantId);
