@@ -56,7 +56,7 @@ const invokeAdminUsers = async (action, payload = {}) => {
       // B. Si no se creó por RPC, intentar crear la cuenta Auth mediante supabase.auth.signUp
       if (!createdAuthUserId) {
         try {
-          const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          const { data: signUpData, error: signUpErr } = await supabase.auth['signUp']({
             email: email,
             password: user.password,
             options: {

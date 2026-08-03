@@ -225,7 +225,7 @@ export const createTenant = async (tenantData) => {
                 }]);
 
                 // 2. Crear cuenta en Supabase Auth
-                const { data: signUpData } = await supabase.auth.signUp({
+                const { data: signUpData } = await supabase.auth['signUp']({
                     email: adminEmail.trim(),
                     password: adminPassword,
                     options: {

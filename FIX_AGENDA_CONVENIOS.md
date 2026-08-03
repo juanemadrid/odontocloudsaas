@@ -1,28 +1,78 @@
 # Fix: Errores en Gestión de Agenda
 
 **Fecha**: 3 de Agosto de 2026  
-**Estado**: ✅ SOLUCIONADO
+**Estado**: ⚠️ EN PROGRESO - Último paso pendiente
 
 ---
 
-## Problemas Identificados
+## RESUMEN EJECUTIVO
 
-### ❌ Error 1: Tabla `convenios` no existe (404 Not Found)
+### ✅ COMPLETADO:
+1. ✅ Tabla `convenios` creada
+2. ✅ Tabla `convenios_descuentos` creada
+3. ✅ Tabla `audit_logs` creada
+4. ✅ Tabla `agenda_abierta` creada
+5. ✅ Función `assertAppointmentAvailability` implementada
+6. ✅ Función SQL `check_appointment_availability` creada
+7. ✅ Trigger problemático `citas_enforce_availability` eliminado
+8. ✅ **Las citas se están creando correctamente**
+
+### ⚠️ PENDIENTE:
+- 🔴 **Política RLS de `audit_logs` bloqueando INSERT (Error 400)**
+
+---
+
+## Problemas Identificados y Resueltos
+
+### ✅ Error 1: Tabla `convenios` no existe (404 Not Found)
+**SOLUCIONADO** - Tabla creada con migración `20250803_create_missing_tables.sql`
+
+### ✅ Error 2: Tabla `audit_logs` no existe (404 Not Found)
+**SOLUCIONADO** - Tabla creada con estructura completa
+
+### ✅ Error 3: Tabla `agenda_abierta` no existe o estructura incorrecta
+**SOLUCIONADO** - Tabla creada con columna `usuario_id` requerida
+
+### ✅ Error 4: Función `assertAppointmentAvailability` no definida
+**SOLUCIONADO** - Función implementada en `src/modules/agenda/hooks/useAgenda.js`
+
+### ✅ Error 5: Función SQL `check_appointment_availability` no existe
+**SOLUCIONADO** - Función PostgreSQL creada en Supabase
+
+### ✅ Error 6: Trigger `citas_enforce_availability` - "column a.activo does not exist"
+**SOLUCIONADO** - Trigger eliminado, validación movida al frontend
+
+### ✅ Error 7: Citas no se podían crear (Error 400)
+**SOLUCIONADO** - Todos los errores anteriores corregidos, citas creándose exitosamente
+
+### 🔴 Error 8: Log de auditoría falla después de crear cita (Error 400)
+
+**Síntoma actual**:
 ```
-GET https://jhdflchyhkwpedtbkusp.supabase.co/rest/v1/convenios?select=*&tenant_id=eq.xxx 404 (Not Found)
+POST https://jhdflchyhkwpedtbkusp.supabase.co/rest/v1/audit_logs?columns=... 400 (Bad Request)
 ```
 
-**Causa**: La tabla `convenios` no estaba creada en la base de datos.
+**Comportamiento**:
+- ✅ La cita SE CREA correctamente en la base de datos
+- ❌ Después de crear la cita, falla el registro de auditoría
+- ⚠️ Error aparece en la consola pero no afecta la funcionalidad principal
 
-### ❌ Error 2: Función `assertAppointmentAvailability` no definida
-```
-ReferenceError: assertAppointmentAvailability is not defined
-    at createAppointment (useAgenda.js:417:9)
-    at handleSave (Agenda.jsx:146:19)
-    at onValidSubmit (AppointmentModal.jsx:335:19)
+**Causa**:
+La política RLS de `audit_logs` está bloqueando INSERT:
+```sql
+CREATE POLICY "Users can insert audit logs for their tenant" ON public.audit_logs
+  FOR INSERT WITH CHECK (
+    tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid())
+  );
 ```
 
-**Causa**: Falta la función que valida la disponibilidad de horarios antes de crear/actualizar citas.
+Problema: Esta validación falla en runtime porque:
+1. Al momento del INSERT, Supabase valida el tenant_id
+2. La subconsulta a `profiles` puede fallar por timing/permisos
+3. Resultado: Error 400 Bad Request
+
+**Solución**:
+Ver archivo **FIX_AUDIT_LOGS_400.md** para instrucciones detalladas de fix.
 
 ---
 
@@ -223,12 +273,71 @@ const { data, error } = await supabase
 
 | Componente | Estado | Descripción |
 |------------|--------|-------------|
-| Tabla `convenios` | ⏳ PENDIENTE | Necesita ejecutar migración SQL |
-| Tabla `convenios_descuentos` | ⏳ PENDIENTE | Necesita ejecutar migración SQL |
+| Tabla `convenios` | ✅ CREADA | Migración ejecutada |
+| Tabla `convenios_descuentos` | ✅ CREADA | Migración ejecutada |
+| Tabla `audit_logs` | ✅ CREADA | Migración ejecutada |
+| Tabla `agenda_abierta` | ✅ CREADA | Migración ejecutada |
 | Función `assertAppointmentAvailability` | ✅ IMPLEMENTADA | Código actualizado |
+| Función SQL `check_appointment_availability` | ✅ CREADA | PostgreSQL function |
 | Validación de horarios | ✅ FUNCIONANDO | Se valida al crear/actualizar citas |
-| RLS Policies | ⏳ PENDIENTE | Se crean con la migración |
+| Creación de citas | ✅ FUNCIONANDO | Citas se crean exitosamente |
+| RLS Policies (general) | ✅ CONFIGURADAS | Funcionando correctamente |
+| **RLS Policy audit_logs INSERT** | 🔴 PENDIENTE FIX | Bloqueando con Error 400 |
 
 ---
 
-**IMPORTANTE**: Después de aplicar la migración SQL, los errores 404 de convenios y el error de `assertAppointmentAvailability` estarán completamente resueltos.
+## 🚨 ACCIÓN REQUERIDA AHORA
+
+Para completar el fix y eliminar el error 400 en audit_logs:
+
+### Opción 1: Ejecutar solo el fix rápido (RECOMENDADO)
+
+1. Abre Supabase SQL Editor
+2. Copia la sección **"FIX RÁPIDO"** del archivo `EJECUTAR_ESTE_SQL.sql`
+3. Ejecuta (Run)
+4. Recarga la aplicación con Ctrl+Shift+R
+5. Prueba crear una cita
+
+### Opción 2: Leer instrucciones detalladas
+
+Abre el archivo **`FIX_AUDIT_LOGS_400.md`** que contiene:
+- Explicación completa del problema
+- Paso a paso con capturas de pantalla sugeridas
+- SQL listo para copiar y pegar
+- Verificación de que el fix funcionó
+
+---
+
+## Cronología de Fixes Aplicados
+
+### Fix 1: Tablas faltantes (COMPLETADO ✅)
+- **Fecha**: 3 ago 2026
+- **Archivo**: `supabase/migrations/20250803_create_missing_tables.sql`
+- **Resultado**: Tablas `convenios`, `convenios_descuentos`, `audit_logs`, `agenda_abierta` creadas
+
+### Fix 2: Función assertAppointmentAvailability (COMPLETADO ✅)
+- **Fecha**: 3 ago 2026
+- **Archivo**: `src/modules/agenda/hooks/useAgenda.js`
+- **Línea**: 62-118
+- **Resultado**: Validación de disponibilidad funcionando
+
+### Fix 3: Función SQL check_appointment_availability (COMPLETADO ✅)
+- **Fecha**: 3 ago 2026
+- **Archivo**: Ejecutado directamente en Supabase
+- **Resultado**: Función PostgreSQL creada
+
+### Fix 4: Trigger problemático eliminado (COMPLETADO ✅)
+- **Fecha**: 3 ago 2026
+- **Trigger**: `citas_enforce_availability` eliminado
+- **Resultado**: Citas se pueden crear sin error de "column a.activo"
+
+### Fix 5: Política RLS audit_logs (PENDIENTE 🔴)
+- **Fecha**: 3 ago 2026 - PREPARADO
+- **Archivo**: `FIX_AUDIT_LOGS_400.md` + `EJECUTAR_ESTE_SQL.sql`
+- **Acción requerida**: Ejecutar SQL en Supabase
+- **Resultado esperado**: Logs de auditoría se guardan sin error 400
+
+---
+
+**ÚLTIMA ACTUALIZACIÓN**: 3 de agosto de 2026 - 15:30  
+**PRÓXIMO PASO**: Ejecutar fix de política RLS para audit_logs
