@@ -1,13 +1,20 @@
 // src/modules/administracion/views/Convenios.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { 
-  FiCheckSquare, FiPlus, FiSearch, FiEdit3, FiTrash2, 
-  FiSave, FiAlertCircle, FiArrowRight, FiArrowLeft, 
-  FiEye, FiEyeOff, FiToggleLeft, FiToggleRight, FiInfo, FiPercent
+  FiSearch, FiPlus, FiEdit3, FiTrash2, 
+  FiEye, FiHome, FiHelpCircle, FiCheck,
+  FiArrowLeft, FiSave, FiAlertCircle, FiMapPin, FiCheckCircle
 } from "react-icons/fi";
+import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
+import { getConfigItems } from "../../../services/configPersistenceService";
+
+const formatCurrency = (num) => {
+  const val = Number(num) || 0;
+  return `$${val.toLocaleString("es-CO")}`;
+};
 
 const formatNumberWithDots = (num) => {
   if (num === undefined || num === null || num === "" || num === 0) return "";
@@ -20,127 +27,42 @@ export default function Convenios() {
   const toast = useToast();
   const inquilino = userProfile?.inquilino || userProfile?.tenantId;
 
-  // Views: 'LIST' | 'FORM'
+  // Navigation / View state: 'LIST' | 'FORM'
   const [viewMode, setViewMode] = useState("LIST");
-  const [step, setStep] = useState(1); // Wizard step: 1 or 2
+  const [step, setStep] = useState(1); // 1: Info & Contacto, 2: Detalle del convenio / Descuentos
+
+  // Data states
   const [convenios, setConvenios] = useState([]);
   const [listasPrecios, setListasPrecios] = useState([]);
   const [sucursales, setSucursales] = useState([]);
   
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editingConvenio, setEditingConvenio] = useState(null);
-  const [selectedConvenio, setSelectedConvenio] = useState(null);
-  const [priceListItems, setPriceListItems] = useState([]);
-  const [loadingItems, setLoadingItems] = useState(false);
-  const [discounts, setDiscounts] = useState({});
-  const [savingDiscounts, setSavingDiscounts] = useState(false);
-  const [detailSearchQuery, setDetailSearchQuery] = useState("");
-  const [detailCategory, setDetailCategory] = useState("TODAS");
-  const [detailCategories, setDetailCategories] = useState(["TODAS"]);
-
-  const loadConvenioDetails = async (convenio) => {
-    if (!convenio?.listaPreciosId) return;
-    setLoadingItems(true);
-    try {
-      const { data: snapItems } = await supabase
-        .from("items_lista_precios")
-        .select("*")
-        .eq("lista_precios_id", convenio.listaPreciosId);
-
-      const items = (snapItems || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-      setPriceListItems(items);
-
-      const cats = items.map(i => i.categoria).filter(c => !!c);
-      setDetailCategories(["TODAS", ...new Set(cats)]);
-
-      const { data: snapDiscounts } = await supabase
-        .from("descuentos_convenio")
-        .select("*")
-        .eq("convenio_id", convenio.id);
-
-      const discMap = {};
-      (snapDiscounts || []).forEach(doc => {
-        discMap[doc.item_id || doc.id] = doc;
-      });
-      setDiscounts(discMap);
-    } catch (e) {
-      console.error("Error loading convenio details:", e);
-      toast?.error("Error al cargar los servicios del convenio");
-    } finally {
-      setLoadingItems(false);
-    }
-  };
-
-  const handleDiscountChange = (itemId, originalPrice, field, value) => {
-    setDiscounts(prev => {
-      const current = prev[itemId] || { desc_porc: 0, descuento: 0 };
-      let newPorc = current.desc_porc;
-      let newVal = current.descuento;
-
-      if (field === "desc_porc") {
-        newPorc = Math.max(0, Math.min(100, Number(value) || 0));
-        newVal = (originalPrice * newPorc) / 100;
-      } else if (field === "descuento") {
-        newVal = Math.max(0, Math.min(originalPrice, Number(value) || 0));
-        newPorc = originalPrice > 0 ? (newVal / originalPrice) * 100 : 0;
-      }
-
-      return {
-        ...prev,
-        [itemId]: {
-          desc_porc: Number(newPorc.toFixed(2)),
-          descuento: Number(newVal.toFixed(2))
-        }
-      };
-    });
-  };
-
-  const handleSaveDiscounts = async () => {
-    if (!selectedConvenio?.id) return;
-    setSavingDiscounts(true);
-    try {
-      const promises = Object.entries(discounts).map(async ([itemId, disc]) => {
-        if (disc.desc_porc > 0 || disc.descuento > 0) {
-          await supabase.from("descuentos_convenio").upsert({
-            id: `${selectedConvenio.id}_${itemId}`,
-            convenio_id: selectedConvenio.id,
-            item_id: itemId,
-            desc_porc: disc.desc_porc,
-            descuento: disc.descuento,
-            updated_at: new Date().toISOString()
-          });
-        } else {
-          await supabase.from("descuentos_convenio").delete().eq("id", `${selectedConvenio.id}_${itemId}`);
-        }
-      });
-      await Promise.all(promises);
-      toast?.success("Descuentos del convenio guardados con éxito");
-      setViewMode("LIST");
-    } catch (e) {
-      console.error("Error saving discounts:", e);
-      toast?.error("Error al guardar los descuentos");
-    } finally {
-      setSavingDiscounts(false);
-    }
-  };
-
-  // Filters
   const [searchQuery, setSearchQuery] = useState("");
-  const [showInactivos, setShowInactivos] = useState(false);
+  const [editingConvenio, setEditingConvenio] = useState(null);
 
-  // Form State
+  // Form State (Step 1)
   const [formData, setFormData] = useState({
     nombre: "",
     nroBeneficiarios: 0,
     listaPreciosId: "",
+    listaPreciosNombre: "",
     nombreContacto: "",
     email: "",
     telefono: "",
     direccion: "",
-    sucursalesIds: [], // Selected branches
+    sucursalesIds: [],
     activo: true
   });
+
+  // Services & Discounts State (Step 2)
+  const [serviceItems, setServiceItems] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [discounts, setDiscounts] = useState({});
+
+  // Sucursales Modal State
+  const [selectedBranchConvenio, setSelectedBranchConvenio] = useState(null);
+  const [showBranchesModal, setShowBranchesModal] = useState(false);
 
   useEffect(() => {
     if (inquilino) {
@@ -149,6 +71,7 @@ export default function Convenios() {
     }
   }, [inquilino]);
 
+  // Load Convenios from Supabase / Fallback
   const loadConvenios = async () => {
     setLoading(true);
     try {
@@ -157,7 +80,8 @@ export default function Convenios() {
         const { data, error } = await supabase
           .from("convenios")
           .select("*")
-          .eq("tenant_id", inquilino);
+          .eq("tenant_id", inquilino)
+          .order("created_at", { ascending: false });
         if (!error && data && data.length > 0) list = data;
       } catch (e) {}
 
@@ -172,82 +96,192 @@ export default function Convenios() {
 
       setConvenios(list);
     } catch (e) {
-      console.error("Error loading convenios:", e);
-      toast?.error("Error al cargar convenios");
+      console.error("Error cargando convenios:", e);
+      toast?.error("Error al cargar los convenios");
     } finally {
       setLoading(false);
     }
   };
 
+  // Load Metadata (Listas de Precios & Sucursales via getConfigItems)
   const loadMetadata = async () => {
     try {
-      const { data: snapL } = await supabase
-        .from("listas_precios")
-        .select("*")
-        .eq("tenant_id", inquilino);
-      setListasPrecios(snapL || []);
+      // 1. Fetch Listas de Precios
+      let lists = await getConfigItems(inquilino, "listas_precios", "listas_precios");
+      if (!lists || lists.length === 0) {
+        const { data: snapL } = await supabase.from("listas_precios").select("*").eq("tenant_id", inquilino);
+        lists = snapL || [];
+      }
+      setListasPrecios(lists || []);
 
-      const { data: snapS } = await supabase
-        .from("sucursales")
-        .select("*")
-        .eq("tenant_id", inquilino);
-      setSucursales(snapS || []);
+      // 2. Fetch Sucursales
+      let sucs = await getConfigItems(inquilino, "sucursales", "sucursales");
+      if (!sucs || sucs.length === 0) {
+        const { data: snapS } = await supabase.from("sucursales").select("*").eq("tenant_id", inquilino);
+        sucs = snapS || [];
+      }
+      setSucursales(sucs || []);
     } catch (e) {
-      console.error("Error loading convenios metadata:", e);
+      console.error("Error cargando metadata:", e);
     }
   };
 
+  // Helper: Get or infer sucursales for a given convenio based on its selected price list
+  const getSucursalesForConvenio = (convenio) => {
+    if (!convenio) return [];
+
+    const plistId = convenio.listaPreciosId || "";
+    const plistName = convenio.listaPreciosNombre || "PRECIOS MONTERIA";
+
+    // A. Match system sucursales linked by listaPrecioId or matching sucursalesIds
+    let matched = sucursales.filter(s => {
+      if (convenio.sucursalesIds && convenio.sucursalesIds.length > 0) {
+        if (convenio.sucursalesIds.includes(s.id) || convenio.sucursalesIds.includes(s.nombre)) return true;
+      }
+      if (plistId && (s.listaPrecioId === plistId || s.lista_precio_id === plistId)) return true;
+      if (s.nombre && plistName.toLowerCase().includes(s.nombre.toLowerCase())) return true;
+      return false;
+    });
+
+    // B. If system has configured sucursales but none explicitly matched, return sucursales that use this price list or active sucursales
+    if (matched.length === 0 && sucursales.length > 0) {
+      matched = sucursales;
+    }
+
+    // C. Fallback: Automatically generate/infer sucursal representation from the price list name
+    if (matched.length === 0) {
+      let sucursalName = plistName.replace(/^precios\s+/i, "Sucursal ");
+      if (!sucursalName.toLowerCase().startsWith("sucursal") && !sucursalName.toLowerCase().startsWith("sede")) {
+        sucursalName = `Sucursal ${sucursalName}`;
+      }
+      matched = [{
+        id: `derived_${convenio.id || 'default'}`,
+        nombre: sucursalName,
+        ciudad: convenio.direccion ? convenio.direccion.split(" ")[0] : "Montería",
+        direccion: convenio.direccion || "Dirección de Sede",
+        isDerived: true
+      }];
+    }
+
+    return matched;
+  };
+
+  // Start creation flow (Step 1)
   const handleNew = () => {
     setEditingConvenio(null);
+    const defaultListObj = listasPrecios[0];
+    const defaultListId = defaultListObj?.id || "";
+    const defaultListName = defaultListObj?.nombre || "PRECIOS MONTERIA";
+
+    const autoSucursales = sucursales.filter(s => 
+      s.listaPrecioId === defaultListId || 
+      (s.nombre && defaultListName.toLowerCase().includes(s.nombre.toLowerCase()))
+    );
+
     setFormData({
       nombre: "",
       nroBeneficiarios: 0,
-      listaPreciosId: listasPrecios[0]?.id || "",
+      listaPreciosId: defaultListId,
+      listaPreciosNombre: defaultListName,
       nombreContacto: "",
       email: "",
       telefono: "",
       direccion: "",
-      sucursalesIds: sucursales.map(s => s.id), // All branches by default
+      sucursalesIds: autoSucursales.map(s => s.id),
       activo: true
     });
+    setDiscounts({});
     setStep(1);
     setViewMode("FORM");
   };
 
+  // Handle changing price list in Step 1 (Auto-loads related sucursal)
+  const handleListaPreciosChange = (listId) => {
+    const selectedListObj = listasPrecios.find(l => l.id === listId);
+    const listName = selectedListObj?.nombre || "Particular / Base";
+
+    const matchingSucs = sucursales.filter(s => 
+      s.listaPrecioId === listId || 
+      s.lista_precio_id === listId || 
+      (s.nombre && listName.toLowerCase().includes(s.nombre.toLowerCase()))
+    );
+
+    const newSucIds = matchingSucs.length > 0 ? matchingSucs.map(s => s.id) : [listId];
+
+    setFormData(prev => ({
+      ...prev,
+      listaPreciosId: listId,
+      listaPreciosNombre: listName,
+      sucursalesIds: newSucIds
+    }));
+  };
+
+  // Edit existing convenio (Step 1)
   const handleEdit = (convenio) => {
     setEditingConvenio(convenio);
     setFormData({
       nombre: convenio.nombre || "",
       nroBeneficiarios: convenio.nroBeneficiarios || 0,
       listaPreciosId: convenio.listaPreciosId || "",
+      listaPreciosNombre: convenio.listaPreciosNombre || "",
       nombreContacto: convenio.nombreContacto || "",
       email: convenio.email || "",
       telefono: convenio.telefono || "",
       direccion: convenio.direccion || "",
       sucursalesIds: convenio.sucursalesIds || [],
+      discounts: convenio.discounts || {},
       activo: convenio.activo !== undefined ? convenio.activo : true
     });
+    loadServicesForConvenio(convenio);
     setStep(1);
     setViewMode("FORM");
   };
 
-  const handleToggleActivo = async (convenio) => {
-    try {
-      const newStatus = !convenio.activo;
-      await supabase.from("convenios").update({ activo: newStatus }).eq("id", convenio.id);
-      toast?.success(`Convenio ${newStatus ? "activado" : "inactivado"} con éxito`);
-      loadConvenios();
-    } catch (e) {
-      console.error(e);
-      toast?.error("Error al actualizar estado");
-    }
+  // Open Step 2 (Detalle del convenio / Descuentos) directly from table
+  const handleOpenDetail = (convenio) => {
+    setEditingConvenio(convenio);
+    setFormData({
+      nombre: convenio.nombre || "",
+      nroBeneficiarios: convenio.nroBeneficiarios || 0,
+      listaPreciosId: convenio.listaPreciosId || "",
+      listaPreciosNombre: convenio.listaPreciosNombre || "",
+      nombreContacto: convenio.nombreContacto || "",
+      email: convenio.email || "",
+      telefono: convenio.telefono || "",
+      direccion: convenio.direccion || "",
+      sucursalesIds: convenio.sucursalesIds || [],
+      discounts: convenio.discounts || {},
+      activo: convenio.activo !== undefined ? convenio.activo : true
+    });
+    loadServicesForConvenio(convenio);
+    setStep(2);
+    setViewMode("FORM");
   };
 
+  // Delete Convenio
   const handleDelete = async (convenio) => {
-    if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente al convenio "${convenio.nombre}"?`)) return;
+    if (!window.confirm(`¿Está seguro de eliminar el convenio "${convenio.nombre}"?`)) return;
     try {
-      await supabase.from("convenios").delete().eq("id", convenio.id);
-      toast?.success("Convenio eliminado con éxito");
+      try {
+        await supabase.from("convenios").delete().eq("id", convenio.id);
+      } catch (e) {}
+
+      // Update config fallback
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", inquilino)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const updatedList = (currentConfig.convenios || []).filter(c => c.id !== convenio.id);
+
+      await supabase.from("website_config").upsert(
+        { tenant_id: inquilino, config: { ...currentConfig, convenios: updatedList } },
+        { onConflict: "tenant_id" }
+      );
+
+      toast?.success("Convenio eliminado correctamente");
       loadConvenios();
     } catch (e) {
       console.error(e);
@@ -255,54 +289,198 @@ export default function Convenios() {
     }
   };
 
-  const handleContinue = (e) => {
-    e.preventDefault();
-    // Validate Step 1
-    if (!formData.nombre.trim()) return toast?.error("El nombre del convenio es requerido");
-    if (formData.nroBeneficiarios < 0) return toast?.error("El número de beneficiarios no puede ser negativo");
-    if (!formData.nombreContacto.trim()) return toast?.error("El nombre del contacto es requerido");
-    if (!formData.email.trim()) return toast?.error("El correo del contacto es requerido");
-    if (!formData.telefono.trim()) return toast?.error("El teléfono es requerido");
-    if (!formData.direccion.trim()) return toast?.error("La dirección es requerida");
+  // Load services for Step 2 and merge stored discounts
+  const loadServicesForConvenio = async (convenioOrFormData) => {
+    const listId = convenioOrFormData.listaPreciosId;
+    const convenioId = convenioOrFormData.id || editingConvenio?.id;
+    setLoadingItems(true);
+    try {
+      let items = [];
+      if (listId) {
+        const { data: snapItems } = await supabase
+          .from("items_lista_precios")
+          .select("*")
+          .eq("lista_precios_id", listId);
+        
+        if (snapItems && snapItems.length > 0) {
+          items = snapItems.map(i => ({
+            id: i.id || i.codigo || i.code,
+            codigo: i.codigo || i.code || "-",
+            nombre: i.nombre || i.name || "Servicio sin nombre",
+            precio: Number(i.precio) || 0,
+            categoria: i.categoria || i.category || "General"
+          }));
+        } else {
+          // Check description field in listas_precios if stored as JSON
+          const { data: listRow } = await supabase
+            .from("listas_precios")
+            .select("descripcion")
+            .eq("id", listId)
+            .maybeSingle();
+          
+          try {
+            const parsed = typeof listRow?.descripcion === "string" ? JSON.parse(listRow.descripcion) : listRow?.descripcion;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              items = parsed.map((i, idx) => ({
+                id: i.id || i.codigo || i.code || `item_${idx}`,
+                codigo: i.codigo || i.code || `PROD-${idx + 1}`,
+                nombre: i.nombre || i.name || "Servicio",
+                precio: Number(i.precio) || 0,
+                categoria: i.categoria || i.category || "General"
+              }));
+            }
+          } catch (err) {}
+        }
+      }
 
+      // Fallback if no items found in custom price list: use CUPS dental catalog
+      if (items.length === 0) {
+        items = CUPS_DENTAL_CODES.map((cups) => ({
+          id: cups.code,
+          codigo: cups.code,
+          nombre: cups.name,
+          precio: cups.precio,
+          categoria: cups.category || "General"
+        }));
+      }
+
+      setServiceItems(items);
+
+      // Start discMap with discounts stored directly on the convenio record
+      let discMap = { ...(convenioOrFormData?.discounts || editingConvenio?.discounts || discounts || {}) };
+
+      // Fetch saved discounts from Supabase table if available
+      if (convenioId) {
+        try {
+          const { data: snapDiscounts } = await supabase
+            .from("descuentos_convenio")
+            .select("*")
+            .eq("convenio_id", convenioId);
+
+          if (snapDiscounts && snapDiscounts.length > 0) {
+            snapDiscounts.forEach(doc => {
+              discMap[doc.item_id] = {
+                desc_porc: Number(doc.desc_porc) || 0,
+                descuento: Number(doc.descuento) || 0,
+                mode: doc.desc_porc > 0 ? "porc" : "valor"
+              };
+            });
+          }
+        } catch (e) {}
+      }
+
+      setDiscounts(discMap);
+    } catch (e) {
+      console.error("Error al cargar servicios del convenio:", e);
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
+  // Continue button (Step 1 -> Step 2)
+  const handleContinue = (e) => {
+    if (e) e.preventDefault();
+    if (!formData.nombre.trim()) return toast?.error("El nombre del convenio es obligatorio");
+    if (formData.nroBeneficiarios < 0) return toast?.error("El número de beneficiarios no puede ser negativo");
+    if (!formData.nombreContacto.trim()) return toast?.error("El nombre del contacto es obligatorio");
+    if (!formData.email.trim()) return toast?.error("El e-mail del contacto es obligatorio");
+    if (!formData.telefono.trim()) return toast?.error("El teléfono es obligatorio");
+    if (!formData.direccion.trim()) return toast?.error("La dirección es obligatoria");
+
+    loadServicesForConvenio(formData);
     setStep(2);
   };
 
-  const handleViewDetails = (convenio) => {
-    setSelectedConvenio(convenio);
-    setViewMode("DETAIL");
-    loadConvenioDetails(convenio);
+  // Handle discount change for percentage / fixed value
+  const handleDiscountChange = (itemKey, originalPrice, field, value) => {
+    setDiscounts(prev => {
+      const current = prev[itemKey] || { desc_porc: 0, descuento: 0, mode: field === "desc_porc" ? "porc" : "valor" };
+      let newPorc = current.desc_porc;
+      let newVal = current.descuento;
+      let mode = current.mode;
+
+      if (field === "desc_porc") {
+        mode = "porc";
+        newPorc = Math.max(0, Math.min(100, Number(value) || 0));
+        newVal = Math.round((originalPrice * newPorc) / 100);
+      } else if (field === "descuento") {
+        mode = "valor";
+        newVal = Math.max(0, Math.min(originalPrice, Number(value) || 0));
+        newPorc = originalPrice > 0 ? Number(((newVal / originalPrice) * 100).toFixed(2)) : 0;
+      } else if (field === "mode") {
+        mode = value;
+      }
+
+      return {
+        ...prev,
+        [itemKey]: {
+          desc_porc: newPorc,
+          descuento: newVal,
+          mode
+        }
+      };
+    });
   };
 
+  // Save Convenio & Discounts (Step 1 or Step 2)
   const handleSave = async () => {
+    if (!formData.nombre.trim()) return toast?.error("El nombre del convenio es obligatorio");
     setSaving(true);
     try {
-      const priceListName = listasPrecios.find(l => l.id === formData.listaPreciosId)?.nombre || "Particular / Base";
-      const { inquilino: _, ...cleanFormData } = formData;
+      const selectedListObj = listasPrecios.find(l => l.id === formData.listaPreciosId);
+      const priceListName = selectedListObj?.nombre || formData.listaPreciosNombre || "PRECIOS MONTERIA";
+      
       const convenioId = editingConvenio?.id || (crypto.randomUUID ? crypto.randomUUID() : `conv_${Date.now()}`);
-      const dataToSave = {
-        ...cleanFormData,
+      
+      const record = {
         id: convenioId,
         nombre: formData.nombre.trim(),
+        nroBeneficiarios: Number(formData.nroBeneficiarios) || 0,
+        listaPreciosId: formData.listaPreciosId || "",
+        listaPreciosNombre: priceListName,
         nombreContacto: formData.nombreContacto.trim(),
         email: formData.email.trim(),
         telefono: formData.telefono.trim(),
         direccion: formData.direccion.trim(),
-        listaPreciosNombre: priceListName,
+        sucursalesIds: formData.sucursalesIds || [],
+        discounts: discounts, // Store discounts directly inside the convenio record
+        activo: formData.activo !== undefined ? formData.activo : true,
         tenant_id: inquilino,
         updated_at: new Date().toISOString()
       };
 
+      // 1. Save Convenio in Supabase
       try {
         if (editingConvenio?.id) {
-          await supabase.from("convenios").update(dataToSave).eq("id", editingConvenio.id);
+          await supabase.from("convenios").update(record).eq("id", editingConvenio.id);
         } else {
-          dataToSave.created_at = new Date().toISOString();
-          await supabase.from("convenios").insert([dataToSave]);
+          record.created_at = new Date().toISOString();
+          await supabase.from("convenios").insert([record]);
         }
       } catch (e) {}
 
-      // Sincronizar en website_config JSON
+      // 2. Save Discounts in Supabase table
+      if (Object.keys(discounts).length > 0) {
+        try {
+          const discountPromises = Object.entries(discounts).map(async ([itemId, disc]) => {
+            if (disc.desc_porc > 0 || disc.descuento > 0) {
+              await supabase.from("descuentos_convenio").upsert({
+                id: `${convenioId}_${itemId}`,
+                convenio_id: convenioId,
+                item_id: itemId,
+                desc_porc: disc.desc_porc,
+                descuento: disc.descuento,
+                updated_at: new Date().toISOString()
+              });
+            } else {
+              await supabase.from("descuentos_convenio").delete().eq("id", `${convenioId}_${itemId}`);
+            }
+          });
+          await Promise.all(discountPromises);
+        } catch (e) {}
+      }
+
+      // 3. Fallback sync to website_config JSON (saves entire convenio + discounts object)
       const { data: cfgRow } = await supabase
         .from("website_config")
         .select("config")
@@ -313,622 +491,668 @@ export default function Convenios() {
       const currentList = Array.isArray(currentConfig.convenios) ? currentConfig.convenios : [];
       let updatedList;
       if (editingConvenio?.id) {
-        updatedList = currentList.map(item => item.id === editingConvenio.id ? { ...item, ...dataToSave } : item);
+        updatedList = currentList.map(item => item.id === editingConvenio.id ? { ...item, ...record } : item);
       } else {
-        updatedList = [dataToSave, ...currentList];
+        const existingIdx = currentList.findIndex(c => c.id === convenioId);
+        if (existingIdx >= 0) {
+          currentList[existingIdx] = { ...currentList[existingIdx], ...record };
+          updatedList = currentList;
+        } else {
+          updatedList = [record, ...currentList];
+        }
       }
 
-      const newConfig = {
-        ...currentConfig,
-        convenios: updatedList,
-        updatedAt: new Date().toISOString()
-      };
-
       await supabase.from("website_config").upsert(
-        { tenant_id: inquilino, config: newConfig },
+        { tenant_id: inquilino, config: { ...currentConfig, convenios: updatedList } },
         { onConflict: "tenant_id" }
       );
 
       toast?.success(editingConvenio ? "Convenio actualizado correctamente" : "Convenio creado con éxito");
-      
-      const savedConvenio = { id: convenioId, ...dataToSave };
-      handleViewDetails(savedConvenio);
+      setViewMode("LIST");
       loadConvenios();
     } catch (e) {
-      console.error(e);
+      console.error("Error al guardar el convenio:", e);
       toast?.error("Error al guardar el convenio");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleBranchToggle = (branchId) => {
-    setFormData(prev => {
-      const ids = prev.sucursalesIds.includes(branchId)
-        ? prev.sucursalesIds.filter(id => id !== branchId)
-        : [...prev.sucursalesIds, branchId];
-      return { ...prev, sucursalesIds: ids };
+  // Group service items by category for Step 2
+  const groupedServiceItems = useMemo(() => {
+    const groups = {};
+    serviceItems.forEach(item => {
+      const cat = item.categoria || "General";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
     });
-  };
+    return groups;
+  }, [serviceItems]);
 
-  // Filtered List
+  // Filtered convenios for main list
   const filteredConvenios = convenios.filter(c => {
-    const isStatusMatch = showInactivos ? !c.activo : c.activo;
-    if (!isStatusMatch) return false;
-
-    const term = searchQuery.toLowerCase();
-    const cName = (c.nombre || "").toLowerCase();
-    const cPriceList = (c.listaPreciosNombre || "").toLowerCase();
-    const cContact = (c.nombreContacto || "").toLowerCase();
-
-    return cName.includes(term) || cPriceList.includes(term) || cContact.includes(term);
+    const term = searchQuery.toLowerCase().trim();
+    if (!term) return true;
+    const name = (c.nombre || "").toLowerCase();
+    const plist = (c.listaPreciosNombre || "").toLowerCase();
+    const contact = (c.nombreContacto || "").toLowerCase();
+    const dir = (c.direccion || "").toLowerCase();
+    return name.includes(term) || plist.includes(term) || contact.includes(term) || dir.includes(term);
   });
 
   return (
-    <div className="bg-white rounded-[28px] border border-slate-200/60 shadow-md p-6 h-full flex flex-col overflow-hidden animate-fadeIn">
-      {viewMode === "LIST" ? (
-        <>
-          {/* Header Controls */}
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-            <div className="relative w-full sm:max-w-md">
-              <FiSearch size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar convenio..."
-                className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-slate-200 text-[12px] font-bold text-slate-700 bg-slate-50/50 outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300"
-              />
+    <div className="bg-slate-50/50 min-h-full flex flex-col font-sans text-slate-700 animate-fadeIn">
+      
+      {/* ─── CASE 1: MAIN CONVENIOS LIST VIEW ─── */}
+      {viewMode === "LIST" && (
+        <div className="flex-1 flex flex-col gap-5">
+          {/* Top Card */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col gap-6">
+            
+            {/* Breadcrumb & Title */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
+                <FiHome size={13} className="text-slate-400" />
+                <span>-</span>
+                <span>Administración - Convenios</span>
+              </div>
+              <h2 className="text-xl font-bold text-slate-800 tracking-tight">
+                Convenios
+              </h2>
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-              <button
-                onClick={() => setShowInactivos(!showInactivos)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                  showInactivos 
-                    ? "bg-blue-50 text-blue-600 border border-blue-200"
-                    : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {showInactivos ? <FiEyeOff size={14} /> : <FiEye size={14} />}
-                <span>{showInactivos ? "Ver Activos" : "Ver Inactivos"}</span>
-              </button>
+            {/* Header Toolbar: Search & New Convenio Button */}
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="relative w-full sm:w-80">
+                <FiSearch size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar..."
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 placeholder:text-slate-400 outline-none focus:border-cyan-500 focus:bg-white transition-all"
+                />
+              </div>
 
               <button
+                type="button"
                 onClick={handleNew}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100 hover:-translate-y-0.5 active:scale-95"
+                className="w-full sm:w-auto px-5 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer border-0"
               >
-                <FiPlus size={15} strokeWidth={3} />
+                <FiPlus size={16} strokeWidth={2.5} />
                 <span>Nuevo convenio</span>
               </button>
             </div>
-          </div>
 
-          {/* Table Container */}
-          <div className="flex-1 overflow-auto custom-scrollbar border border-slate-100 rounded-2xl">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <th className="px-6 py-4">Nombre convenio</th>
-                  <th className="px-6 py-4">Lista de precios</th>
-                  <th className="px-6 py-4">Dirección</th>
-                  <th className="px-6 py-4">Nombre contacto</th>
-                  <th className="px-6 py-4 text-center">Sucursales</th>
-                  <th className="px-6 py-4 text-center">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/60 text-slate-700">
-                {loading ? (
-                  <tr>
-                    <td colSpan="6" className="px-6 py-20 text-center">
-                      <div className="w-8 h-8 border-3 border-slate-100 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" style={{ border: "3px solid #f1f5f9", borderTopColor: "#3b82f6" }} />
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargando convenios...</span>
-                    </td>
+            {/* Convenios Table */}
+            <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
+              <table className="w-full text-left border-collapse min-w-[750px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200/80 text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                    <th className="py-3 px-4">
+                      <div className="flex items-center gap-1">
+                        <span>Nombre convenio</span>
+                        <span className="text-[10px] text-slate-400">▲▼</span>
+                      </div>
+                    </th>
+                    <th className="py-3 px-4">Lista de precios</th>
+                    <th className="py-3 px-4">Dirección</th>
+                    <th className="py-3 px-4">Nombre contacto</th>
+                    <th className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Sucursales</span>
+                        <FiHelpCircle size={13} className="text-slate-400" title="Sucursales asignadas por la lista de precios" />
+                      </div>
+                    </th>
+                    <th className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Opciones</span>
+                        <span className="text-[10px] text-slate-400">▲▼</span>
+                      </div>
+                    </th>
                   </tr>
-                ) : filteredConvenios.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="px-6 py-20 text-center">
-                      <div className="text-3xl mb-3">🤝</div>
-                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No se encontraron convenios registrados</p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredConvenios.map((convenio) => {
-                    const mappedBranches = sucursales
-                      .filter(s => convenio.sucursalesIds?.includes(s.id))
-                      .map(s => s.nombre);
-                    return (
-                      <tr key={convenio.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4 font-bold text-slate-800 text-[13px]">
-                          {convenio.nombre}
-                          <div className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Beneficiarios: {convenio.nroBeneficiarios || 0}</div>
-                        </td>
-                        <td className="px-6 py-4 text-[12px] font-bold text-slate-600">
-                          {convenio.listaPreciosNombre || "Particular / Base"}
-                        </td>
-                        <td className="px-6 py-4 text-[12px] font-semibold text-slate-500">
-                          {convenio.direccion}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-[12px] font-bold text-slate-700">{convenio.nombreContacto}</div>
-                          <div className="text-[10px] text-slate-400 lowercase">{convenio.email} | {convenio.telefono}</div>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span 
-                            className="bg-indigo-50 border border-indigo-100 text-indigo-700 font-black px-2.5 py-1 rounded-full text-[10px]"
-                            title={mappedBranches.length > 0 ? mappedBranches.join(", ") : "Ninguna"}
-                          >
-                            {mappedBranches.length} {mappedBranches.length === 1 ? "sucursal" : "sucursales"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => handleViewDetails(convenio)}
-                              className="w-7 h-7 rounded-lg bg-purple-500 hover:bg-purple-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                              title="Gestionar Descuentos"
-                            >
-                              <FiPercent size={13} />
-                            </button>
-                            <button
-                              onClick={() => handleEdit(convenio)}
-                              className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                              title="Editar Convenio"
-                            >
-                              <FiEdit3 size={13} />
-                            </button>
-                            <button
-                              onClick={() => handleToggleActivo(convenio)}
-                              className={`w-7 h-7 rounded-lg text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0 ${
-                                convenio.activo ? "bg-emerald-500 hover:bg-emerald-600" : "bg-amber-500 hover:bg-amber-600"
-                              }`}
-                              title={convenio.activo ? "Inactivar Convenio" : "Activar Convenio"}
-                            >
-                              {convenio.activo ? <FiToggleRight size={13} /> : <FiToggleLeft size={13} />}
-                            </button>
-                            <button
-                              onClick={() => handleDelete(convenio)}
-                              className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                              title="Eliminar Convenio"
-                            >
-                              <FiTrash2 size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : viewMode === "FORM" ? (
-        /* CREATE / EDIT FORM VIEW */
-        <div className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
-          {/* Header */}
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6 shrink-0">
-            <div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                Convenios / {editingConvenio ? "Editar" : "Nuevo Convenio"} / Paso {step} de 2
-              </span>
-              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">
-                {step === 1 ? "Información convenio & contacto" : "Sucursales del convenio"}
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
-              {step === 1 ? (
-                <button
-                  type="button"
-                  onClick={handleContinue}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100"
-                >
-                  <span>Continuar</span>
-                  <FiArrowRight size={14} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100 disabled:opacity-50"
-                >
-                  <FiSave size={14} />
-                  <span>{saving ? "Guardando..." : "Guardar"}</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-6">
-            {step === 1 ? (
-              <div className="space-y-6">
-                
-                {/* Sec 1: Información convenio */}
-                <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                    Información convenio
-                  </h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                        Nombre del convenio *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.nombre}
-                        onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                        placeholder="Nombre del convenio"
-                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all caret-slate-950"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                        Nro de beneficiarios *
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        required
-                        value={formData.nroBeneficiarios}
-                        onChange={(e) => setFormData({ ...formData, nroBeneficiarios: parseInt(e.target.value) || 0 })}
-                        placeholder="0"
-                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                        Lista de precios
-                      </label>
-                      <select
-                        value={formData.listaPreciosId}
-                        onChange={(e) => setFormData({ ...formData, listaPreciosId: e.target.value })}
-                        className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                      >
-                        <option value="">Seleccione...</option>
-                        {listasPrecios.map(list => (
-                          <option key={list.id} value={list.id}>{list.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Sec 2: Información de contacto */}
-                <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                    Información de contacto
-                  </h4>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                        Nombre del contacto *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.nombreContacto}
-                        onChange={(e) => setFormData({ ...formData, nombreContacto: e.target.value })}
-                        placeholder="Nombre del contacto"
-                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all caret-slate-950"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                        E-mail *
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        placeholder="Ingrese e-mail"
-                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all caret-slate-950"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                        Teléfono *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.telefono}
-                        onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-                        placeholder="Celular o fijo"
-                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all caret-slate-950"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                        Dirección *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.direccion}
-                        onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-                        placeholder="Ingrese la dirección"
-                        className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all caret-slate-950"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            ) : (
-              /* STEP 2: Branches checklist */
-              <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-4">
-                <div>
-                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-1 flex items-center gap-2">
-                    <FiCheckSquare className="text-blue-600" />
-                    Sucursales habilitadas
-                  </h4>
-                  <p className="text-[11px] font-medium text-slate-400">
-                    Selecciona en cuáles sucursales de tu clínica estará disponible y habilitado este convenio comercial.
-                  </p>
-                </div>
-
-                {sucursales.length === 0 ? (
-                  <div className="p-8 text-center bg-white border border-slate-200/50 rounded-xl">
-                    <FiInfo size={24} className="mx-auto text-slate-300 mb-2" />
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">No hay sucursales creadas en la clínica.</span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
-                    {sucursales.map(suc => {
-                      const isChecked = formData.sucursalesIds.includes(suc.id);
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {loading ? (
+                    <tr>
+                      <td colSpan="6" className="py-16 text-center">
+                        <div className="w-7 h-7 border-2 border-slate-200 border-t-cyan-500 rounded-full animate-spin mx-auto mb-2" />
+                        <span className="text-xs font-semibold text-slate-400">Cargando convenios...</span>
+                      </td>
+                    </tr>
+                  ) : filteredConvenios.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="py-16 text-center">
+                        <p className="text-xs font-bold text-slate-400">No hay convenios registrados</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredConvenios.map((convenio) => {
                       return (
-                        <label 
-                          key={suc.id} 
-                          className={`flex items-center gap-3 p-4 rounded-xl border transition-all cursor-pointer select-none ${
-                            isChecked 
-                              ? "bg-blue-50/40 border-blue-200 text-blue-800" 
-                              : "bg-white border-slate-200 hover:bg-slate-50 text-slate-700"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleBranchToggle(suc.id)}
-                            className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
-                          />
-                          <span className="text-xs font-bold uppercase tracking-wide">{suc.nombre}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Footer controls */}
-          <div className="flex justify-between items-center pt-4 border-t border-slate-100 shrink-0">
-            {step === 2 ? (
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100 text-[11px] font-black text-slate-600 uppercase tracking-widest border border-slate-200/60 transition-all"
-              >
-                <FiArrowLeft size={14} />
-                <span>Atrás</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setViewMode("LIST")}
-                className="px-6 py-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100 text-[11px] font-black text-slate-600 uppercase tracking-widest border border-slate-200/60 transition-all"
-              >
-                Cancelar
-              </button>
-            )}
-
-            {step === 1 ? (
-              <button
-                type="button"
-                onClick={handleContinue}
-                className="flex items-center gap-2 px-8 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-blue-100"
-              >
-                <span>Continuar</span>
-                <FiArrowRight size={14} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-2 px-8 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-blue-100 disabled:opacity-50"
-              >
-                <FiSave size={14} />
-                <span>{saving ? "Guardando..." : "Guardar"}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* DETAIL VIEW */
-        <div className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
-          {/* Header */}
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-6 shrink-0">
-            <div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                Convenios / {selectedConvenio?.nombre} / Gestión de Descuentos
-              </span>
-              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">
-                Servicios del tarifario: {selectedConvenio?.listaPreciosNombre}
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setViewMode("LIST")}
-                className="px-6 py-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100 text-[11px] font-black text-slate-600 uppercase tracking-widest border border-slate-200/60 transition-all"
-              >
-                Volver
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveDiscounts}
-                disabled={savingDiscounts}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-[#8dc63f]/25 disabled:opacity-50"
-              >
-                <FiSave size={14} />
-                <span>{savingDiscounts ? "Guardando..." : "Guardar Descuentos"}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Convenio Summary Info */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 border border-slate-100 rounded-2xl mb-6 shrink-0 text-slate-700">
-            <div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Contacto</span>
-              <span className="text-xs font-bold text-slate-800">{selectedConvenio?.nombreContacto}</span>
-            </div>
-            <div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">E-mail / Teléfono</span>
-              <span className="text-xs font-semibold text-slate-600">{selectedConvenio?.email} | {selectedConvenio?.telefono}</span>
-            </div>
-            <div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Tarifario Base</span>
-              <span className="text-xs font-bold text-indigo-600">{selectedConvenio?.listaPreciosNombre}</span>
-            </div>
-            <div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Dirección</span>
-              <span className="text-xs font-semibold text-slate-600">{selectedConvenio?.direccion}</span>
-            </div>
-          </div>
-
-          {/* Controls: Search & Category */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-4 shrink-0">
-            <div className="relative flex-1">
-              <FiSearch size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={detailSearchQuery}
-                onChange={(e) => setDetailSearchQuery(e.target.value)}
-                placeholder="Buscar servicio por nombre o código..."
-                className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-slate-200 text-[12px] font-bold text-slate-700 bg-slate-50/50 outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300"
-              />
-            </div>
-            <div className="w-full sm:w-64">
-              <select
-                value={detailCategory}
-                onChange={(e) => setDetailCategory(e.target.value)}
-                className="w-full bg-slate-50/50 border border-slate-200 rounded-2xl px-4 py-2.5 text-[12px] font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-400 transition-all"
-              >
-                {detailCategories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Services Table */}
-          <div className="flex-1 overflow-auto custom-scrollbar border border-slate-100 rounded-2xl">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest sticky top-0 z-10">
-                  <th className="px-6 py-4">Código / Servicio</th>
-                  <th className="px-6 py-4">Categoría</th>
-                  <th className="px-6 py-4 text-right">Precio Original</th>
-                  <th className="px-6 py-4 text-center w-36">Descuento (%)</th>
-                  <th className="px-6 py-4 text-center w-40">Descuento ($)</th>
-                  <th className="px-6 py-4 text-right">Precio Final</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/60 text-slate-700">
-                {loadingItems ? (
-                  <tr>
-                    <td colSpan="6" className="px-6 py-20 text-center">
-                      <div className="w-8 h-8 border-3 border-slate-100 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" style={{ border: "3px solid #f1f5f9", borderTopColor: "#3b82f6" }} />
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargando servicios...</span>
-                    </td>
-                  </tr>
-                ) : priceListItems.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="px-6 py-20 text-center">
-                      <div className="text-3xl mb-3">📋</div>
-                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No hay servicios en esta lista de precios</p>
-                    </td>
-                  </tr>
-                ) : (
-                  priceListItems
-                    .filter(item => {
-                      const matchesSearch = 
-                        (item.nombre || "").toLowerCase().includes(detailSearchQuery.toLowerCase()) ||
-                        (item.codigo || "").toLowerCase().includes(detailSearchQuery.toLowerCase());
-                      const matchesCat = detailCategory === "TODAS" || item.categoria === detailCategory;
-                      return matchesSearch && matchesCat;
-                    })
-                    .map(item => {
-                      const originalPrice = item.precio || 0;
-                      const disc = discounts[item.id] || { desc_porc: 0, descuento: 0 };
-                      const finalPrice = Math.max(0, originalPrice - disc.descuento);
-
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="text-[12px] font-bold text-slate-800">{item.nombre}</div>
-                            <div className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">{item.codigo || "SIN CÓDIGO"}</div>
+                        <tr key={convenio.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3.5 px-4 font-semibold text-slate-800">
+                            {convenio.nombre}
                           </td>
-                          <td className="px-6 py-4 text-[11px] font-semibold text-slate-500">
-                            {item.categoria || "General"}
+                          <td className="py-3.5 px-4 font-medium text-slate-600">
+                            {convenio.listaPreciosNombre || "PRECIOS MONTERIA"}
                           </td>
-                          <td className="px-6 py-4 text-right text-[12px] font-bold text-slate-700">
-                            $ {originalPrice.toLocaleString("es-CO")}
+                          <td className="py-3.5 px-4 font-medium text-slate-600">
+                            {convenio.direccion || "-"}
                           </td>
-                          <td className="px-6 py-4 text-center">
-                            <div className="relative inline-block w-28">
-                              <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="any"
-                                value={disc.desc_porc || ""}
-                                onChange={(e) => handleDiscountChange(item.id, originalPrice, "desc_porc", e.target.value)}
-                                placeholder="0"
-                                className="w-full text-right pr-7 pl-2 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-blue-400"
-                              />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                          <td className="py-3.5 px-4 font-medium text-slate-600">
+                            {convenio.nombreContacto || "-"}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedBranchConvenio(convenio);
+                                setShowBranchesModal(true);
+                              }}
+                              className="w-7 h-7 inline-flex items-center justify-center bg-[#00A3E0] hover:bg-[#008fc7] text-white rounded-md transition-colors shadow-xs border-0 cursor-pointer"
+                              title="Ver Sucursal vinculada a la Lista de Precios"
+                            >
+                              <FiEye size={14} />
+                            </button>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="inline-flex items-center gap-1.5">
+                              {/* Edit Step 1 (Green button) */}
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(convenio)}
+                                className="w-7 h-7 inline-flex items-center justify-center bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-md transition-colors shadow-xs border-0 cursor-pointer"
+                                title="Editar convenio"
+                              >
+                                <FiEdit3 size={13} />
+                              </button>
+                              
+                              {/* Detail / Discounts (Cyan button) */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDetail(convenio)}
+                                className="w-7 h-7 inline-flex items-center justify-center bg-[#00A3E0] hover:bg-[#008fc7] text-white rounded-md transition-colors shadow-xs border-0 cursor-pointer"
+                                title="Edición de convenio (Detalle y Descuentos)"
+                              >
+                                <FiEye size={13} />
+                              </button>
+
+                              {/* Delete (Red button) */}
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(convenio)}
+                                className="w-7 h-7 inline-flex items-center justify-center bg-rose-500 hover:bg-rose-600 text-white rounded-md transition-colors shadow-xs border-0 cursor-pointer"
+                                title="Eliminar convenio"
+                              >
+                                <FiTrash2 size={13} />
+                              </button>
                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <div className="relative inline-block w-36">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">$</span>
-                              <input
-                                type="text"
-                                value={disc.descuento ? formatNumberWithDots(disc.descuento) : ""}
-                                onChange={(e) => {
-                                  const raw = e.target.value.replace(/\D/g, "");
-                                  handleDiscountChange(item.id, originalPrice, "descuento", raw);
-                                }}
-                                placeholder="0"
-                                className="w-full text-right pr-2 pl-6 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-blue-400"
-                              />
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-right text-[12px] font-black text-indigo-600">
-                            $ {finalPrice.toLocaleString("es-CO")}
                           </td>
                         </tr>
                       );
                     })
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
           </div>
         </div>
       )}
+
+      {/* ─── CASE 2: FORM STEP 1 (NUEVO / EDICIÓN DE CONVENIO) ─── */}
+      {viewMode === "FORM" && step === 1 && (
+        <div className="flex-1 flex flex-col gap-5">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col gap-6">
+            
+            {/* Header & Navigation */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight">
+                  {editingConvenio ? "Edición de convenio" : "Nuevo convenio"}
+                </h2>
+                <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
+                  <FiHome size={13} className="text-slate-400" />
+                  <span>-</span>
+                  <span>Administración - Convenios - {editingConvenio ? "Edición de convenio" : "Nuevo convenio"}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons Top Right */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleContinue}
+                  className="px-5 py-2 bg-[#00A3E0] hover:bg-[#008fc7] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer"
+                >
+                  Continuar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-5 py-2 bg-[#8CC63F] hover:bg-[#7bb335] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer disabled:opacity-50"
+                >
+                  {saving ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+
+            {/* Form Sections */}
+            <div className="flex flex-col gap-6">
+              
+              {/* SECTION 1: Información convenio */}
+              <div className="border border-slate-200/80 rounded-xl p-5 bg-white">
+                <h3 className="text-xs font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 uppercase tracking-wide">
+                  Información convenio
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+                  {/* Nombre del convenio */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      Nombre del convenio *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.nombre}
+                      onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                      placeholder="Nombre del convenio"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-xs text-slate-700 font-medium focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Nro de beneficiarios */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      Nro. de beneficiarios *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      value={formData.nroBeneficiarios}
+                      onChange={(e) => setFormData({ ...formData, nroBeneficiarios: parseInt(e.target.value) || 0 })}
+                      placeholder="0"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-xs text-slate-700 font-medium focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Lista de precios */}
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      Lista de precios
+                    </label>
+                    <select
+                      value={formData.listaPreciosId}
+                      onChange={(e) => handleListaPreciosChange(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-xs text-slate-700 font-medium bg-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    >
+                      <option value="">Seleccione...</option>
+                      {listasPrecios.map(list => (
+                        <option key={list.id} value={list.id}>{list.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Información de contacto */}
+              <div className="border border-slate-200/80 rounded-xl p-5 bg-white">
+                <h3 className="text-xs font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 uppercase tracking-wide">
+                  Información de contacto
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+                  {/* Nombre del contacto */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      Nombre del contacto *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.nombreContacto}
+                      onChange={(e) => setFormData({ ...formData, nombreContacto: e.target.value })}
+                      placeholder="Nombre del contacto"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-xs text-slate-700 font-medium focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* E-mail */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      E-mail *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="Ingrese e-mail"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-xs text-slate-700 font-medium focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Teléfono */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      Teléfono *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.telefono}
+                      onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
+                      placeholder="Celular o fijo"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-xs text-slate-700 font-medium focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Dirección */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      Dirección *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.direccion}
+                      onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
+                      placeholder="Ingrese la dirección"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-xs text-slate-700 font-medium focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Bottom Buttons */}
+            <div className="flex justify-between items-center border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setViewMode("LIST")}
+                className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg transition-all border border-slate-200 cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleContinue}
+                  className="px-5 py-2 bg-[#00A3E0] hover:bg-[#008fc7] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer"
+                >
+                  Continuar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-5 py-2 bg-[#8CC63F] hover:bg-[#7bb335] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer disabled:opacity-50"
+                >
+                  {saving ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ─── CASE 3: FORM STEP 2 (EDICIÓN DE CONVENIO - DETALLE DEL CONVENIO & DESCUENTOS) ─── */}
+      {viewMode === "FORM" && step === 2 && (
+        <div className="flex-1 flex flex-col gap-5">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col gap-6">
+            
+            {/* Header & Navigation */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-slate-800 tracking-tight">
+                  Edición de convenio
+                </h2>
+                <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400">
+                  <FiHome size={13} className="text-slate-400" />
+                  <span>-</span>
+                  <span>Administración - Convenios - Edición de convenio</span>
+                </div>
+              </div>
+
+              {/* Top Action Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="px-5 py-2 bg-[#00A3E0] hover:bg-[#008fc7] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer"
+                >
+                  Atrás
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-5 py-2 bg-[#8CC63F] hover:bg-[#7bb335] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer disabled:opacity-50"
+                >
+                  {saving ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+
+            {/* Section Title */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 tracking-tight">
+                Detalle del convenio
+              </h3>
+            </div>
+
+            {/* Services Table Grouped by Category */}
+            <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
+              <table className="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200/80 text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                    <th className="py-3 px-4 w-32">Código</th>
+                    <th className="py-3 px-4">Producto</th>
+                    <th className="py-3 px-4 text-right w-32">Precio</th>
+                    <th className="py-3 px-4 text-center w-40">Dcta. Porcentaje</th>
+                    <th className="py-3 px-4 text-center w-44">Dcta. Valor</th>
+                    <th className="py-3 px-4 text-right w-36">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {loadingItems ? (
+                    <tr>
+                      <td colSpan="6" className="py-16 text-center">
+                        <div className="w-7 h-7 border-2 border-slate-200 border-t-cyan-500 rounded-full animate-spin mx-auto mb-2" />
+                        <span className="text-xs font-semibold text-slate-400">Cargando catálogo de servicios...</span>
+                      </td>
+                    </tr>
+                  ) : Object.keys(groupedServiceItems).length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="py-16 text-center">
+                        <p className="text-xs font-bold text-slate-400">No hay servicios en el tarifario seleccionado</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    Object.entries(groupedServiceItems).map(([categoryName, items]) => (
+                      <React.Fragment key={categoryName}>
+                        {/* Category Header Row */}
+                        <tr className="bg-slate-50/90 border-t border-b border-slate-200/70">
+                          <td colSpan="6" className="py-2.5 px-4 font-bold text-slate-700 text-xs italic">
+                            {categoryName}
+                          </td>
+                        </tr>
+
+                        {/* Category Items Rows */}
+                        {items.map((item) => {
+                          const itemKey = item.id || item.codigo;
+                          const originalPrice = item.precio || 0;
+                          const disc = discounts[itemKey] || discounts[item.codigo] || { desc_porc: 0, descuento: 0, mode: "porc" };
+                          const finalPrice = Math.max(0, originalPrice - (disc.descuento || 0));
+
+                          return (
+                            <tr key={itemKey} className="hover:bg-slate-50/50 transition-colors">
+                              {/* Código */}
+                              <td className="py-3 px-4 font-medium text-slate-500">
+                                {item.codigo || "-"}
+                              </td>
+
+                              {/* Producto */}
+                              <td className="py-3 px-4 font-semibold text-slate-800">
+                                {item.nombre}
+                              </td>
+
+                              {/* Precio base */}
+                              <td className="py-3 px-4 text-right font-medium text-slate-600">
+                                {formatCurrency(originalPrice)}
+                              </td>
+
+                              {/* Dcta. Porcentaje */}
+                              <td className="py-3 px-4 text-center">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <span className="text-xs text-slate-400 font-medium">%</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="any"
+                                    value={disc.desc_porc || ""}
+                                    onChange={(e) => handleDiscountChange(itemKey, originalPrice, "desc_porc", e.target.value)}
+                                    placeholder="0"
+                                    className="w-16 px-2 py-1 border border-slate-200 rounded-md text-xs font-semibold text-slate-700 text-right outline-none focus:border-cyan-500"
+                                  />
+                                  <input
+                                    type="checkbox"
+                                    checked={disc.mode === "porc"}
+                                    onChange={() => handleDiscountChange(itemKey, originalPrice, "mode", "porc")}
+                                    className="w-3.5 h-3.5 text-cyan-600 border-slate-300 rounded focus:ring-cyan-500 cursor-pointer"
+                                    title="Modo Porcentaje"
+                                  />
+                                </div>
+                              </td>
+
+                              {/* Dcta. Valor */}
+                              <td className="py-3 px-4 text-center">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <span className="text-xs text-slate-400 font-medium">$</span>
+                                  <input
+                                    type="text"
+                                    value={disc.descuento ? formatNumberWithDots(disc.descuento) : ""}
+                                    onChange={(e) => {
+                                      const raw = e.target.value.replace(/\D/g, "");
+                                      handleDiscountChange(itemKey, originalPrice, "descuento", raw);
+                                    }}
+                                    placeholder="0"
+                                    className="w-24 px-2 py-1 border border-slate-200 rounded-md text-xs font-semibold text-slate-700 text-right outline-none focus:border-cyan-500"
+                                  />
+                                  <input
+                                    type="checkbox"
+                                    checked={disc.mode === "valor"}
+                                    onChange={() => handleDiscountChange(itemKey, originalPrice, "mode", "valor")}
+                                    className="w-3.5 h-3.5 text-cyan-600 border-slate-300 rounded focus:ring-cyan-500 cursor-pointer"
+                                    title="Modo Valor Fijo"
+                                  />
+                                </div>
+                              </td>
+
+                              {/* Total */}
+                              <td className="py-3 px-4 text-right font-bold text-slate-800">
+                                {formatCurrency(finalPrice)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bottom Action Buttons */}
+            <div className="flex justify-end items-center gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="px-5 py-2 bg-[#00A3E0] hover:bg-[#008fc7] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer"
+              >
+                Atrás
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="px-5 py-2 bg-[#8CC63F] hover:bg-[#7bb335] active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition-all border-0 cursor-pointer disabled:opacity-50"
+              >
+                {saving ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ─── SUCURSALES DEL CONVENIO MODAL ─── */}
+      {showBranchesModal && selectedBranchConvenio && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 flex flex-col gap-4 animate-scaleIn">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+                Sucursales del Convenio
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowBranchesModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1 text-xs">
+              <p className="text-slate-600 font-medium">
+                Convenio: <span className="font-bold text-slate-800">{selectedBranchConvenio.nombre}</span>
+              </p>
+              <p className="text-slate-500 font-medium">
+                Lista de precios: <span className="font-semibold text-cyan-600">{selectedBranchConvenio.listaPreciosNombre || "PRECIOS MONTERIA"}</span>
+              </p>
+            </div>
+
+            {/* Sucursales vinculadas */}
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+              {getSucursalesForConvenio(selectedBranchConvenio).map((suc, idx) => (
+                <div key={suc.id || idx} className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 bg-slate-50/70">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <FiMapPin size={13} className="text-cyan-600" />
+                      {suc.nombre}
+                    </span>
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {suc.direccion || selectedBranchConvenio.direccion || "Dirección de la sucursal"}
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                    <FiCheckCircle size={11} />
+                    Habilitada
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowBranchesModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer border-0"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

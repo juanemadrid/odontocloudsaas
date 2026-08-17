@@ -425,7 +425,7 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
                   className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
                   value={fecha}
                   onChange={e => setFecha(e.target.value)}
-                />
+                 max="9999-12-31" min="1900-01-01" />
                 <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
               </div>
             </div>
@@ -440,7 +440,7 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
                   className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
                   value={fechaRecepcion}
                   onChange={e => setFechaRecepcion(e.target.value)}
-                />
+                 max="9999-12-31" min="1900-01-01" />
                 <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
               </div>
             </div>
@@ -479,7 +479,7 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
                 className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
                 value={vencimiento}
                 onChange={e => setVencimiento(e.target.value)}
-              />
+               max="9999-12-31" min="1900-01-01" />
             </div>
           </div>
 

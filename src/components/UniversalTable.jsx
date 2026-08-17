@@ -120,7 +120,7 @@ function UniModal({ item, onClose, schema, collectionName, onSuccess }) {
                                     className="form-input w-full"
                                     value={form[field.key] || ""}
                                     onChange={e => setForm({ ...form, [field.key]: e.target.value })}
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             ) : (
                                 <input
                                     className="form-input w-full"

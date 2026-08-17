@@ -10,7 +10,10 @@ export default function SearchableSelect({
     disabledPlaceholder = "Seleccione...",
     loading = false,
     loadingPlaceholder = "Cargando...",
-    className = ""
+    className = "",
+    requireSearch = false,
+    minSearchChars = 1,
+    emptySearchPlaceholder = "Escribe para buscar..."
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -20,12 +23,37 @@ export default function SearchableSelect({
     // Filter options based on search term
     const filteredOptions = React.useMemo(() => {
         const term = (search || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        
+        if (requireSearch && term.length < minSearchChars) {
+            return [];
+        }
+
         if (!term) return options;
-        return options.filter(opt => {
-            const normalizedOpt = (opt || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            return normalizedOpt.includes(term);
+
+        // Match options and sort by relevance (word starts with term first, then contains)
+        const matches = [];
+        for (const opt of options) {
+            const str = String(opt || "");
+            const normalizedOpt = str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            
+            if (normalizedOpt.includes(term)) {
+                // Check if any word starts with the term
+                const words = normalizedOpt.split(/\s+/);
+                const startsWithWord = words.some(w => w.startsWith(term));
+                matches.push({
+                    opt: str,
+                    score: startsWithWord ? 0 : 1
+                });
+            }
+        }
+
+        matches.sort((a, b) => {
+            if (a.score !== b.score) return a.score - b.score;
+            return a.opt.localeCompare(b.opt);
         });
-    }, [options, search]);
+
+        return matches.map(m => m.opt);
+    }, [options, search, requireSearch, minSearchChars]);
 
     // Close when clicking outside
     useEffect(() => {
@@ -55,6 +83,8 @@ export default function SearchableSelect({
         : disabled
         ? disabledPlaceholder
         : placeholder;
+
+    const isWaitingForSearch = requireSearch && (search || "").trim().length < minSearchChars;
 
     return (
         <div ref={containerRef} className={`relative inline-block w-full md:w-64 ${className}`}>
@@ -99,7 +129,11 @@ export default function SearchableSelect({
 
                     {/* Scrollable options list */}
                     <div className="overflow-y-auto max-h-48 custom-scrollbar space-y-0.5 pr-0.5">
-                        {filteredOptions.length === 0 ? (
+                        {isWaitingForSearch ? (
+                            <div className="text-center py-4 px-2 text-xs font-medium text-slate-400 leading-relaxed">
+                                {emptySearchPlaceholder}
+                            </div>
+                        ) : filteredOptions.length === 0 ? (
                             <div className="text-center py-4 text-xs font-medium text-slate-400 leading-none">
                                 No se encontraron resultados
                             </div>
@@ -115,7 +149,7 @@ export default function SearchableSelect({
                                     className={`w-full text-left px-3 py-2 text-xs font-medium rounded-lg transition-colors duration-200 ${
                                         value === opt
                                             ? "bg-blue-50 text-blue-600 font-bold"
-                                            : "text-slate-700 hover:bg-slate-50"
+                                             : "text-slate-700 hover:bg-slate-50"
                                     }`}
                                 >
                                     {opt}

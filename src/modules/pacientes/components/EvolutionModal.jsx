@@ -256,15 +256,19 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 const inquilino = userProfile?.inquilino || userProfile?.tenantId || patient?.inquilino || patient?.tenant_id;
 
                 // A. Doctores asignados al paciente
-                if (patient?.profesionales && Array.isArray(patient.profesionales)) {
-                    patient.profesionales.forEach(d => {
-                        const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
-                        const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-                        if (name.trim() && docId) {
-                            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
-                        }
-                    });
-                }
+                const assignedList = (Array.isArray(patient?.profesionales) && patient.profesionales.length > 0)
+                    ? patient.profesionales
+                    : (Array.isArray(patient?.historial_medico?.profesionales) && patient.historial_medico.profesionales.length > 0)
+                        ? patient.historial_medico.profesionales
+                        : (patient?.profesional_nombre ? [{ id: patient.profesional_id || 'default-doc', nombre: patient.profesional_nombre }] : []);
+
+                assignedList.forEach(d => {
+                    const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+                    const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+                    if (name.trim() && docId) {
+                        mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
+                    }
+                });
 
                 // B. Cargar desde tabla profesionales
                 try {
@@ -1006,7 +1010,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     type="date"
                                     {...register("fecha")} 
                                     className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 caret-slate-950"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
                         </div>
 

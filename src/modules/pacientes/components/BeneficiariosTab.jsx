@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiAlertCircle, FiSearch, FiPlus, FiTrash2, FiEdit2, FiX } from 'react-icons/fi';
+import { FiAlertCircle, FiSearch, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
-import { v4 as uuidv4 } from 'uuid';
 import { searchPatients } from '../../../services/patientService';
 
 export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
@@ -16,14 +15,15 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
     const [selectedPatient, setSelectedPatient] = useState(null);
     const dropdownRef = useRef(null);
 
-    // Modal states for manual edit/add
-    const [isOpen, setIsOpen] = useState(false);
-    const [formVal, setFormVal] = useState({ nombre: '', documento: '', direccion: '', telefono: '' });
-    const [errors, setErrors] = useState({});
+    // Delete confirmation modal state
+    const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
     // Check if patient actually has a "convenioBeneficio" string or assigned field
     const hasConvenio = patient?.convenioBeneficio && patient.convenioBeneficio.trim() !== "";
-    const beneficiarios = patient?.beneficiarios || [];
+    const currentHistorial = patient?.historial_medico || patient?.historialMedico || {};
+    const beneficiarios = (Array.isArray(patient?.beneficiarios) && patient.beneficiarios.length > 0)
+        ? patient.beneficiarios
+        : (Array.isArray(currentHistorial?.beneficiarios) ? currentHistorial.beneficiarios : []);
 
     const handleAssignClick = () => {
         if (onSwitchTab) onSwitchTab('mark'); 
@@ -42,23 +42,32 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
 
     // Search patients in the system
     useEffect(() => {
+        let isCurrent = true;
         const fetchPatients = async () => {
-            if (searchQuery.trim().length < 2) {
+            if (!searchQuery || searchQuery.trim().length < 1) {
                 setSearchResults([]);
                 return;
             }
             try {
-                const results = await searchPatients(patient.inquilino, searchQuery);
-                // Exclude current patient from results
-                const filteredResults = results.filter(p => p.id !== patient.id);
+                const tenantId = patient?.inquilino || patient?.tenant_id;
+                const results = await searchPatients(tenantId, searchQuery);
+                if (!isCurrent) return;
+                // Exclude current patient and already added beneficiaries from results
+                const currentBens = (Array.isArray(patient?.beneficiarios) && patient.beneficiarios.length > 0)
+                    ? patient.beneficiarios
+                    : (patient?.historial_medico?.beneficiarios || []);
+                const filteredResults = (results || []).filter(p => p.id !== patient?.id && !currentBens.some(b => b.id === p.id));
                 setSearchResults(filteredResults);
             } catch (e) {
-                console.error("Error searching patients:", e);
+                console.error("Error searching patients for beneficiaries:", e);
             }
         };
 
         fetchPatients();
-    }, [searchQuery, patient]);
+        return () => {
+            isCurrent = false;
+        };
+    }, [searchQuery, patient?.id, patient?.inquilino, patient?.tenant_id]);
 
     // Clear selected patient if user manually edits search query
     useEffect(() => {
@@ -68,60 +77,19 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
                 setSelectedPatient(null);
             }
         }
-    }, [searchQuery]);
-
-    // Save/Add manual entry
-    const handleOpenAdd = () => {
-        setFormVal({ nombre: '', documento: '', direccion: '', telefono: '' });
-        setErrors({});
-        setIsOpen(true);
-    };
-
-    const handleSave = async () => {
-        if (!formVal.nombre.trim()) {
-            setErrors({ nombre: "El nombre es obligatorio" });
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            const newBen = {
-                id: uuidv4(),
-                ...formVal,
-                createdAt: Date.now()
-            };
-            const updatedList = [...beneficiarios, newBen];
-
-            await supabase
-                .from("pacientes")
-                .update({
-                    beneficiarios: updatedList,
-                    updated_at: new Date().toISOString()
-                })
-                .eq("id", patient.id);
-            onUpdate && onUpdate({ ...patient, beneficiarios: updatedList });
-            toast.success("Beneficiario agregado");
-            setIsOpen(false);
-        } catch (e) {
-            console.error(e);
-            toast.error("Error al guardar beneficiario");
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+    }, [searchQuery, selectedPatient]);
 
     // Add selected autocomplete patient
     const handleAddClick = async () => {
         if (!selectedPatient) {
-            // Fallback: If no patient is selected, open manual modal
-            handleOpenAdd();
+            toast.warn("Por favor busque y seleccione un paciente de la lista para agregarlo como beneficiario.");
             return;
         }
 
         // Check if already in the list
         const exists = beneficiarios.some(b => b.id === selectedPatient.id);
         if (exists) {
-            toast.warn("Este beneficiario ya está agregado");
+            toast.warn("Este beneficiario ya se encuentra agregado.");
             return;
         }
 
@@ -130,49 +98,76 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
             const newBen = {
                 id: selectedPatient.id,
                 nombre: selectedPatient.nombreCompleto || `${selectedPatient.nombres || ""} ${selectedPatient.apellidos || ""}`.trim(),
-                documento: selectedPatient.nroDocumento || '',
-                direccion: selectedPatient.barrio || selectedPatient.lugarResidencia || '',
-                telefono: selectedPatient.celular || '',
+                documento: selectedPatient.nroDocumento || selectedPatient.documento || '',
+                direccion: selectedPatient.direccion || selectedPatient.barrio || selectedPatient.lugarResidencia || '',
+                telefono: selectedPatient.celular || selectedPatient.telefono || '',
                 createdAt: Date.now()
             };
             const updatedList = [...beneficiarios, newBen];
+            const currentHist = patient?.historial_medico || patient?.historialMedico || {};
+            const newHistorial = {
+                ...currentHist,
+                beneficiarios: updatedList
+            };
 
-            await supabase
+            const { error } = await supabase
                 .from("pacientes")
                 .update({
-                    beneficiarios: updatedList,
+                    historial_medico: newHistorial,
                     updated_at: new Date().toISOString()
                 })
                 .eq("id", patient.id);
-            onUpdate && onUpdate({ ...patient, beneficiarios: updatedList });
-            toast.success("Beneficiario agregado");
+
+            if (error) throw error;
+
+            onUpdate && onUpdate({
+                ...patient,
+                beneficiarios: updatedList,
+                historial_medico: newHistorial,
+                historialMedico: newHistorial
+            });
+            toast.success("Beneficiario agregado exitosamente");
             setSearchQuery('');
             setSelectedPatient(null);
         } catch (e) {
-            console.error(e);
+            console.error("Error al agregar beneficiario:", e);
             toast.error("Error al agregar beneficiario");
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const handleDelete = async (targetId) => {
-        if (!window.confirm("¿Seguro que deseas eliminar este beneficiario?")) return;
-        
+    const confirmDelete = async (targetId) => {
+        if (!targetId) return;
         setIsSubmitting(true);
         try {
             const updatedList = beneficiarios.filter(b => b.id !== targetId);
-            await supabase
+            const currentHist = patient?.historial_medico || patient?.historialMedico || {};
+            const newHistorial = {
+                ...currentHist,
+                beneficiarios: updatedList
+            };
+
+            const { error } = await supabase
                 .from("pacientes")
                 .update({
-                    beneficiarios: updatedList,
+                    historial_medico: newHistorial,
                     updated_at: new Date().toISOString()
                 })
                 .eq("id", patient.id);
-            onUpdate && onUpdate({ ...patient, beneficiarios: updatedList });
-            toast.success("Beneficiario eliminado");
+
+            if (error) throw error;
+
+            onUpdate && onUpdate({
+                ...patient,
+                beneficiarios: updatedList,
+                historial_medico: newHistorial,
+                historialMedico: newHistorial
+            });
+            toast.success("Beneficiario eliminado correctamente");
+            setDeleteConfirmId(null);
         } catch (e) {
-            console.error(e);
+            console.error("Error al eliminar beneficiario:", e);
             toast.error("Error al eliminar beneficiario");
         } finally {
             setIsSubmitting(false);
@@ -193,7 +188,7 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
                     <div className="flex items-center gap-4 w-full">
                         <button 
                             className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold uppercase tracking-wider transition-all active:scale-95"
-                            onClick={() => onSwitchTab('datos')}
+                            onClick={() => onSwitchTab && onSwitchTab('datos')}
                         >
                             No, cancelar!
                         </button>
@@ -233,6 +228,7 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
                             <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden py-1 max-h-60 overflow-y-auto">
                                 {searchResults.map(p => {
                                     const nombre = p.nombreCompleto || `${p.nombres || ""} ${p.apellidos || ""}`.trim();
+                                    const docText = p.tipoDocumento ? `${p.tipoDocumento} - ${p.nroDocumento || p.documento}` : (p.nroDocumento || p.documento ? `Doc: ${p.nroDocumento || p.documento}` : '');
                                     return (
                                         <button 
                                             key={p.id} 
@@ -242,10 +238,10 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
                                                 setSearchQuery(nombre);
                                                 setShowDropdown(false);
                                             }}
-                                            className="w-full px-4 py-2 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors"
+                                            className="w-full px-4 py-2.5 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors flex flex-col"
                                         >
-                                            <div className="text-xs font-bold text-slate-700">{nombre}</div>
-                                            <div className="text-[10px] text-slate-400 mt-0.5">- {p.nroDocumento || p.id}</div>
+                                            <span className="text-xs font-bold text-slate-800">{nombre}</span>
+                                            {docText && <span className="text-[10px] text-slate-400 font-medium mt-0.5">{docText}</span>}
                                         </button>
                                     );
                                 })}
@@ -284,8 +280,10 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
                                         <td className="py-4 px-6 text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 <button 
-                                                    className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
-                                                    onClick={() => handleDelete(ben.id)}
+                                                    type="button"
+                                                    className="w-8 h-8 rounded-lg bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors shadow-sm active:scale-95"
+                                                    onClick={() => setDeleteConfirmId(ben.id)}
+                                                    title="Eliminar beneficiario"
                                                 >
                                                     <FiTrash2 size={14} />
                                                 </button>
@@ -306,93 +304,34 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
 
             </div>
 
-            {/* MODAL FOR ADD/EDIT */}
-            {isOpen && (
+            {/* CONFIRMATION DELETE MODAL */}
+            {deleteConfirmId && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fadeIn">
-                    <div className="bg-white rounded-3xl w-full max-w-lg border border-slate-100 shadow-2xl p-6 md:p-8 animate-scaleUp">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-[14px] font-black text-slate-800 uppercase tracking-tight">
-                                Agregar Beneficiario
-                            </h3>
-                            <button 
-                                type="button" 
-                                onClick={() => setIsOpen(false)}
-                                className="text-slate-400 hover:text-slate-600 transition-colors"
-                            >
-                                <FiX size={18} />
-                            </button>
+                    <div className="bg-white rounded-3xl w-full max-w-md border border-slate-100 shadow-2xl p-6 md:p-8 text-center animate-scaleUp">
+                        <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 border-4 border-red-100 flex items-center justify-center mx-auto mb-4">
+                            <FiTrash2 size={28} />
                         </div>
-                        
-                        <div className="space-y-4">
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                    Nombre Completo <span className="text-rose-500">*</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={formVal.nombre}
-                                    onChange={(e) => setFormVal({...formVal, nombre: e.target.value})}
-                                    placeholder="Ej: Juan Pérez"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400"
-                                />
-                                {errors.nombre && <p className="text-rose-500 text-[10px] font-bold uppercase tracking-wider mt-1">{errors.nombre}</p>}
-                            </div>
-
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                    Número de Documento
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={formVal.documento}
-                                    onChange={(e) => setFormVal({...formVal, documento: e.target.value})}
-                                    placeholder="Ej: 12345678"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400"
-                                />
-                            </div>
-
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                    Dirección
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={formVal.direccion}
-                                    onChange={(e) => setFormVal({...formVal, direccion: e.target.value})}
-                                    placeholder="Ej: Calle 123 #45-67"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400"
-                                />
-                            </div>
-
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                    Teléfono
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={formVal.telefono}
-                                    onChange={(e) => setFormVal({...formVal, telefono: e.target.value})}
-                                    placeholder="Ej: 3001234567"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-3 mt-8">
+                        <h3 className="text-base font-black text-slate-800 uppercase tracking-tight mb-2">
+                            ¿Confirmar Eliminación?
+                        </h3>
+                        <p className="text-xs font-medium text-slate-500 mb-6">
+                            ¿Está seguro de que desea eliminar a este beneficiario del convenio?
+                        </p>
+                        <div className="flex items-center gap-3">
                             <button
                                 type="button"
-                                onClick={() => setIsOpen(false)}
-                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all"
+                                onClick={() => setDeleteConfirmId(null)}
+                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold uppercase tracking-wider rounded-xl transition-all"
                             >
                                 Cancelar
                             </button>
                             <button
                                 type="button"
-                                onClick={handleSave}
+                                onClick={() => confirmDelete(deleteConfirmId)}
                                 disabled={isSubmitting}
-                                className="flex-1 py-3 bg-[#8CC63F] hover:bg-[#7bb335] text-white text-[11px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-[#8CC63F]/20 transition-all disabled:opacity-50"
+                                className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-lg shadow-red-500/20 transition-all disabled:opacity-50"
                             >
-                                {isSubmitting ? "Guardando..." : "Guardar"}
+                                {isSubmitting ? "Eliminando..." : "Sí, Eliminar"}
                             </button>
                         </div>
                     </div>

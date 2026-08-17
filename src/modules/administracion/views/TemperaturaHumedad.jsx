@@ -689,7 +689,7 @@ export default function TemperaturaHumedad() {
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                     className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
+                   max="9999-12-31" min="1900-01-01" />
                 </div>
 
                 <div>
@@ -699,7 +699,7 @@ export default function TemperaturaHumedad() {
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                     className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
+                   max="9999-12-31" min="1900-01-01" />
                 </div>
 
                 <button
@@ -883,7 +883,7 @@ export default function TemperaturaHumedad() {
                     value={graphStartDate}
                     onChange={(e) => setGraphStartDate(e.target.value)}
                     className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
+                   max="9999-12-31" min="1900-01-01" />
                 </div>
 
                 <div>
@@ -893,7 +893,7 @@ export default function TemperaturaHumedad() {
                     value={graphEndDate}
                     onChange={(e) => setGraphEndDate(e.target.value)}
                     className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
+                   max="9999-12-31" min="1900-01-01" />
                 </div>
 
                 <button

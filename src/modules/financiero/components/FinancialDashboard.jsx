@@ -85,14 +85,14 @@ export default function FinancialDashboard() {
                         value={dateRange.start}
                         onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
                         className="bg-transparent border-none text-[11px] font-black text-slate-600 uppercase tracking-wider focus:ring-0"
-                    />
+                     max="9999-12-31" min="1900-01-01" />
                     <span className="text-slate-300">|</span>
                     <input
                         type="date"
                         value={dateRange.end}
                         onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
                         className="bg-transparent border-none text-[11px] font-black text-slate-600 uppercase tracking-wider focus:ring-0"
-                    />
+                     max="9999-12-31" min="1900-01-01" />
                 </div>
 
                 {/* KPI Summary Chips */}

@@ -378,7 +378,7 @@ export default function PatientPortal() {
                                             disabled={loading}
                                             required
                                             className="w-full pl-10 pr-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white"
-                                        />
+                                         max="9999-12-31" min="1900-01-01" />
                                     </div>
                                 </div>
 
@@ -651,7 +651,7 @@ export default function PatientPortal() {
                             <p className="text-xs text-slate-500">Completa el formulario. Tu solicitud llegará directamente a la clínica.</p>
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Fecha preferida</label>
-                                <input type="date" min={new Date().toISOString().slice(0,10)} required value={nuevaCitaForm.fecha} onChange={e => setNuevaCitaForm(f => ({...f, fecha: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
+                                <input type="date" min={new Date().toISOString().slice(0,10)} max="9999-12-31" required value={nuevaCitaForm.fecha} onChange={e => setNuevaCitaForm(f => ({...f, fecha: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Motivo de consulta</label>

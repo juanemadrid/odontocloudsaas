@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -6,7 +6,7 @@ import * as z from "zod";
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import { useToast } from "../../../context/ToastContext";
-import { searchPatients } from "../../../services/patientService";
+import { searchPatients, checkDocumentExists } from "../../../services/patientService";
 import { FiUser, FiCalendar, FiPhone, FiExternalLink, FiSearch, FiCreditCard, FiAlertCircle } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
@@ -92,13 +92,24 @@ export default function AppointmentModal({
     const [term, setTerm] = useState("");
     const [selectedPatientPhone, setSelectedPatientPhone] = useState("");
     const searchInputWrapperRef = useRef(null);
+    const wasOpenRef = useRef(false);
+    const lastInitialDataIdRef = useRef(null);
     const [dropdownStyle, setDropdownStyle] = useState({});
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
- 
-    const { control, register, handleSubmit, setValue, watch, reset, formState: { errors, isSubmitting, isDirty } } = useForm({
+
+    const { control, register, handleSubmit, setValue, setError, clearErrors, watch, reset, formState: { errors, isSubmitting, isDirty } } = useForm({
         resolver: zodResolver(appointmentSchema),
         defaultValues: {
             isNewPatient: false,
+            pacienteId: "",
+            pacienteNombre: "",
+            nombres: "",
+            apellidos: "",
+            tipoDocumento: "",
+            nroDocumento: "",
+            celular: "",
+            sexo: "",
+            fechaNacimiento: "",
             duracion: 30,
             comentario: "",
             doctorId: "",
@@ -115,59 +126,99 @@ export default function AppointmentModal({
             enviarCorreo: true
         }
     });
- 
+
     const isNew = watch("isNewPatient");
     const selectedPatientName = watch("pacienteNombre");
- 
-    useEffect(() => {
-        if (isOpen && initialData) {
-            setIsConfirmingDelete(false);
-            let f = "", h = "";;
-            if (initialData.start) {
-                const y = initialData.start.getFullYear();
-                const m = String(initialData.start.getMonth() + 1).padStart(2, '0');
-                const d = String(initialData.start.getDate()).padStart(2, '0');
-                f = `${y}-${m}-${d}`;
-                h = String(initialData.start.getHours()).padStart(2, '0') + ":" + String(initialData.start.getMinutes()).padStart(2, '0');
-            }
-            // Soporte para fecha directa como string (ej. desde notificación de cita)
-            if (!f && initialData.fecha) {
-                f = initialData.fecha;
-            }
+    const watchedValoracion = watch("valoracion");
+    const watchedControl = watch("control");
 
-            reset({
-                isNewPatient: false,
-                id: initialData.id,
-                pacienteId: initialData.pacienteId || "",
-                pacienteNombre: initialData.paciente || initialData.pacienteNombre || "",
-                doctorId: initialData.doctorId || (doctors?.[0]?.id || ""),
-                consultorioId: initialData.consultorioId || (chairs?.[0]?.id || ""),
-                sucursalId: initialData.sucursalId || (branches?.[0]?.id || ""),
-                especialidadId: initialData.especialidadId || "",
-                entidadId: initialData.entidadId || "",
-                precioItemId: initialData.precioItemId || "",
-                fecha: f,
-                hora: h,
-                duracion: initialData.duracion || 30,
-                comentario: initialData.comentario || "",
-                status: initialData.status || "confirmed",
-                valoracion: initialData.valoracion || false,
-                control: initialData.control || false,
-                enviarCorreo: initialData.enviarCorreo ?? true
-            });
-            setTerm(initialData.paciente || initialData.pacienteNombre || "");
-            setSelectedPatientPhone(initialData.celular || "");
-        } else {
-            reset({
-                isNewPatient: false, // Default to search
-                doctorId: doctors?.[0]?.id || "",
-                consultorioId: chairs?.[0]?.id || "",
-                sucursalId: branches?.[0]?.id || ""
-            });
-            setTerm("");
-            setSelectedPatientPhone("");
+    const handleToggleValoracion = (e) => {
+        const checked = e.target.checked;
+        setValue("valoracion", checked, { shouldDirty: true });
+        if (checked) {
+            setValue("control", false, { shouldDirty: true });
         }
-    }, [isOpen, initialData, doctors, chairs, branches, reset]);
+    };
+
+    const handleToggleControl = (e) => {
+        const checked = e.target.checked;
+        setValue("control", checked, { shouldDirty: true });
+        if (checked) {
+            setValue("valoracion", false, { shouldDirty: true });
+        }
+    };
+
+    useEffect(() => {
+        if (isOpen) {
+            const isInitialOpen = !wasOpenRef.current;
+            const isDifferentAppointment = initialData?.id && initialData.id !== lastInitialDataIdRef.current;
+
+            if (isInitialOpen || isDifferentAppointment) {
+                wasOpenRef.current = true;
+                lastInitialDataIdRef.current = initialData?.id || null;
+                setIsConfirmingDelete(false);
+
+                let f = "", h = "";
+                if (initialData?.start) {
+                    const dObj = new Date(initialData.start);
+                    if (!isNaN(dObj.getTime())) {
+                        const y = dObj.getFullYear();
+                        const m = String(dObj.getMonth() + 1).padStart(2, '0');
+                        const d = String(dObj.getDate()).padStart(2, '0');
+                        f = `${y}-${m}-${d}`;
+                        h = String(dObj.getHours()).padStart(2, '0') + ":" + String(dObj.getMinutes()).padStart(2, '0');
+                    }
+                }
+                // Soporte para fecha directa como string (ej. desde notificación de cita)
+                if (!f && initialData?.fecha) {
+                    f = initialData.fecha;
+                }
+                if (!f) {
+                    const now = new Date();
+                    const y = now.getFullYear();
+                    const m = String(now.getMonth() + 1).padStart(2, '0');
+                    const d = String(now.getDate()).padStart(2, '0');
+                    f = `${y}-${m}-${d}`;
+                }
+                if (!h && initialData?.hora) {
+                    h = initialData.hora;
+                }
+
+                reset({
+                    isNewPatient: false,
+                    id: initialData?.id,
+                    pacienteId: initialData?.pacienteId || "",
+                    pacienteNombre: initialData?.paciente || initialData?.pacienteNombre || "",
+                    nombres: "",
+                    apellidos: "",
+                    tipoDocumento: "",
+                    nroDocumento: "",
+                    celular: "",
+                    sexo: "",
+                    fechaNacimiento: "",
+                    doctorId: initialData?.doctorId || "",
+                    consultorioId: initialData?.consultorioId || "",
+                    sucursalId: initialData?.sucursalId || (branches?.[0]?.id || ""),
+                    especialidadId: initialData?.especialidadId || "",
+                    entidadId: initialData?.entidadId || "",
+                    precioItemId: initialData?.precioItemId || "",
+                    fecha: f,
+                    hora: h,
+                    duracion: initialData?.duracion || 30,
+                    comentario: initialData?.comentario || "",
+                    status: initialData?.status || "confirmed",
+                    valoracion: Boolean(initialData?.valoracion),
+                    control: Boolean(initialData?.control) && !initialData?.valoracion,
+                    enviarCorreo: initialData?.enviarCorreo ?? true
+                });
+                setTerm(initialData?.paciente || initialData?.pacienteNombre || "");
+                setSelectedPatientPhone(initialData?.celular || "");
+            }
+        } else {
+            wasOpenRef.current = false;
+            lastInitialDataIdRef.current = null;
+        }
+    }, [isOpen, initialData?.id, branches, reset]);
 
     // Search Logic
     useEffect(() => {
@@ -202,6 +253,38 @@ export default function AppointmentModal({
         return () => clearTimeout(timer);
     }, [term, isNew, selectedPatientName, inquilino, toast]);
 
+    // Check document duplication for new patient registration
+    const watchedNroDocumento = watch("nroDocumento");
+    useEffect(() => {
+        if (!isNew || !watchedNroDocumento || !watchedNroDocumento.trim()) {
+            clearErrors("nroDocumento");
+            return;
+        }
+        const val = watchedNroDocumento.trim();
+        if (val.length < 3) {
+            clearErrors("nroDocumento");
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            try {
+                const existing = await checkDocumentExists(inquilino, val);
+                if (existing) {
+                    setError("nroDocumento", {
+                        type: "manual",
+                        message: "Número de documento en uso"
+                    });
+                } else {
+                    clearErrors("nroDocumento");
+                }
+            } catch (err) {
+                console.error("Error al verificar duplicado de documento:", err);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [isNew, watchedNroDocumento, inquilino, setError, clearErrors]);
+
     // Update dropdown position when results appear
     useEffect(() => {
         if (patientResults.length > 0 && searchInputWrapperRef.current) {
@@ -223,6 +306,46 @@ export default function AppointmentModal({
     const watchedConsultorioId = watch("consultorioId");
     const watchedDate = watch("fecha");
     const watchedDuracion = watch("duracion");
+
+    // Dynamic filtering of physical spaces (consultorios/chairs) based on the selected doctor's assignments in Gestión de Agenda
+    const availableChairs = useMemo(() => {
+        if (!watchedDoctorId) return [];
+        const doc = (doctors || []).find(d => String(d.id) === String(watchedDoctorId));
+        if (!doc) return [];
+
+        const assignedIds = doc.espaciosFisicos || doc.selectedResources || doc.consultorios || doc.recursos;
+        if (Array.isArray(assignedIds)) {
+            if (assignedIds.length === 0) return [];
+            return (chairs || []).filter(c => assignedIds.some(id => String(id) === String(c.id)));
+        }
+        return [];
+    }, [watchedDoctorId, doctors, chairs]);
+
+    // Keep consultorioId synchronized when doctor or available chairs change
+    useEffect(() => {
+        if (!watchedDoctorId) {
+            if (watchedConsultorioId) {
+                setValue("consultorioId", "", { shouldValidate: false });
+            }
+            return;
+        }
+
+        if (availableChairs.length === 0) {
+            if (watchedConsultorioId) {
+                setValue("consultorioId", "", { shouldValidate: true });
+            }
+            return;
+        }
+
+        const isCurrentValid = availableChairs.some(c => String(c.id) === String(watchedConsultorioId));
+        if (!isCurrentValid) {
+            if (availableChairs.length === 1) {
+                setValue("consultorioId", availableChairs[0].id, { shouldValidate: true });
+            } else {
+                setValue("consultorioId", "", { shouldValidate: true });
+            }
+        }
+    }, [watchedDoctorId, availableChairs, watchedConsultorioId, setValue]);
 
     useEffect(() => {
         if (!isOpen || !inquilino || !watchedDoctorId || !watchedConsultorioId) {
@@ -287,6 +410,18 @@ export default function AppointmentModal({
     const onValidSubmit = async (data) => {
         console.log("onValidSubmit triggered with data:", data);
         try {
+            if (data.isNewPatient && data.nroDocumento) {
+                const existingDoc = await checkDocumentExists(inquilino, data.nroDocumento);
+                if (existingDoc) {
+                    setError("nroDocumento", {
+                        type: "manual",
+                        message: "Número de documento en uso"
+                    });
+                    toast.error("Número de documento en uso");
+                    return;
+                }
+            }
+
             const [y, m, d] = data.fecha.split("-").map(Number);
             const [hh, mm] = data.hora.split(":").map(Number);
             const start = new Date(y, m - 1, d, hh, mm);
@@ -305,9 +440,15 @@ export default function AppointmentModal({
                 'cancelled': 'CANCELADO',
                 'waiting': 'EN ESPERA'
             };
-            const finalStatus = (data.status === 'cancelled' && initialData?.start && new Date(initialData.start).getTime() !== start.getTime())
-                ? 'confirmed'
-                : (data.status || 'confirmed');
+            let finalStatus = data.status || 'confirmed';
+            const wasCancelled = initialData?.status === 'cancelled' ||
+                ['cancelada', 'cancelado', 'cancelled', 'no asiste', 'no-show'].includes(String(initialData?.estado || '').toLowerCase());
+            
+            // Si la cita estaba cancelada previamente y se edita/guarda, re-activar su estado a 'confirmed'
+            if (wasCancelled && data.status === 'cancelled') {
+                finalStatus = 'confirmed';
+            }
+
             if (finalStatus !== 'cancelled') {
                 await assertAppointmentAvailability({
                     tenantId: inquilino,
@@ -514,8 +655,12 @@ export default function AppointmentModal({
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo Doc *</label>
-                                            <select {...register("tipoDocumento")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none">
-                                                <option value="">TIPO...</option>
+                                            <select 
+                                                {...register("tipoDocumento")} 
+                                                disabled={!hasWritePermission} 
+                                                className={`w-full bg-white border ${errors.tipoDocumento ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200'} rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none`}
+                                            >
+                                                <option value="">SELECCIONAR TIPO DE DOC...</option>
                                                 <option value="CC">CC - Cédula</option>
                                                 <option value="TI">TI - Tarjeta Id.</option>
                                                 <option value="RC">RC - Reg. Civil</option>
@@ -523,10 +668,25 @@ export default function AppointmentModal({
                                                 <option value="PA">PA - Pasaporte</option>
                                                 <option value="PE">PE - Permiso Esp.</option>
                                             </select>
+                                            {errors.tipoDocumento && (
+                                                <p className="text-[10px] font-bold text-red-500 ml-1 mt-0.5 animate-in fade-in slide-in-from-top-1">
+                                                    {errors.tipoDocumento.message}
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Documento *</label>
-                                            <input {...register("nroDocumento")} disabled={!hasWritePermission} placeholder="DOCUMENTO" className="bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 placeholder:text-slate-300 uppercase w-full shadow-sm focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 outline-none transition-all" />
+                                            <input 
+                                                {...register("nroDocumento")} 
+                                                disabled={!hasWritePermission} 
+                                                placeholder="DOCUMENTO" 
+                                                className={`bg-white border ${errors.nroDocumento ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200'} rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 placeholder:text-slate-300 uppercase w-full shadow-sm focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 outline-none transition-all`} 
+                                            />
+                                            {errors.nroDocumento && (
+                                                <p className="text-[11px] font-bold text-red-500 ml-1 mt-0.5 animate-in fade-in slide-in-from-top-1">
+                                                    {errors.nroDocumento.message}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
@@ -546,7 +706,7 @@ export default function AppointmentModal({
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha Nacimiento *</label>
-                                        <input type="date" {...register("fechaNacimiento")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 shadow-sm transition-all" />
+                                        <input type="date" {...register("fechaNacimiento")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 shadow-sm transition-all"  max="9999-12-31" min="1900-01-01" />
                                     </div>
                                 </div>
                             )}
@@ -559,15 +719,28 @@ export default function AppointmentModal({
                             <div className="grid grid-cols-1 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Sede *</label>
-                                    <select {...register("sucursalId")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none">
+                                    <select 
+                                        {...register("sucursalId")} 
+                                        disabled={!hasWritePermission} 
+                                        className={`w-full bg-white border ${errors.sucursalId ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200'} rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none`}
+                                    >
                                         <option value="">ELIJA SUCURSAL...</option>
                                         {branches.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
                                     </select>
+                                    {errors.sucursalId && (
+                                        <p className="text-[10px] font-bold text-red-500 ml-1 mt-0.5 animate-in fade-in slide-in-from-top-1">
+                                            {errors.sucursalId.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Especialidad *</label>
-                                    <select {...register("especialidadId")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Especialidad</label>
+                                    <select 
+                                        {...register("especialidadId")} 
+                                        disabled={!hasWritePermission} 
+                                        className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none"
+                                    >
                                         <option value="">ELIJA ESPECIALIDAD...</option>
                                         {/* ✅ FILTRADO POR SUCURSAL */}
                                         {specialties
@@ -590,7 +763,11 @@ export default function AppointmentModal({
 
                                 <div className="space-y-1.5">
                                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Profesional *</label>
-                                    <select {...register("doctorId")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none disabled:bg-slate-100 disabled:cursor-not-allowed">
+                                    <select 
+                                        {...register("doctorId")} 
+                                        disabled={!hasWritePermission} 
+                                        className={`w-full bg-white border ${errors.doctorId ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200'} rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none disabled:bg-slate-100 disabled:cursor-not-allowed`}
+                                    >
                                         <option value="">ELIJA DOCTOR...</option>
                                         {/* ✅ FILTRADO POR ESPECIALIDAD Y SUCURSAL */}
                                         {doctors
@@ -598,8 +775,9 @@ export default function AppointmentModal({
                                                 const selectedSuc = watch("sucursalId");
                                                 if (selectedSuc && Array.isArray(d.sucursales) && d.sucursales.length > 0) {
                                                     const matchBranch = d.sucursales.some(suc => 
-                                                        suc === selectedSuc || 
-                                                        branches.find(b => b.id === selectedSuc)?.nombre?.toLowerCase() === String(suc).toLowerCase()
+                                                        String(suc).toLowerCase() === String(selectedSuc).toLowerCase() || 
+                                                        branches.find(b => String(b.id) === String(selectedSuc))?.nombre?.toLowerCase() === String(suc).toLowerCase() ||
+                                                        branches.find(b => String(b.nombre || "").toLowerCase() === String(suc).toLowerCase())?.id === selectedSuc
                                                     );
                                                     if (!matchBranch) return false;
                                                 }
@@ -609,15 +787,21 @@ export default function AppointmentModal({
 
                                                 const docEspStr = (d.especialidad || "").toLowerCase();
                                                 const docEspArr = Array.isArray(d.especialidades) ? d.especialidades.map(e => String(e).toLowerCase()) : [];
-                                                const specObj = specialties.find(s => (s.id || s.nombre) === esp);
+                                                const specObj = specialties.find(s => (s.id && String(s.id) === String(esp)) || (s.nombre && String(s.nombre).toLowerCase() === String(esp).toLowerCase()));
                                                 const targetSpecName = (specObj?.nombre || esp || "").toLowerCase();
                                                 const targetSpecId = (specObj?.id || esp || "").toLowerCase();
 
                                                 if (docEspArr.length > 0) {
-                                                    return docEspArr.some(e => e.includes(targetSpecName) || e.includes(targetSpecId) || targetSpecName.includes(e));
+                                                    const matchesAny = docEspArr.some(e => 
+                                                        e.includes(targetSpecName) || 
+                                                        targetSpecName.includes(e) || 
+                                                        e.includes(targetSpecId) || 
+                                                        targetSpecId.includes(e)
+                                                    );
+                                                    if (matchesAny) return true;
                                                 }
                                                 if (docEspStr) {
-                                                    return docEspStr.includes(targetSpecName) || docEspStr.includes(targetSpecId);
+                                                    return docEspStr.includes(targetSpecName) || targetSpecName.includes(docEspStr) || docEspStr.includes(targetSpecId);
                                                 }
                                                 return true;
                                             })
@@ -627,14 +811,36 @@ export default function AppointmentModal({
                                             })
                                         }
                                     </select>
+                                    {errors.doctorId && (
+                                        <p className="text-[10px] font-bold text-red-500 ml-1 mt-0.5 animate-in fade-in slide-in-from-top-1">
+                                            {errors.doctorId.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="space-y-1.5">
                                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Espacio Clínico *</label>
-                                    <select {...register("consultorioId")} disabled={!hasWritePermission} className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none">
-                                        <option value="">ELIJA CONSULTORIO...</option>
-                                        {chairs.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                    <select 
+                                        {...register("consultorioId")} 
+                                        disabled={!hasWritePermission || !watchedDoctorId || availableChairs.length === 0} 
+                                        className={`w-full bg-white border ${errors.consultorioId ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200'} rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none disabled:bg-slate-100 disabled:cursor-not-allowed`}
+                                    >
+                                        {!watchedDoctorId ? (
+                                            <option value="">PRIMERO SELECCIONE UN DOCTOR...</option>
+                                        ) : availableChairs.length === 0 ? (
+                                            <option value="">SIN ESPACIO CLÍNICO ASIGNADO</option>
+                                        ) : (
+                                            <>
+                                                <option value="">ELIJA CONSULTORIO...</option>
+                                                {availableChairs.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                            </>
+                                        )}
                                     </select>
+                                    {errors.consultorioId && (
+                                        <p className="text-[10px] font-bold text-red-500 ml-1 mt-0.5 animate-in fade-in slide-in-from-top-1">
+                                            {errors.consultorioId.message}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
@@ -645,7 +851,7 @@ export default function AppointmentModal({
                                             {...register("fecha")} 
                                             disabled={!hasWritePermission} 
                                             className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 uppercase outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 shadow-sm transition-all" 
-                                        />
+                                         max="9999-12-31" min="1900-01-01" />
                                     </div>
 
                                     <div className="space-y-1.5">
@@ -705,16 +911,28 @@ export default function AppointmentModal({
                             <div className="flex flex-col gap-5 bg-slate-50/50 p-5 rounded-2xl border border-dashed border-slate-200">
                                 <div className="flex items-center justify-between">
                                     <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="checkbox" {...register("valoracion")} disabled={!hasWritePermission} className="rounded-md border-slate-300 text-emerald-600 focus:ring-emerald-500/20 h-4.5 w-4.5 transition-all shadow-sm" />
+                                        <input 
+                                            type="checkbox" 
+                                            checked={Boolean(watchedValoracion)}
+                                            onChange={handleToggleValoracion}
+                                            disabled={!hasWritePermission} 
+                                            className="rounded-md border-slate-300 text-emerald-600 focus:ring-emerald-500/20 h-4.5 w-4.5 transition-all shadow-sm cursor-pointer" 
+                                        />
                                         <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight group-hover:text-emerald-600 transition-colors">Valoración</span>
                                     </label>
                                     <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="checkbox" {...register("control")} disabled={!hasWritePermission} className="rounded-md border-slate-300 text-emerald-600 focus:ring-emerald-500/20 h-4.5 w-4.5 transition-all shadow-sm" />
+                                        <input 
+                                            type="checkbox" 
+                                            checked={Boolean(watchedControl)}
+                                            onChange={handleToggleControl}
+                                            disabled={!hasWritePermission} 
+                                            className="rounded-md border-slate-300 text-emerald-600 focus:ring-emerald-500/20 h-4.5 w-4.5 transition-all shadow-sm cursor-pointer" 
+                                        />
                                         <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight group-hover:text-emerald-600 transition-colors">Control Post</span>
                                     </label>
                                 </div>
                                 <label className="flex items-center gap-3 cursor-pointer group border-t border-slate-200 pt-4">
-                                    <input type="checkbox" {...register("enviarCorreo")} disabled={!hasWritePermission} className="rounded-md border-slate-300 text-blue-600 focus:ring-blue-500/20 h-4 w-4 transition-all" />
+                                    <input type="checkbox" {...register("enviarCorreo")} disabled={!hasWritePermission} className="rounded-md border-slate-300 text-blue-600 focus:ring-blue-500/20 h-4 w-4 transition-all cursor-pointer" />
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">Enviar recordatorio vía email</span>
                                 </label>
                             </div>
@@ -803,6 +1021,14 @@ export default function AppointmentModal({
                                                     watchedConsultorioId,
                                                     watchedDuracion
                                                 );
+
+                                                if (!watchedDoctorId || !watchedConsultorioId) {
+                                                    return (
+                                                        <div className="py-8 text-center px-1">
+                                                            <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest block leading-tight">Elija profesional y consultorio</span>
+                                                        </div>
+                                                    );
+                                                }
 
                                                 if (slots.length === 0) {
                                                     return (

@@ -586,7 +586,7 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
                                     value={formData.dsFechaInicio}
                                     onChange={(e) => handleChange("dsFechaInicio", e.target.value)}
                                     className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
 
                             {/* Fecha Final */}
@@ -597,7 +597,7 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
                                     value={formData.dsFechaFinal}
                                     onChange={(e) => handleChange("dsFechaFinal", e.target.value)}
                                     className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
                         </div>
 
@@ -734,7 +734,7 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
                                     value={formData.fvFechaInicio}
                                     onChange={(e) => handleChange("fvFechaInicio", e.target.value)}
                                     className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
 
                             {/* Fecha final */}
@@ -745,7 +745,7 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
                                     value={formData.fvFechaFinal}
                                     onChange={(e) => handleChange("fvFechaFinal", e.target.value)}
                                     className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
 
                             {/* Texto resolución */}
@@ -895,7 +895,7 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
                                     value={formData.feFechaInicio}
                                     onChange={(e) => handleChange("feFechaInicio", e.target.value)}
                                     className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
 
                             {/* Fecha Final */}
@@ -906,7 +906,7 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
                                     value={formData.feFechaFinal}
                                     onChange={(e) => handleChange("feFechaFinal", e.target.value)}
                                     className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
                         </div>
 

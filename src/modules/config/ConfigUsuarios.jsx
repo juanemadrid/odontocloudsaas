@@ -298,7 +298,7 @@ export default function ConfigUsuarios() {
                                     </div>
                                     <div>
                                         <label className="label">Fecha de nacimiento *</label>
-                                        <input type="date" className="input" value={formData.fechaNacimiento} onChange={e => setFormData({ ...formData, fechaNacimiento: e.target.value })} />
+                                        <input type="date" className="input" value={formData.fechaNacimiento} onChange={e => setFormData({ ...formData, fechaNacimiento: e.target.value })}  max="9999-12-31" min="1900-01-01" />
                                     </div>
                                 </div>
                             </div>

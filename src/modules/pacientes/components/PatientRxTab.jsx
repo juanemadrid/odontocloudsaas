@@ -34,7 +34,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
     const [selectedFile, setSelectedFile] = useState(null);
     const [nombreVisible, setNombreVisible] = useState("");
     const [descripcion, setDescripcion] = useState("");
-    const [profesionalResp, setProfesionalResp] = useState(currentUserName);
+    const [profesionalResp, setProfesionalResp] = useState("");
     const [fechaAsoc, setFechaAsoc] = useState(new Date().toISOString().split("T")[0]);
     const fileInputRef = useRef(null);
 
@@ -46,24 +46,23 @@ export default function PatientRxTab({ patient, onUpdate }) {
             try {
                 const list = await getDoctorsList(userProfile, patient);
                 setCatalogProfesionales(list);
-                if (list.length > 0) {
-                    const currentUid = String(userProfile?.uid || userProfile?.id || '');
-                    const me = list.find(p => String(p.id) === currentUid);
-                    const myName = me ? (me.nombreCompleto || me.nombre) : (list[0].nombreCompleto || list[0].nombre);
-                    setProfesionalResp(prev => prev && prev !== "Usuario" ? prev : myName);
-                }
             } catch (err) {
                 console.error("Error loading professionals in PatientRxTab:", err);
             }
         };
         loadCatalog();
-    }, [userProfile, patient]);
+    }, [userProfile, patient?.profesionales, patient?.id]);
+
+    const currentHistorial = patient?.historial_medico || patient?.historialMedico || {};
+    const rxImagenesList = (Array.isArray(patient?.rxImagenes) && patient.rxImagenes.length > 0)
+        ? patient.rxImagenes
+        : (Array.isArray(currentHistorial?.rxImagenes) ? currentHistorial.rxImagenes : []);
 
     React.useEffect(() => {
         let cancelled = false;
         const refreshUrls = async () => {
             const entries = await Promise.all(
-                (patient?.rxImagenes || []).map(async item => {
+                rxImagenesList.map(async item => {
                     if (!item?.path && !item?.url) return null;
                     const signedUrl = await resolvePrivateFileUrl(item.url, item.path);
                     return signedUrl ? [item.path || item.url, signedUrl] : null;
@@ -77,19 +76,19 @@ export default function PatientRxTab({ patient, onUpdate }) {
         return () => {
             cancelled = true;
         };
-    }, [patient?.rxImagenes]);
+    }, [patient?.rxImagenes, patient?.historial_medico?.rxImagenes]);
 
     const images = useMemo(() => {
-        let list = Array.isArray(patient?.rxImagenes) ? patient.rxImagenes.map(item => ({
+        let list = rxImagenesList.map(item => ({
             ...item,
             url: signedUrls[item.path || item.url] || item.url
-        })) : [];
+        }));
         if (filter.trim()) {
             const q = filter.toLowerCase();
             list = list.filter(i => (i.title || "").toLowerCase().includes(q) || (i.name || "").toLowerCase().includes(q));
         }
         return [...list].sort((a, b) => (b.uploadedAtMS || b.created || 0) - (a.uploadedAtMS || a.created || 0));
-    }, [patient?.rxImagenes, filter, signedUrls]);
+    }, [rxImagenesList, filter, signedUrls]);
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
@@ -153,21 +152,35 @@ export default function PatientRxTab({ patient, onUpdate }) {
 
             let updatedList;
             if (editingImage) {
-                updatedList = (patient.rxImagenes || []).map(img => 
+                updatedList = rxImagenesList.map(img => 
                     img.path === editingImage.path ? itemData : img
                 );
             } else {
-                updatedList = [...(patient.rxImagenes || []), itemData];
+                updatedList = [...rxImagenesList, itemData];
             }
 
-            await supabase
+            const currentHist = patient?.historial_medico || patient?.historialMedico || {};
+            const newHistorial = {
+                ...currentHist,
+                rxImagenes: updatedList
+            };
+
+            const { error } = await supabase
                 .from("pacientes")
                 .update({
-                    rxImagenes: updatedList,
+                    historial_medico: newHistorial,
                     updated_at: new Date().toISOString()
                 })
                 .eq("id", patient.id);
-            onUpdate && onUpdate({ ...patient, rxImagenes: updatedList });
+
+            if (error) throw error;
+
+            onUpdate && onUpdate({
+                ...patient,
+                rxImagenes: updatedList,
+                historial_medico: newHistorial,
+                historialMedico: newHistorial
+            });
             toast.success(editingImage ? "Archivo actualizado correctamente" : "Archivo guardado correctamente");
             
             // reset form and return to list
@@ -178,7 +191,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
             setEditingImage(null);
             setViewMode("list");
         } catch (err) {
-            console.error(err);
+            console.error("Error subiendo o guardando el archivo:", err);
             toast.error("Error subiendo el archivo");
         } finally {
             setUploading(false);
@@ -190,20 +203,32 @@ export default function PatientRxTab({ patient, onUpdate }) {
     };
 
     const executeDelete = async (item) => {
-        const currentList = patient.rxImagenes || [];
-        const newList = currentList.filter(x => x.path !== item.path && x.url !== item.url);
+        const newList = rxImagenesList.filter(x => x.path !== item.path && x.url !== item.url);
 
         try {
             if (item.path) await removePrivateFile(item.path);
-            await supabase
+            const currentHist = patient?.historial_medico || patient?.historialMedico || {};
+            const newHistorial = {
+                ...currentHist,
+                rxImagenes: newList
+            };
+
+            const { error } = await supabase
                 .from("pacientes")
                 .update({
-                    rxImagenes: newList,
+                    historial_medico: newHistorial,
                     updated_at: new Date().toISOString()
                 })
                 .eq("id", patient.id);
 
-            onUpdate && onUpdate({ ...patient, rxImagenes: newList });
+            if (error) throw error;
+
+            onUpdate && onUpdate({
+                ...patient,
+                rxImagenes: newList,
+                historial_medico: newHistorial,
+                historialMedico: newHistorial
+            });
             toast.success("Archivo eliminado");
         } catch (e) {
             console.error("Document deletion failed:", e);
@@ -272,7 +297,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mt-3">Fecha asociación *</label>
                             </div>
                             <div className="md:col-span-9">
-                                <input type="date" required value={fechaAsoc} onChange={e => setFechaAsoc(e.target.value)} className="w-64 bg-white border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium text-slate-700 focus:border-blue-500 outline-none" />
+                                <input type="date" required value={fechaAsoc} onChange={e => setFechaAsoc(e.target.value)} className="w-64 bg-white border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium text-slate-700 focus:border-blue-500 outline-none"  max="9999-12-31" min="1900-01-01" />
                             </div>
 
                             <div className="md:col-span-3 text-right">
@@ -299,13 +324,20 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                     onChange={e => setProfesionalResp(e.target.value)} 
                                     className="w-full bg-white border border-slate-200 rounded-lg py-2.5 px-4 text-sm font-medium text-slate-700 focus:border-blue-500 outline-none cursor-pointer"
                                 >
-                                    <option value="">Seleccione...</option>
+                                    <option value="">
+                                        {catalogProfesionales.length === 0 ? "Sin profesionales asignados al paciente" : "Seleccione..."}
+                                    </option>
                                     {catalogProfesionales.map((p) => (
                                         <option key={p.id} value={p.nombreCompleto || p.nombre || p.id}>
                                             {p.nombreCompleto || p.nombre || p.id}
                                         </option>
                                     ))}
                                 </select>
+                                {catalogProfesionales.length === 0 && (
+                                    <p className="text-[11px] text-amber-600 font-medium mt-1.5 flex items-center gap-1">
+                                        ⚠️ Este paciente no tiene profesionales asignados en la pestaña "Profesionales".
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </form>
@@ -344,7 +376,15 @@ export default function PatientRxTab({ patient, onUpdate }) {
                             <FiEye size={14} /> Comparar Antes vs Después
                         </button>
                         <button 
-                            onClick={() => setViewMode("form")}
+                            onClick={() => {
+                                setEditingImage(null);
+                                setSelectedFile(null);
+                                setNombreVisible("");
+                                setDescripcion("");
+                                setProfesionalResp("");
+                                setFechaAsoc(new Date().toISOString().split("T")[0]);
+                                setViewMode("form");
+                            }}
                             className="px-6 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 flex items-center gap-2 transition-all active:scale-95 shrink-0"
                         >
                             <FiPlus size={14} /> Nuevo archivo

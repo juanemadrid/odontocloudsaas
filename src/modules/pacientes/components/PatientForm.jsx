@@ -63,7 +63,7 @@ export default function PatientForm({
 }) {
     const toast = useToast();
     const { userProfile } = useAuth();
-    const inquilino = userProfile?.inquilino;
+    const inquilino = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
 
     const [planes, setPlanes] = useState([]);
     const [profesionales, setProfesionales] = useState([]);
@@ -123,7 +123,10 @@ export default function PatientForm({
 
     const isRequired = (key, defaultRequired = false) => {
         if (!formConfig) return defaultRequired;
-        return formConfig[key]?.required === true;
+        if (formConfig[key] && typeof formConfig[key].required === "boolean") {
+            return formConfig[key].required;
+        }
+        return defaultRequired;
     };
 
     const dynamicSchema = useMemo(() => {
@@ -140,6 +143,7 @@ export default function PatientForm({
             paisDomicilio: "paisDomicilio",
             ciudadDomicilio: "ciudadDomicilio",
             barrioDomicilio: "barrio",
+            barrio: "barrio",
             lugarResidencia: "lugarResidencia",
             estrato: "estrato",
             zonaResidencial: "zonaResidencial",
@@ -188,7 +192,7 @@ export default function PatientForm({
                     shape[schemaKey] = z.any().optional().nullable().or(z.literal(""));
                 } else if (fieldConfig.required === false) {
                     shape[schemaKey] = shape[schemaKey].optional().or(z.literal("")).or(z.any());
-                } else {
+                } else if (fieldConfig.required === true) {
                     shape[schemaKey] = z.string().min(1, `El campo es obligatorio`);
                 }
             }
@@ -304,16 +308,64 @@ export default function PatientForm({
             if (!inquilino) return;
             setLoadingProfesionales(true);
             try {
-                const { profesionales } = await import("../../../services/supabaseServices");
-                const data = await profesionales.getByTenant(inquilino);
-                const professionalsList = data.map(d => ({ 
-                    id: d.id, 
-                    ...d, 
-                    displayName: d.nombre_completo || d.nombre 
-                }));
-                // Ordenar alfabéticamente
-                professionalsList.sort((a, b) => a.displayName.localeCompare(b.displayName));
-                setProfesionales(professionalsList);
+                const usersMap = new Map();
+
+                // 1. Table 'usuarios'
+                try {
+                    const { data: uData } = await supabase
+                        .from("usuarios")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    (uData || []).forEach(u => {
+                        const name = (u.displayname || u.nombre || u.nombres || u.nombre_completo || u.full_name || u.email || "").trim();
+                        if (name) usersMap.set(u.id || name.toLowerCase(), { id: u.id, displayName: name, ...u });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from usuarios table:", err);
+                }
+
+                // 2. Table 'profiles'
+                try {
+                    const { data: pData } = await supabase
+                        .from("profiles")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    (pData || []).forEach(p => {
+                        const name = (p.full_name || p.displayname || p.nombre || p.nombre_completo || p.email || "").trim();
+                        if (name) usersMap.set(p.id || name.toLowerCase(), { id: p.id, displayName: name, ...p });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from profiles table:", err);
+                }
+
+                // 3. Table 'profesionales'
+                try {
+                    const { profesionales } = await import("../../../services/supabaseServices");
+                    const data = await profesionales.getByTenant(inquilino);
+                    (data || []).forEach(d => {
+                        const name = (d.nombre_completo || d.nombre || d.displayName || d.displayname || "").trim();
+                        if (name) usersMap.set(d.id || name.toLowerCase(), { id: d.id, displayName: name, ...d });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from profesionales table:", err);
+                }
+
+                // 4. website_config fallback
+                try {
+                    const { getConfigItems } = await import("../../../services/configPersistenceService");
+                    const cfgUsers = await getConfigItems(inquilino, "usuarios", "usuarios");
+                    (cfgUsers || []).forEach(u => {
+                        const name = (u.nombre || u.displayname || u.nombres || u.nombre_completo || "").trim();
+                        if (name) usersMap.set(u.id || name.toLowerCase(), { id: u.id, displayName: name, ...u });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from website_config usuarios:", err);
+                }
+
+                const sortedUsers = Array.from(usersMap.values()).sort((a, b) => 
+                    (a.displayName || "").localeCompare(b.displayName || "")
+                );
+                setProfesionales(sortedUsers);
             } catch (e) {
                 console.error("Error loading profesionales from Supabase:", e);
             } finally {
@@ -356,78 +408,94 @@ export default function PatientForm({
         const loadSucursales = async () => {
             if (!inquilino) return;
             try {
-                const q = query(collection(db, "sucursales"), where("inquilino", "==", inquilino));
-                const snap = await getDocs(q);
-                const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-                setSucursales(data);
+                let sucursalesData = [];
+                const { data, error } = await supabase
+                    .from("sucursales")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (!error && data) sucursalesData = data;
+
+                try {
+                    const { getConfigItems } = await import("../../../services/configPersistenceService");
+                    const cfgSuc = await getConfigItems(inquilino, "sucursales", "sucursales");
+                    if (cfgSuc && cfgSuc.length > 0) {
+                        const sMap = new Map();
+                        sucursalesData.forEach(s => sMap.set(s.id, s));
+                        cfgSuc.forEach(s => {
+                            if (!sMap.has(s.id)) sMap.set(s.id, s);
+                            else sMap.set(s.id, { ...sMap.get(s.id), ...s });
+                        });
+                        sucursalesData = Array.from(sMap.values());
+                    }
+                } catch (e) {}
+
+                sucursalesData.sort((a, b) => (a.nombre || a.name || "").localeCompare(b.nombre || b.name || ""));
+                setSucursales(sucursalesData);
             } catch (e) {
-                console.error("Error loading sucursales:", e);
+                console.error("Error loading sucursales from Supabase:", e);
             }
         };
 
         const loadRemisionData = async () => {
             if (!inquilino) return;
             try {
-                const [uSnap, pSnap] = await Promise.all([
-                    getDocs(query(collection(db, "usuarios"), where("inquilino", "==", inquilino))),
-                    getDocs(query(collection(db, "pacientes"), where("inquilino", "==", inquilino)))
-                ]);
-                const usuarios = uSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                    .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-                const pacientes = pSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                    .sort((a, b) => (a.nombreCompleto || a.nombre || "").localeCompare(b.nombreCompleto || b.nombre || ""));
-                setUsuariosRemision(usuarios);
+                const { data: pData } = await supabase
+                    .from("pacientes")
+                    .select("id, nombres, apellidos, documento")
+                    .eq("tenant_id", inquilino);
+
+                const pacientes = (pData || []).map(d => ({
+                    id: d.id,
+                    nombres: d.nombres,
+                    apellidos: d.apellidos,
+                    nombreCompleto: `${d.nombres || ""} ${d.apellidos || ""}`.trim() || d.documento
+                })).sort((a, b) => (a.nombreCompleto || "").localeCompare(b.nombreCompleto || ""));
                 setPacientesRemision(pacientes);
             } catch (e) {
-                console.error("Error loading remision data:", e);
+                console.error("Error loading remision data from Supabase:", e);
             }
         };
 
         const loadConvenios = async () => {
             if (!inquilino) return;
             try {
-                const q = query(collection(db, "convenios"), where("inquilino", "==", inquilino), where("activo", "==", true));
-                const snap = await getDocs(q);
-                const data = snap.docs.map(d => d.data().nombre?.trim()).filter(Boolean);
-                data.sort((a, b) => a.localeCompare(b));
-                setConveniosList(data);
+                let conveniosData = [];
+                const { data, error } = await supabase
+                    .from("convenios")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (!error && data) conveniosData = data;
+
+                try {
+                    const { getConfigItems } = await import("../../../services/configPersistenceService");
+                    const cfgConv = await getConfigItems(inquilino, "convenios", "convenios");
+                    if (cfgConv && cfgConv.length > 0) {
+                        const cMap = new Map();
+                        conveniosData.forEach(c => cMap.set(c.id, c));
+                        cfgConv.forEach(c => {
+                            if (!cMap.has(c.id)) cMap.set(c.id, c);
+                            else cMap.set(c.id, { ...cMap.get(c.id), ...c });
+                        });
+                        conveniosData = Array.from(cMap.values());
+                    }
+                } catch (e) {}
+
+                const activeConvenios = conveniosData.filter(c => c.activo !== false && c.estado !== "Inactivo");
+                const names = activeConvenios.map(c => (c.nombre || c.name || "").trim()).filter(Boolean);
+                const uniqueNames = [...new Set(names)].sort((a, b) => a.localeCompare(b));
+                setConveniosList(uniqueNames);
             } catch (e) {
-                console.error("Error loading convenios:", e);
+                console.error("Error loading convenios from Supabase:", e);
             }
         };
 
-        // TODO: Migrar estas funciones a Supabase cuando estén listos los servicios
-        // const loadPlanes = async () => {
-        //     if (!inquilino) return;
-        //     setLoadingPlanes(true);
-        //     // ... implementar cuando esté listo el servicio de planes
-        //     setLoadingPlanes(false);
-        // };
-
-        // const loadSucursales = async () => {
-        //     if (!inquilino) return;
-        //     // ... implementar cuando esté listo el servicio de sucursales  
-        // };
-
-        // const loadConvenios = async () => {
-        //     if (!inquilino) return;
-        //     // ... implementar cuando esté listo el servicio de convenios
-        // };
-
-        // const loadRemisionData = async () => {
-        //     if (!inquilino) return;
-        //     // ... implementar cuando esté listo el servicio de usuarios/pacientes para remisión
-        // };
-
-        // Cargar solo los servicios que ya están migrados
+        // Cargar catálogos desde Supabase
         loadProfesionales();
         loadEps();
         loadBarrios();
-        // loadPlanes();           // TODO: Migrar
-        // loadSucursales();       // TODO: Migrar  
-        // loadConvenios();        // TODO: Migrar
-        // loadRemisionData();     // TODO: Migrar
+        loadSucursales();
+        loadConvenios();
+        loadRemisionData();
     }, [inquilino]);
 
     const {
@@ -464,6 +532,44 @@ export default function PatientForm({
         }
     }, [nroDocumentoValue, setValue]);
 
+    useEffect(() => {
+        if (!nroDocumentoValue || !nroDocumentoValue.trim()) {
+            clearErrors("nroDocumento");
+            return;
+        }
+        const val = nroDocumentoValue.trim();
+        if (initialData?.nroDocumento === val || val.length < 3) {
+            clearErrors("nroDocumento");
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("pacientes")
+                    .select("id")
+                    .eq("tenant_id", inquilino)
+                    .eq("documento", val)
+                    .limit(1);
+
+                if (error) throw error;
+
+                if (data && data.length > 0 && data[0].id !== initialData?.id) {
+                    setError("nroDocumento", {
+                        type: "manual",
+                        message: "Número de documento en uso"
+                    });
+                } else {
+                    clearErrors("nroDocumento");
+                }
+            } catch (err) {
+                console.error("Error checking document duplication:", err);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [nroDocumentoValue, initialData?.id, initialData?.nroDocumento, inquilino, setError, clearErrors]);
+
     const checkDocumentDuplication = async (e) => {
         const val = e.target.value?.trim();
         if (!val) return;
@@ -487,9 +593,9 @@ export default function PatientForm({
                 if (foundDoc.id !== initialData?.id) {
                     setError("nroDocumento", {
                         type: "manual",
-                        message: `Ya existe un paciente registrado con el número de documento ${val}`
+                        message: "Número de documento en uso"
                     });
-                    toast.error(`Atención: Ya existe un paciente con el número de documento ${val}`);
+                    toast.error("Número de documento en uso");
                 } else {
                     clearErrors("nroDocumento");
                 }
@@ -1116,7 +1222,7 @@ export default function PatientForm({
                                 {isVisible("fechaNacimiento") && (
                                     <FormRow label="Fecha de Nacimiento" required={isRequired("fechaNacimiento", true)} error={errors.fechaNacimiento}>
                                         <div className="flex gap-4">
-                                            <input type="date" {...register("fechaNacimiento")} className="form-input text-sm w-full md:w-48" />
+                                            <input type="date" {...register("fechaNacimiento")} className="form-input text-sm w-full md:w-48"  max="9999-12-31" min="1900-01-01" />
                                             <div className="px-4 py-2 bg-slate-100 rounded-lg text-sm text-slate-700 font-bold flex items-center shadow-inner">
                                                 Edad: {age || "---"}
                                             </div>
@@ -1202,22 +1308,21 @@ export default function PatientForm({
                                     </FormRow>
                                 )}
 
-                                {(isVisible("estrato") || isVisible("zonaResidencial")) && (
-                                    <FormRow label="Configuración Domicilio">
-                                        <div className="flex gap-4 items-center">
-                                            {isVisible("estrato") && (
-                                                <select {...register("estrato")} className="form-input text-sm w-32">
-                                                    <option value="">Estrato</option>
-                                                    {ESTRATOS.map(e => <option key={e} value={e}>{e}</option>)}
-                                                </select>
-                                            )}
-                                            {isVisible("zonaResidencial") && (
-                                                <select {...register("zonaResidencial")} className="form-input text-sm w-40">
-                                                    <option value="">Zona Residencial</option>
-                                                    {ZONAS_RESIDENCIALES.map(z => <option key={z} value={z}>{z}</option>)}
-                                                </select>
-                                            )}
-                                        </div>
+                                {isVisible("estrato") && (
+                                    <FormRow label="Estrato" required={isRequired("estrato", false)} error={errors.estrato}>
+                                        <select {...register("estrato")} className="form-input text-sm w-full">
+                                            <option value="">Seleccione estrato...</option>
+                                            {ESTRATOS.map(e => <option key={e} value={e}>{e}</option>)}
+                                        </select>
+                                    </FormRow>
+                                )}
+
+                                {isVisible("zonaResidencial") && (
+                                    <FormRow label="Zona residencial" required={isRequired("zonaResidencial", true)} error={errors.zonaResidencial}>
+                                        <select {...register("zonaResidencial")} className="form-input text-sm w-full">
+                                            <option value="">Seleccione zona...</option>
+                                            {ZONAS_RESIDENCIALES.map(z => <option key={z} value={z}>{z}</option>)}
+                                        </select>
                                     </FormRow>
                                 )}
 

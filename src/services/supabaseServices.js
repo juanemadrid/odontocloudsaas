@@ -467,40 +467,93 @@ export const metodosPagoService = {
 // ===============================================================
 
 export const configuracionFormulariosService = {
-  // Obtener configuración de formulario
-  async get(tenantId, tipoFormulario) {
+  // Obtener configuración de formulario (primero website_config, luego configuracion_formularios, luego legacy)
+  async get(tenantId, tipoFormulario = "formulario_pacientes") {
+    if (!tenantId) return null;
     try {
-      const { data, error } = await supabase
+      // 1. Principal: website_config con tenant_id = tenantId
+      const { data: webCfg, error: webErr } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+
+      if (!webErr && webCfg?.config?.[tipoFormulario]) {
+        return webCfg.config[tipoFormulario];
+      }
+
+      // 2. Fallback: tabla configuracion_formularios
+      const { data: formCfg, error: formErr } = await supabase
         .from("configuracion_formularios")
         .select("*")
         .eq("tenant_id", tenantId)
         .eq("tipo_formulario", tipoFormulario)
         .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') {
-        console.warn("configuracion_formularios get notice:", error.message);
-        return null;
+      if (!formErr && formCfg?.configuracion) {
+        return formCfg.configuracion;
       }
-      return data?.configuracion || null;
     } catch (e) {
-      return null;
+      console.warn(`Error fetching ${tipoFormulario} config:`, e);
     }
+    return null;
   },
 
-  // Guardar configuración de formulario
-  async save(tenantId, tipoFormulario, configuracion) {
-    const { data, error } = await supabase
-      .from("configuracion_formularios")
-      .upsert([{
-        tenant_id: tenantId,
-        tipo_formulario: tipoFormulario,
-        configuracion
-      }])
-      .select()
+  // Guardar configuración de formulario en website_config
+  async save(tenantId, tipoFormulario = "formulario_pacientes", configuracion) {
+    if (!tenantId) throw new Error("Tenant ID no proporcionado");
+
+    // Consultar website_config actual para el inquilino
+    const { data: existingRow, error: fetchError } = await supabase
+      .from("website_config")
+      .select("config")
+      .eq("tenant_id", tenantId)
       .maybeSingle();
 
-    if (error) throw error;
-    return data;
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.warn("Notice fetching website_config before save:", fetchError.message);
+    }
+
+    const currentConfig = existingRow?.config || {};
+    const updatedConfig = {
+      ...currentConfig,
+      [tipoFormulario]: configuracion,
+      updatedAt: new Date().toISOString()
+    };
+
+    // 1. Guardar en website_config con tenant_id = tenantId
+    const { error: upsertError } = await supabase
+      .from("website_config")
+      .upsert({ tenant_id: tenantId, config: updatedConfig }, { onConflict: "tenant_id" });
+
+    if (upsertError) {
+      console.error("Error al guardar en website_config:", upsertError);
+      throw upsertError;
+    }
+
+    // 2. Intentar guardar en configuracion_formularios (si la tabla existe)
+    try {
+      await supabase
+        .from("configuracion_formularios")
+        .upsert([{
+          tenant_id: tenantId,
+          tipo_formulario: tipoFormulario,
+          configuracion
+        }], { onConflict: "tenant_id,tipo_formulario" });
+    } catch (e) {
+      // Ignorar de forma segura si la tabla no existe o falla por RLS
+    }
+
+    // 3. Intentar guardar en la clave legacy por compatibilidad
+    try {
+      await supabase
+        .from("website_config")
+        .upsert([{ tenant_id: `${tenantId}_${tipoFormulario}`, config: configuracion }], { onConflict: "tenant_id" });
+    } catch (e) {
+      // Ignorar si la clave legacy falla por RLS
+    }
+
+    return configuracion;
   }
 };
 
@@ -511,7 +564,8 @@ export const configuracionFormulariosService = {
 export const documentosClinicosService = {
   // Obtener documentos de un paciente
   async getByPaciente(pacienteId, tipo = null) {
-    let query = supabase
+    const client = supabaseAdmin || supabase;
+    let query = client
       .from("documentos_clinicos")
       .select("*")
       .eq("paciente_id", pacienteId);
@@ -630,21 +684,54 @@ export const supabaseUtils = {
 // ===============================================================
 
 export const getDoctorsList = async (userProfile, patient = null) => {
-  const mapDoctors = new Map();
-  const inquilino = userProfile?.inquilino || userProfile?.tenantId || patient?.inquilino || patient?.tenant_id;
-
-  // A. Doctores asignados al paciente
-  if (patient?.profesionales && Array.isArray(patient.profesionales)) {
-    patient.profesionales.forEach(d => {
-      const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
-      const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-      if (name.trim() && docId) {
-        mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', raw: d });
+  // 1. If a patient is provided, return ONLY the professionals assigned to that patient (from ProfesionalesTab / historial_medico)
+  if (patient) {
+    let assigned = [];
+    const pHist = patient.historial_medico || patient.historialMedico;
+    if (patient.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
+      assigned = patient.profesionales;
+    } else if (pHist?.profesionales && Array.isArray(pHist.profesionales) && pHist.profesionales.length > 0) {
+      assigned = pHist.profesionales;
+    } else if (patient.profesional_nombre || patient.profesionalNombre) {
+      assigned = [{ id: patient.profesional_id || patient.profesionalId || "default-doc", nombre: patient.profesional_nombre || patient.profesionalNombre }];
+    } else if (patient.id) {
+      try {
+        const { data: pData } = await supabase
+          .from("pacientes")
+          .select("historial_medico, profesional_id, profesional_nombre")
+          .eq("id", patient.id)
+          .maybeSingle();
+        if (pData?.historial_medico?.profesionales && Array.isArray(pData.historial_medico.profesionales) && pData.historial_medico.profesionales.length > 0) {
+          assigned = pData.historial_medico.profesionales;
+        } else if (pData?.profesional_nombre) {
+          assigned = [{ id: pData.profesional_id || "default-doc", nombre: pData.profesional_nombre }];
+        }
+      } catch (err) {
+        console.warn("Error fetching assigned professionals for patient:", err);
       }
-    });
+    }
+
+    if (assigned && assigned.length > 0) {
+      const mapDoctors = new Map();
+      assigned.forEach(d => {
+        const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
+        const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+        if (name.trim() && docId) {
+          mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', raw: d });
+        }
+      });
+      return Array.from(mapDoctors.values()).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+    }
+
+    // Patient has no assigned professionals
+    return [];
   }
 
-  // B. Tabla profesionales
+  // 2. If NO patient is provided (global/tenant context), load all tenant professionals/doctors:
+  const mapDoctors = new Map();
+  const inquilino = userProfile?.inquilino || userProfile?.tenantId;
+
+  // A. Tabla profesionales
   try {
     let query = supabase.from('profesionales').select('*');
     if (inquilino) {
@@ -664,7 +751,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
     }
   } catch (e) {}
 
-  // C. Tabla profiles
+  // B. Tabla profiles
   try {
     let query = supabase.from('profiles').select('*');
     if (inquilino) query = query.eq('tenant_id', inquilino);

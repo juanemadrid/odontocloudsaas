@@ -250,6 +250,11 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
         const safeBasePath = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
         const path = id === 'Inicio' ? safeBasePath : `${safeBasePath}/${id}`;
         
+        if (window.checkIncompletePatientNavigation) {
+            const intercepted = window.checkIncompletePatientNavigation(path);
+            if (intercepted) return;
+        }
+
         if (window.hasUnsavedChanges) {
             setPendingNavigationPath(path);
             return;

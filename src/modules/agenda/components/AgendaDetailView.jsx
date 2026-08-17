@@ -38,14 +38,14 @@ export default function AgendaDetailView({ appointments, doctors }) {
                         <input
                             type="date"
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 font-bold text-xs uppercase focus:outline-none focus:border-blue-500 transition-all"
-                        />
+                         max="9999-12-31" min="1900-01-01" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha Final</label>
                         <input
                             type="date"
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-700 font-bold text-xs uppercase focus:outline-none focus:border-blue-500 transition-all"
-                        />
+                         max="9999-12-31" min="1900-01-01" />
                     </div>
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado Cita</label>

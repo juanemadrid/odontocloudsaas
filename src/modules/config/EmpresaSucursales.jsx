@@ -4,6 +4,7 @@
 // Réplica exacta de los campos de OralDrive
 // ============================================================
 import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { 
     FiSearch, FiEdit2, FiTrash2, FiPlus, FiArrowLeft, FiMapPin, 
     FiCheckCircle, FiSave, FiPhoneCall, FiCheck, FiHelpCircle, FiUsers, FiBox
@@ -94,25 +95,51 @@ function CitySelect({ value, onChange }) {
 }
 
 // Selector Dual de Almacenes (Dual Listbox)
-function AlmacenesDualList({ available, selected, onChange }) {
+function AlmacenesDualList({ available = [], selected = [], onChange }) {
     const [leftSelected, setLeftSelected] = useState([]);
     const [rightSelected, setRightSelected] = useState([]);
 
+    // Map selected (array of strings or IDs) to items
+    const selectedItems = (selected || []).map(s => {
+        const match = available.find(a => 
+            a.nombre === s || 
+            String(a.id) === String(s) || 
+            a.nombre?.toLowerCase() === String(s)?.toLowerCase()
+        );
+        return {
+            id: match ? (match.id || match.nombre) : s,
+            nombre: match ? match.nombre : s
+        };
+    });
+
+    // Available items are those in `available` that are NOT in `selected`
+    const availableItems = available.filter(a => {
+        const itemVal = a.nombre || a.id;
+        return !(selected || []).some(s => 
+            s === itemVal || 
+            String(s) === String(a.id) || 
+            s === a.nombre || 
+            String(s)?.toLowerCase() === itemVal?.toLowerCase()
+        );
+    });
+
     const moveRight = () => {
         if (leftSelected.length === 0) return;
-        const newSelected = [...new Set([...selected, ...leftSelected])];
+        const newSelected = [...new Set([...(selected || []), ...leftSelected])];
         onChange(newSelected);
         setLeftSelected([]);
     };
 
     const moveAllRight = () => {
-        onChange(available.map(a => a.nombre || a.id));
+        const allAvailable = availableItems.map(a => a.nombre || a.id);
+        const newSelected = [...new Set([...(selected || []), ...allAvailable])];
+        onChange(newSelected);
         setLeftSelected([]);
     };
 
     const moveLeft = () => {
         if (rightSelected.length === 0) return;
-        const newSelected = selected.filter(id => !rightSelected.includes(id));
+        const newSelected = (selected || []).filter(s => !rightSelected.includes(s));
         onChange(newSelected);
         setRightSelected([]);
     };
@@ -121,9 +148,6 @@ function AlmacenesDualList({ available, selected, onChange }) {
         onChange([]);
         setRightSelected([]);
     };
-
-    const availableItems = available.filter(a => !selected.includes(a.nombre || a.id));
-    const selectedItems = available.filter(a => selected.includes(a.nombre || a.id));
 
     return (
         <div className="space-y-1.5 md:col-span-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-200/80">
@@ -207,8 +231,10 @@ function AlmacenesDualList({ available, selected, onChange }) {
     );
 }
 
+const isGuid = (val) => typeof val === 'string' && /^[0-9a-f-]{15,}$/i.test(val);
+
 // Editor Component for Sucursal
-function SucursalEditor({ item, onBack, inquilino }) {
+function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], initialListasPrecios = [], initialAlmacenes = [] }) {
     const toast = useToast();
     const [form, setForm] = useState({
         nombre: item?.nombre || "",
@@ -232,50 +258,91 @@ function SucursalEditor({ item, onBack, inquilino }) {
         codigoPrestadorDetalle: item?.codigoPrestadorDetalle || "",
     });
 
-    const [consecutivos, setConsecutivos] = useState([]);
-    const [listasPrecios, setListasPrecios] = useState([]);
-    const [availableAlmacenes, setAvailableAlmacenes] = useState([
-        { id: "principal", nombre: "Principal" },
-        { id: "general", nombre: "Almacén General" }
-    ]);
+    const [consecutivos, setConsecutivos] = useState(initialConsecutivos);
+    const [listasPrecios, setListasPrecios] = useState(initialListasPrecios);
+    const [availableAlmacenes, setAvailableAlmacenes] = useState(
+        initialAlmacenes.length > 0 
+            ? initialAlmacenes 
+            : (item?.almacenes?.length > 0 ? item.almacenes.map(a => ({ id: a, nombre: a })) : [{ id: "principal", nombre: "Principal" }])
+    );
     const [usuarios, setUsuarios] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
 
-    useEffect(() => {
-        const loadDeps = async () => {
-            if (!inquilino) return;
-            try {
-                const [cData, lData, aData, uProfRes, uConfigData] = await Promise.all([
-                    getConfigItems(inquilino, "consecutivos", "consecutivos"),
-                    getConfigItems(inquilino, "listas_precios", "listas_precios"),
-                    getConfigItems(inquilino, "almacenes", "almacenes"),
-                    supabase.from("profiles").select("*").eq("tenant_id", inquilino),
-                    getConfigItems(inquilino, "usuarios", "usuarios")
-                ]);
+    // Instant combined options so saved values render cleanly with zero raw GUID display
+    const combinedConsecutivos = React.useMemo(() => {
+        const list = [...consecutivos];
+        if (form.consecutivoId) {
+            const exists = list.some(c => String(c.id) === String(form.consecutivoId) || c.nombre === form.consecutivoId);
+            if (!exists) {
+                const displayName = isGuid(form.consecutivoId) ? "Cargando consecutivo..." : form.consecutivoId;
+                list.unshift({ id: form.consecutivoId, nombre: displayName });
+            }
+        }
+        return list;
+    }, [consecutivos, form.consecutivoId]);
 
+    const combinedListasPrecios = React.useMemo(() => {
+        const list = [...listasPrecios];
+        if (form.listaPrecioId) {
+            const exists = list.some(l => String(l.id) === String(form.listaPrecioId) || l.nombre === form.listaPrecioId);
+            if (!exists) {
+                const displayName = isGuid(form.listaPrecioId) ? "Cargando lista de precios..." : form.listaPrecioId;
+                list.unshift({ id: form.listaPrecioId, nombre: displayName });
+            }
+        }
+        return list;
+    }, [listasPrecios, form.listaPrecioId]);
+
+    useEffect(() => {
+        if (!inquilino) return;
+
+        // Fetch Consecutivos independently for fast response
+        getConfigItems(inquilino, "consecutivos", "consecutivos")
+            .then(cData => {
                 if (Array.isArray(cData) && cData.length > 0) setConsecutivos(cData);
+            })
+            .catch(e => console.error("Error cargando consecutivos:", e));
+
+        // Fetch Listas Precios independently
+        getConfigItems(inquilino, "listas_precios", "listas_precios")
+            .then(lData => {
                 if (Array.isArray(lData) && lData.length > 0) setListasPrecios(lData);
+            })
+            .catch(e => console.error("Error cargando listas precios:", e));
+
+        // Fetch Almacenes independently
+        getConfigItems(inquilino, "almacenes", "almacenes")
+            .then(aData => {
                 if (Array.isArray(aData) && aData.length > 0) {
                     setAvailableAlmacenes(aData);
+                } else if (item?.almacenes?.length > 0) {
+                    setAvailableAlmacenes(item.almacenes.map(a => ({ id: a, nombre: a })));
+                } else {
+                    setAvailableAlmacenes([{ id: "principal", nombre: "Principal" }]);
                 }
+            })
+            .catch(e => console.error("Error cargando almacenes:", e));
 
-                // Sincronización completa de usuarios creados en el sistema
-                const userMap = new Map();
-                (uProfRes.data || []).forEach(u => {
-                    const name = u.full_name || u.nombreCompleto || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
-                    if (name) userMap.set(u.id || u.email, name);
-                });
-                (uConfigData || []).forEach(u => {
-                    const name = u.nombreCompleto || u.displayName || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
-                    if (name) userMap.set(u.id || u.email, name);
-                });
+        // Fetch Usuarios in background
+        Promise.all([
+            supabase.from("profiles").select("*").eq("tenant_id", inquilino),
+            getConfigItems(inquilino, "usuarios", "usuarios")
+        ]).then(([uProfRes, uConfigData]) => {
+            const userMap = new Map();
+            (uProfRes.data || []).forEach(u => {
+                const name = u.full_name || u.nombreCompleto || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
+                if (name) userMap.set(u.id || u.email, name);
+            });
+            (uConfigData || []).forEach(u => {
+                const name = u.nombreCompleto || u.displayName || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
+                if (name) userMap.set(u.id || u.email, name);
+            });
 
-                const userList = Array.from(userMap.entries()).map(([id, name]) => ({ id, name }));
-                setUsuarios(userList);
-            } catch (e) { console.error("Error cargando dependencias sucursal:", e); }
-        };
-        loadDeps();
-    }, [inquilino]);
+            const userList = Array.from(userMap.entries()).map(([id, name]) => ({ id, name }));
+            setUsuarios(userList);
+        }).catch(e => console.error("Error cargando usuarios:", e));
+
+    }, [inquilino, item]);
 
     const handleChange = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
 
@@ -414,13 +481,17 @@ function SucursalEditor({ item, onBack, inquilino }) {
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Consecutivo *</label>
                         <select
-                            value={form.consecutivoId}
+                            value={
+                                combinedConsecutivos.find(c => String(c.id) === String(form.consecutivoId) || c.nombre === form.consecutivoId)?.id ||
+                                combinedConsecutivos.find(c => String(c.id) === String(form.consecutivoId) || c.nombre === form.consecutivoId)?.nombre ||
+                                form.consecutivoId
+                            }
                             onChange={e => handleChange("consecutivoId", e.target.value)}
                             className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
                         >
                             <option value="">Seleccione consecutivo...</option>
-                            {consecutivos.map(c => (
-                                <option key={c.id} value={c.id || c.nombre}>{c.nombre}</option>
+                            {combinedConsecutivos.map(c => (
+                                <option key={c.id || c.nombre} value={c.id || c.nombre}>{c.nombre}</option>
                             ))}
                         </select>
                     </div>
@@ -429,13 +500,17 @@ function SucursalEditor({ item, onBack, inquilino }) {
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-600">Lista de precios *</label>
                         <select
-                            value={form.listaPrecioId}
+                            value={
+                                combinedListasPrecios.find(l => String(l.id) === String(form.listaPrecioId) || l.nombre === form.listaPrecioId)?.id ||
+                                combinedListasPrecios.find(l => String(l.id) === String(form.listaPrecioId) || l.nombre === form.listaPrecioId)?.nombre ||
+                                form.listaPrecioId
+                            }
                             onChange={e => handleChange("listaPrecioId", e.target.value)}
                             className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
                         >
                             <option value="">Seleccione lista de precios...</option>
-                            {listasPrecios.map(l => (
-                                <option key={l.id} value={l.id || l.nombre}>{l.nombre}</option>
+                            {combinedListasPrecios.map(l => (
+                                <option key={l.id || l.nombre} value={l.id || l.nombre}>{l.nombre}</option>
                             ))}
                         </select>
                     </div>
@@ -613,6 +688,8 @@ export default function EmpresaSucursales() {
     const toast = useToast();
     const inquilino = userProfile?.inquilino;
 
+    const location = useLocation();
+
     const [searchTerm, setSearchTerm] = useState("");
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -621,13 +698,26 @@ export default function EmpresaSucursales() {
     const [view, setView] = useState("list");
     const [editingItem, setEditingItem] = useState(null);
 
+    // Preloaded config dependencies for instant dropdown population
+    const [preloadedConsecutivos, setPreloadedConsecutivos] = useState([]);
+    const [preloadedListasPrecios, setPreloadedListasPrecios] = useState([]);
+    const [preloadedAlmacenes, setPreloadedAlmacenes] = useState([]);
+
     const fetchData = async () => {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const data = await getConfigItems(inquilino, "sucursales", "sucursales");
+            const [data, cData, lData, aData] = await Promise.all([
+                getConfigItems(inquilino, "sucursales", "sucursales"),
+                getConfigItems(inquilino, "consecutivos", "consecutivos"),
+                getConfigItems(inquilino, "listas_precios", "listas_precios"),
+                getConfigItems(inquilino, "almacenes", "almacenes")
+            ]);
             const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
             setRows(sorted);
+            if (Array.isArray(cData)) setPreloadedConsecutivos(cData);
+            if (Array.isArray(lData)) setPreloadedListasPrecios(lData);
+            if (Array.isArray(aData)) setPreloadedAlmacenes(aData);
         } catch (error) {
             console.error("Error fetching sucursales:", error);
             setRows([]);
@@ -639,6 +729,19 @@ export default function EmpresaSucursales() {
     useEffect(() => {
         fetchData();
     }, [inquilino]);
+
+    useEffect(() => {
+        if ((location.state?.editSucursalId || location.state?.editSucursalName) && rows.length > 0) {
+            const match = rows.find(r => 
+                String(r.id) === String(location.state.editSucursalId) || 
+                (r.nombre && r.nombre === location.state.editSucursalName)
+            );
+            if (match) {
+                setEditingItem(match);
+                setView("editor");
+            }
+        }
+    }, [location.state, rows]);
 
     const openNew = () => {
         setEditingItem(null);
@@ -668,7 +771,16 @@ export default function EmpresaSucursales() {
     };
 
     if (view === "editor") {
-        return <SucursalEditor item={editingItem} onBack={() => { setView("list"); fetchData(); }} inquilino={inquilino} />;
+        return (
+            <SucursalEditor
+                item={editingItem}
+                onBack={() => { setView("list"); fetchData(); }}
+                inquilino={inquilino}
+                initialConsecutivos={preloadedConsecutivos}
+                initialListasPrecios={preloadedListasPrecios}
+                initialAlmacenes={preloadedAlmacenes}
+            />
+        );
     }
 
     const filteredRows = rows.filter(r =>

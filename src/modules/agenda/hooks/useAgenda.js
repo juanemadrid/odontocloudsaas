@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { createOrUpdatePatient } from "../../../services/patientService";
 import { useAudit } from "../../../hooks/useAudit";
@@ -59,6 +59,12 @@ const calculateAgeStr = (birthDateStr) => {
     return numStr;
 };
 
+const isCancelledStatus = (st) => {
+    if (!st) return false;
+    const norm = String(st).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+    return ["CANCELADA", "CANCELADO", "CANCELLED", "NO ASISTE", "NO-SHOW"].includes(norm);
+};
+
 /**
  * Verifica disponibilidad de un profesional y consultorio en un rango de tiempo
  * Lanza error si hay conflicto de horarios
@@ -76,10 +82,8 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
     // Construir query base
     let query = supabase
         .from("citas")
-        .select("id, fecha_inicio, fecha_fin, profesional_id, consultorio_id")
-        .eq("tenant_id", tenantId)
-        .neq("estado", "CANCELADO")
-        .not("estado", "in", '("CANCELADA","CANCELADO","NO ASISTE")');
+        .select("id, fecha_inicio, fecha_fin, profesional_id, consultorio_id, estado")
+        .eq("tenant_id", tenantId);
 
     // Si hay un ID a excluir (para updates), excluirlo de la búsqueda
     if (excludeId) {
@@ -93,8 +97,10 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
         throw new Error("Error al verificar disponibilidad de horarios");
     }
 
-    // Verificar conflictos
+    // Verificar conflictos ignorando citas canceladas
     const conflicts = (existingAppointments || []).filter(apt => {
+        if (isCancelledStatus(apt.estado)) return false;
+
         const aptStart = new Date(apt.fecha_inicio);
         const aptEnd = new Date(apt.fecha_fin);
 
@@ -104,8 +110,8 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
         if (!hasTimeOverlap) return false;
 
         // Verificar si hay conflicto con el mismo profesional o consultorio
-        const sameProfessional = professionalId && apt.profesional_id === professionalId;
-        const sameRoom = roomId && apt.consultorio_id === roomId;
+        const sameProfessional = professionalId && String(apt.profesional_id) === String(professionalId);
+        const sameRoom = roomId && String(apt.consultorio_id) === String(roomId);
 
         return sameProfessional || sameRoom;
     });
@@ -117,9 +123,9 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
         
         let errorMsg = "Ya existe una cita programada en este horario";
         
-        if (professionalId && conflict.profesional_id === professionalId) {
+        if (professionalId && String(conflict.profesional_id) === String(professionalId)) {
             errorMsg += ` para este profesional (${conflictStart.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })} - ${conflictEnd.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})`;
-        } else if (roomId && conflict.consultorio_id === roomId) {
+        } else if (roomId && String(conflict.consultorio_id) === String(roomId)) {
             errorMsg += ` para este consultorio (${conflictStart.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })} - ${conflictEnd.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})`;
         }
 
@@ -263,6 +269,8 @@ export function useAgenda() {
                 const allUsersList = Array.from(allUsersMap.values());
 
                 // Filtrar doctores / profesionales
+                const doctorSettingsMap = cfgConfig?.agenda_doctor_settings || {};
+
                 const docsList = allUsersList
                     .filter(u => {
                         const detail = userDetailsMap[u.id] || {};
@@ -275,6 +283,20 @@ export function useAgenda() {
                         const userNombre = u.nombre || detail.nombre || nombreCompleto.split(' ')[0] || '';
                         const userApellido = u.apellido || detail.apellido || nombreCompleto.split(' ').slice(1).join(' ') || '';
 
+                        const docSettings = doctorSettingsMap[u.id] || {};
+                        let docSpaces = [];
+                        if (docSettings && Array.isArray(docSettings.selectedResources)) {
+                            docSpaces = docSettings.selectedResources;
+                        } else if (docSettings && Array.isArray(docSettings.espaciosFisicos)) {
+                            docSpaces = docSettings.espaciosFisicos;
+                        } else if (Array.isArray(detail.recursos)) {
+                            docSpaces = detail.recursos;
+                        } else if (Array.isArray(u.recursos)) {
+                            docSpaces = u.recursos;
+                        } else {
+                            docSpaces = [];
+                        }
+
                         return {
                             id: u.id,
                             nombre: userNombre,
@@ -283,6 +305,11 @@ export function useAgenda() {
                             email: u.email,
                             rol: u.role || u.rol || "Doctor",
                             especialidad: u.especialidad || (detail.especialidades ? detail.especialidades.join(', ') : 'Odontología General'),
+                            especialidades: detail.especialidades || (u.especialidades || []),
+                            sucursales: detail.sucursales || u.sucursales || [],
+                            espaciosFisicos: docSpaces,
+                            selectedResources: docSpaces,
+                            recursoPrincipal: docSettings.recursoPrincipal || docSpaces[0] || "",
                             activo: u.activo !== false
                         };
                     });
@@ -358,14 +385,13 @@ export function useAgenda() {
         return () => { supabase.removeChannel(channel); };
     }, [inquilino]);
 
-    // === Load Appointments ===
-    useEffect(() => {
+    // 1. Fetch & Subscribe to Supabase Appointments
+    const fetchSupabaseCitas = useCallback(async () => {
         if (!inquilino) {
             setLoading(false);
             return;
         }
 
-        setLoading(true);
         let start, end;
         if (viewMode === 'day') {
             start = startOfDay(selectedDate);
@@ -376,15 +402,64 @@ export function useAgenda() {
             end.setHours(23, 59, 59, 999);
         }
 
-        console.log("useAgenda - Fetching appointments for range:", { start, end, inquilino });
-        let isCurrent = true;
+        try {
+            const { data, error } = await supabase
+                .from("citas")
+                .select("*, paciente:pacientes(nombres, apellidos, documento, telefono)")
+                .eq("tenant_id", inquilino);
 
-        let supabaseRaw = [];
+            if (error) throw error;
 
-        const updateCombinedAppointments = () => {
-            if (!isCurrent) return;
+            const mapped = (data || []).map(c => {
+                const startObj = c.fecha_inicio ? new Date(c.fecha_inicio) : new Date();
+                const endObj = c.fecha_fin ? new Date(c.fecha_fin) : new Date(startObj.getTime() + (c.duracion || 30) * 60000);
+                const statusMap = {
+                    'pending': 'SIN CONFIRMAR',
+                    'confirmed': 'CONFIRMADA',
+                    'attended': 'ATENDIDO',
+                    'urgencia': 'URGENCIA',
+                    'sin-cont-web': 'SIN CONT. WEB',
+                    'no-show': 'NO ASISTE',
+                    'cancelled': 'CANCELADO',
+                    'waiting': 'EN ESPERA'
+                };
+                const stateKey = String(c.estado || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+                const statusAliases = {
+                    "sin confirmar": "pending", "pendiente": "pending", "programada": "pending",
+                    "confirmada": "confirmed", "confirmado": "confirmed",
+                    "atendido": "attended", "completada": "attended", "completado": "attended",
+                    "urgencia": "urgencia", "sin cont. web": "sin-cont-web",
+                    "no asiste": "no-show", "cancelada": "cancelled", "cancelado": "cancelled",
+                    "cancelled": "cancelled", "en espera": "waiting"
+                };
+                const normStatus = statusAliases[stateKey] || (statusMap[stateKey] ? stateKey : "confirmed");
 
-            const visible = supabaseRaw.filter(ev => {
+                return {
+                    id: c.id,
+                    inquilino: c.tenant_id,
+                    pacienteId: c.paciente_id,
+                    doctorId: c.profesional_id,
+                    resourceId: c.profesional_id,
+                    consultorioId: c.consultorio_id,
+                    sucursalId: c.sucursal_id || "",
+                    fecha: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : "",
+                    horaInicio: c.fecha_inicio ? new Date(c.fecha_inicio).toTimeString().substring(0, 5) : "",
+                    horaFin: c.fecha_fin ? new Date(c.fecha_fin).toTimeString().substring(0, 5) : "",
+                    start: startObj,
+                    end: endObj,
+                    duracion: Math.max(5, Math.round((endObj.getTime() - startObj.getTime()) / 60000)),
+                    status: normStatus,
+                    estado: c.estado || "CONFIRMADA",
+                    comentario: c.notas || c.motivo || "",
+                    motivo: c.motivo || "",
+                    paciente: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
+                    pacienteNombre: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
+                    celular: c.paciente?.telefono || "",
+                    nroDocumento: c.paciente?.documento || ""
+                };
+            });
+
+            const visible = mapped.filter(ev => {
                 const inRange = ev.start >= start && ev.start <= end;
                 const activeDocFilter = isDoctorOnly ? loggedInDoctorId : filterDocId;
                 const matchDoc = !activeDocFilter || ev.doctorId === activeDocFilter || ev.resourceId === activeDocFilter || ev.profesional_id === activeDocFilter;
@@ -393,76 +468,22 @@ export function useAgenda() {
                 return inRange && matchDoc && matchBranch && matchChair;
             }).sort((a, b) => (a.start || 0) - (b.start || 0));
 
-            console.log("useAgenda - Combined visible appointments:", visible.length);
             setAppointments(visible);
+        } catch (err) {
+            console.error("Error al obtener citas de Supabase en useAgenda:", err);
+        } finally {
             setLoading(false);
-        };
+        }
+    }, [inquilino, viewMode, selectedDate, isDoctorOnly, loggedInDoctorId, filterDocId, filterBranchId, filterChairId]);
 
-        // 1. Fetch & Subscribe to Supabase Appointments
-        const fetchSupabaseCitas = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from("citas")
-                    .select("*, paciente:pacientes(nombres, apellidos, documento, telefono)")
-                    .eq("tenant_id", inquilino);
+    // === Load Appointments Effect & Subscription ===
+    useEffect(() => {
+        if (!inquilino) {
+            setLoading(false);
+            return;
+        }
 
-                if (error) throw error;
-
-                supabaseRaw = (data || []).map(c => {
-                    const startObj = c.fecha_inicio ? new Date(c.fecha_inicio) : new Date();
-                    const endObj = c.fecha_fin ? new Date(c.fecha_fin) : new Date(startObj.getTime() + (c.duracion || 30) * 60000);
-                    const statusMap = {
-                        'pending': 'SIN CONFIRMAR',
-                        'confirmed': 'CONFIRMADA',
-                        'attended': 'ATENDIDO',
-                        'urgencia': 'URGENCIA',
-                        'sin-cont-web': 'SIN CONT. WEB',
-                        'no-show': 'NO ASISTE',
-                        'cancelled': 'CANCELADO',
-                        'waiting': 'EN ESPERA'
-                    };
-                    const stateKey = String(c.estado || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-                    const statusAliases = {
-                        "sin confirmar": "pending", "pendiente": "pending", "programada": "pending",
-                        "confirmada": "confirmed", "confirmado": "confirmed",
-                        "atendido": "attended", "completada": "attended", "completado": "attended",
-                        "urgencia": "urgencia", "sin cont. web": "sin-cont-web",
-                        "no asiste": "no-show", "cancelada": "cancelled", "cancelado": "cancelled",
-                        "cancelled": "cancelled", "en espera": "waiting"
-                    };
-                    const normStatus = statusAliases[stateKey] || (statusMap[stateKey] ? stateKey : "confirmed");
-
-                    return {
-                        id: c.id,
-                        inquilino: c.tenant_id,
-                        pacienteId: c.paciente_id,
-                        doctorId: c.profesional_id,
-                        resourceId: c.profesional_id,
-                        consultorioId: c.consultorio_id,
-                        sucursalId: c.sucursal_id || "",
-                        fecha: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : "",
-                        horaInicio: c.fecha_inicio ? new Date(c.fecha_inicio).toTimeString().substring(0, 5) : "",
-                        horaFin: c.fecha_fin ? new Date(c.fecha_fin).toTimeString().substring(0, 5) : "",
-                        start: startObj,
-                        end: endObj,
-                        duracion: Math.max(5, Math.round((endObj.getTime() - startObj.getTime()) / 60000)),
-                        status: normStatus,
-                        estado: c.estado || "CONFIRMADA",
-                        comentario: c.notas || c.motivo || "",
-                        motivo: c.motivo || "",
-                        paciente: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
-                        pacienteNombre: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
-                        celular: c.paciente?.telefono || "",
-                        nroDocumento: c.paciente?.documento || ""
-                    };
-                });
-
-                updateCombinedAppointments();
-            } catch (err) {
-                console.error("Error al obtener citas de Supabase en useAgenda:", err);
-            }
-        };
-
+        setLoading(true);
         fetchSupabaseCitas();
 
         const channel = supabase
@@ -477,10 +498,9 @@ export function useAgenda() {
             .subscribe();
 
         return () => {
-            isCurrent = false;
             supabase.removeChannel(channel);
         };
-    }, [inquilino, selectedDate, viewMode, filterDocId, filterBranchId, isDoctorOnly, loggedInDoctorId]);
+    }, [inquilino, fetchSupabaseCitas]);
 
     // Actions
     const createAppointment = async (data) => {
@@ -577,6 +597,7 @@ export function useAgenda() {
                 console.warn("Could not send notification:", nErr);
             }
         }
+        await fetchSupabaseCitas();
         return newId;
     };
 
@@ -637,8 +658,9 @@ export function useAgenda() {
             validatedStart = finalPatch.start ? new Date(finalPatch.start) : new Date(currentData.fecha_inicio);
             if (finalPatch.fecha || finalPatch.horaInicio) {
                 const localDate = finalPatch.fecha || `${validatedStart.getFullYear()}-${String(validatedStart.getMonth() + 1).padStart(2, "0")}-${String(validatedStart.getDate()).padStart(2, "0")}`;
-                const localTime = finalPatch.horaInicio || `${String(validatedStart.getHours()).padStart(2, "0")}:${String(validatedStart.getMinutes()).padStart(2, "0")}`;
-                validatedStart = new Date(`${localDate}T${localTime}:00`);
+                const rawTime = finalPatch.horaInicio || `${String(validatedStart.getHours()).padStart(2, "0")}:${String(validatedStart.getMinutes()).padStart(2, "0")}`;
+                const cleanTime = String(rawTime).trim().substring(0, 5);
+                validatedStart = new Date(`${localDate}T${cleanTime}:00`);
             }
             validatedEnd = finalPatch.end ? new Date(finalPatch.end) : new Date(currentData.fecha_fin);
             if (!finalPatch.end && (finalPatch.start || finalPatch.fecha || finalPatch.horaInicio || finalPatch.duracion)) {
@@ -724,6 +746,8 @@ export function useAgenda() {
         } catch (nErr) {
             console.warn("Could not send real-time notification to patient/log audit:", nErr);
         }
+
+        await fetchSupabaseCitas();
     };
 
     const deleteAppointment = async (id) => {
@@ -740,6 +764,7 @@ export function useAgenda() {
             doctor: currentData.profesional_id || "No asignado",
             citaId: id
         });
+        await fetchSupabaseCitas();
     };
     return {
         selectedDate, setSelectedDate,
@@ -749,6 +774,7 @@ export function useAgenda() {
         specialties, entities, priceList, patientsMap,
         isDoctorOnly, loggedInDoctorId,
         createAppointment, updateAppointment, deleteAppointment,
+        refreshAppointments: fetchSupabaseCitas,
         filters: { filterDocId: isDoctorOnly ? loggedInDoctorId : filterDocId, setFilterDocId, filterBranchId, setFilterBranchId, filterChairId, setFilterChairId }
     };
 }

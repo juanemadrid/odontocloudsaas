@@ -14,6 +14,51 @@ import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiX, FiCheck, FiFilter, FiUser, Fi
 import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
 import Input from "../../components/ui/Input";
 
+const normalizeDate = (val) => {
+    if (!val) return "";
+    if (typeof val === "string") {
+        if (val.includes("T")) return val.split("T")[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+        const parts = val.split(/[-/]/);
+        if (parts.length === 3) {
+            if (parts[2].length === 4) {
+                return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            }
+            if (parts[0].length === 4) {
+                return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            }
+        }
+    }
+    return val;
+};
+
+const extractNombreApellido = (rawNombre, rawApellido, rawFullName) => {
+    let nom = (rawNombre || "").trim();
+    let ape = (rawApellido || "").trim();
+
+    // 1. Si el apellido ya viene y el nombre termina con ese apellido, limpiar el apellido del nombre
+    if (nom && ape && nom.toLowerCase().endsWith(ape.toLowerCase())) {
+        nom = nom.slice(0, nom.length - ape.length).trim();
+    }
+
+    // 2. Si el apellido está vacío pero el nombre tiene espacios
+    if (nom && !ape && nom.includes(" ")) {
+        const parts = nom.split(/\s+/);
+        nom = parts[0];
+        ape = parts.slice(1).join(" ");
+    } else if (!nom && !ape && rawFullName) {
+        const parts = rawFullName.trim().split(/\s+/);
+        if (parts.length >= 2) {
+            nom = parts[0];
+            ape = parts.slice(1).join(" ");
+        } else {
+            nom = parts[0] || "";
+            ape = "";
+        }
+    }
+    return { nombre: nom, apellido: ape };
+};
+
 export default function EmpresaUsuarios() {
     const { userProfile } = useAuth();
     const toast = useToast();
@@ -55,6 +100,7 @@ export default function EmpresaUsuarios() {
     const [searchTermSucAvailable, setSearchTermSucAvailable] = useState("");
     const [searchTermSucSelected, setSearchTermSucSelected] = useState("");
     const [showPassword, setShowPassword] = useState(false);
+    const [errors, setErrors] = useState({});
     const [deleteConfirmModal, setDeleteConfirmModal] = useState(null); // Usuario a eliminar
 
     // Form State
@@ -62,7 +108,7 @@ export default function EmpresaUsuarios() {
         nombre: "",
         apellido: "",
         email: "",
-        tipoDocumento: "CC",
+        tipoDocumento: "Cédula de ciudadanía",
         numeroDocumento: "",
         telefonoMovil: "",
         telefonoFijo: "",
@@ -97,7 +143,7 @@ export default function EmpresaUsuarios() {
                 supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
                 getConfigItems(userProfile.inquilino, "sucursales", "sucursales"),
                 supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle(),
-                getConfigItems(userProfile.inquilino, "usuarios", "usuarios")
+                getConfigItems(userProfile.inquilino, "usuarios", null)
             ]);
 
             const userDetailsMap = cRes.data?.config?.user_details || {};
@@ -112,11 +158,15 @@ export default function EmpresaUsuarios() {
                 const rolLower = (u.role || "").toLowerCase();
                 const esDoctor = detail.esDoctor ?? (rolLower.includes('doctor') || rolLower.includes('odontólog') || rolLower.includes('odontologo') || especialidadesArr.length > 0);
 
-                let userNombre = detail.nombre || (u.full_name || "").split(" ")[0] || "";
-                let userApellido = detail.apellido || (u.full_name || "").split(" ").slice(1).join(" ") || "";
-                const updatedFullName = (detail.nombre || detail.apellido) ? `${detail.nombre || ''} ${detail.apellido || ''}`.trim() : u.full_name;
+                const { nombre: userNombre, apellido: userApellido } = extractNombreApellido(
+                    detail.nombre,
+                    detail.apellido,
+                    u.full_name
+                );
+                const updatedFullName = `${userNombre} ${userApellido}`.trim() || u.full_name;
 
                 profilesMap.set(u.id, {
+                    ...detail,
                     id: u.id,
                     nombre: userNombre,
                     apellido: userApellido,
@@ -127,15 +177,14 @@ export default function EmpresaUsuarios() {
                     especialidad: rawEsp,
                     especialidades: especialidadesArr,
                     sucursales: userSucursales,
-                    tipoDocumento: detail.tipoDocumento || u.tipo_documento || "CC",
+                    tipoDocumento: detail.tipoDocumento || u.tipo_documento || "Cédula de ciudadanía",
                     numeroDocumento: detail.numeroDocumento || u.registro_medico || "",
                     telefonoMovil: detail.telefonoMovil || u.telefono || "",
                     telefonoFijo: detail.telefonoFijo || "",
                     direccion: detail.direccion || "",
-                    genero: detail.genero || "Femenino",
-                    fechaNacimiento: detail.fechaNacimiento || "",
-                    ...detail,
-                    password: "",
+                    genero: detail.genero || "Masculino",
+                    fechaNacimiento: normalizeDate(detail.fechaNacimiento || u.fecha_nacimiento || u.fechaNacimiento || ""),
+                    password: detail.password || u.password || "",
                     esDoctor,
                     activo: u.activo !== false
                 });
@@ -145,28 +194,33 @@ export default function EmpresaUsuarios() {
             (configUsersData || []).forEach(u => {
                 if (!u.id) return;
                 const existing = profilesMap.get(u.id) || {};
-                const nombreCompleto = u.nombreCompleto || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email;
+                const { nombre: uNom, apellido: uApe } = extractNombreApellido(
+                    u.nombre || existing.nombre,
+                    u.apellido || existing.apellido,
+                    u.nombreCompleto || existing.nombreCompleto || u.full_name || existing.nombre
+                );
+                const nombreCompleto = `${uNom} ${uApe}`.trim() || u.email;
                 profilesMap.set(u.id, {
+                    ...existing,
+                    ...u,
                     id: u.id,
-                    nombre: u.nombre || existing.nombre || "",
-                    apellido: u.apellido || existing.apellido || "",
-                    nombreCompleto: nombreCompleto || existing.nombreCompleto || u.email,
+                    nombre: uNom,
+                    apellido: uApe,
+                    nombreCompleto: nombreCompleto,
                     email: u.email || existing.email,
                     rol: u.role || u.rol || existing.rol || "Doctor",
                     profileId: u.role || u.rol || existing.profileId || "Doctor",
                     especialidad: u.especialidad || existing.especialidad || "",
                     especialidades: u.especialidades || existing.especialidades || [],
                     sucursales: u.sucursales || existing.sucursales || [],
-                    tipoDocumento: u.tipoDocumento || existing.tipoDocumento || "CC",
+                    tipoDocumento: u.tipoDocumento || existing.tipoDocumento || "Cédula de ciudadanía",
                     numeroDocumento: u.numeroDocumento || existing.numeroDocumento || "",
                     telefonoMovil: u.telefonoMovil || existing.telefonoMovil || "",
                     telefonoFijo: u.telefonoFijo || existing.telefonoFijo || "",
                     direccion: u.direccion || existing.direccion || "",
                     genero: u.genero || existing.genero || "Masculino",
-                    fechaNacimiento: u.fechaNacimiento || existing.fechaNacimiento || "",
-                    ...existing,
-                    ...u,
-                    password: "",
+                    fechaNacimiento: normalizeDate(u.fechaNacimiento || existing.fechaNacimiento || ""),
+                    password: u.password || existing.password || "",
                     esDoctor: u.esDoctor ?? existing.esDoctor ?? true,
                     activo: u.activo !== false
                 });
@@ -221,54 +275,46 @@ export default function EmpresaUsuarios() {
                 (u.email || "").toLowerCase().includes(lower)
             );
         }
-        // Disabled toggle (Currently filtering by 'activo' flag logic implied? 
-        // Screenshot implies a toggle to SHOW disabled. Usually we show actives by default.
-        // Let's assume most users are active. If 'activo' is false they are disabled.
         if (!showDisabled) {
             res = res.filter(u => u.activo !== false); // Show only active
         } else {
-            // Show all or only disabled? Usually "Deshabilitados" button TOGGLES view to show them.
-            // Let's make it filter to SHOW disabled ones if button is active? Or show ALL?
-            // Screenshot: Blue button "Deshabilitados". Likely a filter. 
-            // Let's assume clicking it shows the disabled list.
             res = res.filter(u => u.activo === false);
         }
-
-        // Wait, if button is inactive (default), show actives. If active, show disabled? 
-        // Or show ALL? Let's implement: Default = Show Active. Toggle ON = Show Inactive.
 
         setFiltered(res);
     }, [users, search, showDisabled]);
 
     // 3. Handlers
+    const handleFieldChange = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+        if (errors[field]) {
+            setErrors(prev => ({ ...prev, [field]: null }));
+        }
+    };
+
     const handleOpenModal = async (user = null) => {
+        setErrors({});
         if (user) {
             setEditId(user.id);
             
-            let userNombre = user.nombre || "";
-            let userApellido = user.apellido || "";
-            if (!userNombre && !userApellido && user.displayName) {
-                const parts = user.displayName.trim().split(/\s+/);
-                if (parts.length >= 2) {
-                    userNombre = parts[0];
-                    userApellido = parts.slice(1).join(" ");
-                } else if (parts.length === 1) {
-                    userNombre = parts[0];
-                }
-            }
+            const { nombre: userNombre, apellido: userApellido } = extractNombreApellido(
+                user.nombre,
+                user.apellido,
+                user.nombreCompleto || user.displayName || user.full_name
+            );
 
             setFormData({
                 ...initialForm,
                 nombre: userNombre,
                 apellido: userApellido,
                 email: user.email || "",
-                tipoDocumento: user.tipoDocumento || "CC",
+                tipoDocumento: user.tipoDocumento || "Cédula de ciudadanía",
                 numeroDocumento: user.numeroDocumento || "",
                 telefonoMovil: user.telefonoMovil || "",
                 telefonoFijo: user.telefonoFijo || "",
                 direccion: user.direccion || "",
-                genero: user.genero || "Femenino",
-                fechaNacimiento: user.fechaNacimiento || "",
+                genero: user.genero || "Masculino",
+                fechaNacimiento: normalizeDate(user.fechaNacimiento || user.fecha_nacimiento || ""),
                 esDoctor: user.esDoctor || false,
                 esLaboratory: user.esLaboratory || false,
                 seeOtherDoctorsData: user.seeOtherDoctorsData || false,
@@ -278,7 +324,7 @@ export default function EmpresaUsuarios() {
                 encabezadoPersonalizado: user.encabezadoPersonalizado || "",
                 formaPago: user.formaPago || "Realizadas y pagadas",
 
-                profileId: user.profileId || "",
+                profileId: user.profileId || user.rol || "",
                 sucursales: user.sucursales || [],
                 especialidades: user.especialidades || [],
                 password: user.password || ""
@@ -300,18 +346,64 @@ export default function EmpresaUsuarios() {
     };
 
     const toggleSelection = (key, id) => {
-        setFormData(prev => ({
-            ...prev,
-            [key]: prev[key].includes(id)
+        setFormData(prev => {
+            const nextList = prev[key].includes(id)
                 ? prev[key].filter(x => x !== id)
-                : [...prev[key], id]
-        }));
+                : [...prev[key], id];
+            return {
+                ...prev,
+                [key]: nextList
+            };
+        });
+        if (key === 'especialidades' && errors.especialidades) {
+            setErrors(prev => ({ ...prev, especialidades: null }));
+        }
     };
 
     const handleSave = async (e) => {
         if (e) e.preventDefault();
-        if (!formData.nombre.trim()) return toast.error("El nombre es obligatorio");
-        if (!formData.email.trim()) return toast.error("El correo electrónico es obligatorio");
+
+        // Validar todos los campos obligatorios (*)
+        const newErrors = {};
+
+        if (!formData.nombre?.trim()) newErrors.nombre = "El nombre es obligatorio";
+        if (!formData.apellido?.trim()) newErrors.apellido = "El apellido es obligatorio";
+        if (!formData.numeroDocumento?.trim()) newErrors.numeroDocumento = "El número de documento es obligatorio";
+        if (!formData.telefonoMovil?.trim()) newErrors.telefonoMovil = "El teléfono móvil es obligatorio";
+        if (!formData.genero?.trim()) newErrors.genero = "El género es obligatorio";
+        if (!formData.fechaNacimiento?.trim()) newErrors.fechaNacimiento = "La fecha de nacimiento es obligatoria";
+
+        const isEditingAdmin = editId && users.find(u => u.id === editId)?.rol === "administrador";
+        if (!isEditingAdmin && !formData.profileId?.trim()) {
+            newErrors.profileId = "El tipo de perfil es obligatorio";
+        }
+
+        if (formData.esDoctor && (!formData.especialidades || formData.especialidades.length === 0)) {
+            newErrors.especialidades = "Debe seleccionar al menos una especialización para el doctor";
+        }
+
+        if (!formData.email?.trim()) {
+            newErrors.email = "El correo electrónico es obligatorio";
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+            newErrors.email = "Ingrese un correo electrónico válido";
+        }
+
+        if (!editId) {
+            if (!formData.password?.trim()) {
+                newErrors.password = "La contraseña es obligatoria (mínimo 8 caracteres)";
+            } else if (formData.password.trim().length < 8) {
+                newErrors.password = "La contraseña debe tener mínimo 8 caracteres";
+            }
+        } else {
+            if (formData.password && formData.password.trim().length > 0 && formData.password.trim().length < 8) {
+                newErrors.password = "La contraseña debe tener mínimo 8 caracteres";
+            }
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            return toast.error("⚠️ Hay campos obligatorios sin diligenciar (*). Por favor completa los campos marcados en rojo.");
+        }
 
         const targetEmail = formData.email.trim().toLowerCase();
 
@@ -346,17 +438,12 @@ export default function EmpresaUsuarios() {
             }
 
             const selectedProfile = rolesDisponibles.find(r => r.id === formData.profileId || r.nombre === formData.profileId);
-            const fullName = `${formData.nombre} ${formData.apellido}`.trim();
+            const fullName = `${formData.nombre.trim()} ${formData.apellido.trim()}`.trim();
             const primaryEmail = (userProfile?.email || "atmcentrodeldolor@gmail.com").toLowerCase().trim();
             const isPrimaryAccount = targetEmail === primaryEmail;
             
             // Asignar rol respetando la elección del usuario (Doctor, Odontólogo, etc.)
             let roleName = isPrimaryAccount ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Doctor");
-
-            if (!editId && (!formData.password || formData.password.length < 8)) {
-                setSaving(false);
-                return toast.error('La contraseña debe tener mínimo 8 caracteres para crear el usuario');
-            }
 
             const res = await upsertManagedUser({
                 id: editId || null,
@@ -366,11 +453,12 @@ export default function EmpresaUsuarios() {
                 fullName,
                 role: roleName,
                 especialidad: (formData.especialidades || []).join(', ') || null,
-                registroMedico: formData.numeroDocumento || null,
-                telefono: formData.telefonoMovil || formData.telefonoFijo || null,
+                registroMedico: formData.numeroDocumento?.trim() || null,
+                telefono: formData.telefonoMovil?.trim() || formData.telefonoFijo?.trim() || null,
                 activo: true
             });
             const targetId = res?.user?.id || editId || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+            
             // Guardar configuración extendida de usuario (sucursales, especialidades, etc.) en website_config
             try {
                 const { data: cfgData } = await supabase
@@ -383,15 +471,16 @@ export default function EmpresaUsuarios() {
                 const userDetails = currentConfig.user_details || {};
 
                 userDetails[targetId] = {
-                    nombre: formData.nombre,
-                    apellido: formData.apellido,
-                    tipoDocumento: formData.tipoDocumento || "CC",
-                    numeroDocumento: formData.numeroDocumento || "",
-                    telefonoMovil: formData.telefonoMovil || "",
-                    telefonoFijo: formData.telefonoFijo || "",
-                    direccion: formData.direccion || "",
-                    genero: formData.genero || "Femenino",
+                    nombre: formData.nombre.trim(),
+                    apellido: formData.apellido.trim(),
+                    tipoDocumento: formData.tipoDocumento || "Cédula de ciudadanía",
+                    numeroDocumento: formData.numeroDocumento?.trim() || "",
+                    telefonoMovil: formData.telefonoMovil?.trim() || "",
+                    telefonoFijo: formData.telefonoFijo?.trim() || "",
+                    direccion: formData.direccion?.trim() || "",
+                    genero: formData.genero || "Masculino",
                     fechaNacimiento: formData.fechaNacimiento || "",
+                    password: formData.password || userDetails[targetId]?.password || "",
                     sucursales: formData.sucursales || [],
                     especialidades: formData.especialidades || [],
                     esDoctor: formData.esDoctor || false,
@@ -415,21 +504,22 @@ export default function EmpresaUsuarios() {
                     }, { onConflict: "tenant_id" });
 
                 // Persistencia unificada a través de configPersistenceService
-                await saveConfigItem(userProfile.inquilino, "usuarios", "usuarios", {
+                await saveConfigItem(userProfile.inquilino, "usuarios", null, {
                     id: targetId,
-                    nombre: formData.nombre,
-                    apellido: formData.apellido,
+                    nombre: formData.nombre.trim(),
+                    apellido: formData.apellido.trim(),
                     nombreCompleto: fullName,
                     email: targetEmail,
                     rol: roleName,
                     profileId: roleName,
-                    tipoDocumento: formData.tipoDocumento || "CC",
-                    numeroDocumento: formData.numeroDocumento || "",
-                    telefonoMovil: formData.telefonoMovil || "",
-                    telefonoFijo: formData.telefonoFijo || "",
-                    direccion: formData.direccion || "",
-                    genero: formData.genero || "Femenino",
+                    tipoDocumento: formData.tipoDocumento || "Cédula de ciudadanía",
+                    numeroDocumento: formData.numeroDocumento?.trim() || "",
+                    telefonoMovil: formData.telefonoMovil?.trim() || "",
+                    telefonoFijo: formData.telefonoFijo?.trim() || "",
+                    direccion: formData.direccion?.trim() || "",
+                    genero: formData.genero || "Masculino",
                     fechaNacimiento: formData.fechaNacimiento || "",
+                    password: formData.password || "",
                     sucursales: formData.sucursales || [],
                     especialidades: formData.especialidades || [],
                     esDoctor: formData.esDoctor || false,
@@ -502,25 +592,24 @@ export default function EmpresaUsuarios() {
                     .eq("tenant_id", userProfile.inquilino)
                     .maybeSingle();
 
-                if (cfgData?.config?.user_details) {
-                    const updatedDetails = { ...cfgData.config.user_details };
-                    delete updatedDetails[userToDelete.id];
+                if (cfgData?.config?.user_details && cfgData.config.user_details[userToDelete.id]) {
+                    const nextUserDetails = { ...cfgData.config.user_details };
+                    delete nextUserDetails[userToDelete.id];
                     await supabase
                         .from("website_config")
                         .update({
                             config: {
                                 ...cfgData.config,
-                                user_details: updatedDetails
+                                user_details: nextUserDetails
                             }
                         })
                         .eq("tenant_id", userProfile.inquilino);
                 }
-            } catch (e) {
-                console.warn("Aviso al limpiar user_details:", e);
+            } catch (cfgErr) {
+                console.warn("Error limpiando website_config en eliminación:", cfgErr);
             }
 
-            toast.success('Usuario "' + (userToDelete.nombreCompleto || userToDelete.email) + '" eliminado correctamente');
-            setUsers(previous => previous.filter(user => String(user.id) !== String(userToDelete.id)));
+            toast.success('Usuario eliminado correctamente');
             setDeleteConfirmModal(null);
             loadData();
         } catch (error) {
@@ -528,75 +617,61 @@ export default function EmpresaUsuarios() {
             toast.error('Error al eliminar usuario: ' + (error.message || ''));
         }
     };
+
     const cancelDelete = () => {
-        console.log("❌ Usuario canceló la eliminación");
         setDeleteConfirmModal(null);
     };
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-4">
-            {/* Toolbar / Search Header */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-3">
-                <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                        <FiUser size={18} />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <h1 className="text-[16px] font-bold text-slate-800 tracking-tight">Usuarios y Talento Humano</h1>
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#8CC63F]/15 border border-[#8CC63F]/30 text-[#5da832]">
-                                {users.length} / {userProfile?.tenant?.plan?.maxUsers || 2} usuarios (Plan {userProfile?.tenant?.plan?.name || 'Consultorio'})
-                            </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 font-medium">Gestión de profesionales, perfiles y accesos a la clínica</p>
-                    </div>
+        <div className="space-y-4">
+            {/* Header con estilo uniforme */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                    <h3 className="text-base font-bold text-slate-800">
+                        Usuarios y Permisos
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                        Gestiona el acceso del personal y doctores al sistema
+                    </p>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-                    {/* Status Toggle */}
-                    <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
-                        <button
-                            onClick={() => setShowDisabled(false)}
-                            className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer border-0 ${!showDisabled ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800 bg-transparent'}`}
-                        >
-                            Activos
-                        </button>
-                        <button
-                            onClick={() => setShowDisabled(true)}
-                            className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer border-0 ${showDisabled ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800 bg-transparent'}`}
-                        >
-                            Deshabilitados
-                        </button>
-                    </div>
-
-                    {/* Search Input */}
-                    <div className="relative flex-1 md:w-56">
-                        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                        <input
-                            type="text"
-                            placeholder="Buscar por nombre..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:bg-white focus:border-blue-500 transition-colors"
-                        />
-                    </div>
-
-                    {/* New User Button */}
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowDisabled(!showDisabled)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${showDisabled
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            }`}
+                    >
+                        <FiFilter size={13} />
+                        {showDisabled ? "Viendo Inactivos" : "Ver Inactivos"}
+                    </button>
                     <button
                         onClick={() => handleOpenModal()}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all shadow-blue-500/10 cursor-pointer border-0"
                     >
-                        <FiPlus size={16} />
-                        <span>Nuevo Miembro</span>
+                        <FiPlus size={15} />
+                        <span>Nuevo Usuario</span>
                     </button>
                 </div>
             </div>
 
-            {/* Table */}
+            {/* Buscador */}
+            <div className="relative">
+                <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar usuario por nombre o correo..."
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-blue-500 transition-colors shadow-sm"
+                />
+            </div>
+
+            {/* Tabla de Usuarios */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left border-collapse">
                     <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
+                        <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                             <th className="py-2.5 px-4">Miembro / Contacto</th>
                             <th className="py-2.5 px-4">Perfil / Rol</th>
                             <th className="py-2.5 px-4">Estado Profesional</th>
@@ -692,7 +767,7 @@ export default function EmpresaUsuarios() {
             {modalOpen && ReactDOM.createPortal(
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
                     <div className="bg-white w-full max-w-4xl h-[88vh] rounded-xl overflow-hidden shadow-2xl flex flex-col border border-slate-200">
-                        {/* Header limpio consistente con el estilo de config */}
+                        {/* Header limpio */}
                         <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -716,7 +791,7 @@ export default function EmpresaUsuarios() {
                         {/* Cuerpo del modal */}
                         <div className="flex-1 overflow-hidden relative bg-slate-50">
                             <form onSubmit={handleSave} autoComplete="off" className="h-full overflow-y-auto custom-scrollbar p-4 pb-20 space-y-3">
-                                {/* Campos ocultos para evitar autofill agresivo del navegador */}
+                                {/* Campos ocultos para evitar autofill */}
                                 <input type="text" name="prevent_autofill_username" style={{ display: 'none' }} tabIndex={-1} readOnly />
                                 <input type="password" name="prevent_autofill_password" style={{ display: 'none' }} tabIndex={-1} readOnly />
 
@@ -744,11 +819,25 @@ export default function EmpresaUsuarios() {
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Nombre *</label>
-                                            <Input type="text" value={formData.nombre} onChange={e => setFormData({ ...formData, nombre: e.target.value })} required placeholder="Ingrese nombre" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
+                                            <input 
+                                                type="text" 
+                                                value={formData.nombre} 
+                                                onChange={e => handleFieldChange("nombre", e.target.value)} 
+                                                placeholder="Ingrese nombre" 
+                                                className={`w-full h-8 bg-slate-50 border ${errors.nombre ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-400'} rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white outline-none transition-all`} 
+                                            />
+                                            {errors.nombre && <span className="text-[10px] font-semibold text-red-500">{errors.nombre}</span>}
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Apellido *</label>
-                                            <Input type="text" value={formData.apellido} onChange={e => setFormData({ ...formData, apellido: e.target.value })} required placeholder="Ingrese apellidos" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
+                                            <input 
+                                                type="text" 
+                                                value={formData.apellido} 
+                                                onChange={e => handleFieldChange("apellido", e.target.value)} 
+                                                placeholder="Ingrese apellidos" 
+                                                className={`w-full h-8 bg-slate-50 border ${errors.apellido ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-400'} rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white outline-none transition-all`} 
+                                            />
+                                            {errors.apellido && <span className="text-[10px] font-semibold text-red-500">{errors.apellido}</span>}
                                         </div>
                                     </div>
 
@@ -756,15 +845,24 @@ export default function EmpresaUsuarios() {
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Tipo de documento</label>
-                                            <select value={formData.tipoDocumento} onChange={e => setFormData({ ...formData, tipoDocumento: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
+                                            <select value={formData.tipoDocumento} onChange={e => handleFieldChange("tipoDocumento", e.target.value)} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
                                                 <option value="Cédula de ciudadanía">Cédula de ciudadanía</option>
                                                 <option value="Cédula de extranjería">Cédula de extranjería</option>
                                                 <option value="Pasaporte">Pasaporte</option>
+                                                <option value="Tarjeta de identidad">Tarjeta de identidad</option>
+                                                <option value="Permiso Especial">Permiso Especial</option>
                                             </select>
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Número de documento *</label>
-                                            <Input type="text" value={formData.numeroDocumento} onChange={e => setFormData({ ...formData, numeroDocumento: e.target.value })} required placeholder="Ej: 12345678" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
+                                            <input 
+                                                type="text" 
+                                                value={formData.numeroDocumento} 
+                                                onChange={e => handleFieldChange("numeroDocumento", e.target.value)} 
+                                                placeholder="Ej: 12345678" 
+                                                className={`w-full h-8 bg-slate-50 border ${errors.numeroDocumento ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-400'} rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white outline-none transition-all`} 
+                                            />
+                                            {errors.numeroDocumento && <span className="text-[10px] font-semibold text-red-500">{errors.numeroDocumento}</span>}
                                         </div>
                                     </div>
 
@@ -772,11 +870,24 @@ export default function EmpresaUsuarios() {
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Teléfono móvil *</label>
-                                            <Input type="text" value={formData.telefonoMovil} onChange={e => setFormData({ ...formData, telefonoMovil: e.target.value })} required placeholder="Ej: 310..." className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
+                                            <input 
+                                                type="text" 
+                                                value={formData.telefonoMovil} 
+                                                onChange={e => handleFieldChange("telefonoMovil", e.target.value)} 
+                                                placeholder="Ej: 310..." 
+                                                className={`w-full h-8 bg-slate-50 border ${errors.telefonoMovil ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-400'} rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white outline-none transition-all`} 
+                                            />
+                                            {errors.telefonoMovil && <span className="text-[10px] font-semibold text-red-500">{errors.telefonoMovil}</span>}
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Teléfono fijo</label>
-                                            <Input type="text" value={formData.telefonoFijo} onChange={e => setFormData({ ...formData, telefonoFijo: e.target.value })} placeholder="Ej: 601..." className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
+                                            <input 
+                                                type="text" 
+                                                value={formData.telefonoFijo} 
+                                                onChange={e => handleFieldChange("telefonoFijo", e.target.value)} 
+                                                placeholder="Ej: 601..." 
+                                                className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" 
+                                            />
                                         </div>
                                     </div>
 
@@ -784,25 +895,43 @@ export default function EmpresaUsuarios() {
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Género *</label>
-                                            <select value={formData.genero} onChange={e => setFormData({ ...formData, genero: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
-                                                <option value="Femenino">Femenino</option>
+                                            <select 
+                                                value={formData.genero} 
+                                                onChange={e => handleFieldChange("genero", e.target.value)} 
+                                                className={`w-full h-8 bg-slate-50 border ${errors.genero ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-400'} rounded-lg px-3 text-[13px] text-slate-800 outline-none transition-all`}
+                                            >
                                                 <option value="Masculino">Masculino</option>
+                                                <option value="Femenino">Femenino</option>
                                                 <option value="Otro">Otro</option>
                                             </select>
+                                            {errors.genero && <span className="text-[10px] font-semibold text-red-500">{errors.genero}</span>}
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-medium text-slate-500">Fecha de nacimiento *</label>
-                                            <Input type="date" value={formData.fechaNacimiento} onChange={e => setFormData({ ...formData, fechaNacimiento: e.target.value })} required className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
+                                            <input 
+                                                type="date" 
+                                                value={formData.fechaNacimiento} 
+                                                onChange={e => handleFieldChange("fechaNacimiento", e.target.value)} 
+                                                className={`w-full h-8 bg-slate-50 border ${errors.fechaNacimiento ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-400'} rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white outline-none transition-all`} 
+                                                max="9999-12-31" 
+                                                min="1900-01-01" 
+                                            />
+                                            {errors.fechaNacimiento && <span className="text-[10px] font-semibold text-red-500">{errors.fechaNacimiento}</span>}
                                         </div>
                                     </div>
 
-                                    {/* Fila 5: Dirección (ancho completo) */}
+                                    {/* Fila 5: Dirección */}
                                     <div className="space-y-1">
                                         <label className="text-[11px] font-medium text-slate-500">Dirección</label>
-                                        <Input type="text" value={formData.direccion} onChange={e => setFormData({ ...formData, direccion: e.target.value })} placeholder="Dirección de residencia" className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" />
+                                        <input 
+                                            type="text" 
+                                            value={formData.direccion} 
+                                            onChange={e => handleFieldChange("direccion", e.target.value)} 
+                                            placeholder="Dirección de residencia" 
+                                            className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 focus:bg-white focus:border-blue-400 outline-none transition-all" 
+                                        />
                                     </div>
                                 </section>
-
 
                                 {/* BLOQUE 2: INFORMACIÓN EMPRESARIAL */}
                                 <section className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3">
@@ -838,11 +967,11 @@ export default function EmpresaUsuarios() {
 
                                                     <div className="space-y-1 transition-all">
                                                         <label className="text-[11px] font-medium text-slate-500">Porcentaje</label>
-                                                        <Input type="number" value={formData.comisionPorcentaje} onChange={e => setFormData({ ...formData, comisionPorcentaje: e.target.value })} placeholder="0" className="h-8 bg-white border-slate-200 rounded-lg px-4 font-black text-blue-600 text-[16px] shadow-sm" />
+                                                        <input type="number" value={formData.comisionPorcentaje} onChange={e => handleFieldChange("comisionPorcentaje", e.target.value)} placeholder="0" className="h-8 bg-white border-slate-200 rounded-lg px-4 font-black text-blue-600 text-[16px] shadow-sm" />
                                                     </div>
 
                                                     <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                        <span className="text-[12px] font-medium text-slate-700">¿Documentos clinicos se imprimen con logo?</span>
+                                                        <span className="text-[12px] font-medium text-slate-700">¿Documentos clínicos se imprimen con logo?</span>
                                                         <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsWithLogo: !formData.clinicalDocsWithLogo })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.clinicalDocsWithLogo ? "bg-blue-600" : "bg-slate-300"}`}>
                                                             <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.clinicalDocsWithLogo ? "left-6" : "left-1"}`} />
                                                         </button>
@@ -864,7 +993,7 @@ export default function EmpresaUsuarios() {
                                                             </div>
                                                             <textarea 
                                                                 value={formData.encabezadoPersonalizado}
-                                                                onChange={e => setFormData({ ...formData, encabezadoPersonalizado: e.target.value })}
+                                                                onChange={e => handleFieldChange("encabezadoPersonalizado", e.target.value)}
                                                                 placeholder="Escriba el encabezado que aparecerá en los documentos..."
                                                                 className="w-full h-24 p-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 text-[12px] shadow-sm focus:border-blue-500 focus:bg-white outline-none transition-all caret-black custom-scrollbar resize-none"
                                                             />
@@ -877,7 +1006,7 @@ export default function EmpresaUsuarios() {
                                         <div className="space-y-3">
                                             <div className="space-y-1">
                                                 <label className="text-[11px] font-semibold text-slate-500">Forma de pago</label>
-                                                <select value={formData.formaPago} onChange={e => setFormData({ ...formData, formaPago: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
+                                                <select value={formData.formaPago} onChange={e => handleFieldChange("formaPago", e.target.value)} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
                                                     <option value="Realizadas y pagadas">Realizadas y pagadas</option>
                                                     <option value="Solo realizadas">Solo realizadas</option>
                                                 </select>
@@ -898,12 +1027,19 @@ export default function EmpresaUsuarios() {
                                                         );
                                                     }
                                                     return (
-                                                        <select required value={formData.profileId} onChange={e => setFormData({ ...formData, profileId: e.target.value })} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 font-black text-[11px] text-slate-700 focus:border-blue-500 transition-all">
-                                                            <option value="">Seleccione perfil...</option>
-                                                            {rolesDisponibles.map(p => (
-                                                                <option key={p.id} value={p.id}>{p.nombre}</option>
-                                                            ))}
-                                                        </select>
+                                                        <>
+                                                            <select 
+                                                                value={formData.profileId} 
+                                                                onChange={e => handleFieldChange("profileId", e.target.value)} 
+                                                                className={`w-full h-8 bg-slate-50 border ${errors.profileId ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-500'} rounded-lg px-3 font-black text-[11px] text-slate-700 transition-all`}
+                                                            >
+                                                                <option value="">Seleccione perfil...</option>
+                                                                {rolesDisponibles.map(p => (
+                                                                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                                                                ))}
+                                                            </select>
+                                                            {errors.profileId && <span className="text-[10px] font-semibold text-red-500">{errors.profileId}</span>}
+                                                        </>
                                                     );
                                                 })()}
                                             </div>
@@ -916,6 +1052,12 @@ export default function EmpresaUsuarios() {
                                                 <FiActivity size={16} className="text-blue-500" />
                                                 <label className="text-[10px] font-black text-slate-700 uppercase tracking-[0.2em]">Especializaciones *</label>
                                             </div>
+
+                                            {errors.especialidades && (
+                                                <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-600 text-[11px] font-semibold">
+                                                    ⚠️ {errors.especialidades}
+                                                </div>
+                                            )}
 
                                             <div className="grid grid-cols-1 xl:grid-cols-[1fr,30px,1fr] gap-3">
                                                 <div className="flex flex-col bg-slate-50 rounded-xl border border-slate-100 overflow-hidden h-52">
@@ -1057,65 +1199,62 @@ export default function EmpresaUsuarios() {
                                                     name="new_user_email_field"
                                                     autoComplete="new-password"
                                                     value={formData.email} 
-                                                    onChange={e => setFormData({ ...formData, email: e.target.value })} 
-                                                    required 
+                                                    onChange={e => handleFieldChange("email", e.target.value)} 
                                                     placeholder="usuario@clinica.com" 
-                                                    className={`w-full h-9 bg-slate-50 border ${formData.email && users.some(u => u.email?.toLowerCase() === formData.email.trim().toLowerCase() && u.id !== editId) ? 'border-red-500 text-red-600 bg-red-50/20' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-11 pr-4 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`} 
+                                                    className={`w-full h-9 bg-slate-50 border ${errors.email || (formData.email && users.some(u => u.email?.toLowerCase() === formData.email.trim().toLowerCase() && u.id !== editId)) ? 'border-red-500 text-red-600 bg-red-50/20 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-11 pr-4 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`} 
                                                 />
                                             </div>
-                                            {(() => {
-                                                const isDup = formData.email.trim() && users.some(u => u.email?.toLowerCase() === formData.email.trim().toLowerCase() && u.id !== editId);
-                                                if (isDup) {
-                                                    return (
-                                                        <p className="text-[10px] font-bold text-red-500 flex items-center gap-1 mt-1">
-                                                            <span>⚠️ Este correo ya está registrado por otro usuario.</span>
-                                                        </p>
-                                                    );
-                                                }
-                                                return (
-                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Este correo se usa para iniciar sesión</p>
-                                                );
-                                            })()}
+                                            {errors.email ? (
+                                                <p className="text-[10px] font-bold text-red-500 flex items-center gap-1 mt-1">
+                                                    <span>⚠️ {errors.email}</span>
+                                                </p>
+                                            ) : (formData.email && users.some(u => u.email?.toLowerCase() === formData.email.trim().toLowerCase() && u.id !== editId)) ? (
+                                                <p className="text-[10px] font-bold text-red-500 flex items-center gap-1 mt-1">
+                                                    <span>⚠️ Este correo ya está registrado por otro usuario.</span>
+                                                </p>
+                                            ) : (
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-1">Este correo se usa para iniciar sesión</p>
+                                            )}
                                         </div>
 
                                         <div className="space-y-2.5">
                                             <label className="text-[11px] font-medium text-slate-500">Contraseña *</label>
-                                            <div className="relative">
+                                            <div className="relative max-w-sm">
                                                 <input 
                                                     type={showPassword ? "text" : "password"} 
                                                     name="new_user_password_field"
                                                     autoComplete="new-password"
                                                     value={formData.password} 
-                                                    onChange={e => setFormData({ ...formData, password: e.target.value })} 
-                                                    required={!editId} 
+                                                    onChange={e => handleFieldChange("password", e.target.value)} 
                                                     minLength={8}
-                                                    placeholder="Mínimo 8 caracteres" 
-                                                    className={`w-full h-9 bg-slate-50 border ${formData.password && formData.password.length > 0 && formData.password.length < 8 ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-4 pr-12 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`}
+                                                    placeholder={editId ? "Contraseña del usuario" : "Mínimo 8 caracteres"} 
+                                                    className={`w-full h-9 bg-slate-50 border ${errors.password || (formData.password && formData.password.length > 0 && formData.password.length < 8) ? 'border-red-500 focus:border-red-500 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-500'} focus:bg-white rounded-xl pl-4 pr-12 font-bold text-[13px] text-slate-700 outline-none transition-all caret-black`}
                                                 />
                                                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all">
                                                     {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
                                                 </button>
                                             </div>
-                                            {formData.password && formData.password.length > 0 && formData.password.length < 8 && (
+                                            {errors.password ? (
+                                                <p className="text-[10px] font-semibold text-red-500 pl-1 mt-1">
+                                                    ⚠️ {errors.password}
+                                                </p>
+                                            ) : formData.password && formData.password.length > 0 && formData.password.length < 8 ? (
                                                 <p className="text-[10px] font-semibold text-red-500 pl-1 mt-1">
                                                     Faltan {8 - formData.password.length} caracteres
                                                 </p>
-                                            )}
+                                            ) : null}
                                         </div>
                                     </div>
                                 </section>
                             </form>
                         </div>
 
-                        {/* Footer limpio */}
+                        {/* Footer del Modal */}
                         <div className="bg-white px-5 py-3 border-t border-slate-200 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                                 <span className="text-[10px] text-slate-400">Validación en tiempo real</span>
-                                <div className="h-3 w-px bg-slate-200" />
-                                <span className="text-[10px] text-slate-400">Los cambios se aplicarán al próximo inicio de sesión</span>
                             </div>
-
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setModalOpen(false)}

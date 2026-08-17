@@ -494,7 +494,7 @@ export default function ProductoForm({ item, categories, inquilino, onSave, onCa
                 className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
                 value={form.extension_fecha_1}
                 onChange={e => setForm({ ...form, extension_fecha_1: e.target.value })}
-              />
+               max="9999-12-31" min="1900-01-01" />
             </div>
 
             <div className="flex flex-col gap-2">
@@ -504,7 +504,7 @@ export default function ProductoForm({ item, categories, inquilino, onSave, onCa
                 className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
                 value={form.extension_fecha_2}
                 onChange={e => setForm({ ...form, extension_fecha_2: e.target.value })}
-              />
+               max="9999-12-31" min="1900-01-01" />
             </div>
           </div>
         </div>

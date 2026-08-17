@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { formatCurrency, calculateAgeStr } from "../../../utils/formatters";
 import { useAuth } from "../../../context/AuthContext";
@@ -113,9 +113,9 @@ const FormDatosPersonales = ({ patient, photoState }) => {
             if (data && data.id !== patient?.id) {
                 setError("nroDocumento", {
                     type: "manual",
-                    message: `Ya existe un paciente registrado con el número de documento ${val}`
+                    message: "Número de documento en uso"
                 });
-                toast?.error(`Atención: Ya existe un paciente con el número de documento ${val}`);
+                toast?.error("Número de documento en uso");
             } else {
                 clearErrors("nroDocumento");
             }
@@ -410,7 +410,7 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                         </FormRow>
                         <FormRow label="Fecha de Nacimiento" required={isRequired("fechaNacimiento", true)} error={errors.fechaNacimiento}>
                             <div className="flex gap-4">
-                                <input type="date" {...register("fechaNacimiento")} className="form-input text-sm w-full md:w-48" />
+                                <input type="date" {...register("fechaNacimiento")} className="form-input text-sm w-full md:w-48"  max="9999-12-31" min="1900-01-01" />
                                 <div className="px-4 py-2 bg-slate-100 rounded-lg text-sm text-slate-700 font-bold flex items-center shadow-inner">
                                     Edad: {age || "---"}
                                 </div>
@@ -483,17 +483,18 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                             <input {...register("lugarResidencia")} className="form-input text-sm w-full" placeholder="Dirección completa" />
                         </FormRow>
 
-                        <FormRow label="Configuración Domicilio">
-                            <div className="flex gap-4 items-center">
-                                <select {...register("estrato")} className="form-input text-sm w-32">
-                                    <option value="">Estrato</option>
-                                    {ESTRATOS.map(e => <option key={e} value={e}>{e}</option>)}
-                                </select>
-                                <select {...register("zonaResidencial")} className="form-input text-sm w-40">
-                                    <option value="">Zona Residencial</option>
-                                    {ZONAS_RESIDENCIALES.map(z => <option key={z} value={z}>{z}</option>)}
-                                </select>
-                            </div>
+                        <FormRow label="Estrato" error={errors.estrato}>
+                            <select {...register("estrato")} className="form-input text-sm w-full">
+                                <option value="">Seleccione estrato...</option>
+                                {ESTRATOS.map(e => <option key={e} value={e}>{e}</option>)}
+                            </select>
+                        </FormRow>
+
+                        <FormRow label="Zona residencial" required={isRequired("zonaResidencial", true)} error={errors.zonaResidencial}>
+                            <select {...register("zonaResidencial")} className="form-input text-sm w-full">
+                                <option value="">Seleccione zona...</option>
+                                {ZONAS_RESIDENCIALES.map(z => <option key={z} value={z}>{z}</option>)}
+                            </select>
                         </FormRow>
                         <FormRow label="Celular" required={isRequired("celular", true)} error={errors.celular}>
                             <div className="flex items-center gap-0 w-full max-w-sm">
@@ -891,6 +892,15 @@ const FormMarketing = ({ pacientesRemision = [], profesionales = [], conveniosLi
         }
     }, [asesorComercialType, setValue]);
 
+    const currentConvenio = watch("convenioBeneficio");
+    const optionsWithCurrent = useMemo(() => {
+        const list = ["Ninguno", ...conveniosList];
+        if (currentConvenio && currentConvenio !== "Ninguno" && !conveniosList.includes(currentConvenio)) {
+            list.push(currentConvenio);
+        }
+        return list;
+    }, [conveniosList, currentConvenio]);
+
     return (
         <div className="p-4 md:p-8 animate-fadeIn max-w-4xl mx-auto">
             <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm pb-32">
@@ -900,7 +910,7 @@ const FormMarketing = ({ pacientesRemision = [], profesionales = [], conveniosLi
                         <SearchableSelect
                             value={watch("convenioBeneficio")}
                             onChange={(val) => setValue("convenioBeneficio", val === "Ninguno" ? "" : val, { shouldDirty: true })}
-                            options={["Ninguno", ...conveniosList]}
+                            options={optionsWithCurrent}
                             placeholder="Seleccione..."
                             className="w-full md:w-64"
                         />
@@ -967,7 +977,7 @@ const FormMarketing = ({ pacientesRemision = [], profesionales = [], conveniosLi
                                         value={watch("remitidoPorValue")}
                                         onChange={(val) => setValue("remitidoPorValue", val, { shouldDirty: true })}
                                         options={profesionales.map(p => p.displayName)}
-                                        placeholder="Seleccione un doctor..."
+                                        placeholder="Seleccione un usuario..."
                                         className="w-full md:w-96"
                                     />
                                 )}
@@ -977,6 +987,9 @@ const FormMarketing = ({ pacientesRemision = [], profesionales = [], conveniosLi
                                         onChange={(val) => setValue("remitidoPorValue", val, { shouldDirty: true })}
                                         options={pacientesRemision.map(p => p.nombreCompleto || `${p.nombre || ""} ${p.apellido || ""}`.trim())}
                                         placeholder="Seleccione un paciente..."
+                                        requireSearch={true}
+                                        minSearchChars={1}
+                                        emptySearchPlaceholder="Escribe para buscar paciente..."
                                         className="w-full md:w-96"
                                     />
                                 )}
@@ -1026,7 +1039,7 @@ const FormMarketing = ({ pacientesRemision = [], profesionales = [], conveniosLi
                                         value={watch("asesorComercialValue")}
                                         onChange={(val) => setValue("asesorComercialValue", val, { shouldDirty: true })}
                                         options={profesionales.map(p => p.displayName)}
-                                        placeholder="Seleccione un asesor..."
+                                        placeholder="Seleccione un usuario..."
                                         className="w-full md:w-96"
                                     />
                                 )}
@@ -1117,7 +1130,9 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
         }
     }, [searchParams]);
 
+    const navigate = useNavigate();
     const [showWarningModal, setShowWarningModal] = useState(false);
+    const [pendingExternalNav, setPendingExternalNav] = useState(null);
 
     const isPatientIncomplete = useMemo(() => {
         if (!patient) return true;
@@ -1156,6 +1171,12 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
     useEffect(() => {
         if (isPatientIncomplete) {
+            window.checkIncompletePatientNavigation = (targetPath) => {
+                setPendingExternalNav(targetPath || null);
+                setShowWarningModal(true);
+                return true;
+            };
+
             if (activeTab !== "datos") {
                 setActiveTab("datos");
                 const currentParams = {};
@@ -1165,7 +1186,13 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                 currentParams.tab = "datos";
                 setSearchParams(currentParams);
             }
+        } else {
+            window.checkIncompletePatientNavigation = null;
         }
+
+        return () => {
+            window.checkIncompletePatientNavigation = null;
+        };
     }, [patient?.id, isPatientIncomplete, activeTab, searchParams, setSearchParams]);
 
     const [financials, setFinancials] = useState(null);
@@ -1176,7 +1203,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
     const [pacientesRemision, setPacientesRemision] = useState([]);
     const [profesionales, setProfesionales] = useState([]);
     const [conveniosList, setConveniosList] = useState([]);
-    const inquilino = userProfile?.inquilino;
+    const inquilino = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
 
     useEffect(() => {
         if (!inquilino) return;
@@ -1188,7 +1215,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                     .select("id, nombres, apellidos, documento")
                     .eq("tenant_id", inquilino);
 
-                if (pacientesError) throw pacientesError;
+                if (pacientesError) console.warn("Error loading pacientes for remision:", pacientesError);
 
                 const pacientes = (pacientesData || []).map(d => ({
                     id: d.id,
@@ -1198,26 +1225,235 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                 })).sort((a, b) => (a.nombreCompleto || "").localeCompare(b.nombreCompleto || ""));
                 setPacientesRemision(pacientes);
 
-                // Load professionals from Supabase
-                const { profesionalesService } = await import("../../../services/supabaseServices");
-                const doctors = await profesionalesService.getByTenant(inquilino);
-                const doctorsFormatted = doctors.map(d => ({ 
-                    id: d.id, 
-                    ...d, 
-                    displayName: d.nombre_completo || d.nombre 
-                })).sort((a, b) => a.displayName.localeCompare(b.displayName));
-                setProfesionales(doctorsFormatted);
+                // Load all system users/professionals from Supabase (usuarios, profiles, profesionales) and website_config
+                const usersMap = new Map();
 
-                // TODO: Migrate convenios to Supabase when ready
-                // For now, set empty array to avoid an unnecessary data dependency
-                setConveniosList([]);
-                console.log("💡 Convenios temporalmente vacío - pendiente migración a Supabase");
+                // 1. Table 'usuarios'
+                try {
+                    const { data: uData } = await supabase
+                        .from("usuarios")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    (uData || []).forEach(u => {
+                        const name = (u.displayname || u.nombre || u.nombres || u.nombre_completo || u.full_name || u.email || "").trim();
+                        if (name) usersMap.set(u.id || name.toLowerCase(), { id: u.id, displayName: name, ...u });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from usuarios table:", err);
+                }
+
+                // 2. Table 'profiles'
+                try {
+                    const { data: pData } = await supabase
+                        .from("profiles")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    (pData || []).forEach(p => {
+                        const name = (p.full_name || p.displayname || p.nombre || p.nombre_completo || p.email || "").trim();
+                        if (name) usersMap.set(p.id || name.toLowerCase(), { id: p.id, displayName: name, ...p });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from profiles table:", err);
+                }
+
+                // 3. Table 'profesionales'
+                try {
+                    const { profesionalesService } = await import("../../../services/supabaseServices");
+                    const doctors = await profesionalesService.getByTenant(inquilino);
+                    (doctors || []).forEach(d => {
+                        const name = (d.nombre_completo || d.nombre || d.displayName || d.displayname || "").trim();
+                        if (name) usersMap.set(d.id || name.toLowerCase(), { id: d.id, displayName: name, ...d });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from profesionales table:", err);
+                }
+
+                // 4. website_config fallback
+                try {
+                    const { getConfigItems } = await import("../../../services/configPersistenceService");
+                    const cfgUsers = await getConfigItems(inquilino, "usuarios", "usuarios");
+                    (cfgUsers || []).forEach(u => {
+                        const name = (u.nombre || u.displayname || u.nombres || u.nombre_completo || "").trim();
+                        if (name) usersMap.set(u.id || name.toLowerCase(), { id: u.id, displayName: name, ...u });
+                    });
+                } catch (err) {
+                    console.warn("Could not load from website_config usuarios:", err);
+                }
+
+                const sortedUsers = Array.from(usersMap.values()).sort((a, b) => 
+                    (a.displayName || "").localeCompare(b.displayName || "")
+                );
+                setProfesionales(sortedUsers);
             } catch (e) {
                 console.error("Error loading remision catalogs from Supabase:", e);
             }
         };
         loadRemisionCatalogs();
     }, [inquilino]);
+
+    // Cargar convenios activos filtrados por la sucursal asignada al paciente
+    useEffect(() => {
+        if (!inquilino) return;
+        let isMounted = true;
+
+        const loadConveniosForPatient = async () => {
+            try {
+                // 1. Obtener convenios registrados
+                let conveniosData = [];
+                try {
+                    const { data, error } = await supabase
+                        .from("convenios")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (!error && data) conveniosData = data;
+                } catch (err) {
+                    console.error("Error fetching convenios table:", err);
+                }
+
+                try {
+                    const { getConfigItems } = await import("../../../services/configPersistenceService");
+                    const cfgConvenios = await getConfigItems(inquilino, "convenios", "convenios");
+                    if (cfgConvenios && cfgConvenios.length > 0) {
+                        const map = new Map();
+                        conveniosData.forEach(c => map.set(c.id, c));
+                        cfgConvenios.forEach(c => {
+                            if (!map.has(c.id)) {
+                                map.set(c.id, c);
+                            } else {
+                                map.set(c.id, { ...map.get(c.id), ...c });
+                            }
+                        });
+                        conveniosData = Array.from(map.values());
+                    }
+                } catch (e) {}
+
+                // 2. Obtener sucursales registradas para contrastar nombres e IDs
+                let sucursalesData = [];
+                try {
+                    const { data: sData } = await supabase
+                        .from("sucursales")
+                        .select("*")
+                        .eq("tenant_id", inquilino);
+                    if (sData) sucursalesData = sData;
+                } catch (e) {}
+
+                try {
+                    const { getConfigItems } = await import("../../../services/configPersistenceService");
+                    const cfgSuc = await getConfigItems(inquilino, "sucursales", "sucursales");
+                    if (cfgSuc && cfgSuc.length > 0) {
+                        const sMap = new Map();
+                        sucursalesData.forEach(s => sMap.set(s.id, s));
+                        cfgSuc.forEach(s => {
+                            if (!sMap.has(s.id)) sMap.set(s.id, s);
+                            else sMap.set(s.id, { ...sMap.get(s.id), ...s });
+                        });
+                        sucursalesData = Array.from(sMap.values());
+                    }
+                } catch (e) {}
+
+                // 3. Filtrar convenios activos
+                const activeConvenios = conveniosData.filter(c => {
+                    if (c.activo === false || c.estado === "Inactivo" || c.status === "inactive") return false;
+                    return true;
+                });
+
+                // 4. Identificar la sucursal del paciente
+                const patientBranch = (
+                    patient?.sede || 
+                    patient?.sucursal || 
+                    patient?.sucursalId || 
+                    patient?.sucursal_id || 
+                    patient?.sucursalNombre || 
+                    patient?.sucursal_nombre || 
+                    patient?.sedeId || 
+                    patient?.sede_id || 
+                    userProfile?.sucursal || 
+                    userProfile?.sucursal_id || 
+                    ""
+                ).toString().trim();
+
+                let targetBranchId = "";
+                let targetBranchName = "";
+
+                if (patientBranch) {
+                    const foundSuc = sucursalesData.find(s => 
+                        (s.id && String(s.id).toLowerCase() === patientBranch.toLowerCase()) ||
+                        (s.nombre && String(s.nombre).toLowerCase() === patientBranch.toLowerCase()) ||
+                        (s.name && String(s.name).toLowerCase() === patientBranch.toLowerCase())
+                    );
+                    if (foundSuc) {
+                        targetBranchId = String(foundSuc.id || "");
+                        targetBranchName = String(foundSuc.nombre || foundSuc.name || "");
+                    } else {
+                        targetBranchName = patientBranch;
+                    }
+                }
+
+                // 5. Filtrar según la sucursal correspondiente
+                const filteredConvenios = activeConvenios.filter(c => {
+                    const sucIds = c.sucursalesIds || c.sucursales || c.sucursales_ids || [];
+                    
+                    // Si no tiene asignación de sucursales o contiene 'TODAS', aplica para todas
+                    if (!Array.isArray(sucIds) || sucIds.length === 0) {
+                        return true;
+                    }
+                    if (sucIds.some(sid => String(sid).toUpperCase() === "TODAS" || String(sid).toUpperCase() === "ALL")) {
+                        return true;
+                    }
+
+                    // Si no hay sucursal asociada al paciente ni al perfil, se muestran todos los convenios activos
+                    if (!patientBranch && !targetBranchId && !targetBranchName) {
+                        return true;
+                    }
+
+                    // Validar si la sucursal del paciente está incluida
+                    return sucIds.some(sid => {
+                        if (!sid) return false;
+                        const sStr = String(sid).trim().toLowerCase();
+                        if (targetBranchId && sStr === targetBranchId.toLowerCase()) return true;
+                        if (targetBranchName && sStr === targetBranchName.toLowerCase()) return true;
+                        if (patientBranch && sStr === patientBranch.toLowerCase()) return true;
+                        return false;
+                    });
+                });
+
+                const names = filteredConvenios
+                    .map(c => (c.nombre || c.name || "").trim())
+                    .filter(Boolean);
+
+                const uniqueNames = [...new Set(names)].sort((a, b) => a.localeCompare(b));
+
+                if (isMounted) {
+                    setConveniosList(uniqueNames);
+                    console.log("✅ Convenios activos cargados para la sucursal del paciente:", {
+                        sucursalPaciente: patientBranch || "Sin sucursal asignada (global)",
+                        totalConveniosActivos: activeConvenios.length,
+                        conveniosFiltrados: uniqueNames
+                    });
+                }
+            } catch (err) {
+                console.error("Error cargando convenios por sucursal:", err);
+            }
+        };
+
+        loadConveniosForPatient();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [
+        inquilino, 
+        patient?.sede, 
+        patient?.sucursal, 
+        patient?.sucursalId, 
+        patient?.sucursal_id, 
+        patient?.sucursalNombre, 
+        patient?.sucursal_nombre, 
+        patient?.sedeId, 
+        patient?.sede_id,
+        userProfile?.sucursal,
+        userProfile?.sucursal_id
+    ]);
 
     const buildDefaultValues = (data = {}) => ({
         prefijoCelular: "+57",
@@ -1971,6 +2207,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                     onClick={() => {
                                         setActiveTab("datos");
                                         setShowWarningModal(false);
+                                        setPendingExternalNav(null);
                                     }}
                                     className="w-full py-3 bg-[#8CC63F] text-white text-[11px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-[#8CC63F]/20 hover:bg-[#7bb335] active:scale-95 transition-all flex items-center justify-center gap-2"
                                 >
@@ -1981,7 +2218,16 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                     type="button"
                                     onClick={() => {
                                         setShowWarningModal(false);
-                                        onClose();
+                                        const targetPath = pendingExternalNav;
+                                        setPendingExternalNav(null);
+                                        if (onClose) onClose();
+                                        if (targetPath) {
+                                            const segments = targetPath.split("/");
+                                            const lastSegment = segments[segments.length - 1];
+                                            const id = lastSegment === "dashboard_admin" ? "Inicio" : lastSegment;
+                                            window.dispatchEvent(new CustomEvent(`reset-module-${String(id).toLowerCase()}`));
+                                            navigate(targetPath);
+                                        }
                                     }}
                                     className="w-full py-3 bg-slate-100 text-slate-600 text-[11px] font-black uppercase tracking-widest rounded-full hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center"
                                 >

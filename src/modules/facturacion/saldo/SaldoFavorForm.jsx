@@ -472,7 +472,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                                 className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
                                 value={fecha}
                                 onChange={e => setFecha(e.target.value)}
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                         </div>
                         <div>
                             <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">

@@ -111,6 +111,8 @@ export default function Agenda() {
         return Math.min(100, Math.round((totalDuration / totalCapacityMins) * 100));
     }, [appointments, selectedDate, doctors]);
 
+    const defaultInitialData = useMemo(() => ({ start: new Date(selectedDate) }), [selectedDate]);
+
     const handleSlotClick = (doctorId, time, dateOverride) => {
         if (!can("Agenda", "Agenda", "crear")) {
             toast.error("No tienes permisos para crear citas");
@@ -699,7 +701,7 @@ export default function Agenda() {
             <AppointmentModal
                 isOpen={modalOpen}
                 onClose={() => setModalOpen(false)}
-                initialData={editingApt || slotData || { start: new Date() }}
+                initialData={editingApt || slotData || defaultInitialData}
                 doctors={doctors}
                 chairs={chairs}
                 branches={branches}

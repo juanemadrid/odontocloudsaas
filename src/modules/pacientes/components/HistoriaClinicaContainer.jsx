@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
     FiPrinter, 
     FiFileText, 
@@ -103,6 +103,87 @@ export default function HistoriaClinicaContainer({ patient }) {
         setSignModal({ isOpen: true, doc: docObj });
     };
 
+    const loadDocs = useCallback(async () => {
+        if (!patient?.id) return;
+        try {
+            let tableDocs = [];
+            try {
+                const { data: docData, error } = await supabase
+                    .from("documentos_clinicos")
+                    .select("*")
+                    .eq("paciente_id", patient.id)
+                    .order("created_at", { ascending: false });
+                if (!error && docData) {
+                    tableDocs = docData;
+                }
+            } catch (e) {
+                // Table direct read notice
+            }
+
+            let hmDocs = [];
+            try {
+                const { data: pData } = await supabase
+                    .from("pacientes")
+                    .select("historial_medico")
+                    .eq("id", patient.id)
+                    .maybeSingle();
+                const hm = pData?.historial_medico || patient?.historial_medico;
+                if (Array.isArray(hm?.documentosClinicos)) {
+                    hmDocs = hm.documentosClinicos;
+                }
+            } catch (e) {
+                if (Array.isArray(patient?.historial_medico?.documentosClinicos)) {
+                    hmDocs = patient.historial_medico.documentosClinicos;
+                }
+            }
+
+            const docMap = new Map();
+            hmDocs.forEach(d => {
+                if (d && d.id) docMap.set(String(d.id), d);
+            });
+            tableDocs.forEach(d => {
+                if (d && d.id) {
+                    const meta = d.metadata || {};
+                    docMap.set(String(d.id), {
+                        ...meta,
+                        ...d,
+                        tipoDocumento: meta.tipoDocumento || d.tipo || d.titulo || "Documento",
+                        tipo: d.tipo || meta.tipoDocumento || d.titulo || "Documento",
+                        recetaItems: d.receta_items || meta.recetaItems || [],
+                        fechaIso: meta.fechaIso || d.created_at,
+                        profesional: meta.profesional || meta.doctor || "",
+                        transcribe: meta.transcribe || "",
+                        diagnostico: meta.diagnostico || ""
+                    });
+                }
+            });
+
+            const parsedDocs = Array.from(docMap.values()).map(d => {
+                const meta = d.metadata || {};
+                return {
+                    ...meta,
+                    ...d,
+                    tipoDocumento: d.tipoDocumento || meta.tipoDocumento || d.tipo || d.titulo || "Documento",
+                    tipo: d.tipo || d.tipoDocumento || meta.tipoDocumento || d.titulo || "Documento",
+                    recetaItems: d.receta_items || d.recetaItems || meta.recetaItems || [],
+                    fechaIso: d.fechaIso || meta.fechaIso || d.created_at,
+                    profesional: d.profesional || meta.profesional || meta.doctor || "",
+                    transcribe: d.transcribe || meta.transcribe || "",
+                    diagnostico: d.diagnostico || meta.diagnostico || ""
+                };
+            }).sort((a, b) => new Date(b.fechaIso || b.created_at || 0) - new Date(a.fechaIso || a.created_at || 0));
+
+            setDocuments(parsedDocs);
+        } catch (err) {
+            console.error("Error loading clinical documents", err);
+        }
+    }, [patient?.id, patient?.historial_medico]);
+
+    // Real-time synchronization / initial load of clinical documents
+    useEffect(() => {
+        loadDocs();
+    }, [loadDocs]);
+
     const confirmSignPrescription = async () => {
         const docObj = signModal.doc;
         setSignModal({ isOpen: false, doc: null });
@@ -114,38 +195,54 @@ export default function HistoriaClinicaContainer({ patient }) {
                 signedBy: userProfile?.uid
             }));
             
-            await supabase
-                .from("documentos_clinicos")
-                .update({
+            // 1. Table update
+            try {
+                await supabase
+                    .from("documentos_clinicos")
+                    .update({
+                        firmado: true,
+                        receta_items: updatedItems,
+                        metadata: {
+                            ...(docObj.metadata || {}),
+                            recetaItems: updatedItems,
+                            firmado: true
+                        },
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq("id", docObj.id);
+            } catch (e) {
+                // Table notice
+            }
+
+            // 2. Historial medico update
+            try {
+                const { data: pData } = await supabase
+                    .from("pacientes")
+                    .select("id, historial_medico")
+                    .eq("id", patient.id)
+                    .maybeSingle();
+                const hm = pData?.historial_medico || patient?.historial_medico || {};
+                const currentDocs = Array.isArray(hm.documentosClinicos) ? [...hm.documentosClinicos] : [];
+                const updatedDocs = currentDocs.map(d => (d.id === docObj.id ? {
+                    ...d,
+                    firmado: true,
                     recetaItems: updatedItems,
-                    updated_at: new Date().toISOString()
-                })
-                .eq("id", docObj.id);
-            
+                    metadata: { ...(d.metadata || {}), recetaItems: updatedItems, firmado: true }
+                } : d));
+                const newHM = { ...hm, documentosClinicos: updatedDocs };
+                await supabase.from("pacientes").update({ historial_medico: newHM }).eq("id", patient.id);
+                if (patient) patient.historial_medico = newHM;
+            } catch (e) {
+                console.warn("HM sign sync:", e);
+            }
+
             toast.success("Receta firmada digitalmente ✅");
+            loadDocs();
         } catch (err) {
             console.error("Error signing prescription", err);
             toast.error("Error al firmar la receta");
         }
     };
-
-    // Real-time synchronization of clinical documents
-    useEffect(() => {
-        if (!patient?.id) return;
-        const loadDocs = async () => {
-            try {
-                const { data: docData } = await supabase
-                    .from("documentos_clinicos")
-                    .select("*")
-                    .eq("paciente_id", patient.id)
-                    .order("created_at", { ascending: false });
-                setDocuments(docData || []);
-            } catch (err) {
-                console.error("Error loading clinical documents", err);
-            }
-        };
-        loadDocs();
-    }, [patient?.id]);
 
     const handleOpenModal = (tipo) => {
         setSelectedDocType(tipo);
@@ -176,11 +273,35 @@ export default function HistoriaClinicaContainer({ patient }) {
         const docId = deleteModal.docId;
         setDeleteModal({ isOpen: false, docId: null });
         try {
-            await supabase
-                .from("documentos_clinicos")
-                .delete()
-                .eq("id", docId);
+            // 1. Table delete
+            try {
+                await supabase
+                    .from("documentos_clinicos")
+                    .delete()
+                    .eq("id", docId);
+            } catch (e) {
+                // Table notice
+            }
+
+            // 2. Historial medico delete
+            try {
+                const { data: pData } = await supabase
+                    .from("pacientes")
+                    .select("id, historial_medico")
+                    .eq("id", patient.id)
+                    .maybeSingle();
+                const hm = pData?.historial_medico || patient?.historial_medico || {};
+                const currentDocs = Array.isArray(hm.documentosClinicos) ? [...hm.documentosClinicos] : [];
+                const updatedDocs = currentDocs.filter(d => d.id !== docId);
+                const newHM = { ...hm, documentosClinicos: updatedDocs };
+                await supabase.from("pacientes").update({ historial_medico: newHM }).eq("id", patient.id);
+                if (patient) patient.historial_medico = newHM;
+            } catch (e) {
+                console.warn("HM delete sync:", e);
+            }
+
             toast.success("Documento eliminado correctamente");
+            loadDocs();
         } catch (err) {
             console.error("Error deleting doc", err);
             toast.error("Error al eliminar el documento");
@@ -1324,9 +1445,12 @@ export default function HistoriaClinicaContainer({ patient }) {
                 <React.Suspense fallback={<div className="fixed inset-0 z-[9999] bg-slate-900/40 flex items-center justify-center text-white font-bold">Cargando editor clinico...</div>}>
                     <DocClinicoModal
                         isOpen={modalOpen}
-                        onClose={() => {
+                        onClose={(saved) => {
                             setModalOpen(false);
                             setEditingDoc(null);
+                            if (saved) {
+                                loadDocs();
+                            }
                         }}
                         patient={patient}
                         docType={selectedDocType}

@@ -597,7 +597,7 @@ export default function ReciboCajaList({ onNew }) {
                                 className="w-full h-11 pl-12 pr-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
                                 value={fechaInicio}
                                 onChange={e => setFechaInicio(e.target.value)}
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                         </div>
                     </div>
 
@@ -610,7 +610,7 @@ export default function ReciboCajaList({ onNew }) {
                                 className="w-full h-11 pl-12 pr-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
                                 value={fechaFin}
                                 onChange={e => setFechaFin(e.target.value)}
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                         </div>
                     </div>
 

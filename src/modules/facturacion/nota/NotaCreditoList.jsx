@@ -500,7 +500,7 @@ export default function NotaCreditoList({ onNew }) {
                                 value={fechaInicio}
                                 onChange={(e) => setFechaInicio(e.target.value)}
                                 className="w-full h-11 pl-11 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                         </div>
                     </div>
                     <div className="space-y-1.5">
@@ -512,7 +512,7 @@ export default function NotaCreditoList({ onNew }) {
                                 value={fechaFin}
                                 onChange={(e) => setFechaFin(e.target.value)}
                                 className="w-full h-11 pl-11 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                         </div>
                     </div>
                     <div className="flex items-end gap-3">

@@ -292,7 +292,7 @@ export default function ConfigFacturacionElectronica() {
                             value={dianData.dianFechaResolucion}
                             onChange={e => setDianData(p => ({ ...p, dianFechaResolucion: e.target.value }))}
                             className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500"
-                        />
+                         max="9999-12-31" min="1900-01-01" />
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">

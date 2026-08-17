@@ -101,9 +101,15 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
         const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
         if (!tenantId) return;
         try {
-            if (patient?.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
-                const profs = patient.profesionales.map(p => 
-                    p.nombreCompleto || p.nombre_completo || p.displayName || p.email || ''
+            const assignedList = (Array.isArray(patient?.profesionales) && patient.profesionales.length > 0)
+                ? patient.profesionales
+                : (Array.isArray(patient?.historial_medico?.profesionales) && patient.historial_medico.profesionales.length > 0)
+                    ? patient.historial_medico.profesionales
+                    : (patient?.profesional_nombre ? [{ id: patient.profesional_id || 'default-doc', nombre: patient.profesional_nombre }] : []);
+
+            if (assignedList.length > 0) {
+                const profs = assignedList.map(p => 
+                    p.nombreCompleto || p.nombre || p.nombre_completo || p.displayName || p.email || ''
                 ).filter(n => !!n);
                 setProfesionalesDropdown([...new Set(profs)]);
                 return;
@@ -675,7 +681,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                                 className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500 text-xs font-bold text-slate-700"
                                                 value={formData.ordenFecha}
                                                 onChange={(e) => setFormData({ ...formData, ordenFecha: e.target.value })}
-                                            />
+                                             max="9999-12-31" min="1900-01-01" />
                                         </div>
                                         <label className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                             <input

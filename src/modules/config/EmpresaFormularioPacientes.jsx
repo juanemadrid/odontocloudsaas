@@ -3,6 +3,7 @@ import { FiSave, FiClipboard, FiInfo } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { configuracionFormulariosService } from "../../services/supabaseServices";
 
 // Compact iOS Style Toggle Switch Component
 const Toggle = ({ checked, onChange }) => (
@@ -113,10 +114,10 @@ export default function EmpresaFormularioPacientes() {
         const load = async () => {
             if (!inquilino) return;
             try {
-                const { data: webSnap } = await supabase.from("website_config").select("config").eq("tenant_id", `${inquilino}_formulario_pacientes`).maybeSingle();
-                if (webSnap?.config) setConfig(webSnap.config);
+                const loadedConfig = await configuracionFormulariosService.get(inquilino, "formulario_pacientes");
+                if (loadedConfig) setConfig(loadedConfig);
             } catch (e) {
-                console.error(e);
+                console.error("Error cargando configuración de formulario de pacientes:", e);
             } finally {
                 setLoading(false);
             }
@@ -150,14 +151,14 @@ export default function EmpresaFormularioPacientes() {
         if (!inquilino) return;
         setSaving(true);
         try {
-            await supabase.from("website_config").upsert([{ tenant_id: `${inquilino}_formulario_pacientes`, config }], { onConflict: "tenant_id" });
+            await configuracionFormulariosService.save(inquilino, "formulario_pacientes", config);
             if (toast && toast.success) {
                 toast.success("Configuración guardada correctamente");
             } else {
                 alert("Configuración guardada correctamente");
             }
         } catch (e) {
-            console.error(e);
+            console.error("Error guardando configuración:", e);
             if (toast && toast.error) {
                 toast.error("Error al guardar la configuración");
             } else {

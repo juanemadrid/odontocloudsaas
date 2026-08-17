@@ -9,7 +9,7 @@ import {
 
 export { calculateWorkingIntervals, generateAvailableSlots, normalizeScheduleRow, parseTimeToMinutes };
 
-const cancelledStates = new Set(["cancelada", "cancelado", "cancelled"]);
+const cancelledStates = new Set(["cancelada", "cancelado", "cancelled", "no asiste", "no-show", "no_asiste"]);
 const uniqueRows = (rows) => {
   const seen = new Map();
   rows.map(normalizeScheduleRow).forEach((row) => {

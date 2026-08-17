@@ -141,6 +141,13 @@ export default function CommandPalette() {
     }, [query, staticCommands, basePath, navigate, userProfile?.inquilino]);
 
     const handleAction = (item) => {
+        if (window.checkIncompletePatientNavigation) {
+            const intercepted = window.checkIncompletePatientNavigation(null);
+            if (intercepted) {
+                setIsOpen(false);
+                return;
+            }
+        }
         item.action();
         setIsOpen(false);
     };

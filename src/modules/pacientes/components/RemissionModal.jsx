@@ -4,6 +4,7 @@ import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { useForm } from 'react-hook-form';
+import { getDoctorsList } from '../../../services/supabaseServices';
 
 export default function RemissionModal({ isOpen, onClose, onSave, patient, initialData = null }) {
     const { userProfile } = useAuth();
@@ -66,122 +67,20 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
 
         const fetchDoctors = async () => {
             try {
-                const mapDoctors = new Map();
-                const inquilino = userProfile?.inquilino || userProfile?.tenantId || patient?.inquilino || patient?.tenant_id;
+                // Patient assigned doctors (remitente)
+                const assignedDocs = await getDoctorsList(userProfile, patient);
+                setPatientDoctors(assignedDocs);
 
-                // A. Doctores asignados al paciente
-                if (patient?.profesionales && Array.isArray(patient.profesionales)) {
-                    patient.profesionales.forEach(d => {
-                        const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
-                        const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-                        if (name.trim() && docId) {
-                            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
-                        }
-                    });
-                }
-
-                // B. Cargar desde tabla profesionales
-                try {
-                    let query = supabase.from('profesionales').select('*');
-                    if (inquilino) {
-                        query = query.eq('tenant_id', inquilino);
-                    }
-                    const { data: profData } = await query;
-                    if (profData && Array.isArray(profData)) {
-                        profData.forEach(d => {
-                            if (d.activo !== false) {
-                                const name = d.nombre_completo || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
-                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-                                if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.correo || d.email || '' });
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn("Error en profesionales para remisión:", e);
-                }
-
-                // C. Cargar desde tabla profiles
-                try {
-                    let query = supabase.from('profiles').select('*');
-                    if (inquilino) query = query.eq('tenant_id', inquilino);
-                    const { data: profsData } = await query;
-                    if (profsData && Array.isArray(profsData)) {
-                        profsData.forEach(u => {
-                            const name = u.full_name || u.nombreCompleto || u.nombre || u.email || '';
-                            const docId = String(u.id || (name ? name.toLowerCase() : ''));
-                            if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn('Error cargando profiles:', e);
-                }
-
-                // D. Cargar desde website_config
-                try {
-                    if (inquilino) {
-                        const { data: cfgRow } = await supabase
-                            .from("website_config")
-                            .select("config")
-                            .eq("tenant_id", inquilino)
-                            .maybeSingle();
-
-                        if (cfgRow?.config) {
-                            const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
-                            const doctores = cfgRow.config.doctores || cfgRow.config.profesionales || [];
-
-                            usuarios.forEach(u => {
-                                const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
-                                const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
-                                if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
-                                }
-                            });
-
-                            doctores.forEach(d => {
-                                const name = d.nombreCompleto || d.nombre || d.displayName || d.email || "";
-                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-                                if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
-                                }
-                            });
-                        }
-                    }
-                } catch (e) {}
-
-                // E. SIEMPRE incluir al usuario actual en sesión
-                if (userProfile) {
-                    const myId = String(userProfile.uid || userProfile.id || 'current_user');
-                    const myName = userProfile.nombreCompleto ||
-                        userProfile.nombre ||
-                        `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() ||
-                        userProfile.displayName ||
-                        userProfile.email ||
-                        "Doctor Principal";
-
-                    if (myName.trim() && !mapDoctors.has(myId)) {
-                        mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' });
-                    }
-                }
-
-                // F. Fallback por si no hay médicos en la base de datos
-                if (mapDoctors.size === 0) {
-                    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '' });
-                }
-
-                let docs = Array.from(mapDoctors.values());
-                setAllDoctors(docs);
-                setPatientDoctors(docs);
+                // All system doctors (receptor)
+                const allDocs = await getDoctorsList(userProfile, null);
+                setAllDoctors(allDocs.length > 0 ? allDocs : assignedDocs);
             } catch (err) {
                 console.error("Error fetching dependencies", err);
             }
         };
 
         fetchDoctors();
-    }, [isOpen, userProfile, patient]);
+    }, [isOpen, userProfile, patient?.profesionales, patient?.id]);
 
     const onSubmit = async (data) => {
         setSaving(true);
@@ -327,7 +226,7 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
                                     type="date"
                                     {...register("fecha")} 
                                     className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 caret-slate-950"
-                                />
+                                 max="9999-12-31" min="1900-01-01" />
                             </div>
                             <div className="flex-1">
                                 <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">

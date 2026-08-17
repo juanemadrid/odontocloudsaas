@@ -95,7 +95,7 @@ export default function TransactionForm({ onClose, onSaved }) {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-                <Input
+                <input
                     label="Monto"
                     name="amount"
                     type="text"
@@ -106,7 +106,7 @@ export default function TransactionForm({ onClose, onSaved }) {
                     autoFocus
                 />
 
-                <Input
+                <input
                     label="Descripción / Concepto"
                     name="description"
                     type="text"
@@ -116,13 +116,13 @@ export default function TransactionForm({ onClose, onSaved }) {
                 />
 
                 <div className="grid grid-cols-2 gap-4">
-                    <Input
+                    <input
                         label="Fecha"
                         name="date"
                         type="date"
                         value={formData.date}
                         onChange={handleChange}
-                    />
+                     max="9999-12-31" min="1900-01-01" />
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Método</label>
                         <select

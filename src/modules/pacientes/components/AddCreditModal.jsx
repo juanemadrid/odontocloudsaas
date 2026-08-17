@@ -210,7 +210,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                                         type="date"
                                         {...register("fecha", { required: true })}
                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#8CC63F] focus:ring-2 focus:ring-[#8CC63F]/20 transition-all"
-                                    />
+                                     max="9999-12-31" min="1900-01-01" />
                                 </div>
                                 
                                 <div>

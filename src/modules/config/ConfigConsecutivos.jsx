@@ -4,7 +4,8 @@
 // Diseño estilizado, compacto y profesional.
 // ============================================================
 import React, { useState, useEffect } from "react";
-import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiHash, FiUsers, FiFilter } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiHash, FiUsers, FiMenu, FiX, FiMapPin } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
@@ -15,14 +16,24 @@ import ConfigConsecutivosForm from "./ConfigConsecutivosForm";
 
 export default function ConfigConsecutivos() {
     const { userProfile } = useAuth();
+    const navigate = useNavigate();
+
     const [searchTerm, setSearchTerm] = useState("");
     const [showForm, setShowForm] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [consecutivos, setConsecutivos] = useState([]);
+    const [sucursales, setSucursales] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // Modal state for Sucursales Relacionadas
+    const [showSucursalesModal, setShowSucursalesModal] = useState(false);
+    const [selectedConsecutivo, setSelectedConsecutivo] = useState(null);
+
     useEffect(() => {
-        loadConsecutivos();
+        if (userProfile?.inquilino) {
+            loadConsecutivos();
+            loadSucursales();
+        }
     }, [userProfile?.inquilino]);
 
     const loadConsecutivos = async () => {
@@ -38,6 +49,15 @@ export default function ConfigConsecutivos() {
             toast.error("Error al cargar consecutivos");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadSucursales = async () => {
+        try {
+            const data = await getConfigItems(userProfile.inquilino, "sucursales", "sucursales");
+            setSucursales(data || []);
+        } catch (error) {
+            console.error("Error cargando sucursales:", error);
         }
     };
 
@@ -63,6 +83,30 @@ export default function ConfigConsecutivos() {
         setShowForm(false);
         setEditingItem(null);
         loadConsecutivos();
+    };
+
+    const handleOpenSucursalesModal = (item) => {
+        setSelectedConsecutivo(item);
+        setShowSucursalesModal(true);
+    };
+
+    const handleNavigateToSucursal = (sucursal) => {
+        setShowSucursalesModal(false);
+        navigate("/dashboard_admin/config/sucursales", {
+            state: { editSucursalId: sucursal.id, editSucursalName: sucursal.nombre }
+        });
+    };
+
+    // Calculate sucursales related to selected consecutivo
+    const getRelatedSucursales = (consecutivo) => {
+        if (!consecutivo) return [];
+        const matches = sucursales.filter(s => 
+            String(s.consecutivoId) === String(consecutivo.id) ||
+            s.consecutivoId === consecutivo.nombre
+        );
+        // Fallback: If no sucursal has selected consecutivoId explicitly, return sucursales for the tenant
+        if (matches.length > 0) return matches;
+        return sucursales;
     };
 
     const filteredData = consecutivos.filter(item => 
@@ -162,9 +206,14 @@ export default function ConfigConsecutivos() {
                                         </td>
                                         <td className="py-3 px-4">
                                             <div className="flex justify-center">
-                                                <div className="w-7 h-7 rounded bg-slate-100 text-slate-600 flex items-center justify-center" title="Usuarios asignados">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenSucursalesModal(item)}
+                                                    className="w-7 h-7 rounded bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 flex items-center justify-center transition-colors cursor-pointer border-0 shadow-xs"
+                                                    title="Quienes usan el consecutivo (Sucursales Relacionadas)"
+                                                >
                                                     <FiUsers size={14} />
-                                                </div>
+                                                </button>
                                             </div>
                                         </td>
                                         <td className="py-3 px-4">
@@ -200,6 +249,84 @@ export default function ConfigConsecutivos() {
                 </div>
 
             </div>
+
+            {/* ─── MODAL SUCURSALES RELACIONADAS (RÉPLICA ORALDRIVE) ─── */}
+            {showSucursalesModal && selectedConsecutivo && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 flex flex-col gap-4 animate-scaleIn">
+                        
+                        {/* Header with Title requested by user ("Sucursales Relacionadas") */}
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+                                Sucursales Relacionadas
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowSucursalesModal(false)}
+                                className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer bg-transparent border-0 p-0"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Table of Related Sucursales */}
+                        <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
+                            <table className="w-full text-left border-collapse text-xs">
+                                <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200/80 font-bold text-slate-600">
+                                        <th className="py-2.5 px-4">Nombre</th>
+                                        <th className="py-2.5 px-4">Tipo</th>
+                                        <th className="py-2.5 px-4 text-center">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {getRelatedSucursales(selectedConsecutivo).length === 0 ? (
+                                        <tr>
+                                            <td colSpan="3" className="py-8 text-center text-slate-400 font-medium">
+                                                No hay sucursales asociadas a este consecutivo
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        getRelatedSucursales(selectedConsecutivo).map((suc) => (
+                                            <tr key={suc.id || suc.nombre} className="hover:bg-slate-50/70 transition-colors">
+                                                <td className="py-3 px-4 font-semibold text-slate-800">
+                                                    {suc.nombre}
+                                                </td>
+                                                <td className="py-3 px-4 font-medium text-slate-600">
+                                                    Sucursal
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleNavigateToSucursal(suc)}
+                                                        className="w-7 h-7 inline-flex items-center justify-center bg-[#00A3E0] hover:bg-[#008fc7] text-white rounded-md transition-colors border-0 cursor-pointer shadow-xs"
+                                                        title="Ver / Editar en Módulo de Sucursales"
+                                                    >
+                                                        <FiMenu size={14} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Footer Close Button */}
+                        <div className="flex justify-end pt-2 border-t border-slate-100">
+                            <button
+                                type="button"
+                                onClick={() => setShowSucursalesModal(false)}
+                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors cursor-pointer border-0"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

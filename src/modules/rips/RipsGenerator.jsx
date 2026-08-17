@@ -566,7 +566,7 @@ export default function RipsGenerator() {
                                 value={dateRange.start} 
                                 onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
                                 className="w-full px-4 py-3 pl-10 text-sm font-medium rounded-xl border border-slate-200 bg-white text-slate-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm outline-none transition-all duration-200"
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                             <FiCalendar className="absolute left-3.5 top-3.5 text-slate-400 w-4 h-4" />
                         </div>
                     </div>
@@ -582,7 +582,7 @@ export default function RipsGenerator() {
                                 value={dateRange.end} 
                                 onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
                                 className="w-full px-4 py-3 pl-10 text-sm font-medium rounded-xl border border-slate-200 bg-white text-slate-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm outline-none transition-all duration-200"
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                             <FiCalendar className="absolute left-3.5 top-3.5 text-slate-400 w-4 h-4" />
                         </div>
                     </div>

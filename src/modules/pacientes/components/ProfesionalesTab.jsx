@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiSearch, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
+import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
 
@@ -15,7 +16,12 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
     const [selectedProfId, setSelectedProfId] = useState("");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-    const profesionales = patient?.profesionales || [];
+    const currentHistorial = patient?.historial_medico || patient?.historialMedico || {};
+    const profesionales = (Array.isArray(patient?.profesionales) && patient.profesionales.length > 0)
+        ? patient.profesionales
+        : (Array.isArray(currentHistorial?.profesionales) && currentHistorial.profesionales.length > 0)
+            ? currentHistorial.profesionales
+            : (patient?.profesional_nombre ? [{ id: patient.profesional_id || "default-doc", nombre: patient.profesional_nombre, especialidades: ["Odontología General"] }] : []);
 
     const dropdownRef = React.useRef(null);
 
@@ -227,20 +233,44 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
         setIsSubmitting(true);
         try {
             const updatedList = [...profesionales, newPro];
-            await supabase
+            const currentHist = patient?.historial_medico || patient?.historialMedico || {};
+            const newHistorial = {
+                ...currentHist,
+                profesionales: updatedList
+            };
+
+            const payload = {
+                historial_medico: newHistorial,
+                profesional_id: updatedList[0]?.id || null,
+                profesional_nombre: updatedList[0]?.nombre || null,
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabase
                 .from("pacientes")
-                .update({
-                    profesionales: updatedList,
-                    updated_at: new Date().toISOString()
-                })
+                .update(payload)
                 .eq("id", patient.id);
-            onUpdate && onUpdate({ ...patient, profesionales: updatedList });
+
+            if (error) throw error;
+
+            const updatedPatient = {
+                ...patient,
+                profesionales: updatedList,
+                historial_medico: newHistorial,
+                historialMedico: newHistorial,
+                profesional_id: payload.profesional_id,
+                profesional_nombre: payload.profesional_nombre,
+                profesionalId: payload.profesional_id,
+                profesionalNombre: payload.profesional_nombre
+            };
+
+            onUpdate && onUpdate(updatedPatient);
             toast.success("Profesional vinculado al paciente");
             setSearchTerm("");
             setSelectedProfId("");
             setIsDropdownOpen(false);
         } catch (e) {
-            console.error(e);
+            console.error("Error al vincular profesional:", e);
             toast.error("Error al vincular profesional");
         } finally {
             setIsSubmitting(false);
@@ -253,17 +283,41 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
         setIsSubmitting(true);
         try {
             const updatedList = profesionales.filter(p => p.id !== targetId);
-            await supabase
+            const currentHist = patient?.historial_medico || patient?.historialMedico || {};
+            const newHistorial = {
+                ...currentHist,
+                profesionales: updatedList
+            };
+
+            const payload = {
+                historial_medico: newHistorial,
+                profesional_id: updatedList[0]?.id || null,
+                profesional_nombre: updatedList[0]?.nombre || null,
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabase
                 .from("pacientes")
-                .update({
-                    profesionales: updatedList,
-                    updated_at: new Date().toISOString()
-                })
+                .update(payload)
                 .eq("id", patient.id);
-            onUpdate && onUpdate({ ...patient, profesionales: updatedList });
+
+            if (error) throw error;
+
+            const updatedPatient = {
+                ...patient,
+                profesionales: updatedList,
+                historial_medico: newHistorial,
+                historialMedico: newHistorial,
+                profesional_id: payload.profesional_id,
+                profesional_nombre: payload.profesional_nombre,
+                profesionalId: payload.profesional_id,
+                profesionalNombre: payload.profesional_nombre
+            };
+
+            onUpdate && onUpdate(updatedPatient);
             toast.success("Profesional desvinculado");
         } catch (e) {
-            console.error(e);
+            console.error("Error al eliminar profesional:", e);
             toast.error("Error al eliminar profesional");
         } finally {
             setIsSubmitting(false);

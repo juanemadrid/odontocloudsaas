@@ -360,7 +360,7 @@ export default function NotaDebitoForm({ onCancel, onSuccess }) {
                                                 className="w-full h-11 pl-10 pr-4 bg-white border border-slate-200 focus:border-blue-500 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/5 transition-all"
                                                 value={fecha}
                                                 onChange={e => setFecha(e.target.value)}
-                                            />
+                                             max="9999-12-31" min="1900-01-01" />
                                         </div>
                                     </FormRow>
 

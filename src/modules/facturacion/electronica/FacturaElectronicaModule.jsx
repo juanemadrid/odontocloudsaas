@@ -332,10 +332,10 @@ export default function FacturaElectronicaModule() {
           <div className="flex items-center gap-2">
             <FiCalendar size={14} className="text-slate-400" />
             <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)}
-              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all" />
+              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"  max="9999-12-31" min="1900-01-01" />
             <span className="text-slate-400 text-sm">—</span>
             <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)}
-              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all" />
+              className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"  max="9999-12-31" min="1900-01-01" />
           </div>
           <button onClick={loadFacturas} className="h-11 w-11 flex items-center justify-center bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-100 transition-all">
             <FiRefreshCw size={15} />

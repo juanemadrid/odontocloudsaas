@@ -163,7 +163,7 @@ export default function PestanaEditor({ id, onBack, inquilino, userEmail, curren
                                         {field.type === "text" && <input disabled className="emp-input" placeholder="Texto corto..." />}
                                         {field.type === "number" && <input disabled type="number" className="emp-input" placeholder="0" />}
                                         {field.type === "textarea" && <textarea disabled className="emp-input" rows={3} placeholder="Texto largo..." />}
-                                        {field.type === "date" && <input disabled type="date" className="emp-input" />}
+                                        {field.type === "date" && <input disabled type="date" className="emp-input"  max="9999-12-31" min="1900-01-01" />}
                                         {field.type === "select" && (
                                             <div>
                                                 <select disabled className="emp-input">

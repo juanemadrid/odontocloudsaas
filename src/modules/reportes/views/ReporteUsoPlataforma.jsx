@@ -136,7 +136,7 @@ export default function ReporteUsoPlataforma() {
               value={fechaInicial}
               onChange={(e) => setFechaInicial(e.target.value)}
               className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-sky-500 transition-all"
-            />
+             max="9999-12-31" min="1900-01-01" />
           </div>
 
           <div className="md:col-span-2">
@@ -146,7 +146,7 @@ export default function ReporteUsoPlataforma() {
               value={fechaFinal}
               onChange={(e) => setFechaFinal(e.target.value)}
               className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-sky-500 transition-all"
-            />
+             max="9999-12-31" min="1900-01-01" />
           </div>
 
           <div className="md:col-span-1">

@@ -172,7 +172,7 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                                 disabled={hoyToggle}
                                 onChange={(e) => setDesde(e.target.value)}
                                 className="w-full h-11 pl-10 pr-4 bg-slate-50/50 hover:bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-600 focus:ring-4 focus:ring-purple-500/5 focus:border-purple-500 transition-all outline-none"
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                         </div>
                     </div>
 
@@ -188,7 +188,7 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                                 disabled={hoyToggle}
                                 onChange={(e) => setHasta(e.target.value)}
                                 className="w-full h-11 pl-10 pr-4 bg-slate-50/50 hover:bg-slate-50 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-600 focus:ring-4 focus:ring-purple-500/5 focus:border-purple-500 transition-all outline-none"
-                            />
+                             max="9999-12-31" min="1900-01-01" />
                         </div>
                     </div>
 

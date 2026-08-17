@@ -379,7 +379,7 @@ export default function PlantillaEditor({ id, isViewOnly = false, onBack, inquil
                                                     type="date"
                                                     disabled={isViewOnly}
                                                     className="w-48 h-8 bg-white border border-slate-200 rounded-md px-3 text-[11px] text-slate-700 outline-none focus:border-blue-500"
-                                                />
+                                                 max="9999-12-31" min="1900-01-01" />
                                             )}
                                             {field.type === "checkbox" && (
                                                 <div className="flex items-center gap-2 py-1">

@@ -66,21 +66,27 @@ const invokeAdminUsers = async (action, payload = {}) => {
     const userId = createdAuthUserId || user.id || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
 
     const profilePayload = {
-      id: userId,
       email,
       full_name: fullName,
       role: role,
       tenant_id: tenantId,
-      activo: user.activo ?? true,
-      updated_at: new Date().toISOString()
+      inquilino: tenantId,
+      activo: user.activo ?? true
     };
+    if (user.apellido) profilePayload.apellido = user.apellido;
+    if (user.telefono) profilePayload.telefono = user.telefono;
+    if (user.tipoDocumento || user.tipo_documento) profilePayload.tipo_documento = user.tipoDocumento || user.tipo_documento;
+    if (user.numeroDocumento || user.numero_documento) profilePayload.numero_documento = user.numeroDocumento || user.numero_documento;
+    if (user.especialidad) profilePayload.especialidad = user.especialidad;
+    if (user.registroMedico || user.registro_medico) profilePayload.registro_medico = user.registroMedico || user.registro_medico;
+    if (user.sucursalId || user.sucursal_id) profilePayload.sucursal_id = user.sucursalId || user.sucursal_id;
 
     try {
       const { data: existingProf } = await supabase.from("profiles").select("id").eq("email", email).maybeSingle();
       if (existingProf?.id) {
         await supabase.from("profiles").update(profilePayload).eq("id", existingProf.id);
       } else {
-        await supabase.from("profiles").upsert(profilePayload);
+        await supabase.from("profiles").upsert({ id: userId, ...profilePayload });
       }
     } catch (dbErr) {
       console.warn("Excepción al guardar en tabla profiles:", dbErr);

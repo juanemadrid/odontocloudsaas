@@ -17,6 +17,5 @@ if (!globalScope.__supabase) {
   globalScope.__supabase = supabase;
 }
 
-
 export { supabase };
 export default supabase;

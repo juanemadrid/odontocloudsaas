@@ -3,7 +3,7 @@ import supabase from "../../../lib/supabaseClient";
 import { normalizeScheduleRow } from "../../../services/agendaAvailabilityService";
 import { useAuth } from "../../../context/AuthContext";
 import { 
-  FiSearch, FiEdit2, FiPlus, FiSave, FiX, FiCheck, FiUsers, FiPhone, FiInfo, FiTrash2, FiActivity, FiClock, FiChevronLeft, FiCalendar 
+  FiSearch, FiEdit2, FiPlus, FiSave, FiX, FiCheck, FiUsers, FiPhone, FiInfo, FiTrash2, FiActivity, FiClock, FiChevronLeft, FiChevronRight, FiChevronsLeft, FiChevronsRight, FiCalendar 
 } from "react-icons/fi";
 import { getConfigItems, saveConfigItem } from "../../../services/configPersistenceService";
 
@@ -88,6 +88,20 @@ export default function GestionAgenda() {
     horaFin: "12:00",
     motivo: ""
   });
+
+  // Doctor Settings Modal ("Ajustes agenda doctor" - Tiempo y recursos)
+  const [doctorSettingsModalOpen, setDoctorSettingsModalOpen] = useState(false);
+  const [activeDoctorForSettings, setActiveDoctorForSettings] = useState(null);
+  const [doctorSettingsForm, setDoctorSettingsForm] = useState({
+    tiempoAtencion: "30",
+    agendaOnline: false,
+    multiplesEspacios: false,
+    numeroMultiplesEspacios: 0,
+    selectedResources: [],
+    recursoPrincipal: ""
+  });
+  const [highlightedAvailable, setHighlightedAvailable] = useState([]);
+  const [highlightedSelected, setHighlightedSelected] = useState([]);
 
   const [saving, setSaving] = useState(false);
 
@@ -801,6 +815,475 @@ export default function GestionAgenda() {
     } catch (error) { alert("Error al eliminar el bloqueo: " + error.message); }
     finally { setSaving(false); }
   };
+
+  // =========================================================================
+  // DOCTOR AGENDA SETTINGS ("TIEMPO Y RECURSOS") HANDLERS
+  // =========================================================================
+  const handleOpenDoctorSettings = async (doctorParam = null) => {
+    // If doctorParam is an Event object or null, fallback to selectedProfForSchedule or selectedProf
+    const candidateDoctor = (doctorParam && typeof doctorParam.preventDefault !== "function" && doctorParam.id) 
+      ? doctorParam 
+      : (selectedProfForSchedule || selectedProf);
+    
+    if (!candidateDoctor) return;
+
+    setActiveDoctorForSettings(candidateDoctor);
+    if (candidateDoctor && !selectedProfForSchedule) {
+      setSelectedProfForSchedule(candidateDoctor);
+    }
+
+    const currentTenant = inquilino || userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
+
+    // Open modal immediately with empty/initial defaults
+    setDoctorSettingsForm({
+      tiempoAtencion: "30",
+      agendaOnline: false,
+      multiplesEspacios: false,
+      numeroMultiplesEspacios: 0,
+      selectedResources: [],
+      recursoPrincipal: ""
+    });
+    setHighlightedAvailable([]);
+    setHighlightedSelected([]);
+    setDoctorSettingsModalOpen(true);
+
+    if (!currentTenant) return;
+
+    try {
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", currentTenant)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const doctorSettings = currentConfig.agenda_doctor_settings?.[candidateDoctor.id] || null;
+      const userDetails = currentConfig.user_details?.[candidateDoctor.id] || {};
+
+      let assignedResIds = [];
+      if (doctorSettings && Array.isArray(doctorSettings.selectedResources)) {
+        assignedResIds = doctorSettings.selectedResources;
+      } else if (doctorSettings && Array.isArray(doctorSettings.espaciosFisicos)) {
+        assignedResIds = doctorSettings.espaciosFisicos;
+      } else if (Array.isArray(userDetails.recursos)) {
+        assignedResIds = userDetails.recursos;
+      } else if (Array.isArray(userDetails.sucursales)) {
+        assignedResIds = userDetails.sucursales;
+      } else if (Array.isArray(candidateDoctor.espaciosFisicos)) {
+        assignedResIds = candidateDoctor.espaciosFisicos;
+      } else if (Array.isArray(candidateDoctor.selectedResources)) {
+        assignedResIds = candidateDoctor.selectedResources;
+      } else {
+        assignedResIds = [];
+      }
+
+      // Filter to only existing resources if any (robust string matching)
+      const validAssigned = assignedResIds.filter(id => resources.some(r => String(r.id) === String(id)));
+      const finalSelected = validAssigned;
+      const primaryRes = doctorSettings?.recursoPrincipal || userDetails?.recursoPrincipal || finalSelected[0] || "";
+
+      setDoctorSettingsForm({
+        tiempoAtencion: String(doctorSettings?.tiempoAtencion || userDetails?.tiempoAtencion || 30),
+        agendaOnline: Boolean(doctorSettings?.agendaOnline ?? userDetails?.agendaOnline ?? false),
+        multiplesEspacios: Boolean(doctorSettings?.multiplesEspacios ?? userDetails?.multiplesEspacios ?? false),
+        numeroMultiplesEspacios: doctorSettings?.numeroMultiplesEspacios !== undefined ? doctorSettings.numeroMultiplesEspacios : (userDetails?.numeroMultiplesEspacios || 0),
+        selectedResources: finalSelected,
+        recursoPrincipal: primaryRes
+      });
+    } catch (err) {
+      console.error("Error loading doctor agenda settings:", err);
+    }
+  };
+
+  const handleSaveDoctorSettings = async (e) => {
+    e?.preventDefault();
+    const activeDoctor = activeDoctorForSettings || selectedProfForSchedule || selectedProf;
+    if (!activeDoctor || !activeDoctor.id) return;
+    const currentTenant = inquilino || userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
+    if (!currentTenant) return;
+    setSaving(true);
+    try {
+      const { data: cfgRow } = await supabase
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", currentTenant)
+        .maybeSingle();
+
+      const currentConfig = cfgRow?.config || {};
+      const doctorSettingsMap = { ...(currentConfig.agenda_doctor_settings || {}) };
+
+      const settingData = {
+        tiempoAtencion: Number(doctorSettingsForm.tiempoAtencion) || 30,
+        agendaOnline: Boolean(doctorSettingsForm.agendaOnline),
+        multiplesEspacios: Boolean(doctorSettingsForm.multiplesEspacios),
+        numeroMultiplesEspacios: Boolean(doctorSettingsForm.multiplesEspacios) ? (Number(doctorSettingsForm.numeroMultiplesEspacios) || 0) : 0,
+        selectedResources: doctorSettingsForm.selectedResources || [],
+        espaciosFisicos: doctorSettingsForm.selectedResources || [],
+        recursoPrincipal: doctorSettingsForm.recursoPrincipal || (doctorSettingsForm.selectedResources?.[0] || "")
+      };
+
+      doctorSettingsMap[activeDoctor.id] = settingData;
+
+      const userDetailsMap = { ...(currentConfig.user_details || {}) };
+      const currentDetail = userDetailsMap[activeDoctor.id] || {};
+      userDetailsMap[activeDoctor.id] = {
+        ...currentDetail,
+        tiempoAtencion: settingData.tiempoAtencion,
+        agendaOnline: settingData.agendaOnline,
+        multiplesEspacios: settingData.multiplesEspacios,
+        numeroMultiplesEspacios: settingData.numeroMultiplesEspacios,
+        recursos: settingData.selectedResources,
+        espaciosFisicos: settingData.selectedResources,
+        recursoPrincipal: settingData.recursoPrincipal
+      };
+
+      const newConfig = {
+        ...currentConfig,
+        agenda_doctor_settings: doctorSettingsMap,
+        user_details: userDetailsMap
+      };
+
+      const { error } = await supabase
+        .from("website_config")
+        .upsert({
+          tenant_id: currentTenant,
+          config: newConfig
+        }, { onConflict: "tenant_id" });
+
+      if (error) throw error;
+
+      // Update in-memory doctor reference
+      if (selectedProfForSchedule && selectedProfForSchedule.id === activeDoctor.id) {
+        setSelectedProfForSchedule(prev => ({
+          ...prev,
+          ...settingData
+        }));
+      }
+
+      setDoctorSettingsModalOpen(false);
+    } catch (err) {
+      console.error("Error saving doctor agenda settings:", err);
+      alert("Error al guardar ajustes de agenda: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMoveToSelected = () => {
+    if (highlightedAvailable.length === 0) return;
+    const newSelected = [
+      ...doctorSettingsForm.selectedResources,
+      ...highlightedAvailable.filter(hid => !doctorSettingsForm.selectedResources.some(sid => String(sid) === String(hid)))
+    ];
+    setDoctorSettingsForm(prev => ({
+      ...prev,
+      selectedResources: newSelected,
+      recursoPrincipal: prev.recursoPrincipal || newSelected[0] || ""
+    }));
+    setHighlightedAvailable([]);
+  };
+
+  const handleMoveAllToSelected = () => {
+    const allIds = resources.map(r => r.id);
+    setDoctorSettingsForm(prev => ({
+      ...prev,
+      selectedResources: allIds,
+      recursoPrincipal: prev.recursoPrincipal || allIds[0] || ""
+    }));
+    setHighlightedAvailable([]);
+  };
+
+  const handleMoveToAvailable = () => {
+    if (highlightedSelected.length === 0) return;
+    const newSelected = doctorSettingsForm.selectedResources.filter(id => !highlightedSelected.some(hid => String(hid) === String(id)));
+    setDoctorSettingsForm(prev => ({
+      ...prev,
+      selectedResources: newSelected,
+      recursoPrincipal: newSelected.some(id => String(id) === String(prev.recursoPrincipal)) ? prev.recursoPrincipal : (newSelected[0] || "")
+    }));
+    setHighlightedSelected([]);
+  };
+
+  const handleMoveAllToAvailable = () => {
+    setDoctorSettingsForm(prev => ({
+      ...prev,
+      selectedResources: [],
+      recursoPrincipal: ""
+    }));
+    setHighlightedSelected([]);
+  };
+
+  const availableResources = resources.filter(r => !doctorSettingsForm.selectedResources.some(id => String(id) === String(r.id)));
+  const selectedResourceObjects = resources.filter(r => doctorSettingsForm.selectedResources.some(id => String(id) === String(r.id)));
+
+  const renderDoctorSettingsModal = () => {
+    if (!doctorSettingsModalOpen) return null;
+    return (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div
+          className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150 border border-slate-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+            <h3 className="text-sm font-bold text-slate-800 tracking-tight">
+              Ajustes agenda doctor
+            </h3>
+            <button
+              type="button"
+              onClick={() => setDoctorSettingsModalOpen(false)}
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-all cursor-pointer"
+            >
+              <FiX size={15} />
+            </button>
+          </div>
+
+          {/* Form Body */}
+          <form onSubmit={handleSaveDoctorSettings}>
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* Tiempo de atención */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 sm:gap-4">
+                <label className="text-xs font-semibold text-slate-600">
+                  Tiempo de atención <span className="text-rose-500">*</span>
+                </label>
+                <div className="sm:col-span-2">
+                  <select
+                    value={doctorSettingsForm.tiempoAtencion}
+                    onChange={(e) => setDoctorSettingsForm(prev => ({ ...prev, tiempoAtencion: e.target.value }))}
+                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-blue-500 transition-all shadow-xs"
+                  >
+                    <option value="10">10 minutos</option>
+                    <option value="15">15 minutos</option>
+                    <option value="20">20 minutos</option>
+                    <option value="30">30 minutos</option>
+                    <option value="40">40 minutos</option>
+                    <option value="45">45 minutos</option>
+                    <option value="50">50 minutos</option>
+                    <option value="60">60 minutos</option>
+                    <option value="90">90 minutos</option>
+                    <option value="120">120 minutos</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Agenda Online */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 sm:gap-4">
+                <label className="text-xs font-semibold text-slate-600">
+                  Agenda Online
+                </label>
+                <div className="sm:col-span-2 flex items-center">
+                  <input
+                    type="checkbox"
+                    id="agendaOnlineCheck"
+                    checked={doctorSettingsForm.agendaOnline}
+                    onChange={(e) => setDoctorSettingsForm(prev => ({ ...prev, agendaOnline: e.target.checked }))}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Múltiples espacios */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 sm:gap-4">
+                <label className="text-xs font-semibold text-slate-600">
+                  Múltiples espacios <span className="text-rose-500">*</span>
+                </label>
+                <div className="sm:col-span-2 flex items-center">
+                  <input
+                    type="checkbox"
+                    id="multiplesEspaciosCheck"
+                    checked={doctorSettingsForm.multiplesEspacios}
+                    onChange={(e) => setDoctorSettingsForm(prev => ({ ...prev, multiplesEspacios: e.target.checked }))}
+                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Número múltiples espacios (Condicional cuando se chulea múltiples espacios) */}
+              {doctorSettingsForm.multiplesEspacios && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 sm:gap-4 bg-lime-50/50 p-3 rounded-xl border border-lime-200/60 animate-in fade-in duration-200">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Número múltiples espacios <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="sm:col-span-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={doctorSettingsForm.numeroMultiplesEspacios || ""}
+                      onChange={(e) => setDoctorSettingsForm(prev => ({ ...prev, numeroMultiplesEspacios: parseInt(e.target.value, 10) || 0 }))}
+                      placeholder="Ej: 2"
+                      className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-lime-500 transition-all shadow-xs"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Número de pacientes simultáneos que puede atender en este horario.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Espacios físicos (Dual Transfer List) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 pt-1">
+                <label className="text-xs font-semibold text-slate-600 pt-1">
+                  Espacios físicos
+                </label>
+                <div className="sm:col-span-2">
+                  <div className="grid grid-cols-11 gap-2 items-center">
+                    {/* Recursos disponibles */}
+                    <div className="col-span-5">
+                      <span className="block text-[11px] font-bold text-slate-500 mb-1">
+                        Recursos disponibles
+                      </span>
+                      <div className="h-32 border border-slate-200 rounded-lg bg-white overflow-y-auto p-1 text-xs">
+                        {availableResources.length === 0 ? (
+                          <span className="text-[10px] text-slate-400 p-2 block italic">No hay más recursos</span>
+                        ) : (
+                          availableResources.map(r => {
+                            const isHigh = highlightedAvailable.some(id => String(id) === String(r.id));
+                            return (
+                              <div
+                                key={r.id}
+                                onClick={() => {
+                                  setHighlightedAvailable(prev =>
+                                    prev.some(id => String(id) === String(r.id)) ? prev.filter(id => String(id) !== String(r.id)) : [...prev, r.id]
+                                  );
+                                }}
+                                className={`px-2.5 py-1.5 rounded cursor-pointer select-none text-[11px] font-medium transition-colors ${
+                                  isHigh ? "bg-blue-600 text-white font-bold" : "hover:bg-slate-100 text-slate-700"
+                                }`}
+                              >
+                                {r.nombre}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Opciones (botones de traspaso) */}
+                    <div className="col-span-1 flex flex-col items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleMoveToSelected}
+                        disabled={highlightedAvailable.length === 0}
+                        className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-xs font-bold cursor-pointer"
+                        title="Mover seleccionado"
+                      >
+                        <FiChevronRight size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleMoveAllToSelected}
+                        disabled={availableResources.length === 0}
+                        className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-xs font-bold cursor-pointer"
+                        title="Mover todos"
+                      >
+                        <FiChevronsRight size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleMoveToAvailable}
+                        disabled={highlightedSelected.length === 0}
+                        className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-xs font-bold cursor-pointer"
+                        title="Devolver seleccionado"
+                      >
+                        <FiChevronLeft size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleMoveAllToAvailable}
+                        disabled={doctorSettingsForm.selectedResources.length === 0}
+                        className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-xs font-bold cursor-pointer"
+                        title="Devolver todos"
+                      >
+                        <FiChevronsLeft size={12} />
+                      </button>
+                    </div>
+
+                    {/* Seleccionados */}
+                    <div className="col-span-5">
+                      <span className="block text-[11px] font-bold text-slate-500 mb-1">
+                        Seleccionados
+                      </span>
+                      <div className="h-32 border border-slate-200 rounded-lg bg-white overflow-y-auto p-1 text-xs">
+                        {selectedResourceObjects.length === 0 ? (
+                          <span className="text-[10px] text-slate-400 p-2 block italic">Ningún recurso asignado</span>
+                        ) : (
+                          selectedResourceObjects.map(r => {
+                            const isHigh = highlightedSelected.some(id => String(id) === String(r.id));
+                            return (
+                              <div
+                                key={r.id}
+                                onClick={() => {
+                                  setHighlightedSelected(prev =>
+                                    prev.some(id => String(id) === String(r.id)) ? prev.filter(id => String(id) !== String(r.id)) : [...prev, r.id]
+                                  );
+                                }}
+                                className={`px-2.5 py-1.5 rounded cursor-pointer select-none text-[11px] font-medium transition-colors ${
+                                  isHigh ? "bg-blue-600 text-white font-bold" : "hover:bg-slate-100 text-slate-700"
+                                }`}
+                              >
+                                {r.nombre}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recurso principal */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 sm:gap-4">
+                <label className="text-xs font-semibold text-slate-600">
+                  Recurso principal <span className="text-rose-500">*</span>
+                </label>
+                <div className="sm:col-span-2">
+                  <select
+                    value={doctorSettingsForm.recursoPrincipal}
+                    onChange={(e) => setDoctorSettingsForm(prev => ({ ...prev, recursoPrincipal: e.target.value }))}
+                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-blue-500 transition-all shadow-xs"
+                  >
+                    {selectedResourceObjects.length === 0 ? (
+                      <option value="">Seleccione al menos un consultorio arriba</option>
+                    ) : (
+                      selectedResourceObjects.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.nombre}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-end gap-2.5 bg-slate-50/50">
+              <button
+                type="button"
+                onClick={() => setDoctorSettingsModalOpen(false)}
+                className="h-9 px-4 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-all cursor-pointer"
+              >
+                Cerrar
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="h-9 px-5 bg-[#8cc33f] hover:bg-[#7cb342] text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+              >
+                {saving ? (
+                  <><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Guardando...</>
+                ) : (
+                  "Guardar"
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
   const handleToggleSelectAllPred = () => {
     if (selectedPredIds.length === filteredPredSlots.length) {
       setSelectedPredIds([]);
@@ -942,10 +1425,17 @@ export default function GestionAgenda() {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="px-5 py-2.5 bg-emerald-500 text-white text-[11px] font-black uppercase tracking-wider rounded-full shadow-md shadow-emerald-100 flex items-center gap-2">
-              <FiClock className="text-base animate-pulse" />
-              Tiempo y recursos
-            </span>
+            {isDoctorMode && (
+              <button 
+                type="button"
+                onClick={() => handleOpenDoctorSettings(selectedProfForSchedule)}
+                className="px-5 py-2.5 bg-[#8cc33f] hover:bg-[#7cb342] text-white text-[11px] font-black uppercase tracking-wider rounded-full shadow-md shadow-lime-100 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                title="Configurar tiempo de atención, consultorios y múltiples espacios"
+              >
+                <FiClock className="text-base" />
+                Tiempo y recursos
+              </button>
+            )}
             <button 
               onClick={() => {
                 if (isDoctorMode) {
@@ -1446,7 +1936,7 @@ export default function GestionAgenda() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-[14px] px-4 py-2.5 text-[12px] font-bold text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all"
                     value={openForm.fecha}
                     onChange={(e) => setOpenForm({ ...openForm, fecha: e.target.value })}
-                  />
+                   max="9999-12-31" min="1900-01-01" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1524,7 +2014,7 @@ export default function GestionAgenda() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-[14px] px-4 py-2.5 text-[12px] font-bold text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all"
                     value={unavailForm.fecha}
                     onChange={(e) => setUnavailForm({ ...unavailForm, fecha: e.target.value })}
-                  />
+                   max="9999-12-31" min="1900-01-01" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1673,6 +2163,8 @@ export default function GestionAgenda() {
             </div>
           </div>
         )}
+
+        {renderDoctorSettingsModal()}
       </div>
     );
   }
@@ -1821,10 +2313,10 @@ export default function GestionAgenda() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-6 py-4 text-right flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => setSelectedProfForSchedule(prof)}
-                          className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90 ml-auto"
+                          className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90 cursor-pointer"
                           title="Configurar Horarios y Agenda del Profesional"
                         >
                           <FiCalendar size={13} />
@@ -2006,6 +2498,9 @@ export default function GestionAgenda() {
           </div>
         </div>
       )}
+
+      {/* ─── MODAL: AJUSTES AGENDA DOCTOR (TIEMPO Y RECURSOS) ─── */}
+      {renderDoctorSettingsModal()}
     </>
   );
 }

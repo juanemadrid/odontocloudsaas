@@ -11,6 +11,7 @@ import COLOMBIAN_CUM_REGISTRY from '../../../data/cumCompleto';
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 import { PREDEFINED_TEMPLATES } from '../../../data/plantillasPredeterminadas';
 import { getConfigItems } from '../../../services/configPersistenceService';
+import { getDoctorsList } from '../../../services/supabaseServices';
 
 
 export default function DocClinicoModal({ isOpen, onClose, patient, docType, initialData = null, isViewOnly = false }) {
@@ -465,142 +466,24 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     // Load active professionals
     useEffect(() => {
         const loadCatalog = async () => {
-            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
-            if (!inq) return;
-            
             try {
-                const mapDoctors = new Map();
-
-                // 1. Cargar desde patient.profesionales (si el paciente ya tiene profesionales asociados)
-                if (patient?.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
-                    patient.profesionales.forEach(p => {
-                        const name = p.nombreCompleto || p.nombre || "";
-                        if (name.trim()) {
-                            mapDoctors.set(p.id || name.toLowerCase(), {
-                                id: p.id || name.toLowerCase(),
-                                nombreCompleto: name
-                            });
-                        }
-                    });
-                }
-
-                // 2. Cargar desde la tabla profiles
-                try {
-                    const { data: profilesData } = await supabase
-                        .from("profiles")
-                        .select("*")
-                        .eq("tenant_id", inq);
-
-                    if (profilesData && Array.isArray(profilesData)) {
-                        profilesData.forEach(u => {
-                            if (u.activo !== false) {
-                                const roleStr = (u.role || u.rol || "").toLowerCase();
-                                const isDoc = u.esDoctor === true || u.esOdontologo === true || 
-                                              roleStr.includes("doctor") || roleStr.includes("odontolog") || 
-                                              roleStr.includes("especialista") || roleStr.includes("admin") || !!u.especialidad;
-                                if (isDoc) {
-                                    const name = u.full_name || u.nombreCompleto || u.nombre || u.email || "";
-                                    if (name.trim() && !mapDoctors.has(u.id || name.toLowerCase())) {
-                                        mapDoctors.set(u.id || name.toLowerCase(), {
-                                            id: u.id || name.toLowerCase(),
-                                            nombreCompleto: name
-                                        });
-                                    }
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {}
-
-                // 3. Cargar desde tabla profesionales
-                try {
-                    const { data: profData } = await supabase
-                        .from("profesionales")
-                        .select("*")
-                        .eq("tenant_id", inq);
-
-                    if (profData && Array.isArray(profData)) {
-                        profData.forEach(d => {
-                            if (d.activo !== false) {
-                                const name = d.nombre_completo || d.nombre || "";
-                                const docId = d.id || name.toLowerCase();
-                                if (name.trim() && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, {
-                                        id: docId,
-                                        nombreCompleto: name
-                                    });
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {}
-
-                // 4. Cargar desde website_config (user_details & usuarios)
-                try {
-                    const { data: cfgRow } = await supabase
-                        .from("website_config")
-                        .select("config")
-                        .eq("tenant_id", inq)
-                        .maybeSingle();
-
-                    if (cfgRow?.config) {
-                        const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
-                        const userDetails = cfgRow.config.user_details || {};
-
-                        usuarios.forEach(u => {
-                            const detail = userDetails[u.id || u.uid] || {};
-                            const roleStr = (u.rol || u.role || "").toLowerCase();
-                            const isDoc = u.esDoctor === true || detail.esDoctor === true || 
-                                          roleStr.includes("doctor") || roleStr.includes("odontolog");
-                            if (isDoc) {
-                                const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
-                                const docId = u.id || u.uid || name.toLowerCase();
-                                if (name.trim() && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, { id: docId, nombreCompleto: name });
-                                }
-                            }
-                        });
-
-                        Object.entries(userDetails).forEach(([uid, detail]) => {
-                            if (detail.esDoctor === true && !mapDoctors.has(uid)) {
-                                const docName = detail.nombreCompleto || detail.nombre || userProfile?.nombreCompleto || "Doctor(a) Registrado";
-                                mapDoctors.set(uid, { id: uid, nombreCompleto: docName });
-                            }
-                        });
-                    }
-                } catch (e) {}
-
-                // 5. Agregar usuario actual logueado (userProfile)
-                if (userProfile) {
-                    const myName = userProfile.nombreCompleto || userProfile.nombre || userProfile.displayName;
-                    const myId = userProfile.uid || userProfile.id || `user-${myName}`;
-                    if (myName && !mapDoctors.has(myId)) {
-                        mapDoctors.set(myId, { id: myId, nombreCompleto: myName });
-                    }
-                }
-
-                const list = Array.from(mapDoctors.values()).sort((a, b) => 
-                    (a.nombreCompleto || "").localeCompare(b.nombreCompleto || "")
-                );
+                const list = await getDoctorsList(userProfile, patient);
                 setCatalogProfesionales(list);
 
-                // Autoselect single doctor or current doctor if professional field is empty
-                if (list.length > 0 && !profesional) {
-                    const myName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName;
-                    const matchMine = list.find(l => l.nombreCompleto === myName);
-                    if (matchMine) {
-                        setProfesional(matchMine.nombreCompleto);
-                    } else {
-                        setProfesional(list[0].nombreCompleto);
-                    }
+                // Keep initialData professional if present, otherwise let user select
+                if (initialData?.profesional) {
+                    setProfesional(initialData.profesional);
+                } else if (profesional && list.some(l => (l.nombreCompleto || l.nombre) === profesional)) {
+                    // keep current user choice
+                } else {
+                    setProfesional("");
                 }
-
             } catch (err) {
                 console.error("Error loading doctor catalog in modal", err);
             }
         };
         if (isOpen) loadCatalog();
-    }, [isOpen, userProfile, patient]);
+    }, [isOpen, userProfile, patient?.profesionales, patient?.id]);
 
     const clearPrescriptionDetailFields = () => {
         setPrescripcionDescripcion("");
@@ -616,6 +499,75 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         setPrescripcionRecomendacion("");
     };
 
+    const extractDoseAndUnit = (m) => {
+        if (!m) return { valor: "", unidad: "mg" };
+        
+        // Priority 1: Check m.concentracion
+        let raw = (m.concentracion || "").trim();
+        
+        // Priority 2: If no concentracion, search inside descripcion or principioActivo
+        if (!raw && m.descripcion) {
+            const descMatch = m.descripcion.match(/(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml|ui|iu|gotas?|tabletas?|capsulas?|cápsulas?|ampollas?|unidades?|u\b)/i);
+            if (descMatch) {
+                raw = descMatch[0];
+            }
+        }
+        if (!raw && m.principioActivo) {
+            const paMatch = m.principioActivo.match(/(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml|ui|iu|gotas?|tabletas?|capsulas?|cápsulas?|ampollas?|unidades?|u\b)/i);
+            if (paMatch) {
+                raw = paMatch[0];
+            }
+        }
+
+        if (!raw) {
+            let defaultUnit = "mg";
+            const altUnit = (m.unidadConcentracion || m.unidadMedida || "").toLowerCase();
+            if (altUnit.includes("ml")) defaultUnit = "ml";
+            else if (altUnit.includes("g") && !altUnit.includes("got")) defaultUnit = "g";
+            else if (altUnit.includes("cap")) defaultUnit = "cápsula";
+            else if (altUnit.includes("tab")) defaultUnit = "tableta";
+            return { valor: "", unidad: defaultUnit };
+        }
+
+        // If compound concentration like "100mg/5ml" or "100 mg / 5 ml", take ONLY the primary (first) part before the slash
+        const primaryPart = raw.split('/')[0].trim();
+
+        // Match numeric digits (with optional decimal point) and letters
+        const match = primaryPart.match(/^([0-9]+(?:\.[0-9]+)?)\s*([a-zA-ZáéíóúÁÉÍÓÚµμ%]+)?/i) ||
+                      primaryPart.match(/([0-9]+(?:\.[0-9]+)?)\s*([a-zA-ZáéíóúÁÉÍÓÚµμ%]+)?/i);
+
+        let valor = "";
+        let unidad = "mg";
+
+        if (match) {
+            valor = match[1] || "";
+            const rawUnit = (match[2] || "").toLowerCase();
+            
+            if (rawUnit.startsWith("mg")) unidad = "mg";
+            else if (rawUnit.startsWith("g") && !rawUnit.startsWith("got")) unidad = "g";
+            else if (rawUnit.startsWith("ml")) unidad = "ml";
+            else if (rawUnit.startsWith("cap") || rawUnit.startsWith("cáp")) unidad = "cápsula";
+            else if (rawUnit.startsWith("tab")) unidad = "tableta";
+            else if (rawUnit.startsWith("u") || rawUnit.startsWith("ui") || rawUnit.startsWith("iu")) unidad = "unidad";
+            else if (rawUnit.startsWith("amp")) unidad = "ampolla";
+            else if (rawUnit.startsWith("cár") || rawUnit.startsWith("car")) unidad = "cárpula";
+            else if (rawUnit.startsWith("got")) unidad = "gota";
+            else if (rawUnit.startsWith("apli")) unidad = "aplicación";
+            else if (m.unidadConcentracion) {
+                const u = m.unidadConcentracion.toLowerCase();
+                if (u.includes("mg")) unidad = "mg";
+                else if (u.includes("ml")) unidad = "ml";
+                else if (u.includes("g")) unidad = "g";
+            }
+        } else {
+            // Fallback: only numbers in primaryPart
+            const numOnly = primaryPart.replace(/[^0-9.]/g, '');
+            valor = numOnly;
+        }
+
+        return { valor, unidad };
+    };
+
     const handleSelectMedication = (m) => {
         setSelectedMed(m);
         const displayTerm = `${m.cum ? m.cum + ' - ' : ''}${m.principioActivo}${m.marca ? ' - ' + m.marca : ''}`.trim();
@@ -626,20 +578,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         setPrescripcionDescripcion(m.descripcion || "");
         setPrescripcionMarca(m.marca || "");
         
-        // Extract dosage value if exists (e.g. "500 mg" -> "500")
-        const dosisVal = m.concentracion ? m.concentracion.replace(/[^0-9.]/g, '') : "";
+        // Correctly extract single dosage and unit (prevent merging compound 100mg/5ml into 1005mg)
+        const { valor: dosisVal, unidad: dosisUnit } = extractDoseAndUnit(m);
         setPrescripcionDosisValor(dosisVal);
-        
-        // Extract dosage unit
-        let dosisUnit = "mg";
-        if (m.concentracion) {
-            const unitPart = m.concentracion.replace(/[0-9. ]/g, '');
-            if (unitPart) dosisUnit = unitPart;
-        } else if (m.unidadConcentracion) {
-            dosisUnit = m.unidadConcentracion;
-        } else if (m.unidadMedida) {
-            dosisUnit = m.unidadMedida;
-        }
         setPrescripcionDosisUnidad(dosisUnit);
         
         setPrescripcionFrecuenciaValor("");
@@ -667,10 +608,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 viaAdministracion: "ORAL"
             };
             setSelectedMed(customMed);
+            const { valor: dosisVal, unidad: dosisUnit } = extractDoseAndUnit(customMed);
             setPrescripcionDescripcion("");
             setPrescripcionMarca("");
-            setPrescripcionDosisValor("");
-            setPrescripcionDosisUnidad("mg");
+            setPrescripcionDosisValor(dosisVal);
+            setPrescripcionDosisUnidad(dosisUnit);
             setPrescripcionFrecuenciaValor("");
             setPrescripcionFrecuenciaUnidad("Horas");
             setPrescripcionVia("ORAL");
@@ -786,18 +728,30 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         setSaving(true);
         try {
             const isEditing = !!initialData;
-            const payload = {
-                paciente_id: patient.id,
-                patientId: patient.id,
-                fechaIso: isEditing ? initialData.fechaIso : new Date().toISOString(),
-                tipoDocumento: isEditing ? initialData.tipoDocumento : (isTemplateDoc && selectedTemplate ? selectedTemplate.nombre : docType),
+            const docTipo = isEditing 
+                ? (initialData.tipo || initialData.tipoDocumento || docType) 
+                : (isTemplateDoc && selectedTemplate ? selectedTemplate.nombre : docType);
+            const docTitulo = isTemplateDoc && selectedTemplate 
+                ? selectedTemplate.nombre 
+                : (docType || initialData?.tipoDocumento || "Documento Clínico");
+            const docTranscribe = isEditing 
+                ? (initialData.transcribe || initialData.metadata?.transcribe || "Sistema") 
+                : (userProfile?.nombreCompleto || userProfile?.nombre || "Sistema");
+            const docCreadorId = isEditing 
+                ? (initialData.creadorId || initialData.metadata?.creadorId || "") 
+                : (userProfile?.uid || "");
+            const docFechaIso = isEditing 
+                ? (initialData.fechaIso || initialData.created_at || new Date().toISOString()) 
+                : new Date().toISOString();
+
+            const extraMetadata = {
+                tipoDocumento: docTipo,
+                titulo: docTitulo,
                 profesional: profesional,
-                transcribe: isEditing ? initialData.transcribe : (userProfile?.nombreCompleto || userProfile?.nombre || "Sistema"),
-                creadorId: isEditing ? initialData.creadorId : (userProfile?.uid || ""),
-                contenido: finalContent,
+                transcribe: docTranscribe,
+                creadorId: docCreadorId,
                 diagnostico: diagVal,
-                tenant_id: userProfile?.inquilino || "",
-                updated_at: new Date().toISOString(),
+                fechaIso: docFechaIso,
                 // Structured properties for recovery
                 ...(docType === 'Receta' && {
                     recetaItems: recetaItems,
@@ -831,21 +785,103 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 })
             };
 
-            if (isEditing) {
-                const { error: updateErr } = await supabase
-                    .from("documentos_clinicos")
-                    .update(payload)
-                    .eq("id", initialData.id);
-                if (updateErr) throw updateErr;
-            } else {
-                const { error: insertErr } = await supabase
-                    .from("documentos_clinicos")
-                    .insert([{ ...payload, created_at: new Date().toISOString() }]);
-                if (insertErr) throw insertErr;
+            const tenantId = userProfile?.inquilino || patient.tenant_id || userProfile?.tenant_id;
+
+            const dbPayload = {
+                tenant_id: tenantId,
+                paciente_id: patient.id,
+                tipo: docTipo,
+                titulo: docTitulo,
+                contenido: finalContent,
+                firmado: isEditing ? (initialData.firmado ?? false) : false,
+                receta_items: docType === 'Receta' ? recetaItems : (initialData?.receta_items || null),
+                metadata: extraMetadata,
+                updated_at: new Date().toISOString()
+            };
+
+            const docId = isEditing ? (initialData.id || `doc-${Date.now()}`) : `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+            let saveSuccess = false;
+
+            // 1. Intentar guardar en la tabla documentos_clinicos si está disponible
+            try {
+                if (isEditing) {
+                    const { error: updateErr } = await supabase
+                        .from("documentos_clinicos")
+                        .update(dbPayload)
+                        .eq("id", initialData.id);
+                    if (!updateErr) saveSuccess = true;
+                } else {
+                    const { error: insertErr } = await supabase
+                        .from("documentos_clinicos")
+                        .insert([{ ...dbPayload, id: docId, created_at: new Date().toISOString() }]);
+                    if (!insertErr) saveSuccess = true;
+                }
+            } catch (tblErr) {
+                console.warn("Notice: documentos_clinicos table direct write:", tblErr);
             }
 
-            toast.success(`${docType || initialData?.tipoDocumento} guardada correctamente`);
-            onClose();
+            // 2. Persistir siempre en el historial_medico del paciente (Garantía 100% de persistencia)
+            try {
+                const { data: pData } = await supabase
+                    .from("pacientes")
+                    .select("id, historial_medico")
+                    .eq("id", patient.id)
+                    .maybeSingle();
+
+                const currentHM = pData?.historial_medico || patient?.historial_medico || {};
+                const currentDocs = Array.isArray(currentHM.documentosClinicos) ? [...currentHM.documentosClinicos] : [];
+
+                const docRecord = {
+                    id: docId,
+                    ...extraMetadata,
+                    ...dbPayload,
+                    tipoDocumento: docTipo,
+                    recetaItems: docType === 'Receta' ? recetaItems : (initialData?.receta_items || []),
+                    created_at: isEditing ? (initialData.created_at || new Date().toISOString()) : new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+
+                let updatedDocs;
+                if (isEditing) {
+                    updatedDocs = currentDocs.map(d => (d.id === initialData.id ? { ...d, ...docRecord } : d));
+                    if (!updatedDocs.some(d => d.id === initialData.id)) {
+                        updatedDocs.unshift(docRecord);
+                    }
+                } else {
+                    updatedDocs = [docRecord, ...currentDocs];
+                }
+
+                const updatedHM = {
+                    ...currentHM,
+                    documentosClinicos: updatedDocs
+                };
+
+                const { error: patErr } = await supabase
+                    .from("pacientes")
+                    .update({
+                        historial_medico: updatedHM,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq("id", patient.id);
+
+                if (!patErr) {
+                    saveSuccess = true;
+                    if (patient) {
+                        patient.historial_medico = updatedHM;
+                    }
+                }
+            } catch (hmErr) {
+                console.error("Error sincronizando historial_medico del paciente:", hmErr);
+            }
+
+            if (!saveSuccess) {
+                throw new Error("No se pudo guardar el documento clínico");
+            }
+
+            toast.success(`${docType || initialData?.tipoDocumento || "Documento"} guardado correctamente`);
+            if (typeof onClose === 'function') {
+                onClose(true);
+            }
         } catch (error) {
             console.error("Error saving document:", error);
             toast.error("Error al guardar el documento");
@@ -860,13 +896,29 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     const handleOpenAsocConsulta = async () => {
         setAsocConsultaModal(true);
         try {
-            const { data: list } = await supabase
+            let list = [];
+            const { data: dbList, error } = await supabase
                 .from("documentos_clinicos")
                 .select("*")
                 .eq("paciente_id", patient.id)
-                .eq("tipoDocumento", "Consulta")
+                .or("tipo.eq.Consulta,tipoDocumento.eq.Consulta")
                 .order("created_at", { ascending: false });
-            setConsultasList(list || []);
+            if (!error && dbList) {
+                list = dbList;
+            }
+
+            const hmDocs = (patient?.historial_medico?.documentosClinicos || []).filter(d => 
+                d.tipo === "Consulta" || d.tipoDocumento === "Consulta"
+            );
+            
+            const merged = [...list];
+            hmDocs.forEach(h => {
+                if (!merged.some(m => m.id === h.id)) {
+                    merged.push(h);
+                }
+            });
+
+            setConsultasList(merged);
         } catch (e) {
             toast.error('Error cargando consultas');
         }
@@ -914,57 +966,43 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 custom-scrollbar text-left">
                     
                     {/* General information blocks */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-slate-100">
-                        <div className="space-y-1">
-                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Odontólogo Prescriptor *</label>
-                            <select 
-                                value={profesional}
-                                onChange={(e) => setProfesional(e.target.value)}
-                                disabled={isViewOnly}
-                                className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
-                            >
-                                <option value="" disabled>Seleccione un profesional...</option>
-                                {catalogProfesionales.map(p => {
-                                    const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
-                                    return (
-                                        <option key={p.id || name} value={name}>{name.toUpperCase()}</option>
-                                    );
-                                })}
-                            </select>
-                        </div>
-                        
-                        {docType === 'Receta' ? (
+                    {docType !== 'Receta' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-slate-100">
                             <div className="space-y-1">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Plan de Formulación</label>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Odontólogo Prescriptor *</label>
                                 <select 
-                                    value={selectedPlan}
-                                    onChange={(e) => setSelectedPlan(e.target.value)}
+                                    value={profesional}
+                                    onChange={(e) => setProfesional(e.target.value)}
                                     disabled={isViewOnly}
                                     className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                                 >
-                                    <option value="">SELECCIONE...</option>
-                                    {treatmentPlans.map(plan => (
-                                        <option key={plan.id} value={plan.nombre}>{(plan.nombre || "").toUpperCase()}</option>
-                                    ))}
+                                    <option value="" disabled>Seleccione un profesional...</option>
+                                    {catalogProfesionales.map(p => {
+                                        const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
+                                        return (
+                                            <option key={p.id || name} value={name}>{name.toUpperCase()}</option>
+                                        );
+                                    })}
                                 </select>
                             </div>
-                        ) : docType === 'Orden' ? (
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Tipo de orden *</label>
-                                <select 
-                                    value={tipoOrden}
-                                    onChange={(e) => setTipoOrden(e.target.value)}
-                                    disabled={isViewOnly}
-                                    className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
-                                >
-                                    <option value="Orden médica">Orden médica</option>
-                                    <option value="Ayuda diagnóstica">Ayuda diagnóstica</option>
-                                    <option value="Examen de laboratorio">Examen de laboratorio</option>
-                                    <option value="Anexo 3">Anexo 3</option>
-                                    <option value="Fórmula de uso crónico">Fórmula de uso crónico</option>
-                                </select>
-                            </div>
-                        ) : (docType === 'Plantilla' || initialData?.isTemplateDoc) ? (
+                            
+                            {docType === 'Orden' ? (
+                                <div className="space-y-1">
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Tipo de orden *</label>
+                                    <select 
+                                        value={tipoOrden}
+                                        onChange={(e) => setTipoOrden(e.target.value)}
+                                        disabled={isViewOnly}
+                                        className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                                    >
+                                        <option value="Orden médica">Orden médica</option>
+                                        <option value="Ayuda diagnóstica">Ayuda diagnóstica</option>
+                                        <option value="Examen de laboratorio">Examen de laboratorio</option>
+                                        <option value="Anexo 3">Anexo 3</option>
+                                        <option value="Fórmula de uso crónico">Fórmula de uso crónico</option>
+                                    </select>
+                                </div>
+                            ) : (docType === 'Plantilla' || initialData?.isTemplateDoc) ? (
                             /* ── PLANTILLA: selector de plantilla ── */
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">
@@ -1009,6 +1047,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                             </div>
                         )}
                     </div>
+                    )}
 
                     {/* PLANTILLA: Dynamic fields from selected template */}
                     {(docType === 'Plantilla' || initialData?.isTemplateDoc) && selectedTemplate?.campos?.length > 0 && (
@@ -1116,7 +1155,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         <input type="number" value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} readOnly={isViewOnly} className="w-40 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all read-only:opacity-70" />
                                                     )}
                                                     {field.type === 'date' && (
-                                                        <input type="date" value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} disabled={isViewOnly} className="w-56 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all disabled:opacity-70" />
+                                                        <input type="date" value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} disabled={isViewOnly} className="w-56 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all disabled:opacity-70"  max="9999-12-31" min="1900-01-01" />
                                                     )}
                                                     {field.type === 'select' && (
                                                         <select value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} disabled={isViewOnly} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none disabled:opacity-70">
@@ -1150,14 +1189,10 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     {/* INTERACTIVE PRESCRIPTION EDITOR */}
                     {docType === 'Receta' ? (
                         <div className="space-y-4">
-                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
-                                Información básica
-                            </h3>
-
-                            {/* Row 1: Prescribe* & Plan de formulación */}
+                            {/* Row 1: Odontólogo Prescriptor* & Plan de formulación */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1">
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Prescribe *</label>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Odontólogo Prescriptor *</label>
                                     <select 
                                         value={profesional}
                                         onChange={(e) => setProfesional(e.target.value)}

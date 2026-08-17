@@ -205,6 +205,13 @@ export const getPatientById = async (id) => {
             // Profesional
             profesionalId: data.profesional_id || data.profesionalId || "",
             profesionalNombre: data.profesional_nombre || data.profesionalNombre || "",
+            profesionales: (Array.isArray(data.historial_medico?.profesionales) && data.historial_medico.profesionales.length > 0)
+                ? data.historial_medico.profesionales
+                : (data.profesional_nombre ? [{ id: data.profesional_id || "default-doc", nombre: data.profesional_nombre, especialidades: ["Odontología General"] }] : []),
+            rxImagenes: Array.isArray(data.historial_medico?.rxImagenes) ? data.historial_medico.rxImagenes : (Array.isArray(data.rxImagenes) ? data.rxImagenes : []),
+            beneficiarios: Array.isArray(data.historial_medico?.beneficiarios) ? data.historial_medico.beneficiarios : (Array.isArray(data.beneficiarios) ? data.beneficiarios : []),
+            historial_medico: data.historial_medico || {},
+            historialMedico: data.historial_medico || {},
             // Responsable
             nombreResponsable: data.nombre_responsable || data.nombreResponsable || "",
             parentesco: data.parentesco || "",
@@ -292,10 +299,9 @@ export const createOrUpdatePatient = async (tenantId, patientData, isNew = false
         remitido_por_type: patientData.remitidoPorType || "Libre",
         remitido_por_value: patientData.remitidoPorValue || "",
         asesor_comercial_type: patientData.asesorComercialType || "Libre",
-        asesor_comercial_value: patientData.asesorComercialValue || "",
         // Profesional asignado
-        profesional_id: patientData.profesionalId || "",
-        profesional_nombre: patientData.profesionalNombre || "",
+        profesional_id: (Array.isArray(patientData.profesionales) && patientData.profesionales[0]?.id) || patientData.profesionalId || "",
+        profesional_nombre: (Array.isArray(patientData.profesionales) && (patientData.profesionales[0]?.nombreCompleto || patientData.profesionales[0]?.nombre)) || patientData.profesionalNombre || "",
         // Responsable
         nombre_responsable: patientData.nombreResponsable || "",
         parentesco: patientData.parentesco || "",
@@ -311,7 +317,12 @@ export const createOrUpdatePatient = async (tenantId, patientData, isNew = false
         // Foto
         foto_url: fotoUrl || patientData.fotoUrl || "",
         // Metadata
-        historial_medico: patientData.historialMedico || patientData.historial_medico || {},
+        historial_medico: {
+            ...(patientData.historialMedico || patientData.historial_medico || {}),
+            ...(Array.isArray(patientData.profesionales) ? { profesionales: patientData.profesionales } : {}),
+            ...(Array.isArray(patientData.rxImagenes) ? { rxImagenes: patientData.rxImagenes } : {}),
+            ...(Array.isArray(patientData.beneficiarios) ? { beneficiarios: patientData.beneficiarios } : {})
+        },
         contacto_emergencia: patientData.contactoEmergencia || patientData.contacto_emergencia || {},
         activo: patientData.activo ?? true,
         updated_at: new Date().toISOString()
@@ -404,4 +415,29 @@ export const uploadPatientPhoto = async (tenantId, patientId, file) => {
         upsert: true
     });
     return uploaded.reference;
+};
+
+export const checkDocumentExists = async (tenantId, documento, excludePatientId = null) => {
+    if (!tenantId || !documento) return null;
+    const docStr = String(documento).trim();
+    if (!docStr) return null;
+
+    try {
+        let query = supabase
+            .from("pacientes")
+            .select("id, nombres, apellidos, documento, tipo_documento, telefono, email")
+            .eq("tenant_id", tenantId)
+            .eq("documento", docStr);
+
+        if (excludePatientId) {
+            query = query.neq("id", excludePatientId);
+        }
+
+        const { data, error } = await query.limit(1);
+        if (error) throw error;
+        return data && data.length > 0 ? data[0] : null;
+    } catch (e) {
+        console.error("Error al verificar duplicado de documento:", e);
+        return null;
+    }
 };
