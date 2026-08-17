@@ -480,7 +480,6 @@ export default function EmpresaUsuarios() {
                     direccion: formData.direccion?.trim() || "",
                     genero: formData.genero || "Masculino",
                     fechaNacimiento: formData.fechaNacimiento || "",
-                    password: formData.password || userDetails[targetId]?.password || "",
                     sucursales: formData.sucursales || [],
                     especialidades: formData.especialidades || [],
                     esDoctor: formData.esDoctor || false,
