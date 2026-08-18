@@ -9,6 +9,7 @@ import MEDICAMENTOS_COLOMBIA from '../../../data/medicamentosColombia';
 import VIAS_ADMINISTRACION from '../../../data/viasAdministracionColombia';
 import COLOMBIAN_CUM_REGISTRY from '../../../data/cumCompleto';
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
+import CUPSSearch from './CUPSSearch';
 import { PREDEFINED_TEMPLATES } from '../../../data/plantillasPredeterminadas';
 import { getConfigItems } from '../../../services/configPersistenceService';
 import { getDoctorsList } from '../../../services/supabaseServices';
@@ -89,6 +90,32 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     const [asocConsultaModal, setAsocConsultaModal] = useState(false);
     const [consultasList, setConsultasList] = useState([]);
     const [asocConsultaId, setAsocConsultaId] = useState(null);
+    const [associatedConsulta, setAssociatedConsulta] = useState(null);
+
+    const formatConsultaDate = (dateVal) => {
+        if (!dateVal) return '';
+        try {
+            const d = new Date(dateVal);
+            if (isNaN(d.getTime())) return String(dateVal);
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            let hours = d.getHours();
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            const strHours = String(hours).padStart(2, '0');
+            return `${day}/${month}/${year} ${strHours}:${minutes} ${ampm}`;
+        } catch {
+            return '';
+        }
+    };
+
+    const getConsultaDoctor = (c) => {
+        if (!c) return '-';
+        return c.profesional || c.transcribe || c.metadata?.profesional || c.metadata?.transcribe || c.doctor || c.doctorName || '-';
+    };
 
     // ── Consulta summary generator ────────────────────────────────────────
     const generateConsultaSummary = (motivo, enfermedad, ants, aler, fams, meds) => {
@@ -305,12 +332,17 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         setMedSuggestions(filtered);
     }, [medSearchTerm, selectedMed]);
 
-    // Initialize/Reset
+    const wasOpenRef = React.useRef(false);
+    const prevInitialDataRef = React.useRef(null);
+
+    // Initialize/Reset only when modal opens or initialData changes upon opening
     useEffect(() => {
         if (!isOpen) {
+            wasOpenRef.current = false;
+            prevInitialDataRef.current = null;
             setContenido("");
             setDiagnostico("");
-            setProfesional(userProfile?.nombreCompleto || userProfile?.nombre || "");
+            setProfesional("");
             setRecetaItems([]);
             setSelectedPlan("");
             setMedSearchTerm("");
@@ -329,6 +361,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             setCupsObservaciones('');
             setCupsQuery('');
             setAsocConsultaId(null);
+            setAssociatedConsulta(null);
             // Reset Consulta states
             setConsultaTab('motivo');
             setMotivoConsulta('');
@@ -341,74 +374,90 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             setTemplates([]);
             setSelectedTemplate(null);
             setTemplateValues({});
-        } else if (initialData) {
-            setContenido(initialData.contenido || "");
-            setDiagnostico(initialData.diagnostico || "");
-            setProfesional(initialData.profesional || userProfile?.nombreCompleto || userProfile?.nombre || "");
-            setRecetaItems(initialData.recetaItems || []);
-            setSelectedPlan(initialData.planFormulacion || "");
-            
-            // Initialize Orden states if we are editing/viewing an existing Orden
-            if (initialData.tipoDocumento === 'Orden') {
-                setOrdenStep('details'); // Go directly to details when editing or viewing
-                setTipoOrden(initialData.tipoOrden || 'Orden médica');
-                setDxPrincipal(initialData.dxPrincipal || null);
-                setDiagnosticosRelacionados(initialData.dxRelacionados || []);
-                setObservacionesGenerales(initialData.observacionesGenerales || '');
-                setCupsItems(initialData.cupsItems || []);
-                setAsocConsultaId(initialData.asocConsultaId || null);
-            }
-            // Initialize Consulta states if editing/viewing
-            if (initialData.tipoDocumento === 'Consulta') {
-                setConsultaTab('motivo');
-                setMotivoConsulta(initialData.motivoConsulta || '');
-                setEnfermedadActual(initialData.enfermedadActual || '');
-                setAntecedentes(initialData.antecedentes || []);
-                setAntNoRefiere(initialData.antNoRefiere || false);
-                setAlergias(initialData.alergias || []);
-                setAlerNoRefiere(initialData.alerNoRefiere || false);
-                setAntFamiliares(initialData.antFamiliares || []);
-                setFamNoRefiere(initialData.famNoRefiere || false);
-                setMedicamentosPrev(initialData.medicamentosPrev || []);
-                setMedPrevNoRefiere(initialData.medPrevNoRefiere || false);
-            }
-            // Initialize Template states if editing/viewing a template document
-            if (initialData.isTemplateDoc) {
-                const predefined = PREDEFINED_TEMPLATES.find(t => t.id === initialData.templateId || t.nombre === initialData.tipoDocumento);
-                if (predefined) {
-                    setSelectedTemplate(predefined);
-                } else {
-                    setSelectedTemplate({ nombre: initialData.tipoDocumento, campos: initialData.campos || [] });
-                }
-                setTemplateValues(initialData.valoresCampos || {});
-            }
-        } else {
-            setRecetaItems([]);
-            setSelectedPlan("");
-            
-            // For a new Orden, start with empty professional so they must choose
-            if (docType === 'Orden') {
-                setProfesional("");
-            } else {
-                setProfesional(userProfile?.nombreCompleto || userProfile?.nombre || "");
-            }
-            
-            // Initialize new Orden defaults
-            setOrdenStep('profesional');
-            setTipoOrden('Orden médica');
-            setDxPrincipal(null);
-            setDiagnosticosRelacionados([]);
-            setTempDxRelacionado(null);
-            setObservacionesGenerales('');
-            setCupsItems([]);
-            setSelectedCups(null);
-            setCupsObservaciones('');
-            setCupsQuery('');
-            // Reset Plantilla states for new doc
-            setSelectedTemplate(null);
-            setTemplateValues({});
+            return;
         }
-    }, [isOpen, initialData, userProfile, docType]);
+
+        const justOpened = !wasOpenRef.current;
+        const initialDataChanged = initialData !== prevInitialDataRef.current;
+
+        if (justOpened || initialDataChanged) {
+            wasOpenRef.current = true;
+            prevInitialDataRef.current = initialData;
+
+            if (initialData) {
+                setContenido(initialData.contenido || "");
+                setDiagnostico(initialData.diagnostico || "");
+                setProfesional(initialData.profesional || "");
+                setRecetaItems(initialData.recetaItems || []);
+                setSelectedPlan(initialData.planFormulacion || "");
+                
+                // Initialize Orden states if we are editing/viewing an existing Orden
+                if (initialData.tipoDocumento === 'Orden') {
+                    setOrdenStep('details'); // Go directly to details when editing or viewing
+                    setTipoOrden(initialData.tipoOrden || 'Orden médica');
+                    setDxPrincipal(initialData.dxPrincipal || null);
+                    setDiagnosticosRelacionados(initialData.dxRelacionados || []);
+                    setObservacionesGenerales(initialData.observacionesGenerales || '');
+                    setCupsItems(initialData.cupsItems || []);
+                    setAsocConsultaId(initialData.asocConsultaId || initialData.metadata?.asocConsultaId || null);
+                    setAssociatedConsulta(initialData.associatedConsulta || initialData.metadata?.associatedConsulta || null);
+                }
+                // Initialize Consulta states if editing/viewing
+                const isConsulta = (initialData.tipoDocumento === 'Consulta' || initialData.tipo === 'Consulta' || docType === 'Consulta' || (initialData.tipoDocumento || initialData.tipo || '').toLowerCase() === 'consulta');
+                if (isConsulta) {
+                    setConsultaTab('motivo');
+                    const meta = initialData.metadata || {};
+                    setMotivoConsulta(initialData.motivoConsulta || meta.motivoConsulta || '');
+                    setEnfermedadActual(initialData.enfermedadActual || meta.enfermedadActual || '');
+                    setAntecedentes(initialData.antecedentes || meta.antecedentes || []);
+                    setAntNoRefiere(initialData.antNoRefiere ?? meta.antNoRefiere ?? false);
+                    setAlergias(initialData.alergias || meta.alergias || []);
+                    setAlerNoRefiere(initialData.alerNoRefiere ?? meta.alerNoRefiere ?? false);
+                    setAntFamiliares(initialData.antFamiliares || meta.antFamiliares || []);
+                    setFamNoRefiere(initialData.famNoRefiere ?? meta.famNoRefiere ?? false);
+                    setMedicamentosPrev(initialData.medicamentosPrev || meta.medicamentosPrev || []);
+                    setMedPrevNoRefiere(initialData.medPrevNoRefiere ?? meta.medPrevNoRefiere ?? false);
+                }
+                // Initialize Template states if editing/viewing a template document
+                if (initialData.isTemplateDoc) {
+                    const predefined = PREDEFINED_TEMPLATES.find(t => t.id === initialData.templateId || t.nombre === initialData.tipoDocumento);
+                    if (predefined) {
+                        setSelectedTemplate(predefined);
+                    } else {
+                        setSelectedTemplate({ nombre: initialData.tipoDocumento, campos: initialData.campos || [] });
+                    }
+                    setTemplateValues(initialData.valoresCampos || {});
+                }
+            } else {
+                setRecetaItems([]);
+                setSelectedPlan("");
+                
+                // For a new Orden, start with empty professional so they must choose
+                if (docType === 'Orden') {
+                    setProfesional("");
+                } else {
+                    setProfesional(userProfile?.nombreCompleto || userProfile?.nombre || "");
+                }
+                
+                // Initialize new Orden defaults
+                setOrdenStep('profesional');
+                setTipoOrden('Orden médica');
+                setDxPrincipal(null);
+                setDiagnosticosRelacionados([]);
+                setTempDxRelacionado(null);
+                setObservacionesGenerales('');
+                setCupsItems([]);
+                setSelectedCups(null);
+                setCupsObservaciones('');
+                setCupsQuery('');
+                setAsocConsultaId(null);
+                setAssociatedConsulta(null);
+                // Reset Plantilla states for new doc
+                setSelectedTemplate(null);
+                setTemplateValues({});
+            }
+        }
+    }, [isOpen, initialData, docType]);
 
     // Load configured clinical templates (Plantillas Clínicas)
     useEffect(() => {
@@ -421,11 +470,27 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             
             try {
                 const dbTemplates = await getConfigItems(inq, "plantillas_clinicas", "plantillas_clinicas");
-                const merged = [...PREDEFINED_TEMPLATES];
                 
+                // Merge database customizations with predefined templates
+                const merged = PREDEFINED_TEMPLATES.map(p => {
+                    const dbMatch = Array.isArray(dbTemplates) 
+                        ? dbTemplates.find(d => d.id === p.id || d.nombre?.toLowerCase() === p.nombre?.toLowerCase()) 
+                        : null;
+                    if (dbMatch) {
+                        return {
+                            ...p,
+                            ...dbMatch,
+                            // Ensure campos merged preserving visibility and labels
+                            campos: Array.isArray(dbMatch.campos) && dbMatch.campos.length > 0 ? dbMatch.campos : p.campos
+                        };
+                    }
+                    return p;
+                });
+                
+                // Add custom tenant templates from DB that aren't in predefined
                 if (Array.isArray(dbTemplates)) {
                     dbTemplates.forEach(t => {
-                        if (!merged.some(existing => existing.id === t.id || existing.nombre === t.nombre)) {
+                        if (!merged.some(existing => existing.id === t.id || existing.nombre?.toLowerCase() === t.nombre?.toLowerCase())) {
                             merged.push(t);
                         }
                     });
@@ -433,35 +498,36 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 
                 setTemplates(merged);
                 
-                // Auto-select template if none selected or when creating a new template document
-                if (!selectedTemplate) {
-                    let matched = null;
-                    if (initialData?.templateId || initialData?.nombrePlantilla || initialData?.tipoDocumento) {
-                        matched = merged.find(t => t.id === initialData.templateId || t.nombre === initialData.nombrePlantilla || t.nombre === initialData.tipoDocumento);
-                    }
-                    if (!matched && docType && docType !== 'Plantilla') {
-                        matched = merged.find(t => t.nombre?.toLowerCase() === docType?.toLowerCase() || t.id === docType);
-                    }
-                    if (!matched) {
-                        matched = merged.find(t => t.id === 'ficha_ttm') || merged.find(t => t.id === 'atm') || merged[0];
-                    }
-                    if (matched) {
-                        setSelectedTemplate(matched);
-                        if (initialData?.valoresCampos) {
-                            setTemplateValues(initialData.valoresCampos);
+                // Auto-select template ONLY when editing an existing document or for specific docTypes
+                if (initialData?.isTemplateDoc || initialData?.templateId || initialData?.nombrePlantilla) {
+                    setSelectedTemplate(prev => {
+                        const targetId = initialData?.templateId || initialData?.nombrePlantilla || initialData?.tipoDocumento || prev?.id;
+                        if (targetId) {
+                            return merged.find(t => t.id === targetId || t.nombre?.toLowerCase() === String(targetId).toLowerCase()) || null;
                         }
-                    }
+                        return null;
+                    });
+                } else if (docType && docType !== 'Plantilla') {
+                    setSelectedTemplate(merged.find(t => t.nombre?.toLowerCase() === docType?.toLowerCase() || t.id === docType) || null);
+                } else {
+                    // For a new Plantilla document, remain unselected so user picks from dropdown
+                    setSelectedTemplate(null);
                 }
             } catch (err) {
                 console.error('Error loading templates:', err);
                 setTemplates(PREDEFINED_TEMPLATES);
-                if (!selectedTemplate && PREDEFINED_TEMPLATES.length > 0) {
-                    setSelectedTemplate(PREDEFINED_TEMPLATES[0]);
+                if (initialData?.isTemplateDoc || initialData?.templateId || initialData?.nombrePlantilla) {
+                    const targetId = initialData?.templateId || initialData?.nombrePlantilla || initialData?.tipoDocumento;
+                    setSelectedTemplate(PREDEFINED_TEMPLATES.find(t => t.id === targetId || t.nombre?.toLowerCase() === String(targetId).toLowerCase()) || null);
+                } else if (docType && docType !== 'Plantilla') {
+                    setSelectedTemplate(PREDEFINED_TEMPLATES.find(t => t.nombre?.toLowerCase() === docType?.toLowerCase() || t.id === docType) || null);
+                } else {
+                    setSelectedTemplate(null);
                 }
             }
         };
         loadTemplates();
-    }, [isOpen, docType, userProfile, initialData]);
+    }, [isOpen, docType, initialData]);
 
     // Load active professionals
     useEffect(() => {
@@ -470,20 +536,28 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 const list = await getDoctorsList(userProfile, patient);
                 setCatalogProfesionales(list);
 
-                // Keep initialData professional if present, otherwise let user select
+                // Keep initialData professional ONLY if it is in the patient's linked professionals
                 if (initialData?.profesional) {
-                    setProfesional(initialData.profesional);
-                } else if (profesional && list.some(l => (l.nombreCompleto || l.nombre) === profesional)) {
-                    // keep current user choice
+                    const isAssigned = (list || []).some(p => {
+                        const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
+                        return name.toLowerCase().trim() === initialData.profesional.toLowerCase().trim();
+                    });
+                    setProfesional(isAssigned ? initialData.profesional : "");
                 } else {
-                    setProfesional("");
+                    setProfesional(prev => {
+                        const isAssigned = (list || []).some(p => {
+                            const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
+                            return name.toLowerCase().trim() === (prev || "").toLowerCase().trim();
+                        });
+                        return isAssigned ? prev : "";
+                    });
                 }
             } catch (err) {
                 console.error("Error loading doctor catalog in modal", err);
             }
         };
         if (isOpen) loadCatalog();
-    }, [isOpen, userProfile, patient?.profesionales, patient?.id]);
+    }, [isOpen, patient?.id, initialData]);
 
     const clearPrescriptionDetailFields = () => {
         setPrescripcionDescripcion("");
@@ -680,16 +754,22 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     const generateTemplateSummary = (campos, valores) => {
         const lines = [];
         (campos || []).forEach(field => {
+            if (field.visible === false) return; // Skip hidden fields configured by tenant
+            const fLabel = field.fullLabel || field.label || field.editLabel || field.viewLabel || field.id;
+            const val = valores?.[field.id] ?? valores?.[field.key];
             if (field.type === 'section') {
-                lines.push(`\n── ${field.label} ──`);
+                lines.push(`\n── ${fLabel} ──`);
             } else if (field.type === 'checkbox' || field.type === 'toggle') {
-                const val = valores[field.id];
-                lines.push(`${field.label}: ${val ? 'SÍ' : 'NO'}`);
+                lines.push(`${fLabel}: ${val ? 'SÍ' : 'NO'}`);
             } else {
-                const val = valores[field.id] || '';
-                if (val) lines.push(`${field.label}: ${val}`);
+                if (val !== undefined && val !== null && val !== '') {
+                    lines.push(`${fLabel}: ${val}`);
+                }
             }
         });
+        if (valores?.tercera_firma || valores?.terceraFirma) {
+            lines.push(`Tercera firma: Habilitada`);
+        }
         return lines.join('\n');
     };
 
@@ -698,25 +778,96 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         let diagVal = diagnostico;
         const isTemplateDoc = docType === 'Plantilla' || initialData?.isTemplateDoc;
 
+        // 1. Validar profesional prescriptor u odontólogo obligatorio
+        if (!profesional || !profesional.trim() || profesional.toLowerCase().includes('seleccione')) {
+            toast.error(docType === 'Alerta' ? "Debe seleccionar el odontólogo (*)" : "Debe seleccionar el profesional prescriptor (*)");
+            return;
+        }
+
+        let finalAntecedentes = [...antecedentes];
+        let finalAlergias = [...alergias];
+        let finalAntFamiliares = [...antFamiliares];
+        let finalMedicamentosPrev = [...medicamentosPrev];
+
         if (docType === 'Receta') {
             if (recetaItems.length === 0) {
-                toast.error("Debe añadir al menos un medicamento a la receta");
+                toast.error("Debe añadir al menos un medicamento a la receta (*)");
                 return;
             }
             finalContent = generateContenidoSummary(recetaItems);
         } else if (docType === 'Consulta') {
+            // Automatically commit any temporary/pending inputs in Antecedentes tab before saving
+            if (!antNoRefiere && tempAntCIE10) {
+                finalAntecedentes.push({ ...tempAntCIE10, obs: tempAntObs });
+                setAntecedentes(finalAntecedentes);
+                setTempAntCIE10(null);
+                setTempAntObs('');
+            }
+
+            if (!alerNoRefiere && tempAlerTipo) {
+                finalAlergias.push({ tipo: tempAlerTipo, obs: tempAlerObs });
+                setAlergias(finalAlergias);
+                setTempAlerTipo('');
+                setTempAlerObs('');
+            }
+
+            if (!famNoRefiere && tempFamParentesco && tempFamCIE10) {
+                finalAntFamiliares.push({ parentesco: tempFamParentesco, ...tempFamCIE10, obs: tempFamObs });
+                setAntFamiliares(finalAntFamiliares);
+                setTempFamParentesco('');
+                setTempFamCIE10(null);
+                setTempFamObs('');
+            }
+
+            if (!medPrevNoRefiere && tempMedPrevItem) {
+                const medName = typeof tempMedPrevItem === 'object' 
+                    ? `${tempMedPrevItem.code ? `[${tempMedPrevItem.code}] ` : ''}${tempMedPrevItem.name || tempMedPrevItem.principioActivo || ''}`.trim() 
+                    : String(tempMedPrevItem);
+                finalMedicamentosPrev.push({ 
+                    nombre: medName, 
+                    obs: tempMedPrevObs.trim() 
+                });
+                setMedicamentosPrev(finalMedicamentosPrev);
+                setTempMedPrevItem(null);
+                setTempMedPrevObs('');
+            }
+
             if (!motivoConsulta.trim()) {
-                toast.error("El motivo de consulta no puede estar vacío");
+                toast.error("El motivo de consulta no puede estar vacío (*)");
                 return;
             }
-            finalContent = generateConsultaSummary(motivoConsulta, enfermedadActual, antecedentes, alergias, antFamiliares, medicamentosPrev);
+            finalContent = generateConsultaSummary(motivoConsulta, enfermedadActual, finalAntecedentes, finalAlergias, finalAntFamiliares, finalMedicamentosPrev);
         } else if (docType === 'Orden') {
+            if (!tipoOrden || !tipoOrden.trim()) {
+                toast.error("Debe seleccionar el tipo de orden (*)");
+                return;
+            }
             finalContent = generateOrdenSummary(tipoOrden, dxPrincipal, diagnosticosRelacionados, cupsItems, observacionesGenerales);
             if (dxPrincipal) diagVal = `${dxPrincipal.code} - ${dxPrincipal.name}`;
-        } else if (isTemplateDoc && selectedTemplate) {
-            finalContent = generateTemplateSummary(selectedTemplate.campos, templateValues);
-            if (!finalContent || !finalContent.trim()) {
-                finalContent = `Documento generado a partir de la plantilla: ${selectedTemplate.nombre}`;
+        } else if (isTemplateDoc) {
+            if (!selectedTemplate && !contenido?.trim()) {
+                toast.error("Debe seleccionar una plantilla (*)");
+                return;
+            }
+            if (selectedTemplate) {
+                if (selectedTemplate.campos && selectedTemplate.campos.length > 0) {
+                    for (const field of selectedTemplate.campos) {
+                        if (field.visible === false) continue;
+                        if (field.required) {
+                            const val = templateValues[field.id] ?? templateValues[field.key];
+                            if (val === undefined || val === null || val === '' || (typeof val === 'string' && !val.trim())) {
+                                toast.error(`El campo "${field.label || field.editLabel}" es obligatorio (*)`);
+                                return;
+                            }
+                        }
+                    }
+                }
+                finalContent = generateTemplateSummary(selectedTemplate.campos, templateValues);
+                if (!finalContent || !finalContent.trim()) {
+                    finalContent = `Documento generado a partir de la plantilla: ${selectedTemplate.nombre}`;
+                }
+            } else {
+                finalContent = contenido;
             }
         }
 
@@ -763,7 +914,8 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     dxRelacionados: diagnosticosRelacionados,
                     cupsItems: cupsItems,
                     observacionesGenerales: observacionesGenerales,
-                    asocConsultaId: asocConsultaId || null
+                    asocConsultaId: asocConsultaId || null,
+                    associatedConsulta: associatedConsulta || null
                 }),
                 ...(isTemplateDoc && {
                     isTemplateDoc: true,
@@ -774,13 +926,13 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 ...(docType === 'Consulta' && {
                     motivoConsulta,
                     enfermedadActual,
-                    antecedentes,
+                    antecedentes: finalAntecedentes,
                     antNoRefiere,
-                    alergias,
+                    alergias: finalAlergias,
                     alerNoRefiere,
-                    antFamiliares,
+                    antFamiliares: finalAntFamiliares,
                     famNoRefiere,
-                    medicamentosPrev,
+                    medicamentosPrev: finalMedicamentosPrev,
                     medPrevNoRefiere
                 })
             };
@@ -967,16 +1119,18 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     
                     {/* General information blocks */}
                     {docType !== 'Receta' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-slate-100">
+                        <div className={`grid ${docType === 'Alerta' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4 pb-4 border-b border-slate-100`}>
                             <div className="space-y-1">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Odontólogo Prescriptor *</label>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">
+                                    {docType === 'Alerta' ? 'Odontólogo *' : 'Odontólogo Prescriptor *'}
+                                </label>
                                 <select 
                                     value={profesional}
                                     onChange={(e) => setProfesional(e.target.value)}
                                     disabled={isViewOnly}
                                     className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                                 >
-                                    <option value="" disabled>Seleccione un profesional...</option>
+                                    <option value="">Seleccione un profesional...</option>
                                     {catalogProfesionales.map(p => {
                                         const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
                                         return (
@@ -1029,7 +1183,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                     </div>
                                 )}
                             </div>
-                        ) : (
+                        ) : docType === 'Alerta' ? null : (
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Diagnóstico asoc. (Opcional)</label>
                                 {isViewOnly ? (
@@ -1052,7 +1206,203 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     {/* PLANTILLA: Dynamic fields from selected template */}
                     {(docType === 'Plantilla' || initialData?.isTemplateDoc) && selectedTemplate?.campos?.length > 0 && (
                         <div className="space-y-6 pb-6 border-b border-slate-100">
-                            {selectedTemplate.id === 'atm' ? (
+                            {(selectedTemplate.id === 'formulario_fisico' || selectedTemplate.nombre === 'FORMULARIO FISICO') ? (
+                                /* ================= FORMULARIO FÍSICO 1:1 LAYOUT ================= */
+                                <div className="space-y-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
+                                    {/* Top Vitals Row 1: FC, PA, FR, TC */}
+                                    {(() => {
+                                        const fcField = selectedTemplate.campos.find(f => f.id === 'fc' || f.key === 'fc');
+                                        const paField = selectedTemplate.campos.find(f => f.id === 'pa' || f.key === 'pa');
+                                        const frField = selectedTemplate.campos.find(f => f.id === 'fr' || f.key === 'fr');
+                                        const tcField = selectedTemplate.campos.find(f => f.id === 'tc' || f.key === 'tc');
+                                        const showRow1 = (fcField?.visible !== false) || (paField?.visible !== false) || (frField?.visible !== false) || (tcField?.visible !== false);
+                                        
+                                        if (!showRow1) return null;
+
+                                        return (
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                {fcField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{fcField.label || 'FC'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['fc'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, fc: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                                {paField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{paField.label || 'PA'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['pa'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, pa: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                                {frField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{frField.label || 'FR'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['fr'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, fr: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                                {tcField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{tcField.label || 'TC'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['tc'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, tc: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* Top Vitals Row 2: PESO, TALLA, IMC, OTRO (---) */}
+                                    {(() => {
+                                        const pesoField = selectedTemplate.campos.find(f => f.id === 'peso' || f.key === 'peso');
+                                        const tallaField = selectedTemplate.campos.find(f => f.id === 'talla' || f.key === 'talla');
+                                        const imcField = selectedTemplate.campos.find(f => f.id === 'imc' || f.key === 'imc');
+                                        const otroField = selectedTemplate.campos.find(f => f.id === 'otro_param' || f.key === 'otro_param');
+                                        const showRow2 = (pesoField?.visible !== false) || (tallaField?.visible !== false) || (imcField?.visible !== false) || (otroField?.visible !== false);
+                                        
+                                        if (!showRow2) return null;
+
+                                        return (
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                {pesoField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{pesoField.fullLabel || pesoField.label || 'PESO (Kg)'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['peso'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, peso: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                                {tallaField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{tallaField.fullLabel || tallaField.label || 'TALLA'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['talla'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, talla: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                                {imcField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{imcField.fullLabel || imcField.label || 'IMC'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['imc'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, imc: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                                {otroField?.visible !== false && (
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{otroField.fullLabel || otroField.label || '---'}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={templateValues['otro_param'] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, otro_param: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            placeholder=""
+                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* Body Textareas */}
+                                    <div className="space-y-4 pt-4 border-t border-slate-200/80">
+                                        {[
+                                            { id: 'cabeza', label: 'Cabeza' },
+                                            { id: 'organos_sentidos', label: 'Órgano de los sentidos' },
+                                            { id: 'cuello', label: 'Cuello' },
+                                            { id: 'torax', label: 'Tórax' },
+                                            { id: 'cardio_pulmonar', label: 'Cardio Pulmonar' },
+                                            { id: 'abdomen', label: 'Abdomen' },
+                                            { id: 'genitourinario', label: 'Genitourinario' },
+                                            { id: 'columna', label: 'Columna y extremidades' },
+                                            { id: 'neurologicos', label: 'Neurológicos' },
+                                            { id: 'piel_anexos', label: 'Piel y Anexos' }
+                                        ].map(item => {
+                                            const fieldDef = selectedTemplate.campos.find(f => f.id === item.id || f.key === item.id);
+                                            if (fieldDef && fieldDef.visible === false) return null;
+                                            const labelText = fieldDef?.fullLabel || fieldDef?.label || item.label;
+
+                                            return (
+                                                <div key={item.id} className="grid grid-cols-1 md:grid-cols-4 items-start gap-2 md:gap-4">
+                                                    <label className="text-xs font-medium text-slate-600 pt-1.5 md:col-span-1">
+                                                        {labelText}
+                                                    </label>
+                                                    <div className="md:col-span-3">
+                                                        <textarea
+                                                            value={templateValues[item.id] || ''}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                                            readOnly={isViewOnly}
+                                                            rows={2}
+                                                            placeholder=""
+                                                            className="w-full p-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-blue-500 transition-all resize-none read-only:opacity-75"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Bottom: Tercera Firma */}
+                                    <div className="pt-4 border-t border-slate-200/80 flex items-center justify-center gap-2">
+                                        <span className="text-[12px] font-semibold text-slate-700">Tercera firma</span>
+                                        <button
+                                            type="button"
+                                            disabled={isViewOnly}
+                                            onClick={() => setTemplateValues(prev => ({ ...prev, tercera_firma: !prev.tercera_firma }))}
+                                            className={`w-9 h-5 rounded-full relative cursor-pointer transition-colors duration-200 border-0 ${
+                                                templateValues['tercera_firma'] ? "bg-sky-500" : "bg-slate-200"
+                                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                        >
+                                            <div
+                                                className={`absolute top-[2px] w-4 h-4 bg-white rounded-full transition-transform duration-200 shadow-sm ${
+                                                    templateValues['tercera_firma'] ? "translate-x-4" : "translate-x-[2px]"
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : selectedTemplate.id === 'atm' ? (
                                 <div className="space-y-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
                                     {/* 2 Column Checkbox Grid */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
@@ -1066,18 +1416,22 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                 { id: 'dolor_atm', label: 'DOLOR ATM' },
                                                 { id: 'dolor_muscular', label: 'DOLOR MUSCULAR' },
                                                 { id: 'remision_especialista', label: 'REMISIÓN ESPECIALISTA' }
-                                            ].map(item => (
-                                                <label key={item.id} className="flex items-center gap-3.5 cursor-pointer group select-none">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={!!templateValues[item.id]}
-                                                        disabled={isViewOnly}
-                                                        onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                                                        className="w-5 h-5 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
-                                                    />
-                                                    <span className="text-[11px] font-black text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider">{item.label}</span>
-                                                </label>
-                                            ))}
+                                            ].map(item => {
+                                                const fieldDef = selectedTemplate.campos.find(f => f.id === item.id || f.key === item.id);
+                                                if (fieldDef && fieldDef.visible === false) return null;
+                                                return (
+                                                    <label key={item.id} className="flex items-center gap-3.5 cursor-pointer group select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!templateValues[item.id]}
+                                                            disabled={isViewOnly}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                                                            className="w-5 h-5 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
+                                                        />
+                                                        <span className="text-[11px] font-black text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider">{item.label}</span>
+                                                    </label>
+                                                );
+                                            })}
                                         </div>
 
                                         {/* Column 2 */}
@@ -1090,18 +1444,22 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                 { id: 'bloqueo_mandibular', label: 'BLOQUEO MANDIBULAR' },
                                                 { id: 'crepitacion', label: 'CREPITACIÓN' },
                                                 { id: 'maloclusion', label: 'MALOCLUSIÓN' }
-                                            ].map(item => (
-                                                <label key={item.id} className="flex items-center gap-3.5 cursor-pointer group select-none">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={!!templateValues[item.id]}
-                                                        disabled={isViewOnly}
-                                                        onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                                                        className="w-5 h-5 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
-                                                    />
-                                                    <span className="text-[11px] font-black text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider">{item.label}</span>
-                                                </label>
-                                            ))}
+                                            ].map(item => {
+                                                const fieldDef = selectedTemplate.campos.find(f => f.id === item.id || f.key === item.id);
+                                                if (fieldDef && fieldDef.visible === false) return null;
+                                                return (
+                                                    <label key={item.id} className="flex items-center gap-3.5 cursor-pointer group select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!templateValues[item.id]}
+                                                            disabled={isViewOnly}
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                                                            className="w-5 h-5 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
+                                                        />
+                                                        <span className="text-[11px] font-black text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider">{item.label}</span>
+                                                    </label>
+                                                );
+                                            })}
                                         </div>
                                     </div>
 
@@ -1135,20 +1493,20 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                 </div>
                             ) : (
                                 <div className="space-y-5">
-                                    {selectedTemplate.campos.map(field => (
+                                    {selectedTemplate.campos.filter(f => f.visible !== false).map(field => (
                                         <div key={field.id}>
                                             {field.type === 'section' ? (
                                                 <div className="flex items-center gap-3 pt-2">
                                                     <div className="h-px flex-1 bg-gradient-to-r from-blue-200 to-transparent" />
-                                                    <span className="text-[11px] font-black text-blue-600 uppercase tracking-[0.2em]">{field.label}</span>
+                                                    <span className="text-[11px] font-black text-blue-600 uppercase tracking-[0.2em]">{field.label || field.editLabel || field.viewLabel}</span>
                                                     <div className="h-px flex-1 bg-gradient-to-l from-blue-200 to-transparent" />
                                                 </div>
                                             ) : (
                                                 <div className="space-y-1.5">
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                                                        {field.label}{field.required && <span className="text-red-400 ml-1">*</span>}
+                                                        {field.fullLabel || field.label || field.editLabel || field.viewLabel}{field.required && <span className="text-red-400 ml-1">*</span>}
                                                     </label>
-                                                    {field.type === 'text' && (
+                                                    {(field.type === 'text' || field.type === 'input') && (
                                                         <input type="text" value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} readOnly={isViewOnly} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all read-only:opacity-70" />
                                                     )}
                                                     {field.type === 'number' && (
@@ -1199,7 +1557,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         disabled={isViewOnly}
                                         className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                                     >
-                                        <option value="" disabled>Seleccione...</option>
+                                        <option value="">Seleccione un profesional...</option>
                                         {catalogProfesionales.map(p => {
                                             const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
                                             return (
@@ -1420,32 +1778,62 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                         <div className="space-y-4">
                             {/* Diagnóstico Principal y Relacionado */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Diagnóstico Principal (CIE10)</label>
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Diagnóstico Principal (CIE10)</label>
+                                    
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex-1">
+                                            {isViewOnly ? (
+                                                <div className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 flex items-center">
+                                                    {dxPrincipal ? `${dxPrincipal.code} - ${dxPrincipal.name}` : '-'}
+                                                </div>
+                                            ) : (
+                                                <CIE10Search 
+                                                    value={dxPrincipal}
+                                                    onSelect={(item) => setDxPrincipal(item)}
+                                                    className="w-full"
+                                                />
+                                            )}
+                                        </div>
                                         {!isViewOnly && (
                                             <button
                                                 type="button"
                                                 onClick={handleOpenAsocConsulta}
-                                                className="text-[9px] font-black uppercase tracking-widest text-[#8CC63F] hover:text-[#7bb335] flex items-center gap-1 transition-colors"
+                                                className="w-9 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl flex items-center justify-center transition-all active:scale-95 cursor-pointer shadow-sm shrink-0"
+                                                title="Asociar consulta"
                                             >
-                                                <FiSearch size={11} /> Asociar consulta
+                                                <FiSearch size={16} />
                                             </button>
                                         )}
                                     </div>
-                                    {asocConsultaId && (
-                                        <p className="text-[10px] text-emerald-600 font-bold pl-1">✓ Consulta asociada</p>
-                                    )}
-                                    {isViewOnly ? (
-                                        <div className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 flex items-center">
-                                            {dxPrincipal ? `${dxPrincipal.code} - ${dxPrincipal.name}` : '-'}
+
+                                    {/* Card de Consulta Asociada al estilo OralDrive */}
+                                    {(associatedConsulta || asocConsultaId) && (
+                                        <div className="flex items-center justify-between px-3 py-2 bg-slate-50/90 border border-slate-200 rounded-xl text-xs mt-1.5 shadow-sm animate-in fade-in duration-200">
+                                            <div className="flex items-center gap-2 overflow-hidden text-slate-700">
+                                                <span className="font-bold text-slate-800 shrink-0">Consulta</span>
+                                                <span className="text-slate-600 truncate font-medium text-[11px]">
+                                                    {associatedConsulta 
+                                                        ? `${formatConsultaDate(associatedConsulta.fechaIso || associatedConsulta.created_at || associatedConsulta.date)} - ${getConsultaDoctor(associatedConsulta)}`
+                                                        : 'Consulta asociada'
+                                                    }
+                                                </span>
+                                            </div>
+                                            {!isViewOnly && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setAssociatedConsulta(null);
+                                                        setAsocConsultaId(null);
+                                                        toast.success("Asociación de consulta eliminada");
+                                                    }}
+                                                    className="p-1.5 bg-[#e65353] hover:bg-rose-600 text-white rounded-lg transition-all active:scale-95 shrink-0 ml-2 cursor-pointer shadow-sm flex items-center justify-center"
+                                                    title="Eliminar asociación de consulta"
+                                                >
+                                                    <FiTrash2 size={13} />
+                                                </button>
+                                            )}
                                         </div>
-                                    ) : (
-                                        <CIE10Search 
-                                            value={dxPrincipal}
-                                            onSelect={(item) => setDxPrincipal(item)}
-                                            className="w-full"
-                                        />
                                     )}
                                 </div>
 
@@ -1701,7 +2089,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </button>
                                                     </div>
                                                 )}
-                                                {antecedentes.length > 0 && (
+                                                {antecedentes.length > 0 ? (
                                                     <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Código</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Diagnóstico</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
@@ -1717,7 +2105,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                             </tbody>
                                                         </table>
                                                     </div>
-                                                )}
+                                                ) : isViewOnly ? (
+                                                    <p className="text-xs text-slate-400 italic py-1">Sin antecedentes registrados</p>
+                                                ) : null}
                                             </>
                                         )}
                                     </div>
@@ -1772,7 +2162,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </button>
                                                     </div>
                                                 )}
-                                                {alergias.length > 0 && (
+                                                {alergias.length > 0 ? (
                                                     <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Tipo</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
@@ -1787,7 +2177,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                             </tbody>
                                                         </table>
                                                     </div>
-                                                )}
+                                                ) : isViewOnly ? (
+                                                    <p className="text-xs text-slate-400 italic py-1">Sin alergias registradas</p>
+                                                ) : null}
                                             </>
                                         )}
                                     </div>
@@ -1848,7 +2240,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </button>
                                                     </div>
                                                 )}
-                                                {antFamiliares.length > 0 && (
+                                                {antFamiliares.length > 0 ? (
                                                     <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Parentesco</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Código</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Diagnóstico</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
@@ -1865,7 +2257,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                             </tbody>
                                                         </table>
                                                     </div>
-                                                )}
+                                                ) : isViewOnly ? (
+                                                    <p className="text-xs text-slate-400 italic py-1">Sin antecedentes familiares registrados</p>
+                                                ) : null}
                                             </>
                                         )}
                                     </div>
@@ -1907,8 +2301,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                             type="button" 
                                                             onClick={() => {
                                                                 if (!tempMedPrevItem) { toast.error('Seleccione un medicamento de la lista'); return; }
+                                                                const medName = typeof tempMedPrevItem === 'object' 
+                                                                    ? `${tempMedPrevItem.code ? `[${tempMedPrevItem.code}] ` : ''}${tempMedPrevItem.name || tempMedPrevItem.principioActivo || ''}`.trim() 
+                                                                    : String(tempMedPrevItem);
                                                                 setMedicamentosPrev(prev => [...prev, { 
-                                                                    nombre: `${tempMedPrevItem.code} - ${tempMedPrevItem.name}`, 
+                                                                    nombre: medName, 
                                                                     obs: tempMedPrevObs.trim() 
                                                                 }]);
                                                                 setTempMedPrevItem(null); 
@@ -1921,7 +2318,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                         </button>
                                                     </div>
                                                 )}
-                                                {medicamentosPrev.length > 0 && (
+                                                {medicamentosPrev.length > 0 ? (
                                                     <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Medicamento</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
@@ -1936,7 +2333,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                             </tbody>
                                                         </table>
                                                     </div>
-                                                )}
+                                                ) : isViewOnly ? (
+                                                    <p className="text-xs text-slate-400 italic py-1">Sin medicamentos registrados</p>
+                                                ) : null}
                                             </>
                                         )}
                                     </div>
@@ -1998,22 +2397,35 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                             {consultasList.map(c => (
                                                 <tr key={c.id} className={`hover:bg-slate-50/50 transition-colors ${asocConsultaId === c.id ? 'bg-emerald-50' : ''}`}>
                                                     <td className="px-4 py-3 font-bold text-[#8CC63F]">
-                                                        {c.fechaIso ? new Date(c.fechaIso).toLocaleString('es-ES') : '-'}
+                                                        {formatConsultaDate(c.fechaIso || c.created_at || c.date) || '-'}
                                                     </td>
-                                                    <td className="px-4 py-3 font-bold text-slate-700">{c.transcribe || c.profesional || '-'}</td>
+                                                    <td className="px-4 py-3 font-bold text-slate-700">{getConsultaDoctor(c)}</td>
                                                     <td className="px-4 py-3">
                                                         <button
                                                             type="button"
                                                             onClick={() => {
                                                                 setAsocConsultaId(c.id);
-                                                                // Auto-fill dx principal from first antecedente
-                                                                if (c.antecedentes && c.antecedentes.length > 0) {
+                                                                setAssociatedConsulta(c);
+                                                                // Auto-fill dx principal if available in the consultation
+                                                                if (c.metadata?.dxPrincipal) {
+                                                                    setDxPrincipal(c.metadata.dxPrincipal);
+                                                                } else if (c.dxPrincipal) {
+                                                                    setDxPrincipal(c.dxPrincipal);
+                                                                } else if (c.diagnostico && typeof c.diagnostico === 'string') {
+                                                                    const parts = c.diagnostico.split(' - ');
+                                                                    if (parts.length >= 2) {
+                                                                        setDxPrincipal({ code: parts[0].trim(), name: parts.slice(1).join(' - ').trim() });
+                                                                    } else {
+                                                                        setDxPrincipal({ code: 'DX', name: c.diagnostico });
+                                                                    }
+                                                                } else if (c.antecedentes && c.antecedentes.length > 0) {
                                                                     setDxPrincipal({ code: c.antecedentes[0].code, name: c.antecedentes[0].name });
                                                                 }
                                                                 setAsocConsultaModal(false);
                                                                 toast.success('Consulta asociada correctamente');
                                                             }}
-                                                            className="p-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg transition-all"
+                                                            className="p-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg transition-all cursor-pointer"
+                                                            title="Seleccionar consulta"
                                                         >
                                                             <FiCheck size={14} />
                                                         </button>
@@ -2296,42 +2708,14 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                         {/* Body */}
                         <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left relative">
                             {/* Search field */}
-                            <div className="space-y-1 relative">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Código *</label>
-                                <input 
-                                    type="text" 
-                                    placeholder="Escriba la consulta o el código CUPS"
-                                    value={cupsQuery} 
-                                    onChange={(e) => {
-                                        setCupsQuery(e.target.value);
-                                        setShowCupsSuggestions(true);
-                                        if (selectedCups) setSelectedCups(null);
-                                    }}
-                                    onFocus={() => setShowCupsSuggestions(true)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 placeholder:text-slate-350"
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Procedimiento o Código (CUPS) *</label>
+                                <CUPSSearch 
+                                    value={selectedCups}
+                                    onSelect={(item) => setSelectedCups(item)}
+                                    placeholder="Buscar código o nombre del procedimiento (ej: 890201, 870112, hemograma...)"
+                                    className="w-full"
                                 />
-                                
-                                {/* CUPS Suggestions Dropdown */}
-                                {showCupsSuggestions && cupsQuery.length >= 2 && (
-                                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto divide-y divide-slate-50">
-                                        {CUPS_DENTAL_CODES.filter(c => 
-                                            c.code.toLowerCase().includes(cupsQuery.toLowerCase()) ||
-                                            c.name.toLowerCase().includes(cupsQuery.toLowerCase())
-                                        ).slice(0, 5).map(c => (
-                                            <div 
-                                                key={c.code}
-                                                onClick={() => {
-                                                    setSelectedCups(c);
-                                                    setCupsQuery(`${c.code} - ${c.name}`);
-                                                    setShowCupsSuggestions(false);
-                                                }}
-                                                className="p-3 hover:bg-indigo-50 cursor-pointer text-xs text-slate-700 flex justify-between items-center transition-all"
-                                            >
-                                                <span><span className="font-bold text-indigo-600">{c.code}</span> - {c.name}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
 
                             {/* Observaciones */}
@@ -2339,10 +2723,10 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Observaciones</label>
                                 <textarea 
                                     rows={3}
-                                    placeholder="Observaciones"
+                                    placeholder="Observaciones adicionales del procedimiento..."
                                     value={cupsObservaciones} 
                                     onChange={e => setCupsObservaciones(e.target.value)} 
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 placeholder:text-slate-350 resize-none custom-scrollbar"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#8CC63F] placeholder:text-slate-350 resize-none custom-scrollbar"
                                 />
                             </div>
                         </div>
@@ -2357,7 +2741,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                     setCupsQuery('');
                                     setCupsObservaciones('');
                                 }}
-                                className="px-5 py-2.5 rounded-full font-bold text-xs text-slate-500 hover:bg-slate-200 transition-colors"
+                                className="px-5 py-2.5 rounded-full font-bold text-xs text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
                             >
                                 Cerrar
                             </button>
@@ -2380,7 +2764,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                     setCupsObservaciones('');
                                     toast.success("CUPS agregado");
                                 }}
-                                className="px-6 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white text-xs font-black rounded-full uppercase tracking-wider shadow"
+                                className="px-6 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white text-xs font-black rounded-full uppercase tracking-wider shadow cursor-pointer transition-all active:scale-95"
                             >
                                 Agregar CUPS
                             </button>

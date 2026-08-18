@@ -147,6 +147,16 @@ export default function HistoriaClinicaContainer({ patient }) {
                     docMap.set(String(d.id), {
                         ...meta,
                         ...d,
+                        motivoConsulta: meta.motivoConsulta || d.motivoConsulta || "",
+                        enfermedadActual: meta.enfermedadActual || d.enfermedadActual || "",
+                        antecedentes: meta.antecedentes || d.antecedentes || [],
+                        antNoRefiere: meta.antNoRefiere ?? d.antNoRefiere ?? false,
+                        alergias: meta.alergias || d.alergias || [],
+                        alerNoRefiere: meta.alerNoRefiere ?? d.alerNoRefiere ?? false,
+                        antFamiliares: meta.antFamiliares || d.antFamiliares || [],
+                        famNoRefiere: meta.famNoRefiere ?? d.famNoRefiere ?? false,
+                        medicamentosPrev: meta.medicamentosPrev || d.medicamentosPrev || [],
+                        medPrevNoRefiere: meta.medPrevNoRefiere ?? d.medPrevNoRefiere ?? false,
                         tipoDocumento: meta.tipoDocumento || d.tipo || d.titulo || "Documento",
                         tipo: d.tipo || meta.tipoDocumento || d.titulo || "Documento",
                         recetaItems: d.receta_items || meta.recetaItems || [],
@@ -163,6 +173,16 @@ export default function HistoriaClinicaContainer({ patient }) {
                 return {
                     ...meta,
                     ...d,
+                    motivoConsulta: d.motivoConsulta || meta.motivoConsulta || "",
+                    enfermedadActual: d.enfermedadActual || meta.enfermedadActual || "",
+                    antecedentes: d.antecedentes || meta.antecedentes || [],
+                    antNoRefiere: d.antNoRefiere ?? meta.antNoRefiere ?? false,
+                    alergias: d.alergias || meta.alergias || [],
+                    alerNoRefiere: d.alerNoRefiere ?? meta.alerNoRefiere ?? false,
+                    antFamiliares: d.antFamiliares || meta.antFamiliares || [],
+                    famNoRefiere: d.famNoRefiere ?? meta.famNoRefiere ?? false,
+                    medicamentosPrev: d.medicamentosPrev || meta.medicamentosPrev || [],
+                    medPrevNoRefiere: d.medPrevNoRefiere ?? meta.medPrevNoRefiere ?? false,
                     tipoDocumento: d.tipoDocumento || meta.tipoDocumento || d.tipo || d.titulo || "Documento",
                     tipo: d.tipo || d.tipoDocumento || meta.tipoDocumento || d.titulo || "Documento",
                     recetaItems: d.receta_items || d.recetaItems || meta.recetaItems || [],
@@ -1269,10 +1289,16 @@ export default function HistoriaClinicaContainer({ patient }) {
                                     <p><strong>Motivo de Consulta:</strong> ${d.motivoConsulta || '-'}</p>
                                     <p><strong>Enfermedad Actual:</strong> ${d.enfermedadActual || '-'}</p>
                                     ${(d.antecedentes || []).length > 0 ? `
-                                        <p><strong>Antecedentes:</strong> ${(d.antecedentes || []).map(a => `[${a.code}] ${a.name}`).join(', ')}</p>
+                                        <p><strong>Antecedentes:</strong> ${(d.antecedentes || []).map(a => `[${a.code}] ${a.name}${a.obs ? ` (${a.obs})` : ''}`).join(', ')}</p>
                                     ` : ''}
                                     ${(d.alergias || []).length > 0 ? `
-                                        <p><strong>Alergias:</strong> ${(d.alergias || []).map(a => `${a.tipo} (${a.obs || ''})`).join(', ')}</p>
+                                        <p><strong>Alergias:</strong> ${(d.alergias || []).map(a => `${a.tipo}${a.obs ? ` (${a.obs})` : ''}`).join(', ')}</p>
+                                    ` : ''}
+                                    ${(d.antFamiliares || []).length > 0 ? `
+                                        <p><strong>Antecedentes Familiares:</strong> ${(d.antFamiliares || []).map(f => `${f.parentesco}: [${f.code}] ${f.name}${f.obs ? ` (${f.obs})` : ''}`).join(', ')}</p>
+                                    ` : ''}
+                                    ${(d.medicamentosPrev || []).length > 0 ? `
+                                        <p><strong>Medicamentos en Uso:</strong> ${(d.medicamentosPrev || []).map(m => `${m.nombre}${m.obs ? ` (${m.obs})` : ''}`).join(', ')}</p>
                                     ` : ''}
                                 </div>
                             ` : (d.contenido || '').replace(/\n/g, '<br/>')}

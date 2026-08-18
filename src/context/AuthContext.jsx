@@ -314,7 +314,14 @@ export const AuthProvider = ({ children }) => {
       if (session?.user) {
         setUser(session.user);
         const prof = await fetchUserProfile(session.user);
-        if (isMounted) setUserProfile(prof);
+        if (isMounted && prof) {
+          setUserProfile(prev => {
+            if (prev && prev.id === prof.id && prev.tenant_id === prof.tenant_id && prev.role === prof.role && prev.nombreCompleto === prof.nombreCompleto && prev.tenant?.id === prof.tenant?.id) {
+              return prev;
+            }
+            return prof;
+          });
+        }
       } else {
         setUser(null);
         setUserProfile(null);

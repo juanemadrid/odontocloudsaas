@@ -688,12 +688,11 @@ export const getDoctorsList = async (userProfile, patient = null) => {
   if (patient) {
     let assigned = [];
     const pHist = patient.historial_medico || patient.historialMedico;
+    
     if (patient.profesionales && Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
       assigned = patient.profesionales;
     } else if (pHist?.profesionales && Array.isArray(pHist.profesionales) && pHist.profesionales.length > 0) {
       assigned = pHist.profesionales;
-    } else if (patient.profesional_nombre || patient.profesionalNombre) {
-      assigned = [{ id: patient.profesional_id || patient.profesionalId || "default-doc", nombre: patient.profesional_nombre || patient.profesionalNombre }];
     } else if (patient.id) {
       try {
         const { data: pData } = await supabase
@@ -709,6 +708,8 @@ export const getDoctorsList = async (userProfile, patient = null) => {
       } catch (err) {
         console.warn("Error fetching assigned professionals for patient:", err);
       }
+    } else if (patient.profesional_nombre || patient.profesionalNombre) {
+      assigned = [{ id: patient.profesional_id || patient.profesionalId || "default-doc", nombre: patient.profesional_nombre || patient.profesionalNombre }];
     }
 
     if (assigned && assigned.length > 0) {

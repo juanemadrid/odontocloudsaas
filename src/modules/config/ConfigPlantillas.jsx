@@ -4,6 +4,7 @@ import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import PlantillaEditor from "./PlantillaEditor";
+import FormularioFisicoConfig from "./FormularioFisicoConfig";
 import { PREDEFINED_TEMPLATES } from "../../data/plantillasPredeterminadas";
 import { getConfigItems, deleteConfigItem } from "../../services/configPersistenceService";
 
@@ -26,7 +27,23 @@ export default function ConfigPlantillas() {
         const loadPlantillas = async () => {
             try {
                 const dbTemplates = await getConfigItems(inquilino, "plantillas_clinicas", "plantillas_clinicas");
-                setRows([...PREDEFINED_TEMPLATES, ...(dbTemplates || [])]);
+                
+                // Merge database custom configs (e.g. customized formulario_fisico) with PREDEFINED_TEMPLATES
+                const merged = PREDEFINED_TEMPLATES.map(p => {
+                    const dbMatch = dbTemplates?.find(d => d.id === p.id);
+                    return dbMatch ? { ...p, ...dbMatch } : p;
+                });
+                
+                // Add purely custom templates
+                if (Array.isArray(dbTemplates)) {
+                    dbTemplates.forEach(d => {
+                        if (!merged.some(m => m.id === d.id)) {
+                            merged.push(d);
+                        }
+                    });
+                }
+
+                setRows(merged);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -55,6 +72,21 @@ export default function ConfigPlantillas() {
     };
 
     if (view === "editor") {
+        if (selectedId === "formulario_fisico") {
+            return (
+                <FormularioFisicoConfig
+                    isViewOnly={isViewOnly}
+                    onBack={() => {
+                        setView("list");
+                        setSelectedId(null);
+                        setIsViewOnly(false);
+                    }}
+                    inquilino={inquilino}
+                    userEmail={userProfile?.email}
+                />
+            );
+        }
+
         return (
             <PlantillaEditor
                 id={selectedId}
@@ -163,6 +195,7 @@ export default function ConfigPlantillas() {
                                     </td>
                                     <td className="py-2.5 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5">
+                                            {/* Botón Ver (ojo verde) */}
                                             <button
                                                 onClick={() => { setSelectedId(row.id); setView("editor"); setIsViewOnly(true); }}
                                                 className="w-7 h-7 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
@@ -170,23 +203,27 @@ export default function ConfigPlantillas() {
                                             >
                                                 <FiEye size={13} />
                                             </button>
+
+                                            {/* Botón Editar (lápiz azul): disponible para formulario_fisico y para plantillas personalizadas */}
+                                            {(row.id === "formulario_fisico" || !row.isSystem) && (
+                                                <button
+                                                    onClick={() => { setSelectedId(row.id); setView("editor"); setIsViewOnly(false); }}
+                                                    className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                    title="Editar Plantilla"
+                                                >
+                                                    <FiEdit2 size={13} />
+                                                </button>
+                                            )}
+
+                                            {/* Botón Eliminar (basura roja): NUNCA para plantillas del sistema */}
                                             {!row.isSystem && (
-                                                <>
-                                                    <button
-                                                        onClick={() => { setSelectedId(row.id); setView("editor"); setIsViewOnly(false); }}
-                                                        className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                        title="Editar Plantilla"
-                                                    >
-                                                        <FiEdit2 size={13} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(row.id)}
-                                                        className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                        title="Eliminar Plantilla"
-                                                    >
-                                                        <FiTrash2 size={13} />
-                                                    </button>
-                                                </>
+                                                <button
+                                                    onClick={() => handleDelete(row.id)}
+                                                    className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                    title="Eliminar Plantilla"
+                                                >
+                                                    <FiTrash2 size={13} />
+                                                </button>
                                             )}
                                         </div>
                                     </td>
