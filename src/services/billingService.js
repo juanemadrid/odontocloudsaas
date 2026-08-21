@@ -102,8 +102,10 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                 motivo = p.notas.replace(/^ANULADO\s*-\s*/i, "").trim();
             }
 
-            const rawUser = notasParsed.registradoPor || notasParsed.usuarioNombre || p.registradoPor || p.registrado_por || p.usuario || p.profesional || "";
-            const validUser = (rawUser && rawUser.toLowerCase() !== "sistema") ? rawUser : "";
+            let rawConcepto = notasParsed.concepto || p.concepto || p.referencia || "ABONO GENERAL";
+            if (notasParsed.planTitle && !rawConcepto.toLowerCase().includes(notasParsed.planTitle.toLowerCase())) {
+                rawConcepto = `${rawConcepto} (${notasParsed.planTitle})`;
+            }
 
             return {
                 id: p.id,
@@ -111,7 +113,7 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                 monto: s(p.monto),
                 fechaISO: p.fecha || p.created_at,
                 medio: p.metodo || p.medio || "—",
-                concepto: notasParsed.concepto || p.concepto || p.referencia || "SALDO A FAVOR",
+                concepto: rawConcepto,
                 referencia: notasParsed.referencia || p.referencia || "",
                 estado: isVoided ? "Anulado" : (p.estado || "Completado"),
                 motivoAnulacion: motivo,

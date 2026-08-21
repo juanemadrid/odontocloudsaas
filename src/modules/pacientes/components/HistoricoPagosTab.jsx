@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import supabase from '../../../lib/supabaseClient';
-import { getConfigCached } from '../../../hooks/useConfig';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { useAudit } from '../../../hooks/useAudit';
 import { ReceiptPrintService } from '../../../services/ReceiptPrintService';
 import { formatCurrency } from '../../../utils/formatters';
+import { getPatientFinancials } from '../../../services/billingService';
 import {
     FiDollarSign, FiCalendar, FiCreditCard, FiTrash2,
     FiPrinter, FiX, FiSearch, FiCopy, FiInbox, FiLoader,
@@ -81,72 +81,23 @@ export default function HistoricoPagosTab({ patientId }) {
         const loadPagos = async () => {
             setLoading(true);
             try {
-                const PAGO_COLS = "id, paciente_id, tenant_id, monto, fecha, created_at, metodo, medio, referencia, concepto, notas, notes, estado, motivoAnulacion, anuladoPor, fechaAnulacion, nroConsecutivo, consecutivo, registradoPor, usuarioNombre";
+                const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || "";
+                const finData = await getPatientFinancials(patientId, inq);
+                const allPagos = finData?.pagos || [];
 
-                let { data: payData } = await supabase
-                    .from("pagos")
-                    .select(PAGO_COLS)
-                    .eq("paciente_id", patientId)
-                    .order("created_at", { ascending: false });
-
-                let list = payData || [];
-
-                // Usar caché compartida de config en lugar de nueva query
-                if (userProfile?.inquilino) {
-                    const cfg = await getConfigCached(userProfile.inquilino);
-                    const cfgPagos = cfg?.pagos || [];
-                    const matchingCfg = cfgPagos.filter(p =>
-                        p.paciente_id === patientId ||
-                        p.pacienteId === patientId ||
-                        p.patient_id === patientId ||
-                        p.patientId === patientId
-                    );
-
-                    const existingIds = new Set(list.map(p => p.id));
-                    matchingCfg.forEach(p => {
-                        if (!existingIds.has(p.id)) {
-                            list.push(p);
-                        }
-                    });
-                }
-
-                let data = (list || []).map(d => {
-                    let notasParsed = {};
-                    if (d.notas && typeof d.notas === "string" && d.notas.trim().startsWith("{")) {
-                        try {
-                            notasParsed = JSON.parse(d.notas);
-                        } catch (_) {}
-                    }
-                    
-                    let concepto = d.concepto || notasParsed.concepto || "";
-                    if (!concepto) {
-                        const ref = (d.referencia || "").toUpperCase();
-                        const not = (d.notas || "").toUpperCase();
-                        if (ref.includes("SALDO A FAVOR") || not.includes("SALDO A FAVOR")) {
-                            concepto = "SALDO A FAVOR";
-                        } else {
-                            concepto = "ABONO GENERAL";
-                        }
-                    }
-
-                    return {
-                        id: d.id,
-                        ...d,
-                        fechaISO: d.created_at || d.fecha || d.fechaISO,
-                        monto: Number(d.monto || d.total || d.valor || 0),
-                        concepto: concepto,
-                        registradoPor: notasParsed.registradoPor || notasParsed.usuarioNombre || d.registradoPor || d.registrado_por || d.usuario || d.profesional || "",
-                        referencia: notasParsed.referencia || d.referencia || ""
-                    };
-                });
-
-                // Incluir abonos a saldo a favor; excluir exclusivamente consumos/usos de saldo a favor
-                data = data.filter(p => {
+                // Excluir exclusivamente consumos / usos de saldo a favor
+                const validPagos = allPagos.filter(p => {
                     const medio = (p.metodo || p.medio || p.metodo_pago || "").toLowerCase();
-                    const isConsumo = medio === "saldo a favor" || medio.includes("saldo a favor");
+                    const concepto = (p.concepto || p.referencia || p.notas || "").toLowerCase();
+                    const isConsumo = medio === "saldo a favor" || 
+                                     medio.includes("saldo a favor") ||
+                                     concepto.includes("consumo s. a favor") ||
+                                     concepto.includes("uso saldo a favor") ||
+                                     concepto.includes("consumo saldo a favor");
                     return !isConsumo;
                 });
-                setPagos(data);
+
+                setPagos(validPagos);
             } catch (err) {
                 console.error("Error fetching payments:", err);
                 toast?.error?.("Error al cargar el historial de pagos");
