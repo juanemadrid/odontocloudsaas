@@ -28,6 +28,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
     const [currentPlanId, setCurrentPlanId] = useState(initialData?.id || null);
     const isEditing = !!currentPlanId;
+    const isPlan = initialData?.type === 'plan';
     const patientId = patient?.id;
     const toast = useToast();
     const [loading, setLoading] = useState(false);
@@ -542,24 +543,23 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     const cargarCombo = async (plan) => {
         setLoadingPlanItems(true);
         try {
-            const snap = await getDocs(collection(db, "planes", plan.id, "planes_items"));
-            const planItems = snap.docs.map(d => d.data());
+            const planItems = plan.items || [];
             
             if (planItems.length === 0) {
-                toast.error("Este plan no tiene ítems configurados.");
+                toast.error("Este plan no tiene ítems configurados. Ve a Configuración -> Planes para agregar servicios.");
                 return;
             }
 
             // Inyectar al presupuesto
             const newItems = planItems.map(it => ({
                 id: Math.random().toString(36).substr(2, 9),
-                code: it.codigo || "",
-                desc: it.nombre || "",
-                amount: Number(it.precio || 0),
-                qty: Number(it.cantidad || 1),
+                code: it.codigo || it.code || "",
+                desc: it.nombre || it.desc || "",
+                amount: Number(it.valor_unit || it.precio || it.amount || 0),
+                qty: Number(it.cantidad || it.qty || 1),
                 descuento: Number(it.descuento || 0),
                 dientes: it.dientes || "",
-                line_obs: it.line_obs || "",
+                line_obs: it.observaciones || it.line_obs || "",
                 permite_descuento: it.permite_descuento !== undefined ? it.permite_descuento : true,
                 max_desc: it.max_desc !== undefined ? Number(it.max_desc) : 100
             }));
@@ -567,10 +567,10 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             const nextItems = [...items, ...newItems];
             setItems(nextItems);
             setShowPlanesModal(false);
-            toast.success(`Combo "${plan.nombre}" cargado!`);
+            toast.success(`Combo "${plan.nombre}" cargado con éxito!`);
             triggerAutoSave(nextItems);
         } catch (e) {
-            console.error(e);
+            console.error("Error cargando combo:", e);
             toast.error("Error cargando el combo.");
         } finally {
             setLoadingPlanItems(false);
@@ -1032,7 +1032,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     <div>
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
                              <div className="flex items-center gap-2">
-                                <FiActivity className="text-indigo-600" /> Plan de Tratamiento
+                                <FiActivity className="text-indigo-600" /> {isPlan ? "Plan de Tratamiento" : "Presupuesto"}
                              </div>
                              <span className="hidden sm:inline mx-2 text-slate-200">|</span>
                              <div className="flex items-center gap-2">
@@ -1332,7 +1332,6 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                         {/* Descripción del procedimiento */}
                                         <td className="px-3 py-2.5 align-middle">
                                             <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-tight">
-                                                {item.code && <span className="text-indigo-400 mr-1.5 text-[9px] font-mono">{item.code}</span>}
                                                 {item.desc}
                                             </div>
                                         </td>
@@ -1524,40 +1523,44 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                           {row('Descuentos', descuentos, 'text-rose-400')}
                                           <div className="h-px bg-slate-100 my-1" />
                                           {row('Total', total, 'text-slate-800 font-black text-sm')}
-                                          {row('Abono', abono, 'text-emerald-600')}
-                                          <div className="h-px bg-slate-100 my-1" />
-                                          <div className="flex justify-between items-center">
-                                              <span className="text-[11px] uppercase tracking-widest text-slate-400 font-bold">Saldo pendiente</span>
-                                              <span className={`font-mono font-black text-sm ${saldoPendiente > 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
-                                                  $ {saldoPendiente.toLocaleString('es-CO')}
-                                              </span>
-                                          </div>
-                                          {row('Saldo facturado', saldoFacturado, 'text-indigo-500')}
-                                          {row('Valor a facturar', valorAFacturar, 'text-amber-600 font-black')}
-                                          {/* Botón Generar Factura - solo aparece cuando hay ítems seleccionados */}
-                                           {selectedForInvoice.size > 0 && (
-                                               <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                                                   <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                                       {selectedForInvoice.size} ítem(s) seleccionado(s) para facturar
-                                                   </div>
-                                                   {!factusCredentials && (
-                                                       <div className="flex items-center gap-1.5 text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                                                           <FiAlertCircle size={10} />
-                                                           Configura Factus en Configuración → Facturación Electrónica
-                                                       </div>
-                                                   )}
-                                                   <button
-                                                       onClick={handleGenerateSelectedInvoice}
-                                                       disabled={emittingInvoice}
-                                                       className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-100"
-                                                   >
-                                                       {emittingInvoice
-                                                           ? <><FiLoader size={13} className="animate-spin" /> Emitiendo ante DIAN…</>
-                                                           : <><FiSend size={13} /> Emitir Factura DIAN</>
-                                                       }
-                                                   </button>
-                                               </div>
-                                           )}
+                                          {isPlan && (
+                                              <>
+                                                  {row('Abono', abono, 'text-emerald-600')}
+                                                  <div className="h-px bg-slate-100 my-1" />
+                                                  <div className="flex justify-between items-center">
+                                                      <span className="text-[11px] uppercase tracking-widest text-slate-400 font-bold">Saldo pendiente</span>
+                                                      <span className={`font-mono font-black text-sm ${saldoPendiente > 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                                          $ {saldoPendiente.toLocaleString('es-CO')}
+                                                      </span>
+                                                  </div>
+                                                  {row('Saldo facturado', saldoFacturado, 'text-indigo-500')}
+                                                  {row('Valor a facturar', valorAFacturar, 'text-amber-600 font-black')}
+                                                  {/* Botón Generar Factura - solo aparece cuando hay ítems seleccionados */}
+                                                  {selectedForInvoice.size > 0 && (
+                                                      <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                                                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                                              {selectedForInvoice.size} ítem(s) seleccionado(s) para facturar
+                                                          </div>
+                                                          {!factusCredentials && (
+                                                              <div className="flex items-center gap-1.5 text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                                                                  <FiAlertCircle size={10} />
+                                                                  Configura Factus en Configuración → Facturación Electrónica
+                                                              </div>
+                                                          )}
+                                                          <button
+                                                              onClick={handleGenerateSelectedInvoice}
+                                                              disabled={emittingInvoice}
+                                                              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-100"
+                                                          >
+                                                              {emittingInvoice
+                                                                  ? <><FiLoader size={13} className="animate-spin" /> Emitiendo ante DIAN…</>
+                                                                  : <><FiSend size={13} /> Emitir Factura DIAN</>
+                                                              }
+                                                          </button>
+                                                      </div>
+                                                  )}
+                                              </>
+                                          )}
                                       </>
                                   );
                               })()}

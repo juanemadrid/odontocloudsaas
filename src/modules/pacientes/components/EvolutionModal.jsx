@@ -809,8 +809,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                         <table className="w-full text-left table-fixed">
                                             <thead className="sticky top-0 bg-white shadow-sm z-10 hidden md:table-header-group">
                                                 <tr>
-                                                    <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-1/2">Acciones Clínicas</th>
-                                                    <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest w-1/3">Observaciones</th>
+                                                    <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Acciones Clínicas</th>
                                                     <th className="px-4 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center w-24">Realizado</th>
                                                 </tr>
                                             </thead>
@@ -839,18 +838,6 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                                     {idx + 1}. {s.desc || s.procedimiento || s.nombre || 'Servicio sin nombre'}
                                                                 </div>
                                                             </div>
-                                                        </td>
-                                                        <td className="px-4 py-2 align-middle">
-                                                            <input 
-                                                                type="text"
-                                                                placeholder="Anotaciones..."
-                                                                className="w-full h-8 px-2 rounded-md border border-slate-200 text-[10px] font-bold text-slate-600 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all placeholder:text-slate-300 caret-slate-950"
-                                                                value={plantillaDetails[s.id]?.observation || ''}
-                                                                onChange={(e) => setPlantillaDetails(prev => ({
-                                                                    ...prev,
-                                                                    [s.id]: { ...prev[s.id], observation: e.target.value }
-                                                                }))}
-                                                            />
                                                         </td>
                                                         <td className="px-4 py-2 align-middle text-center">
                                                             <div className="flex items-center justify-start md:justify-center" title="Marque cuando este procedimiento quede completamente terminado en esta sesión">
