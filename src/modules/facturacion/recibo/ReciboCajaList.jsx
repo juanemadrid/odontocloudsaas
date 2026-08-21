@@ -500,8 +500,11 @@ export default function ReciboCajaList({ onNew }) {
             const recibosMapped = (dataRecibos || []).map(d => {
                 const pId = d.paciente_id || d.pacienteId || d.patient_id || d.paciente;
                 const pName = d.pacienteNombre || d.patientNombre || d.paciente_nombre || d.nombrePaciente || patientMap[pId] || "—";
+                const rawConsecutivo = d.nroConsecutivo || d.nro_consecutivo || d.consecutivo || "";
+                const nroConsecutivo = rawConsecutivo ? String(rawConsecutivo).padStart(4, '0') : "";
                 return { 
                     ...d, 
+                    nroConsecutivo: nroConsecutivo,
                     pacienteNombre: pName,
                     isPago: false 
                 };
@@ -528,17 +531,31 @@ export default function ReciboCajaList({ onNew }) {
 
             const dataPagos = (dataPagosRaw || [])
                 .map(pData => {
-                    const medioRaw = pData.medio || "Abono";
+                    let metadata = {};
+                    if (pData.notas && typeof pData.notas === "string" && pData.notas.trim().startsWith("{")) {
+                        try { metadata = JSON.parse(pData.notas); } catch (e) {}
+                    } else if (pData.notas && typeof pData.notas === "object") {
+                        metadata = pData.notas;
+                    }
+
+                    const medioRaw = pData.medio || metadata.medio || "Abono";
                     const condicionPago = medioRaw.toLowerCase() === "saldo a favor" ? "Consumo s. a favor" : medioRaw;
-                    const pId = pData.paciente_id || pData.pacienteId || pData.patient_id || pData.paciente;
-                    const pName = pData.patientNombre || pData.pacienteNombre || pData.paciente_nombre || pData.nombrePaciente || patientMap[pId] || "—";
+                    const pId = pData.paciente_id || pData.pacienteId || metadata.paciente_id || metadata.pacienteId || pData.patient_id || pData.paciente;
+                    const pName = pData.patientNombre || pData.pacienteNombre || metadata.patientNombre || metadata.pacienteNombre || pData.paciente_nombre || pData.nombrePaciente || patientMap[pId] || "—";
+                    
+                    const rawConsecutivo = pData.nroConsecutivo || pData.nro_consecutivo || metadata.nroConsecutivo || metadata.nro_consecutivo || pData.consecutivo || "";
+                    const nroConsecutivo = rawConsecutivo ? String(rawConsecutivo).padStart(4, '0') : "";
+
+                    const rawConcepto = pData.concepto || metadata.concepto || pData.referencia || metadata.referencia || "Abono a tratamiento";
+                    const concepto = (typeof rawConcepto === "string" && !rawConcepto.trim().startsWith("{")) ? rawConcepto : (metadata.concepto || metadata.planTitle || "Abono a tratamiento");
+
                     return {
                         id: pData.id,
-                        nroConsecutivo: pData.nroConsecutivo || "",
+                        nroConsecutivo: nroConsecutivo,
                         fecha: pData.fechaISO || pData.created_at || pData.fecha,
                         pacienteNombre: pName,
                         condicionPago: condicionPago,
-                        concepto: pData.concepto || pData.referencia || pData.notas || "Abono",
+                        concepto: concepto,
                         total: pData.monto || 0,
                         isPago: true
                     };
