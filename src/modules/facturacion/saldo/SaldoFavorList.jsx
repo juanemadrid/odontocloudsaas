@@ -5,6 +5,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
+import { formatCurrency } from "../../../utils/formatters";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -26,27 +27,29 @@ const formatDateOnly = (dObj) => {
 };
 
 export const printHTMLInHiddenIframe = (html) => {
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    document.body.appendChild(iframe);
+    let iframe = document.getElementById("oc-print-iframe");
+    if (!iframe) {
+        iframe = document.createElement("iframe");
+        iframe.id = "oc-print-iframe";
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "0px";
+        iframe.style.height = "0px";
+        iframe.style.border = "none";
+        iframe.style.visibility = "hidden";
+        document.body.appendChild(iframe);
+    }
 
     const doc = iframe.contentWindow.document;
     doc.open();
     doc.write(html);
     doc.close();
 
-    iframe.contentWindow.focus();
     setTimeout(() => {
+        iframe.contentWindow.focus();
         iframe.contentWindow.print();
-        setTimeout(() => {
-            document.body.removeChild(iframe);
-        }, 1000);
-    }, 300);
+    }, 200);
 };
 
 export default function SaldoFavorList({ onNew }) {
@@ -355,63 +358,63 @@ export default function SaldoFavorList({ onNew }) {
 
     const handlePrintPatientMovements = () => {
         if (!selectedPaciente || selectedMovements.length === 0) return;
-        
-        const clinic = userProfile?.tenant || {};
-        const clinicName = userProfile?.tenantNombre || userProfile?.clinica || clinic.nombre || "CLÍNICA ODONTOLÓGICA";
-        const nit = userProfile?.tenantNit || clinic.nit || userProfile?.nit || "";
-        const direccion = userProfile?.tenantDireccion || clinic.direccion || userProfile?.direccion || "";
-        const ciudad = userProfile?.tenantCiudad || clinic.ciudad || userProfile?.ciudad || "Sincelejo";
-        const telefono = userProfile?.tenantTelefono || clinic.telefono || userProfile?.telefono || "";
-        const email = userProfile?.tenantEmail || clinic.email || userProfile?.email || "";
-        const logoUrl = userProfile?.tenantLogo || clinic.logo || "";
+        try {
+            const clinic = userProfile?.tenant || {};
+            const clinicName = userProfile?.tenantNombre || userProfile?.clinica || clinic.nombre || "CLÍNICA ODONTOLÓGICA";
+            const nit = userProfile?.tenantNit || clinic.nit || userProfile?.nit || "";
+            const direccion = userProfile?.tenantDireccion || clinic.direccion || userProfile?.direccion || "";
+            const ciudad = userProfile?.tenantCiudad || clinic.ciudad || userProfile?.ciudad || "Sincelejo";
+            const telefono = userProfile?.tenantTelefono || clinic.telefono || userProfile?.telefono || "";
+            const email = userProfile?.tenantEmail || clinic.email || userProfile?.email || "";
+            const logoUrl = userProfile?.tenantLogo || clinic.logo || "";
 
-        const pacName = (selectedPaciente.nombreCompleto || `${selectedPaciente.nombres || ""} ${selectedPaciente.apellidos || ""}`).trim().toUpperCase();
-        const pacDoc = selectedPaciente.documento || selectedPaciente.nroDocumento || selectedPaciente.nro_documento || selectedPaciente.cedula || "—";
-        const pacDocType = (selectedPaciente.tipoDocumento || selectedPaciente.tipo_documento || "CÉDULA DE CIUDADANÍA").toUpperCase();
-        const pacAddress = selectedPaciente.direccion || selectedPaciente.dir || "—";
-        const pacCity = selectedPaciente.ciudad || selectedPaciente.municipio || ciudad || "—";
-        const pacTel = selectedPaciente.celular || selectedPaciente.telefono || "—";
-        const elaboradoPor = (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "ADMINISTRADOR").toUpperCase();
+            const pacName = (selectedPaciente.nombreCompleto || `${selectedPaciente.nombres || ""} ${selectedPaciente.apellidos || ""}`).trim().toUpperCase();
+            const pacDoc = selectedPaciente.documento || selectedPaciente.nroDocumento || selectedPaciente.nro_documento || selectedPaciente.cedula || "—";
+            const pacDocType = (selectedPaciente.tipoDocumento || selectedPaciente.tipo_documento || "CÉDULA DE CIUDADANÍA").toUpperCase();
+            const pacAddress = selectedPaciente.direccion || selectedPaciente.dir || "—";
+            const pacCity = selectedPaciente.ciudad || selectedPaciente.municipio || ciudad || "—";
+            const pacTel = selectedPaciente.celular || selectedPaciente.telefono || "—";
+            const elaboradoPor = (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "ADMINISTRADOR").toUpperCase();
 
-        const now = new Date();
-        const expeditionDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+            const now = new Date();
+            const expeditionDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
-        const rowsHtml = selectedMovements.map(mov => {
-            const isAbono = mov.tipoMovimiento.toLowerCase().includes("abono") || mov.tipoMovimiento.toLowerCase().includes("entrada");
-            const tMov = isAbono ? "Entrada" : "Salida";
-            const tDoc = isAbono ? (mov.tipoDocumento || "Recibo de caja") : "Cons. s. a fav.";
-            const isAnulado = mov.estado === "Anulado";
+            const rowsHtml = selectedMovements.map(mov => {
+                const isAbono = mov.tipoMovimiento.toLowerCase().includes("abono") || mov.tipoMovimiento.toLowerCase().includes("entrada");
+                const tMov = isAbono ? "Entrada" : "Salida";
+                const tDoc = isAbono ? (mov.tipoDocumento || "Recibo de caja") : "Cons. s. a fav.";
+                const isAnulado = mov.estado === "Anulado";
 
-            let docClean = String(mov.documento || "").replace(/^#/, "");
-            if (docClean.toUpperCase().includes("SALDO A FAVOR") || !docClean) {
-                docClean = "—";
-            }
+                let docClean = String(mov.documento || "").replace(/^#/, "");
+                if (docClean.toUpperCase().includes("SALDO A FAVOR") || !docClean) {
+                    docClean = "—";
+                }
 
-            return `
-            <tr>
-                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; ${isAnulado ? 'text-decoration: line-through; color: #ef4444;' : ''}">
-                    ${formatDateOnly(mov.fecha)}
-                </td>
-                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; font-weight: 600;">
-                    ${tMov}
-                </td>
-                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 700;">
-                    $${formatCurrency(mov.valor || 0)}
-                </td>
-                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; text-transform: uppercase;">
-                    ${tDoc}
-                </td>
-                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; font-family: monospace; font-weight: 700;">
-                    ${docClean}
-                </td>
-                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: left; text-transform: uppercase; font-size: 9.5px;">
-                    ${mov.planTratamiento || "—"}
-                    ${isAnulado && mov.motivoAnulacion ? `<div style="color: #ef4444; font-size: 8.5px; font-style: italic;">(Anulado: ${mov.motivoAnulacion})</div>` : ''}
-                </td>
-            </tr>`;
-        }).join("");
+                return `
+                <tr>
+                    <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; ${isAnulado ? 'text-decoration: line-through; color: #ef4444;' : ''}">
+                        ${formatDateOnly(mov.fecha)}
+                    </td>
+                    <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; font-weight: 600;">
+                        ${tMov}
+                    </td>
+                    <td style="border: 1px solid #334155; padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 700;">
+                        $${formatCurrency(mov.valor || 0)}
+                    </td>
+                    <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; text-transform: uppercase;">
+                        ${tDoc}
+                    </td>
+                    <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; font-family: monospace; font-weight: 700;">
+                        ${docClean}
+                    </td>
+                    <td style="border: 1px solid #334155; padding: 5px 6px; text-align: left; text-transform: uppercase; font-size: 9.5px;">
+                        ${mov.planTratamiento || "—"}
+                        ${isAnulado && mov.motivoAnulacion ? `<div style="color: #ef4444; font-size: 8.5px; font-style: italic;">(Anulado: ${mov.motivoAnulacion})</div>` : ''}
+                    </td>
+                </tr>`;
+            }).join("");
 
-        const html = `<!DOCTYPE html>
+            const html = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8" />
@@ -537,7 +540,11 @@ export default function SaldoFavorList({ onNew }) {
 </body>
 </html>`;
 
-        printHTMLInHiddenIframe(html);
+            printHTMLInHiddenIframe(html);
+        } catch (err) {
+            console.error("Error al generar PDF de historial:", err);
+            alert("Error al preparar la impresión del historial: " + (err.message || err));
+        }
     };
 
     return (
