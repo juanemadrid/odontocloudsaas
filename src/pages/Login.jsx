@@ -1,7 +1,7 @@
 // ===============================
 // 📄 Login.jsx - Acceso híbrido OdontoCloud (Supabase Auth)
 // ===============================
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "../lib/supabaseClient";
 import "../styles/login.css";
@@ -16,13 +16,38 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [loadingStatus, setLoadingStatus] = useState(false);  const [forgotModal, setForgotModal] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(false);
+  const [forgotModal, setForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotMsg, setForgotMsg] = useState({ type: "", text: "" });
   const [sendingReset, setSendingReset] = useState(false);
 
   const [sendingResend, setSendingResend] = useState(false);
   const [resendMsg, setResendMsg] = useState({ type: "", text: "" });
+
+  // PWA Install Prompt
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [canInstall, setCanInstall] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setCanInstall(true);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setCanInstall(false);
+    }
+    setDeferredPrompt(null);
+  };
 
   const handleResendVerification = async () => {
     const targetEmail = email.trim();
@@ -345,21 +370,35 @@ const Login = () => {
               </div>
             )}
 
-            {resendMsg.text && (
-              <div
-                style={{
-                  marginTop: "0.75rem",
-                  padding: "0.75rem 1rem",
-                  borderRadius: "0.75rem",
-                  backgroundColor: resendMsg.type === "success" ? "#f0fdf4" : "#fef2f2",
-                  border: `1px solid ${resendMsg.type === "success" ? "#bbf7d0" : "#fecaca"}`,
-                  color: resendMsg.type === "success" ? "#166534" : "#991b1b",
-                  fontSize: "0.8125rem",
-                  fontWeight: 600,
-                  textAlign: "center"
-                }}
-              >
-                {resendMsg.text}
+            {canInstall && (
+              <div style={{ marginTop: "1.25rem", textAlign: "center" }}>
+                <button
+                  type="button"
+                  onClick={handleInstallApp}
+                  style={{
+                    width: "100%",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                    padding: "0.625rem 1rem",
+                    borderRadius: "0.625rem",
+                    border: "1px solid #bfdbfe",
+                    backgroundColor: "#eff6ff",
+                    color: "#1d4ed8",
+                    fontSize: "0.8125rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Instalar OdontoCloud en este equipo
+                </button>
               </div>
             )}
           </form>

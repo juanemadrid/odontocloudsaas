@@ -5,7 +5,7 @@
     "theme_color": "#2563eb",
     "background_color": "#ffffff",
     "display": "standalone",
-    "start_url": "/odontocloudsaas/",
+    "start_url": "/odontocloudsaas/login",
     "scope": "/odontocloudsaas/",
     "icons": [
         {
