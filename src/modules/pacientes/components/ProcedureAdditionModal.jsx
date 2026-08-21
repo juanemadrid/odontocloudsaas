@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import supabase from '../../../lib/supabaseClient';
 import { FiSearch, FiPlus, FiX, FiInfo, FiTrash2, FiPercent, FiCheckCircle, FiPlusCircle } from 'react-icons/fi';
 import { useToast } from '../../../context/ToastContext';
@@ -14,10 +14,26 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
     
     const [searchResults, setSearchResults] = useState([]);
     const [searchLoading, setSearchLoading] = useState(false);
-    
+    const [showDropdown, setShowDropdown] = useState(false);
+    const searchContainerRef = useRef(null);
+
     // Staging table
     const [stagedItems, setStagedItems] = useState([]);
     const [globalDiscount, setGlobalDiscount] = useState('');
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+                setShowDropdown(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        document.addEventListener("touchstart", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("touchstart", handleClickOutside);
+        };
+    }, []);
 
     // Tooth Selector State
     const [toothModal, setToothModal] = useState({ isOpen: false, itemId: null, initialValue: "" });
@@ -169,6 +185,7 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
             max_desc: proc.max_descuento_porcentaje || 100
         };
         setStagedItems([...stagedItems, newItem]);
+        setShowDropdown(false);
         setSearchResults([]);
         setSearchTerm('');
         setQty(1);
@@ -277,24 +294,53 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
                             {categories.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                     </div>
-                    <div className="md:col-span-6 relative">
+                    <div className="md:col-span-6 relative" ref={searchContainerRef}>
                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Buscar Ítem (Nombre o Código)</label>
                         <div className="relative">
                             <input 
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all pr-10"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all pr-16"
                                 placeholder="Escribe para buscar..."
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                onFocus={() => setShowDropdown(true)}
+                                onChange={(e) => {
+                                    setSearchTerm(e.target.value);
+                                    setShowDropdown(true);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Escape') setShowDropdown(false);
+                                    if (e.key === 'Enter') handleSearch();
+                                }}
                             />
-                            <button onClick={handleSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600">
-                                <FiSearch size={18} />
-                            </button>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                {searchTerm && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setSearchTerm(''); setShowDropdown(false); }} 
+                                        className="text-slate-300 hover:text-slate-500 p-0.5"
+                                        title="Limpiar búsqueda"
+                                    >
+                                        <FiX size={15} />
+                                    </button>
+                                )}
+                                <button type="button" onClick={() => { handleSearch(); setShowDropdown(true); }} className="text-slate-400 hover:text-indigo-600">
+                                    <FiSearch size={18} />
+                                </button>
+                            </div>
                         </div>
                         
                         {/* Instant Search Dropdown */}
-                        {searchResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-100 shadow-2xl rounded-xl z-[100] max-h-60 overflow-y-auto custom-scrollbar">
+                        {showDropdown && searchResults.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-2xl rounded-xl z-[100] max-h-60 overflow-y-auto custom-scrollbar">
+                                <div className="p-2 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                                    <span>Resultados ({searchResults.length})</span>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowDropdown(false)}
+                                        className="hover:text-slate-700 text-slate-400 font-bold"
+                                    >
+                                        Cerrar ✕
+                                    </button>
+                                </div>
                                 {searchResults.map(r => (
                                     <div 
                                         key={r.id} 
