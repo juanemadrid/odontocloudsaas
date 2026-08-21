@@ -110,7 +110,20 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
     const onSubmit = async (data) => {
         setLoading(true);
         try {
-            const now = new Date().toISOString();
+            const currentUserName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración";
+            const referenceStr = data.referencia ? String(data.referencia).trim() : "";
+            const observationsStr = data.observaciones ? String(data.observaciones).trim() : "";
+
+            const notesPayload = JSON.stringify({
+                concepto: "SALDO A FAVOR",
+                referencia: referenceStr,
+                observaciones: observationsStr,
+                notas: observationsStr || (referenceStr ? `Ref: ${referenceStr}` : "SALDO A FAVOR"),
+                registradoPor: currentUserName,
+                usuarioNombre: currentUserName,
+                doctor: data.doctor || "",
+                medio: data.medio || "Efectivo"
+            });
 
             const creditData = {
                 tenant_id: userProfile?.inquilino || "",
@@ -118,8 +131,8 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                 paciente_id: patient?.id || "",
                 monto: Number(data.valor) || 0,
                 metodo: data.medio || "Efectivo",
-                referencia: data.referencia ? `SALDO A FAVOR - Ref: ${data.referencia}` : "SALDO A FAVOR",
-                notas: data.observaciones ? `SALDO A FAVOR - ${data.observaciones}` : "SALDO A FAVOR",
+                referencia: referenceStr ? `Ref: ${referenceStr}` : "SALDO A FAVOR",
+                notas: notesPayload,
                 created_at: now
             };
 

@@ -24,20 +24,41 @@ const parseNotes = (notesRaw) => {
     return null;
 };
 
+const getUserLabel = (pago, profile) => {
+    const raw = pago.registradoPor || pago.registrado_por || pago.usuario || pago.usuarioNombre || pago.profesional || pago.created_by;
+    if (raw && typeof raw === 'string' && !raw.includes('@') && raw.toLowerCase() !== 'sistema') {
+        return raw;
+    }
+    if (raw && typeof raw === 'string' && raw.includes('@')) {
+        return raw.split('@')[0];
+    }
+    return profile?.nombreCompleto || profile?.nombre || profile?.email?.split('@')[0] || 'Administración';
+};
+
 const getDisplayNotes = (pago) => {
     const parsed = parseNotes(pago.notas || pago.notes);
     if (parsed) {
         const parts = [];
-        if (parsed.concepto) parts.push(parsed.concepto);
-        if (parsed.planTitle) parts.push(`[${parsed.planTitle}]`);
+        if (parsed.referencia) parts.push(`Ref: ${parsed.referencia}`);
         if (parsed.observaciones) parts.push(parsed.observaciones);
+        if (parsed.concepto && parts.length === 0) parts.push(parsed.concepto);
         if (parts.length > 0) return parts.join(" — ");
+        if (parsed.notas && parsed.notas !== "SALDO A FAVOR") return parsed.notas;
     }
-    const raw = pago.notes || pago.notas || pago.referencia || pago.concepto || "ABONO SALDO A FAVOR";
-    if (typeof raw === "string" && raw.trim().startsWith("{")) {
-        return "ABONO A TRATAMIENTO";
+    
+    const ref = pago.referencia || "";
+    const notes = pago.notas || pago.notes || "";
+    
+    if (ref && !ref.startsWith("{") && ref !== "SALDO A FAVOR") {
+        if (notes && !notes.startsWith("{") && notes !== "SALDO A FAVOR" && notes !== ref) {
+            return `${ref} — ${notes}`;
+        }
+        return ref;
     }
-    return raw;
+    if (notes && !notes.startsWith("{") && notes !== "SALDO A FAVOR") {
+        return notes;
+    }
+    return "SALDO A FAVOR";
 };
 
 export default function SaldoTab({ patient }) {
@@ -319,8 +340,8 @@ export default function SaldoTab({ patient }) {
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className={`py-5 px-6 uppercase ${isVoided ? 'text-rose-400/80' : 'text-slate-500'}`}>
-                                                    {pago.registradoPor || pago.profesional || "Sistema"}
+                                                <td className={`py-5 px-6 uppercase ${isVoided ? 'text-rose-400/80' : 'text-slate-700 font-bold'}`}>
+                                                    {getUserLabel(pago, userProfile)}
                                                 </td>
                                                 <td className={`py-5 px-6 text-right font-black font-mono ${
                                                     isVoided 

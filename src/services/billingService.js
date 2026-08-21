@@ -102,21 +102,25 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                 motivo = p.notas.replace(/^ANULADO\s*-\s*/i, "").trim();
             }
 
+            const rawUser = notasParsed.registradoPor || notasParsed.usuarioNombre || p.registradoPor || p.registrado_por || p.usuario || p.profesional || "";
+            const validUser = (rawUser && rawUser.toLowerCase() !== "sistema") ? rawUser : "";
+
             return {
                 id: p.id,
                 ...p,
                 monto: s(p.monto),
                 fechaISO: p.fecha || p.created_at,
-                medio: p.metodo || "—",
-                concepto: notasParsed.concepto || p.referencia || "",
+                medio: p.metodo || p.medio || "—",
+                concepto: notasParsed.concepto || p.concepto || p.referencia || "SALDO A FAVOR",
+                referencia: notasParsed.referencia || p.referencia || "",
                 estado: isVoided ? "Anulado" : (p.estado || "Completado"),
                 motivoAnulacion: motivo,
-                notas: notasParsed.notas || (p.notas && !p.notas.startsWith("{") ? p.notas : "") || "",
-                notes: notasParsed.notas || "",
+                notas: notasParsed.notas || notasParsed.observaciones || (p.notas && !p.notas.startsWith("{") ? p.notas : "") || "",
+                notes: notasParsed.notas || notasParsed.observaciones || "",
                 nroConsecutivo: notasParsed.nroConsecutivo || "",
                 consecutivo: notasParsed.nroConsecutivo || "",
-                registradoPor: notasParsed.registradoPor || "Sistema",
-                usuarioNombre: notasParsed.registradoPor || "Sistema"
+                registradoPor: validUser,
+                usuarioNombre: validUser
             };
         }).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
 
