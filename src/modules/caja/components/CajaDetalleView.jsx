@@ -48,31 +48,78 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       .catch((err) => console.error("Error cargando tenant:", err));
   }, [userProfile?.inquilino, caja?.inquilino]);
 
-  // Cargar movimientos
+  // Cargar movimientos y resolver nombres de pacientes
   useEffect(() => {
     if (!caja?.id) return;
     const fetchMovs = async () => {
       setLoading(true);
+      const inquilinoId = userProfile?.inquilino || caja?.inquilino || "";
+      let patientMap = {};
+      try {
+        const { data: pacsData } = await supabase
+          .from("pacientes")
+          .select("*")
+          .eq("tenant_id", inquilinoId);
+        (pacsData || []).forEach(p => {
+          const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || p.documento;
+          if (p.id && full) patientMap[p.id] = full;
+        });
+      } catch (e) {}
+
       const { data } = await supabase
         .from("movimientos_caja")
         .select("*")
         .eq("caja_id", caja.id)
         .order("created_at", { ascending: false });
-      setMovimientos(data || []);
+
+      const parsed = (data || []).map(m => {
+        const pId = m.paciente_id || m.pacienteId;
+        const pName = m.pacienteNombre || m.patientNombre || m.paciente_nombre || patientMap[pId] || m.tercero || m.usuarioNombre || "—";
+        const fechaVal = m.fecha || m.created_at || m.fechaISO || m.fecha_apertura;
+        return {
+          ...m,
+          fecha: fechaVal,
+          pacienteNombre: pName,
+          tercero: pName
+        };
+      });
+
+      setMovimientos(parsed);
       setLoading(false);
     };
 
     fetchMovs();
-  }, [caja?.id]);
+  }, [caja?.id, userProfile?.inquilino, caja?.inquilino]);
 
   // Cálculos de totales
   const totalIngresos = movimientos
     .filter(m => m.tipo === "ingreso")
-    .reduce((s, m) => s + (m.monto || 0), 0);
+    .reduce((s, m) => s + (Number(m.monto) || 0), 0);
 
   const totalEgresos = movimientos
     .filter(m => m.tipo === "egreso")
-    .reduce((s, m) => s + (m.monto || 0), 0);
+    .reduce((s, m) => s + (Number(m.monto) || 0), 0);
+
+  const totalCaja = (Number(caja.baseInicial) || 0) + totalIngresos - totalEgresos;
+
+  // Mapa de saldo progresivo por movimiento
+  const balanceMap = React.useMemo(() => {
+    const base = Number(caja.baseInicial || 0);
+    const sortedOldest = [...movimientos].sort((a, b) => {
+      const ta = new Date(a.fecha || a.created_at || 0).getTime();
+      const tb = new Date(b.fecha || b.created_at || 0).getTime();
+      return ta - tb;
+    });
+
+    let running = base;
+    const map = {};
+    sortedOldest.forEach(m => {
+      const signo = m.tipo === "egreso" ? -1 : 1;
+      running += (Number(m.monto || 0) * signo);
+      map[m.id] = running;
+    });
+    return map;
+  }, [movimientos, caja.baseInicial]);
 
   // Desglose por Medio de Pago
   const resumenMediosPago = React.useMemo(() => {
@@ -84,7 +131,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       }
       map[metodo].cantidad += 1;
       const signo = m.tipo === "egreso" ? -1 : 1;
-      map[metodo].valor += (m.monto || 0) * signo;
+      map[metodo].valor += (Number(m.monto) || 0) * signo;
     });
     return Object.entries(map).map(([metodo, data]) => ({
       metodo,
@@ -258,7 +305,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           </div>
           <div className="flex justify-between py-2 border-t-2 border-slate-200 mt-3 pt-3">
             <span className="text-slate-800 font-bold">Total caja</span>
-            <span className="text-slate-900 font-extrabold text-[15px]">{fmt(caja.saldoActual || 0)}</span>
+            <span className="text-slate-900 font-extrabold text-[15px]">{fmt(totalCaja)}</span>
           </div>
         </div>
 
@@ -373,7 +420,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                         {valorFormateado}
                       </td>
                       <td className="px-3 py-3 text-slate-600">{m.metodoPago || "Efectivo"}</td>
-                      <td className="px-3 py-3 text-slate-700 font-medium">{fmt(caja.saldoActual || 0)}</td>
+                      <td className="px-3 py-3 text-slate-700 font-medium">{fmt(balanceMap[m.id] ?? totalCaja)}</td>
                       <td className="px-3 py-3 text-slate-500 uppercase">{sucursalNombre}</td>
                       <td className="px-3 py-3">
                         <button

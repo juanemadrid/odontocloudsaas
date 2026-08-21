@@ -101,6 +101,15 @@ export default function Caja() {
         if (data && data.length > 0) list = data;
       } catch (e) {}
 
+      let movsList = [];
+      try {
+        const { data: mData } = await supabase
+          .from("movimientos_caja")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (mData) movsList = mData;
+      } catch (e) {}
+
       const { data: cfgRow } = await supabase
         .from("website_config")
         .select("config")
@@ -109,19 +118,28 @@ export default function Caja() {
 
       const cfgCajas = cfgRow?.config?.cajas || [];
 
-      // Combinar cajas de DB y website_config
+      // Combinar cajas de DB y website_config con cálculo dinámico de saldos
       const mergedMap = new Map();
       [...list, ...cfgCajas].forEach(c => {
         if (c && c.id && !mergedMap.has(c.id)) {
+          const cajaMovs = movsList.filter(m => m.caja_id === c.id || m.cajaId === c.id);
+          const movIngresos = cajaMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + Number(m.monto || 0), 0);
+          const movEgresos = cajaMovs.filter(m => m.tipo === "egreso").reduce((s, m) => s + Number(m.monto || 0), 0);
+          
+          const totalIngresos = (Number(c.total_ingresos ?? c.totalIngresos ?? 0)) > 0 ? Number(c.total_ingresos ?? c.totalIngresos) : movIngresos;
+          const totalEgresos = (Number(c.total_egresos ?? c.totalEgresos ?? 0)) > 0 ? Number(c.total_egresos ?? c.totalEgresos) : movEgresos;
+          const baseInicial = Number(c.base_inicial ?? c.baseInicial ?? 0);
+          const saldoCalculado = (Number(c.saldo_actual ?? c.saldoActual ?? 0)) > 0 ? Number(c.saldo_actual ?? c.saldoActual) : (baseInicial + totalIngresos - totalEgresos);
+
           mergedMap.set(c.id, {
             ...c,
-            baseInicial: c.base_inicial ?? c.baseInicial ?? 0,
-            saldoInicial: c.saldo_inicial ?? c.saldoInicial ?? 0,
-            saldoActual: c.saldo_actual ?? c.saldoActual ?? 0,
-            totalIngresos: c.total_ingresos ?? c.totalIngresos ?? 0,
-            totalEgresos: c.total_egresos ?? c.totalEgresos ?? 0,
+            baseInicial,
+            saldoInicial: c.saldo_inicial ?? c.saldoInicial ?? baseInicial,
+            saldoActual: saldoCalculado,
+            totalIngresos,
+            totalEgresos,
             usuarioId: c.usuario_id ?? c.usuarioId ?? "",
-            usuarioNombre: c.usuario_nombre ?? c.usuarioNombre ?? "Usuario",
+            usuarioNombre: c.usuario_nombre ?? c.usuarioNombre ?? (c.nombre || "Usuario"),
             fechaApertura: c.fecha_apertura ?? c.fechaApertura ?? c.created_at
           });
         }

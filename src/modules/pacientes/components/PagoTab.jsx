@@ -490,13 +490,25 @@ export default function PagoTab({ patient }) {
             if (activeCaja && method !== "Saldo a favor") {
                 const movData = {
                     caja_id: activeCaja.id,
+                    cajaId: activeCaja.id,
                     tenant_id: userProfile?.inquilino || "",
+                    inquilino: userProfile?.inquilino || "",
                     tipo: "ingreso",
                     concepto: concept || "Abono a tratamiento",
                     monto: paymentAmount,
+                    metodoPago: method,
                     metodo_pago: method,
+                    paciente_id: patient.id,
+                    pacienteId: patient.id,
+                    pacienteNombre: patientName,
+                    paciente_nombre: patientName,
+                    nro_consecutivo: nroConsecutivo,
+                    consecutivo: nroConsecutivo ? `RC-${String(nroConsecutivo).padStart(4, "0")}` : undefined,
                     referencia: reference || `Abono de ${patient.nombreCompleto || 'Paciente'}`,
                     usuario_id: userProfile?.uid || userProfile?.id || null,
+                    usuarioId: userProfile?.uid || userProfile?.id || null,
+                    usuarioNombre: userProfile?.nombreCompleto || userProfile?.nombre || "Usuario",
+                    fecha: new Date().toISOString(),
                     created_at: new Date().toISOString()
                 };
                 
