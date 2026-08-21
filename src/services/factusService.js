@@ -217,31 +217,34 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     }
 
     // Helper: is the range active and not expired?
+    // Helper: is the range active and not expired?
     const isUsable = (r) =>
       (r.is_active === true || r.is_active === 1 || r.is_active === "1") &&
       r.is_expired !== true && r.is_expired !== 1;
 
     // Priority 1: active, non-expired "Factura de Venta" range
-    const invoiceDocumentNames = ["factura de venta", "factura venta", "invoice"];
-    let selectedRange = ranges.find(
-      (r) => isUsable(r) && invoiceDocumentNames.includes((r.document || "").toLowerCase())
-    );
+    const isInvoiceDoc = (doc) => {
+      const d = (doc || "").toLowerCase();
+      return (d.includes("factura") || d.includes("invoice") || d.includes("venta")) &&
+             !d.includes("crédito") && !d.includes("credito") && !d.includes("débito") && !d.includes("debito");
+    };
+
+    let selectedRange = ranges.find((r) => isUsable(r) && isInvoiceDoc(r.document));
 
     // Priority 2: if a specific ID was saved and it matches a "Factura de Venta", use it
     if (!selectedRange && numberingRangeId) {
       const savedRange = ranges.find((r) => Number(r.id) === numberingRangeId && isUsable(r));
-      if (savedRange && invoiceDocumentNames.includes((savedRange.document || "").toLowerCase())) {
+      if (savedRange && isInvoiceDoc(savedRange.document)) {
         selectedRange = savedRange;
       }
     }
 
-    // Priority 3 (fallback): any active non-expired range — may still fail if wrong type
+    // Priority 3 (fallback): any active non-expired range
     if (!selectedRange) {
       selectedRange = ranges.find(isUsable) || ranges[0];
       if (selectedRange) {
         console.warn(
-          `⚠️ No "Factura de Venta" range found. Using fallback: "${selectedRange.document}" (ID ${selectedRange.id}). ` +
-          "Configure a 'Factura de Venta' range in Factus for reliable invoicing."
+          `⚠️ Usando rango: "${selectedRange.document}" (ID ${selectedRange.id}).`
         );
       }
     }
@@ -260,30 +263,34 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
       throw new Error("No hay un rango de numeración Factus configurado para producción.");
     }
     numberingRangeId = 8;
-    console.warn("Usando el rango 8 de sandbox; configura el rango Factus antes de pasar a producción.");
   }
 
   // ── Patient / customer data ──
-  const docNum = String(
+  let docNum = String(
     patientData.documento ||
       patientData.identificacion ||
       patientData.cedula ||
       "222222222222"
   ).replace(/\D/g, "");
+  if (!docNum || docNum.length < 3) docNum = "222222222222";
 
   const tipoDoc = getDocTypeCode(
     patientData.tipoDocumento || patientData.tipo_documento
   );
 
-  const email = patientData.email || patientData.correo || "correo@prueba.com";
-  const phone = String(
+  const rawEmail = String(patientData.email || patientData.correo || "").trim();
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : "facturacion@odontocloud.com";
+
+  let phone = String(
     patientData.telefono || patientData.celular || "3001234567"
   ).replace(/\D/g, "");
+  if (phone.length < 10) phone = phone.padEnd(10, "0");
+
   const address =
     patientData.direccion || patientData.address || "Dirección no registrada";
   const cityName =
-    patientData.ciudad || patientData.municipio || "Bogotá D.r.";
-  const municipalityCode = getMunicipalityCode(cityName) || "11001"; // default Bogotá if not found
+    patientData.ciudad || patientData.municipio || "Bogotá D.C.";
+  const municipalityCode = getMunicipalityCode(cityName) || "11001";
 
   const fullName = [patientData.nombre, patientData.apellido]
     .filter(Boolean)
@@ -291,25 +298,30 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     .trim() || "Cliente OdontoCloud";
 
   // ── Legal organization & tribute based on document type ──
-  // Factus V2 uses code strings directly (not _id)
-  // identification_document_code: "13"=CC, "31"=NIT, "22"=CE, "41"=PA, "12"=TI
   const isNIT = tipoDoc === "31";
-  // legal_organization_code: "2"=Persona Natural, "1"=Persona Jurídica
   const legalOrgCode = isNIT ? "1" : "2";
-  // tribute_code: "ZZ"=No aplica (Persona Natural), "O-13"=Gran Contribuyente (NIT)
   const tributeCode = isNIT ? "O-13" : "ZZ";
 
-  // Split name for Factus `names` field
-  const nameParts = fullName.trim().split(" ");
-  const firstName = nameParts.slice(0, Math.ceil(nameParts.length / 2)).join(" ") || fullName;
-  const lastName  = nameParts.slice(Math.ceil(nameParts.length / 2)).join(" ") || firstName;
+  // Split name for Factus `names` & `last_names`
+  const nameParts = fullName.trim().split(/\s+/);
+  const firstName = nameParts[0] || "Cliente";
+  const lastName  = nameParts.slice(1).join(" ") || firstName || "General";
 
   // ── Items ──
   const rawItems = invoiceData.items || [];
   const factusItems = rawItems.map((item, idx) => {
-    const qty = parseFloat(item.cantidad || item.quantity || 1);
-    const price = parseFloat(item.precioUnitario || item.precio || item.valor || 0);
-    const discountRate = parseFloat(item.descuento || item.discount || 0);
+    const qty = parseFloat(item.cantidad || item.quantity || 1) || 1;
+    const price = parseFloat(item.precioUnitario || item.precio || item.valor || 0) || 0;
+    
+    let discountRate = 0;
+    const rawDiscount = parseFloat(item.descuento || item.discount || 0) || 0;
+    if (rawDiscount > 0) {
+      if (rawDiscount <= 100 && !item.descuentoEnPesos) {
+        discountRate = rawDiscount;
+      } else if (price * qty > 0) {
+        discountRate = Math.min(100, Math.max(0, (rawDiscount / (price * qty)) * 100));
+      }
+    }
 
     return {
       code_reference: item.code || `SERV-${String(idx + 1).padStart(4, "0")}`,
@@ -317,7 +329,7 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
         item.descripcion || item.nombre || item.concepto || "Servicio Odontológico"
       ).slice(0, 100),
       quantity: qty,
-      discount_rate: discountRate,
+      discount_rate: Number(discountRate.toFixed(2)),
       price: price,
       unit_measure_code: "94",      // unidad
       standard_code: "0001",        // Estándar contribuyente
@@ -341,8 +353,6 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   }
 
   // ── Total: MUST equal sum of items for Factus validation ──
-  // invoiceData.total may be an abono/partial payment — do NOT use it for payment_details.amount.
-  // Factus requires: sum(payment_details.amount) == sum(item.price * item.quantity * (1 - discount/100))
   const itemsTotal = factusItems.reduce((sum, item) => {
     const lineTotal = item.price * item.quantity * (1 - (item.discount_rate || 0) / 100);
     return sum + lineTotal;
@@ -352,7 +362,6 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   // ── Payment ──
   const paymentForm = String(invoiceData.condicionPago || "1");
   const paymentMethodCode = String(invoiceData.medioPago || "10");
-
 
   const referenceCode =
     invoiceData.factusReferenceCode ||
@@ -374,7 +383,7 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
       identification_document_code: tipoDoc,
       identification: docNum,
       names: firstName,
-      ...(lastName && lastName !== firstName ? { last_names: lastName } : {}),
+      ...(legalOrgCode === "2" ? { last_names: lastName } : {}),
       ...(isNIT ? { company: fullName, trade_name: fullName } : {}),
       address: address,
       email: email,

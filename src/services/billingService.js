@@ -128,16 +128,17 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             pagado: 0
         }));
 
-        const facturaIds = facturas.map(f => f.id).filter(Boolean);
+        const isValidUUID = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id || ''));
+        const facturaIds = facturas.map(f => f.id).filter(isValidUUID);
         let notasDebito = [];
 
         if (facturaIds.length > 0) {
             try {
-                const { data } = await supabase
+                const { data, error: ndErr } = await supabase
                     .from("notas_debito")
                     .select("id, factura_id, monto, estado, referencia, notas")
                     .in("factura_id", facturaIds);
-                if (data) notasDebito = data;
+                if (!ndErr && data) notasDebito = data;
             } catch (e) {}
         }
 

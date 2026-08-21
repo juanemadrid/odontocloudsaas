@@ -22,13 +22,16 @@ const json = (body: unknown, status = 200) =>
   });
 
 const factusError = (data: any, status: number) => {
-  if (data?.errors && typeof data.errors === "object") {
-    return Object.entries(data.errors)
-      .map(([field, messages]) =>
-        field + ": " + (Array.isArray(messages) ? messages.join(", ") : String(messages))
-      )
+  const errs = data?.data?.errors || data?.errors || data?.data?.error || data?.error;
+  if (errs && typeof errs === "object") {
+    return Object.entries(errs)
+      .map(([field, messages]) => {
+        const msg = Array.isArray(messages) ? messages.join(", ") : String(messages);
+        return `${field}: ${msg}`;
+      })
       .join(" | ");
   }
+  if (typeof data?.data === "string") return data.data;
   return data?.message || data?.error_description || "Error Factus HTTP " + status;
 };
 
