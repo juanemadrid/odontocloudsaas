@@ -144,34 +144,26 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         }
       } catch (e) {}
 
+      const egresoLabel = nroConsecutivo ? `[EGR-${String(nroConsecutivo).padStart(4, "0")}] ` : "";
       const movData = {
         tenant_id: inquilino,
-        inquilino,
         caja_id: caja.id,
-        cajaId: caja.id,
         tipo,
-        nro_consecutivo: nroConsecutivo,
-        consecutivo: nroConsecutivo ? `${tipo === "egreso" ? "EGR" : "RC"}-${String(nroConsecutivo).padStart(4, "0")}` : undefined,
-        concepto: form.concepto,
+        concepto: `${egresoLabel}${form.concepto}`,
         monto: montoNum,
-        metodoPago: form.metodoPago,
-        descripcion: form.descripcion.trim(),
-        // Paciente
-        paciente_id: selectedPatient?.id || "",
-        pacienteId: selectedPatient?.id || "",
-        pacienteNombre: selectedPatient?.nombre || "",
-        pacienteCedula: selectedPatient?.cedula || "",
-        // Factura vinculada
-        facturaId: selectedFactura?.id || "",
-        facturaNum: selectedFactura?.numero || selectedFactura?.numeroFactura || "",
-        // Usuario
-        usuarioId: userProfile?.uid || "",
-        usuarioNombre: userProfile?.nombre || userProfile?.email || "Usuario",
+        metodo_pago: form.metodoPago || "Efectivo",
+        descripcion: form.descripcion ? form.descripcion.trim() : null,
+        paciente_id: selectedPatient?.id || null,
+        paciente_nombre: selectedPatient?.nombre || null,
+        recibo_id: selectedFactura?.id || null,
+        usuario_id: userProfile?.uid || userProfile?.id || null,
+        usuario_nombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Usuario",
         fecha: new Date().toISOString(),
         created_at: new Date().toISOString()
       };
 
-      await supabase.from("movimientos_caja").insert([movData]);
+      const { error: insertErr } = await supabase.from("movimientos_caja").insert([movData]);
+      if (insertErr) throw insertErr;
 
       // Incrementar consecutivo en configuración
       if (consDoc && nroConsecutivo) {
@@ -187,9 +179,9 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
 
       // 2. Actualizar saldo en caja
       const delta = tipo === "ingreso" ? montoNum : -montoNum;
-      const newSaldo = (caja.saldoActual || 0) + delta;
-      const newIngresos = (caja.totalIngresos || 0) + (tipo === "ingreso" ? montoNum : 0);
-      const newEgresos = (caja.totalEgresos || 0) + (tipo === "egreso" ? montoNum : 0);
+      const newSaldo = (Number(caja.saldoActual) || 0) + delta;
+      const newIngresos = (Number(caja.totalIngresos) || 0) + (tipo === "ingreso" ? montoNum : 0);
+      const newEgresos = (Number(caja.totalEgresos) || 0) + (tipo === "egreso" ? montoNum : 0);
 
       try {
         await supabase.from("cajas").update({

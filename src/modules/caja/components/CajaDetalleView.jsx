@@ -74,11 +74,14 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
       const parsed = (data || []).map(m => {
         const pId = m.paciente_id || m.pacienteId;
-        const pName = m.pacienteNombre || m.patientNombre || m.paciente_nombre || patientMap[pId] || m.tercero || m.usuarioNombre || "—";
+        const pName = m.paciente_nombre || m.pacienteNombre || m.patientNombre || patientMap[pId] || m.tercero || m.usuario_nombre || m.usuarioNombre || "—";
         const fechaVal = m.fecha || m.created_at || m.fechaISO || m.fecha_apertura;
+        const metodoPago = m.metodo_pago || m.metodoPago || "Efectivo";
         return {
           ...m,
           fecha: fechaVal,
+          metodoPago,
+          metodo_pago: metodoPago,
           pacienteNombre: pName,
           tercero: pName
         };
