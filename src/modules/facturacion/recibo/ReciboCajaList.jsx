@@ -564,7 +564,7 @@ export default function ReciboCajaList({ onNew }) {
                         isPago: true
                     };
                 })
-                .filter(p => p.concepto !== "SALDO A FAVOR");
+                .filter(p => p.condicionPago !== "Consumo s. a favor" && (p.condicionPago || "").toLowerCase() !== "saldo a favor");
 
             // Combine and filter by date range client-side
             let data = [...recibosMapped, ...dataPagos];

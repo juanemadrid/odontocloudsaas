@@ -110,14 +110,42 @@ export default function HistoricoPagosTab({ patientId }) {
                     });
                 }
 
-                let data = (list || []).map(d => ({
-                    id: d.id,
-                    ...d,
-                    fechaISO: d.created_at || d.fecha || d.fechaISO,
-                    monto: Number(d.monto || d.total || d.valor || 0)
-                }));
+                let data = (list || []).map(d => {
+                    let notasParsed = {};
+                    if (d.notas && typeof d.notas === "string" && d.notas.trim().startsWith("{")) {
+                        try {
+                            notasParsed = JSON.parse(d.notas);
+                        } catch (_) {}
+                    }
+                    
+                    let concepto = d.concepto || notasParsed.concepto || "";
+                    if (!concepto) {
+                        const ref = (d.referencia || "").toUpperCase();
+                        const not = (d.notas || "").toUpperCase();
+                        if (ref.includes("SALDO A FAVOR") || not.includes("SALDO A FAVOR")) {
+                            concepto = "SALDO A FAVOR";
+                        } else {
+                            concepto = "ABONO GENERAL";
+                        }
+                    }
 
-                data = data.filter(p => p.concepto !== "SALDO A FAVOR");
+                    return {
+                        id: d.id,
+                        ...d,
+                        fechaISO: d.created_at || d.fecha || d.fechaISO,
+                        monto: Number(d.monto || d.total || d.valor || 0),
+                        concepto: concepto,
+                        registradoPor: notasParsed.registradoPor || notasParsed.usuarioNombre || d.registradoPor || d.registrado_por || d.usuario || d.profesional || "",
+                        referencia: notasParsed.referencia || d.referencia || ""
+                    };
+                });
+
+                // Incluir abonos a saldo a favor; excluir exclusivamente consumos/usos de saldo a favor
+                data = data.filter(p => {
+                    const medio = (p.metodo || p.medio || p.metodo_pago || "").toLowerCase();
+                    const isConsumo = medio === "saldo a favor" || medio.includes("saldo a favor");
+                    return !isConsumo;
+                });
                 setPagos(data);
             } catch (err) {
                 console.error("Error fetching payments:", err);
