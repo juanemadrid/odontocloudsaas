@@ -361,6 +361,60 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
         );
     };
 
+    // Obtiene la fecha de finalización del plan (basada en el plan o en la última evolución/ítem realizado)
+    const getPlanFinalizationDate = (plan) => {
+        const explicitDate = plan.fechaFinalizacion || plan.fecha_finalizacion || plan.fechaFinalizado || plan.fecha_fin || plan.completed_at;
+        if (explicitDate) {
+            try {
+                const d = new Date(explicitDate);
+                if (!isNaN(d.getTime())) return d.toLocaleDateString();
+            } catch {}
+        }
+
+        const items = plan.items || [];
+        const planEvolutions = evolutions.filter(e => e.planId === plan.id);
+
+        const itemDates = [];
+        for (const item of items) {
+            let itemDate = null;
+            if (item.realizado && (item.fechaRealizado || item.fecha_realizado || item.fechaFinalizado)) {
+                itemDate = new Date(item.fechaRealizado || item.fecha_realizado || item.fechaFinalizado);
+            } else {
+                const evo = planEvolutions.find(e =>
+                    e.plantillaItems?.[item.id]?.realizado === true ||
+                    (e.plantillaItems?.[item.id]?.realizado === undefined && e.plantillaItems?.[item.id]?.checked === true)
+                );
+                if (evo && (evo.date || evo.created_at || evo.fecha)) {
+                    itemDate = new Date(evo.date || evo.created_at || evo.fecha);
+                }
+            }
+
+            if (itemDate && !isNaN(itemDate.getTime())) {
+                itemDates.push(itemDate);
+            }
+        }
+
+        if (itemDates.length > 0) {
+            const maxDate = new Date(Math.max(...itemDates.map(d => d.getTime())));
+            return maxDate.toLocaleDateString();
+        }
+
+        if (planEvolutions.length > 0) {
+            const latestEvo = planEvolutions.reduce((latest, curr) => {
+                const d1 = new Date(curr.date || curr.created_at || curr.fecha || 0).getTime();
+                const d2 = new Date(latest.date || latest.created_at || latest.fecha || 0).getTime();
+                return d1 > d2 ? curr : latest;
+            }, planEvolutions[0]);
+
+            if (latestEvo) {
+                const d = new Date(latestEvo.date || latestEvo.created_at || latestEvo.fecha);
+                if (!isNaN(d.getTime())) return d.toLocaleDateString();
+            }
+        }
+
+        return null;
+    };
+
     if (loading) return <div className="p-10 text-center text-slate-400 font-bold animate-pulse">Cargando registros...</div>;
 
     return (
@@ -511,7 +565,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                     <td className="px-3 py-3.5 text-slate-500">{p.profesional || p.profesionalId || currentUserFullName || "No Asignado"}</td>
                                     <td className="px-3 py-3.5 text-center text-slate-500">{createdAt.toLocaleDateString()}</td>
                                     <td className="px-3 py-3.5 text-center text-slate-500">
-                                        {p.fechaFinalizacion ? new Date(p.fechaFinalizacion).toLocaleDateString() : '--'}
+                                        {getPlanFinalizationDate(p) || '--'}
                                     </td>
                                     <td className="px-3 py-3.5 text-center">
                                         {planStatus === 'paid' ? (
