@@ -453,11 +453,11 @@ export default function ReciboCajaList({ onNew }) {
             try {
                 const { data: pacsData } = await supabase
                     .from("pacientes")
-                    .select("id, nombres, apellidos, nombre, apellido, nombre_completo, nombreCompleto")
+                    .select("*")
                     .eq("tenant_id", inquilino);
                 
                 (pacsData || []).forEach(p => {
-                    const full = p.nombreCompleto || p.nombre_completo || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim();
+                    const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || p.nombre_completo || p.documento || "Paciente";
                     if (p.id && full) {
                         patientMap[p.id] = full;
                     }
@@ -470,7 +470,7 @@ export default function ReciboCajaList({ onNew }) {
                     .eq("tenant_id", inquilino)
                     .maybeSingle();
                 (cfgRow?.config?.pacientes || []).forEach(p => {
-                    const full = p.nombreCompleto || p.nombre_completo || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim();
+                    const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || p.nombre_completo || "";
                     if (p.id && full && !patientMap[p.id]) {
                         patientMap[p.id] = full;
                     }
@@ -538,16 +538,20 @@ export default function ReciboCajaList({ onNew }) {
                         metadata = pData.notas;
                     }
 
-                    const medioRaw = pData.medio || metadata.medio || "Abono";
+                    const medioRaw = pData.metodo || pData.medio || metadata.metodo || metadata.medio || "Efectivo";
                     const condicionPago = medioRaw.toLowerCase() === "saldo a favor" ? "Consumo s. a favor" : medioRaw;
                     const pId = pData.paciente_id || pData.pacienteId || metadata.paciente_id || metadata.pacienteId || pData.patient_id || pData.paciente;
-                    const pName = pData.patientNombre || pData.pacienteNombre || metadata.patientNombre || metadata.pacienteNombre || pData.paciente_nombre || pData.nombrePaciente || patientMap[pId] || "—";
+                    const pName = pData.patientNombre || pData.pacienteNombre || metadata.patientNombre || metadata.pacienteNombre || pData.paciente_nombre || pData.nombrePaciente || patientMap[pId] || "Paciente";
                     
                     const rawConsecutivo = pData.nroConsecutivo || pData.nro_consecutivo || metadata.nroConsecutivo || metadata.nro_consecutivo || pData.consecutivo || "";
                     const nroConsecutivo = rawConsecutivo ? String(rawConsecutivo).padStart(4, '0') : "";
 
+                    const planLabel = metadata.planTitle ? ` (${metadata.planTitle})` : "";
                     const rawConcepto = pData.concepto || metadata.concepto || pData.referencia || metadata.referencia || "Abono a tratamiento";
-                    const concepto = (typeof rawConcepto === "string" && !rawConcepto.trim().startsWith("{")) ? rawConcepto : (metadata.concepto || metadata.planTitle || "Abono a tratamiento");
+                    let concepto = (typeof rawConcepto === "string" && !rawConcepto.trim().startsWith("{")) ? rawConcepto : (metadata.concepto || "Abono a tratamiento");
+                    if (planLabel && !concepto.includes(metadata.planTitle)) {
+                        concepto += planLabel;
+                    }
 
                     return {
                         id: pData.id,

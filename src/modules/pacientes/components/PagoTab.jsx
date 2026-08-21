@@ -412,6 +412,7 @@ export default function PagoTab({ patient }) {
             }
 
             // Build schema-compliant payload for pagos table
+            const patientName = patient.nombreCompleto || `${patient.nombres || patient.nombre || ""} ${patient.apellidos || patient.apellido || ""}`.trim() || "Paciente";
             const metadataNotas = {
                 concepto: concept || "ABONO A TRATAMIENTO",
                 profesional: profesional || "",
@@ -420,6 +421,8 @@ export default function PagoTab({ patient }) {
                 planTitle: selectedPlan?.title || selectedPlan?.nombre || "",
                 itemPayments: itemPayments,
                 nroConsecutivo: nroConsecutivo,
+                pacienteNombre: patientName,
+                patientNombre: patientName,
                 registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || "Sistema",
                 cajaId: activeCaja ? activeCaja.id : null,
                 observaciones: notes || ""
