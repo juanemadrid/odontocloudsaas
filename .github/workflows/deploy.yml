@@ -34,11 +34,26 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Validate and build
+      - name: Security check
+        run: npm run security:check
+
+      - name: Agenda availability tests
+        run: npm run test:agenda
+
+      - name: Config integration tests
+        run: npm run test:config
+
+      - name: Odontograma tests
+        run: npm run test:odontograma
+
+      - name: Production readiness tests
+        run: npm run test:production
+
+      - name: Build project
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://jhdflchyhkwpedtbkusp.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_G87lxtV9IRKBUA71AFGzmA_8c5qz8wB' }}
-        run: npm run test:ci
+        run: npm run build
 
       - name: Prepare SPA fallback & NoJekyll
         run: |

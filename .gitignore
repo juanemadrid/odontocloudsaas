@@ -12,5 +12,8 @@ taxi_sabana
 *.log
 .codex-agenda-preview-1.patch
 scripts/*.mjs
+!scripts/security-check.mjs
+!scripts/test-agenda-availability.mjs
 !scripts/test-config-integration.mjs
+!scripts/test-odontograma.mjs
 !scripts/test-production-readiness.mjs
