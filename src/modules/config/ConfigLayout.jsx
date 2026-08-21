@@ -28,6 +28,7 @@ const MENU_ITEMS = [
     { label: "Parámetros", slug: "parametros", icon: FiSliders },
     { label: "Recursos físicos", slug: "recursos-fisicos", icon: FiMonitor },
     { label: "Plantillas Doc. Clínicos", slug: "plantillas-clinicas", icon: FiClipboard },
+    { label: "Pestañas de Consulta", slug: "pestanas-consulta", icon: FiLayout },
     { label: "Cargas", slug: "cargas", icon: FiUploadCloud },
     { label: "Impuestos", slug: "impuestos", icon: FiPercent },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiBook },
