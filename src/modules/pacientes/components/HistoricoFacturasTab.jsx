@@ -516,7 +516,7 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
                                 const branchName = tenant?.nombreComercial || 'Sede Principal';
 
                                 return (
-                                    <tr key={fact.id} className={`border-b border-slate-50 hover:bg-indigo-50/20 transition-colors group ${idx%2===0?'bg-white':'bg-slate-50/20'}`}>
+                                    <tr key={fact.id} className={`border-b border-slate-50 hover:bg-indigo-50/20 transition-colors group ${idx%2===0?'bg-white':'bg-slate-50/20'} ${openMenu===fact.id ? 'relative z-30' : ''}`}>
                                         <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">{fmtDate(dateVal)}</td>
                                         <td className="px-2.5 py-2.5 whitespace-nowrap"><span className="font-semibold text-slate-700 text-xs">#{invoiceNro}</span></td>
                                         <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">
@@ -537,21 +537,21 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
                                                 {userEmail}
                                             </div>
                                         </td>
-                                        <td className="px-2.5 py-2.5 whitespace-nowrap text-center sticky right-0 bg-white group-hover:bg-[#f5f6ff] transition-colors z-10 shadow-[-4px_0_8px_rgba(0,0,0,0.03)]">
+                                        <td className={`px-2.5 py-2.5 whitespace-nowrap text-center sticky right-0 bg-white group-hover:bg-[#f5f6ff] transition-colors shadow-[-4px_0_8px_rgba(0,0,0,0.03)] ${openMenu===fact.id ? 'z-40' : 'z-10'}`}>
                                             <div className="relative inline-block" ref={openMenu===fact.id?menuRef:null}>
                                                 <button onClick={() => setOpenMenu(openMenu===fact.id?null:fact.id)}
                                                     className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors mx-auto">
                                                     <FiMoreHorizontal size={16} />
                                                 </button>
                                                 {openMenu===fact.id && (
-                                                    <div className="absolute right-0 top-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl z-50 py-1 min-w-[172px] text-left">
+                                                    <div className={`absolute right-0 ${idx >= filtered.length - 2 && filtered.length > 2 ? 'bottom-full mb-1' : 'top-full mt-1'} bg-white border border-slate-200 rounded-xl shadow-2xl z-50 py-1.5 min-w-[175px] text-left`}>
                                                         <button onClick={() => { setSelected(fact); setOpenMenu(null); }}
-                                                            className="flex items-center gap-2.5 w-full px-4 py-2 text-xs font-semibold text-[#8CC63F] hover:bg-green-50 transition-colors">
+                                                            className="flex items-center gap-2.5 w-full px-4 py-2 text-xs font-semibold text-[#8CC63F] hover:bg-green-50 transition-colors whitespace-nowrap">
                                                             <FiInfo size={13}/> Información
                                                         </button>
-                                                        <div className="border-t border-slate-50 my-1" />
+                                                        <div className="border-t border-slate-100 my-1" />
                                                         <button onClick={() => { printInvoice(fact, patient, tenant); setOpenMenu(null); }}
-                                                            className="flex items-center gap-2.5 w-full px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                                                            className="flex items-center gap-2.5 w-full px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors whitespace-nowrap">
                                                             <FiPrinter size={13}/> Imprimir
                                                         </button>
                                                         <button onClick={() => {
@@ -560,18 +560,18 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
                                                             toast.info(`Enviando factura a ${email}…`);
                                                             setOpenMenu(null);
                                                         }}
-                                                            className="flex items-center gap-2.5 w-full px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                                                            className="flex items-center gap-2.5 w-full px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors whitespace-nowrap">
                                                             <FiMail size={13}/> Enviar correo
                                                         </button>
                                                         {isEmit && fact.factusPdfUrl && (
                                                             <a href={fact.factusPdfUrl} target="_blank" rel="noopener noreferrer" onClick={() => setOpenMenu(null)}
-                                                                className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                                                                className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors whitespace-nowrap">
                                                                 <FiDownload size={13}/> Descargar PDF
                                                             </a>
                                                         )}
                                                         {isEmit && fact.factusCufe && (
                                                             <button onClick={() => { navigator.clipboard.writeText(fact.factusCufe); toast.success('CUFE copiado'); setOpenMenu(null); }}
-                                                                className="flex items-center gap-2.5 w-full px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                                                                className="flex items-center gap-2.5 w-full px-4 py-2 text-xs text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors whitespace-nowrap">
                                                                 <FiCopy size={13}/> Copiar CUFE
                                                             </button>
                                                         )}
