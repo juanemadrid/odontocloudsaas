@@ -97,6 +97,18 @@ export default function AppointmentModal({
     const [dropdownStyle, setDropdownStyle] = useState({});
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
+    const isLocked = useMemo(() => {
+        if (!initialData?.id) return false;
+        const rawDate = initialData.fecha || initialData.start || initialData.fecha_inicio;
+        if (!rawDate) return false;
+        const d = new Date(rawDate);
+        if (isNaN(d.getTime())) return false;
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        oneMonthAgo.setHours(0, 0, 0, 0);
+        return d < oneMonthAgo;
+    }, [initialData]);
+
     const { control, register, handleSubmit, setValue, setError, clearErrors, watch, reset, formState: { errors, isSubmitting, isDirty } } = useForm({
         resolver: zodResolver(appointmentSchema),
         defaultValues: {
@@ -549,6 +561,22 @@ export default function AppointmentModal({
                         <span className="text-xl leading-none">×</span>
                     </button>
                 </div>
+
+                {isLocked && (
+                    <div className="bg-rose-50 border-b border-rose-200 px-8 py-3.5 flex items-center justify-between gap-4 shrink-0">
+                        <div className="flex items-center gap-3">
+                            <span className="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center text-xs shadow-md">
+                                <FiAlertCircle size={14} />
+                            </span>
+                            <div className="flex flex-col">
+                                <span className="text-rose-800 text-[11px] font-black uppercase tracking-wider">Cita Histórica Cerrada (+1 Mes)</span>
+                                <span className="text-rose-600 text-[10px] font-bold uppercase tracking-widest mt-0.5">
+                                    Esta cita ocurrió hace más de un mes y se encuentra protegida contra modificaciones, reprogramación o eliminación.
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {initialData?.registroCompleto === false && (
                     <div className="bg-amber-50 border-b border-amber-200 px-8 py-3.5 flex items-center justify-between gap-4 animate-pulse shrink-0">
@@ -1111,7 +1139,7 @@ export default function AppointmentModal({
                         <>
                             {initialData?.id ? (
                                 <div className="flex items-center gap-4">
-                                    {can("Agenda", "Agenda", "eliminar") && (
+                                    {can("Agenda", "Agenda", "eliminar") && !isLocked && (
                                         <button
                                             type="button"
                                             onClick={() => setIsConfirmingDelete(true)}
@@ -1142,14 +1170,18 @@ export default function AppointmentModal({
                                 {hasWritePermission && (
                                     <button
                                         type="submit"
-                                        disabled={isSubmitting}
+                                        disabled={isSubmitting || isLocked}
                                         onClick={handleSubmit(onValidSubmit, onInvalidSubmit)}
-                                        className="px-16 py-4 rounded-2xl bg-emerald-600 text-white font-extrabold text-[12px] uppercase tracking-[0.2em] hover:bg-emerald-700 shadow-2xl shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 min-w-[240px] flex items-center justify-center gap-3"
+                                        className={`px-16 py-4 rounded-2xl font-extrabold text-[12px] uppercase tracking-[0.2em] transition-all active:scale-95 min-w-[240px] flex items-center justify-center gap-3 ${
+                                            isLocked 
+                                                ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none' 
+                                                : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xl shadow-emerald-500/30'
+                                        }`}
                                     >
                                         {isSubmitting ? (
                                             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                         ) : null}
-                                        <span>{isSubmitting ? "GUARDANDO..." : "CONFIRMAR REGISTRO"}</span>
+                                        <span>{isSubmitting ? "GUARDANDO..." : isLocked ? "CITA CERRADA (+1 MES)" : "CONFIRMAR REGISTRO"}</span>
                                     </button>
                                 )}
                             </div>

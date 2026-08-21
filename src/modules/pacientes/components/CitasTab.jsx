@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { 
     FiCalendar, FiClock, FiUser, FiMapPin, FiPlus, FiSearch, FiPrinter, 
-    FiDownload, FiEdit2, FiTrash2, FiMessageCircle, FiCheck, FiX, FiAlertCircle
+    FiDownload, FiEdit2, FiTrash2, FiMessageCircle, FiCheck, FiX, FiAlertCircle, FiLock
 } from "react-icons/fi";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
@@ -11,7 +11,7 @@ import { useAgenda } from "../../agenda/hooks/useAgenda";
 import supabase from "../../../lib/supabaseClient";
 import * as XLSX from "xlsx";
 import AppointmentModal from "../../agenda/components/AppointmentModal";
-import { openWhatsAppWebDirect } from "../../../services/WhatsAppService";
+import { openWhatsAppWebDirect, getActiveClinicName } from "../../../services/WhatsAppService";
 
 export const normalizeStatus = (status) => {
     if (!status) return "programada";
@@ -23,6 +23,23 @@ export const normalizeStatus = (status) => {
     if (s.includes("no_asist") || s.includes("no_show") || s.includes("inasist")) return "no_asistio";
     if (s.includes("prog") || s.includes("pend") || s.includes("sin_confirm")) return "programada";
     return s;
+};
+
+/**
+ * Determina si una cita tiene más de 1 mes de antigüedad (cerrada / no modificable)
+ */
+export const isAppointmentLocked = (apt) => {
+    if (!apt) return false;
+    const rawDate = apt.fecha_inicio || apt.start || apt.fecha;
+    if (!rawDate) return false;
+    const aptDate = new Date(rawDate);
+    if (isNaN(aptDate.getTime())) return false;
+
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    oneMonthAgo.setHours(0, 0, 0, 0);
+
+    return aptDate < oneMonthAgo;
 };
 
 const STATUS_COLORS = {
@@ -231,10 +248,14 @@ export default function CitasTab({ patient }) {
     }, [appointments, searchTerm, doctors, chairs, branches]);
 
     // Update appointment status directly
-    const handleStatusChange = async (aptId, newStatus) => {
+    const handleStatusChange = async (apt, newStatus) => {
+        if (isAppointmentLocked(apt)) {
+            toast?.warning ? toast.warning("Esta cita tiene más de 1 mes de antigüedad y se encuentra cerrada.") : alert("Cita cerrada: no se puede cambiar el estado.");
+            return;
+        }
         try {
-            await updateAppointment(aptId, { status: newStatus, estado: newStatus });
-            setAppointments(prev => prev.map(a => a.id === aptId ? { ...a, estado: newStatus } : a));
+            await updateAppointment(apt.id, { status: newStatus, estado: newStatus });
+            setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, estado: newStatus } : a));
             toast?.success ? toast.success("Estado de cita actualizado") : alert("Estado de cita actualizado");
         } catch (err) {
             console.error("Error updating status:", err);
@@ -243,11 +264,15 @@ export default function CitasTab({ patient }) {
     };
 
     // Delete appointment
-    const handleDeleteApt = async (aptId) => {
+    const handleDeleteApt = async (apt) => {
+        if (isAppointmentLocked(apt)) {
+            toast?.error ? toast.error("No es posible eliminar citas con más de 1 mes de antigüedad.") : alert("No se puede eliminar una cita cerrada.");
+            return;
+        }
         if (!window.confirm("¿Seguro que deseas eliminar esta cita del historial?")) return;
         try {
-            await deleteAppointment(aptId);
-            setAppointments(prev => prev.filter(a => a.id !== aptId));
+            await deleteAppointment(apt.id);
+            setAppointments(prev => prev.filter(a => a.id !== apt.id));
             if (toast?.success) toast.success("Cita eliminada correctamente");
         } catch (err) {
             console.error("Error deleting appointment:", err);
@@ -326,6 +351,11 @@ export default function CitasTab({ patient }) {
 
     // Open edit appointment modal
     const handleOpenEdit = (apt) => {
+        if (isAppointmentLocked(apt)) {
+            toast?.warning ? toast.warning("No se puede editar ni reprogramar una cita con más de 1 mes de antigüedad.") : alert("Cita cerrada: más de 1 mes.");
+            return;
+        }
+
         const start = new Date(apt.fecha_inicio || apt.start);
         const end = new Date(apt.fecha_fin || apt.end);
         const durationMinutes = Math.max(15, Math.round((end - start) / (1000 * 60)));
@@ -394,7 +424,7 @@ export default function CitasTab({ patient }) {
                             </span>
                         </div>
                         <p className="text-xs font-medium text-slate-500">
-                            Historial completo de turnos (programadas, confirmadas, atendidas y canceladas)
+                            Historial de turnos del paciente (límite de edición hasta 1 mes de antigüedad)
                         </p>
                     </div>
                 </div>
@@ -443,19 +473,19 @@ export default function CitasTab({ patient }) {
                 </div>
             </div>
 
-            {/* Table of Appointments */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+            {/* Table of Appointments with Scroll Limit (approx. 6-7 rows max-h) */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="overflow-x-auto max-h-[460px] overflow-y-auto custom-scrollbar">
                     <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                        <thead className="sticky top-0 z-20 bg-slate-100 shadow-xs">
+                            <tr className="border-b border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-widest">
                                 <th className="py-3 px-4 w-40">Fecha / Hora</th>
                                 <th className="py-3 px-4">Profesional</th>
                                 <th className="py-3 px-4 w-44">Espacio Físico</th>
                                 <th className="py-3 px-4 w-48">Sucursal</th>
                                 <th className="py-3 px-4">Comentario / Motivo</th>
                                 <th className="py-3 px-4 w-36 text-center">Estado</th>
-                                <th className="py-3 px-4 w-24 text-right">Acciones</th>
+                                <th className="py-3 px-4 w-28 text-right">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
@@ -517,13 +547,15 @@ export default function CitasTab({ patient }) {
 
                                     const normStatus = normalizeStatus(apt.estado);
                                     const statusStyle = STATUS_COLORS[normStatus] || "bg-slate-100 text-slate-600 border-slate-200";
+                                    const isLocked = isAppointmentLocked(apt);
 
                                     return (
-                                        <tr key={apt.id} className="hover:bg-slate-50/60 transition-colors">
+                                        <tr key={apt.id} className={`hover:bg-slate-50/60 transition-colors ${isLocked ? 'bg-slate-50/40 opacity-90' : ''}`}>
                                             {/* Fecha / Hora */}
                                             <td className="py-3 px-4 font-mono">
-                                                <div className="font-black text-slate-800 text-xs">
-                                                    {dateFormatted}
+                                                <div className="flex items-center gap-1.5 font-black text-slate-800 text-xs">
+                                                    {isLocked && <FiLock className="text-amber-500 shrink-0" size={11} title="Cita cerrada (+1 mes de antigüedad)" />}
+                                                    <span>{dateFormatted}</span>
                                                 </div>
                                                 <div className="text-[11px] font-bold text-slate-400 mt-0.5">
                                                     {startTime}
@@ -566,8 +598,12 @@ export default function CitasTab({ patient }) {
                                             <td className="py-3 px-4 text-center">
                                                 <select
                                                     value={normStatus}
-                                                    onChange={(e) => handleStatusChange(apt.id, e.target.value)}
-                                                    className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border cursor-pointer outline-none transition-all ${statusStyle}`}
+                                                    disabled={isLocked}
+                                                    onChange={(e) => handleStatusChange(apt, e.target.value)}
+                                                    className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border outline-none transition-all ${
+                                                        isLocked ? 'cursor-not-allowed opacity-75 border-slate-300 bg-slate-100 text-slate-600' : 'cursor-pointer ' + statusStyle
+                                                    }`}
+                                                    title={isLocked ? "Cita de más de 1 mes de antigüedad (Cerrada)" : "Cambiar estado"}
                                                 >
                                                     {STATUS_OPTIONS.map(opt => (
                                                         <option key={opt.value} value={opt.value} className="bg-white text-slate-800 normal-case font-bold">
@@ -579,7 +615,7 @@ export default function CitasTab({ patient }) {
 
                                             {/* Acciones */}
                                             <td className="py-3 px-4 text-right">
-                                                <div className="flex items-center justify-end gap-1">
+                                                <div className="flex items-center justify-end gap-1.5">
                                                     {/* WhatsApp reminder */}
                                                     {(patient?.telefono || patient?.celular || apt.celular || apt.telefono) ? (
                                                         <button
@@ -601,18 +637,30 @@ export default function CitasTab({ patient }) {
                                                         </button>
                                                     ) : null}
 
+                                                    {/* Editar Cita */}
                                                     <button
                                                         onClick={() => handleOpenEdit(apt)}
-                                                        className="w-8 h-8 rounded-xl bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 flex items-center justify-center transition-all shadow-xs cursor-pointer border-0"
-                                                        title="Editar cita"
+                                                        disabled={isLocked}
+                                                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shadow-xs border-0 ${
+                                                            isLocked 
+                                                                ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-50' 
+                                                                : 'bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 cursor-pointer'
+                                                        }`}
+                                                        title={isLocked ? "Cita cerrada: No se puede editar (+1 mes de antigüedad)" : "Editar cita"}
                                                     >
                                                         <FiEdit2 size={14} />
                                                     </button>
 
+                                                    {/* Eliminar Cita */}
                                                     <button
-                                                        onClick={() => handleDeleteApt(apt.id)}
-                                                        className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-600 flex items-center justify-center transition-all shadow-xs cursor-pointer border-0"
-                                                        title="Eliminar cita"
+                                                        onClick={() => handleDeleteApt(apt)}
+                                                        disabled={isLocked}
+                                                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shadow-xs border-0 ${
+                                                            isLocked 
+                                                                ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-50' 
+                                                                : 'bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-600 cursor-pointer'
+                                                        }`}
+                                                        title={isLocked ? "Cita cerrada: No se puede eliminar (+1 mes de antigüedad)" : "Eliminar cita"}
                                                     >
                                                         <FiTrash2 size={14} />
                                                     </button>
@@ -625,6 +673,14 @@ export default function CitasTab({ patient }) {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Counter Footer in Card */}
+                {filteredAppointments.length > 0 && (
+                    <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-bold px-4">
+                        <span>Total Citas: {filteredAppointments.length}</span>
+                        <span className="text-[11px] text-slate-400">Las citas con candado tienen más de 1 mes y están protegidas contra cambios</span>
+                    </div>
+                )}
             </div>
 
             {/* Modal for creating / editing appointment (identical to Agenda modal) */}
@@ -644,7 +700,7 @@ export default function CitasTab({ patient }) {
                     priceList={priceList}
                     onSave={handleSaveApt}
                     onDelete={(id) => {
-                        handleDeleteApt(id);
+                        handleDeleteApt({ id, ...editingApt });
                         setModalOpen(false);
                     }}
                 />

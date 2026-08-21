@@ -209,17 +209,35 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                     <span className={`text-slate-600 font-bold italic block uppercase transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[100px]' : 'text-[12px] truncate max-w-[200px]'}`} title={apt.comentario}>{apt.comentario || "-"}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
-                                                    <div className={`flex justify-center transition-all ${sidebarVisible ? 'scale-90' : 'scale-110'} origin-center no-print`}>
-                                                        <StatusSelector
-                                                            currentStatus={apt.status}
-                                                            onChange={(newStatus) => onUpdateStatus?.(apt.id, newStatus)}
-                                                        />
-                                                    </div>
-                                                    <div className={`print-only text-center uppercase font-black text-[9px] px-2 py-1 rounded-md border ${
-                                                        APPOINTMENT_STATUSES.find(s => s.id === apt.status)?.color || 'bg-slate-50 text-slate-500 border-slate-100'
-                                                    }`}>
-                                                        {APPOINTMENT_STATUSES.find(s => s.id === apt.status)?.label || apt.status}
-                                                    </div>
+                                                    {(() => {
+                                                        const isLocked = (() => {
+                                                            const rawDate = apt.start || apt.fecha || apt.fecha_inicio;
+                                                            if (!rawDate) return false;
+                                                            const d = new Date(rawDate);
+                                                            if (isNaN(d.getTime())) return false;
+                                                            const oneMonthAgo = new Date();
+                                                            oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+                                                            oneMonthAgo.setHours(0, 0, 0, 0);
+                                                            return d < oneMonthAgo;
+                                                        })();
+
+                                                        return (
+                                                            <>
+                                                                <div className={`flex justify-center transition-all ${sidebarVisible ? 'scale-90' : 'scale-110'} origin-center no-print`}>
+                                                                    <StatusSelector
+                                                                        currentStatus={apt.status}
+                                                                        disabled={isLocked}
+                                                                        onChange={(newStatus) => !isLocked && onUpdateStatus?.(apt.id, newStatus)}
+                                                                    />
+                                                                </div>
+                                                                <div className={`print-only text-center uppercase font-black text-[9px] px-2 py-1 rounded-md border ${
+                                                                    APPOINTMENT_STATUSES.find(s => s.id === apt.status)?.color || 'bg-slate-50 text-slate-500 border-slate-100'
+                                                                }`}>
+                                                                    {APPOINTMENT_STATUSES.find(s => s.id === apt.status)?.label || apt.status}
+                                                                </div>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="py-3 px-2 text-center no-print">
                                                     <span className={`px-2 py-0.5 rounded-md font-black tracking-tight border uppercase transition-all ${sidebarVisible ? 'text-[8.5px]' : 'text-[11px]'} ${apt.pagoPendiente > 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
@@ -227,56 +245,54 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                     </span>
                                                 </td>
                                                 <td className="py-3 px-6 text-right whitespace-nowrap no-print">
-                                                    <div className="flex items-center justify-end gap-3">
-                                                        <a
-                                                            href={(() => {
-                                                                let rawPhone = (apt.celular || apt.telefono || apt.celularPaciente || apt.telefonoPaciente || apt.pacienteCelular || apt.pacienteTelefono || apt.phone || apt.mobile || "").toString().replace(/\D/g, "");
-                                                                if (rawPhone.startsWith("0")) rawPhone = rawPhone.slice(1);
-                                                                if (rawPhone.length === 10 && !rawPhone.startsWith("57")) {
-                                                                    rawPhone = "57" + rawPhone;
-                                                                }
-                                                                const nombre = apt.paciente || apt.pacienteNombre || apt.nombrePaciente || apt.nombreCompleto || "Paciente";
-                                                                
-                                                                let fechaStr = "—";
-                                                                if (apt.start) {
-                                                                    const d = apt.start instanceof Date ? apt.start : new Date(apt.start);
-                                                                    fechaStr = d.toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long" });
-                                                                } else if (apt.fecha) {
-                                                                    fechaStr = apt.fecha;
-                                                                }
+                                                    {(() => {
+                                                        const isLocked = (() => {
+                                                            const rawDate = apt.start || apt.fecha || apt.fecha_inicio;
+                                                            if (!rawDate) return false;
+                                                            const d = new Date(rawDate);
+                                                            if (isNaN(d.getTime())) return false;
+                                                            const oneMonthAgo = new Date();
+                                                            oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+                                                            oneMonthAgo.setHours(0, 0, 0, 0);
+                                                            return d < oneMonthAgo;
+                                                        })();
 
-                                                                let horaStr = "—";
-                                                                if (apt.start) {
-                                                                    const d = apt.start instanceof Date ? apt.start : new Date(apt.start);
-                                                                    horaStr = d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
-                                                                } else if (apt.horaInicio || apt.hora) {
-                                                                    horaStr = apt.horaInicio || apt.hora;
-                                                                }
-                                                                const doctor = apt.doctorDisplayName || apt.doctorName || apt.dentista || apt.doctor || "su Odontólogo Tratante";
-                                                                const textMessage = `Hola *${nombre}*, te saludamos de *CLINICA DENTAL*.\n\nTe recordamos tu cita odontológica programada:\n\n• *Fecha:* ${fechaStr}\n• *Hora:* ${horaStr}\n• *Profesional:* ${doctor}\n\nPor favor responde a este mensaje confirmando tu asistencia. ¡Te esperamos!`;
-
-                                                                const encodedText = encodeURIComponent(textMessage);
-                                                                return rawPhone ? `https://api.whatsapp.com/send?phone=${rawPhone}&text=${encodedText}` : `https://api.whatsapp.com/send?text=${encodedText}`;
-                                                            })()}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            className="text-emerald-600 hover:text-emerald-700 transition-all hover:scale-110 p-1 flex items-center justify-center"
-                                                            title="Enviar recordatorio por WhatsApp"
-                                                        >
-                                                            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                                                                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766 0-3.18-2.587-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217s.231.006.332.013c.101.007.237-.038.37.285.144.35.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.548-.68.115-.173.231-.144.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.1.824z" />
-                                                                <path d="M12.037 5c-3.835 0-6.953 3.118-6.954 6.956 0 1.587.537 3.047 1.442 4.212l-1.525 5.57 5.717-1.5c1.111.411 2.316.64 3.578.64 3.838 0 6.954-3.12 6.957-6.958C21.251 8.119 18.133 5 12.037 5zm0 12.651c-1.259 0-2.438-.346-3.441-.954l-.246-.149-2.31.606.617-2.253-.165-.262c-.653-1.037-1.002-2.249-1.002-3.483.001-3.415 2.779-6.194 6.195-6.194 3.415 0 6.192 2.78 6.193 6.196-.002 3.417-2.781 6.197-6.196 6.197z" />
-                                                            </svg>
-                                                        </a>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); onEventClick(apt); }}
-                                                            className="text-blue-600 hover:text-blue-700 transition-all hover:scale-110 p-1"
-                                                            title="Editar"
-                                                        >
-                                                            <FiEdit2 size={16} />
-                                                        </button>
-                                                    </div>
+                                                        return (
+                                                            <div className="flex items-center justify-end gap-3">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (onWhatsApp) {
+                                                                            onWhatsApp(apt);
+                                                                        }
+                                                                    }}
+                                                                    className="text-emerald-600 hover:text-emerald-700 transition-all hover:scale-110 p-1 flex items-center justify-center cursor-pointer border-0 bg-transparent"
+                                                                    title="Enviar recordatorio por WhatsApp"
+                                                                >
+                                                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                                                        <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766 0-3.18-2.587-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217s.231.006.332.013c.101.007.237-.038.37.285.144.35.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.548-.68.115-.173.231-.144.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.1.824z" />
+                                                                        <path d="M12.037 5c-3.835 0-6.953 3.118-6.954 6.956 0 1.587.537 3.047 1.442 4.212l-1.525 5.57 5.717-1.5c1.111.411 2.316.64 3.578.64 3.838 0 6.954-3.12 6.957-6.958C21.251 8.119 18.133 5 12.037 5zm0 12.651c-1.259 0-2.438-.346-3.441-.954l-.246-.149-2.31.606.617-2.253-.165-.262c-.653-1.037-1.002-2.249-1.002-3.483.001-3.415 2.779-6.194 6.195-6.194 3.415 0 6.192 2.78 6.193 6.196-.002 3.417-2.781 6.197-6.196 6.197z" />
+                                                                    </svg>
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => { 
+                                                                        e.stopPropagation(); 
+                                                                        if (isLocked) {
+                                                                            alert("Esta cita tiene más de 1 mes de antigüedad y se encuentra cerrada para modificaciones.");
+                                                                            return;
+                                                                        }
+                                                                        onEventClick(apt); 
+                                                                    }}
+                                                                    disabled={isLocked}
+                                                                    className={`p-1 transition-all ${isLocked ? 'text-slate-300 cursor-not-allowed opacity-40' : 'text-blue-600 hover:text-blue-700 hover:scale-110 cursor-pointer'}`}
+                                                                    title={isLocked ? "Cita cerrada: no se puede editar (+1 mes)" : "Editar"}
+                                                                >
+                                                                    <FiEdit2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </td>
                                             </tr>
                                         ))}
