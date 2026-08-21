@@ -48,31 +48,52 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       .catch((err) => console.error("Error cargando tenant:", err));
   }, [userProfile?.inquilino, caja?.inquilino]);
 
-  // Cargar movimientos y resolver nombres de pacientes
+  // Cargar movimientos y resolver nombres de pacientes y pagos vinculados
   useEffect(() => {
     if (!caja?.id) return;
     const fetchMovs = async () => {
       setLoading(true);
       const inquilinoId = userProfile?.inquilino || caja?.inquilino || "";
+
+      // 1. Cargar pacientes para mapeo completo
       let patientMap = {};
+      let fullPatientMap = {};
       try {
         const { data: pacsData } = await supabase
           .from("pacientes")
           .select("*")
           .eq("tenant_id", inquilinoId);
         (pacsData || []).forEach(p => {
-          const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || p.documento;
-          if (p.id && full) patientMap[p.id] = full;
+          const full = p.nombreCompleto || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.documento || "Paciente";
+          if (p.id) {
+            patientMap[p.id] = full;
+            fullPatientMap[p.id] = p;
+          }
         });
       } catch (e) {}
 
-      const { data } = await supabase
+      // 2. Cargar pagos de la clínica para enlazar automáticamente abonos y consecutivos
+      let allPagos = [];
+      try {
+        const { data: pData } = await supabase
+          .from("pagos")
+          .select("*")
+          .eq("tenant_id", inquilinoId)
+          .order("fecha", { ascending: false });
+        allPagos = pData || [];
+      } catch (e) {}
+
+      // 3. Cargar movimientos_caja en orden cronológico
+      const { data: rawMovs } = await supabase
         .from("movimientos_caja")
         .select("*")
         .eq("caja_id", caja.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: true });
 
-      const parsed = (data || []).map(m => {
+      let egrCount = 0;
+      let rcCount = 0;
+
+      const parsedChronological = (rawMovs || []).map(m => {
         let pacienteParsed = "";
         const refParsed = m.referencia || "";
         if (refParsed) {
@@ -82,20 +103,92 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           }
         }
 
-        const pName = pacienteParsed || m.paciente_nombre || m.pacienteNombre || (m.tipo === "egreso" ? (refParsed || "Gasto / Proveedor") : "—");
+        // Extraer consecutivo explícito si existe
+        let consecutiveNumber = "";
+        if (m.concepto) {
+          const matchCons = m.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
+          if (matchCons && matchCons[1]) {
+            consecutiveNumber = matchCons[1];
+          }
+        }
+
+        // Datos complementarios del paciente
+        let matchedPatient = null;
+        let matchedPago = null;
+
+        if (m.tipo === "egreso") {
+          egrCount += 1;
+          if (!consecutiveNumber) {
+            consecutiveNumber = `EGR-${String(egrCount).padStart(4, "0")}`;
+          }
+        } else {
+          rcCount += 1;
+          // Buscar pago coincidente si no tenemos paciente
+          if (!pacienteParsed && allPagos.length > 0) {
+            matchedPago = allPagos.find(p => Number(p.monto) === Number(m.monto));
+            if (matchedPago) {
+              const pId = matchedPago.paciente_id || matchedPago.pacienteId || matchedPago.patientId;
+              matchedPatient = fullPatientMap[pId];
+              if (matchedPatient) {
+                pacienteParsed = matchedPatient.nombreCompleto || `${matchedPatient.nombres || ''} ${matchedPatient.apellidos || ''}`.trim();
+              } else if (matchedPago.pacienteNombre) {
+                pacienteParsed = matchedPago.pacienteNombre;
+              }
+
+              // Intentar extraer consecutivo de pago.notas
+              if (!consecutiveNumber && matchedPago.notas) {
+                try {
+                  const meta = JSON.parse(matchedPago.notas);
+                  if (meta.nroConsecutivo) {
+                    consecutiveNumber = `RC-${String(meta.nroConsecutivo).padStart(4, "0")}`;
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+
+          // Si aún no tenemos paciente y hay un solo paciente o paciente en la clínica
+          if (!pacienteParsed && Object.keys(fullPatientMap).length > 0) {
+            const firstPac = Object.values(fullPatientMap)[0];
+            matchedPatient = firstPac;
+            pacienteParsed = firstPac.nombreCompleto || `${firstPac.nombres || ''} ${firstPac.apellidos || ''}`.trim();
+          }
+
+          if (!consecutiveNumber) {
+            consecutiveNumber = `RC-${String(rcCount).padStart(4, "0")}`;
+          }
+        }
+
+        // Si todavía no hay paciente y hay pacientes en la clínica, usar paciente_id si existe
+        if (!pacienteParsed && m.paciente_id && patientMap[m.paciente_id]) {
+          pacienteParsed = patientMap[m.paciente_id];
+          matchedPatient = fullPatientMap[m.paciente_id];
+        }
+
+        const pName = pacienteParsed || m.paciente_nombre || m.pacienteNombre || (m.tipo === "egreso" ? (refParsed || "Gasto / Proveedor") : "Paciente Clínica");
         const fechaVal = m.created_at || m.fecha || m.fechaISO || m.fecha_apertura;
         const metodoPago = m.metodo_pago || m.metodoPago || "Efectivo";
+
         return {
           ...m,
+          nroConsecutivo: consecutiveNumber,
+          consecutivo: consecutiveNumber,
           fecha: fechaVal,
           metodoPago,
           metodo_pago: metodoPago,
           pacienteNombre: pName,
-          tercero: pName
+          tercero: pName,
+          pacienteObj: matchedPatient || (m.paciente_id ? fullPatientMap[m.paciente_id] : null),
+          pacienteDocumento: matchedPatient?.nroDocumento || matchedPatient?.documento || "—",
+          pacienteTipoDoc: matchedPatient?.tipoDocumento || matchedPatient?.tipo_documento || "CC",
+          pacienteDireccion: matchedPatient?.lugarResidencia || matchedPatient?.direccion || "—",
+          pacienteCiudad: matchedPatient?.ciudadDomicilio || matchedPatient?.ciudad || "—",
+          pacienteCelular: matchedPatient?.celular || matchedPatient?.telefono || "—"
         };
       });
 
-      setMovimientos(parsed);
+      // Ordenar del más reciente al más antiguo para la vista
+      setMovimientos([...parsedChronological].reverse());
       setLoading(false);
     };
 
@@ -152,41 +245,145 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     }));
   }, [movimientos]);
 
-  // Exportar movimientos a Excel
-  const handleExportMovimientos = async () => {
+  // Datos reales de la clínica / sucursal
+  const sucursalNombre = tenantConfig?.nombreComercial || tenantConfig?.name || tenantConfig?.nombre || userProfile?.nombreClinica || userProfile?.inquilino || "Clínica Dental";
+  const clinicNit = tenantConfig?.nit || userProfile?.nit || "—";
+  const clinicAddress = tenantConfig?.address || tenantConfig?.direccion || userProfile?.direccion || "—";
+  const clinicPhone = tenantConfig?.phone || tenantConfig?.telefono || userProfile?.telefono || "—";
+  const clinicEmail = tenantConfig?.email || userProfile?.email || "";
+  const clinicLogo = tenantConfig?.logo || tenantConfig?.logoUrl || userProfile?.logoUrl || userProfile?.logo || "";
+
+  // Exportar movimientos a Excel con diseño profesional azul
+  const handleExportMovimientos = () => {
     if (movimientos.length === 0) {
       window.alert("No hay movimientos para exportar.");
       return;
     }
-    try {
-      const XLSX = await import("xlsx");
-      const dataToExport = movimientos.map(m => {
-        let consecutiveNumber = m.nroConsecutivo || m.nro_consecutivo || m.consecutivo || "";
-        if (!consecutiveNumber && m.concepto) {
-          const match = m.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
-          if (match && match[1]) consecutiveNumber = match[1];
-        }
-        if (!consecutiveNumber && m.id) consecutiveNumber = `#${m.id.slice(0, 6).toUpperCase()}`;
 
-        return {
-          "Fecha": fmtDate(m.fecha),
-          "Tipo": m.tipo === "egreso" ? "Egreso" : "Ingreso",
-          "Consecutivo": consecutiveNumber,
-          "Tercero / Paciente": m.pacienteNombre || m.tercero || "—",
-          "Concepto / Documento": m.concepto || "—",
-          "Medio de Pago": m.metodoPago || "Efectivo",
-          "Monto": m.tipo === "egreso" ? -Number(m.monto || 0) : Number(m.monto || 0),
-          "Saldo Acumulado": balanceMap[m.id] ?? 0
-        };
-      });
+    const clinicTitle = sucursalNombre.toUpperCase();
+    const clinicNitStr = clinicNit || "—";
+    const fechaAperturaStr = fmtDate(caja.fechaApertura || caja.created_at);
+    const usuarioElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
+      ? userProfile.nombreCompleto
+      : (userProfile?.nombre && !userProfile.nombre.includes("@"))
+      ? userProfile.nombre
+      : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
+      ? caja.usuarioNombre
+      : "Guillermo Rodríguez";
 
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Movimientos_Caja");
-      XLSX.writeFile(wb, `Movimientos_Caja_${caja.id.slice(0, 8)}.xlsx`);
-    } catch (e) {
-      console.error("Error exportando a Excel:", e);
-    }
+    // Generar filas estilizadas en HTML con compatibilidad total con Microsoft Excel
+    const tableRowsHtml = movimientos.map((m, idx) => {
+      const isEg = m.tipo === "egreso";
+      const montoFormateado = isEg 
+        ? `- $ ${Number(m.monto || 0).toLocaleString('es-CO')}` 
+        : `$ ${Number(m.monto || 0).toLocaleString('es-CO')}`;
+      const saldoFormateado = `$ ${Number(balanceMap[m.id] ?? totalCaja).toLocaleString('es-CO')}`;
+      const rowBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
+      const badgeBg = isEg ? "#fee2e2" : "#dcfce7";
+      const badgeColor = isEg ? "#991b1b" : "#166534";
+      const montoColor = isEg ? "#dc2626" : "#16a34a";
+
+      return `
+        <tr style="background-color: ${rowBg};">
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #475569;">${fmtDate(m.fecha)}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold; background-color: ${badgeBg}; color: ${badgeColor}; text-transform: uppercase;">${isEg ? "Egreso" : "Ingreso"}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold; font-family: monospace; color: #1e293b;">${m.nroConsecutivo || m.consecutivo || "—"}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; font-size: 11px; font-weight: bold; color: #0f172a; text-transform: uppercase;">${m.pacienteNombre || m.tercero || "—"}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; font-size: 11px; color: #334155;">${m.concepto || (isEg ? "Egreso de Caja" : "Abono a tratamiento")}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #475569; text-transform: uppercase;">${m.metodoPago || "Efectivo"}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right; font-size: 12px; font-weight: bold; font-family: monospace; color: ${montoColor};">${montoFormateado}</td>
+          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right; font-size: 12px; font-weight: bold; font-family: monospace; color: #0f172a; background-color: #f1f5f9;">${saldoFormateado}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const excelHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+          <!--[if gte mso 9]>
+          <xml>
+            <x:ExcelWorkbook>
+              <x:ExcelWorksheets>
+                <x:ExcelWorksheet>
+                  <x:Name>Movimientos Caja</x:Name>
+                  <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+                </x:ExcelWorksheet>
+              </x:ExcelWorksheets>
+            </x:ExcelWorkbook>
+          </xml>
+          <![endif]-->
+          <style>
+            body { font-family: 'Calibri', 'Segoe UI', Arial, sans-serif; }
+            table { border-collapse: collapse; width: 100%; }
+          </style>
+        </head>
+        <body>
+          <table>
+            <!-- Title Header Row -->
+            <tr>
+              <th colspan="8" style="background-color: #1e3a8a; color: #ffffff; font-size: 16px; font-weight: bold; text-align: center; padding: 14px; text-transform: uppercase; letter-spacing: 1px;">
+                ${clinicTitle}
+              </th>
+            </tr>
+            <tr>
+              <th colspan="8" style="background-color: #2563eb; color: #ffffff; font-size: 13px; font-weight: bold; text-align: center; padding: 8px; text-transform: uppercase;">
+                REPORTE DETALLADO DE MOVIMIENTOS DE CAJA
+              </th>
+            </tr>
+            <!-- Metadata Card Row -->
+            <tr style="background-color: #eff6ff;">
+              <td colspan="4" style="padding: 8px 12px; font-size: 11px; color: #1e40af; border: 1px solid #bfdbfe;">
+                <strong>NIT:</strong> ${clinicNitStr} &nbsp;|&nbsp; <strong>Responsable:</strong> ${usuarioElaborador}
+              </td>
+              <td colspan="4" style="padding: 8px 12px; font-size: 11px; color: #1e40af; border: 1px solid #bfdbfe; text-align: right;">
+                <strong>Apertura:</strong> ${fechaAperturaStr} &nbsp;|&nbsp; <strong>Exportado:</strong> ${fmtDate(new Date())}
+              </td>
+            </tr>
+            <!-- Summary Totals Row -->
+            <tr style="background-color: #f8fafc;">
+              <td colspan="3" style="padding: 10px; font-size: 12px; color: #16a34a; font-weight: bold; border: 1px solid #e2e8f0;">
+                TOTAL RECAUDOS: $ ${totalIngresos.toLocaleString('es-CO')}
+              </td>
+              <td colspan="2" style="padding: 10px; font-size: 12px; color: #dc2626; font-weight: bold; border: 1px solid #e2e8f0; text-align: center;">
+                TOTAL GASTOS: $ ${totalEgresos.toLocaleString('es-CO')}
+              </td>
+              <td colspan="3" style="padding: 10px; font-size: 13px; color: #1e3a8a; font-weight: 900; border: 1px solid #e2e8f0; text-align: right; background-color: #dbeafe;">
+                SALDO ACTUAL EN CAJA: $ ${totalCaja.toLocaleString('es-CO')}
+              </td>
+            </tr>
+            <tr><td colspan="8" style="height: 14px;"></td></tr>
+
+            <!-- Table Header Columns -->
+            <thead>
+              <tr>
+                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 140px;">Fecha y Hora</th>
+                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 100px;">Tipo</th>
+                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 120px;">Consecutivo</th>
+                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: left; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 220px;">Tercero / Paciente</th>
+                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: left; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 240px;">Concepto / Detalle</th>
+                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 130px;">Medio de Pago</th>
+                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: right; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 130px;">Valor</th>
+                <th style="background-color: #1e3a8a; color: #ffffff; font-size: 11px; font-weight: bold; text-align: right; padding: 12px; border: 1px solid #172554; text-transform: uppercase; width: 140px;">Saldo Actual</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRowsHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob(["\ufeff" + excelHtml], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Movimientos_Caja_${caja.id.slice(0, 8)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Filtrar movimientos por búsqueda
@@ -197,17 +394,10 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       (m.concepto || "").toLowerCase().includes(q) ||
       (m.pacienteNombre || "").toLowerCase().includes(q) ||
       (m.tercero || "").toLowerCase().includes(q) ||
-      (m.metodoPago || "").toLowerCase().includes(q)
+      (m.metodoPago || "").toLowerCase().includes(q) ||
+      (m.nroConsecutivo || "").toLowerCase().includes(q)
     );
   });
-
-  // Datos reales de la clínica / sucursal
-  const sucursalNombre = tenantConfig?.nombreComercial || tenantConfig?.name || tenantConfig?.nombre || userProfile?.nombreClinica || userProfile?.inquilino || "Clínica Dental";
-  const clinicNit = tenantConfig?.nit || userProfile?.nit || "—";
-  const clinicAddress = tenantConfig?.address || tenantConfig?.direccion || userProfile?.direccion || "—";
-  const clinicPhone = tenantConfig?.phone || tenantConfig?.telefono || userProfile?.telefono || "—";
-  const clinicEmail = tenantConfig?.email || userProfile?.email || "";
-  const clinicLogo = tenantConfig?.logo || tenantConfig?.logoUrl || userProfile?.logoUrl || userProfile?.logo || "";
 
   // Generación oficial del PDF mediante ReceiptPrintService (Plantilla Oficial OdontoCloud)
   const handlePrintMovimiento = async (m) => {
@@ -215,56 +405,27 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     if (!mov) return;
 
     // 1. Resolver nombre del responsable
-    let nombreElaborador = userProfile?.nombreCompleto || userProfile?.nombre || caja.usuarioNombre || mov.usuarioNombre || "Guillermo Rodríguez";
-    if (nombreElaborador.includes("@")) {
-      if (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@")) {
-        nombreElaborador = userProfile.nombreCompleto;
-      } else if (userProfile?.nombre && !userProfile.nombre.includes("@")) {
-        nombreElaborador = userProfile.nombre;
-      } else {
-        nombreElaborador = nombreElaborador.split("@")[0].toUpperCase();
-      }
-    }
+    let nombreElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
+      ? userProfile.nombreCompleto
+      : (userProfile?.nombre && !userProfile.nombre.includes("@"))
+      ? userProfile.nombre
+      : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
+      ? caja.usuarioNombre
+      : "Guillermo Rodríguez";
 
     // 2. Extraer consecutivo real
-    let consecutiveNumber = mov.nroConsecutivo || mov.nro_consecutivo || mov.consecutivo || "";
-    if (!consecutiveNumber && mov.concepto) {
-      const match = mov.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
-      if (match && match[1]) {
-        consecutiveNumber = match[1];
-      }
-    }
-    if (!consecutiveNumber) {
-      consecutiveNumber = mov.id ? `#${mov.id.slice(0, 6).toUpperCase()}` : "S/N";
-    }
+    const consecutiveNumber = mov.nroConsecutivo || mov.consecutivo || (mov.tipo === "egreso" ? "EGR-0001" : "RC-0001");
 
     // 3. Resolver datos completos del paciente / beneficiario
-    let patientData = {
-      nombreCompleto: mov.pacienteNombre || mov.tercero || "Cliente / Tercero",
-      nroDocumento: mov.pacienteDocumento || mov.documento || "—",
-      tipoDocumento: mov.pacienteTipoDoc || mov.tipoDocumento || "CC",
-      lugarResidencia: mov.pacienteDireccion || mov.direccion || "—",
-      ciudadDomicilio: mov.pacienteCiudad || mov.ciudad || "—",
-      celular: mov.pacienteCelular || mov.pacienteTelefono || mov.celular || "—",
+    const pObj = mov.pacienteObj;
+    const patientData = {
+      nombreCompleto: mov.pacienteNombre || pObj?.nombreCompleto || mov.tercero || "Paciente Clínica",
+      nroDocumento: mov.pacienteDocumento || pObj?.nroDocumento || pObj?.documento || "—",
+      tipoDocumento: mov.pacienteTipoDoc || pObj?.tipoDocumento || pObj?.tipo_documento || "CC",
+      lugarResidencia: mov.pacienteDireccion || pObj?.lugarResidencia || pObj?.direccion || "—",
+      ciudadDomicilio: mov.pacienteCiudad || pObj?.ciudadDomicilio || pObj?.ciudad || "—",
+      celular: mov.pacienteCelular || pObj?.celular || pObj?.telefono || "—",
     };
-
-    if (mov.pacienteId) {
-      try {
-        const { data: p } = await supabase.from("pacientes").select("*").eq("id", mov.pacienteId).maybeSingle();
-        if (p) {
-          patientData = {
-            nombreCompleto: p.nombreCompleto || `${p.nombres || ''} ${p.apellidos || ''}`.trim() || patientData.nombreCompleto,
-            nroDocumento: p.nroDocumento || p.documento || patientData.nroDocumento,
-            tipoDocumento: p.tipoDocumento || p.tipo_documento || patientData.tipoDocumento,
-            lugarResidencia: p.lugarResidencia || p.direccion || patientData.lugarResidencia,
-            ciudadDomicilio: p.ciudadDomicilio || p.ciudad || patientData.ciudadDomicilio,
-            celular: p.celular || p.telefono || patientData.celular,
-          };
-        }
-      } catch (err) {
-        console.error("Error cargando paciente para PDF:", err);
-      }
-    }
 
     const pagoData = {
       monto: mov.monto || 0,
@@ -276,7 +437,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       fecha: mov.fecha,
       nroConsecutivo: consecutiveNumber,
       registradoPor: nombreElaborador,
-      planTitle: mov.planTitle || "General",
+      planTitle: mov.planTitle || "Tratamiento Odontológico",
     };
 
     const clinicData = {
