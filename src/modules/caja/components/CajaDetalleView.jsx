@@ -253,98 +253,257 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   const clinicEmail = tenantConfig?.email || userProfile?.email || "";
   const clinicLogo = tenantConfig?.logo || tenantConfig?.logoUrl || userProfile?.logoUrl || userProfile?.logo || "";
 
-  // Exportar movimientos a Excel (.xlsx) nativo sin advertencias de formato
-  const handleExportMovimientos = async () => {
+  // Exportar movimientos a Excel con diseño corporativo azul profesional (SpreadsheetML oficial)
+  const handleExportMovimientos = () => {
     if (movimientos.length === 0) {
       window.alert("No hay movimientos para exportar.");
       return;
     }
 
-    try {
-      const XLSX = await import("xlsx");
+    const clinicTitle = (sucursalNombre || "ODONTOCLOUD").toUpperCase();
+    const clinicNitStr = clinicNit || "—";
+    const fechaAperturaStr = fmtDate(caja.fechaApertura || caja.created_at);
+    const usuarioElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
+      ? userProfile.nombreCompleto
+      : (userProfile?.nombre && !userProfile.nombre.includes("@"))
+      ? userProfile.nombre
+      : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
+      ? caja.usuarioNombre
+      : "Guillermo Rodríguez";
 
-      const clinicTitle = sucursalNombre.toUpperCase();
-      const clinicNitStr = clinicNit || "—";
-      const fechaAperturaStr = fmtDate(caja.fechaApertura || caja.created_at);
-      const usuarioElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
-        ? userProfile.nombreCompleto
-        : (userProfile?.nombre && !userProfile.nombre.includes("@"))
-        ? userProfile.nombre
-        : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
-        ? caja.usuarioNombre
-        : "Guillermo Rodríguez";
+    const rowsXml = movimientos.map(m => {
+      const isEg = m.tipo === "egreso";
+      const valNum = isEg ? -Number(m.monto || 0) : Number(m.monto || 0);
+      const salNum = Number(balanceMap[m.id] ?? totalCaja);
+      const styleValor = isEg ? "DataValorEgreso" : "DataValorIngreso";
+      const styleTipo = isEg ? "BadgeEgreso" : "BadgeIngreso";
 
-      // Encabezado corporativo estructurado
-      const sheetData = [
-        [clinicTitle],
-        ["REPORTE DETALLADO DE MOVIMIENTOS DE CAJA"],
-        [`NIT: ${clinicNitStr}`, "", `Responsable: ${usuarioElaborador}`, "", `Apertura: ${fechaAperturaStr}`, "", `Exportado: ${fmtDate(new Date())}`],
-        [`Total Recaudos: $ ${totalIngresos.toLocaleString('es-CO')}`, "", `Total Gastos: $ ${totalEgresos.toLocaleString('es-CO')}`, "", `Saldo Actual en Caja: $ ${totalCaja.toLocaleString('es-CO')}`],
-        [],
-        [
-          "Fecha y Hora",
-          "Tipo",
-          "Consecutivo",
-          "Tercero / Paciente",
-          "Concepto / Detalle",
-          "Medio de Pago",
-          "Valor",
-          "Saldo Actual"
-        ]
-      ];
+      return `
+   <Row ss:Height="22">
+    <Cell ss:StyleID="DataRowCenter"><Data ss:Type="String">${fmtDate(m.fecha)}</Data></Cell>
+    <Cell ss:StyleID="${styleTipo}"><Data ss:Type="String">${isEg ? "Egreso" : "Ingreso"}</Data></Cell>
+    <Cell ss:StyleID="DataRowCenter"><Data ss:Type="String">${m.nroConsecutivo || m.consecutivo || "—"}</Data></Cell>
+    <Cell ss:StyleID="DataRow"><Data ss:Type="String">${m.pacienteNombre || m.tercero || "—"}</Data></Cell>
+    <Cell ss:StyleID="DataRow"><Data ss:Type="String">${m.concepto || (isEg ? "Egreso de Caja" : "Abono a tratamiento")}</Data></Cell>
+    <Cell ss:StyleID="DataRowCenter"><Data ss:Type="String">${m.metodoPago || "Efectivo"}</Data></Cell>
+    <Cell ss:StyleID="${styleValor}"><Data ss:Type="Number">${valNum}</Data></Cell>
+    <Cell ss:StyleID="DataSaldo"><Data ss:Type="Number">${salNum}</Data></Cell>
+   </Row>`;
+    }).join("");
 
-      movimientos.forEach(m => {
-        const isEg = m.tipo === "egreso";
-        const val = isEg ? -Number(m.monto || 0) : Number(m.monto || 0);
-        const sal = Number(balanceMap[m.id] ?? totalCaja);
-        sheetData.push([
-          fmtDate(m.fecha),
-          isEg ? "Egreso" : "Ingreso",
-          m.nroConsecutivo || m.consecutivo || "—",
-          m.pacienteNombre || m.tercero || "—",
-          m.concepto || (isEg ? "Egreso de Caja" : "Abono a tratamiento"),
-          m.metodoPago || "Efectivo",
-          val,
-          sal
-        ]);
-      });
+    const xmlSpreadsheet = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+  <Author>OdontoCloud</Author>
+ </DocumentProperties>
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#1E293B"/>
+  </Style>
+  <Style ss:ID="ClinicTitle">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="15" ss:Color="#FFFFFF" ss:Bold="1"/>
+   <Interior ss:Color="#1E3A8A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="ReportTitle">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="12" ss:Color="#FFFFFF" ss:Bold="1"/>
+   <Interior ss:Color="#2563EB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="MetaCard">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#1E40AF" ss:Bold="1"/>
+   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="MetaCardRight">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#1E40AF" ss:Bold="1"/>
+   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="TotalRecaudos">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#166534" ss:Bold="1"/>
+   <Interior ss:Color="#DCFCE7" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="TotalGastos">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#991B1B" ss:Bold="1"/>
+   <Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="TotalSaldo">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Calibri" ss:Size="12" ss:Color="#1E3A8A" ss:Bold="1"/>
+   <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="TableHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1D4ED8"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1D4ED8"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1D4ED8"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1D4ED8"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/>
+   <Interior ss:Color="#2563EB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="TableHeaderSaldo">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#172554"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#172554"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#172554"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#172554"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#FFFFFF" ss:Bold="1"/>
+   <Interior ss:Color="#1E3A8A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="DataRow">
+   <Alignment ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#1E293B"/>
+  </Style>
+  <Style ss:ID="DataRowCenter">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#334155"/>
+  </Style>
+  <Style ss:ID="BadgeIngreso">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#166534" ss:Bold="1"/>
+   <Interior ss:Color="#DCFCE7" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="BadgeEgreso">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#991B1B" ss:Bold="1"/>
+   <Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="DataValorIngreso">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#16A34A" ss:Bold="1"/>
+   <NumberFormat ss:Format="&quot;$&quot;\ #,##0"/>
+  </Style>
+  <Style ss:ID="DataValorEgreso">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#DC2626" ss:Bold="1"/>
+   <NumberFormat ss:Format="&quot;-$&quot;\ #,##0;&quot;-$&quot;\ #,##0;&quot;$ 0&quot;"/>
+  </Style>
+  <Style ss:ID="DataSaldo">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#0F172A" ss:Bold="1"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="&quot;$&quot;\ #,##0"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Movimientos_Caja">
+  <Table ss:DefaultRowHeight="18">
+   <Column ss:Width="130"/>
+   <Column ss:Width="80"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="180"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="120"/>
 
-      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+   <!-- Row 1: Clinic Name -->
+   <Row ss:Height="30">
+    <Cell ss:MergeAcross="7" ss:StyleID="ClinicTitle"><Data ss:Type="String">${clinicTitle}</Data></Cell>
+   </Row>
 
-      // Anchos de columna profesionales
-      ws['!cols'] = [
-        { wch: 22 }, // Fecha
-        { wch: 12 }, // Tipo
-        { wch: 16 }, // Consecutivo
-        { wch: 32 }, // Tercero / Paciente
-        { wch: 35 }, // Concepto
-        { wch: 18 }, // Medio de Pago
-        { wch: 18 }, // Valor
-        { wch: 18 }  // Saldo Actual
-      ];
+   <!-- Row 2: Report Title -->
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="7" ss:StyleID="ReportTitle"><Data ss:Type="String">REPORTE DETALLADO DE MOVIMIENTOS DE CAJA</Data></Cell>
+   </Row>
 
-      // Formatear columnas numéricas
-      const range = XLSX.utils.decode_range(ws['!ref'] || "A1");
-      for (let R = 6; R <= range.e.r; ++R) {
-        const cellValor = ws[XLSX.utils.encode_cell({ r: R, c: 6 })];
-        if (cellValor) {
-          cellValor.t = 'n';
-          cellValor.z = '$ #,##0';
-        }
-        const cellSaldo = ws[XLSX.utils.encode_cell({ r: R, c: 7 })];
-        if (cellSaldo) {
-          cellSaldo.t = 'n';
-          cellSaldo.z = '$ #,##0';
-        }
-      }
+   <!-- Row 3: Metadata -->
+   <Row ss:Height="20">
+    <Cell ss:MergeAcross="3" ss:StyleID="MetaCard"><Data ss:Type="String">NIT: ${clinicNitStr}  |  Responsable: ${usuarioElaborador}</Data></Cell>
+    <Cell ss:MergeAcross="3" ss:StyleID="MetaCardRight"><Data ss:Type="String">Apertura: ${fechaAperturaStr}  |  Exportado: ${fmtDate(new Date())}</Data></Cell>
+   </Row>
 
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Movimientos_Caja");
+   <!-- Row 4: Totals Banner -->
+   <Row ss:Height="24">
+    <Cell ss:MergeAcross="2" ss:StyleID="TotalRecaudos"><Data ss:Type="String">TOTAL RECAUDOS: $ ${totalIngresos.toLocaleString('es-CO')}</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="TotalGastos"><Data ss:Type="String">TOTAL GASTOS: $ ${totalEgresos.toLocaleString('es-CO')}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="TotalSaldo"><Data ss:Type="String">SALDO ACTUAL EN CAJA: $ ${totalCaja.toLocaleString('es-CO')}</Data></Cell>
+   </Row>
 
-      XLSX.writeFile(wb, `Movimientos_Caja_${caja.id.slice(0, 8)}.xlsx`);
-    } catch (err) {
-      console.error("Error exportando a Excel:", err);
-    }
+   <!-- Row 5: Spacer -->
+   <Row ss:Height="10"></Row>
+
+   <!-- Row 6: Table Headers -->
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">FECHA Y HORA</Data></Cell>
+    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">TIPO</Data></Cell>
+    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">CONSECUTIVO</Data></Cell>
+    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">TERCERO / PACIENTE</Data></Cell>
+    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">CONCEPTO / DETALLE</Data></Cell>
+    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">MEDIO DE PAGO</Data></Cell>
+    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">VALOR</Data></Cell>
+    <Cell ss:StyleID="TableHeaderSaldo"><Data ss:Type="String">SALDO ACTUAL</Data></Cell>
+   </Row>
+
+   ${rowsXml}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xmlSpreadsheet], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Movimientos_Caja_${caja.id.slice(0, 8)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Filtrar movimientos por búsqueda
