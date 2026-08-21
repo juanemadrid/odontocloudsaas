@@ -314,7 +314,7 @@ export default function EmpresaPlanes() {
                                     className="px-5 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md shadow-[#8CC63F]/20 flex items-center gap-2 border-0 active:scale-95"
                                 >
                                     <FiSave size={15} strokeWidth={2.5} />
-                                    <span>Continuar & Agregar Productos</span>
+                                    <span>Continuar & Agregar Servicios</span>
                                 </button>
                             </div>
                         </div>
@@ -435,9 +435,14 @@ function PlanPriceListEditor({ plan, listas, inquilino, onBack }) {
                     </button>
 
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-500 border border-sky-100 flex items-center justify-center shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setIsEditingTitle(true)}
+                            className="w-10 h-10 rounded-xl bg-sky-50 text-sky-500 hover:bg-sky-100 hover:text-sky-600 border border-sky-100 flex items-center justify-center shrink-0 cursor-pointer transition-all active:scale-95 shadow-sm"
+                            title="Editar nombre del plan"
+                        >
                             <FiEdit2 size={18} />
-                        </div>
+                        </button>
                         
                         <div>
                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 block leading-none mb-1">
@@ -454,7 +459,7 @@ function PlanPriceListEditor({ plan, listas, inquilino, onBack }) {
                                         onBlur={() => setIsEditingTitle(false)}
                                         onKeyDown={e => { if (e.key === "Enter") setIsEditingTitle(false); }}
                                     />
-                                    <button onClick={() => setIsEditingTitle(false)} className="text-emerald-600 p-1">
+                                    <button onClick={() => setIsEditingTitle(false)} className="text-emerald-600 p-1" title="Confirmar">
                                         <FiCheck size={16} />
                                     </button>
                                 </div>
@@ -491,7 +496,7 @@ function PlanPriceListEditor({ plan, listas, inquilino, onBack }) {
                         className="bg-[#8CC63F] hover:bg-[#7bb335] text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-[#8CC63F]/20 flex items-center gap-2 cursor-pointer border-0 active:scale-95 whitespace-nowrap"
                     >
                         <FiPlus size={15} strokeWidth={3} />
-                        <span>Agregar Productos</span>
+                        <span>Agregar Servicios</span>
                     </button>
 
                     <button
@@ -505,7 +510,7 @@ function PlanPriceListEditor({ plan, listas, inquilino, onBack }) {
                 </div>
             </div>
 
-            {/* Table of Products */}
+            {/* Table of Services */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -529,14 +534,14 @@ function PlanPriceListEditor({ plan, listas, inquilino, onBack }) {
                                             <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mb-1">
                                                 <FiPackage size={28} />
                                             </div>
-                                            <p className="text-sm font-black text-slate-700 uppercase tracking-tight">No hay productos o servicios en este plan</p>
-                                            <p className="text-xs text-slate-400 max-w-sm">Haz clic en el botón verde superior <strong>"Agregar Productos"</strong> para seleccionar procedimientos de la lista de precios vinculada.</p>
+                                            <p className="text-sm font-black text-slate-700 uppercase tracking-tight">No hay servicios en este plan</p>
+                                            <p className="text-xs text-slate-400 max-w-sm">Haz clic en el botón verde superior <strong>"Agregar Servicios"</strong> para seleccionar procedimientos de la lista de precios vinculada.</p>
                                             <button
                                                 onClick={() => setShowAddModal(true)}
                                                 className="mt-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-[#8CC63F]/20 flex items-center gap-2 cursor-pointer border-0"
                                             >
                                                 <FiPlus size={14} strokeWidth={3} />
-                                                <span>Agregar Primer Producto</span>
+                                                <span>Agregar Primer Servicio</span>
                                             </button>
                                         </div>
                                     </td>
@@ -847,11 +852,11 @@ function ProductSelectorModal({ isOpen, onClose, onAdd, baseListId }) {
                 </div>
 
                 {/* Items List */}
-                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar divide-y divide-slate-50">
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                     {loading ? (
                         <div className="py-16 text-center text-slate-400 font-medium">
                             <div className="w-6 h-6 border-2 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mx-auto mb-2" />
-                            Cargando productos...
+                            Cargando servicios...
                         </div>
                     ) : filteredItems.length === 0 ? (
                         <div className="py-16 text-center text-slate-400 font-medium">
@@ -865,31 +870,29 @@ function ProductSelectorModal({ isOpen, onClose, onAdd, baseListId }) {
                                 <div
                                     key={item.id}
                                     onClick={() => toggleSelectItem(item)}
-                                    className={`p-3 rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                                    className={`p-3 rounded-2xl flex items-center justify-between gap-3 cursor-pointer transition-all ${
                                         isSelected 
                                             ? 'bg-indigo-50/80 border border-indigo-200' 
                                             : 'hover:bg-slate-50 border border-transparent'
                                     }`}
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
-                                            isSelected 
-                                                ? 'bg-indigo-600 border-indigo-600 text-white' 
-                                                : 'border-slate-300 bg-white'
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors ${
+                                            isSelected ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 bg-white'
                                         }`}>
-                                            {isSelected && <FiCheck size={14} strokeWidth={3} />}
+                                            {isSelected && <FiCheck size={12} strokeWidth={3} />}
                                         </div>
 
-                                        <div>
-                                            <div className="flex items-center gap-2">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 mb-0.5">
                                                 {item.codigo && (
-                                                    <span className="font-mono text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
+                                                    <span className="text-[9px] font-black px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-100 uppercase tracking-wider font-mono">
                                                         {item.codigo}
                                                     </span>
                                                 )}
-                                                <span className="text-xs font-bold text-slate-800 uppercase">{item.nombre}</span>
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.categoria}</span>
                                             </div>
-                                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{item.categoria}</span>
+                                            <p className="text-xs font-bold text-slate-800 truncate uppercase">{item.nombre}</p>
                                         </div>
                                     </div>
 
@@ -906,9 +909,9 @@ function ProductSelectorModal({ isOpen, onClose, onAdd, baseListId }) {
                 <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
                     <div className="text-xs font-bold text-slate-500">
                         {selectedCount > 0 ? (
-                            <span className="text-indigo-600 font-black">{selectedCount} producto(s) seleccionado(s)</span>
+                            <span className="text-indigo-600 font-black">{selectedCount} servicio(s) seleccionado(s)</span>
                         ) : (
-                            <span>Ningún producto seleccionado</span>
+                            <span>Ningún servicio seleccionado</span>
                         )}
                     </div>
 
