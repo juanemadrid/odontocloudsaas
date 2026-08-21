@@ -41,6 +41,7 @@ import HistoricoPagosTab from "./HistoricoPagosTab";
 import HistoricoFacturasTab from "./HistoricoFacturasTab";
 import AIInsightsTab from "./AIInsightsTab";
 import HistoriaClinicaTab from "./HistoriaClinicaTab";
+import CitasTab from "./CitasTab";
 
 const FormRow = ({ label, required, children, error, helpText }) => {
     // Clonar el children y agregar clases de error si es necesario
@@ -1943,6 +1944,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
         if (activeTab === 'eps') return 'Edición Eps paciente';
         if (activeTab === 'mark') return 'Edición Marketing paciente';
         if (activeTab === 'pro') return 'Profesionales';
+        if (activeTab === 'citas') return 'Citas';
         return 'Edición Información Paciente';
     };
 
@@ -2012,10 +2014,11 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                 <SidebarButton icon={FiTrendingUp} label="Marketing" active={activeTab === "mark"} onClick={() => handleTabChange("mark")} />
                                 <SidebarButton icon={FiShield} label="EPS" active={activeTab === "eps"} onClick={() => handleTabChange("eps")} />
                                 <SidebarButton icon={FiUsers} label="Beneficiarios convenio" active={activeTab === "conv"} onClick={() => handleTabChange("conv")} />
-                                <SidebarButton icon={FiBriefcase} label="Profesionales" active={activeTab === "pro"} onClick={() => handleTabChange("pro")} />
                                 {can("Pacientes", "Rx/imágenes/Doc", "consultar") && (
                                     <SidebarButton icon={FiCamera} label="Rx / Imágenes / Doc" active={activeTab === "rx"} onClick={() => handleTabChange("rx")} />
                                 )}
+                                <SidebarButton icon={FiBriefcase} label="Profesionales" active={activeTab === "pro"} onClick={() => handleTabChange("pro")} />
+                                <SidebarButton icon={FiCalendar} label="Citas" active={activeTab === "citas"} onClick={() => handleTabChange("citas")} />
                             </div>
 
                             <SidebarSectionTitle>Historia Clínica</SidebarSectionTitle>
@@ -2070,8 +2073,8 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                                 <span>Deuda activa: ${realizedDebt.toLocaleString('es-CO')}</span>
                                             </button>
                                         )}
-                                        <SidebarButton icon={FiDollarSign} label="Histórico pagos" active={activeTab === "hist_pago"} onClick={() => handleTabChange("hist_pago")} />
-                                        <SidebarButton icon={FiFileText} label="Histórico facturas" active={activeTab === "hist_fact"} onClick={() => handleTabChange("hist_fact")} />
+                                        <SidebarButton icon={FiDollarSign} label="Histórico de pagos" active={activeTab === "hist_pago"} onClick={() => handleTabChange("hist_pago")} />
+                                        <SidebarButton icon={FiFileText} label="Facturación" active={activeTab === "hist_fact"} onClick={() => handleTabChange("hist_fact")} />
                                     </>
                                 )}
                             </div>
@@ -2157,6 +2160,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                             ) : (
                                 <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${isFullHeightTab ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar animate-fadeIn p-2'}`}>
                                     {activeTab === "rx" && <PatientRxTab patient={patient} onUpdate={setPatient} />}
+                                    {activeTab === "citas" && <CitasTab patient={patient} />}
                                     {activeTab === "evo" && <EvolucionesTab patient={patient} />}
                                     {activeTab === "conv" && <BeneficiariosTab patient={patient} onUpdate={setPatient} onSwitchTab={setActiveTab} />}
                                     {activeTab === "pro" && <ProfesionalesTab patient={patient} onUpdate={setPatient} />}
@@ -2174,7 +2178,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                     {activeTab === "hist_pago" && <HistoricoPagosTab patientId={patient.id} />}
                                     {activeTab === "hist_fact" && <HistoricoFacturasTab patientId={patient.id} patient={patient} />}
                                     
-                                    {["citas", "fact"].includes(activeTab) && (
+                                    {activeTab === "fact" && (
                                         <div className="flex flex-col items-center justify-center min-h-[400px] p-10 text-center opacity-40">
                                             <FiActivity size={48} className="mb-4 text-slate-400" />
                                             <h5 className="text-[14px] font-black text-slate-600 uppercase tracking-widest">Módulo en Sincronización</h5>
