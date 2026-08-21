@@ -489,26 +489,14 @@ export default function PagoTab({ patient }) {
             // 4. Synchronize with active Caja session (for cash / bank methods)
             if (activeCaja && method !== "Saldo a favor") {
                 const movData = {
-                    caja_id: activeCaja.id,
-                    cajaId: activeCaja.id,
                     tenant_id: userProfile?.inquilino || "",
-                    inquilino: userProfile?.inquilino || "",
-                    tipo: "ingreso",
-                    concepto: concept || "Abono a tratamiento",
-                    monto: paymentAmount,
-                    metodoPago: method,
-                    metodo_pago: method,
-                    paciente_id: patient.id,
-                    pacienteId: patient.id,
-                    pacienteNombre: patientName,
-                    paciente_nombre: patientName,
-                    nro_consecutivo: nroConsecutivo,
-                    consecutivo: nroConsecutivo ? `RC-${String(nroConsecutivo).padStart(4, "0")}` : undefined,
-                    referencia: reference || `Abono de ${patient.nombreCompleto || 'Paciente'}`,
+                    caja_id: activeCaja.id,
                     usuario_id: userProfile?.uid || userProfile?.id || null,
-                    usuarioId: userProfile?.uid || userProfile?.id || null,
-                    usuarioNombre: userProfile?.nombreCompleto || userProfile?.nombre || "Usuario",
-                    fecha: new Date().toISOString(),
+                    tipo: "ingreso",
+                    concepto: nroConsecutivo ? `[RC-${String(nroConsecutivo).padStart(4, "0")}] ${concept || "Abono a tratamiento"}` : (concept || "Abono a tratamiento"),
+                    monto: paymentAmount,
+                    metodo_pago: method,
+                    referencia: `Paciente: ${patientName}${reference ? ' | ' + reference : ''}`,
                     created_at: new Date().toISOString()
                 };
                 
@@ -521,10 +509,7 @@ export default function PagoTab({ patient }) {
                 try {
                     await supabase
                         .from("cajas")
-                        .update({
-                            saldo_actual: (Number(activeCaja.saldo_actual || activeCaja.saldoActual || 0)) + paymentAmount,
-                            total_ingresos: (Number(activeCaja.total_ingresos || activeCaja.totalIngresos || 0)) + paymentAmount
-                        })
+                        .update({ updated_at: new Date().toISOString() })
                         .eq("id", activeCaja.id);
                 } catch (e) {}
 

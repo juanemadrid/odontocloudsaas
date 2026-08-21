@@ -73,9 +73,17 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         .order("created_at", { ascending: false });
 
       const parsed = (data || []).map(m => {
-        const pId = m.paciente_id || m.pacienteId;
-        const pName = m.paciente_nombre || m.pacienteNombre || m.patientNombre || patientMap[pId] || m.tercero || m.usuario_nombre || m.usuarioNombre || "—";
-        const fechaVal = m.fecha || m.created_at || m.fechaISO || m.fecha_apertura;
+        let pacienteParsed = "";
+        const refParsed = m.referencia || "";
+        if (refParsed) {
+          const match = refParsed.match(/Paciente:\s*([^|]+)/i);
+          if (match && match[1]) {
+            pacienteParsed = match[1].trim();
+          }
+        }
+
+        const pName = pacienteParsed || m.paciente_nombre || m.pacienteNombre || (m.tipo === "egreso" ? (refParsed || "Gasto / Proveedor") : "—");
+        const fechaVal = m.created_at || m.fecha || m.fechaISO || m.fecha_apertura;
         const metodoPago = m.metodo_pago || m.metodoPago || "Efectivo";
         return {
           ...m,

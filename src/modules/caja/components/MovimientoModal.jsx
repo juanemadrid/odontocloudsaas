@@ -145,20 +145,27 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
       } catch (e) {}
 
       const egresoLabel = nroConsecutivo ? `[EGR-${String(nroConsecutivo).padStart(4, "0")}] ` : "";
+      
+      let refText = "";
+      if (selectedPatient?.nombre) {
+        refText += `Paciente: ${selectedPatient.nombre}`;
+      }
+      if (form.descripcion?.trim()) {
+        refText += (refText ? " | " : "") + form.descripcion.trim();
+      }
+      if (selectedFactura?.numero || selectedFactura?.numeroFactura) {
+        refText += (refText ? " | " : "") + `Factura: ${selectedFactura.numero || selectedFactura.numeroFactura}`;
+      }
+
       const movData = {
         tenant_id: inquilino,
         caja_id: caja.id,
+        usuario_id: userProfile?.uid || userProfile?.id || null,
         tipo,
         concepto: `${egresoLabel}${form.concepto}`,
         monto: montoNum,
         metodo_pago: form.metodoPago || "Efectivo",
-        descripcion: form.descripcion ? form.descripcion.trim() : null,
-        paciente_id: selectedPatient?.id || null,
-        paciente_nombre: selectedPatient?.nombre || null,
-        recibo_id: selectedFactura?.id || null,
-        usuario_id: userProfile?.uid || userProfile?.id || null,
-        usuario_nombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Usuario",
-        fecha: new Date().toISOString(),
+        referencia: refText || null,
         created_at: new Date().toISOString()
       };
 
@@ -177,34 +184,28 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         } catch (e) {}
       }
 
-      // 2. Actualizar saldo en caja
-      const delta = tipo === "ingreso" ? montoNum : -montoNum;
-      const newSaldo = (Number(caja.saldoActual) || 0) + delta;
-      const newIngresos = (Number(caja.totalIngresos) || 0) + (tipo === "ingreso" ? montoNum : 0);
-      const newEgresos = (Number(caja.totalEgresos) || 0) + (tipo === "egreso" ? montoNum : 0);
-
+      // Actualizar updated_at en caja
       try {
         await supabase.from("cajas").update({
-          saldo_actual: newSaldo,
-          total_ingresos: newIngresos,
-          total_egresos: newEgresos,
           updated_at: new Date().toISOString()
         }).eq("id", caja.id);
       } catch (e) {}
 
-      // 3. Si tiene factura vinculada, actualizar estado/saldo de la factura
+      // Si tiene factura vinculada, actualizar estado/saldo de la factura
       if (selectedFactura?.id && tipo === "ingreso") {
-        const pagado = (selectedFactura.montoPagado || 0) + montoNum;
-        const total = selectedFactura.monto || selectedFactura.total || 0;
-        const nuevoEstado = pagado >= total ? "Pagada" : "Parcial";
-        await supabase.from("facturas").update({
-          montoPagado: pagado,
-          saldoPendiente: Math.max(0, total - pagado),
-          estado: nuevoEstado,
-          ultimoPagoFecha: new Date().toISOString(),
-          ultimoPagoCaja: caja.id,
-          updated_at: new Date().toISOString()
-        }).eq("id", selectedFactura.id);
+        try {
+          const pagado = (selectedFactura.montoPagado || 0) + montoNum;
+          const total = selectedFactura.monto || selectedFactura.total || 0;
+          const nuevoEstado = pagado >= total ? "Pagada" : "Parcial";
+          await supabase.from("facturas").update({
+            montoPagado: pagado,
+            saldoPendiente: Math.max(0, total - pagado),
+            estado: nuevoEstado,
+            ultimoPagoFecha: new Date().toISOString(),
+            ultimoPagoCaja: caja.id,
+            updated_at: new Date().toISOString()
+          }).eq("id", selectedFactura.id);
+        } catch (e) {}
       }
 
       onSuccess?.();
