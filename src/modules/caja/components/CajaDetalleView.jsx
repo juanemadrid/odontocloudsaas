@@ -132,11 +132,12 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     return map;
   }, [movimientos, caja.baseInicial]);
 
-  // Desglose por Medio de Pago
+  // Desglose por Medio de Pago (Agrupado insensible a mayúsculas)
   const resumenMediosPago = React.useMemo(() => {
     const map = {};
     movimientos.forEach(m => {
-      const metodo = m.metodoPago || "Efectivo";
+      const raw = (m.metodoPago || m.metodo_pago || "Efectivo").trim();
+      const metodo = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
       if (!map[metodo]) {
         map[metodo] = { cantidad: 0, valor: 0 };
       }
@@ -150,6 +151,43 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       valor: data.valor,
     }));
   }, [movimientos]);
+
+  // Exportar movimientos a Excel
+  const handleExportMovimientos = async () => {
+    if (movimientos.length === 0) {
+      window.alert("No hay movimientos para exportar.");
+      return;
+    }
+    try {
+      const XLSX = await import("xlsx");
+      const dataToExport = movimientos.map(m => {
+        let consecutiveNumber = m.nroConsecutivo || m.nro_consecutivo || m.consecutivo || "";
+        if (!consecutiveNumber && m.concepto) {
+          const match = m.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
+          if (match && match[1]) consecutiveNumber = match[1];
+        }
+        if (!consecutiveNumber && m.id) consecutiveNumber = `#${m.id.slice(0, 6).toUpperCase()}`;
+
+        return {
+          "Fecha": fmtDate(m.fecha),
+          "Tipo": m.tipo === "egreso" ? "Egreso" : "Ingreso",
+          "Consecutivo": consecutiveNumber,
+          "Tercero / Paciente": m.pacienteNombre || m.tercero || "—",
+          "Concepto / Documento": m.concepto || "—",
+          "Medio de Pago": m.metodoPago || "Efectivo",
+          "Monto": m.tipo === "egreso" ? -Number(m.monto || 0) : Number(m.monto || 0),
+          "Saldo Acumulado": balanceMap[m.id] ?? 0
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Movimientos_Caja");
+      XLSX.writeFile(wb, `Movimientos_Caja_${caja.id.slice(0, 8)}.xlsx`);
+    } catch (e) {
+      console.error("Error exportando a Excel:", e);
+    }
+  };
 
   // Filtrar movimientos por búsqueda
   const movsFiltrados = movimientos.filter(m => {
@@ -176,8 +214,8 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     const mov = m || selectedMovimiento;
     if (!mov) return;
 
-    // 1. Resolver nombre del responsable (evitando mostrar correo electrónico)
-    let nombreElaborador = userProfile?.nombreCompleto || userProfile?.nombre || caja.usuarioNombre || mov.usuarioNombre || "Cajero";
+    // 1. Resolver nombre del responsable
+    let nombreElaborador = userProfile?.nombreCompleto || userProfile?.nombre || caja.usuarioNombre || mov.usuarioNombre || "Guillermo Rodríguez";
     if (nombreElaborador.includes("@")) {
       if (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@")) {
         nombreElaborador = userProfile.nombreCompleto;
@@ -188,7 +226,19 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       }
     }
 
-    // 2. Resolver datos completos del paciente
+    // 2. Extraer consecutivo real
+    let consecutiveNumber = mov.nroConsecutivo || mov.nro_consecutivo || mov.consecutivo || "";
+    if (!consecutiveNumber && mov.concepto) {
+      const match = mov.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
+      if (match && match[1]) {
+        consecutiveNumber = match[1];
+      }
+    }
+    if (!consecutiveNumber) {
+      consecutiveNumber = mov.id ? `#${mov.id.slice(0, 6).toUpperCase()}` : "S/N";
+    }
+
+    // 3. Resolver datos completos del paciente / beneficiario
     let patientData = {
       nombreCompleto: mov.pacienteNombre || mov.tercero || "Cliente / Tercero",
       nroDocumento: mov.pacienteDocumento || mov.documento || "—",
@@ -200,13 +250,12 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
     if (mov.pacienteId) {
       try {
-        const patientSnap = await getDoc(doc(db, "pacientes", mov.pacienteId));
-        if (patientSnap.exists()) {
-          const p = patientSnap.data();
+        const { data: p } = await supabase.from("pacientes").select("*").eq("id", mov.pacienteId).maybeSingle();
+        if (p) {
           patientData = {
             nombreCompleto: p.nombreCompleto || `${p.nombres || ''} ${p.apellidos || ''}`.trim() || patientData.nombreCompleto,
             nroDocumento: p.nroDocumento || p.documento || patientData.nroDocumento,
-            tipoDocumento: p.tipoDocumento || patientData.tipoDocumento,
+            tipoDocumento: p.tipoDocumento || p.tipo_documento || patientData.tipoDocumento,
             lugarResidencia: p.lugarResidencia || p.direccion || patientData.lugarResidencia,
             ciudadDomicilio: p.ciudadDomicilio || p.ciudad || patientData.ciudadDomicilio,
             celular: p.celular || p.telefono || patientData.celular,
@@ -220,12 +269,12 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     const pagoData = {
       monto: mov.monto || 0,
       tipo: mov.tipo || "ingreso",
-      documentTitle: mov.tipo === "egreso" ? "Egreso" : "Recibo de Caja",
+      documentTitle: mov.tipo === "egreso" ? "Comprobante de Egreso" : "Recibo de Caja",
       medio: mov.metodoPago || "Efectivo",
       concepto: mov.concepto || mov.descripcion || (mov.tipo === "egreso" ? "Egreso de Caja" : "Recibo de Caja"),
       notas: mov.descripcion || mov.concepto || "Sin observaciones adicionales",
       fecha: mov.fecha,
-      nroConsecutivo: mov.id ? mov.id.slice(0, 6).toUpperCase() : "S/N",
+      nroConsecutivo: consecutiveNumber,
       registradoPor: nombreElaborador,
       planTitle: mov.planTitle || "General",
     };
@@ -371,8 +420,9 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
               />
             </div>
             <button
-              title="Exportar movimientos"
-              className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded text-slate-500 hover:text-slate-700 bg-white transition-colors cursor-pointer"
+              onClick={handleExportMovimientos}
+              title="Exportar movimientos a Excel"
+              className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 bg-white transition-all cursor-pointer shadow-sm active:scale-95"
             >
               <FiFileText size={15} />
             </button>
@@ -452,114 +502,137 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       </div>
 
       {/* Modal Vista Previa del Comprobante Oficial */}
-      {selectedMovimiento && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-[700px] rounded-lg shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
-            
-            {/* Header modal */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <span className="text-[13px] font-bold text-slate-700">Comprobante de Movimiento</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handlePrintMovimiento(selectedMovimiento)}
-                  className="px-4 py-1.5 bg-blue-600 text-white rounded text-[12px] font-medium flex items-center gap-1.5 hover:bg-blue-700 transition-colors border-0 cursor-pointer shadow-sm"
-                >
-                  <FiPrinter size={14} /> Imprimir PDF Oficial
-                </button>
-                <button
-                  onClick={() => setSelectedMovimiento(null)}
-                  className="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors border-0 cursor-pointer"
-                >
-                  <FiX size={18} />
-                </button>
-              </div>
-            </div>
+      {selectedMovimiento && (() => {
+        let previewConsecutive = selectedMovimiento.nroConsecutivo || selectedMovimiento.nro_consecutivo || "";
+        if (!previewConsecutive && selectedMovimiento.concepto) {
+          const match = selectedMovimiento.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
+          if (match && match[1]) previewConsecutive = match[1];
+        }
+        if (!previewConsecutive && selectedMovimiento.id) {
+          previewConsecutive = `#${selectedMovimiento.id.slice(0, 6).toUpperCase()}`;
+        }
 
-            {/* Document Body (Vista previa) */}
-            <div className="p-8 overflow-y-auto space-y-6 text-[12px] text-slate-700 bg-white">
+        const nombreElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@")) 
+          ? userProfile.nombreCompleto 
+          : (userProfile?.nombre && !userProfile.nombre.includes("@"))
+          ? userProfile.nombre
+          : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
+          ? caja.usuarioNombre
+          : "Guillermo Rodríguez";
+
+        const esEgresoModal = selectedMovimiento.tipo === "egreso";
+
+        return (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-[700px] rounded-lg shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
               
-              {/* Header Comprobante */}
-              <div className="flex justify-between items-start pb-4 border-b border-slate-200">
-                <div className="flex items-center gap-4">
-                  {clinicLogo && (
-                    <img src={clinicLogo} alt="Logo" className="max-h-14 max-w-32 object-contain" />
-                  )}
+              {/* Header modal */}
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                <span className="text-[13px] font-bold text-slate-700">Comprobante de Movimiento</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handlePrintMovimiento(selectedMovimiento)}
+                    className="px-4 py-1.5 bg-blue-600 text-white rounded text-[12px] font-medium flex items-center gap-1.5 hover:bg-blue-700 transition-colors border-0 cursor-pointer shadow-sm"
+                  >
+                    <FiPrinter size={14} /> Imprimir PDF Oficial
+                  </button>
+                  <button
+                    onClick={() => setSelectedMovimiento(null)}
+                    className="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors border-0 cursor-pointer"
+                  >
+                    <FiX size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Document Body (Vista previa) */}
+              <div className="p-8 overflow-y-auto space-y-6 text-[12px] text-slate-700 bg-white">
+                
+                {/* Header Comprobante */}
+                <div className="flex justify-between items-start pb-4 border-b border-slate-200">
+                  <div className="flex items-center gap-4">
+                    {clinicLogo && (
+                      <img src={clinicLogo} alt="Logo" className="max-h-14 max-w-32 object-contain" />
+                    )}
+                    <div>
+                      <h2 className="text-[15px] font-bold text-slate-900 uppercase">{sucursalNombre}</h2>
+                      <p className="text-slate-500">NIT: {clinicNit}</p>
+                      <p className="text-slate-500">{clinicAddress}</p>
+                      <p className="text-slate-500">{clinicEmail}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-[14px] font-bold uppercase block ${esEgresoModal ? "text-rose-600" : "text-blue-600"}`}>
+                      {esEgresoModal ? "Comprobante de Egreso" : "Recibo de Caja"}
+                    </span>
+                    <span className="text-slate-700 font-bold font-mono">No. {previewConsecutive}</span>
+                  </div>
+                </div>
+
+                {/* Grid Metadata */}
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded border border-slate-100 text-[12px]">
                   <div>
-                    <h2 className="text-[15px] font-bold text-slate-900 uppercase">{sucursalNombre}</h2>
-                    <p className="text-slate-500">NIT: {clinicNit}</p>
-                    <p className="text-slate-500">{clinicAddress}</p>
-                    <p className="text-slate-500">{clinicEmail}</p>
+                    <span className="font-bold text-slate-500 block uppercase text-[10px]">
+                      {esEgresoModal ? "Beneficiario / Proveedor:" : "Señor(a) Paciente:"}
+                    </span>
+                    <span className="font-semibold text-slate-800">{selectedMovimiento.pacienteNombre || selectedMovimiento.tercero || selectedMovimiento.usuarioNombre || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-500 block uppercase text-[10px]">Fecha de Expedición:</span>
+                    <span className="font-semibold text-slate-800">{fmtDate(selectedMovimiento.fecha)}</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-500 block uppercase text-[10px]">Elaborado Por:</span>
+                    <span className="font-semibold text-slate-800">{nombreElaborador}</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-500 block uppercase text-[10px]">Medio de Pago:</span>
+                    <span className="font-semibold text-slate-800">{selectedMovimiento.metodoPago || "Efectivo"}</span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[14px] font-bold text-slate-800 uppercase block">
-                    {selectedMovimiento.tipo === "egreso" ? "Egreso" : "Recibo de caja"}
-                  </span>
-                  <span className="text-slate-500 font-medium">No. {selectedMovimiento.id.slice(0, 6).toUpperCase()}</span>
-                </div>
-              </div>
 
-              {/* Grid Metadata */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded border border-slate-100 text-[12px]">
-                <div>
-                  <span className="font-bold text-slate-500 block uppercase text-[10px]">Señor(a):</span>
-                  <span className="font-semibold text-slate-800">{selectedMovimiento.pacienteNombre || selectedMovimiento.tercero || selectedMovimiento.usuarioNombre || "—"}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-slate-500 block uppercase text-[10px]">Fecha de Expedición:</span>
-                  <span className="font-semibold text-slate-800">{fmtDate(selectedMovimiento.fecha)}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-slate-500 block uppercase text-[10px]">Elaborado Por:</span>
-                  <span className="font-semibold text-slate-800">{caja.usuarioNombre || caja.nombre || "—"}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-slate-500 block uppercase text-[10px]">Medio de Pago:</span>
-                  <span className="font-semibold text-slate-800">{selectedMovimiento.metodoPago || "Efectivo"}</span>
-                </div>
-              </div>
+                {/* Detalle Concepto */}
+                <table className="w-full text-[12px] border-collapse border border-slate-200">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200">
+                      <th className="p-2 text-left font-bold text-slate-600">Concepto</th>
+                      <th className="p-2 text-center font-bold text-slate-600">Cantidad</th>
+                      <th className="p-2 text-right font-bold text-slate-600">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="p-2 text-slate-800">{selectedMovimiento.concepto || selectedMovimiento.descripcion || "Movimiento de caja"}</td>
+                      <td className="p-2 text-center text-slate-600">1</td>
+                      <td className="p-2 text-right font-semibold text-slate-800">{fmt(selectedMovimiento.monto)}</td>
+                    </tr>
+                  </tbody>
+                </table>
 
-              {/* Detalle Concepto */}
-              <table className="w-full text-[12px] border-collapse border border-slate-200">
-                <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200">
-                    <th className="p-2 text-left font-bold text-slate-600">Concepto</th>
-                    <th className="p-2 text-center font-bold text-slate-600">Cantidad</th>
-                    <th className="p-2 text-right font-bold text-slate-600">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="p-2 text-slate-800">{selectedMovimiento.concepto || selectedMovimiento.descripcion || "Movimiento de caja"}</td>
-                    <td className="p-2 text-center text-slate-600">1</td>
-                    <td className="p-2 text-right font-semibold text-slate-800">{fmt(selectedMovimiento.monto)}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Totales */}
-              <div className="flex justify-end pt-2">
-                <div className="w-48 space-y-1 text-right">
-                  <div className="flex justify-between text-slate-500">
-                    <span>Subtotal:</span>
-                    <span>{fmt(selectedMovimiento.monto)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-slate-900 text-[13px] pt-1 border-t border-slate-200">
-                    <span>Total:</span>
-                    <span>{fmt(selectedMovimiento.monto)}</span>
+                {/* Totales */}
+                <div className="flex justify-end pt-2">
+                  <div className="w-48 space-y-1 text-right">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Subtotal:</span>
+                      <span>{fmt(selectedMovimiento.monto)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-slate-900 text-[13px] pt-1 border-t border-slate-200">
+                      <span>Total:</span>
+                      <span>{fmt(selectedMovimiento.monto)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Firmas */}
-              <div className="grid grid-cols-2 gap-8 pt-12 text-center text-[11px] text-slate-500">
-                <div className="border-t border-slate-300 pt-2 font-medium">ELABORADO POR</div>
-                <div className="border-t border-slate-300 pt-2 font-medium">ACEPTADA, FIRMA Y/O SELLO Y FECHA</div>
+                {/* Firmas */}
+                <div className="grid grid-cols-2 gap-8 pt-12 text-center text-[11px] text-slate-500">
+                  <div className="border-t border-slate-300 pt-2 font-medium">ELABORADO POR</div>
+                  <div className="border-t border-slate-300 pt-2 font-medium">{esEgresoModal ? "RECIBIDO / BENEFICIARIO" : "ACEPTADA, FIRMA Y/O SELLO Y FECHA"}</div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
