@@ -497,18 +497,31 @@ export default function ReciboCajaList({ onNew }) {
                     .maybeSingle();
                 dataRecibos = cfgRow?.config?.recibos_caja || [];
             }
-            const recibosMapped = (dataRecibos || []).map(d => {
-                const pId = d.paciente_id || d.pacienteId || d.patient_id || d.paciente;
-                const pName = d.pacienteNombre || d.patientNombre || d.paciente_nombre || d.nombrePaciente || patientMap[pId] || "—";
-                const rawConsecutivo = d.nroConsecutivo || d.nro_consecutivo || d.consecutivo || "";
-                const nroConsecutivo = rawConsecutivo ? String(rawConsecutivo).padStart(4, '0') : "";
-                return { 
-                    ...d, 
-                    nroConsecutivo: nroConsecutivo,
-                    pacienteNombre: pName,
-                    isPago: false 
-                };
-            });
+            const isConsumoSaldo = (item, metadata = {}) => {
+                const cond = (item.condicionPago || item.condicion || item.metodo_pago || item.metodo || item.medio || metadata.metodo || metadata.medio || "").toLowerCase();
+                const conc = (item.concepto || item.referencia || item.notas || metadata.concepto || metadata.referencia || "").toLowerCase();
+                return cond.includes("consumo") || 
+                       cond === "saldo a favor" || 
+                       cond.includes("saldo a favor") ||
+                       conc.includes("uso saldo a favor") ||
+                       conc.includes("consumo s. a favor") ||
+                       conc.includes("consumo saldo a favor");
+            };
+
+            const recibosMapped = (dataRecibos || [])
+                .filter(d => !isConsumoSaldo(d))
+                .map(d => {
+                    const pId = d.paciente_id || d.pacienteId || d.patient_id || d.paciente;
+                    const pName = d.pacienteNombre || d.patientNombre || d.paciente_nombre || d.nombrePaciente || patientMap[pId] || "—";
+                    const rawConsecutivo = d.nroConsecutivo || d.nro_consecutivo || d.consecutivo || "";
+                    const nroConsecutivo = rawConsecutivo ? String(rawConsecutivo).padStart(4, '0') : "";
+                    return { 
+                        ...d, 
+                        nroConsecutivo: nroConsecutivo,
+                        pacienteNombre: pName,
+                        isPago: false 
+                    };
+                });
 
             // 2. Fetch pagos (abonos from patient profile)
             let dataPagosRaw = [];
@@ -539,7 +552,7 @@ export default function ReciboCajaList({ onNew }) {
                     }
 
                     const medioRaw = pData.metodo || pData.medio || metadata.metodo || metadata.medio || "Efectivo";
-                    const condicionPago = medioRaw.toLowerCase() === "saldo a favor" ? "Consumo s. a favor" : medioRaw;
+                    const condicionPago = medioRaw;
                     const pId = pData.paciente_id || pData.pacienteId || metadata.paciente_id || metadata.pacienteId || pData.patient_id || pData.paciente;
                     const pName = pData.patientNombre || pData.pacienteNombre || metadata.patientNombre || metadata.pacienteNombre || pData.paciente_nombre || pData.nombrePaciente || patientMap[pId] || "Paciente";
                     
@@ -561,10 +574,12 @@ export default function ReciboCajaList({ onNew }) {
                         condicionPago: condicionPago,
                         concepto: concepto,
                         total: pData.monto || 0,
-                        isPago: true
+                        isPago: true,
+                        _raw: pData,
+                        _meta: metadata
                     };
                 })
-                .filter(p => p.condicionPago !== "Consumo s. a favor" && (p.condicionPago || "").toLowerCase() !== "saldo a favor");
+                .filter(p => !isConsumoSaldo(p._raw, p._meta));
 
             // Combine and filter by date range client-side
             let data = [...recibosMapped, ...dataPagos];
