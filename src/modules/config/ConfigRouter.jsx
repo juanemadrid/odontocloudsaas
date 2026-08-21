@@ -22,7 +22,6 @@ import EmpresaCategorias from "./EmpresaCategorias"; // NEW COMPONENT
 import WebsiteEditor from "../cms/WebsiteEditor";
 import ConfigCondicionesPago from "./ConfigCondicionesPago";
 import ConfigPlantillas from "./ConfigPlantillas";
-import ConfigPestanasMedicas from "./ConfigPestanasMedicas";
 import EmpresaBancos from "./EmpresaBancos";
 import ConfigRecursosFisicos from "./ConfigRecursosFisicos";
 import EmpresaFormularioPacientes from "./EmpresaFormularioPacientes";
@@ -109,8 +108,6 @@ export default function ConfigRouter() {
                 return <ConfigRecursosFisicos />;
             case "plantillas-clinicas":
                 return <ConfigPlantillas />;
-            case "pestanas-consulta":
-                return <ConfigPestanasMedicas />;
             case "consentimientos":
                 return <ConfigConsentimientos />;
             case "cargas":

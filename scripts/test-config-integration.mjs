@@ -23,7 +23,6 @@ const expectedSlugs = [
   "parametros",
   "recursos-fisicos",
   "plantillas-clinicas",
-  "pestanas-consulta",
   "cargas",
   "impuestos",
   "catalogo-cuentas",
@@ -35,7 +34,7 @@ const layout = read("src/modules/config/ConfigLayout.jsx");
 const router = read("src/modules/config/ConfigRouter.jsx");
 const menuSlugs = [...layout.matchAll(/slug:\s*"([^"]+)"/g)].map((match) => match[1]);
 
-assert.deepEqual(menuSlugs, expectedSlugs, "El menú visible de Configuración debe conservar sus 24 módulos y orden.");
+assert.deepEqual(menuSlugs, expectedSlugs, "El menú visible de Configuración debe conservar sus 23 módulos y orden.");
 for (const slug of expectedSlugs) {
   assert.match(router, new RegExp(`case ["']${slug}["']`), `Falta la ruta de Configuración: ${slug}`);
 }
@@ -69,14 +68,6 @@ assert.doesNotMatch(userDetailsPayload, /password/i);
 const patientFormService = read("src/services/supabaseServices.js");
 assert.match(patientFormService, /configuracionFormulariosService/);
 assert.match(patientFormService, /saveConfigSection/);
-
-const medicalTabs = read("src/modules/config/ConfigPestanasMedicas.jsx");
-assert.match(medicalTabs, /saveConfigItem\(inquilino, "pestanas_medicas", null/);
-assert.doesNotMatch(medicalTabs, /\.from\("pestanas_medicas"\)/);
-
-const clinicalDocument = read("src/modules/pacientes/components/DocClinicoModal.jsx");
-assert.match(clinicalDocument, /getConfigItems\([^,]+, "pestanas_medicas", null\)/);
-assert.match(clinicalDocument, /pestanasMedicas/);
 
 const accounts = read("src/modules/config/ConfigCatalogoCuentas.jsx");
 assert.doesNotMatch(accounts, /\.from\("catalogo_cuentas"\)/);
