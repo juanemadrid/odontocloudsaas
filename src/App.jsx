@@ -53,6 +53,43 @@ export default function App() {
   // 🛡️ Debug Log
   console.log("App Render - User:", user?.email, "Loading:", loading, "Role:", userProfile?.rol);
 
+  // 🚀 PWA Management: Restrict installation only to Login & App routes (suppress on landing)
+  React.useEffect(() => {
+    const p = location.pathname.toLowerCase();
+    const isAppRoute = p.includes("/login") ||
+                       p.includes("/dashboard") ||
+                       p.includes("/superadmin") ||
+                       p.includes("/home");
+
+    const baseUrl = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+    const manifestHref = `${baseUrl}/manifest.json`;
+
+    let manifestLink = document.querySelector('link[rel="manifest"]');
+
+    if (isAppRoute) {
+      if (!manifestLink) {
+        manifestLink = document.createElement("link");
+        manifestLink.rel = "manifest";
+        manifestLink.href = manifestHref;
+        document.head.appendChild(manifestLink);
+      }
+      if ("serviceWorker" in navigator && !import.meta.env.DEV) {
+        navigator.serviceWorker.register(`${baseUrl || ""}/sw.js`)
+          .then((reg) => console.log("PWA Service Worker registered for app:", reg.scope))
+          .catch((err) => console.error("SW registration error:", err));
+      }
+    } else {
+      if (manifestLink) {
+        manifestLink.remove();
+      }
+      const suppressPrompt = (e) => {
+        e.preventDefault();
+      };
+      window.addEventListener("beforeinstallprompt", suppressPrompt);
+      return () => window.removeEventListener("beforeinstallprompt", suppressPrompt);
+    }
+  }, [location.pathname]);
+
   if (loading) {
     return <PremiumLoading />;
   }
