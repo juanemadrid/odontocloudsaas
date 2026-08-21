@@ -72,6 +72,7 @@ export const AuthProvider = ({ children }) => {
 
         let permisosConfig = null;
         let extraLogo = "";
+        let empresaNombre = "";
         try {
           const { data: wData } = await supabase
             .from("website_config")
@@ -80,6 +81,9 @@ export const AuthProvider = ({ children }) => {
             .maybeSingle();
 
           extraLogo = wData?.config?.empresa_datos?.logoUrl || "";
+          empresaNombre = wData?.config?.empresa_datos?.nombre || 
+                          wData?.config?.empresa_datos?.razonSocial || 
+                          wData?.config?.empresa_datos?.nombreComercial || "";
 
           const perfiles = wData?.config?.perfiles || [];
           const userRoleName = (profile.role || "").trim().toLowerCase();
@@ -134,6 +138,11 @@ export const AuthProvider = ({ children }) => {
                            new Date(createdAtDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
         const resolvedLogo = tenantData.logo_url || tenantData.logoUrl || tenantData.logo || extraLogo || "";
+        const resolvedTenantName = tenantData.nombreComercial || 
+                                   tenantData.nombre || 
+                                   tenantData.name || 
+                                   empresaNombre || 
+                                   "Clínica Odontológica";
 
         const fullProfile = {
           ...profile,
@@ -145,10 +154,12 @@ export const AuthProvider = ({ children }) => {
           inquilino: profile.tenant_id,
           nombre: profile.full_name,
           nombreCompleto: profile.full_name,
+          clinica: resolvedTenantName,
+          tenantNombre: resolvedTenantName,
           tenant: {
             id: tenantData.id || profile.tenant_id,
-            nombre: tenantData.nombre || tenantData.name || tenantData.nombreComercial || "Clínica Dental",
-            nombreComercial: tenantData.nombreComercial || tenantData.nombre || tenantData.name || "Clínica Dental",
+            nombre: resolvedTenantName,
+            nombreComercial: resolvedTenantName,
             direccion: tenantData.direccion || tenantData.address || "No configurada",
             telefono: tenantData.telefono || tenantData.phone || "---",
             logo: resolvedLogo,

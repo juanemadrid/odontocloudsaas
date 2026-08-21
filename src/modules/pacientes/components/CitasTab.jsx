@@ -1,17 +1,29 @@
 // src/modules/pacientes/components/CitasTab.jsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { 
     FiCalendar, FiClock, FiUser, FiMapPin, FiPlus, FiSearch, FiPrinter, 
-    FiDownload, FiEdit2, FiTrash2, FiMessageCircle, FiCheck, FiX, FiAlertCircle 
+    FiDownload, FiEdit2, FiTrash2, FiMessageCircle, FiCheck, FiX, FiAlertCircle
 } from "react-icons/fi";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
+import { usePermissions } from "../../../hooks/usePermissions";
+import { useAgenda } from "../../agenda/hooks/useAgenda";
 import supabase from "../../../lib/supabaseClient";
 import * as XLSX from "xlsx";
 import AppointmentModal from "../../agenda/components/AppointmentModal";
 import { openWhatsAppWebDirect } from "../../../services/WhatsAppService";
-import { getConfigItems } from "../../../services/configPersistenceService";
-import { createAppointment, updateAppointment, deleteAppointment } from "../../../services/appointmentService";
+
+export const normalizeStatus = (status) => {
+    if (!status) return "programada";
+    const s = String(status).toLowerCase().trim().replace(/[\s_-]+/g, "_");
+    if (s.includes("cancel")) return "cancelada";
+    if (s.includes("atend") || s.includes("complet")) return "atendida";
+    if (s.includes("confirm")) return "confirmada";
+    if (s.includes("sala") || s.includes("arrived") || s.includes("espera")) return "en_sala";
+    if (s.includes("no_asist") || s.includes("no_show") || s.includes("inasist")) return "no_asistio";
+    if (s.includes("prog") || s.includes("pend") || s.includes("sin_confirm")) return "programada";
+    return s;
+};
 
 const STATUS_COLORS = {
     programada: "bg-sky-50 text-sky-700 border-sky-200",
@@ -19,14 +31,16 @@ const STATUS_COLORS = {
     en_sala: "bg-purple-50 text-purple-700 border-purple-200",
     atendida: "bg-teal-50 text-teal-700 border-teal-200",
     cancelada: "bg-rose-50 text-rose-700 border-rose-200",
-    no_asistio: "bg-amber-50 text-amber-700 border-amber-200",
-    // Standard capitalized fallbacks
-    PROGRAMADA: "bg-sky-50 text-sky-700 border-sky-200",
-    CONFIRMADA: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    "EN SALA": "bg-purple-50 text-purple-700 border-purple-200",
-    ATENDIDA: "bg-teal-50 text-teal-700 border-teal-200",
-    CANCELADA: "bg-rose-50 text-rose-700 border-rose-200",
-    "NO ASISTIÓ": "bg-amber-50 text-amber-700 border-amber-200"
+    no_asistio: "bg-amber-50 text-amber-700 border-amber-200"
+};
+
+const STATUS_LABELS = {
+    programada: "Programada",
+    confirmada: "Confirmada",
+    en_sala: "En sala",
+    atendida: "Atendida",
+    cancelada: "Cancelada",
+    no_asistio: "No asistió"
 };
 
 const STATUS_OPTIONS = [
@@ -41,115 +55,167 @@ const STATUS_OPTIONS = [
 export default function CitasTab({ patient }) {
     const { userProfile } = useAuth();
     const toast = useToast();
+    const { can } = usePermissions();
     const inquilino = userProfile?.inquilino || patient?.inquilino || patient?.tenant_id;
+
+    // Catalogs and handlers synced with Agenda module
+    const {
+        doctors,
+        chairs,
+        branches,
+        specialties,
+        entities,
+        priceList,
+        createAppointment,
+        updateAppointment,
+        deleteAppointment
+    } = useAgenda();
 
     const [appointments, setAppointments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
 
-    // Catalogs for display and modal
-    const [doctors, setDoctors] = useState([]);
-    const [chairs, setChairs] = useState([]);
-    const [branches, setBranches] = useState([]);
-    const [specialties, setSpecialties] = useState([]);
-    const [entities, setEntities] = useState([]);
-    const [priceList, setPriceList] = useState([]);
-
     // Modal state
     const [modalOpen, setModalOpen] = useState(false);
     const [editingApt, setEditingApt] = useState(null);
 
-    // Fetch patient appointments & catalogs
-    const loadData = async () => {
-        if (!patient?.id || !inquilino) return;
+    // Filter appointments matching this patient by all available criteria
+    const filterAndSetAppointments = useCallback((citasList) => {
+        const targetId = String(patient?.id || "").trim();
+        const targetUid = String(patient?.uid || "").trim();
+        const targetDoc = String(patient?.nroDocumento || patient?.documento || "").trim().toLowerCase();
+        const targetName = String(patient?.nombreCompleto || `${patient?.nombres || ''} ${patient?.apellidos || ''}`).trim().toLowerCase();
+        const targetPhone = String(patient?.celular || patient?.telefono || "").trim().replace(/\D/g, "");
+
+        const matched = (citasList || []).filter(c => {
+            // 1. Direct paciente_id match
+            const cPacId = String(c.paciente_id || c.pacienteId || c.patientId || c.paciente?.id || "").trim();
+            if (targetId && cPacId && (cPacId === targetId || targetId === cPacId)) return true;
+            if (targetUid && cPacId && (cPacId === targetUid || targetUid === cPacId)) return true;
+
+            // 2. Document match
+            const cDoc = String(c.paciente?.documento || c.documento || c.nroDocumento || "").trim().toLowerCase();
+            if (targetDoc && cDoc && (cDoc === targetDoc || cDoc.includes(targetDoc) || targetDoc.includes(cDoc))) return true;
+
+            // 3. Phone match (if at least 7 digits)
+            const cPhone = String(c.paciente?.telefono || c.celular || c.telefono || "").trim().replace(/\D/g, "");
+            if (targetPhone && targetPhone.length >= 7 && cPhone && cPhone.length >= 7 && (cPhone === targetPhone || targetPhone.includes(cPhone) || cPhone.includes(targetPhone))) return true;
+
+            // 4. Name match
+            const cJoinedName = c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim().toLowerCase() : "";
+            const cDirectName = String(c.pacienteNombre || c.paciente || "").trim().toLowerCase();
+            const cMotivo = String(c.motivo || "").trim().toLowerCase();
+            const cNotas = String(c.notas || "").trim().toLowerCase();
+
+            if (targetName && targetName.length >= 3) {
+                if (cJoinedName && (cJoinedName === targetName || cJoinedName.includes(targetName) || targetName.includes(cJoinedName))) return true;
+                if (cDirectName && (cDirectName === targetName || cDirectName.includes(targetName) || targetName.includes(cDirectName))) return true;
+                if (cMotivo && cMotivo.includes(targetName)) return true;
+                if (cNotas && cNotas.includes(targetName)) return true;
+            }
+
+            return false;
+        });
+
+        // Format dates into Date objects if needed and sort descending (newest / future first)
+        matched.sort((a, b) => {
+            const timeA = new Date(a.fecha_inicio || a.start || 0).getTime();
+            const timeB = new Date(b.fecha_inicio || b.start || 0).getTime();
+            return timeB - timeA;
+        });
+
+        setAppointments(matched);
+    }, [patient]);
+
+    // Fetch all appointments for the tenant from Supabase and filter for this patient
+    const loadPatientAppointments = useCallback(async () => {
+        if (!inquilino) return;
         setLoading(true);
         try {
-            // 1. Fetch appointments for this patient
-            const { data: aptsData, error: aptsError } = await supabase
+            // First try with joined paciente
+            const { data: allCitas, error: aptsError } = await supabase
                 .from("citas")
-                .select("*, profesional:profesionales(nombre_completo, especialidad)")
+                .select("*, paciente:pacientes(id, nombres, apellidos, documento, telefono)")
                 .eq("tenant_id", inquilino)
-                .eq("paciente_id", patient.id)
                 .order("fecha_inicio", { ascending: false });
 
             if (aptsError) {
-                console.error("Error fetching patient appointments:", aptsError);
+                console.warn("Retrying citas fetch with simple select:", aptsError);
+                const { data: simpleCitas } = await supabase
+                    .from("citas")
+                    .select("*")
+                    .eq("tenant_id", inquilino)
+                    .order("fecha_inicio", { ascending: false });
+
+                if (simpleCitas) {
+                    filterAndSetAppointments(simpleCitas);
+                    return;
+                }
             }
 
-            // 2. Fetch catalogs for appointment modal and labels
-            const [profRes, chairsRes, branchesRes, specRes, entRes, priceRes, profilesRes] = await Promise.all([
-                supabase.from("profesionales").select("*").eq("tenant_id", inquilino),
-                getConfigItems(inquilino, "recursos_fisicos", "consultorios"),
-                getConfigItems(inquilino, "sucursales", "sucursales"),
-                getConfigItems(inquilino, "especialidades", "especialidades"),
-                supabase.from("entidades").select("*").eq("tenant_id", inquilino),
-                getConfigItems(inquilino, "listas_precios", "listas_precios"),
-                supabase.from("profiles").select("*").eq("tenant_id", inquilino)
-            ]);
-
-            // Combine doctors
-            const doctorsMap = new Map();
-            (profRes.data || []).forEach(d => {
-                if (d.activo !== false) {
-                    doctorsMap.set(d.id, {
-                        id: d.id,
-                        nombre: d.nombre_completo || d.nombre || "",
-                        especialidad: d.especialidad || "Odontología",
-                        email: d.correo || d.email || "",
-                        telefono: d.telefono || ""
-                    });
-                }
-            });
-            (profilesRes.data || []).forEach(p => {
-                if (p.activo !== false && !doctorsMap.has(p.id)) {
-                    doctorsMap.set(p.id, {
-                        id: p.id,
-                        nombre: p.full_name || p.nombre || p.email || "",
-                        especialidad: p.especialidad || "Odontología",
-                        email: p.email || "",
-                        telefono: p.telefono || ""
-                    });
-                }
-            });
-
-            setDoctors(Array.from(doctorsMap.values()));
-            setChairs(chairsRes || []);
-            setBranches(branchesRes || []);
-            setSpecialties(specRes || []);
-            setEntities(entRes.data || []);
-            setPriceList(priceRes || []);
-            setAppointments(aptsData || []);
+            if (allCitas) {
+                filterAndSetAppointments(allCitas);
+            } else {
+                setAppointments([]);
+            }
         } catch (err) {
-            console.error("Error loading patient appointments data:", err);
+            console.error("Error loading patient appointments:", err);
+            setAppointments([]);
         } finally {
             setLoading(false);
         }
-    };
+    }, [inquilino, filterAndSetAppointments]);
 
+    // Initial load + Realtime synchronization for appointments
     useEffect(() => {
-        loadData();
-    }, [patient?.id, inquilino]);
+        loadPatientAppointments();
+
+        if (!inquilino) return;
+
+        const channel = supabase
+            .channel(`citas-patient-feed-${inquilino}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'citas',
+                    filter: `tenant_id=eq.${inquilino}`
+                },
+                () => {
+                    loadPatientAppointments();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [inquilino, loadPatientAppointments]);
 
     // Helpers to resolve names
     const getDoctorName = (apt) => {
-        if (apt.profesional?.nombre_completo) return apt.profesional.nombre_completo;
-        const doc = doctors.find(d => d.id === apt.profesional_id);
-        return doc?.nombre || apt.profesional_nombre || "Profesional no asignado";
+        const docId = apt.profesional_id || apt.doctorId || apt.doctor_id;
+        const doc = doctors.find(d => String(d.id) === String(docId));
+        if (doc) {
+            return doc.nombreCompleto || `${doc.nombre || ''} ${doc.apellido || ''}`.trim() || doc.nombre;
+        }
+        return apt.profesional_nombre || apt.doctor || apt.doctorName || "Profesional no asignado";
     };
 
     const getChairName = (apt) => {
-        const chairId = apt.consultorio_id || apt.recurso_id;
-        const chair = chairs.find(c => c.id === chairId);
-        return chair?.nombre || chair?.name || apt.consultorio_nombre || (chairId ? `Consultorio ${chairId}` : "Sin espacio físico");
+        const chairId = apt.consultorio_id || apt.recurso_id || apt.consultorioId || apt.sillonId;
+        const chair = chairs.find(c => String(c.id) === String(chairId));
+        return chair?.nombre || chair?.name || apt.consultorio_nombre || (chairId ? `Consultorio ${chairId}` : "Consultorio General");
     };
 
     const getBranchName = (apt) => {
-        const branchId = apt.sucursal_id;
-        const branch = branches.find(b => b.id === branchId);
+        const branchId = apt.sucursal_id || apt.sucursalId;
+        const branch = branches.find(b => String(b.id) === String(branchId));
         return branch?.nombre || branch?.name || userProfile?.clinica || "Sede Principal";
     };
 
-    // Filter appointments
+    // Filter appointments by search term
     const filteredAppointments = useMemo(() => {
         if (!searchTerm.trim()) return appointments;
         const q = searchTerm.toLowerCase();
@@ -167,7 +233,7 @@ export default function CitasTab({ patient }) {
     // Update appointment status directly
     const handleStatusChange = async (aptId, newStatus) => {
         try {
-            await updateAppointment(inquilino, aptId, { status: newStatus, estado: newStatus });
+            await updateAppointment(aptId, { status: newStatus, estado: newStatus });
             setAppointments(prev => prev.map(a => a.id === aptId ? { ...a, estado: newStatus } : a));
             toast?.success ? toast.success("Estado de cita actualizado") : alert("Estado de cita actualizado");
         } catch (err) {
@@ -177,10 +243,10 @@ export default function CitasTab({ patient }) {
     };
 
     // Delete appointment
-    const handleDelete = async (aptId) => {
+    const handleDeleteApt = async (aptId) => {
         if (!window.confirm("¿Seguro que deseas eliminar esta cita del historial?")) return;
         try {
-            await deleteAppointment(inquilino, aptId);
+            await deleteAppointment(aptId);
             setAppointments(prev => prev.filter(a => a.id !== aptId));
             if (toast?.success) toast.success("Cita eliminada correctamente");
         } catch (err) {
@@ -194,8 +260,9 @@ export default function CitasTab({ patient }) {
         if (appointments.length === 0) return;
         try {
             const exportData = appointments.map(apt => {
-                const start = new Date(apt.fecha_inicio);
-                const end = new Date(apt.fecha_fin);
+                const start = new Date(apt.fecha_inicio || apt.start);
+                const end = new Date(apt.fecha_fin || apt.end);
+                const normStatus = normalizeStatus(apt.estado);
                 return {
                     "FECHA": start.toLocaleDateString("es-CO"),
                     "HORA INICIO": start.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true }),
@@ -204,7 +271,7 @@ export default function CitasTab({ patient }) {
                     "ESPACIO FÍSICO": getChairName(apt),
                     "SUCURSAL": getBranchName(apt),
                     "MOTIVO / COMENTARIO": apt.motivo || apt.notas || "",
-                    "ESTADO": apt.estado || "Programada"
+                    "ESTADO": STATUS_LABELS[normStatus] || apt.estado || "Programada"
                 };
             });
 
@@ -223,7 +290,7 @@ export default function CitasTab({ patient }) {
         window.print();
     };
 
-    // Open new appointment modal prefilled for this patient
+    // Open new appointment modal prefilled with patient data
     const handleOpenNew = () => {
         const now = new Date();
         const yyyy = now.getFullYear();
@@ -232,27 +299,35 @@ export default function CitasTab({ patient }) {
         const hh = String(now.getHours()).padStart(2, "0");
         const min = String(now.getMinutes()).padStart(2, "0");
 
+        const firstDoc = doctors[0];
+        const defaultChairId = firstDoc?.recursoPrincipal || 
+            (Array.isArray(firstDoc?.espaciosFisicos) ? firstDoc.espaciosFisicos[0] : "") || 
+            (chairs[0]?.id || "");
+
         setEditingApt({
             isNewPatient: false,
             pacienteId: patient.id,
+            paciente: patient.nombreCompleto || `${patient.nombres || ''} ${patient.apellidos || ''}`.trim(),
             pacienteNombre: patient.nombreCompleto || `${patient.nombres || ''} ${patient.apellidos || ''}`.trim(),
-            doctorId: doctors[0]?.id || "",
-            consultorioId: chairs[0]?.id || "",
+            celular: patient.celular || patient.telefono || "",
+            doctorId: firstDoc?.id || "",
+            consultorioId: defaultChairId,
             sucursalId: branches[0]?.id || "",
+            especialidadId: specialties[0]?.id || "",
             fecha: `${yyyy}-${mm}-${dd}`,
             hora: `${hh}:${min}`,
             duracion: 30,
-            motivo: "Valoración",
+            motivo: "Consulta odontológica",
             comentario: "",
-            status: "programada"
+            status: "confirmed"
         });
         setModalOpen(true);
     };
 
     // Open edit appointment modal
     const handleOpenEdit = (apt) => {
-        const start = new Date(apt.fecha_inicio);
-        const end = new Date(apt.fecha_fin);
+        const start = new Date(apt.fecha_inicio || apt.start);
+        const end = new Date(apt.fecha_fin || apt.end);
         const durationMinutes = Math.max(15, Math.round((end - start) / (1000 * 60)));
 
         const yyyy = start.getFullYear();
@@ -265,16 +340,20 @@ export default function CitasTab({ patient }) {
             id: apt.id,
             isNewPatient: false,
             pacienteId: patient.id,
+            paciente: patient.nombreCompleto || `${patient.nombres || ''} ${patient.apellidos || ''}`.trim(),
             pacienteNombre: patient.nombreCompleto || `${patient.nombres || ''} ${patient.apellidos || ''}`.trim(),
-            doctorId: apt.profesional_id || "",
-            consultorioId: apt.consultorio_id || "",
-            sucursalId: apt.sucursal_id || branches[0]?.id || "",
+            celular: patient.celular || patient.telefono || "",
+            doctorId: apt.profesional_id || apt.doctorId || "",
+            consultorioId: apt.consultorio_id || apt.consultorioId || "",
+            sucursalId: apt.sucursal_id || apt.sucursalId || (branches[0]?.id || ""),
+            especialidadId: apt.especialidad_id || "",
+            entidadId: apt.entidad_id || "",
             fecha: `${yyyy}-${mm}-${dd}`,
             hora: `${hh}:${min}`,
             duracion: durationMinutes,
             motivo: apt.motivo || "",
-            comentario: apt.notas || "",
-            status: apt.estado || "programada"
+            comentario: apt.notas || apt.motivo || "",
+            status: normalizeStatus(apt.estado)
         });
         setModalOpen(true);
     };
@@ -282,36 +361,20 @@ export default function CitasTab({ patient }) {
     // Save callback from AppointmentModal
     const handleSaveApt = async (aptData) => {
         try {
-            const startDateTime = new Date(`${aptData.fecha}T${aptData.hora}`);
-            const endDateTime = new Date(startDateTime.getTime() + (aptData.duracion || 30) * 60000);
-
-            const payload = {
-                doctorId: aptData.doctorId,
-                pacienteId: patient.id,
-                roomId: aptData.consultorioId,
-                consultorioId: aptData.consultorioId,
-                sucursalId: aptData.sucursalId,
-                start: startDateTime,
-                end: endDateTime,
-                motivo: aptData.motivo || "Consulta",
-                notas: aptData.comentario || "",
-                status: aptData.status || "programada"
-            };
-
             if (aptData.id) {
-                await updateAppointment(inquilino, aptData.id, payload);
+                await updateAppointment(aptData.id, aptData);
                 toast?.success ? toast.success("Cita actualizada exitosamente") : alert("Cita actualizada");
             } else {
-                await createAppointment(inquilino, payload);
+                await createAppointment(aptData);
                 toast?.success ? toast.success("Cita programada exitosamente") : alert("Cita programada");
             }
 
             setModalOpen(false);
             setEditingApt(null);
-            loadData();
+            loadPatientAppointments();
         } catch (err) {
             console.error("Error saving appointment:", err);
-            toast?.error ? toast.error("Error al guardar cita: " + err.message) : alert("Error: " + err.message);
+            toast?.error ? toast.error(err.message || "Error al guardar cita") : alert("Error: " + err.message);
         }
     };
 
@@ -325,12 +388,14 @@ export default function CitasTab({ patient }) {
                     </div>
                     <div>
                         <div className="flex items-center gap-2">
-                            <h1 className="text-base font-black text-slate-800 uppercase tracking-tight">Citas del Paciente</h1>
+                            <h1 className="text-base font-black text-slate-800 uppercase tracking-tight">Historial de Citas</h1>
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline-block">
-                                - Pacientes - Citas
+                                - Paciente
                             </span>
                         </div>
-                        <p className="text-xs font-medium text-slate-500">Historial y programación de turnos y consultas para este paciente</p>
+                        <p className="text-xs font-medium text-slate-500">
+                            Historial completo de turnos (programadas, confirmadas, atendidas y canceladas)
+                        </p>
                     </div>
                 </div>
 
@@ -340,7 +405,7 @@ export default function CitasTab({ patient }) {
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
-                            placeholder="Buscar citas..."
+                            placeholder="Buscar en citas..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                             className="w-full sm:w-48 h-9 pl-9 pr-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-[#8CC63F] transition-colors"
@@ -408,8 +473,12 @@ export default function CitasTab({ patient }) {
                                             <div className="w-14 h-14 rounded-2xl bg-slate-50 text-slate-400 flex items-center justify-center mb-1">
                                                 <FiCalendar size={28} />
                                             </div>
-                                            <p className="text-sm font-black text-slate-700 uppercase tracking-tight">No hay citas registradas</p>
-                                            <p className="text-xs text-slate-400 max-w-sm">Este paciente aún no tiene citas en su historial. Puedes agendar una haciendo clic en el botón verde superior.</p>
+                                            <p className="text-sm font-black text-slate-700 uppercase tracking-tight">
+                                                No hay citas registradas
+                                            </p>
+                                            <p className="text-xs text-slate-400 max-w-sm">
+                                                Este paciente aún no tiene citas en su historial. Puedes agendar una haciendo clic en el botón superior.
+                                            </p>
                                             <button
                                                 onClick={handleOpenNew}
                                                 className="mt-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-[#8CC63F]/20 flex items-center gap-2 cursor-pointer border-0"
@@ -422,26 +491,32 @@ export default function CitasTab({ patient }) {
                                 </tr>
                             ) : (
                                 filteredAppointments.map((apt) => {
-                                    const start = new Date(apt.fecha_inicio);
-                                    const end = new Date(apt.fecha_fin);
-                                    const dateFormatted = start.toLocaleDateString("es-CO", {
-                                        day: "2-digit",
-                                        month: "2-digit",
-                                        year: "2-digit"
-                                    });
-                                    const startTime = start.toLocaleTimeString("es-CO", {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                        hour12: true
-                                    });
-                                    const endTime = end.toLocaleTimeString("es-CO", {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                        hour12: true
-                                    });
+                                    const start = new Date(apt.fecha_inicio || apt.start);
+                                    const end = new Date(apt.fecha_fin || apt.end);
+                                    const dateFormatted = isNaN(start.getTime()) 
+                                        ? (apt.fecha || "Fecha no def.") 
+                                        : start.toLocaleDateString("es-CO", {
+                                            day: "2-digit",
+                                            month: "2-digit",
+                                            year: "2-digit"
+                                        });
+                                    const startTime = isNaN(start.getTime()) 
+                                        ? (apt.horaInicio || apt.hora || "") 
+                                        : start.toLocaleTimeString("es-CO", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                            hour12: true
+                                        });
+                                    const endTime = isNaN(end.getTime()) 
+                                        ? (apt.horaFin || "") 
+                                        : end.toLocaleTimeString("es-CO", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                            hour12: true
+                                        });
 
-                                    const currentStatus = (apt.estado || "programada").toLowerCase();
-                                    const statusStyle = STATUS_COLORS[currentStatus] || "bg-slate-100 text-slate-600 border-slate-200";
+                                    const normStatus = normalizeStatus(apt.estado);
+                                    const statusStyle = STATUS_COLORS[normStatus] || "bg-slate-100 text-slate-600 border-slate-200";
 
                                     return (
                                         <tr key={apt.id} className="hover:bg-slate-50/60 transition-colors">
@@ -490,7 +565,7 @@ export default function CitasTab({ patient }) {
                                             {/* Estado Dropdown / Pill */}
                                             <td className="py-3 px-4 text-center">
                                                 <select
-                                                    value={currentStatus}
+                                                    value={normStatus}
                                                     onChange={(e) => handleStatusChange(apt.id, e.target.value)}
                                                     className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border cursor-pointer outline-none transition-all ${statusStyle}`}
                                                 >
@@ -506,16 +581,19 @@ export default function CitasTab({ patient }) {
                                             <td className="py-3 px-4 text-right">
                                                 <div className="flex items-center justify-end gap-1">
                                                     {/* WhatsApp reminder */}
-                                                    {patient.telefono || patient.celular ? (
+                                                    {(patient?.telefono || patient?.celular || apt.celular || apt.telefono) ? (
                                                         <button
-                                                            onClick={() => openWhatsAppWebDirect({
-                                                                phone: patient.telefono || patient.celular,
-                                                                patientName: patient.nombreCompleto || patient.nombres,
-                                                                dateStr: dateFormatted,
-                                                                timeStr: startTime,
-                                                                doctorName: getDoctorName(apt),
-                                                                clinicName: userProfile?.clinica || "OdontoCloud"
-                                                            })}
+                                                            onClick={() => {
+                                                                const activeClinic = userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.clinica || userProfile?.tenantNombre || "";
+                                                                openWhatsAppWebDirect({
+                                                                    phone: patient?.celular || patient?.telefono || apt.celular || apt.telefono,
+                                                                    patientName: patient?.nombreCompleto || `${patient?.nombres || ''} ${patient?.apellidos || ''}`.trim() || apt.paciente || apt.pacienteNombre,
+                                                                    dateStr: dateFormatted,
+                                                                    timeStr: startTime,
+                                                                    doctorName: getDoctorName(apt),
+                                                                    clinicName: activeClinic
+                                                                }, activeClinic);
+                                                            }}
                                                             className="w-8 h-8 rounded-xl bg-emerald-50 hover:bg-emerald-500 hover:text-white text-emerald-600 flex items-center justify-center transition-all shadow-xs cursor-pointer border-0"
                                                             title="Enviar recordatorio de WhatsApp"
                                                         >
@@ -532,7 +610,7 @@ export default function CitasTab({ patient }) {
                                                     </button>
 
                                                     <button
-                                                        onClick={() => handleDelete(apt.id)}
+                                                        onClick={() => handleDeleteApt(apt.id)}
                                                         className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-600 flex items-center justify-center transition-all shadow-xs cursor-pointer border-0"
                                                         title="Eliminar cita"
                                                     >
@@ -549,7 +627,7 @@ export default function CitasTab({ patient }) {
                 </div>
             </div>
 
-            {/* Modal for creating / editing appointment */}
+            {/* Modal for creating / editing appointment (identical to Agenda modal) */}
             {modalOpen && (
                 <AppointmentModal
                     isOpen={modalOpen}
@@ -566,7 +644,7 @@ export default function CitasTab({ patient }) {
                     priceList={priceList}
                     onSave={handleSaveApt}
                     onDelete={(id) => {
-                        handleDelete(id);
+                        handleDeleteApt(id);
                         setModalOpen(false);
                     }}
                 />

@@ -40,13 +40,48 @@ export const getWhatsAppStatus = async () => {
     }
 };
 
-export async function sendConfirmacion(cita) {
+/**
+ * Obtiene el nombre real de la clínica de la sesión actual
+ */
+export function getActiveClinicName(fallback = "") {
+    if (fallback && fallback !== "Clínica Dental" && fallback !== "OdontoCloud" && fallback !== "Clínica") {
+        return fallback;
+    }
+
+    try {
+        // 1. Buscar en perfiles de sesión activa
+        for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key && key.startsWith("oc_user_profile_")) {
+                const profile = JSON.parse(sessionStorage.getItem(key) || "{}");
+                const name = profile.tenant?.nombreComercial || 
+                             profile.tenant?.nombre || 
+                             profile.tenantNombre || 
+                             profile.clinica;
+                if (name && name !== "Clínica Dental") return name;
+            }
+        }
+    } catch (e) {}
+
+    try {
+        // 2. Buscar en sesión de respaldo odc_session
+        const session = JSON.parse(localStorage.getItem("odc_session") || "{}");
+        if (session.tenantName && session.tenantName !== "Clínica Dental") return session.tenantName;
+        if (session.clinica && session.clinica !== "Clínica Dental") return session.clinica;
+    } catch (e) {}
+
+    return fallback || "Clínica Odontológica";
+}
+
+export async function sendConfirmacion(cita, clinicName = "") {
     const phone = cita.celularPaciente || cita.telefono || cita.celular || "";
+    const activeClinic = getActiveClinicName(clinicName || cita.clinicName || cita.clinica);
     const details = {
-        name: cita.pacienteNombre || cita.nombrePaciente || "Paciente",
-        date: cita.fecha || cita.fechaStr || "-",
-        time: cita.horaInicio || cita.hora || "-",
-        doctor: cita.doctorName || cita.dentista || "su odontologo"
+        name: cita.pacienteNombre || cita.patientName || cita.nombrePaciente || cita.nombreCompleto || cita.paciente || "Paciente",
+        date: cita.dateStr || cita.fecha || cita.fechaStr || "-",
+        time: cita.timeStr || cita.horaInicio || cita.hora || "-",
+        doctor: cita.doctorName || cita.doctor || cita.doctorDisplayName || cita.dentista || "su Odontólogo Tratante",
+        clinic: activeClinic
     };
     try {
         return await invokeWhatsApp("send_confirmation", { to: phone, details });
@@ -56,12 +91,14 @@ export async function sendConfirmacion(cita) {
     }
 }
 
-export async function sendRecordatorio(cita) {
+export async function sendRecordatorio(cita, clinicName = "") {
     const phone = cita.celularPaciente || cita.telefono || cita.celular || "";
+    const activeClinic = getActiveClinicName(clinicName || cita.clinicName || cita.clinica);
     const details = {
-        name: cita.pacienteNombre || cita.nombrePaciente || "Paciente",
-        date: cita.fecha || cita.fechaStr || "-",
-        time: cita.horaInicio || cita.hora || "-"
+        name: cita.pacienteNombre || cita.patientName || cita.nombrePaciente || cita.nombreCompleto || cita.paciente || "Paciente",
+        date: cita.dateStr || cita.fecha || cita.fechaStr || "-",
+        time: cita.timeStr || cita.horaInicio || cita.hora || "-",
+        clinic: activeClinic
     };
     try {
         return await invokeWhatsApp("send_reminder", { to: phone, details });
@@ -85,31 +122,60 @@ export const sendConfirmation = sendConfirmacion;
 
 /**
  * Abre directamente WhatsApp Web o App móvil con un mensaje de recordatorio de cita prellenado
+ * y adaptado al nombre real de la clínica con la que se inició sesión.
  */
-export function openWhatsAppWebDirect(cita, clinicName = "Clínica Dental") {
-    const rawPhone = (cita.celular || cita.telefono || cita.celularPaciente || cita.telefonoPaciente || cita.pacienteCelular || cita.pacienteTelefono || cita.phone || cita.mobile || "").toString().trim();
+export function openWhatsAppWebDirect(cita = {}, clinicName = "") {
+    const rawPhone = (
+        cita.phone || cita.celular || cita.telefono || cita.celularPaciente || 
+        cita.telefonoPaciente || cita.pacienteCelular || cita.pacienteTelefono || 
+        cita.mobile || ""
+    ).toString().trim();
+    
     const phone = normalizePhone(rawPhone);
-    const nombre = cita.pacienteNombre || cita.nombrePaciente || cita.nombreCompleto || cita.paciente || "Paciente";
+    const nombre = cita.patientName || cita.pacienteNombre || cita.nombrePaciente || 
+                   cita.nombreCompleto || cita.nombre || cita.paciente || "Paciente";
     
     let fechaStr = "—";
-    if (cita.start) {
+    if (cita.dateStr) {
+        fechaStr = cita.dateStr;
+    } else if (cita.fechaStr) {
+        fechaStr = cita.fechaStr;
+    } else if (cita.start) {
         const d = cita.start instanceof Date ? cita.start : new Date(cita.start);
-        fechaStr = d.toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+        if (!isNaN(d.getTime())) {
+            fechaStr = d.toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+        } else if (cita.fecha) {
+            fechaStr = cita.fecha;
+        }
     } else if (cita.fecha) {
         fechaStr = cita.fecha;
     }
 
     let horaStr = "—";
-    if (cita.start) {
+    if (cita.timeStr) {
+        horaStr = cita.timeStr;
+    } else if (cita.horaStr) {
+        horaStr = cita.horaStr;
+    } else if (cita.start) {
         const d = cita.start instanceof Date ? cita.start : new Date(cita.start);
-        horaStr = d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" });
+        if (!isNaN(d.getTime())) {
+            horaStr = d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
+        } else if (cita.horaInicio || cita.hora) {
+            horaStr = cita.horaInicio || cita.hora;
+        }
     } else if (cita.horaInicio || cita.hora) {
         horaStr = cita.horaInicio || cita.hora;
     }
 
-    const doctor = cita.doctorName || cita.doctorDisplayName || cita.dentista || cita.doctor || "su Odontólogo Tratante";
+    const doctor = cita.doctorName || cita.doctorDisplayName || cita.doctor || 
+                   cita.profesional || cita.dentista || "su Odontólogo Tratante";
 
-    const textMessage = `Hola *${nombre}*, te saludamos de *${clinicName}*.\n\nTe recordamos tu cita odontológica programada:\n\n• *Fecha:* ${fechaStr}\n• *Hora:* ${horaStr}\n• *Profesional:* ${doctor}\n\nPor favor responde a este mensaje confirmando tu asistencia. ¡Te esperamos!`;
+    // Nombre dinámico adaptado a la clínica en sesión
+    const resolvedClinicName = getActiveClinicName(
+        clinicName || cita.clinicName || cita.clinica || cita.tenantNombre || cita.tenantName || ""
+    );
+
+    const textMessage = `Hola *${nombre}*, te saludamos de *${resolvedClinicName}*.\n\nTe recordamos tu cita odontológica programada:\n\n• *Fecha:* ${fechaStr}\n• *Hora:* ${horaStr}\n• *Profesional:* ${doctor}\n\nPor favor responde a este mensaje confirmando tu asistencia. ¡Te esperamos!`;
 
     const encodedText = encodeURIComponent(textMessage);
     const waUrl = phone ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodedText}` : `https://api.whatsapp.com/send?text=${encodedText}`;
@@ -119,4 +185,3 @@ export function openWhatsAppWebDirect(cita, clinicName = "Clínica Dental") {
         window.location.href = waUrl;
     }
 }
-
