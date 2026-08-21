@@ -181,12 +181,26 @@ export default function NotaDebitoForm({ onCancel, onSuccess }) {
         setError("");
 
         try {
-            // 1. Calculate consecutive number
-            const { count } = await supabase
-                .from("notas_debito")
-                .select("*", { count: "exact", head: true })
-                .eq("tenant_id", inquilino);
-            const consecutive = `ND${(count || 0) + 1}`;
+            // 1. Calculate consecutive number from website_config or fallback to table count
+            let consecutive = "";
+            let consDoc = null;
+            try {
+                const { getConfigItems } = await import("../../../services/configPersistenceService");
+                const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
+                consDoc = consList.find(c => c.activo !== false) || consList[0] || {};
+                const currentCount = parseInt(String(consDoc.contNotaDebito || 0), 10);
+                if (currentCount > 0) {
+                    consecutive = `ND${currentCount}`;
+                }
+            } catch (e) {}
+
+            if (!consecutive) {
+                const { count } = await supabase
+                    .from("notas_debito")
+                    .select("*", { count: "exact", head: true })
+                    .eq("tenant_id", inquilino);
+                consecutive = `ND${(count || 0) + 1}`;
+            }
 
             // 2. Save debit note document
             const notaData = {
@@ -209,6 +223,18 @@ export default function NotaDebitoForm({ onCancel, onSuccess }) {
             };
 
             await supabase.from("notas_debito").insert([notaData]);
+
+            // 3. Increment consecutive in config
+            if (consDoc) {
+                try {
+                    const currentNum = parseInt(consecutive.replace(/\D/g, ""), 10) || 0;
+                    const { saveConfigItem } = await import("../../../services/configPersistenceService");
+                    await saveConfigItem(inquilino, "consecutivos", "consecutivos", {
+                        ...consDoc,
+                        contNotaDebito: currentNum + 1
+                    });
+                } catch (e) {}
+            }
 
             setSuccess(true);
             setTimeout(() => {

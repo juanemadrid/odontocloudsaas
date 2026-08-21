@@ -130,13 +130,28 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
     setSaving(true);
     setError("");
     try {
-      // 1. Registrar en movimientos
+      // 1. Obtener consecutivo desde configuración
+      let nroConsecutivo = null;
+      let consDoc = null;
+      try {
+        const { getConfigItems } = await import("../../../services/configPersistenceService");
+        const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
+        consDoc = consList.find(c => c.activo !== false) || consList[0] || {};
+        const fieldKey = tipo === "egreso" ? "contEgresos" : "contReciboCaja";
+        const currentCount = parseInt(String(consDoc[fieldKey] || 0), 10);
+        if (currentCount > 0) {
+          nroConsecutivo = currentCount;
+        }
+      } catch (e) {}
+
       const movData = {
         tenant_id: inquilino,
         inquilino,
         caja_id: caja.id,
         cajaId: caja.id,
         tipo,
+        nro_consecutivo: nroConsecutivo,
+        consecutivo: nroConsecutivo ? `${tipo === "egreso" ? "EGR" : "RC"}-${String(nroConsecutivo).padStart(4, "0")}` : undefined,
         concepto: form.concepto,
         monto: montoNum,
         metodoPago: form.metodoPago,
@@ -157,6 +172,18 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
       };
 
       await supabase.from("movimientos_caja").insert([movData]);
+
+      // Incrementar consecutivo en configuración
+      if (consDoc && nroConsecutivo) {
+        try {
+          const fieldKey = tipo === "egreso" ? "contEgresos" : "contReciboCaja";
+          const { saveConfigItem } = await import("../../../services/configPersistenceService");
+          await saveConfigItem(inquilino, "consecutivos", "consecutivos", {
+            ...consDoc,
+            [fieldKey]: nroConsecutivo + 1
+          });
+        } catch (e) {}
+      }
 
       // 2. Actualizar saldo en caja
       const delta = tipo === "ingreso" ? montoNum : -montoNum;

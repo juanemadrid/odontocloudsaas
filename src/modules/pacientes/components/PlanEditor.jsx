@@ -408,7 +408,21 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 };
             });
 
-            const nroFactura = `FE-${Math.floor(1000 + Math.random() * 9000)}`;
+            let nroFactura = `FE-${Math.floor(1000 + Math.random() * 9000)}`;
+            try {
+                const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
+                const activeCons = consList.find(c => c.activo !== false) || consList[0] || {};
+                const prefix = activeCons.fvPrefijo || activeCons.fePrefijoFactura || "FE";
+                const currentCount = Number(activeCons.fvNumActual || activeCons.feNumActual || activeCons.contFacturaBorrador || 0) + 1;
+                nroFactura = `${prefix}-${String(currentCount).padStart(4, "0")}`;
+                
+                const { saveConfigItem } = await import('../../../services/configPersistenceService');
+                await saveConfigItem(inquilino, "consecutivos", "consecutivos", {
+                    ...activeCons,
+                    fvNumActual: currentCount,
+                    contFacturaBorrador: currentCount
+                });
+            } catch (e) {}
 
             const dbPayload = {
                 tenant_id:   inquilino || null,

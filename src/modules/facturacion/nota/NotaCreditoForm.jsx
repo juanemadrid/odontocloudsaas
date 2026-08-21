@@ -181,12 +181,26 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
         setError("");
 
         try {
-            // 1. Calculate consecutive number
-            const { count } = await supabase
-                .from("notas_credito")
-                .select("*", { count: "exact", head: true })
-                .eq("tenant_id", inquilino);
-            const consecutive = `NC${(count || 0) + 1}`;
+            // 1. Calculate consecutive number from website_config or fallback to table count
+            let consecutive = "";
+            let consDoc = null;
+            try {
+                const { getConfigItems } = await import("../../../services/configPersistenceService");
+                const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
+                consDoc = consList.find(c => c.activo !== false) || consList[0] || {};
+                const currentCount = parseInt(String(consDoc.contNotaCredito || 0), 10);
+                if (currentCount > 0) {
+                    consecutive = `NC${currentCount}`;
+                }
+            } catch (e) {}
+
+            if (!consecutive) {
+                const { count } = await supabase
+                    .from("notas_credito")
+                    .select("*", { count: "exact", head: true })
+                    .eq("tenant_id", inquilino);
+                consecutive = `NC${(count || 0) + 1}`;
+            }
 
             // 2. If generating balance in favor, insert into "pagos"
             let pagoId = null;
@@ -233,6 +247,18 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
             };
 
             await supabase.from("notas_credito").insert([notaData]);
+
+            // 4. Increment consecutive in config
+            if (consDoc) {
+                try {
+                    const currentNum = parseInt(consecutive.replace(/\D/g, ""), 10) || 0;
+                    const { saveConfigItem } = await import("../../../services/configPersistenceService");
+                    await saveConfigItem(inquilino, "consecutivos", "consecutivos", {
+                        ...consDoc,
+                        contNotaCredito: currentNum + 1
+                    });
+                } catch (e) {}
+            }
 
             setSuccess(true);
             setTimeout(() => {
