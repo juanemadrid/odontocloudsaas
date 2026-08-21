@@ -107,6 +107,8 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                 rawConcepto = `${rawConcepto} (${notasParsed.planTitle})`;
             }
 
+            const validUser = notasParsed.registradoPor || notasParsed.usuarioNombre || p.registrado_por || p.usuario_nombre || p.creado_por || "";
+
             return {
                 id: p.id,
                 ...p,

@@ -133,7 +133,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                 metodo: data.medio || "Efectivo",
                 referencia: referenceStr ? `Ref: ${referenceStr}` : "SALDO A FAVOR",
                 notas: notesPayload,
-                created_at: now
+                created_at: new Date().toISOString()
             };
 
             if (!creditData.tenant_id) {
