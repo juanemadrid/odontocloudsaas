@@ -228,37 +228,7 @@ export default function SaldoTab({ patient }) {
     return (
         <div className="flex-1 flex flex-col h-full bg-slate-50/20 animate-fadeIn overflow-hidden">
             
-            {/* 1. HUD ELITE (Top metrics) */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6 md:px-10 border-b border-slate-100 bg-white shrink-0">
-                <HUDCard 
-                    label="Total Facturado" 
-                    value={totals.totalFacturado} 
-                    icon={FiFileText} 
-                    color="slate" 
-                />
-                <HUDCard 
-                    label="Total Recaudado" 
-                    value={totals.totalPagado} 
-                    icon={FiCheckCircle} 
-                    color="emerald" 
-                />
-                <HUDCard 
-                    label="Saldo por Cobrar" 
-                    value={totals.balance > 0 ? totals.balance : 0} 
-                    icon={FiAlertCircle} 
-                    color="rose" 
-                    isCritical={totals.balance > 0}
-                />
-                <HUDCard 
-                    label="Saldo a Favor" 
-                    value={totals.totalSaldosAFavor} 
-                    icon={FiDollarSign} 
-                    color="indigo" 
-                    badge="Crédito"
-                />
-            </div>
-
-            {/* 2. TOOLBAR & TABLE AREA */}
+            {/* TOOLBAR & TABLE AREA */}
             <div className="flex-1 flex flex-col min-h-0 bg-slate-50/30">
                 
                 {/* TOOLBAR */}
@@ -453,40 +423,6 @@ export default function SaldoTab({ patient }) {
                     </div>
                 </div>
             )}
-        </div>
-    );
-}
-
-function HUDCard({ label, value, icon: Icon, color, isCritical, badge }) {
-    const colors = {
-        indigo: "bg-indigo-50 text-indigo-600 border-indigo-100 ring-indigo-500/10",
-        emerald: "bg-emerald-50 text-emerald-600 border-emerald-100 ring-emerald-500/10",
-        rose: "bg-rose-50 text-rose-600 border-rose-100 ring-rose-500/10",
-        slate: "bg-slate-50 text-slate-600 border-slate-100 ring-slate-500/10"
-    };
-
-    return (
-        <div className={`p-5 rounded-[24px] border ${colors[color]} ring-4 transition-all hover:scale-[1.02] duration-300 relative overflow-hidden group`}>
-            <div className="flex justify-between items-start mb-3 relative z-10">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center bg-white shadow-sm`}>
-                    <Icon size={16} />
-                </div>
-                {badge && (
-                    <span className="text-[8px] font-black bg-white/50 px-2 py-0.5 rounded-full uppercase tracking-tighter">
-                        {badge}
-                    </span>
-                )}
-            </div>
-            <div className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-0.5 leading-none">{label}</div>
-            <div className={`text-xl font-black tracking-tighter leading-none ${isCritical ? 'animate-pulse' : ''}`}>
-                <span className="text-xs mr-0.5 opacity-40">$</span>
-                {formatCurrency(value)}
-            </div>
-            
-            {/* Subtle background decoration */}
-            <div className={`absolute -right-2 -bottom-2 opacity-5 transition-transform group-hover:scale-150 duration-700`}>
-                <Icon size={64} />
-            </div>
         </div>
     );
 }
