@@ -25,6 +25,30 @@ const formatDateOnly = (dObj) => {
   } catch { return "—"; }
 };
 
+export const printHTMLInHiddenIframe = (html) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+        iframe.contentWindow.print();
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 1000);
+    }, 300);
+};
+
 export default function SaldoFavorList({ onNew }) {
     const navigate = useNavigate();
     const { userProfile } = useAuth();
@@ -248,6 +272,28 @@ export default function SaldoFavorList({ onNew }) {
             const pacObj = pacientes.find(pac => pac.id === pId);
             const pacName = p.paciente_nombre || p.pacienteNombre || (pacObj ? (pacObj.nombreCompleto || `${pacObj.nombres || ""} ${pacObj.apellidos || ""}`).trim() : "Tercero");
 
+            let displayPlan = p.planTitle || "";
+            if (!displayPlan && p.notas) {
+                if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+                    try {
+                        const parsed = JSON.parse(p.notas);
+                        displayPlan = parsed.planTitle || (parsed.itemPayments && parsed.itemPayments.map(it => it.desc).filter(Boolean).join(", ")) || parsed.concepto || parsed.observaciones || "Abono a tratamiento";
+                    } catch (_) {}
+                } else if (p.notas !== "SALDO A FAVOR") {
+                    displayPlan = p.notas;
+                }
+            }
+            if (!displayPlan) displayPlan = isTopUp ? "Abono Saldo a Favor" : "Tratamiento Odontológico";
+
+            let docLabel = p.nroConsecutivo || p.consecutivo || "";
+            if (!docLabel) {
+                if (p.referencia && p.referencia !== "SALDO A FAVOR") {
+                    docLabel = p.referencia;
+                } else {
+                    docLabel = isTopUp ? "SALDO A FAVOR" : "USO SALDO A FAVOR";
+                }
+            }
+
             return {
                 id: p.id,
                 fecha: p.fecha || p.createdAt || p.created_at,
@@ -255,8 +301,8 @@ export default function SaldoFavorList({ onNew }) {
                 tipoMovimiento: isTopUp ? "Abono a saldo a favor" : "Consumo s. a favor",
                 valor: Number(p.monto || 0),
                 tipoDocumento: isTopUp ? "Recibo de saldo" : "Recibo de caja",
-                documento: p.nroConsecutivo || p.referencia || "S/N",
-                planTratamiento: p.planTitle || p.notas || "—",
+                documento: docLabel,
+                planTratamiento: displayPlan,
                 estado: isVoid ? "Anulado" : "Activo",
                 motivoAnulacion: motivo,
                 pagoOriginal: p
@@ -305,6 +351,119 @@ export default function SaldoFavorList({ onNew }) {
             console.error("Error printing receipt:", e);
             alert("Error al preparar la impresión");
         }
+    };
+
+    const handlePrintPatientMovements = () => {
+        if (!selectedPaciente || selectedMovements.length === 0) return;
+        const clinicName = userProfile?.tenantNombre || userProfile?.clinica || "ODONTOCLOUD";
+        const pacName = (selectedPaciente.nombreCompleto || `${selectedPaciente.nombres || ""} ${selectedPaciente.apellidos || ""}`).trim().toUpperCase();
+        const pacDoc = selectedPaciente.documento || selectedPaciente.nroDocumento || selectedPaciente.nro_documento || selectedPaciente.cedula || "—";
+        const pacTel = selectedPaciente.celular || selectedPaciente.telefono || "—";
+        const dateNow = new Date().toLocaleDateString("es-CO", { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const timeNow = new Date().toLocaleTimeString("es-CO", { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        const rowsHtml = selectedMovements.map((mov, idx) => {
+            const isAbono = mov.tipoMovimiento.toLowerCase().includes("abono");
+            const colorClass = isAbono ? "#10b981" : "#e11d48";
+            const valSign = isAbono ? "+" : "-";
+            const isAnulado = mov.estado === "Anulado";
+
+            return `
+            <tr style="border-bottom: 1px solid #f1f5f9; ${isAnulado ? 'background:#fff1f2; opacity:0.7;' : (idx % 2 === 0 ? 'background:#ffffff;' : 'background:#f8fafc;')}">
+                <td style="padding: 8px 10px; font-size: 11px; color: #475569;">${formatDateOnly(mov.fecha)}</td>
+                <td style="padding: 8px 10px; font-size: 11px; font-weight: bold; color: #1e293b; text-transform: uppercase;">${mov.tipoMovimiento}</td>
+                <td style="padding: 8px 10px; font-size: 11px; font-weight: bold; color: ${colorClass}; text-align: right; font-family: monospace;">${valSign} ${fmt(mov.valor)}</td>
+                <td style="padding: 8px 10px; font-size: 11px; color: #64748b; text-transform: uppercase;">${mov.tipoDocumento}</td>
+                <td style="padding: 8px 10px; font-size: 11px; font-family: monospace; font-weight: bold; color: #334155;">#${mov.documento}</td>
+                <td style="padding: 8px 10px; font-size: 11px; color: #334155;">${mov.planTratamiento}${isAnulado && mov.motivoAnulacion ? `<br/><span style="color:#e11d48;font-size:9px;font-style:italic;">⚠️ Motivo: ${mov.motivoAnulacion}</span>` : ''}</td>
+                <td style="padding: 8px 10px; font-size: 10px; font-weight: bold; text-align: center; color: ${isAnulado ? '#e11d48' : '#059669'};">${mov.estado.toUpperCase()}</td>
+            </tr>`;
+        }).join("");
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Historial de Saldo a Favor - ${pacName}</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 25px; color: #1e293b; font-size: 12px; }
+        .header-table { width: 100%; border-bottom: 2px solid #8cc33f; padding-bottom: 12px; margin-bottom: 15px; }
+        .pac-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 15px; }
+        table.data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        table.data-table th { background: #f1f5f9; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 900; color: #64748b; border-bottom: 1px solid #cbd5e1; }
+        @media print { @page { margin: 15mm; size: letter portrait; } }
+    </style>
+</head>
+<body>
+    <table class="header-table">
+        <tr>
+            <td>
+                <div style="font-size: 18px; font-weight: 900; color: #1e293b; letter-spacing: -0.5px;">${clinicName}</div>
+                <div style="font-size: 11px; font-weight: bold; color: #8cc33f; text-transform: uppercase; margin-top: 2px;">Historial de Movimientos de Saldo a Favor</div>
+            </td>
+            <td style="text-align: right; font-size: 10px; color: #64748b;">
+                <div>Fecha de emisión: <strong>${dateNow} — ${timeNow}</strong></div>
+                <div>Generado por: ${userProfile?.nombre || userProfile?.email || "Usuario"}</div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="pac-box">
+        <table style="width: 100%; font-size: 11px;">
+            <tr>
+                <td style="width: 50%;"><strong>PACIENTE:</strong> ${pacName}</td>
+                <td style="width: 25%;"><strong>DOC / CC:</strong> ${pacDoc}</td>
+                <td style="width: 25%;"><strong>TEL:</strong> ${pacTel}</td>
+            </tr>
+        </table>
+    </div>
+
+    <table style="width: 100%; margin-bottom: 15px; border-spacing: 10px 0;">
+        <tr>
+            <td style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                <div style="font-size: 9px; font-weight: bold; color: #64748b; text-transform: uppercase;">Saldo Total Abonado</div>
+                <div style="font-size: 15px; font-weight: 900; color: #0f172a; font-family: monospace; margin-top: 3px;">${fmt(selectedTotals.total)}</div>
+            </td>
+            <td style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                <div style="font-size: 9px; font-weight: bold; color: #e11d48; text-transform: uppercase;">Saldo Usado / Cruzado</div>
+                <div style="font-size: 15px; font-weight: 900; color: #e11d48; font-family: monospace; margin-top: 3px;">${fmt(selectedTotals.usado)}</div>
+            </td>
+            <td style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                <div style="font-size: 9px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Saldo Disponible Actual</div>
+                <div style="font-size: 15px; font-weight: 900; color: #16a34a; font-family: monospace; margin-top: 3px;">${fmt(selectedTotals.disponible)}</div>
+            </td>
+        </tr>
+    </table>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="text-align: left;">Fecha</th>
+                <th style="text-align: left;">Tipo Movimiento</th>
+                <th style="text-align: right;">Valor</th>
+                <th style="text-align: left;">Tipo Doc.</th>
+                <th style="text-align: left;">Documento</th>
+                <th style="text-align: left;">Concepto / Plan</th>
+                <th style="text-align: center;">Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${rowsHtml}
+        </tbody>
+    </table>
+
+    <div style="margin-top: 40px; display: flex; justify-content: space-between;">
+        <div style="width: 220px; border-top: 1px solid #94a3b8; text-align: center; padding-top: 5px; font-size: 10px; color: #64748b; font-weight: bold;">
+            Firma Responsable Clínica
+        </div>
+        <div style="width: 220px; border-top: 1px solid #94a3b8; text-align: center; padding-top: 5px; font-size: 10px; color: #64748b; font-weight: bold;">
+            Firma del Paciente / Tercero
+        </div>
+    </div>
+</body>
+</html>`;
+
+        printHTMLInHiddenIframe(html);
     };
 
     return (
@@ -404,8 +563,8 @@ export default function SaldoFavorList({ onNew }) {
                     </div>
                 )}
 
-                {/* Compact Toggle Controls */}
-                <div className="flex items-center gap-5">
+                {/* Compact Toggle Controls & Print History Button */}
+                <div className="flex items-center gap-4 flex-wrap">
                     <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
                         <input
                             type="checkbox"
@@ -414,10 +573,22 @@ export default function SaldoFavorList({ onNew }) {
                                 setDetalleMovimientos(!detalleMovimientos);
                                 setSelectedPaciente(null);
                             }}
-                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
                         />
-                        <span>Detalle de movimientos</span>
+                        <span>Detalle de movimiento por paciente</span>
                     </label>
+
+                    {detalleMovimientos && selectedPaciente && (
+                        <button
+                            type="button"
+                            onClick={handlePrintPatientMovements}
+                            className="h-8 px-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                            title="Imprimir historial completo de movimientos del paciente"
+                        >
+                            <FiPrinter size={13} />
+                            <span>Imprimir Historial</span>
+                        </button>
+                    )}
 
                     {!detalleMovimientos && (
                         <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
@@ -425,7 +596,7 @@ export default function SaldoFavorList({ onNew }) {
                                 type="checkbox"
                                 checked={conSaldo}
                                 onChange={() => setConSaldo(!conSaldo)}
-                                className="w-4 h-4 text-[#8cc33f] rounded border-slate-300 focus:ring-[#8cc33f]"
+                                className="w-4 h-4 text-[#8cc33f] rounded border-slate-300 focus:ring-[#8cc33f] cursor-pointer"
                             />
                             <span>Solo con saldo disponible</span>
                         </label>
