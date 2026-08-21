@@ -355,28 +355,59 @@ export default function SaldoFavorList({ onNew }) {
 
     const handlePrintPatientMovements = () => {
         if (!selectedPaciente || selectedMovements.length === 0) return;
-        const clinicName = userProfile?.tenantNombre || userProfile?.clinica || "ODONTOCLOUD";
+        
+        const clinic = userProfile?.tenant || {};
+        const clinicName = userProfile?.tenantNombre || userProfile?.clinica || clinic.nombre || "CLÍNICA ODONTOLÓGICA";
+        const nit = userProfile?.tenantNit || clinic.nit || userProfile?.nit || "";
+        const direccion = userProfile?.tenantDireccion || clinic.direccion || userProfile?.direccion || "";
+        const ciudad = userProfile?.tenantCiudad || clinic.ciudad || userProfile?.ciudad || "Sincelejo";
+        const telefono = userProfile?.tenantTelefono || clinic.telefono || userProfile?.telefono || "";
+        const email = userProfile?.tenantEmail || clinic.email || userProfile?.email || "";
+        const logoUrl = userProfile?.tenantLogo || clinic.logo || "";
+
         const pacName = (selectedPaciente.nombreCompleto || `${selectedPaciente.nombres || ""} ${selectedPaciente.apellidos || ""}`).trim().toUpperCase();
         const pacDoc = selectedPaciente.documento || selectedPaciente.nroDocumento || selectedPaciente.nro_documento || selectedPaciente.cedula || "—";
+        const pacDocType = (selectedPaciente.tipoDocumento || selectedPaciente.tipo_documento || "CÉDULA DE CIUDADANÍA").toUpperCase();
+        const pacAddress = selectedPaciente.direccion || selectedPaciente.dir || "—";
+        const pacCity = selectedPaciente.ciudad || selectedPaciente.municipio || ciudad || "—";
         const pacTel = selectedPaciente.celular || selectedPaciente.telefono || "—";
-        const dateNow = new Date().toLocaleDateString("es-CO", { day: '2-digit', month: '2-digit', year: 'numeric' });
-        const timeNow = new Date().toLocaleTimeString("es-CO", { hour: '2-digit', minute: '2-digit', hour12: true });
+        const elaboradoPor = (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "ADMINISTRADOR").toUpperCase();
 
-        const rowsHtml = selectedMovements.map((mov, idx) => {
-            const isAbono = mov.tipoMovimiento.toLowerCase().includes("abono");
-            const colorClass = isAbono ? "#10b981" : "#e11d48";
-            const valSign = isAbono ? "+" : "-";
+        const now = new Date();
+        const expeditionDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+
+        const rowsHtml = selectedMovements.map(mov => {
+            const isAbono = mov.tipoMovimiento.toLowerCase().includes("abono") || mov.tipoMovimiento.toLowerCase().includes("entrada");
+            const tMov = isAbono ? "Entrada" : "Salida";
+            const tDoc = isAbono ? (mov.tipoDocumento || "Recibo de caja") : "Cons. s. a fav.";
             const isAnulado = mov.estado === "Anulado";
 
+            let docClean = String(mov.documento || "").replace(/^#/, "");
+            if (docClean.toUpperCase().includes("SALDO A FAVOR") || !docClean) {
+                docClean = "—";
+            }
+
             return `
-            <tr style="border-bottom: 1px solid #f1f5f9; ${isAnulado ? 'background:#fff1f2; opacity:0.7;' : (idx % 2 === 0 ? 'background:#ffffff;' : 'background:#f8fafc;')}">
-                <td style="padding: 8px 10px; font-size: 11px; color: #475569;">${formatDateOnly(mov.fecha)}</td>
-                <td style="padding: 8px 10px; font-size: 11px; font-weight: bold; color: #1e293b; text-transform: uppercase;">${mov.tipoMovimiento}</td>
-                <td style="padding: 8px 10px; font-size: 11px; font-weight: bold; color: ${colorClass}; text-align: right; font-family: monospace;">${valSign} ${fmt(mov.valor)}</td>
-                <td style="padding: 8px 10px; font-size: 11px; color: #64748b; text-transform: uppercase;">${mov.tipoDocumento}</td>
-                <td style="padding: 8px 10px; font-size: 11px; font-family: monospace; font-weight: bold; color: #334155;">#${mov.documento}</td>
-                <td style="padding: 8px 10px; font-size: 11px; color: #334155;">${mov.planTratamiento}${isAnulado && mov.motivoAnulacion ? `<br/><span style="color:#e11d48;font-size:9px;font-style:italic;">⚠️ Motivo: ${mov.motivoAnulacion}</span>` : ''}</td>
-                <td style="padding: 8px 10px; font-size: 10px; font-weight: bold; text-align: center; color: ${isAnulado ? '#e11d48' : '#059669'};">${mov.estado.toUpperCase()}</td>
+            <tr>
+                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; ${isAnulado ? 'text-decoration: line-through; color: #ef4444;' : ''}">
+                    ${formatDateOnly(mov.fecha)}
+                </td>
+                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; font-weight: 600;">
+                    ${tMov}
+                </td>
+                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 700;">
+                    $${formatCurrency(mov.valor || 0)}
+                </td>
+                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; text-transform: uppercase;">
+                    ${tDoc}
+                </td>
+                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: center; font-family: monospace; font-weight: 700;">
+                    ${docClean}
+                </td>
+                <td style="border: 1px solid #334155; padding: 5px 6px; text-align: left; text-transform: uppercase; font-size: 9.5px;">
+                    ${mov.planTratamiento || "—"}
+                    ${isAnulado && mov.motivoAnulacion ? `<div style="color: #ef4444; font-size: 8.5px; font-style: italic;">(Anulado: ${mov.motivoAnulacion})</div>` : ''}
+                </td>
             </tr>`;
         }).join("");
 
@@ -384,67 +415,88 @@ export default function SaldoFavorList({ onNew }) {
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Historial de Saldo a Favor - ${pacName}</title>
+    <title>Histórico saldo a favor - ${pacName}</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 25px; color: #1e293b; font-size: 12px; }
-        .header-table { width: 100%; border-bottom: 2px solid #8cc33f; padding-bottom: 12px; margin-bottom: 15px; }
-        .pac-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 15px; }
-        table.data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        table.data-table th { background: #f1f5f9; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 900; color: #64748b; border-bottom: 1px solid #cbd5e1; }
-        @media print { @page { margin: 15mm; size: letter portrait; } }
+        * { box-sizing: border-box; }
+        body { 
+            font-family: Arial, Helvetica, sans-serif; 
+            margin: 0; 
+            padding: 30px 40px; 
+            color: #0f172a; 
+            font-size: 11px;
+            background: #ffffff;
+        }
+        @media print { 
+            @page { margin: 12mm 15mm; size: letter portrait; }
+            body { padding: 0; }
+        }
     </style>
 </head>
 <body>
-    <table class="header-table">
+
+    <!-- Header -->
+    <table style="width: 100%; margin-bottom: 22px; border-collapse: collapse;">
         <tr>
-            <td>
-                <div style="font-size: 18px; font-weight: 900; color: #1e293b; letter-spacing: -0.5px;">${clinicName}</div>
-                <div style="font-size: 11px; font-weight: bold; color: #8cc33f; text-transform: uppercase; margin-top: 2px;">Historial de Movimientos de Saldo a Favor</div>
+            <td style="width: 25%; vertical-align: middle;">
+                ${logoUrl ? `<img src="${logoUrl}" style="max-height: 65px; max-width: 160px; object-fit: contain;" />` : `<div style="font-size: 16px; font-weight: 900; color: #1e293b;">${clinicName}</div>`}
             </td>
-            <td style="text-align: right; font-size: 10px; color: #64748b;">
-                <div>Fecha de emisión: <strong>${dateNow} — ${timeNow}</strong></div>
-                <div>Generado por: ${userProfile?.nombre || userProfile?.email || "Usuario"}</div>
+            <td style="width: 50%; text-align: center; vertical-align: middle; font-size: 10.5px; line-height: 1.35;">
+                <div style="font-weight: 900; font-size: 12px; text-transform: uppercase; margin-bottom: 2px;">${clinicName}</div>
+                ${nit ? `<div>NIT ${nit}</div>` : ''}
+                ${direccion ? `<div>${direccion}${ciudad ? ` - ${ciudad}` : ''}</div>` : ''}
+                ${telefono ? `<div>${telefono}</div>` : ''}
+                ${email ? `<div>${email}</div>` : ''}
+            </td>
+            <td style="width: 25%; text-align: right; vertical-align: top; font-size: 11px; font-weight: 600; color: #334155;">
+                Histórico saldo a favor
             </td>
         </tr>
     </table>
 
-    <div class="pac-box">
-        <table style="width: 100%; font-size: 11px;">
-            <tr>
-                <td style="width: 50%;"><strong>PACIENTE:</strong> ${pacName}</td>
-                <td style="width: 25%;"><strong>DOC / CC:</strong> ${pacDoc}</td>
-                <td style="width: 25%;"><strong>TEL:</strong> ${pacTel}</td>
-            </tr>
-        </table>
-    </div>
-
-    <table style="width: 100%; margin-bottom: 15px; border-spacing: 10px 0;">
+    <!-- Patient Details Table Grid -->
+    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #334155; margin-bottom: 20px; font-size: 9.5px;">
         <tr>
-            <td style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
-                <div style="font-size: 9px; font-weight: bold; color: #64748b; text-transform: uppercase;">Saldo Total Abonado</div>
-                <div style="font-size: 15px; font-weight: 900; color: #0f172a; font-family: monospace; margin-top: 3px;">${fmt(selectedTotals.total)}</div>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase; width: 16%;">SEÑOR(A)</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; width: 44%; text-transform: uppercase;" colspan="3">${pacName}</td>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-align: center; width: 40%; font-size: 10px;" colspan="2">FECHA DE EXPEDICIÓN (DD/MM/AA)</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">DIRECCIÓN</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; text-transform: uppercase;" colspan="3">${pacAddress}</td>
+            <td style="border: 1px solid #334155; padding: 8px; text-align: center; font-weight: 700; font-size: 11px; vertical-align: middle;" colspan="2" rowspan="3">
+                ${expeditionDate}
             </td>
-            <td style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
-                <div style="font-size: 9px; font-weight: bold; color: #e11d48; text-transform: uppercase;">Saldo Usado / Cruzado</div>
-                <div style="font-size: 15px; font-weight: 900; color: #e11d48; font-family: monospace; margin-top: 3px;">${fmt(selectedTotals.usado)}</div>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">CIUDAD</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; text-transform: uppercase;" colspan="3">${pacCity}</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">TELÉFONO</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; width: 18%; font-weight: 600;">${pacTel}</td>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 6px; font-weight: 900; text-align: center; text-transform: uppercase; width: 14%; font-size: 8.5px; line-height: 1.1;">
+                ${pacDocType}
             </td>
-            <td style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
-                <div style="font-size: 9px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Saldo Disponible Actual</div>
-                <div style="font-size: 15px; font-weight: 900; color: #16a34a; font-family: monospace; margin-top: 3px;">${fmt(selectedTotals.disponible)}</div>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; width: 12%; font-family: monospace; font-size: 10.5px;">
+                ${pacDoc}
             </td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">ELABORADO POR</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-transform: uppercase;" colspan="5">${elaboradoPor}</td>
         </tr>
     </table>
 
-    <table class="data-table">
+    <!-- Movements Table -->
+    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #334155; margin-bottom: 22px; font-size: 9.5px;">
         <thead>
-            <tr>
-                <th style="text-align: left;">Fecha</th>
-                <th style="text-align: left;">Tipo Movimiento</th>
-                <th style="text-align: right;">Valor</th>
-                <th style="text-align: left;">Tipo Doc.</th>
-                <th style="text-align: left;">Documento</th>
-                <th style="text-align: left;">Concepto / Plan</th>
-                <th style="text-align: center;">Estado</th>
+            <tr style="background: #ffffff; text-transform: uppercase;">
+                <th style="border: 1px solid #334155; padding: 5px 6px; text-align: center; width: 12%; font-weight: 900;">Fecha</th>
+                <th style="border: 1px solid #334155; padding: 5px 6px; text-align: center; width: 15%; font-weight: 900; line-height: 1.1;">T.<br/>movimiento</th>
+                <th style="border: 1px solid #334155; padding: 5px 6px; text-align: right; width: 14%; font-weight: 900;">Valor</th>
+                <th style="border: 1px solid #334155; padding: 5px 6px; text-align: center; width: 15%; font-weight: 900;">T. documento</th>
+                <th style="border: 1px solid #334155; padding: 5px 6px; text-align: center; width: 12%; font-weight: 900;">Documento</th>
+                <th style="border: 1px solid #334155; padding: 5px 6px; text-align: left; width: 32%; font-weight: 900;">P. de trat.</th>
             </tr>
         </thead>
         <tbody>
@@ -452,14 +504,36 @@ export default function SaldoFavorList({ onNew }) {
         </tbody>
     </table>
 
-    <div style="margin-top: 40px; display: flex; justify-content: space-between;">
-        <div style="width: 220px; border-top: 1px solid #94a3b8; text-align: center; padding-top: 5px; font-size: 10px; color: #64748b; font-weight: bold;">
-            Firma Responsable Clínica
+    <!-- Totals Area -->
+    <div style="display: flex; justify-content: flex-end; margin-bottom: 50px;">
+        <table style="border-collapse: collapse; font-size: 11px; font-weight: 900; width: 280px;">
+            <tr>
+                <td style="padding: 3px 10px; text-align: right; text-transform: none;">Valor total</td>
+                <td style="padding: 3px 10px; text-align: right; font-family: monospace; font-size: 12px;">$ ${formatCurrency(selectedTotals.total)}</td>
+            </tr>
+            <tr>
+                <td style="padding: 3px 10px; text-align: right; text-transform: none;">Valor usado</td>
+                <td style="padding: 3px 10px; text-align: right; font-family: monospace; font-size: 12px;">$ ${formatCurrency(selectedTotals.usado)}</td>
+            </tr>
+            <tr>
+                <td style="padding: 3px 10px; text-align: right; text-transform: none;">Valor disponible</td>
+                <td style="padding: 3px 10px; text-align: right; font-family: monospace; font-size: 12px;">$ ${formatCurrency(selectedTotals.disponible)}</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Signatures -->
+    <div style="margin-top: 60px; display: flex; justify-content: space-around;">
+        <div style="width: 240px; text-align: center;">
+            <div style="border-top: 1.5px solid #334155; margin-bottom: 6px;"></div>
+            <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase;">ELABORADO POR</div>
         </div>
-        <div style="width: 220px; border-top: 1px solid #94a3b8; text-align: center; padding-top: 5px; font-size: 10px; color: #64748b; font-weight: bold;">
-            Firma del Paciente / Tercero
+        <div style="width: 240px; text-align: center;">
+            <div style="border-top: 1.5px solid #334155; margin-bottom: 6px;"></div>
+            <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase;">ACEPTADA. FIRMA Y/O SELLO Y FECHA</div>
         </div>
     </div>
+
 </body>
 </html>`;
 
