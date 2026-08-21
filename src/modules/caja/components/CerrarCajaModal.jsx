@@ -104,14 +104,21 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
       };
 
       try {
-        await supabase.from("cajas").update({
+        const dbPayload = {
           estado: "cerrada",
           fecha_cierre: fechaCierreIso,
-          total_ingresos: totalIngresos,
-          total_egresos: totalEgresos,
           updated_at: fechaCierreIso
-        }).eq("id", caja.id);
-      } catch (e) {}
+        };
+        if (observacion.trim()) {
+          dbPayload.notas = observacion.trim();
+        }
+        await supabase
+          .from("cajas")
+          .update(dbPayload)
+          .eq("id", caja.id);
+      } catch (e) {
+        console.warn("Error actualizando estado en tabla cajas:", e);
+      }
 
       // Sincronizar en website_config
       try {

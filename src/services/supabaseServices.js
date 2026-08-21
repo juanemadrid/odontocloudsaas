@@ -196,7 +196,8 @@ export const cajasService = {
       .update({
         estado: 'cerrada',
         fecha_cierre: new Date().toISOString(),
-        observaciones
+        notas: observaciones || null,
+        updated_at: new Date().toISOString()
       })
       .eq("id", cajaId)
       .select()
@@ -207,23 +208,11 @@ export const cajasService = {
   },
 
   // Actualizar saldo de caja
-  async actualizarSaldo(cajaId, nuevoSaldo, tipoMovimiento, monto) {
-    // Calcular totales
-    let totalIngresos = 0;
-    let totalEgresos = 0;
-
-    if (tipoMovimiento === 'ingreso') {
-      totalIngresos = monto;
-    } else {
-      totalEgresos = monto;
-    }
-
+  async actualizarSaldo(cajaId) {
     const { data, error } = await supabase
       .from("cajas")
       .update({
-        saldo_actual: nuevoSaldo,
-        total_ingresos: supabase.sql`total_ingresos + ${totalIngresos}`,
-        total_egresos: supabase.sql`total_egresos + ${totalEgresos}`
+        updated_at: new Date().toISOString()
       })
       .eq("id", cajaId)
       .select()
