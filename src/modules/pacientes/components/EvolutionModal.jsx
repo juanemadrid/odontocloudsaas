@@ -1384,7 +1384,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                             <table className="w-full text-left table-fixed">
                                 <thead>
                                     <tr className="border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-widest pb-2">
-                                        <th className="py-2 w-24 text-center">Realizado</th>
+                                        <th className="py-2 w-24 text-center">Seleccionar</th>
                                         <th className="py-2 w-3/4">Procedimiento</th>
                                         <th className="py-2 text-center w-28">Estado Pago</th>
                                     </tr>
@@ -1423,6 +1423,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                                 [s.id]: { 
                                                                     ...prev[s.id], 
                                                                     checked: e.target.checked,
+                                                                    realizado: e.target.checked ? (prev[s.id]?.realizado ?? true) : false,
                                                                     desc: s.desc || s.procedimiento || s.nombre || '',
                                                                     dientes: s.dientes || ''
                                                                 }
@@ -1468,11 +1469,10 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                 const next = { ...prev };
                                                 Object.keys(next).forEach(k => {
                                                     if (!realizedItemIds.has(k)) {
-                                                        // "Marcar realizadas" marks as both selected AND realized
-                                                        // Unmarking only removes the selection, not the realized status
-                                                        // if it was already individually marked
-                                                        next[k].checked = val;
-                                                        next[k].realizado = val;
+                                                        // Solo marcar realizado en los seleccionados por el doctor
+                                                        if (next[k]?.checked) {
+                                                            next[k].realizado = val;
+                                                        }
                                                     }
                                                 });
                                                 return next;
@@ -1481,7 +1481,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     />
                                 </div>
                                 <label htmlFor="marcar-realizadas-chk" className="text-[11px] font-black text-slate-500 uppercase tracking-wider cursor-pointer select-none">
-                                    Marcar realizadas
+                                    Marcar seleccionadas como realizadas
                                 </label>
                             </div>
                         </div>
