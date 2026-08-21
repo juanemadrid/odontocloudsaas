@@ -327,22 +327,42 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
             }
         });
 
-        // Check if any realized item has debt
-        const hasRealizedDebt = (plan.items || []).some(item => {
-            // Compatibilidad: registros nuevos usan `realizado`, antiguos usaban `checked`
-            const realized = planEvolutions.some(e =>
+        // If entire plan total is paid in full -> 'paid'
+        if (totalCost > 0 && paidAmt >= totalCost) return 'paid';
+
+        const items = plan.items || [];
+        
+        // Find items that have been realized
+        const realizedItems = items.filter(item => 
+            item.realizado === true ||
+            planEvolutions.some(e =>
                 e.plantillaItems?.[item.id]?.realizado === true ||
                 (e.plantillaItems?.[item.id]?.realizado === undefined && e.plantillaItems?.[item.id]?.checked === true)
-            );
-            if (!realized) return false;
+            )
+        );
+
+        // Check debt / partial on realized items
+        let hasRealizedDebtNoPayment = false;
+        let hasRealizedPartialPayment = false;
+
+        realizedItems.forEach(item => {
             const itemCost = (Number(item.amount || 0) * Number(item.qty || 1)) - Number(item.descuento || 0);
             const itemPaid = paidMap[item.id] || 0;
-            return itemCost - itemPaid > 0;
+            const diff = itemCost - itemPaid;
+            if (diff > 0) {
+                if (itemPaid > 0) {
+                    hasRealizedPartialPayment = true;
+                } else {
+                    hasRealizedDebtNoPayment = true;
+                }
+            }
         });
 
-        if (totalCost > 0 && paidAmt >= totalCost) return 'paid';
-        if (hasRealizedDebt) return 'debt';
-        if (paidAmt > 0) return 'partial';
+        // Only show partial / debt when a realized item has pending debt
+        if (hasRealizedPartialPayment) return 'partial';
+        if (hasRealizedDebtNoPayment) return 'debt';
+
+        // When all realized items are 100% paid (or no realized items yet):
         return 'pending';
     };
 
@@ -598,14 +618,14 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                             </button>
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleDeleteClick(p); }} 
-                                                disabled={getPlanStatus(p) !== 'pending' || isPlanRealized(p)}
+                                                disabled={paidAmt > 0 || isPlanRealized(p)}
                                                 className={`p-2 rounded-lg transition-all shadow-sm ${
-                                                    (getPlanStatus(p) !== 'pending' || isPlanRealized(p))
+                                                    (paidAmt > 0 || isPlanRealized(p))
                                                         ? 'bg-slate-50 text-slate-200 cursor-not-allowed'
                                                         : 'bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white'
                                                 }`}
                                                 title={
-                                                    getPlanStatus(p) !== 'pending' ? 'No se puede eliminar: tiene pagos registrados' :
+                                                    paidAmt > 0 ? 'No se puede eliminar: tiene pagos registrados' :
                                                     isPlanRealized(p) ? 'No se puede eliminar: tiene procedimientos marcados como realizados' :
                                                     'Eliminar'
                                                 }
