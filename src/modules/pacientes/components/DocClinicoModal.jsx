@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiCheck, FiSave, FiPlus, FiTrash2, FiSearch, FiBox, FiList, FiPenTool } from 'react-icons/fi';
+import { FiX, FiCheck, FiSave, FiPlus, FiTrash2, FiSearch, FiBox, FiList, FiPenTool, FiClock, FiLock, FiCheckCircle, FiChevronRight, FiChevronLeft, FiAlertTriangle } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
@@ -18,8 +18,18 @@ import { getDoctorsList } from '../../../services/supabaseServices';
 export default function DocClinicoModal({ isOpen, onClose, patient, docType, initialData = null, isViewOnly = false }) {
     const { userProfile } = useAuth();
     const toast = useToast();
+
+    // Determinar si es un registro cerrado / finalizado
+    const isClosedRecord = (
+        (docType === 'Consulta' || initialData?.tipoDocumento === 'Consulta' || initialData?.tipo === 'Consulta') &&
+        (initialData?.estado === 'Finalizada' || initialData?.finalizado === true || initialData?.metadata?.estado === 'Finalizada' || initialData?.metadata?.finalizado === true)
+    );
+    const effectiveIsViewOnly = isViewOnly || isClosedRecord;
     
+    const [activeDocId, setActiveDocId] = useState(initialData?.id || null);
     const [saving, setSaving] = useState(false);
+    const [confirmFinalizeWithMissing, setConfirmFinalizeWithMissing] = useState(false);
+    const [missingConsultaTabs, setMissingConsultaTabs] = useState([]);
     const [contenido, setContenido] = useState("");
     const [profesional, setProfesional] = useState("");
     const [diagnostico, setDiagnostico] = useState("");
@@ -59,12 +69,15 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     const [templates, setTemplates] = useState([]);
     const [selectedTemplate, setSelectedTemplate] = useState(null);
     const [templateValues, setTemplateValues] = useState({});
+    const [medicalTabs, setMedicalTabs] = useState([]);
+    const [medicalTabValues, setMedicalTabValues] = useState({});
 
-    // ── Consulta Médica form states ────────────────────────────────────────
+    // ── Consulta Odontológica form states ────────────────────────────────────
     const [consultaTab, setConsultaTab] = useState('motivo');
+    // 1. Motivo de Consulta
     const [motivoConsulta, setMotivoConsulta] = useState('');
     const [enfermedadActual, setEnfermedadActual] = useState('');
-    // Antecedentes
+    // 2. Antecedentes
     const [antNoRefiere, setAntNoRefiere] = useState(false);
     const [tempAntCIE10, setTempAntCIE10] = useState(null);
     const [tempAntObs, setTempAntObs] = useState('');
@@ -85,6 +98,66 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     const [tempMedPrevItem, setTempMedPrevItem] = useState(null);
     const [tempMedPrevObs, setTempMedPrevObs] = useState('');
     const [medicamentosPrev, setMedicamentosPrev] = useState([]);
+    // 3. Examen Odontológico Estructurado
+    const DEFAULT_EXAMEN_ODONTO = {
+        // 1. Estado general
+        estadoGeneral: '',
+        presionArterial: '',
+        frecuenciaCardiaca: '',
+        otrosSignos: '',
+        // 2. Examen extraoral
+        simetriaFacial: '',
+        simetriaFacialObs: '',
+        pielTejidos: '',
+        pielTejidosObs: '',
+        ganglios: '',
+        gangliosObs: '',
+        labios: '',
+        labiosObs: '',
+        // 3. ATM
+        atmItems: [],
+        atmOtros: '',
+        // 4. Tejidos blandos / Intraoral
+        mucosaYugal: '',
+        mucosaYugalObs: '',
+        paladar: '',
+        paladarObs: '',
+        lengua: '',
+        lenguaObs: '',
+        pisoBoca: '',
+        pisoBocaObs: '',
+        glandulasSalivales: '',
+        glandulasSalivalesObs: '',
+        orofaringe: '',
+        orofaringeObs: '',
+        // 5. Periodonto
+        encias: [],
+        higieneOral: '',
+        placaBacteriana: '',
+        calculo: '',
+        movilidadDental: '',
+        periodontoOtros: '',
+        // 6. Oclusión
+        oclusionItems: [],
+        oclusionObs: '',
+        // 7. Hallazgos adicionales
+        hallazgosAdicionales: ''
+    };
+    const [examenOdonto, setExamenOdonto] = useState(DEFAULT_EXAMEN_ODONTO);
+
+    const updateExamenOdonto = (key, value) => {
+        setExamenOdonto(prev => ({ ...prev, [key]: value }));
+    };
+
+    // 4. Diagnóstico
+    const [dxPrincipalConsulta, setDxPrincipalConsulta] = useState(null);
+    const [dxRelacionadosConsulta, setDxRelacionadosConsulta] = useState([]);
+    const [tempDxRelConsultaCIE10, setTempDxRelConsultaCIE10] = useState(null);
+    const [tempDxRelConsultaObs, setTempDxRelConsultaObs] = useState('');
+    const [diagnosticoNotas, setDiagnosticoNotas] = useState('');
+    // 5. Plan de Tratamiento
+    const [planTratamiento, setPlanTratamiento] = useState('');
+    const [recomendaciones, setRecomendaciones] = useState('');
 
     // ── Asociar Consulta (for Orden form) ────────────────────────────────────
     const [asocConsultaModal, setAsocConsultaModal] = useState(false);
@@ -117,28 +190,118 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         return c.profesional || c.transcribe || c.metadata?.profesional || c.metadata?.transcribe || c.doctor || c.doctorName || '-';
     };
 
-    // ── Consulta summary generator ────────────────────────────────────────
-    const generateConsultaSummary = (motivo, enfermedad, ants, aler, fams, meds) => {
-        const lines = [];
-        if (motivo) lines.push(`MOTIVO DE CONSULTA:\n${motivo}`);
-        if (enfermedad) lines.push(`ENFERMEDAD ACTUAL:\n${enfermedad}`);
+    // ── Consulta Odontológica summary generator ───────────────────────────
+    const generateConsultaSummary = (
+        motivo, enfermedad, ants, aler, fams, meds,
+        examen, dxPrinc, dxRels, dxNotas,
+        plan, recs
+    ) => {
+        const sections = [];
+        // 1. Motivo de Consulta
+        const motivoLines = [];
+        if (motivo) motivoLines.push(`Motivo de consulta: ${motivo}`);
+        if (enfermedad) motivoLines.push(`Enfermedad actual: ${enfermedad}`);
+        if (motivoLines.length > 0) sections.push(`1. MOTIVO DE CONSULTA:\n${motivoLines.join('\n')}`);
+
+        // 2. Antecedentes
+        const antLines = [];
         if (ants && ants.length > 0) {
-            lines.push(`ANTECEDENTES:`);
-            ants.forEach(a => lines.push(`  • [${a.code}] ${a.name}${a.obs ? ' – ' + a.obs : ''}`));
+            antLines.push(`  • Médicos:`);
+            ants.forEach(a => antLines.push(`    - [${a.code}] ${a.name}${a.obs ? ' (' + a.obs + ')' : ''}`));
         }
         if (aler && aler.length > 0) {
-            lines.push(`ALERGIAS:`);
-            aler.forEach(a => lines.push(`  • ${a.tipo}${a.obs ? ' – ' + a.obs : ''}`));
+            antLines.push(`  • Alergias:`);
+            aler.forEach(a => antLines.push(`    - ${a.tipo}${a.obs ? ' (' + a.obs + ')' : ''}`));
         }
         if (fams && fams.length > 0) {
-            lines.push(`ANTECEDENTES FAMILIARES:`);
-            fams.forEach(f => lines.push(`  • ${f.parentesco}: [${f.code}] ${f.name}${f.obs ? ' – ' + f.obs : ''}`));
+            antLines.push(`  • Familiares:`);
+            fams.forEach(f => antLines.push(`    - ${f.parentesco}: [${f.code}] ${f.name}${f.obs ? ' (' + f.obs + ')' : ''}`));
         }
         if (meds && meds.length > 0) {
-            lines.push(`MEDICAMENTOS EN USO:`);
-            meds.forEach(m => lines.push(`  • ${m.nombre}${m.obs ? ' – ' + m.obs : ''}`));
+            antLines.push(`  • Medicamentos:`);
+            meds.forEach(m => antLines.push(`    - ${m.nombre}${m.obs ? ' (' + m.obs + ')' : ''}`));
         }
-        return lines.join('\n');
+        if (antLines.length > 0) sections.push(`2. ANTECEDENTES:\n${antLines.join('\n')}`);
+
+        // 3. Examen Odontológico
+        const exLines = [];
+        if (examen) {
+            // 1. Estado general
+            const eg = [];
+            if (examen.estadoGeneral) eg.push(`Estado general: ${examen.estadoGeneral}`);
+            if (examen.presionArterial) eg.push(`PA: ${examen.presionArterial} mmHg`);
+            if (examen.frecuenciaCardiaca) eg.push(`FC: ${examen.frecuenciaCardiaca} lpm`);
+            if (examen.otrosSignos) eg.push(`Otros signos: ${examen.otrosSignos}`);
+            if (eg.length > 0) exLines.push(`  • 1. Estado general / Signos: ${eg.join(' | ')}`);
+
+            // 2. Examen extraoral
+            const extra = [];
+            if (examen.simetriaFacial) extra.push(`Simetría facial: ${examen.simetriaFacial}${examen.simetriaFacialObs ? ` (Obs: ${examen.simetriaFacialObs})` : ''}`);
+            if (examen.pielTejidos) extra.push(`Piel y tejidos: ${examen.pielTejidos}${examen.pielTejidosObs ? ` (Obs: ${examen.pielTejidosObs})` : ''}`);
+            if (examen.ganglios) extra.push(`Ganglios: ${examen.ganglios}${examen.gangliosObs ? ` (Obs: ${examen.gangliosObs})` : ''}`);
+            if (examen.labios) extra.push(`Labios: ${examen.labios}${examen.labiosObs ? ` (Obs: ${examen.labiosObs})` : ''}`);
+            if (extra.length > 0) exLines.push(`  • 2. Examen extraoral: ${extra.join(' | ')}`);
+
+            // 3. ATM
+            const atmList = examen.atmItems || [];
+            if (atmList.length > 0 || examen.atmOtros) {
+                const atmStr = [...atmList, examen.atmOtros ? `Otros: ${examen.atmOtros}` : ''].filter(Boolean).join(', ');
+                exLines.push(`  • 3. ATM (Alteraciones): ${atmStr}`);
+            } else {
+                exLines.push(`  • 3. ATM: Sin alteraciones aparentes`);
+            }
+
+            // 4. Tejidos blandos / Intraoral
+            const intra = [];
+            if (examen.mucosaYugal) intra.push(`Mucosa yugal: ${examen.mucosaYugal}${examen.mucosaYugalObs ? ` (Obs: ${examen.mucosaYugalObs})` : ''}`);
+            if (examen.paladar) intra.push(`Paladar: ${examen.paladar}${examen.paladarObs ? ` (Obs: ${examen.paladarObs})` : ''}`);
+            if (examen.lengua) intra.push(`Lengua: ${examen.lengua}${examen.lenguaObs ? ` (Obs: ${examen.lenguaObs})` : ''}`);
+            if (examen.pisoBoca) intra.push(`Piso de boca: ${examen.pisoBoca}${examen.pisoBocaObs ? ` (Obs: ${examen.pisoBocaObs})` : ''}`);
+            if (examen.glandulasSalivales) intra.push(`Glándulas: ${examen.glandulasSalivales}${examen.glandulasSalivalesObs ? ` (Obs: ${examen.glandulasSalivalesObs})` : ''}`);
+            if (examen.orofaringe) intra.push(`Orofaringe: ${examen.orofaringe}${examen.orofaringeObs ? ` (Obs: ${examen.orofaringeObs})` : ''}`);
+            if (intra.length > 0) exLines.push(`  • 4. Tejidos blandos / Examen intraoral: ${intra.join(' | ')}`);
+
+            // 5. Periodonto
+            const perio = [];
+            if (examen.encias && examen.encias.length > 0) perio.push(`Encías: ${examen.encias.join(', ')}`);
+            if (examen.higieneOral) perio.push(`Higiene oral: ${examen.higieneOral}`);
+            if (examen.placaBacteriana) perio.push(`Placa: ${examen.placaBacteriana}`);
+            if (examen.calculo) perio.push(`Cálculo: ${examen.calculo}`);
+            if (examen.movilidadDental) perio.push(`Movilidad: ${examen.movilidadDental}`);
+            if (examen.periodontoOtros) perio.push(`Otros: ${examen.periodontoOtros}`);
+            if (perio.length > 0) exLines.push(`  • 5. Periodonto: ${perio.join(' | ')}`);
+
+            // 6. Oclusión
+            const ocluList = examen.oclusionItems || [];
+            if (ocluList.length > 0 || examen.oclusionObs) {
+                const ocluStr = [...ocluList, examen.oclusionObs ? `Obs: ${examen.oclusionObs}` : ''].filter(Boolean).join(' | ');
+                exLines.push(`  • 6. Oclusión: ${ocluStr}`);
+            }
+
+            // 7. Hallazgos adicionales
+            if (examen.hallazgosAdicionales) {
+                exLines.push(`  • 7. Hallazgos adicionales: ${examen.hallazgosAdicionales}`);
+            }
+        }
+        if (exLines.length > 0) sections.push(`3. EXAMEN ODONTOLÓGICO:\n${exLines.join('\n')}`);
+
+        // 4. Diagnóstico
+        const dxLines = [];
+        if (dxPrinc) dxLines.push(`  • Diagnóstico principal: [${dxPrinc.code}] ${dxPrinc.name}`);
+        if (dxRels && dxRels.length > 0) {
+            dxLines.push(`  • Diagnósticos relacionados:`);
+            dxRels.forEach(d => dxLines.push(`    - [${d.code}] ${d.name}${d.obs ? ' (' + d.obs + ')' : ''}`));
+        }
+        if (dxNotas) dxLines.push(`  • Observaciones diagnósticas: ${dxNotas}`);
+        if (dxLines.length > 0) sections.push(`4. DIAGNÓSTICO:\n${dxLines.join('\n')}`);
+
+        // 5. Plan de Tratamiento
+        const planLines = [];
+        if (plan) planLines.push(`  • Plan de tratamiento / Procedimientos: ${plan}`);
+        if (recs) planLines.push(`  • Recomendaciones y conducta: ${recs}`);
+        if (planLines.length > 0) sections.push(`5. PLAN DE TRATAMIENTO:\n${planLines.join('\n')}`);
+
+        return sections.join('\n\n');
     };
 
     // Summary generator helper
@@ -362,7 +525,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             setCupsQuery('');
             setAsocConsultaId(null);
             setAssociatedConsulta(null);
-            // Reset Consulta states
+            // Reset Consulta Odontológica states
             setConsultaTab('motivo');
             setMotivoConsulta('');
             setEnfermedadActual('');
@@ -370,10 +533,15 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             setAlerNoRefiere(false); setTempAlerTipo(''); setTempAlerObs(''); setAlergias([]);
             setFamNoRefiere(false); setTempFamParentesco(''); setTempFamCIE10(null); setTempFamObs(''); setAntFamiliares([]);
             setMedPrevNoRefiere(false); setTempMedPrevItem(null); setTempMedPrevObs(''); setMedicamentosPrev([]);
+            setExamenOdonto(DEFAULT_EXAMEN_ODONTO);
+            setDxPrincipalConsulta(null); setDxRelacionadosConsulta([]); setTempDxRelConsultaCIE10(null); setTempDxRelConsultaObs(''); setDiagnosticoNotas('');
+            setPlanTratamiento(''); setRecomendaciones('');
             // Reset Plantilla states
             setTemplates([]);
             setSelectedTemplate(null);
             setTemplateValues({});
+            setMedicalTabs([]);
+            setMedicalTabValues({});
             return;
         }
 
@@ -417,6 +585,59 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     setFamNoRefiere(initialData.famNoRefiere ?? meta.famNoRefiere ?? false);
                     setMedicamentosPrev(initialData.medicamentosPrev || meta.medicamentosPrev || []);
                     setMedPrevNoRefiere(initialData.medPrevNoRefiere ?? meta.medPrevNoRefiere ?? false);
+                    
+                    // Examen Odontológico
+                    const ex = initialData.examenOdontologico || meta.examenOdontologico || {};
+                    setExamenOdonto({
+                        estadoGeneral: ex.estadoGeneral || 'Bueno',
+                        presionArterial: ex.presionArterial || '',
+                        frecuenciaCardiaca: ex.frecuenciaCardiaca || '',
+                        otrosSignos: ex.otrosSignos || '',
+                        simetriaFacial: ex.simetriaFacial || (ex.examenExtraoral?.includes('Alter') ? 'Alterada' : 'Normal'),
+                        simetriaFacialObs: ex.simetriaFacialObs || '',
+                        pielTejidos: ex.pielTejidos || 'Normal',
+                        pielTejidosObs: ex.pielTejidosObs || '',
+                        ganglios: ex.ganglios || 'Sin alteraciones',
+                        gangliosObs: ex.gangliosObs || '',
+                        labios: ex.labios || 'Normal',
+                        labiosObs: ex.labiosObs || '',
+                        atmItems: Array.isArray(ex.atmItems) ? ex.atmItems : [],
+                        atmOtros: ex.atmOtros || ex.atm || '',
+                        mucosaYugal: ex.mucosaYugal || 'Normal',
+                        mucosaYugalObs: ex.mucosaYugalObs || '',
+                        paladar: ex.paladar || 'Normal',
+                        paladarObs: ex.paladarObs || '',
+                        lengua: ex.lengua || 'Normal',
+                        lenguaObs: ex.lenguaObs || '',
+                        pisoBoca: ex.pisoBoca || 'Normal',
+                        pisoBocaObs: ex.pisoBocaObs || '',
+                        glandulasSalivales: ex.glandulasSalivales || 'Normal',
+                        glandulasSalivalesObs: ex.glandulasSalivalesObs || '',
+                        orofaringe: ex.orofaringe || 'Normal',
+                        orofaringeObs: ex.orofaringeObs || '',
+                        encias: Array.isArray(ex.encias) ? ex.encias : (ex.encias ? [ex.encias] : ['Normales']),
+                        higieneOral: ex.higieneOral || 'Buena',
+                        placaBacteriana: ex.placaBacteriana || 'Ausente',
+                        calculo: ex.calculo || 'Ausente',
+                        movilidadDental: ex.movilidadDental || 'No',
+                        periodontoOtros: ex.periodontoOtros || (typeof ex.periodonto === 'string' ? ex.periodonto : ''),
+                        oclusionItems: Array.isArray(ex.oclusionItems) ? ex.oclusionItems : (ex.oclusion ? [ex.oclusion] : ['Normal']),
+                        oclusionObs: ex.oclusionObs || '',
+                        hallazgosAdicionales: ex.hallazgosAdicionales || ex.otrosHallazgos || ''
+                    });
+
+                    // Diagnóstico
+                    setDxPrincipalConsulta(initialData.dxPrincipalConsulta || initialData.dxPrincipal || meta.dxPrincipalConsulta || meta.dxPrincipal || null);
+                    setDxRelacionadosConsulta(initialData.dxRelacionadosConsulta || initialData.dxRelacionados || meta.dxRelacionadosConsulta || meta.dxRelacionados || []);
+                    setDiagnosticoNotas(initialData.diagnosticoNotas || meta.diagnosticoNotas || '');
+
+                    // Plan de Tratamiento
+                    setPlanTratamiento(initialData.planTratamiento || meta.planTratamiento || '');
+                    setRecomendaciones(initialData.recomendaciones || meta.recomendaciones || '');
+                    
+                    setMedicalTabValues(
+                        initialData.pestanasMedicas || meta.pestanasMedicas || {}
+                    );
                 }
                 // Initialize Template states if editing/viewing a template document
                 if (initialData.isTemplateDoc) {
@@ -455,75 +676,63 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 // Reset Plantilla states for new doc
                 setSelectedTemplate(null);
                 setTemplateValues({});
+                setMedicalTabValues({});
             }
         }
     }, [isOpen, initialData, docType]);
+
+    useEffect(() => {
+        const loadMedicalTabs = async () => {
+            const tenantId = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
+            if (!isOpen || docType !== 'Consulta' || !tenantId) return;
+            try {
+                const rows = await getConfigItems(tenantId, "pestanas_medicas", null);
+                setMedicalTabs(
+                    rows
+                        .filter(item => item.activo !== false)
+                        .sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0))
+                );
+            } catch (error) {
+                console.error("Error loading medical tabs:", error);
+                setMedicalTabs([]);
+            }
+        };
+        loadMedicalTabs();
+    }, [isOpen, docType, userProfile?.inquilino]);
 
     // Load configured clinical templates (Plantillas Clínicas)
     useEffect(() => {
         const loadTemplates = async () => {
             const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
             if (!isOpen || !inq) return;
-            const isTemplateMode = docType === 'Plantilla';
+            const isTemplateMode = docType === 'Plantilla' || docType === 'Consulta';
             const isEditingTemplate = initialData?.isTemplateDoc;
             if (!isTemplateMode && !isEditingTemplate) return;
             
             try {
                 const dbTemplates = await getConfigItems(inq, "plantillas_clinicas", "plantillas_clinicas");
-                
-                // Merge database customizations with predefined templates
-                const merged = PREDEFINED_TEMPLATES.map(p => {
-                    const dbMatch = Array.isArray(dbTemplates) 
-                        ? dbTemplates.find(d => d.id === p.id || d.nombre?.toLowerCase() === p.nombre?.toLowerCase()) 
-                        : null;
-                    if (dbMatch) {
-                        return {
-                            ...p,
-                            ...dbMatch,
-                            // Ensure campos merged preserving visibility and labels
-                            campos: Array.isArray(dbMatch.campos) && dbMatch.campos.length > 0 ? dbMatch.campos : p.campos
-                        };
-                    }
-                    return p;
-                });
-                
-                // Add custom tenant templates from DB that aren't in predefined
-                if (Array.isArray(dbTemplates)) {
-                    dbTemplates.forEach(t => {
-                        if (!merged.some(existing => existing.id === t.id || existing.nombre?.toLowerCase() === t.nombre?.toLowerCase())) {
-                            merged.push(t);
-                        }
-                    });
-                }
-                
-                setTemplates(merged);
+                const list = Array.isArray(dbTemplates) ? dbTemplates : [];
+                setTemplates(list);
                 
                 // Auto-select template ONLY when editing an existing document or for specific docTypes
                 if (initialData?.isTemplateDoc || initialData?.templateId || initialData?.nombrePlantilla) {
                     setSelectedTemplate(prev => {
                         const targetId = initialData?.templateId || initialData?.nombrePlantilla || initialData?.tipoDocumento || prev?.id;
                         if (targetId) {
-                            return merged.find(t => t.id === targetId || t.nombre?.toLowerCase() === String(targetId).toLowerCase()) || null;
+                            return list.find(t => t.id === targetId || t.nombre?.toLowerCase() === String(targetId).toLowerCase()) || null;
                         }
                         return null;
                     });
                 } else if (docType && docType !== 'Plantilla') {
-                    setSelectedTemplate(merged.find(t => t.nombre?.toLowerCase() === docType?.toLowerCase() || t.id === docType) || null);
+                    setSelectedTemplate(list.find(t => t.nombre?.toLowerCase() === docType?.toLowerCase() || t.id === docType) || null);
                 } else {
                     // For a new Plantilla document, remain unselected so user picks from dropdown
                     setSelectedTemplate(null);
                 }
             } catch (err) {
                 console.error('Error loading templates:', err);
-                setTemplates(PREDEFINED_TEMPLATES);
-                if (initialData?.isTemplateDoc || initialData?.templateId || initialData?.nombrePlantilla) {
-                    const targetId = initialData?.templateId || initialData?.nombrePlantilla || initialData?.tipoDocumento;
-                    setSelectedTemplate(PREDEFINED_TEMPLATES.find(t => t.id === targetId || t.nombre?.toLowerCase() === String(targetId).toLowerCase()) || null);
-                } else if (docType && docType !== 'Plantilla') {
-                    setSelectedTemplate(PREDEFINED_TEMPLATES.find(t => t.nombre?.toLowerCase() === docType?.toLowerCase() || t.id === docType) || null);
-                } else {
-                    setSelectedTemplate(null);
-                }
+                setTemplates([]);
+                setSelectedTemplate(null);
             }
         };
         loadTemplates();
@@ -760,7 +969,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             if (field.type === 'section') {
                 lines.push(`\n── ${fLabel} ──`);
             } else if (field.type === 'checkbox' || field.type === 'toggle') {
-                lines.push(`${fLabel}: ${val ? 'SÍ' : 'NO'}`);
+                if (Array.isArray(val)) {
+                    lines.push(`${fLabel}: ${val.length > 0 ? val.join(', ') : 'Ninguno'}`);
+                } else {
+                    lines.push(`${fLabel}: ${val ? 'SÍ' : 'NO'}`);
+                }
             } else {
                 if (val !== undefined && val !== null && val !== '') {
                     lines.push(`${fLabel}: ${val}`);
@@ -773,14 +986,15 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         return lines.join('\n');
     };
 
-    const handleSave = async () => {
+    const handleSave = async (isFinalize = true) => {
         let finalContent = contenido;
         let diagVal = diagnostico;
         const isTemplateDoc = docType === 'Plantilla' || initialData?.isTemplateDoc;
+        const isConsultaDoc = docType === 'Consulta' || initialData?.tipoDocumento === 'Consulta' || initialData?.tipo === 'Consulta';
 
-        // 1. Validar profesional prescriptor u odontólogo obligatorio
+        // 1. Validar profesional responsable u odontólogo obligatorio
         if (!profesional || !profesional.trim() || profesional.toLowerCase().includes('seleccione')) {
-            toast.error(docType === 'Alerta' ? "Debe seleccionar el odontólogo (*)" : "Debe seleccionar el profesional prescriptor (*)");
+            toast.error("Debe seleccionar el profesional responsable (*)");
             return;
         }
 
@@ -795,7 +1009,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 return;
             }
             finalContent = generateContenidoSummary(recetaItems);
-        } else if (docType === 'Consulta') {
+        } else if (isConsultaDoc) {
             // Automatically commit any temporary/pending inputs in Antecedentes tab before saving
             if (!antNoRefiere && tempAntCIE10) {
                 finalAntecedentes.push({ ...tempAntCIE10, obs: tempAntObs });
@@ -832,11 +1046,39 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 setTempMedPrevObs('');
             }
 
-            if (!motivoConsulta.trim()) {
+            // Para finalizar la consulta sí es obligatorio el motivo de consulta; en proceso se usa default si está vacío
+            const effectiveMotivo = motivoConsulta.trim() || (isFinalize ? '' : 'Consulta Odontológica en proceso');
+            if (isFinalize && !effectiveMotivo) {
                 toast.error("El motivo de consulta no puede estar vacío (*)");
                 return;
             }
-            finalContent = generateConsultaSummary(motivoConsulta, enfermedadActual, finalAntecedentes, finalAlergias, finalAntFamiliares, finalMedicamentosPrev);
+
+            let finalDxRelsConsulta = [...dxRelacionadosConsulta];
+            if (tempDxRelConsultaCIE10) {
+                finalDxRelsConsulta.push({ ...tempDxRelConsultaCIE10, obs: tempDxRelConsultaObs });
+                setDxRelacionadosConsulta(finalDxRelsConsulta);
+                setTempDxRelConsultaCIE10(null);
+                setTempDxRelConsultaObs('');
+            }
+
+            finalContent = generateConsultaSummary(
+                effectiveMotivo || 'Consulta Odontológica',
+                enfermedadActual,
+                finalAntecedentes,
+                finalAlergias,
+                finalAntFamiliares,
+                finalMedicamentosPrev,
+                examenOdonto,
+                dxPrincipalConsulta,
+                finalDxRelsConsulta,
+                diagnosticoNotas,
+                planTratamiento,
+                recomendaciones
+            );
+
+            if (dxPrincipalConsulta) {
+                diagVal = `${dxPrincipalConsulta.code} - ${dxPrincipalConsulta.name}`;
+            }
         } else if (docType === 'Orden') {
             if (!tipoOrden || !tipoOrden.trim()) {
                 toast.error("Debe seleccionar el tipo de orden (*)");
@@ -878,21 +1120,25 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         
         setSaving(true);
         try {
-            const isEditing = !!initialData;
+            const isEditing = !!(activeDocId || initialData?.id);
+            const targetDocId = activeDocId || initialData?.id || `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+            const finalDocEstado = isConsultaDoc ? (isFinalize ? 'Finalizada' : 'En proceso') : (initialData?.estado || 'Finalizada');
+            const finalDocFirmado = isConsultaDoc ? isFinalize : (isEditing ? (initialData.firmado ?? false) : false);
+
             const docTipo = isEditing 
-                ? (initialData.tipo || initialData.tipoDocumento || docType) 
+                ? (initialData?.tipo || initialData?.tipoDocumento || docType) 
                 : (isTemplateDoc && selectedTemplate ? selectedTemplate.nombre : docType);
             const docTitulo = isTemplateDoc && selectedTemplate 
                 ? selectedTemplate.nombre 
-                : (docType || initialData?.tipoDocumento || "Documento Clínico");
+                : (isConsultaDoc ? "Consulta Odontológica" : (docType || initialData?.tipoDocumento || "Documento Clínico"));
             const docTranscribe = isEditing 
-                ? (initialData.transcribe || initialData.metadata?.transcribe || "Sistema") 
+                ? (initialData?.transcribe || initialData?.metadata?.transcribe || "Sistema") 
                 : (userProfile?.nombreCompleto || userProfile?.nombre || "Sistema");
             const docCreadorId = isEditing 
-                ? (initialData.creadorId || initialData.metadata?.creadorId || "") 
+                ? (initialData?.creadorId || initialData?.metadata?.creadorId || "") 
                 : (userProfile?.uid || "");
             const docFechaIso = isEditing 
-                ? (initialData.fechaIso || initialData.created_at || new Date().toISOString()) 
+                ? (initialData?.fechaIso || initialData?.created_at || new Date().toISOString()) 
                 : new Date().toISOString();
 
             const extraMetadata = {
@@ -903,6 +1149,10 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 creadorId: docCreadorId,
                 diagnostico: diagVal,
                 fechaIso: docFechaIso,
+                estado: finalDocEstado,
+                finalizado: isConsultaDoc ? isFinalize : true,
+                firmado: finalDocFirmado,
+                ...(isConsultaDoc && isFinalize && { fechaFinalizadaIso: new Date().toISOString() }),
                 // Structured properties for recovery
                 ...(docType === 'Receta' && {
                     recetaItems: recetaItems,
@@ -923,7 +1173,10 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     campos: selectedTemplate?.campos || initialData?.campos || [],
                     valoresCampos: templateValues
                 }),
-                ...(docType === 'Consulta' && {
+                ...(isConsultaDoc && {
+                    estado: finalDocEstado,
+                    finalizado: isFinalize,
+                    firmado: finalDocFirmado,
                     motivoConsulta,
                     enfermedadActual,
                     antecedentes: finalAntecedentes,
@@ -933,7 +1186,14 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     antFamiliares: finalAntFamiliares,
                     famNoRefiere,
                     medicamentosPrev: finalMedicamentosPrev,
-                    medPrevNoRefiere
+                    medPrevNoRefiere,
+                    examenOdontologico: examenOdonto,
+                    dxPrincipalConsulta,
+                    dxRelacionadosConsulta,
+                    diagnosticoNotas,
+                    planTratamiento,
+                    recomendaciones,
+                    pestanasMedicas: medicalTabValues
                 })
             };
 
@@ -945,13 +1205,13 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 tipo: docTipo,
                 titulo: docTitulo,
                 contenido: finalContent,
-                firmado: isEditing ? (initialData.firmado ?? false) : false,
+                estado: finalDocEstado,
+                firmado: finalDocFirmado,
                 receta_items: docType === 'Receta' ? recetaItems : (initialData?.receta_items || null),
                 metadata: extraMetadata,
                 updated_at: new Date().toISOString()
             };
 
-            const docId = isEditing ? (initialData.id || `doc-${Date.now()}`) : `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
             let saveSuccess = false;
 
             // 1. Intentar guardar en la tabla documentos_clinicos si está disponible
@@ -960,12 +1220,12 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     const { error: updateErr } = await supabase
                         .from("documentos_clinicos")
                         .update(dbPayload)
-                        .eq("id", initialData.id);
+                        .eq("id", targetDocId);
                     if (!updateErr) saveSuccess = true;
                 } else {
                     const { error: insertErr } = await supabase
                         .from("documentos_clinicos")
-                        .insert([{ ...dbPayload, id: docId, created_at: new Date().toISOString() }]);
+                        .insert([{ ...dbPayload, id: targetDocId, created_at: new Date().toISOString() }]);
                     if (!insertErr) saveSuccess = true;
                 }
             } catch (tblErr) {
@@ -984,19 +1244,22 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 const currentDocs = Array.isArray(currentHM.documentosClinicos) ? [...currentHM.documentosClinicos] : [];
 
                 const docRecord = {
-                    id: docId,
+                    id: targetDocId,
                     ...extraMetadata,
                     ...dbPayload,
                     tipoDocumento: docTipo,
+                    estado: finalDocEstado,
+                    finalizado: isConsultaDoc ? isFinalize : true,
+                    firmado: finalDocFirmado,
                     recetaItems: docType === 'Receta' ? recetaItems : (initialData?.receta_items || []),
-                    created_at: isEditing ? (initialData.created_at || new Date().toISOString()) : new Date().toISOString(),
+                    created_at: isEditing ? (initialData?.created_at || new Date().toISOString()) : new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 };
 
                 let updatedDocs;
                 if (isEditing) {
-                    updatedDocs = currentDocs.map(d => (d.id === initialData.id ? { ...d, ...docRecord } : d));
-                    if (!updatedDocs.some(d => d.id === initialData.id)) {
+                    updatedDocs = currentDocs.map(d => (d.id === targetDocId ? { ...d, ...docRecord } : d));
+                    if (!updatedDocs.some(d => d.id === targetDocId)) {
                         updatedDocs.unshift(docRecord);
                     }
                 } else {
@@ -1030,7 +1293,18 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 throw new Error("No se pudo guardar el documento clínico");
             }
 
-            toast.success(`${docType || initialData?.tipoDocumento || "Documento"} guardado correctamente`);
+            setActiveDocId(targetDocId);
+
+            if (isConsultaDoc) {
+                if (isFinalize) {
+                    toast.success("Consulta Odontológica finalizada y cerrada exitosamente ✅");
+                } else {
+                    toast.success("Progreso de consulta guardado exitosamente ⏳");
+                }
+            } else {
+                toast.success(`${docType || initialData?.tipoDocumento || "Documento"} guardado correctamente`);
+            }
+
             if (typeof onClose === 'function') {
                 onClose(true);
             }
@@ -1040,6 +1314,74 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         } finally {
             setSaving(false);
         }
+    };
+
+    const getMissingConsultaTabs = () => {
+        const missing = [];
+        // 1. Motivo
+        if (!motivoConsulta || !motivoConsulta.trim()) {
+            missing.push({ id: 'motivo', label: '1. Motivo de Consulta' });
+        }
+        // 2. Antecedentes
+        const hasAntecedentes = antNoRefiere || alerNoRefiere || famNoRefiere || medPrevNoRefiere || 
+            antecedentes.length > 0 || alergias.length > 0 || antFamiliares.length > 0 || medicamentosPrev.length > 0 || 
+            !!tempAntCIE10 || !!tempAlerTipo || !!tempFamParentesco || !!tempMedPrevItem;
+        if (!hasAntecedentes) {
+            missing.push({ id: 'antecedentes', label: '2. Antecedentes' });
+        }
+        // 3. Examen Odontológico
+        const hasExamen = examenOdonto && (
+            !!examenOdonto.estadoGeneral ||
+            !!examenOdonto.presionArterial?.trim() ||
+            !!examenOdonto.frecuenciaCardiaca?.trim() ||
+            !!examenOdonto.otrosSignos?.trim() ||
+            !!examenOdonto.simetriaFacial ||
+            !!examenOdonto.pielTejidos ||
+            !!examenOdonto.ganglios ||
+            !!examenOdonto.labios ||
+            (examenOdonto.atmItems && examenOdonto.atmItems.length > 0) ||
+            !!examenOdonto.atmOtros?.trim() ||
+            !!examenOdonto.mucosaYugal ||
+            !!examenOdonto.paladar ||
+            !!examenOdonto.lengua ||
+            !!examenOdonto.pisoBoca ||
+            !!examenOdonto.glandulasSalivales ||
+            !!examenOdonto.orofaringe ||
+            (examenOdonto.encias && examenOdonto.encias.length > 0) ||
+            !!examenOdonto.higieneOral ||
+            !!examenOdonto.placaBacteriana ||
+            !!examenOdonto.calculo ||
+            !!examenOdonto.movilidadDental ||
+            (examenOdonto.oclusionItems && examenOdonto.oclusionItems.length > 0) ||
+            !!examenOdonto.oclusionObs?.trim() ||
+            !!examenOdonto.hallazgosAdicionales?.trim()
+        );
+        if (!hasExamen) {
+            missing.push({ id: 'examen', label: '3. Examen Odontológico' });
+        }
+        // 4. Diagnóstico
+        const hasDiagnostico = !!(dxPrincipalConsulta || (diagnosticoNotas && diagnosticoNotas.trim()) || (dxRelacionadosConsulta && dxRelacionadosConsulta.length > 0));
+        if (!hasDiagnostico) {
+            missing.push({ id: 'diagnostico', label: '4. Diagnóstico' });
+        }
+        // 5. Plan de Tratamiento
+        if (!planTratamiento || !planTratamiento.trim()) {
+            missing.push({ id: 'plan', label: '5. Plan de Tratamiento' });
+        }
+        return missing;
+    };
+
+    const handleAttemptFinalize = () => {
+        const isConsultaDoc = docType === 'Consulta' || initialData?.tipoDocumento === 'Consulta' || initialData?.tipo === 'Consulta';
+        if (isConsultaDoc) {
+            const missing = getMissingConsultaTabs();
+            if (missing.length > 0) {
+                setMissingConsultaTabs(missing);
+                setConfirmFinalizeWithMissing(true);
+                return;
+            }
+        }
+        handleSave(true);
     };
 
     if (!isOpen) return null;
@@ -1078,31 +1420,55 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
-            <div className={`bg-white rounded-2xl shadow-2xl w-full ${docType === 'Alerta' ? 'max-w-lg' : (docType === 'Plantilla' && !selectedTemplate && !initialData) ? 'max-w-lg' : (docType === 'Receta' || docType === 'Orden' || docType === 'Plantilla' || initialData?.isTemplateDoc) ? 'max-w-3xl md:max-w-4xl' : 'max-w-2xl'} flex flex-col max-h-[90vh] overflow-hidden`}>
+            <div className={`bg-white rounded-2xl shadow-2xl w-full ${docType === 'Alerta' ? 'max-w-lg' : (docType === 'Plantilla' && !selectedTemplate && !initialData) ? 'max-w-lg' : (docType === 'Receta' || docType === 'Orden' || docType === 'Plantilla' || docType === 'Consulta' || initialData?.isTemplateDoc) ? 'max-w-3xl md:max-w-4xl' : 'max-w-2xl'} flex flex-col max-h-[90vh] overflow-hidden`}>
                 
                 {/* Modal Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white">
                     <div>
-                        <h2 className="text-base font-black text-slate-800 tracking-tight">
-                            {docType === 'Alerta' ? "Nueva alerta" : 
-                             (docType === 'Plantilla' || initialData?.isTemplateDoc) ? 
-                                (isViewOnly ? `Detalle de ${selectedTemplate?.nombre || initialData?.tipoDocumento}` : 
-                                 (initialData ? `Editar ${initialData.tipoDocumento}` : `Nuevo documento: ${selectedTemplate?.nombre || "Plantilla clínica"}`)) :
-                             (isViewOnly ? `Detalle de ${initialData?.tipoDocumento || docType}` : 
-                              (initialData ? `Editar ${initialData.tipoDocumento}` : `Nueva ${docType}`))}
-                        </h2>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-base font-black text-slate-800 tracking-tight">
+                                {docType === 'Alerta' ? "Nueva alerta" : 
+                                 docType === 'Consulta' ? (effectiveIsViewOnly ? "Detalle de Consulta Odontológica" : (initialData ? "Editar Consulta Odontológica" : "Consulta Odontológica")) :
+                                 (docType === 'Plantilla' || initialData?.isTemplateDoc) ? 
+                                    (effectiveIsViewOnly ? `Detalle de ${selectedTemplate?.nombre || initialData?.tipoDocumento}` : 
+                                     (initialData ? `Editar ${initialData.tipoDocumento}` : `Nuevo documento: ${selectedTemplate?.nombre || "Plantilla clínica"}`)) :
+                                 (effectiveIsViewOnly ? `Detalle de ${initialData?.tipoDocumento || docType}` : 
+                                  (initialData ? `Editar ${initialData.tipoDocumento}` : `Nueva ${docType}`))}
+                            </h2>
+                            {docType === 'Consulta' && (
+                                isClosedRecord ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wide inline-flex items-center gap-1">
+                                        <FiLock size={9} /> Finalizada
+                                    </span>
+                                ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200 uppercase tracking-wide inline-flex items-center gap-1">
+                                        <FiClock size={9} /> En proceso
+                                    </span>
+                                )
+                            )}
+                        </div>
                         {docType !== 'Alerta' && docType !== 'Plantilla' && (
                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                                 <span>Pacientes</span> <span className="text-slate-350">-</span>
                                 <span>Doc. Clínicos</span> <span className="text-slate-350">-</span>
-                                <span className="text-indigo-600 font-black">{isViewOnly ? "Detalle" : (initialData ? `Editar ${docType.toLowerCase()}` : `Nueva ${docType.toLowerCase()}`)}</span>
+                                <span className="text-indigo-600 font-black">{effectiveIsViewOnly ? "Detalle" : (docType === 'Consulta' ? (initialData ? "Editar Consulta Odontológica" : "Nueva Consulta Odontológica") : (initialData ? `Editar ${docType.toLowerCase()}` : `Nueva ${docType.toLowerCase()}`))}</span>
                             </div>
                         )}
                     </div>
                     <div className="flex items-center gap-2">
-                        {!isViewOnly && (
+                        {!effectiveIsViewOnly && docType === 'Consulta' && (
                             <button 
-                                onClick={handleSave}
+                                onClick={() => handleSave(false)}
+                                disabled={saving}
+                                className="px-4 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-full font-black text-[11px] uppercase tracking-wider shadow-xs flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                                title="Guardar avance actual"
+                            >
+                                <FiClock size={12} /> {saving ? "Guardando..." : "Guardar progreso"}
+                            </button>
+                        )}
+                        {!effectiveIsViewOnly && docType !== 'Consulta' && (
+                            <button 
+                                onClick={() => handleSave(true)}
                                 disabled={saving}
                                 className="px-5 py-1.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-wider shadow flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                             >
@@ -1114,15 +1480,23 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                         </button>
                     </div>
                 </div>
+
+                {/* Banner de registro clínico cerrado */}
+                {isClosedRecord && (
+                    <div className="bg-emerald-50 border-b border-emerald-200 px-5 py-2.5 flex items-center gap-2 text-emerald-800 text-xs font-bold shrink-0">
+                        <FiLock className="shrink-0 text-emerald-600" size={14} />
+                        <span>Registro Clínico Cerrado: Esta consulta odontológica fue finalizada y se encuentra protegida contra modificaciones.</span>
+                    </div>
+                )}
                 
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 custom-scrollbar text-left">
                     
                     {/* General information blocks */}
                     {docType !== 'Receta' && (
-                        <div className={`grid ${docType === 'Alerta' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4 pb-4 border-b border-slate-100`}>
+                        <div className={`grid ${docType === 'Alerta' || docType === 'Consulta' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4 pb-4 border-b border-slate-100`}>
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">
-                                    {docType === 'Alerta' ? 'Odontólogo *' : 'Odontólogo Prescriptor *'}
+                                    Profesional Responsable *
                                 </label>
                                 <select 
                                     value={profesional}
@@ -1183,7 +1557,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                     </div>
                                 )}
                             </div>
-                        ) : docType === 'Alerta' ? null : (
+                        ) : (docType === 'Alerta' || docType === 'Consulta') ? null : (
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Diagnóstico asoc. (Opcional)</label>
                                 {isViewOnly ? (
@@ -1206,332 +1580,161 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     {/* PLANTILLA: Dynamic fields from selected template */}
                     {(docType === 'Plantilla' || initialData?.isTemplateDoc) && selectedTemplate?.campos?.length > 0 && (
                         <div className="space-y-6 pb-6 border-b border-slate-100">
-                            {(selectedTemplate.id === 'formulario_fisico' || selectedTemplate.nombre === 'FORMULARIO FISICO') ? (
-                                /* ================= FORMULARIO FÍSICO 1:1 LAYOUT ================= */
-                                <div className="space-y-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                                    {/* Top Vitals Row 1: FC, PA, FR, TC */}
-                                    {(() => {
-                                        const fcField = selectedTemplate.campos.find(f => f.id === 'fc' || f.key === 'fc');
-                                        const paField = selectedTemplate.campos.find(f => f.id === 'pa' || f.key === 'pa');
-                                        const frField = selectedTemplate.campos.find(f => f.id === 'fr' || f.key === 'fr');
-                                        const tcField = selectedTemplate.campos.find(f => f.id === 'tc' || f.key === 'tc');
-                                        const showRow1 = (fcField?.visible !== false) || (paField?.visible !== false) || (frField?.visible !== false) || (tcField?.visible !== false);
-                                        
-                                        if (!showRow1) return null;
+                            <div className="space-y-5">
+                                {selectedTemplate.campos.filter(f => f.visible !== false).map(field => {
+                                    const fieldKey = field.id || field.key;
+                                    const labelText = field.fullLabel || field.label || field.editLabel || field.viewLabel || fieldKey;
 
+                                    if (field.type === 'section') {
                                         return (
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                                {fcField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{fcField.label || 'FC'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['fc'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, fc: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
-                                                {paField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{paField.label || 'PA'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['pa'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, pa: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
-                                                {frField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{frField.label || 'FR'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['fr'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, fr: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
-                                                {tcField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{tcField.label || 'TC'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['tc'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, tc: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
+                                            <div key={fieldKey} className="flex items-center gap-3 pt-3 pb-1 border-b border-slate-100">
+                                                <div className="h-px w-6 bg-blue-500" />
+                                                <span className="text-[12px] font-black text-blue-600 uppercase tracking-widest">
+                                                    {labelText}
+                                                </span>
+                                                <div className="h-px flex-1 bg-gradient-to-r from-blue-200 to-transparent" />
                                             </div>
                                         );
-                                    })()}
+                                    }
 
-                                    {/* Top Vitals Row 2: PESO, TALLA, IMC, OTRO (---) */}
-                                    {(() => {
-                                        const pesoField = selectedTemplate.campos.find(f => f.id === 'peso' || f.key === 'peso');
-                                        const tallaField = selectedTemplate.campos.find(f => f.id === 'talla' || f.key === 'talla');
-                                        const imcField = selectedTemplate.campos.find(f => f.id === 'imc' || f.key === 'imc');
-                                        const otroField = selectedTemplate.campos.find(f => f.id === 'otro_param' || f.key === 'otro_param');
-                                        const showRow2 = (pesoField?.visible !== false) || (tallaField?.visible !== false) || (imcField?.visible !== false) || (otroField?.visible !== false);
-                                        
-                                        if (!showRow2) return null;
+                                    return (
+                                        <div key={fieldKey} className="space-y-1.5">
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
+                                                {labelText}
+                                                {field.required && <span className="text-red-500 ml-1 font-bold">*</span>}
+                                            </label>
 
-                                        return (
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                                {pesoField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{pesoField.fullLabel || pesoField.label || 'PESO (Kg)'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['peso'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, peso: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
-                                                {tallaField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{tallaField.fullLabel || tallaField.label || 'TALLA'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['talla'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, talla: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
-                                                {imcField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{imcField.fullLabel || imcField.label || 'IMC'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['imc'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, imc: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
-                                                {otroField?.visible !== false && (
-                                                    <div className="space-y-1">
-                                                        <label className="block text-[11px] font-bold text-slate-500 uppercase">{otroField.fullLabel || otroField.label || '---'}</label>
-                                                        <input
-                                                            type="text"
-                                                            value={templateValues['otro_param'] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, otro_param: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            placeholder=""
-                                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all read-only:opacity-75"
-                                                        />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })()}
+                                            {(field.type === 'text' || field.type === 'input') && (
+                                                <input
+                                                    type="text"
+                                                    value={templateValues[fieldKey] || ''}
+                                                    onChange={e => setTemplateValues(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Escriba aquí..."
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all read-only:opacity-70"
+                                                />
+                                            )}
 
-                                    {/* Body Textareas */}
-                                    <div className="space-y-4 pt-4 border-t border-slate-200/80">
-                                        {[
-                                            { id: 'cabeza', label: 'Cabeza' },
-                                            { id: 'organos_sentidos', label: 'Órgano de los sentidos' },
-                                            { id: 'cuello', label: 'Cuello' },
-                                            { id: 'torax', label: 'Tórax' },
-                                            { id: 'cardio_pulmonar', label: 'Cardio Pulmonar' },
-                                            { id: 'abdomen', label: 'Abdomen' },
-                                            { id: 'genitourinario', label: 'Genitourinario' },
-                                            { id: 'columna', label: 'Columna y extremidades' },
-                                            { id: 'neurologicos', label: 'Neurológicos' },
-                                            { id: 'piel_anexos', label: 'Piel y Anexos' }
-                                        ].map(item => {
-                                            const fieldDef = selectedTemplate.campos.find(f => f.id === item.id || f.key === item.id);
-                                            if (fieldDef && fieldDef.visible === false) return null;
-                                            const labelText = fieldDef?.fullLabel || fieldDef?.label || item.label;
+                                            {field.type === 'number' && (
+                                                <input
+                                                    type="number"
+                                                    value={templateValues[fieldKey] || ''}
+                                                    onChange={e => setTemplateValues(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+                                                    readOnly={isViewOnly}
+                                                    placeholder="0"
+                                                    className="w-full sm:w-48 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all read-only:opacity-70"
+                                                />
+                                            )}
 
-                                            return (
-                                                <div key={item.id} className="grid grid-cols-1 md:grid-cols-4 items-start gap-2 md:gap-4">
-                                                    <label className="text-xs font-medium text-slate-600 pt-1.5 md:col-span-1">
-                                                        {labelText}
-                                                    </label>
-                                                    <div className="md:col-span-3">
-                                                        <textarea
-                                                            value={templateValues[item.id] || ''}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.value }))}
-                                                            readOnly={isViewOnly}
-                                                            rows={2}
-                                                            placeholder=""
-                                                            className="w-full p-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-blue-500 transition-all resize-none read-only:opacity-75"
-                                                        />
+                                            {field.type === 'date' && (
+                                                <input
+                                                    type="date"
+                                                    value={templateValues[fieldKey] || ''}
+                                                    onChange={e => setTemplateValues(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+                                                    disabled={isViewOnly}
+                                                    className="w-full sm:w-56 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all disabled:opacity-70"
+                                                    max="9999-12-31"
+                                                    min="1900-01-01"
+                                                />
+                                            )}
+
+                                            {field.type === 'select' && (
+                                                <select
+                                                    value={templateValues[fieldKey] || ''}
+                                                    onChange={e => setTemplateValues(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+                                                    disabled={isViewOnly}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none disabled:opacity-70"
+                                                >
+                                                    <option value="">-- Seleccione una opción --</option>
+                                                    {(field.options || []).map((op, i) => {
+                                                        const optVal = typeof op === 'object' ? op.value : op;
+                                                        const optLabel = typeof op === 'object' ? op.label : op;
+                                                        return <option key={i} value={optVal}>{optLabel}</option>;
+                                                    })}
+                                                </select>
+                                            )}
+
+                                            {field.type === 'textarea' && (
+                                                <textarea
+                                                    value={templateValues[fieldKey] || ''}
+                                                    onChange={e => setTemplateValues(prev => ({ ...prev, [fieldKey]: e.target.value }))}
+                                                    readOnly={isViewOnly}
+                                                    rows={4}
+                                                    placeholder="Escriba aquí el detalle..."
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all resize-y read-only:opacity-70"
+                                                />
+                                            )}
+
+                                            {(field.type === 'checkbox' || field.type === 'toggle') && (
+                                                (field.options && field.options.length > 0) ? (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                                        {field.options.map((opt, oIdx) => {
+                                                            const optVal = typeof opt === 'object' ? opt.value : opt;
+                                                            const optLabel = typeof opt === 'object' ? opt.label : opt;
+                                                            const currentArr = Array.isArray(templateValues[fieldKey])
+                                                                ? templateValues[fieldKey]
+                                                                : (templateValues[fieldKey] ? [templateValues[fieldKey]] : []);
+                                                            const isChecked = currentArr.includes(optVal);
+                                                            return (
+                                                                <label
+                                                                    key={oIdx}
+                                                                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer select-none ${
+                                                                        isChecked
+                                                                            ? 'bg-blue-50/80 border-blue-300 text-blue-900 shadow-2xs font-bold'
+                                                                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100/70 font-semibold'
+                                                                    }`}
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isChecked}
+                                                                        disabled={isViewOnly}
+                                                                        onChange={e => {
+                                                                            const newArr = e.target.checked
+                                                                                ? [...currentArr, optVal]
+                                                                                : currentArr.filter(v => v !== optVal);
+                                                                            setTemplateValues(prev => ({ ...prev, [fieldKey]: newArr }));
+                                                                        }}
+                                                                        className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                                                    />
+                                                                    <span className="text-xs uppercase tracking-wide">{optLabel}</span>
+                                                                </label>
+                                                            );
+                                                        })}
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {/* Bottom: Tercera Firma */}
-                                    <div className="pt-4 border-t border-slate-200/80 flex items-center justify-center gap-2">
-                                        <span className="text-[12px] font-semibold text-slate-700">Tercera firma</span>
-                                        <button
-                                            type="button"
-                                            disabled={isViewOnly}
-                                            onClick={() => setTemplateValues(prev => ({ ...prev, tercera_firma: !prev.tercera_firma }))}
-                                            className={`w-9 h-5 rounded-full relative cursor-pointer transition-colors duration-200 border-0 ${
-                                                templateValues['tercera_firma'] ? "bg-sky-500" : "bg-slate-200"
-                                            } disabled:opacity-50 disabled:cursor-not-allowed`}
-                                        >
-                                            <div
-                                                className={`absolute top-[2px] w-4 h-4 bg-white rounded-full transition-transform duration-200 shadow-sm ${
-                                                    templateValues['tercera_firma'] ? "translate-x-4" : "translate-x-[2px]"
-                                                }`}
-                                            />
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : selectedTemplate.id === 'atm' ? (
-                                <div className="space-y-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                                    {/* 2 Column Checkbox Grid */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
-                                        {/* Column 1 */}
-                                        <div className="space-y-3.5">
-                                            {[
-                                                { id: 'normal', label: 'NORMAL' },
-                                                { id: 'problem_art_mandibula', label: 'PROBLEM. ARTI. DE MANDIBULA' },
-                                                { id: 'presencia_sintomas_subjetivos', label: 'PRESENCIA DE SINTOMAS SUBJETIVOS' },
-                                                { id: 'ruidos', label: 'RUIDOS' },
-                                                { id: 'dolor_atm', label: 'DOLOR ATM' },
-                                                { id: 'dolor_muscular', label: 'DOLOR MUSCULAR' },
-                                                { id: 'remision_especialista', label: 'REMISIÓN ESPECIALISTA' }
-                                            ].map(item => {
-                                                const fieldDef = selectedTemplate.campos.find(f => f.id === item.id || f.key === item.id);
-                                                if (fieldDef && fieldDef.visible === false) return null;
-                                                return (
-                                                    <label key={item.id} className="flex items-center gap-3.5 cursor-pointer group select-none">
+                                                ) : (
+                                                    <label className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/70 transition-all select-none">
                                                         <input
                                                             type="checkbox"
-                                                            checked={!!templateValues[item.id]}
+                                                            checked={!!templateValues[fieldKey]}
                                                             disabled={isViewOnly}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                                                            className="w-5 h-5 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
+                                                            onChange={e => setTemplateValues(prev => ({ ...prev, [fieldKey]: e.target.checked }))}
+                                                            className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                                                         />
-                                                        <span className="text-[11px] font-black text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider">{item.label}</span>
+                                                        <span className="text-xs font-bold text-slate-700">{labelText}</span>
                                                     </label>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {/* Column 2 */}
-                                        <div className="space-y-3.5">
-                                            {[
-                                                { id: 'desviaciones', label: 'DESVIACIONES' },
-                                                { id: 'limitacion_apertura', label: 'LIMITACIÓN APERTURA' },
-                                                { id: 'brinco', label: 'BRINCO' },
-                                                { id: 'cambio_volumen', label: 'CAMBIO DE VOLUMEN' },
-                                                { id: 'bloqueo_mandibular', label: 'BLOQUEO MANDIBULAR' },
-                                                { id: 'crepitacion', label: 'CREPITACIÓN' },
-                                                { id: 'maloclusion', label: 'MALOCLUSIÓN' }
-                                            ].map(item => {
-                                                const fieldDef = selectedTemplate.campos.find(f => f.id === item.id || f.key === item.id);
-                                                if (fieldDef && fieldDef.visible === false) return null;
-                                                return (
-                                                    <label key={item.id} className="flex items-center gap-3.5 cursor-pointer group select-none">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={!!templateValues[item.id]}
-                                                            disabled={isViewOnly}
-                                                            onChange={e => setTemplateValues(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                                                            className="w-5 h-5 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
-                                                        />
-                                                        <span className="text-[11px] font-black text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider">{item.label}</span>
-                                                    </label>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    {/* Observaciones Textarea */}
-                                    <div className="space-y-1.5 pt-4 border-t border-slate-100">
-                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Observaciones</label>
-                                        <textarea
-                                            value={templateValues['observaciones'] || ''}
-                                            onChange={e => setTemplateValues(prev => ({ ...prev, observaciones: e.target.value }))}
-                                            readOnly={isViewOnly}
-                                            rows={4}
-                                            placeholder="Escriba las observaciones aquí..."
-                                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 transition-all resize-y read-only:opacity-70"
-                                        />
-                                    </div>
-
-                                    {/* Tercera Firma Toggle */}
-                                    <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                                        <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider pl-1">Tercera firma</span>
-                                        <button
-                                            type="button"
-                                            disabled={isViewOnly}
-                                            onClick={() => setTemplateValues(prev => ({ ...prev, tercera_firma: !prev.tercera_firma }))}
-                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${templateValues['tercera_firma'] ? 'bg-blue-600' : 'bg-slate-200'} disabled:opacity-50 disabled:cursor-not-allowed`}
-                                        >
-                                            <span
-                                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${templateValues['tercera_firma'] ? 'translate-x-5' : 'translate-x-0'}`}
-                                            />
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="space-y-5">
-                                    {selectedTemplate.campos.filter(f => f.visible !== false).map(field => (
-                                        <div key={field.id}>
-                                            {field.type === 'section' ? (
-                                                <div className="flex items-center gap-3 pt-2">
-                                                    <div className="h-px flex-1 bg-gradient-to-r from-blue-200 to-transparent" />
-                                                    <span className="text-[11px] font-black text-blue-600 uppercase tracking-[0.2em]">{field.label || field.editLabel || field.viewLabel}</span>
-                                                    <div className="h-px flex-1 bg-gradient-to-l from-blue-200 to-transparent" />
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-1.5">
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">
-                                                        {field.fullLabel || field.label || field.editLabel || field.viewLabel}{field.required && <span className="text-red-400 ml-1">*</span>}
-                                                    </label>
-                                                    {(field.type === 'text' || field.type === 'input') && (
-                                                        <input type="text" value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} readOnly={isViewOnly} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all read-only:opacity-70" />
-                                                    )}
-                                                    {field.type === 'number' && (
-                                                        <input type="number" value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} readOnly={isViewOnly} className="w-40 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all read-only:opacity-70" />
-                                                    )}
-                                                    {field.type === 'date' && (
-                                                        <input type="date" value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} disabled={isViewOnly} className="w-56 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all disabled:opacity-70"  max="9999-12-31" min="1900-01-01" />
-                                                    )}
-                                                    {field.type === 'select' && (
-                                                        <select value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} disabled={isViewOnly} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all appearance-none disabled:opacity-70">
-                                                            <option value="">-- Seleccione --</option>
-                                                            {(field.options || []).map((op, i) => (
-                                                                <option key={i} value={op}>{op}</option>
-                                                            ))}
-                                                        </select>
-                                                    )}
-                                                    {field.type === 'textarea' && (
-                                                        <textarea value={templateValues[field.id] || ''} onChange={e => setTemplateValues(prev => ({ ...prev, [field.id]: e.target.value }))} readOnly={isViewOnly} rows={4} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all resize-y read-only:opacity-70" />
-                                                    )}
-                                                </div>
+                                                )
                                             )}
                                         </div>
-                                    ))}
-                                </div>
-                            )}
+                                    );
+                                })}
+
+                                {/* Tercera Firma Footer if enabled on template */}
+                                {(selectedTemplate.terceraFirma || selectedTemplate.tercera_firma) && (
+                                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                                        <div>
+                                            <span className="text-xs font-black text-slate-700 uppercase tracking-wide block">Tercera Firma Autorizada</span>
+                                            <span className="text-[11px] text-slate-400 font-medium">Habilitar firma de tutor, testigo o especialista</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={!!templateValues['tercera_firma']}
+                                            onChange={e => setTemplateValues(prev => ({ ...prev, tercera_firma: e.target.checked }))}
+                                            disabled={isViewOnly}
+                                            className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -1550,7 +1753,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                             {/* Row 1: Odontólogo Prescriptor* & Plan de formulación */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1">
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Odontólogo Prescriptor *</label>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Profesional Responsable *</label>
                                     <select 
                                         value={profesional}
                                         onChange={(e) => setProfesional(e.target.value)}
@@ -1998,30 +2201,39 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                             </div>
                         </div>
                     ) : docType === 'Consulta' ? (
-                        // ── Formulario estructurado de Consulta Médica ──────────────
+                        // ── Formulario estructurado de Consulta Odontológica ────────
                         <div className="space-y-0">
                             {/* Tabs */}
-                            <div className="flex border-b border-slate-100 mb-6">
-                                {['motivo', 'antecedentes'].map(tab => (
+                            <div className="flex overflow-x-auto border-b border-slate-200 mb-6 gap-1 custom-scrollbar">
+                                {[
+                                    { id: 'motivo', label: '1. Motivo de Consulta' },
+                                    { id: 'antecedentes', label: '2. Antecedentes' },
+                                    { id: 'examen', label: '3. Examen Odontológico' },
+                                    { id: 'diagnostico', label: '4. Diagnóstico' },
+                                    { id: 'tratamiento', label: '5. Plan de Tratamiento' },
+                                ].map(tab => (
                                     <button
-                                        key={tab}
+                                        key={tab.id}
                                         type="button"
-                                        onClick={() => setConsultaTab(tab)}
-                                        className={`px-6 py-3 text-[11px] font-black uppercase tracking-widest transition-all border-b-2 -mb-px ${
-                                            consultaTab === tab
-                                                ? 'border-[#8CC63F] text-[#8CC63F]'
-                                                : 'border-transparent text-slate-400 hover:text-slate-600'
+                                        onClick={() => setConsultaTab(tab.id)}
+                                        className={`px-4 py-3 text-[11px] font-black uppercase tracking-wider transition-all border-b-2 -mb-px whitespace-nowrap cursor-pointer ${
+                                            consultaTab === tab.id
+                                                ? 'border-[#8CC63F] text-[#8CC63F] bg-lime-50/50 rounded-t-xl font-black'
+                                                : 'border-transparent text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-t-xl'
                                         }`}
                                     >
-                                        {tab === 'motivo' ? 'Motivo Consulta' : 'Antecedentes'}
+                                        {tab.label}
                                     </button>
                                 ))}
                             </div>
 
-                            {consultaTab === 'motivo' ? (
+                            {/* TAB 1: MOTIVO DE CONSULTA */}
+                            {consultaTab === 'motivo' && (
                                 <div className="space-y-5">
                                     <div className="space-y-2">
-                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Motivo de la consulta *</label>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">
+                                            Motivo de la consulta <span className="text-red-500 font-bold">*</span>
+                                        </label>
                                         <textarea
                                             rows={4}
                                             readOnly={isViewOnly}
@@ -2032,7 +2244,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Enfermedad actual</label>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">
+                                            Enfermedad actual
+                                        </label>
                                         <textarea
                                             rows={4}
                                             readOnly={isViewOnly}
@@ -2043,14 +2257,16 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         />
                                     </div>
                                 </div>
-                            ) : (
-                                <div className="space-y-8">
+                            )}
 
-                                    {/* ── Antecedentes ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
-                                        <div className="flex items-center gap-3">
-                                            <h4 className="text-xs font-black text-slate-700">Antecedentes</h4>
-                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                            {/* TAB 2: ANTECEDENTES */}
+                            {consultaTab === 'antecedentes' && (
+                                <div className="space-y-6">
+                                    {/* 1. Médicos */}
+                                    <div className="space-y-3 p-5 bg-slate-50/70 rounded-2xl border border-slate-200">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Antecedentes Médicos</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
                                                 <input type="checkbox" checked={antNoRefiere} onChange={e => setAntNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
                                                 <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
@@ -2061,14 +2277,14 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                     <div className="flex items-end gap-3">
                                                         <div className="flex-1 space-y-2 text-left">
                                                             <div className="space-y-1">
-                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">CIE10</label>
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Diagnóstico CIE-10</label>
                                                                 <CIE10Search value={tempAntCIE10} onSelect={setTempAntCIE10} className="w-full" />
                                                             </div>
                                                             <div className="space-y-1">
-                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación / Detalle</label>
                                                                 <textarea
                                                                     rows={2}
-                                                                    placeholder="Observación"
+                                                                    placeholder="Observación..."
                                                                     value={tempAntObs}
                                                                     onChange={e => setTempAntObs(e.target.value)}
                                                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
@@ -2090,16 +2306,16 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                     </div>
                                                 )}
                                                 {antecedentes.length > 0 ? (
-                                                    <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
+                                                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Código</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Diagnóstico</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
-                                                            <tbody className="divide-y divide-slate-50">
+                                                            <tbody className="divide-y divide-slate-100">
                                                                 {antecedentes.map((a, i) => (
                                                                     <tr key={i}>
                                                                         <td className="px-3 py-2 font-bold text-slate-500 font-mono">{a.code}</td>
                                                                         <td className="px-3 py-2 font-bold text-slate-700 uppercase">{a.name}</td>
                                                                         <td className="px-3 py-2 text-slate-500">{a.obs || '-'}</td>
-                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setAntecedentes(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><FiTrash2 size={13} /></button>}</td>
+                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setAntecedentes(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"><FiTrash2 size={13} /></button>}</td>
                                                                     </tr>
                                                                 ))}
                                                             </tbody>
@@ -2112,11 +2328,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         )}
                                     </div>
 
-                                    {/* ── Alergias ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
-                                        <div className="flex items-center gap-3">
-                                            <h4 className="text-xs font-black text-slate-700">Alergias</h4>
-                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                    {/* 2. Alergias */}
+                                    <div className="space-y-3 p-5 bg-slate-50/70 rounded-2xl border border-slate-200">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Alergias</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
                                                 <input type="checkbox" checked={alerNoRefiere} onChange={e => setAlerNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
                                                 <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
@@ -2134,14 +2350,14 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 transition-all"
                                                                 >
                                                                     <option value="">Seleccione...</option>
-                                                                    {['Medicamento','Alimento','Ambiental','Látex','Otro'].map(t => <option key={t} value={t}>{t}</option>)}
+                                                                    {['Medicamento','Alimento','Ambiental','Látex','Anestésicos locales','Otro'].map(t => <option key={t} value={t}>{t}</option>)}
                                                                 </select>
                                                             </div>
                                                             <div className="space-y-1">
-                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación / Reacción</label>
                                                                 <textarea
                                                                     rows={2}
-                                                                    placeholder="Observación"
+                                                                    placeholder="Observación..."
                                                                     value={tempAlerObs}
                                                                     onChange={e => setTempAlerObs(e.target.value)}
                                                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
@@ -2163,15 +2379,15 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                     </div>
                                                 )}
                                                 {alergias.length > 0 ? (
-                                                    <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
+                                                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Tipo</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
-                                                            <tbody className="divide-y divide-slate-50">
+                                                            <tbody className="divide-y divide-slate-100">
                                                                 {alergias.map((a, i) => (
                                                                     <tr key={i}>
                                                                         <td className="px-3 py-2 font-bold text-slate-700">{a.tipo}</td>
                                                                         <td className="px-3 py-2 text-slate-500">{a.obs || '-'}</td>
-                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setAlergias(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><FiTrash2 size={13} /></button>}</td>
+                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setAlergias(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"><FiTrash2 size={13} /></button>}</td>
                                                                     </tr>
                                                                 ))}
                                                             </tbody>
@@ -2184,11 +2400,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         )}
                                     </div>
 
-                                    {/* ── Antecedentes Familiares ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
-                                        <div className="flex items-center gap-3">
-                                            <h4 className="text-xs font-black text-slate-700">Antecedentes Familiares</h4>
-                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                    {/* 3. Familiares */}
+                                    <div className="space-y-3 p-5 bg-slate-50/70 rounded-2xl border border-slate-200">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Antecedentes Familiares</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
                                                 <input type="checkbox" checked={famNoRefiere} onChange={e => setFamNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
                                                 <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
@@ -2211,7 +2427,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                                     </select>
                                                                 </div>
                                                                 <div className="space-y-1">
-                                                                    <label className="text-[10px] font-bold text-slate-500 pl-0.5">CIE10</label>
+                                                                    <label className="text-[10px] font-bold text-slate-500 pl-0.5">Diagnóstico CIE-10</label>
                                                                     <CIE10Search value={tempFamCIE10} onSelect={setTempFamCIE10} className="w-full" />
                                                                 </div>
                                                             </div>
@@ -2219,7 +2435,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                                 <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
                                                                 <textarea
                                                                     rows={2}
-                                                                    placeholder="Observación"
+                                                                    placeholder="Observación..."
                                                                     value={tempFamObs}
                                                                     onChange={e => setTempFamObs(e.target.value)}
                                                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
@@ -2241,17 +2457,17 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                     </div>
                                                 )}
                                                 {antFamiliares.length > 0 ? (
-                                                    <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
+                                                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Parentesco</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Código</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Diagnóstico</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
-                                                            <tbody className="divide-y divide-slate-50">
+                                                            <tbody className="divide-y divide-slate-100">
                                                                 {antFamiliares.map((f, i) => (
                                                                     <tr key={i}>
                                                                         <td className="px-3 py-2 font-bold text-slate-700">{f.parentesco}</td>
                                                                         <td className="px-3 py-2 font-bold text-slate-500 font-mono">{f.code}</td>
                                                                         <td className="px-3 py-2 font-bold text-slate-700 uppercase">{f.name}</td>
                                                                         <td className="px-3 py-2 text-slate-500">{f.obs || '-'}</td>
-                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setAntFamiliares(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><FiTrash2 size={13} /></button>}</td>
+                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setAntFamiliares(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"><FiTrash2 size={13} /></button>}</td>
                                                                     </tr>
                                                                 ))}
                                                             </tbody>
@@ -2264,11 +2480,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         )}
                                     </div>
 
-                                    {/* ── Medicamentos ── */}
-                                    <div className="space-y-3 p-5 bg-slate-50/60 rounded-2xl border border-slate-150">
-                                        <div className="flex items-center gap-3">
-                                            <h4 className="text-xs font-black text-slate-700">Medicamentos</h4>
-                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                    {/* 4. Medicamentos */}
+                                    <div className="space-y-3 p-5 bg-slate-50/70 rounded-2xl border border-slate-200">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Medicamentos en Uso</h4>
+                                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
                                                 <input type="checkbox" checked={medPrevNoRefiere} onChange={e => setMedPrevNoRefiere(e.target.checked)} disabled={isViewOnly} className="w-4 h-4 rounded border-slate-300 text-[#8CC63F] focus:ring-[#8CC63F]" />
                                                 <span className="text-xs font-semibold text-slate-500">No refiere</span>
                                             </label>
@@ -2279,7 +2495,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                     <div className="flex items-end gap-3">
                                                         <div className="flex-1 space-y-2 text-left">
                                                             <div className="space-y-1">
-                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">DCI</label>
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Medicamento (DCI)</label>
                                                                 <MedicamentoSearch 
                                                                     value={tempMedPrevItem} 
                                                                     onChange={setTempMedPrevItem} 
@@ -2287,10 +2503,10 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                                 />
                                                             </div>
                                                             <div className="space-y-1">
-                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación</label>
+                                                                <label className="text-[10px] font-bold text-slate-500 pl-0.5">Dosis / Frecuencia / Observación</label>
                                                                 <textarea
                                                                     rows={2}
-                                                                    placeholder="Observación"
+                                                                    placeholder="Dosis y observación..."
                                                                     value={tempMedPrevObs}
                                                                     onChange={e => setTempMedPrevObs(e.target.value)}
                                                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500 resize-none"
@@ -2319,15 +2535,15 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                     </div>
                                                 )}
                                                 {medicamentosPrev.length > 0 ? (
-                                                    <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white">
+                                                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                                                         <table className="w-full text-left text-xs">
                                                             <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Medicamento</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
-                                                            <tbody className="divide-y divide-slate-50">
+                                                            <tbody className="divide-y divide-slate-100">
                                                                 {medicamentosPrev.map((m, i) => (
                                                                     <tr key={i}>
                                                                         <td className="px-3 py-2 font-bold text-slate-700">{m.nombre}</td>
                                                                         <td className="px-3 py-2 text-slate-500">{m.obs || '-'}</td>
-                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setMedicamentosPrev(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><FiTrash2 size={13} /></button>}</td>
+                                                                        <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setMedicamentosPrev(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"><FiTrash2 size={13} /></button>}</td>
                                                                     </tr>
                                                                 ))}
                                                             </tbody>
@@ -2341,8 +2557,783 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                     </div>
                                 </div>
                             )}
+
+                            {/* TAB 3: EXAMEN ODONTOLÓGICO ESTRUCTURADO */}
+                            {consultaTab === 'examen' && (
+                                <div className="space-y-6">
+                                    {/* 1. Estado General / Signos Relevantes */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 md:p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-5 h-5 rounded-full bg-[#8CC63F]/20 text-[#8CC63F] flex items-center justify-center text-[10px] font-black">1</span>
+                                                Estado General / Signos Relevantes
+                                                <span className="text-[10px] font-semibold text-slate-400 normal-case">(Opcionales)</span>
+                                            </h4>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Estado general</label>
+                                                <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-slate-200">
+                                                    {['Bueno', 'Regular', 'Malo'].map(opt => (
+                                                        <button
+                                                            key={opt}
+                                                            type="button"
+                                                            disabled={isViewOnly}
+                                                            onClick={() => updateExamenOdonto('estadoGeneral', opt)}
+                                                            className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                                                examenOdonto.estadoGeneral === opt
+                                                                    ? opt === 'Bueno' ? 'bg-[#8CC63F] text-white shadow-xs' : opt === 'Regular' ? 'bg-amber-500 text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                    : 'text-slate-500 hover:bg-slate-100'
+                                                            }`}
+                                                        >
+                                                            {opt}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Presión arterial</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        readOnly={isViewOnly}
+                                                        placeholder="120/80"
+                                                        value={examenOdonto.presionArterial}
+                                                        onChange={e => updateExamenOdonto('presionArterial', e.target.value)}
+                                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 pr-12 h-9 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                                                    />
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">mmHg</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Frecuencia cardíaca</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        readOnly={isViewOnly}
+                                                        placeholder="75"
+                                                        value={examenOdonto.frecuenciaCardiaca}
+                                                        onChange={e => updateExamenOdonto('frecuenciaCardiaca', e.target.value)}
+                                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 pr-10 h-9 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                                                    />
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">lpm</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Otros signos</label>
+                                                <input
+                                                    type="text"
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Temperatura, saturación..."
+                                                    value={examenOdonto.otrosSignos}
+                                                    onChange={e => updateExamenOdonto('otrosSignos', e.target.value)}
+                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Examen Extraoral */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 md:p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-5 h-5 rounded-full bg-[#8CC63F]/20 text-[#8CC63F] flex items-center justify-center text-[10px] font-black">2</span>
+                                                Examen Extraoral
+                                            </h4>
+                                            {!isViewOnly && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setExamenOdonto(prev => ({
+                                                            ...prev,
+                                                            simetriaFacial: 'Normal', simetriaFacialObs: '',
+                                                            pielTejidos: 'Normal', pielTejidosObs: '',
+                                                            ganglios: 'Sin alteraciones', gangliosObs: '',
+                                                            labios: 'Normal', labiosObs: ''
+                                                        }));
+                                                    }}
+                                                    className="text-[11px] font-bold text-[#8CC63F] hover:underline cursor-pointer flex items-center gap-1"
+                                                >
+                                                    <FiCheck size={13} /> Marcar todo normal
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                            {/* Simetría facial */}
+                                            <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-bold text-slate-700">Simetría facial</label>
+                                                    <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                                        {['Normal', 'Alterada'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('simetriaFacial', val)}
+                                                                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                                                    examenOdonto.simetriaFacial === val
+                                                                        ? val === 'Normal' ? 'bg-[#8CC63F] text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Observación..."
+                                                    value={examenOdonto.simetriaFacialObs}
+                                                    onChange={e => updateExamenOdonto('simetriaFacialObs', e.target.value)}
+                                                    className={`w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:bg-white focus:border-indigo-500 ${examenOdonto.simetriaFacial === 'Alterada' ? 'border-rose-300 bg-rose-50/30' : ''}`}
+                                                />
+                                            </div>
+
+                                            {/* Piel y tejidos faciales */}
+                                            <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-bold text-slate-700">Piel y tejidos faciales</label>
+                                                    <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                                        {['Normal', 'Alteración'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('pielTejidos', val)}
+                                                                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                                                    examenOdonto.pielTejidos === val
+                                                                        ? val === 'Normal' ? 'bg-[#8CC63F] text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Observación..."
+                                                    value={examenOdonto.pielTejidosObs}
+                                                    onChange={e => updateExamenOdonto('pielTejidosObs', e.target.value)}
+                                                    className={`w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:bg-white focus:border-indigo-500 ${examenOdonto.pielTejidos === 'Alteración' ? 'border-rose-300 bg-rose-50/30' : ''}`}
+                                                />
+                                            </div>
+
+                                            {/* Ganglios / cadenas ganglionares */}
+                                            <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-bold text-slate-700">Ganglios / cadenas</label>
+                                                    <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                                        {['Sin alteraciones', 'Alterados'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('ganglios', val)}
+                                                                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                                                    examenOdonto.ganglios === val
+                                                                        ? val === 'Sin alteraciones' ? 'bg-[#8CC63F] text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Observación..."
+                                                    value={examenOdonto.gangliosObs}
+                                                    onChange={e => updateExamenOdonto('gangliosObs', e.target.value)}
+                                                    className={`w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:bg-white focus:border-indigo-500 ${examenOdonto.ganglios === 'Alterados' ? 'border-rose-300 bg-rose-50/30' : ''}`}
+                                                />
+                                            </div>
+
+                                            {/* Labios */}
+                                            <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-bold text-slate-700">Labios</label>
+                                                    <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                                        {['Normal', 'Alterado'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('labios', val)}
+                                                                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                                                    examenOdonto.labios === val
+                                                                        ? val === 'Normal' ? 'bg-[#8CC63F] text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Observación..."
+                                                    value={examenOdonto.labiosObs}
+                                                    onChange={e => updateExamenOdonto('labiosObs', e.target.value)}
+                                                    className={`w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:bg-white focus:border-indigo-500 ${examenOdonto.labios === 'Alterado' ? 'border-rose-300 bg-rose-50/30' : ''}`}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 3. Articulación Temporomandibular — ATM */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 md:p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                                            <div>
+                                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                    <span className="w-5 h-5 rounded-full bg-[#8CC63F]/20 text-[#8CC63F] flex items-center justify-center text-[10px] font-black">3</span>
+                                                    Articulación Temporomandibular — ATM
+                                                </h4>
+                                                <p className="text-[11px] text-slate-400 mt-0.5">Seleccione las alteraciones presentes en la evaluación articular</p>
+                                            </div>
+                                            {!isViewOnly && examenOdonto.atmItems.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateExamenOdonto('atmItems', [])}
+                                                    className="text-[11px] font-bold text-slate-400 hover:text-rose-500 cursor-pointer"
+                                                >
+                                                    Limpiar alteraciones
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                                            {[
+                                                'Presencia de síntomas subjetivos',
+                                                'Ruidos',
+                                                'Dolor ATM',
+                                                'Dolor muscular',
+                                                'Desviaciones',
+                                                'Limitación apertura',
+                                                'Brinco',
+                                                'Cambio de volumen',
+                                                'Bloqueo mandibular',
+                                                'Crepitación'
+                                            ].map(item => {
+                                                const active = examenOdonto.atmItems.includes(item);
+                                                return (
+                                                    <button
+                                                        key={item}
+                                                        type="button"
+                                                        disabled={isViewOnly}
+                                                        onClick={() => {
+                                                            const newItems = active 
+                                                                ? examenOdonto.atmItems.filter(i => i !== item)
+                                                                : [...examenOdonto.atmItems, item];
+                                                            updateExamenOdonto('atmItems', newItems);
+                                                        }}
+                                                        className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all flex items-start gap-2 select-none cursor-pointer ${
+                                                            active 
+                                                                ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-xs'
+                                                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100/70'
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={active}
+                                                            readOnly
+                                                            className="mt-0.5 w-3.5 h-3.5 rounded text-amber-600 focus:ring-amber-500 cursor-pointer pointer-events-none"
+                                                        />
+                                                        <span className="leading-tight">{item}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Otros hallazgos / Observaciones ATM</label>
+                                            <input
+                                                type="text"
+                                                readOnly={isViewOnly}
+                                                placeholder="Describa otros hallazgos en la ATM..."
+                                                value={examenOdonto.atmOtros}
+                                                onChange={e => updateExamenOdonto('atmOtros', e.target.value)}
+                                                className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* 4. Tejidos Blandos / Examen Intraoral */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 md:p-5 space-y-4">
+                                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-5 h-5 rounded-full bg-[#8CC63F]/20 text-[#8CC63F] flex items-center justify-center text-[10px] font-black">4</span>
+                                                Tejidos Blandos / Examen Intraoral
+                                            </h4>
+                                            {!isViewOnly && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setExamenOdonto(prev => ({
+                                                            ...prev,
+                                                            mucosaYugal: 'Normal', mucosaYugalObs: '',
+                                                            paladar: 'Normal', paladarObs: '',
+                                                            lengua: 'Normal', lenguaObs: '',
+                                                            pisoBoca: 'Normal', pisoBocaObs: '',
+                                                            glandulasSalivales: 'Normal', glandulasSalivalesObs: '',
+                                                            orofaringe: 'Normal', orofaringeObs: ''
+                                                        }));
+                                                    }}
+                                                    className="text-[11px] font-bold text-[#8CC63F] hover:underline cursor-pointer flex items-center gap-1"
+                                                >
+                                                    <FiCheck size={13} /> Marcar todo normal
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                                            {[
+                                                { id: 'mucosaYugal', label: 'Mucosa yugal', optA: 'Normal', optB: 'Alterada', obsKey: 'mucosaYugalObs' },
+                                                { id: 'paladar', label: 'Paladar', optA: 'Normal', optB: 'Alterado', obsKey: 'paladarObs' },
+                                                { id: 'lengua', label: 'Lengua', optA: 'Normal', optB: 'Alterada', obsKey: 'lenguaObs' },
+                                                { id: 'pisoBoca', label: 'Piso de boca', optA: 'Normal', optB: 'Alterado', obsKey: 'pisoBocaObs' },
+                                                { id: 'glandulasSalivales', label: 'Glándulas salivales', optA: 'Normal', optB: 'Alteradas', obsKey: 'glandulasSalivalesObs' },
+                                                { id: 'orofaringe', label: 'Orofaringe', optA: 'Normal', optB: 'Alterada', obsKey: 'orofaringeObs' },
+                                            ].map(t => (
+                                                <div key={t.id} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-bold text-slate-700">{t.label}</label>
+                                                        <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                                            {[t.optA, t.optB].map(val => (
+                                                                <button
+                                                                    key={val}
+                                                                    type="button"
+                                                                    disabled={isViewOnly}
+                                                                    onClick={() => updateExamenOdonto(t.id, val)}
+                                                                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                                                        examenOdonto[t.id] === val
+                                                                            ? val === t.optA ? 'bg-[#8CC63F] text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                            : 'text-slate-500 hover:text-slate-800'
+                                                                    }`}
+                                                                >
+                                                                    {val}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        readOnly={isViewOnly}
+                                                        placeholder="Observación..."
+                                                        value={examenOdonto[t.obsKey]}
+                                                        onChange={e => updateExamenOdonto(t.obsKey, e.target.value)}
+                                                        className={`w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:bg-white focus:border-indigo-500 ${examenOdonto[t.id] === t.optB ? 'border-rose-300 bg-rose-50/30' : ''}`}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* 5. Periodonto */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 md:p-5 space-y-4">
+                                        <div className="border-b border-slate-200/80 pb-2.5">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-5 h-5 rounded-full bg-[#8CC63F]/20 text-[#8CC63F] flex items-center justify-center text-[10px] font-black">5</span>
+                                                Periodonto
+                                            </h4>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {/* Encías */}
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Encías (Selección múltiple)</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {['Normales', 'Inflamadas', 'Sangrado', 'Recesión'].map(opt => {
+                                                        const active = examenOdonto.encias.includes(opt);
+                                                        return (
+                                                            <button
+                                                                key={opt}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => {
+                                                                    let newEnc;
+                                                                    if (opt === 'Normales') {
+                                                                        newEnc = ['Normales'];
+                                                                    } else {
+                                                                        const filtered = examenOdonto.encias.filter(e => e !== 'Normales');
+                                                                        newEnc = active ? filtered.filter(e => e !== opt) : [...filtered, opt];
+                                                                        if (newEnc.length === 0) newEnc = ['Normales'];
+                                                                    }
+                                                                    updateExamenOdonto('encias', newEnc);
+                                                                }}
+                                                                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                                                    active 
+                                                                        ? opt === 'Normales' ? 'bg-[#8CC63F] border-[#8CC63F] text-white shadow-xs' : 'bg-rose-500 border-rose-500 text-white shadow-xs'
+                                                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                                                                }`}
+                                                            >
+                                                                {opt}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* Higiene, Placa, Cálculo, Movilidad in a grid */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                                {/* Higiene oral */}
+                                                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Higiene oral</label>
+                                                    <div className="grid grid-cols-3 gap-1 bg-slate-100 p-0.5 rounded-lg">
+                                                        {['Buena', 'Regular', 'Deficiente'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('higieneOral', val)}
+                                                                className={`py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                                                    examenOdonto.higieneOral === val
+                                                                        ? val === 'Buena' ? 'bg-[#8CC63F] text-white shadow-xs' : val === 'Regular' ? 'bg-amber-500 text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Placa bacteriana */}
+                                                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Placa bacteriana</label>
+                                                    <div className="grid grid-cols-4 gap-0.5 bg-slate-100 p-0.5 rounded-lg">
+                                                        {['Ausente', 'Leve', 'Moderada', 'Abundante'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('placaBacteriana', val)}
+                                                                className={`py-1 text-[10px] font-bold rounded-md transition-all truncate cursor-pointer ${
+                                                                    examenOdonto.placaBacteriana === val
+                                                                        ? val === 'Ausente' ? 'bg-[#8CC63F] text-white shadow-xs' : val === 'Leve' ? 'bg-blue-500 text-white shadow-xs' : val === 'Moderada' ? 'bg-amber-500 text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                                title={val}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Cálculo */}
+                                                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cálculo</label>
+                                                    <div className="grid grid-cols-4 gap-0.5 bg-slate-100 p-0.5 rounded-lg">
+                                                        {['Ausente', 'Leve', 'Moderado', 'Abundante'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('calculo', val)}
+                                                                className={`py-1 text-[10px] font-bold rounded-md transition-all truncate cursor-pointer ${
+                                                                    examenOdonto.calculo === val
+                                                                        ? val === 'Ausente' ? 'bg-[#8CC63F] text-white shadow-xs' : val === 'Leve' ? 'bg-blue-500 text-white shadow-xs' : val === 'Moderado' ? 'bg-amber-500 text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                                title={val}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Movilidad dental */}
+                                                <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Movilidad dental</label>
+                                                    <div className="grid grid-cols-2 gap-1 bg-slate-100 p-0.5 rounded-lg">
+                                                        {['No', 'Sí'].map(val => (
+                                                            <button
+                                                                key={val}
+                                                                type="button"
+                                                                disabled={isViewOnly}
+                                                                onClick={() => updateExamenOdonto('movilidadDental', val)}
+                                                                className={`py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                                                    examenOdonto.movilidadDental === val
+                                                                        ? val === 'No' ? 'bg-[#8CC63F] text-white shadow-xs' : 'bg-rose-500 text-white shadow-xs'
+                                                                        : 'text-slate-500 hover:text-slate-800'
+                                                                }`}
+                                                            >
+                                                                {val}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Otros hallazgos periodonto */}
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Otros hallazgos periodontales</label>
+                                                <input
+                                                    type="text"
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Observaciones periodontales adicionales..."
+                                                    value={examenOdonto.periodontoOtros}
+                                                    onChange={e => updateExamenOdonto('periodontoOtros', e.target.value)}
+                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 6. Oclusión */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 md:p-5 space-y-4">
+                                        <div className="border-b border-slate-200/80 pb-2.5">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-5 h-5 rounded-full bg-[#8CC63F]/20 text-[#8CC63F] flex items-center justify-center text-[10px] font-black">6</span>
+                                                Oclusión
+                                            </h4>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <div className="flex flex-wrap gap-2">
+                                                {[
+                                                    'Normal',
+                                                    'Maloclusión',
+                                                    'Mordida abierta',
+                                                    'Mordida profunda',
+                                                    'Mordida cruzada',
+                                                    'Desviación de línea media',
+                                                    'Otros'
+                                                ].map(opt => {
+                                                    const active = examenOdonto.oclusionItems.includes(opt);
+                                                    return (
+                                                        <button
+                                                            key={opt}
+                                                            type="button"
+                                                            disabled={isViewOnly}
+                                                            onClick={() => {
+                                                                let newOclu;
+                                                                if (opt === 'Normal') {
+                                                                    newOclu = ['Normal'];
+                                                                } else {
+                                                                    const filtered = examenOdonto.oclusionItems.filter(o => o !== 'Normal');
+                                                                    newOclu = active ? filtered.filter(o => o !== opt) : [...filtered, opt];
+                                                                    if (newOclu.length === 0) newOclu = ['Normal'];
+                                                                }
+                                                                updateExamenOdonto('oclusionItems', newOclu);
+                                                            }}
+                                                            className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                                                active 
+                                                                    ? opt === 'Normal' ? 'bg-[#8CC63F] border-[#8CC63F] text-white shadow-xs' : 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                                                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                                                            }`}
+                                                        >
+                                                            {opt}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Observaciones de oclusión</label>
+                                                <input
+                                                    type="text"
+                                                    readOnly={isViewOnly}
+                                                    placeholder="Observaciones de oclusión, guía anterior, relación molar..."
+                                                    value={examenOdonto.oclusionObs}
+                                                    onChange={e => updateExamenOdonto('oclusionObs', e.target.value)}
+                                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 7. Hallazgos Clínicos Adicionales */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 md:p-5 space-y-3">
+                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                            <span className="w-5 h-5 rounded-full bg-[#8CC63F]/20 text-[#8CC63F] flex items-center justify-center text-[10px] font-black">7</span>
+                                            Hallazgos Clínicos Adicionales
+                                        </h4>
+                                        <textarea
+                                            rows={3}
+                                            readOnly={isViewOnly}
+                                            placeholder="Observaciones adicionales, hábitos, hallazgos radiográficos o clínicos relevantes..."
+                                            value={examenOdonto.hallazgosAdicionales}
+                                            onChange={e => updateExamenOdonto('hallazgosAdicionales', e.target.value)}
+                                            className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-700 outline-none focus:border-blue-500 resize-none transition-all read-only:opacity-75"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB 4: DIAGNÓSTICO */}
+                            {consultaTab === 'diagnostico' && (
+                                <div className="space-y-6">
+                                    {/* Diagnóstico Principal */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-5 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                                                Diagnóstico Principal (CIE-10)
+                                            </h4>
+                                            {dxPrincipalConsulta && !isViewOnly && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDxPrincipalConsulta(null)}
+                                                    className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer"
+                                                >
+                                                    Cambiar / Quitar
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {dxPrincipalConsulta ? (
+                                            <div className="flex items-center justify-between p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-xs font-black font-mono">
+                                                        {dxPrincipalConsulta.code}
+                                                    </span>
+                                                    <span className="text-xs font-bold text-blue-900 uppercase">
+                                                        {dxPrincipalConsulta.name}
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                                                    Principal
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            !isViewOnly ? (
+                                                <div className="space-y-1">
+                                                    <CIE10Search 
+                                                        value={dxPrincipalConsulta} 
+                                                        onSelect={setDxPrincipalConsulta} 
+                                                        className="w-full" 
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-slate-400 italic">Sin diagnóstico principal asignado</p>
+                                            )
+                                        )}
+                                    </div>
+
+                                    {/* Diagnósticos Relacionados */}
+                                    <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-5 space-y-3">
+                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                                            Diagnósticos Relacionados (CIE-10)
+                                        </h4>
+                                        {!isViewOnly && (
+                                            <div className="flex items-end gap-3">
+                                                <div className="flex-1 space-y-2 text-left">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[10px] font-bold text-slate-500 pl-0.5">Buscar Diagnóstico Relacionado</label>
+                                                        <CIE10Search value={tempDxRelConsultaCIE10} onSelect={setTempDxRelConsultaCIE10} className="w-full" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[10px] font-bold text-slate-500 pl-0.5">Observación / Tipo</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Observación o tipo de diagnóstico..."
+                                                            value={tempDxRelConsultaObs}
+                                                            onChange={e => setTempDxRelConsultaObs(e.target.value)}
+                                                            className="w-full bg-white border border-slate-200 rounded-xl px-3 h-9 text-xs font-medium text-slate-700 outline-none focus:border-indigo-500"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => {
+                                                        if (!tempDxRelConsultaCIE10) { toast.error('Seleccione un código CIE10'); return; }
+                                                        setDxRelacionadosConsulta(prev => [...prev, { ...tempDxRelConsultaCIE10, obs: tempDxRelConsultaObs }]);
+                                                        setTempDxRelConsultaCIE10(null); setTempDxRelConsultaObs('');
+                                                    }} 
+                                                    className="w-9 h-9 rounded-full bg-[#8CC63F] hover:bg-[#7bb335] text-white flex items-center justify-center shadow active:scale-95 transition-all cursor-pointer shrink-0 mb-1"
+                                                    title="Agregar Diagnóstico Relacionado"
+                                                >
+                                                    <FiPlus size={18} />
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {dxRelacionadosConsulta.length > 0 ? (
+                                            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                                                <table className="w-full text-left text-xs">
+                                                    <thead><tr className="bg-slate-50"><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Código</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Diagnóstico</th><th className="px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Observación</th><th className="px-3 py-2"></th></tr></thead>
+                                                    <tbody className="divide-y divide-slate-100">
+                                                        {dxRelacionadosConsulta.map((d, i) => (
+                                                            <tr key={i}>
+                                                                <td className="px-3 py-2 font-bold text-slate-500 font-mono">{d.code}</td>
+                                                                <td className="px-3 py-2 font-bold text-slate-700 uppercase">{d.name}</td>
+                                                                <td className="px-3 py-2 text-slate-500">{d.obs || '-'}</td>
+                                                                <td className="px-3 py-2 text-right">{!isViewOnly && <button type="button" onClick={() => setDxRelacionadosConsulta(prev => prev.filter((_, j) => j !== i))} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"><FiTrash2 size={13} /></button>}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : isViewOnly ? (
+                                            <p className="text-xs text-slate-400 italic py-1">Sin diagnósticos relacionados registrados</p>
+                                        ) : null}
+                                    </div>
+
+                                    {/* Observaciones / Notas Diagnósticas */}
+                                    <div className="space-y-2">
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">
+                                            Observaciones y Notas Diagnósticas
+                                        </label>
+                                        <textarea
+                                            rows={3}
+                                            readOnly={isViewOnly}
+                                            placeholder="Pronóstico, hipótesis diagnósticas adicionales o comentarios del odontólogo..."
+                                            value={diagnosticoNotas}
+                                            onChange={e => setDiagnosticoNotas(e.target.value)}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 resize-none transition-all read-only:opacity-75"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB 5: PLAN DE TRATAMIENTO */}
+                            {consultaTab === 'tratamiento' && (
+                                <div className="space-y-5">
+                                    <div className="space-y-2">
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">
+                                            Plan de Tratamiento y Procedimientos
+                                        </label>
+                                        <textarea
+                                            rows={5}
+                                            readOnly={isViewOnly}
+                                            placeholder="Detalle de los procedimientos a realizar por fases (Fase higiénica, operatoria, endodoncia, periodoncia, rehabilitación, etc.)..."
+                                            value={planTratamiento}
+                                            onChange={e => setPlanTratamiento(e.target.value)}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 resize-none transition-all read-only:opacity-75"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest pl-1">
+                                            Conducta y Recomendaciones al Paciente
+                                        </label>
+                                        <textarea
+                                            rows={4}
+                                            readOnly={isViewOnly}
+                                            placeholder="Instrucciones de higiene oral, cuidados post-consulta, remisiones a especialidades, pautas o próximos controles..."
+                                            value={recomendaciones}
+                                            onChange={e => setRecomendaciones(e.target.value)}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm font-medium text-slate-700 outline-none focus:bg-white focus:border-blue-500 resize-none transition-all read-only:opacity-75"
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    ) : (
+                    ) : (docType === 'Plantilla' || initialData?.isTemplateDoc) ? null : (
                         <div>
                             {docType !== 'Alerta' && (
                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Detalle / Contenido *</label>
@@ -2360,17 +3351,128 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     )}
                 </div>
 
-                <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 flex-none bg-white">
-                    <button onClick={onClose} disabled={saving} className="px-6 py-2.5 rounded-full font-bold text-sm text-slate-500 hover:bg-slate-200 transition-colors border border-slate-200 bg-white cursor-pointer">
-                        {docType === 'Alerta' ? "Cerrar" : (isViewOnly ? "Cerrar" : "Cancelar")}
-                    </button>
-                    {!isViewOnly && (
-                        <button onClick={handleSave} disabled={saving} className="px-8 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer">
-                            <FiCheck size={16} /> {saving ? "Guardando..." : (docType === 'Receta' ? "Guardar receta" : docType === 'Orden' ? "Guardar orden" : "Guardar")}
+                <div className="p-4 sm:p-6 border-t border-slate-100 bg-white flex flex-wrap items-center justify-between gap-3 flex-none">
+                    <div>
+                        {docType === 'Consulta' && !isClosedRecord && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-full text-xs font-bold">
+                                <FiClock size={12} /> Estado: En proceso
+                            </span>
+                        )}
+                        {docType === 'Consulta' && isClosedRecord && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-bold">
+                                <FiLock size={12} /> Registro Clínico Cerrado
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                        <button onClick={onClose} disabled={saving} className="px-5 py-2.5 rounded-full font-bold text-xs text-slate-500 hover:bg-slate-100 transition-colors border border-slate-200 bg-white cursor-pointer">
+                            {docType === 'Alerta' || effectiveIsViewOnly ? "Cerrar" : "Cancelar"}
                         </button>
-                    )}
+
+                        {!effectiveIsViewOnly && docType === 'Consulta' && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSave(false)}
+                                    disabled={saving}
+                                    className="px-5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-full font-black text-[11px] uppercase tracking-wider flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                                    title="Guardar avance actual sin finalizar"
+                                >
+                                    <FiClock size={14} /> {saving ? "Guardando..." : "Guardar progreso"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handleAttemptFinalize}
+                                    disabled={saving}
+                                    className="px-6 sm:px-8 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/25 flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer"
+                                >
+                                    <FiCheckCircle size={16} /> {saving ? "Finalizando..." : "Finalizar Consulta Odontológica"}
+                                </button>
+                            </>
+                        )}
+
+                        {!effectiveIsViewOnly && docType !== 'Consulta' && (
+                            <button onClick={() => handleSave(true)} disabled={saving} className="px-8 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 flex items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 cursor-pointer">
+                                <FiCheck size={16} /> {saving ? "Guardando..." : (docType === 'Receta' ? "Guardar receta" : docType === 'Orden' ? "Guardar orden" : "Guardar")}
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
+
+            {/* MODAL DE CONFIRMACIÓN: FINALIZAR CON PESTAÑAS PENDIENTES */}
+            {confirmFinalizeWithMissing && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                                <FiAlertTriangle size={20} className="text-amber-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+                                    Pestañas pendientes por diligenciar
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                                    Se detectaron secciones de la consulta sin completar.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-2">
+                            <p className="text-xs text-slate-700 font-medium">
+                                Las siguientes pestañas no han sido diligenciadas:
+                            </p>
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                                {missingConsultaTabs.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setConfirmFinalizeWithMissing(false);
+                                            setConsultaTab(tab.id);
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                                        title={`Ir a ${tab.label}`}
+                                    >
+                                        • {tab.label} <FiChevronRight size={12} className="text-amber-600" />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                            ¿Desea <strong>finalizar la consulta odontológica</strong> sin diligenciar estas secciones, o prefiere completarlas antes de cerrar el registro clínico?
+                        </p>
+
+                        <div className="flex items-center justify-end gap-2.5 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setConfirmFinalizeWithMissing(false);
+                                    if (missingConsultaTabs.length > 0) {
+                                        setConsultaTab(missingConsultaTabs[0].id);
+                                    }
+                                }}
+                                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-bold transition-all cursor-pointer"
+                            >
+                                Completar {missingConsultaTabs[0]?.label || "pestaña"}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setConfirmFinalizeWithMissing(false);
+                                    handleSave(true);
+                                }}
+                                className="px-5 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full text-xs font-black uppercase tracking-wider shadow-md transition-all cursor-pointer"
+                            >
+                                Sí, finalizar consulta
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* SUB-MODAL: ASOCIAR CONSULTA */}
             {asocConsultaModal && (

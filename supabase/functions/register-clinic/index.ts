@@ -37,6 +37,31 @@ const normalizePlan = (requested: unknown) => {
   return "free";
 };
 
+const validateRegistration = ({
+  adminEmail,
+  adminPassword,
+  adminName,
+  clinicName,
+}: {
+  adminEmail: string;
+  adminPassword: string;
+  adminName: string;
+  clinicName: string;
+}) => {
+  if (!clinicName || clinicName.length < 3 || clinicName.length > 120) {
+    throw new HttpError(400, "El nombre de la clinica no es valido.");
+  }
+  if (!adminName || adminName.length < 3 || adminName.length > 120) {
+    throw new HttpError(400, "El nombre del administrador no es valido.");
+  }
+  if (!adminEmail || !adminEmail.includes("@") || adminEmail.length > 254) {
+    throw new HttpError(400, "El correo no es valido.");
+  }
+  if (adminPassword.length < 8 || adminPassword.length > 72) {
+    throw new HttpError(400, "La contrasena debe tener entre 8 y 72 caracteres.");
+  }
+};
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -58,6 +83,8 @@ Deno.serve(async (request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const body = await request.json();
+    const action = String(body?.action || "submit_request");
 
     let callerIsSuperadmin = false;
     const authorization = request.headers.get("Authorization") || "";
@@ -76,53 +103,142 @@ Deno.serve(async (request) => {
       }
     }
 
-    const body = await request.json();
-    const adminEmail = String(body?.adminEmail || "").trim().toLowerCase();
-    const adminPassword = String(body?.adminPassword || "");
-    const adminName = String(body?.adminName || "").trim();
-    const clinicName = String(body?.clinicName || "").trim();
-    const plan = callerIsSuperadmin ? normalizePlan(body?.requestedPlan) : "free";
-    const planDuration = body?.planDuration === "yearly" ? "yearly" : "monthly";
-    const nit = String(body?.nit || "").trim().slice(0, 50);
-    const phone = String(body?.telefono || "").trim().slice(0, 50);
-    const address = String(body?.direccion || "").trim().slice(0, 250);
-    const city = String(body?.ciudad || "").trim().slice(0, 120);
-    const contactEmail = String(body?.contactEmail || adminEmail).trim().toLowerCase().slice(0, 254);
+    if (action === "submit_request") {
+      const adminEmail = String(body?.adminEmail || "").trim().toLowerCase();
+      const adminPassword = String(body?.adminPassword || "");
+      const adminName = String(body?.adminName || "").trim();
+      const clinicName = String(body?.clinicName || "").trim();
+      const requestedPlanId = typeof body?.requestedPlan === "object"
+        ? String(body.requestedPlan?.id || "trial")
+        : String(body?.requestedPlan || "trial");
+      const requestedPlanName = typeof body?.requestedPlan === "object"
+        ? String(body.requestedPlan?.name || "Trial")
+        : String(body?.requestedPlanName || body?.requestedPlan || "Trial");
 
-    if (!clinicName || clinicName.length < 3 || clinicName.length > 120) {
-      throw new HttpError(400, "El nombre de la clinica no es valido.");
-    }
-    if (!adminName || adminName.length < 3 || adminName.length > 120) {
-      throw new HttpError(400, "El nombre del administrador no es valido.");
-    }
-    if (!adminEmail || !adminEmail.includes("@") || adminEmail.length > 254) {
-      throw new HttpError(400, "El correo no es valido.");
-    }
-    if (adminPassword.length < 8 || adminPassword.length > 72) {
-      throw new HttpError(400, "La contrasena debe tener entre 8 y 72 caracteres.");
+      validateRegistration({ adminEmail, adminPassword, adminName, clinicName });
+
+      const forwardedFor = request.headers.get("x-forwarded-for") || "unknown";
+      const clientAddress = forwardedFor.split(",")[0].trim();
+      const requestHash = await hashValue(clientAddress + ":" + adminEmail);
+      const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+      const { count, error: countError } = await admin
+        .from("registration_attempts")
+        .select("id", { count: "exact", head: true })
+        .eq("request_hash", requestHash)
+        .gte("attempted_at", since);
+      if (countError) throw countError;
+      if ((count || 0) >= 5) {
+        throw new HttpError(429, "Demasiados intentos. Intenta de nuevo mas tarde.");
+      }
+
+      const { error: attemptError } = await admin
+        .from("registration_attempts")
+        .insert({ request_hash: requestHash });
+      if (attemptError) throw attemptError;
+
+      const { data: requestId, error: requestError } = await admin.rpc(
+        "store_subscription_request",
+        {
+          p_admin_email: adminEmail,
+          p_admin_password: adminPassword,
+          p_admin_name: adminName,
+          p_clinic_name: clinicName,
+          p_requested_plan_id: requestedPlanId,
+          p_requested_plan_name: requestedPlanName,
+        },
+      );
+      if (requestError || !requestId) {
+        throw requestError || new Error("No se pudo guardar la solicitud.");
+      }
+
+      return json({
+        success: true,
+        request: {
+          id: requestId,
+          tenantName: clinicName,
+          adminName,
+          adminEmail,
+          requestedPlanId,
+          requestedPlanName,
+          status: "pending",
+        },
+      }, 201);
     }
 
-    const forwardedFor = request.headers.get("x-forwarded-for") || "unknown";
     if (!callerIsSuperadmin) {
-    const clientAddress = forwardedFor.split(",")[0].trim();
-    const requestHash = await hashValue(clientAddress + ":" + adminEmail);
-    const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-
-    const { count, error: countError } = await admin
-      .from("registration_attempts")
-      .select("id", { count: "exact", head: true })
-      .eq("request_hash", requestHash)
-      .gte("attempted_at", since);
-    if (countError) throw countError;
-    if ((count || 0) >= 5) {
-      throw new HttpError(429, "Demasiados intentos. Intenta de nuevo mas tarde.");
+      throw new HttpError(403, "Solo el superadministrador puede gestionar clinicas.");
     }
 
-    const { error: attemptError } = await admin
-      .from("registration_attempts")
-      .insert({ request_hash: requestHash });
-    if (attemptError) throw attemptError;
+    if (action === "reject_request") {
+      const requestId = String(body?.requestId || "");
+      if (!requestId) throw new HttpError(400, "La solicitud es obligatoria.");
+
+      const { error } = await admin
+        .from("subscription_requests")
+        .update({
+          status: "rejected",
+          reject_reason: String(body?.reason || "").slice(0, 500),
+          processed_at: new Date().toISOString(),
+        })
+        .eq("id", requestId)
+        .eq("status", "pending");
+      if (error) throw error;
+
+      const { error: cleanupError } = await admin.rpc(
+        "delete_subscription_request_password",
+        { p_request_id: requestId },
+      );
+      if (cleanupError) throw cleanupError;
+      return json({ success: true });
     }
+
+    let requestId = "";
+    let requestRow: Record<string, unknown> | null = null;
+    if (action === "approve_request") {
+      requestId = String(body?.requestId || "");
+      if (!requestId) throw new HttpError(400, "La solicitud es obligatoria.");
+
+      const { data, error } = await admin
+        .from("subscription_requests")
+        .select("*")
+        .eq("id", requestId)
+        .eq("status", "pending")
+        .maybeSingle();
+      if (error || !data) {
+        throw new HttpError(404, "La solicitud pendiente no existe.");
+      }
+      requestRow = data;
+    } else if (action !== "create_clinic") {
+      throw new HttpError(400, "Operacion desconocida.");
+    }
+
+    const adminEmail = String(
+      requestRow?.admin_email || body?.adminEmail || "",
+    ).trim().toLowerCase();
+    let adminPassword = String(body?.adminPassword || "");
+    const adminName = String(
+      requestRow?.admin_name || body?.adminName || "",
+    ).trim();
+    const clinicName = String(
+      requestRow?.tenant_name || body?.clinicName || "",
+    ).trim();
+    const requestedPlan = requestRow?.requested_plan_id || body?.requestedPlan;
+    const plan = normalizePlan(requestedPlan);
+    const planDuration = body?.planDuration === "yearly" ? "yearly" : "monthly";
+
+    if (requestId) {
+      const { data: storedPassword, error: passwordError } = await admin.rpc(
+        "get_subscription_request_password",
+        { p_request_id: requestId },
+      );
+      if (passwordError || !storedPassword) {
+        throw passwordError || new Error("La solicitud no conserva una contrasena valida.");
+      }
+      adminPassword = String(storedPassword);
+    }
+
+    validateRegistration({ adminEmail, adminPassword, adminName, clinicName });
 
     for (let page = 1; page <= 20; page += 1) {
       const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
@@ -137,6 +253,10 @@ Deno.serve(async (request) => {
       .from("tenants")
       .insert({
         nombre: clinicName,
+        nit: String(body?.nit || "").trim().slice(0, 50),
+        telefono: String(body?.telefono || "").trim().slice(0, 50),
+        direccion: String(body?.direccion || "").trim().slice(0, 250),
+        ciudad: String(body?.ciudad || "").trim().slice(0, 120),
         plan,
         activo: true,
       })
@@ -160,6 +280,7 @@ Deno.serve(async (request) => {
     const { error: profileError } = await admin.from("profiles").insert({
       id: createdUserId,
       tenant_id: tenant.id,
+      inquilino: tenant.id,
       full_name: adminName,
       email: adminEmail,
       role: "administrador",
@@ -167,18 +288,19 @@ Deno.serve(async (request) => {
     });
     if (profileError) throw profileError;
 
-    const { error: branchError } = await admin.from("sucursales").insert({
-      tenant_id: tenant.id,
-      nombre: "Sede Principal",
-      activo: true,
-    });
+    const [{ error: branchError }, { error: officeError }] = await Promise.all([
+      admin.from("sucursales").insert({
+        tenant_id: tenant.id,
+        nombre: "Sede Principal",
+        activo: true,
+      }),
+      admin.from("consultorios").insert({
+        tenant_id: tenant.id,
+        nombre: "Consultorio Principal",
+        activo: true,
+      }),
+    ]);
     if (branchError) throw branchError;
-
-    const { error: officeError } = await admin.from("consultorios").insert({
-      tenant_id: tenant.id,
-      nombre: "Consultorio Principal",
-      activo: true,
-    });
     if (officeError) throw officeError;
 
     const createdAt = new Date();
@@ -190,11 +312,11 @@ Deno.serve(async (request) => {
     const tenantEntry = {
       id: tenant.id,
       nombre: clinicName,
-      nit,
-      telefono: phone,
-      direccion: address,
-      ciudad: city,
-      contactEmail,
+      nit: String(body?.nit || "").trim().slice(0, 50),
+      telefono: String(body?.telefono || "").trim().slice(0, 50),
+      direccion: String(body?.direccion || "").trim().slice(0, 250),
+      ciudad: String(body?.ciudad || "").trim().slice(0, 120),
+      contactEmail: String(body?.contactEmail || adminEmail).trim().toLowerCase().slice(0, 254),
       adminName,
       adminEmail,
       plan,
@@ -223,12 +345,27 @@ Deno.serve(async (request) => {
         ...existingConfig,
         registered_tenants: [
           tenantEntry,
-          ...existingTenants.filter((entry: any) => entry?.id !== tenant.id),
+          ...existingTenants.filter((entry: Record<string, unknown>) => entry?.id !== tenant.id),
         ],
       },
       updated_at: new Date().toISOString(),
     });
     if (catalogError) throw catalogError;
+
+    if (requestId) {
+      const { error: requestUpdateError } = await admin
+        .from("subscription_requests")
+        .update({ status: "approved", processed_at: new Date().toISOString() })
+        .eq("id", requestId)
+        .eq("status", "pending");
+      if (requestUpdateError) throw requestUpdateError;
+
+      const { error: secretCleanupError } = await admin.rpc(
+        "delete_subscription_request_password",
+        { p_request_id: requestId },
+      );
+      if (secretCleanupError) throw secretCleanupError;
+    }
 
     return json({
       success: true,
@@ -244,9 +381,7 @@ Deno.serve(async (request) => {
           auth: { autoRefreshToken: false, persistSession: false },
         });
         if (createdUserId) await cleanup.auth.admin.deleteUser(createdUserId);
-        if (createdTenantId) {
-          await cleanup.from("tenants").delete().eq("id", createdTenantId);
-        }
+        if (createdTenantId) await cleanup.from("tenants").delete().eq("id", createdTenantId);
       }
     } catch (cleanupError) {
       console.error("register-clinic cleanup:", cleanupError);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
+import { getConfigItems } from "../../../services/configPersistenceService";
 import { 
   FiArrowLeft, FiBriefcase, FiDollarSign, FiEye, 
   FiCreditCard, FiCalendar, FiActivity, FiUser, FiSearch,
@@ -45,49 +46,36 @@ export default function BancosView({ inquilino, userProfile }) {
     if (!inquilino) return;
     setLoading(true);
     try {
-      // 1. Load banks
-      const { data: listBancos } = await supabase
-        .from("bancos")
-        .select("*")
-        .eq("tenant_id", inquilino);
+      const [
+        listBancos,
+        listMetodos,
+        pagosResult,
+        recibosResult,
+        movimientosResult
+      ] = await Promise.all([
+        getConfigItems(inquilino, "bancos", "bancos"),
+        getConfigItems(inquilino, "metodos_pago", null),
+        supabase.from("pagos").select("*").eq("tenant_id", inquilino),
+        supabase.from("recibos_caja").select("*").eq("tenant_id", inquilino),
+        supabase.from("movimientos_caja").select("*").eq("tenant_id", inquilino)
+      ]);
 
-      // 2. Load payment methods from website_config
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", inquilino)
-        .maybeSingle();
+      const operationalError =
+        pagosResult.error || recibosResult.error || movimientosResult.error;
+      if (operationalError) throw operationalError;
 
-      const listMetodos = cfgRow?.config?.metodos_pago || [];
+      const listPagos = pagosResult.data || [];
+      const listRecibos = recibosResult.data || [];
+      const listMovs = movimientosResult.data || [];
 
-      // Map payment method names to bank IDs
+      // Map payment method names to bank IDs.
       const methodToBankId = {};
-      (listMetodos || []).forEach(m => {
-        if (m.bancoId && m.nombre) {
-          methodToBankId[m.nombre.toLowerCase().trim()] = m.bancoId;
+      listMetodos.forEach(method => {
+        if (method.bancoId && method.nombre) {
+          methodToBankId[method.nombre.toLowerCase().trim()] = method.bancoId;
         }
-        if (m.bancoId) {
-          methodToBankId[m.id] = m.bancoId;
-        }
+        if (method.bancoId) methodToBankId[method.id] = method.bancoId;
       });
-
-      // 3. Load payments (pagos)
-      const { data: listPagos } = await supabase
-        .from("pagos")
-        .select("*")
-        .eq("tenant_id", inquilino);
-
-      // 4. Load receipts (recibos_caja)
-      const { data: listRecibos } = await supabase
-        .from("recibos_caja")
-        .select("*")
-        .eq("tenant_id", inquilino);
-
-      // 5. Load caja movements
-      const { data: listMovs } = await supabase
-        .from("movimientos_caja")
-        .select("*")
-        .eq("tenant_id", inquilino);
 
       // Calculate balance and movements for each bank
       const updatedBancos = (listBancos || []).map(b => {

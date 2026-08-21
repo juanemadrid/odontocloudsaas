@@ -36,6 +36,10 @@ const baseUrlFor = (testMode: boolean) =>
   testMode ? "https://api-sandbox.factus.com.co" : "https://api.factus.com.co";
 
 Deno.serve(async (request) => {
+  let admin: ReturnType<typeof createClient> | null = null;
+  let auditTenantId: string | null = null;
+  let auditUserId: string | null = null;
+  let auditAction = "unknown";
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -54,7 +58,7 @@ Deno.serve(async (request) => {
     const token = authorization?.replace(/^Bearer\s+/i, "");
     if (!token) throw new HttpError(401, "Debes iniciar sesion.");
 
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
+    admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data: authData, error: authError } = await admin.auth.getUser(token);
@@ -71,12 +75,15 @@ Deno.serve(async (request) => {
 
     const body = await request.json();
     const action = String(body?.action || "");
+    auditAction = action;
     const role = String(profile.role || "").trim().toLowerCase();
     const isSuperadmin = role === "superadmin";
     const isAdmin = ["admin", "administrador", "superadmin"].includes(role);
     const tenantId = isSuperadmin && body?.tenantId
       ? String(body.tenantId)
       : String(profile.tenant_id);
+    auditTenantId = tenantId;
+    auditUserId = authData.user.id;
 
     if (!isSuperadmin && body?.tenantId && String(body.tenantId) !== String(profile.tenant_id)) {
       throw new HttpError(403, "No puedes usar credenciales de otra clinica.");
@@ -275,6 +282,16 @@ Deno.serve(async (request) => {
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 500;
     const message = error instanceof Error ? error.message : "Error interno.";
+    if (admin && auditTenantId && auditUserId && auditAction !== "status") {
+      const { error: auditError } = await admin.from("audit_logs").insert({
+        tenant_id: auditTenantId,
+        inquilino: auditTenantId,
+        performed_by: auditUserId,
+        action: "FACTUS_ERROR",
+        details: { action: auditAction, status, error: message.slice(0, 500) },
+      });
+      if (auditError) console.error("factus audit:", auditError.message);
+    }
     console.error("factus-proxy:", message);
     return json({ success: false, error: message }, status);
   }

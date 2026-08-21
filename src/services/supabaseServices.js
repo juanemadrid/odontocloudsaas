@@ -2,6 +2,7 @@
 // Servicios centralizados para centralizar todas las operaciones de datos en Supabase
 
 import supabase from "../lib/supabaseClient";
+import { getConfigSection, saveConfigSection } from "./configPersistenceService";
 
 // ===============================================================
 // 1. RECIBOS DE CAJA
@@ -471,16 +472,9 @@ export const configuracionFormulariosService = {
   async get(tenantId, tipoFormulario = "formulario_pacientes") {
     if (!tenantId) return null;
     try {
-      // 1. Principal: website_config con tenant_id = tenantId
-      const { data: webCfg, error: webErr } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-
-      if (!webErr && webCfg?.config?.[tipoFormulario]) {
-        return webCfg.config[tipoFormulario];
-      }
+      // 1. Principal: sección cacheada de website_config para la clínica activa
+      const websiteConfig = await getConfigSection(tenantId, tipoFormulario, null);
+      if (websiteConfig) return websiteConfig;
 
       // 2. Fallback: tabla configuracion_formularios
       const { data: formCfg, error: formErr } = await supabase
@@ -503,57 +497,19 @@ export const configuracionFormulariosService = {
   async save(tenantId, tipoFormulario = "formulario_pacientes", configuracion) {
     if (!tenantId) throw new Error("Tenant ID no proporcionado");
 
-    // Consultar website_config actual para el inquilino
-    const { data: existingRow, error: fetchError } = await supabase
-      .from("website_config")
-      .select("config")
-      .eq("tenant_id", tenantId)
-      .maybeSingle();
+    await saveConfigSection(tenantId, tipoFormulario, configuracion);
 
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      console.warn("Notice fetching website_config before save:", fetchError.message);
-    }
+    const { error } = await supabase
+      .from("configuracion_formularios")
+      .upsert([{
+        tenant_id: tenantId,
+        tipo_formulario: tipoFormulario,
+        configuracion
+      }], { onConflict: "tenant_id,tipo_formulario" });
 
-    const currentConfig = existingRow?.config || {};
-    const updatedConfig = {
-      ...currentConfig,
-      [tipoFormulario]: configuracion,
-      updatedAt: new Date().toISOString()
-    };
-
-    // 1. Guardar en website_config con tenant_id = tenantId
-    const { error: upsertError } = await supabase
-      .from("website_config")
-      .upsert({ tenant_id: tenantId, config: updatedConfig }, { onConflict: "tenant_id" });
-
-    if (upsertError) {
-      console.error("Error al guardar en website_config:", upsertError);
-      throw upsertError;
-    }
-
-    // 2. Intentar guardar en configuracion_formularios (si la tabla existe)
-    try {
-      await supabase
-        .from("configuracion_formularios")
-        .upsert([{
-          tenant_id: tenantId,
-          tipo_formulario: tipoFormulario,
-          configuracion
-        }], { onConflict: "tenant_id,tipo_formulario" });
-    } catch (e) {
-      // Ignorar de forma segura si la tabla no existe o falla por RLS
-    }
-
-    // 3. Intentar guardar en la clave legacy por compatibilidad
-    try {
-      await supabase
-        .from("website_config")
-        .upsert([{ tenant_id: `${tenantId}_${tipoFormulario}`, config: configuracion }], { onConflict: "tenant_id" });
-    } catch (e) {
-      // Ignorar si la clave legacy falla por RLS
-    }
-
+    if (error) throw error;
     return configuracion;
+
   }
 };
 

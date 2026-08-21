@@ -412,7 +412,8 @@ export const uploadPatientPhoto = async (tenantId, patientId, file) => {
         tenantId,
         relativePath: `pacientes/${patientId}_${Date.now()}.${fileExt}`,
         file,
-        upsert: true
+        upsert: true,
+        optimizationProfile: "avatar"
     });
     return uploaded.reference;
 };

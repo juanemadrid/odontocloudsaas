@@ -16,3 +16,59 @@ body{font-family:Inter, system-ui, Arial, sans-serif; margin:0; background:var(-
 .nav-link:hover{background:#f1f5f9}
 /* Simple card */
 .card{background:#fff; padding:16px; border-radius:10px; box-shadow:0 1px 3px rgba(15,23,42,0.06); margin-bottom:16px}
+/* Stable desktop-first layouts for lazy-loaded dashboard modules. */
+.patient-details-header {
+  flex-direction: row;
+}
+
+.patient-details-workspace {
+  flex-direction: row;
+}
+
+.patient-details-sidebar {
+  width: 15rem;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-right-width: 1px;
+  border-bottom-width: 0;
+}
+
+.patient-details-sidebar-group {
+  min-width: 0;
+  flex-direction: column;
+}
+
+.config-layout-sidebar {
+  display: flex;
+}
+
+@media (max-width: 1023px) {
+  .patient-details-workspace {
+    flex-direction: column;
+  }
+
+  .patient-details-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right-width: 0;
+    border-bottom-width: 1px;
+  }
+
+  .patient-details-sidebar-group {
+    min-width: max-content;
+    flex-direction: row;
+  }
+
+  .config-layout-sidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .patient-details-header {
+    flex-direction: column;
+  }
+}

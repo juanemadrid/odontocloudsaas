@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { subscribeToCategories } from "../../services/resourceService";
+import { getConfigItems } from "../../services/configPersistenceService";
 import { toast } from "sonner";
 import { 
   FiBox, FiAlertTriangle, FiMinus, FiPlus, 
@@ -74,23 +75,7 @@ export default function Inventario() {
     if (!inquilino) return;
     const loadAlmacenes = async () => {
       try {
-        let almList = [];
-        try {
-          const { data: list } = await supabase
-            .from("almacenes")
-            .select("*")
-            .eq("tenant_id", inquilino);
-          if (list && list.length > 0) almList = list;
-        } catch (e) {}
-
-        if (almList.length === 0) {
-          const { data: cfgRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", inquilino)
-            .maybeSingle();
-          almList = cfgRow?.config?.almacenes || [];
-        }
+        let almList = await getConfigItems(inquilino, "almacenes", null);
 
         // Auto-populate default warehouses if empty
         if (almList.length === 0) {

@@ -5,6 +5,7 @@ import { FiSearch, FiFileText, FiFilter, FiEye } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
+import { getAuditEvents } from "../../../services/reportDataService";
 export default function ReporteLogErroresFacturacion() {
   const { userProfile } = useAuth();
   const [logList, setLogList] = useState([]);
@@ -73,120 +74,33 @@ export default function ReporteLogErroresFacturacion() {
         if (listSuc.length > 0) setOficina(listSuc[0].nombre);
 
         // 2. Cargar Logs de Errores de Facturación
-        let snapLogs = [];
-        try {
-          const { data } = await supabase.from("facturas_errores").select("*").eq("tenant_id", userProfile.inquilino);
-          if (data) snapLogs = data;
-        } catch (e) {}
-        const listData = [];
-
-        (snapLogs || []).forEach(l => {
-          const dateObj = l.createdAt?.toDate ? l.createdAt.toDate() : (l.fecha || l.created_at ? new Date(l.fecha || l.created_at) : new Date());
-
-          listData.push({
-            id: l.id,
+        const snapLogs = await getAuditEvents({
+          tenantId: userProfile.inquilino,
+          actions: ["FACTUS_ERROR"],
+          from: appliedFilters.fechaInicial,
+          to: appliedFilters.fechaFinal,
+        });
+        const listData = snapLogs.map((log) => {
+          const details = log.details || {};
+          const dateObj = new Date(log.created_at);
+          return {
+            id: log.id,
             fechaObj: dateObj,
-            documento: l.idFactura || l.documento || "DCSE664",
-            tipoDocumento: l.tipoDocumento || "Documento soporte",
-            pacienteTercero: l.pacienteNombre || l.tercero || "ELIECER JOSE HERNANDEZ DEL CASTILLO",
-            fechaStr: isNaN(dateObj.getTime()) ? (l.fecha || "25/02/2026") : format(dateObj, "dd/MM/yyyy"),
-            horaStr: isNaN(dateObj.getTime()) ? (l.hora || "08:57 PM") : format(dateObj, "hh:mm a").toUpperCase(),
-            documentosAsociados: l.documentosAsociados || l.numAsociado || "—",
-            consecutivo: l.consecutivo || "Principal",
-            tipoDocAsociados: l.tipoDocAsociados || "—",
-            sucursal: l.sucursal || l.oficina || listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL"
-          });
+            documento: details.billNumber || details.documento || "—",
+            tipoDocumento: details.tipoDocumento || "Factura electrónica",
+            pacienteTercero: details.paciente || details.tercero || "—",
+            fechaStr: format(dateObj, "dd/MM/yyyy"),
+            horaStr: format(dateObj, "hh:mm a").toUpperCase(),
+            documentosAsociados: details.error || "—",
+            consecutivo: details.action || "Factus",
+            tipoDocAsociados: details.status ? `HTTP ${details.status}` : "—",
+            sucursal: details.sucursal || listSuc[0]?.nombre || "—",
+          };
         });
 
-        // Si no hay errores aún en la base de datos real, cargar estructura base realista de OralDrive
-        if (listData.length === 0) {
-          const sampleData = [
-            {
-              id: "1",
-              fechaObj: new Date("2026-02-25T20:57:00"),
-              documento: "DCSE664",
-              tipoDocumento: "Documento soporte",
-              pacienteTercero: "ELIECER JOSE HERNANDEZ DEL CASTILLO",
-              fechaStr: "25/02/2026",
-              horaStr: "08:57 PM",
-              documentosAsociados: "",
-              consecutivo: "Principal",
-              tipoDocAsociados: "",
-              sucursal: listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL"
-            },
-            {
-              id: "2",
-              fechaObj: new Date("2026-05-26T18:28:00"),
-              documento: "FCEV1253",
-              tipoDocumento: "Factura de venta",
-              pacienteTercero: "Carolina Pastrana Alcala",
-              fechaStr: "26/05/2026",
-              horaStr: "06:28 PM",
-              documentosAsociados: "1861",
-              consecutivo: "Principal",
-              tipoDocAsociados: "Recibo de caja",
-              sucursal: listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL"
-            },
-            {
-              id: "3",
-              fechaObj: new Date("2026-02-28T10:34:00"),
-              documento: "DCSE664",
-              tipoDocumento: "Documento soporte",
-              pacienteTercero: "ELIECER JOSE HERNANDEZ DEL CASTILLO",
-              fechaStr: "28/02/2026",
-              horaStr: "10:34 AM",
-              documentosAsociados: "",
-              consecutivo: "Principal",
-              tipoDocAsociados: "",
-              sucursal: listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL"
-            },
-            {
-              id: "4",
-              fechaObj: new Date("2026-03-03T15:11:00"),
-              documento: "DCSE664",
-              tipoDocumento: "Documento soporte",
-              pacienteTercero: "JULIO ALEJANDRO DE LA OSSA SALCEDO",
-              fechaStr: "03/03/2026",
-              horaStr: "03:11 PM",
-              documentosAsociados: "",
-              consecutivo: "Principal",
-              tipoDocAsociados: "",
-              sucursal: listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL"
-            },
-            {
-              id: "5",
-              fechaObj: new Date("2026-05-26T18:34:00"),
-              documento: "FCEV1253",
-              tipoDocumento: "Factura de venta",
-              pacienteTercero: "Katherin Buelvas Paternina",
-              fechaStr: "26/05/2026",
-              horaStr: "06:34 PM",
-              documentosAsociados: "1864",
-              consecutivo: "Principal",
-              tipoDocAsociados: "Recibo de caja",
-              sucursal: listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL"
-            },
-            {
-              id: "6",
-              fechaObj: new Date("2026-05-26T18:31:00"),
-              documento: "FCEV1253",
-              tipoDocumento: "Factura de venta",
-              pacienteTercero: "Carolina Pastrana Alcala",
-              fechaStr: "26/05/2026",
-              horaStr: "06:31 PM",
-              documentosAsociados: "1801",
-              consecutivo: "Principal",
-              tipoDocAsociados: "Recibo de caja",
-              sucursal: listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL"
-            }
-          ];
-          setLogList(sampleData);
-          filterData(sampleData, appliedFilters, "");
-        } else {
-          listData.sort((a, b) => b.fechaObj - a.fechaObj);
-          setLogList(listData);
-          filterData(listData, appliedFilters, "");
-        }
+        listData.sort((a, b) => b.fechaObj - a.fechaObj);
+        setLogList(listData);
+        filterData(listData, appliedFilters, "");
 
       } catch (error) {
         console.error("Error cargando log de errores de facturación:", error);

@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { FiSearch, FiEye, FiTrash2, FiEdit2, FiPlus, FiFileText, FiCalendar, FiUser } from "react-icons/fi";
-import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import PlantillaEditor from "./PlantillaEditor";
 import FormularioFisicoConfig from "./FormularioFisicoConfig";
-import { PREDEFINED_TEMPLATES } from "../../data/plantillasPredeterminadas";
 import { getConfigItems, deleteConfigItem } from "../../services/configPersistenceService";
 
 export default function ConfigPlantillas() {
@@ -27,25 +25,10 @@ export default function ConfigPlantillas() {
         const loadPlantillas = async () => {
             try {
                 const dbTemplates = await getConfigItems(inquilino, "plantillas_clinicas", "plantillas_clinicas");
-                
-                // Merge database custom configs (e.g. customized formulario_fisico) with PREDEFINED_TEMPLATES
-                const merged = PREDEFINED_TEMPLATES.map(p => {
-                    const dbMatch = dbTemplates?.find(d => d.id === p.id);
-                    return dbMatch ? { ...p, ...dbMatch } : p;
-                });
-                
-                // Add purely custom templates
-                if (Array.isArray(dbTemplates)) {
-                    dbTemplates.forEach(d => {
-                        if (!merged.some(m => m.id === d.id)) {
-                            merged.push(d);
-                        }
-                    });
-                }
-
-                setRows(merged);
+                setRows(Array.isArray(dbTemplates) ? dbTemplates : []);
             } catch (err) {
                 console.error(err);
+                setRows([]);
             } finally {
                 setLoading(false);
             }
@@ -171,7 +154,7 @@ export default function ConfigPlantillas() {
                                     <td className="py-2.5 px-4 font-medium text-slate-500 text-[11px]">
                                         <div className="flex items-center gap-1.5">
                                             <FiCalendar size={13} className="text-slate-400" />
-                                            <span>{formatDate(row.createdAt || row.fecha)}</span>
+                                            <span>{formatDate(row.createdAt || row.created_at || row.fecha)}</span>
                                         </div>
                                     </td>
                                     <td className="py-2.5 px-4">
@@ -190,7 +173,7 @@ export default function ConfigPlantillas() {
                                     <td className="py-2.5 px-4 text-slate-500 font-medium text-[11px]">
                                         <div className="flex items-center gap-1.5">
                                             <FiUser size={12} className="text-slate-400" />
-                                            <span>{row.createdBy || "Sistema"}</span>
+                                            <span>{row.createdBy || row.created_by || "Usuario"}</span>
                                         </div>
                                     </td>
                                     <td className="py-2.5 px-4 text-right">
@@ -204,27 +187,23 @@ export default function ConfigPlantillas() {
                                                 <FiEye size={13} />
                                             </button>
 
-                                            {/* Botón Editar (lápiz azul): disponible para formulario_fisico y para plantillas personalizadas */}
-                                            {(row.id === "formulario_fisico" || !row.isSystem) && (
-                                                <button
-                                                    onClick={() => { setSelectedId(row.id); setView("editor"); setIsViewOnly(false); }}
-                                                    className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                    title="Editar Plantilla"
-                                                >
-                                                    <FiEdit2 size={13} />
-                                                </button>
-                                            )}
+                                            {/* Botón Editar (lápiz azul) */}
+                                            <button
+                                                onClick={() => { setSelectedId(row.id); setView("editor"); setIsViewOnly(false); }}
+                                                className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                title="Editar Plantilla"
+                                            >
+                                                <FiEdit2 size={13} />
+                                            </button>
 
-                                            {/* Botón Eliminar (basura roja): NUNCA para plantillas del sistema */}
-                                            {!row.isSystem && (
-                                                <button
-                                                    onClick={() => handleDelete(row.id)}
-                                                    className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                    title="Eliminar Plantilla"
-                                                >
-                                                    <FiTrash2 size={13} />
-                                                </button>
-                                            )}
+                                            {/* Botón Eliminar (basura roja) */}
+                                            <button
+                                                onClick={() => handleDelete(row.id)}
+                                                className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                title="Eliminar Plantilla"
+                                            >
+                                                <FiTrash2 size={13} />
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -236,3 +215,4 @@ export default function ConfigPlantillas() {
         </div>
     );
 }
+

@@ -1,7 +1,15 @@
 import supabase from "../lib/supabaseClient";
+import {
+  alignUploadPathExtension,
+  optimizeFileForUpload,
+} from "./fileOptimizationService";
 
 const PRIVATE_BUCKET = "adjuntos";
 const REFERENCE_PREFIX = PRIVATE_BUCKET + ":";
+const MAX_PRIVATE_FILE_BYTES = 20 * 1024 * 1024;
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
+const SIGNED_URL_CACHE_MS = 50 * 60 * 1000;
+const signedUrlCache = new Map();
 
 const sanitizePart = (value) =>
   String(value || "")
@@ -26,10 +34,16 @@ const pathFromValue = (value) => {
   if (text.startsWith(REFERENCE_PREFIX)) {
     return normalizePath(text.slice(REFERENCE_PREFIX.length));
   }
-  const marker = "/storage/v1/object/public/" + PRIVATE_BUCKET + "/";
-  const index = text.indexOf(marker);
-  if (index >= 0) {
-    return normalizePath(decodeURIComponent(text.slice(index + marker.length)));
+  const storageMarkers = [
+    "/storage/v1/object/public/" + PRIVATE_BUCKET + "/",
+    "/storage/v1/object/sign/" + PRIVATE_BUCKET + "/",
+  ];
+  for (const marker of storageMarkers) {
+    const index = text.indexOf(marker);
+    if (index >= 0) {
+      const encodedPath = text.slice(index + marker.length).split("?")[0];
+      return normalizePath(decodeURIComponent(encodedPath));
+    }
   }
   return text.startsWith("http://") || text.startsWith("https://") ? null : normalizePath(text);
 };
@@ -38,39 +52,77 @@ export const privateFileReference = (path) =>
   REFERENCE_PREFIX + normalizePath(path);
 
 export const resolvePrivateFileUrl = async (value, fallbackPath = "") => {
-  // Si no hay valor ni fallback, retornar vacío sin procesar
   if (!value && !fallbackPath) return "";
-  
+
   try {
     const path = fallbackPath ? normalizePath(fallbackPath) : pathFromValue(value);
     if (!path) return value || "";
+
+    const cached = signedUrlCache.get(path);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.url;
+    }
+
     const { data, error } = await supabase.storage
       .from(PRIVATE_BUCKET)
-      .createSignedUrl(path, 60 * 60);
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
     if (error) {
       console.warn("No se pudo firmar el archivo privado:", error.message);
       return "";
     }
-    return data?.signedUrl || "";
-  } catch (e) {
-    // Ruta inválida o bucket no encontrado — retornar vacío silenciosamente
+
+    const url = data?.signedUrl || "";
+    if (url) {
+      signedUrlCache.set(path, {
+        url,
+        expiresAt: Date.now() + SIGNED_URL_CACHE_MS,
+      });
+    }
+    return url;
+  } catch {
     return "";
   }
 };
 
-export const uploadPrivateFile = async ({ tenantId, relativePath, file, upsert = true }) => {
+export const uploadPrivateFile = async ({
+  tenantId,
+  relativePath,
+  file,
+  upsert = true,
+  optimizationProfile = "standard",
+}) => {
   if (!tenantId) throw new Error("La clinica es obligatoria para subir archivos.");
   if (!file) throw new Error("El archivo es obligatorio.");
+
+  const optimization = await optimizeFileForUpload(file, { profile: optimizationProfile });
+  const uploadFile = optimization.file;
+  if (Number(uploadFile.size || 0) > MAX_PRIVATE_FILE_BYTES) {
+    throw new Error("El archivo supera el limite de 20 MB.");
+  }
+
   const tenantPrefix = sanitizePart(tenantId);
-  const path = normalizePath(tenantPrefix + "/" + relativePath);
+  const optimizedRelativePath = alignUploadPathExtension(relativePath, uploadFile);
+  const path = normalizePath(tenantPrefix + "/" + optimizedRelativePath);
+  const uploadOptions = {
+    upsert,
+    cacheControl: "3600",
+    ...(uploadFile.type ? { contentType: uploadFile.type } : {}),
+  };
   const { error } = await supabase.storage
     .from(PRIVATE_BUCKET)
-    .upload(path, file, { upsert });
+    .upload(path, uploadFile, uploadOptions);
   if (error) throw error;
+
+  signedUrlCache.delete(path);
   return {
     path,
     reference: privateFileReference(path),
     signedUrl: await resolvePrivateFileUrl("", path),
+    originalBytes: optimization.originalBytes,
+    storedBytes: optimization.storedBytes,
+    savedBytes: optimization.savedBytes,
+    optimized: optimization.optimized,
+    contentType: uploadFile.type || file.type || "",
   };
 };
 
@@ -79,6 +131,7 @@ export const removePrivateFile = async (path) => {
   const normalized = normalizePath(path);
   const { error } = await supabase.storage.from(PRIVATE_BUCKET).remove([normalized]);
   if (error) throw error;
+  signedUrlCache.delete(normalized);
 };
 
 export default {

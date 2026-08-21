@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { FiSearch, FiTrash2, FiEdit2, FiPlus, FiArrowUp, FiArrowDown, FiX, FiList, FiClock, FiFileText, FiSave } from "react-icons/fi";
-import supabase from "../../lib/supabaseClient";
+import {
+    deleteConfigItem,
+    getConfigItems,
+    saveConfigItem,
+    saveConfigSection,
+} from "../../services/configPersistenceService";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { PREDEFINED_TEMPLATES } from "../../data/plantillasPredeterminadas";
 
 // Helper for sorting
 const reorder = (list, startIndex, endIndex) => {
@@ -50,12 +56,8 @@ export default function ConfigPestanasMedicas() {
     const fetchPestanas = async () => {
         setLoading(true);
         try {
-            const { data } = await supabase
-                .from("pestanas_medicas")
-                .select("*")
-                .eq("tenant_id", inquilino)
-                .order("orden", { ascending: true });
-            setRows(data || []);
+            const data = await getConfigItems(inquilino, "pestanas_medicas", null);
+            setRows([...data].sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0)));
         } catch (err) {
             console.error(err);
             if (toast?.error) toast.error("Error al cargar pestañas");
@@ -67,12 +69,19 @@ export default function ConfigPestanasMedicas() {
 
     const fetchTemplates = async () => {
         try {
-            const { data } = await supabase
-                .from("plantillas_clinicas")
-                .select("*")
-                .eq("tenant_id", inquilino)
-                .order("nombre", { ascending: true });
-            setTemplates((data || []).map(d => ({ id: d.id, nombre: d.nombre })));
+            const data = await getConfigItems(inquilino, "plantillas_clinicas", null);
+            const merged = new Map(
+                PREDEFINED_TEMPLATES.map(item => [item.id, { id: item.id, nombre: item.nombre }])
+            );
+            data.forEach(item => {
+                const existing = merged.get(item.id) || {};
+                merged.set(item.id, { ...existing, ...item });
+            });
+            setTemplates(
+                Array.from(merged.values())
+                    .map(item => ({ id: item.id, nombre: item.nombre }))
+                    .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""))
+            );
         } catch (error) {
             console.error("Error fetching templates:", error);
         }
@@ -91,29 +100,25 @@ export default function ConfigPestanasMedicas() {
 
         setSaving(true);
         try {
-            const payload = {
-                tenant_id: inquilino,
-                inquilino,
+            const existing = editingId ? rows.find(item => item.id === editingId) : null;
+            await saveConfigItem(inquilino, "pestanas_medicas", null, {
+                ...(existing || {}),
+                ...(editingId ? { id: editingId } : {}),
                 nombre: formData.nombre.trim(),
                 descripcion: formData.descripcion.trim(),
                 plantillaId: formData.plantillaId,
                 plantilla_id: formData.plantillaId,
                 momento: formData.momento,
+                orden: existing?.orden ?? rows.length,
                 updated_at: new Date().toISOString(),
-                updated_by: userProfile.email
-            };
+                updated_by: userProfile.email,
+                ...(!editingId ? { created_by: userProfile.email } : {})
+            });
 
-            if (editingId) {
-                await supabase.from("pestanas_medicas").update(payload).eq("id", editingId);
-                if (toast?.success) toast.success("Pestaña médica actualizada");
-            } else {
-                payload.orden = rows.length;
-                payload.created_at = new Date().toISOString();
-                payload.created_by = userProfile.email;
-                await supabase.from("pestanas_medicas").insert([payload]);
-                if (toast?.success) toast.success("Nueva pestaña creada con éxito");
+            if (toast?.success) {
+                toast.success(editingId ? "Pestaña médica actualizada" : "Nueva pestaña creada con éxito");
             }
-            fetchPestanas();
+            await fetchPestanas();
             closeModal();
         } catch (e) {
             console.error(e);
@@ -126,16 +131,17 @@ export default function ConfigPestanasMedicas() {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Seguro que desea eliminar esta pestaña de la historia clínica?")) return;
         try {
-            await supabase.from("pestanas_medicas").delete().eq("id", id);
+            await deleteConfigItem(inquilino, "pestanas_medicas", null, id);
             if (toast?.success) toast.success("Registro eliminado correctamente");
-            fetchPestanas();
+            await fetchPestanas();
         } catch (e) {
             console.error(e);
             if (toast?.error) toast.error("Error al eliminar");
         }
     };
 
-    const handleMove = async (index, direction) => {
+    const handleMove = async (id, direction) => {
+        const index = rows.findIndex(row => row.id === id);
         const newIndex = direction === "up" ? index - 1 : index + 1;
         if (newIndex < 0 || newIndex >= rows.length) return;
 
@@ -143,11 +149,11 @@ export default function ConfigPestanasMedicas() {
         setRows(newRows);
 
         try {
-            const updates = newRows.map((row, i) =>
-                updateDoc(doc(db, "tenants", inquilino, "pestanas_medicas", row.id), { orden: i })
-            );
-            await Promise.all(updates);
+            const orderedRows = newRows.map((row, order) => ({ ...row, orden: order }));
+            await saveConfigSection(inquilino, "pestanas_medicas", orderedRows);
+            setRows(orderedRows);
         } catch (e) {
+            setRows(rows);
             console.error(e);
             if (toast?.error) toast.error("Error al reordenar");
         }
@@ -159,7 +165,7 @@ export default function ConfigPestanasMedicas() {
             setFormData({
                 nombre: item.nombre,
                 descripcion: item.descripcion || "",
-                plantillaId: item.plantillaId || "",
+                plantillaId: item.plantillaId || item.plantilla_id || "",
                 momento: item.momento || "during_exam"
             });
         } else {
@@ -296,7 +302,7 @@ export default function ConfigPestanasMedicas() {
                                         <td className="py-2.5 px-4">
                                             <div className="flex items-center gap-1.5 text-slate-600 font-medium">
                                                 <FiFileText size={13} className="text-blue-500" />
-                                                <span>{templates.find(t => t.id === row.plantillaId)?.nombre || "Sin Plantilla"}</span>
+                                                <span>{templates.find(t => t.id === (row.plantillaId || row.plantilla_id))?.nombre || "Sin Plantilla"}</span>
                                             </div>
                                         </td>
                                         <td className="py-2.5 px-4">
@@ -309,16 +315,16 @@ export default function ConfigPestanasMedicas() {
                                         <td className="py-2.5 px-4 text-right">
                                             <div className="flex items-center justify-end gap-1.5">
                                                 <button
-                                                    disabled={index === 0}
-                                                    onClick={() => handleMove(index, "up")}
+                                                    disabled={rows.findIndex(item => item.id === row.id) === 0}
+                                                    onClick={() => handleMove(row.id, "up")}
                                                     className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 flex items-center justify-center transition-colors cursor-pointer border-0"
                                                     title="Mover arriba"
                                                 >
                                                     <FiArrowUp size={12} />
                                                 </button>
                                                 <button
-                                                    disabled={index === rows.length - 1}
-                                                    onClick={() => handleMove(index, "down")}
+                                                    disabled={rows.findIndex(item => item.id === row.id) === rows.length - 1}
+                                                    onClick={() => handleMove(row.id, "down")}
                                                     className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 flex items-center justify-center transition-colors cursor-pointer border-0"
                                                     title="Mover abajo"
                                                 >

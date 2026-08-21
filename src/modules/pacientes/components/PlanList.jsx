@@ -62,11 +62,32 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
             setPlans(data);
 
             if (patientId) {
-                const { data: payData } = await supabase
+                const { data: payData, error: paymentsError } = await supabase
                     .from("pagos")
                     .select("*")
                     .eq("paciente_id", patientId);
-                setPayments(payData || []);
+                if (paymentsError) throw paymentsError;
+
+                // Los campos de asignacion por plan/item se guardan dentro de
+                // `notas` como JSON. Normalizarlos aqui mantiene la lista en
+                // sincronía con PagoTab y PlanEditor.
+                const parsedPayments = (payData || []).map(payment => {
+                    let metadata = {};
+                    if (payment.notas && typeof payment.notas === 'string' && payment.notas.trim().startsWith('{')) {
+                        try { metadata = JSON.parse(payment.notas); } catch (error) {}
+                    } else if (payment.notas && typeof payment.notas === 'object') {
+                        metadata = payment.notas;
+                    }
+
+                    return {
+                        ...payment,
+                        ...metadata,
+                        planId: metadata.planId || payment.planId || payment.plan_id,
+                        itemPayments: metadata.itemPayments || payment.itemPayments || []
+                    };
+                }).filter(payment => (payment.estado || '').toLowerCase() !== 'anulado');
+
+                setPayments(parsedPayments);
 
                 const { data: evoData } = await supabase
                     .from("evoluciones")

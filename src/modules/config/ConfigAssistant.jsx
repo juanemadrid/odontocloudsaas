@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../lib/supabaseClient";
+import { getConfigItems } from "../../services/configPersistenceService";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
@@ -17,7 +18,8 @@ const STEPS = [
         icon: FiSettings,
         path: buildDashboardPath('config/datos-basicos'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle();
+            const { data, error } = await supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle();
+            if (error) throw error;
             if (!data) return false;
             return !!(data.nit && (data.nombreComercial || data.nombre || data.name) && (data.telefono || data.phone));
         }
@@ -29,8 +31,8 @@ const STEPS = [
         icon: FiMapPin,
         path: buildDashboardPath('config/sucursales'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("sucursales").select("id").eq("tenant_id", inquilino);
-            return data && data.length > 0;
+            const data = await getConfigItems(inquilino, "sucursales", "sucursales");
+            return data.length > 0;
         }
     },
     {
@@ -40,8 +42,8 @@ const STEPS = [
         icon: FiMonitor,
         path: buildDashboardPath('config/recursos-fisicos'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("consultorios").select("id").eq("tenant_id", inquilino);
-            return data && data.length > 0;
+            const data = await getConfigItems(inquilino, "recursos_fisicos", "consultorios");
+            return data.length > 0;
         }
     },
     {
@@ -51,8 +53,8 @@ const STEPS = [
         icon: FiAward,
         path: buildDashboardPath('config/especialidades'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("especialidades").select("id").eq("tenant_id", inquilino);
-            return data && data.length > 0;
+            const data = await getConfigItems(inquilino, "especialidades", "especialidades");
+            return data.length > 0;
         }
     },
     {
@@ -62,8 +64,14 @@ const STEPS = [
         icon: FiUsers,
         path: buildDashboardPath('config/usuarios'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("usuarios").select("id").eq("tenant_id", inquilino);
-            return data && data.length > 1;
+            const configuredUsers = await getConfigItems(inquilino, "usuarios", null);
+            if (configuredUsers.length > 1) return true;
+            const { count, error } = await supabase
+                .from("profiles")
+                .select("id", { count: "exact", head: true })
+                .eq("tenant_id", inquilino);
+            if (error) throw error;
+            return (count || 0) > 1;
         }
     },
     {
@@ -73,8 +81,8 @@ const STEPS = [
         icon: FiList,
         path: buildDashboardPath('config/listas-precios'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("listas_precios").select("id").eq("tenant_id", inquilino);
-            return data && data.length > 0;
+            const data = await getConfigItems(inquilino, "listas_precios", "listas_precios");
+            return data.length > 0;
         }
     },
     {
@@ -84,8 +92,8 @@ const STEPS = [
         icon: FiFileText,
         path: buildDashboardPath('config/consecutivos'),
         check: async (inquilino) => {
-            const { data } = await supabase.from("consecutivos").select("id").eq("tenant_id", inquilino);
-            return data && data.length > 0;
+            const data = await getConfigItems(inquilino, "consecutivos", "consecutivos");
+            return data.length > 0;
         }
     }
 ];

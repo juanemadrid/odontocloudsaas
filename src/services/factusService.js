@@ -13,38 +13,6 @@ import {
  */
 
 // ─────────────────────────────────────────────
-// Token cache (per credentials key)
-// ─────────────────────────────────────────────
-const tokenCache = {};
-
-const credKey = (c) =>
-  `${c.factusClientId}:${c.factusUsername}:${c.factusTestMode ? "sandbox" : "prod"}`;
-
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
-const getBaseUrl = (testMode = true) =>
-  testMode
-    ? "https://api-sandbox.factus.com.co"
-    : "https://api.factus.com.co";
-
-/** Parse a Factus error response into a human-readable string */
-const parseFactusError = (data, status) => {
-  // Factus 422: errors is an object like { "customer.identification": ["..."] }
-  if (data?.errors && typeof data.errors === "object") {
-    const details = Object.entries(data.errors)
-      .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(", ") : msgs}`)
-      .join(" | ");
-    return details || `Error HTTP ${status}`;
-  }
-  if (data?.message) return data.message;
-  if (data?.error_description) return data.error_description;
-  // Log full response for debugging
-  console.error("Factus full error response:", JSON.stringify(data));
-  return `Error HTTP ${status}`;
-};
-
-// ─────────────────────────────────────────────
 // Colombian municipality DANE codes (top 40+)
 // ─────────────────────────────────────────────
 const MUNICIPALITY_CODES = {
@@ -216,39 +184,27 @@ export const downloadInvoicePDF = async (billNumber) => {
 // ─────────────────────────────────────────────
 // ─────────────────────────────────────────────
 export const sendInvoice = async (invoiceData, patientData, tenantCredentials) => {
-  // ── Load credentials: check sucursal / tenant specific credentials, fallback to superadmin central ──
+  // El navegador solo trabaja con estado no sensible; las credenciales y el
+  // token permanecen dentro de la Edge Function.
   let resolvedCreds = tenantCredentials;
-  try {
+  if (!resolvedCreds?.serverManaged) {
     const { getFactusCredentialsForTenant } = await import("./factusAdminService");
-    const foundCreds = await getFactusCredentialsForTenant(
-      invoiceData?.inquilino || tenantCredentials?.inquilino,
-      invoiceData?.sucursalId || tenantCredentials?.sucursalId
+    resolvedCreds = await getFactusCredentialsForTenant(
+      invoiceData?.inquilino || tenantCredentials?.inquilino
     );
-    if (foundCreds) {
-      resolvedCreds = { ...foundCreds, ...tenantCredentials };
-    }
-  } catch (e) {
-    console.warn("Could not resolve Factus credentials for tenant/sucursal:", e.message);
+  }
+  if (!resolvedCreds?.serverManaged) {
+    throw new Error("La clínica no tiene credenciales Factus configuradas.");
   }
 
-  const creds = {
-    factusClientId:     resolvedCreds?.factusClientId,
-    factusClientSecret: resolvedCreds?.factusClientSecret,
-    factusUsername:     resolvedCreds?.factusUsername || resolvedCreds?.username,
-    factusPassword:     resolvedCreds?.factusPassword || resolvedCreds?.password,
-    factusTestMode:     resolvedCreds?.factusTestMode ?? true,
-  };
-
-  const accessToken = await getToken(creds);
-  const testMode = creds.factusTestMode;
+  const testMode = resolvedCreds.factusTestMode !== false;
 
   // Auto-fetch the correct "Factura de Venta" numbering range from Factus API.
   // IMPORTANT: /v2/bills/validate ONLY accepts ranges of type "Factura de Venta".
   // Ranges like "Nota Crédito", "Nota Débito", etc. will cause a 422 error.
   let numberingRangeId = Number(resolvedCreds.factusNumberingRangeId || tenantCredentials?.factusNumberingRangeId) || 0;
-  try {
-    const rangesData = await getNumberingRanges(accessToken, testMode);
-    console.log("🔍 Raw numbering ranges response:", JSON.stringify(rangesData, null, 2));
+  if (!numberingRangeId) try {
+    const rangesData = await getNumberingRanges();
 
     // Factus uses Laravel pagination: { data: { data: [...], pagination: {...} } }
     let ranges = [];
@@ -292,21 +248,19 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
 
     if (selectedRange?.id) {
       numberingRangeId = Number(selectedRange.id);
-      console.log(
-        `✅ Selected numbering range — ID: ${numberingRangeId} | Type: "${selectedRange.document}" | Prefix: "${selectedRange.prefix}"`
-      );
     } else {
       console.warn("⚠️ No numbering range found in response. Ranges array:", ranges);
     }
-  } catch (e) {
-    console.warn("Could not auto-fetch numbering ranges:", e.message);
+  } catch (error) {
+    console.warn("No fue posible obtener automáticamente los rangos Factus:", error.message);
   }
 
   if (!numberingRangeId) {
-    // Factus V2 sandbox default range ID is typically 8
-    // This will be overridden by the auto-fetch above if the API returns ranges correctly
+    if (!testMode) {
+      throw new Error("No hay un rango de numeración Factus configurado para producción.");
+    }
     numberingRangeId = 8;
-    console.warn("⚠️ Using default numbering range ID 8 for Factus V2 sandbox. Configure the correct ID in Configuración → Facturación Electrónica.");
+    console.warn("Usando el rango 8 de sandbox; configura el rango Factus antes de pasar a producción.");
   }
 
   // ── Patient / customer data ──
@@ -431,8 +385,6 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     },
     items: factusItems,
   };
-
-  console.log("📤 Factus payload:", JSON.stringify(payload, null, 2));
 
   const proxyResponse = await sendFactusBill(payload);
   return { ...proxyResponse.result, _referenceCode: referenceCode };

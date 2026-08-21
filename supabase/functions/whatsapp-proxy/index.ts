@@ -41,6 +41,11 @@ const hashValue = async (value: string) => {
 };
 
 Deno.serve(async (request) => {
+  let admin: ReturnType<typeof createClient> | null = null;
+  let auditTenantId: string | null = null;
+  let auditUserId: string | null = null;
+  let auditAction = "unknown";
+  let auditRecipientHash = "";
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ success: false, error: "Metodo no permitido." }, 405);
 
@@ -54,7 +59,7 @@ Deno.serve(async (request) => {
 
     const authorization = request.headers.get("Authorization") || "";
     if (!authorization.startsWith("Bearer ")) throw new HttpError(401, "Sesion requerida.");
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
+    admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data: authData, error: authError } = await admin.auth.getUser(
@@ -70,9 +75,12 @@ Deno.serve(async (request) => {
     if (profileError || !profile?.activo || !profile.tenant_id) {
       throw new HttpError(403, "Usuario inactivo o sin clinica.");
     }
+    auditTenantId = profile.tenant_id;
+    auditUserId = authData.user.id;
 
     const body = await request.json();
     const action = String(body?.action || "");
+    auditAction = action;
     if (action === "status") {
       return json({ success: true, configured: Boolean(token && phoneId && graphVersion) });
     }
@@ -93,6 +101,7 @@ Deno.serve(async (request) => {
     }
 
     const to = normalizePhone(body?.to);
+    auditRecipientHash = await hashValue(to);
     let messageBody: Record<string, unknown>;
 
     if (action === "send_confirmation" || action === "send_reminder") {
@@ -152,19 +161,46 @@ Deno.serve(async (request) => {
       tenant_id: profile.tenant_id,
       user_id: authData.user.id,
       channel: "whatsapp",
-      recipient_hash: await hashValue(to),
+      recipient_hash: auditRecipientHash,
     });
     if (logError) console.error("whatsapp message log:", logError.message);
 
+
+    const messageId = result?.messages?.[0]?.id || null;
+    const { error: auditError } = await admin.from("audit_logs").insert({
+      tenant_id: auditTenantId,
+      inquilino: auditTenantId,
+      performed_by: auditUserId,
+      action: "WHATSAPP_SENT",
+      details: { action: auditAction, recipientHash: auditRecipientHash, messageId },
+      ip_address: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+      device_info: { userAgent: safeText(request.headers.get("user-agent"), 240) || null },
+    });
+    if (auditError) console.error("whatsapp audit log:", auditError.message);
     return json({
       success: true,
-      messageId: result?.messages?.[0]?.id || null,
+      messageId,
       to,
     });
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 500;
     const message = error instanceof Error ? error.message : "Error interno.";
     console.error("whatsapp-proxy:", message);
+    if (admin && auditTenantId && auditUserId && auditAction !== "status") {
+      const { error: auditError } = await admin.from("audit_logs").insert({
+        tenant_id: auditTenantId,
+        inquilino: auditTenantId,
+        performed_by: auditUserId,
+        action: "WHATSAPP_ERROR",
+        details: {
+          action: auditAction,
+          recipientHash: auditRecipientHash || null,
+          status,
+          message: safeText(message, 500),
+        },
+      });
+      if (auditError) console.error("whatsapp audit error log:", auditError.message);
+    }
     return json({ success: false, error: message }, status);
   }
 });

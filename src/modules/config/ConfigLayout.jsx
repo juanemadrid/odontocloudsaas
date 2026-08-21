@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
 import {
@@ -7,8 +7,6 @@ import {
     FiImage, FiHash, FiTag, FiDollarSign, FiClock, FiSliders, FiMonitor,
     FiClipboard, FiUploadCloud, FiPercent, FiBook, FiStar, FiGlobe
 } from "react-icons/fi";
-import { useAuth } from "../../context/AuthContext";
-import supabase from "../../lib/supabaseClient";
 
 
 const MENU_ITEMS = [
@@ -30,7 +28,6 @@ const MENU_ITEMS = [
     { label: "Parámetros", slug: "parametros", icon: FiSliders },
     { label: "Recursos físicos", slug: "recursos-fisicos", icon: FiMonitor },
     { label: "Plantillas Doc. Clínicos", slug: "plantillas-clinicas", icon: FiClipboard },
-    { label: "Pestañas Consulta Med.", slug: "pestanas-consulta", icon: FiLayout },
     { label: "Cargas", slug: "cargas", icon: FiUploadCloud },
     { label: "Impuestos", slug: "impuestos", icon: FiPercent },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiBook },
@@ -40,39 +37,12 @@ const MENU_ITEMS = [
 
 export default function ConfigLayout({ children }) {
     const location = useLocation();
-    const { userProfile } = useAuth();
-    const [hasWebsiteAccess, setHasWebsiteAccess] = useState(false);
-
-    useEffect(() => {
-        const checkPlan = async () => {
-            if (userProfile?.inquilino) {
-                try {
-                    const { data } = await supabase
-                        .from("tenants")
-                        .select("*")
-                        .eq("id", userProfile.inquilino)
-                        .maybeSingle();
-                    // Activar acceso a Editor Web según plan
-                    setHasWebsiteAccess(
-                        data?.has_website === true ||
-                        data?.plan_tipo === "PREMIUM" ||
-                        data?.plan === "pro" ||
-                        data?.plan === "enterprise" ||
-                        true // Por ahora siempre true para demo
-                    );
-                } catch (e) {
-                    console.error("Error checking website plan:", e);
-                    setHasWebsiteAccess(true); // Fallback para demo
-                }
-            }
-        };
-        checkPlan();
-    }, [userProfile]);
+    const hasWebsiteAccess = true;
 
     return (
         <div className="flex h-full gap-6 p-2 md:p-6 overflow-hidden bg-slate-50/50">
             {/* Sidebar Navigation */}
-            <aside className="w-64 flex-none flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hidden lg:flex">
+            <aside className="config-layout-sidebar w-64 flex-none flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hidden lg:flex">
                 <div className="p-4 border-b border-slate-100 bg-slate-50/50">
                     <h2 className="text-[15px] font-bold text-slate-800 uppercase tracking-tight">
                         Configuración

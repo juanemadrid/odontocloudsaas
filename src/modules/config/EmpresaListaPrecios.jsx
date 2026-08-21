@@ -90,6 +90,7 @@ export default function EmpresaListaPrecios() {
         } catch (error) {
             console.error("Error fetching data from Supabase:", error);
             setRows([]);
+            if (toast?.error) toast.error("No se pudo cargar la lista de precios: " + (error.message || "Error de conexión"));
         } finally {
             setLoading(false);
         }

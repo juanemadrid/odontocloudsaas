@@ -133,7 +133,8 @@ export default function Esterilizacion() {
         tenantId: inquilino,
         relativePath: `esterilizacion/${Date.now()}.${fileExt}`,
         file,
-        upsert: true
+        upsert: true,
+        optimizationProfile: "standard"
       });
 
       if (type === "quimico") {

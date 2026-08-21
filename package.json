@@ -10,7 +10,10 @@
     "lint": "npm run security:check",
     "security:check": "node scripts/security-check.mjs",
     "test:agenda": "node scripts/test-agenda-availability.mjs",
-    "test:ci": "npm run security:check && npm run test:agenda && npm run build",
+    "test:config": "node scripts/test-config-integration.mjs",
+    "test:odontograma": "node scripts/test-odontograma.mjs",
+    "test:production": "node scripts/test-production-readiness.mjs",
+    "test:ci": "npm run security:check && npm run test:agenda && npm run test:config && npm run test:odontograma && npm run test:production && npm run build",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist --dotfiles --repo https://github.com/juanemadrid/odontocloudsaas.git"
   },

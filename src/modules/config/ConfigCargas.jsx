@@ -4,16 +4,29 @@ import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import supabase from "../../lib/supabaseClient";
 
-function ensureXLSX() {
-    return new Promise((resolve) => {
-        if (typeof window !== "undefined" && window.XLSX) return resolve(window.XLSX);
-        const s = document.createElement("script");
-        s.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
-        s.onload = () => resolve(window.XLSX || null);
-        s.onerror = () => resolve(null);
-        document.head.appendChild(s);
-    });
+async function ensureXLSX() {
+    const module = await import("xlsx");
+    return module.default || module;
 }
+
+const toIsoDate = (value) => {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().slice(0, 10);
+    }
+    if (typeof value === "number") {
+        const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+        return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+    }
+
+    const text = String(value).trim();
+    const latinDate = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (latinDate) {
+        const [, day, month, year] = latinDate;
+        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+    return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+};
 
 const CARGA_TYPES = [
     {
@@ -34,7 +47,7 @@ const CARGA_TYPES = [
         id: "servicios",
         label: "Servicios / Procedimientos",
         description: "Actualización de listas de precios, honorarios y códigos de procedimientos.",
-        collection: "servicios_clinica",
+        collection: "catalogo_procedimientos",
         icon: FiActivity
     },
 ];
@@ -130,64 +143,104 @@ export default function ConfigCargas() {
         setProgress({ current: 0, total });
 
         try {
-            const BATCH_SIZE = 100;
-            let count = 0;
+            const seenDocuments = new Set();
+            const records = data.map((row, index) => {
+                const rowNumber = index + 2;
 
-            for (let i = 0; i < total; i += BATCH_SIZE) {
-                const chunk = data.slice(i, i + BATCH_SIZE);
-                const records = chunk.map((row) => {
-                    let payload = {
-                        tenant_id: inquilino,
-                        inquilino,
-                        created_at: new Date().toISOString()
-                    };
-
-                    if (item.id === "pacientes") {
-                        payload = {
-                            ...payload,
-                            nroDocumento: String(row.Documento || ""),
-                            tipoDocumento: row.Tipo_Doc || "CC",
-                            nombre: String(row.Nombres || "").toUpperCase(),
-                            apellido: String(row.Apellidos || "").toUpperCase(),
-                            nombreCompleto: `${row.Nombres || ""} ${row.Apellidos || ""}`.trim().toUpperCase(),
-                            celular: String(row.Celular || ""),
-                            email: String(row.Email || "").toLowerCase(),
-                            sexo: String(row.Sexo || "").toUpperCase(),
-                            direccion: row.Direccion || "",
-                            activo: true
-                        };
-                    } else if (item.id === "productos") {
-                        payload = {
-                            ...payload,
-                            codigo: String(row.Codigo || ""),
-                            nombre: String(row.Nombre || "").toUpperCase(),
-                            costo: Number(row.Costo || 0),
-                            cantidad: Number(row.Stock_Actual || 0),
-                            min_stock: Number(row.Stock_Minimo || 5)
-                        };
-                    } else if (item.id === "servicios") {
-                        payload = {
-                            ...payload,
-                            codigo: String(row.Codigo || ""),
-                            nombre: String(row.Nombre || "").toUpperCase(),
-                            precio: Number(row.Precio_Venta || 0),
-                            categoria: String(row.Categoria || "GENERAL").toUpperCase()
-                        };
+                if (item.id === "pacientes") {
+                    const documento = String(row.Documento || "").trim();
+                    const nombres = String(row.Nombres || "").trim().toUpperCase();
+                    const apellidos = String(row.Apellidos || "").trim().toUpperCase();
+                    if (!documento || !nombres || !apellidos) {
+                        throw new Error(`Fila ${rowNumber}: Documento, Nombres y Apellidos son obligatorios.`);
                     }
-                    return payload;
-                });
+                    if (seenDocuments.has(documento)) {
+                        throw new Error(`Fila ${rowNumber}: el documento ${documento} está repetido en el archivo.`);
+                    }
+                    seenDocuments.add(documento);
 
-                const { error } = await supabase.from(item.collection).insert(records);
-                if (error) console.error(error);
+                    return {
+                        tenant_id: inquilino,
+                        tipo_documento: String(row.Tipo_Doc || "CC").trim().toUpperCase(),
+                        documento,
+                        nombres,
+                        apellidos,
+                        telefono: String(row.Celular || "").trim(),
+                        email: String(row.Email || "").trim().toLowerCase() || null,
+                        fecha_nacimiento: toIsoDate(row.Fecha_Nacimiento),
+                        genero: String(row.Sexo || "").trim().toUpperCase() || null,
+                        direccion: String(row.Direccion || "").trim() || null,
+                        activo: true
+                    };
+                }
 
-                count += chunk.length;
-                setProgress({ current: count, total });
+                if (item.id === "productos") {
+                    const nombre = String(row.Nombre || "").trim().toUpperCase();
+                    if (!nombre) throw new Error(`Fila ${rowNumber}: Nombre es obligatorio.`);
+                    return {
+                        tenant_id: inquilino,
+                        codigo: String(row.Codigo || "").trim() || null,
+                        nombre,
+                        categoria: "GENERAL",
+                        precio_costo: Number(row.Costo || 0),
+                        precio_venta: 0,
+                        cantidad: Math.max(0, Number(row.Stock_Actual || 0)),
+                        minimo_stock: Math.max(0, Number(row.Stock_Minimo || 5)),
+                        es_servicio: false
+                    };
+                }
+
+                const nombre = String(row.Nombre || "").trim().toUpperCase();
+                if (!nombre) throw new Error(`Fila ${rowNumber}: Nombre es obligatorio.`);
+                return {
+                    tenant_id: inquilino,
+                    codigo_cups: String(row.Codigo || "").trim() || null,
+                    nombre,
+                    precio_base: Math.max(0, Number(row.Precio_Venta || 0)),
+                    categoria: String(row.Categoria || "GENERAL").trim().toUpperCase()
+                };
+            });
+
+            // Evita una importación parcial si ya existe alguno de los pacientes.
+            if (item.id === "pacientes") {
+                const documents = records.map(record => record.documento);
+                for (let index = 0; index < documents.length; index += 200) {
+                    const { data: existing, error } = await supabase
+                        .from("pacientes")
+                        .select("documento")
+                        .eq("tenant_id", inquilino)
+                        .in("documento", documents.slice(index, index + 200));
+                    if (error) throw error;
+                    if (existing?.length) {
+                        throw new Error(
+                            `Ya existen pacientes con estos documentos: ${existing
+                                .slice(0, 5)
+                                .map(row => row.documento)
+                                .join(", ")}${existing.length > 5 ? "…" : ""}`
+                        );
+                    }
+                }
             }
 
-            if (toast?.success) toast.success(`Importación masiva completada: ${total} registros procesados.`);
-        } catch (e) {
-            console.error(e);
-            if (toast?.error) toast.error("Error al importar datos a la base de datos");
+            const BATCH_SIZE = 100;
+            let inserted = 0;
+            for (let index = 0; index < records.length; index += BATCH_SIZE) {
+                const batch = records.slice(index, index + BATCH_SIZE);
+                const { error } = await supabase.from(item.collection).insert(batch);
+                if (error) {
+                    throw new Error(`No se pudo guardar el lote iniciado en la fila ${index + 2}: ${error.message}`);
+                }
+
+                inserted += batch.length;
+                setProgress({ current: inserted, total });
+            }
+
+            if (toast?.success) {
+                toast.success(`Importación completada: ${inserted} registros guardados correctamente.`);
+            }
+        } catch (error) {
+            console.error(error);
+            if (toast?.error) toast.error(error.message || "Error al importar datos a la base de datos");
         } finally {
             setLoading(false);
             setProgress({ current: 0, total: 0 });
@@ -270,7 +323,11 @@ export default function ConfigCargas() {
                                     type="file"
                                     accept=".xlsx,.xls,.csv"
                                     className="hidden"
-                                    onChange={(e) => processFile(e.target.files[0], item)}
+                                    onChange={(e) => {
+                                        const selectedFile = e.target.files?.[0];
+                                        if (selectedFile) processFile(selectedFile, item);
+                                        e.target.value = "";
+                                    }}
                                 />
                                 <button
                                     onClick={() => handleUploadClick(`file-${item.id}`)}

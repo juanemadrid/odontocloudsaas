@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import supabase from "../../lib/supabaseClient";
+import { uploadOptimizedPublicFile } from "../../services/storageUploadService";
+import { saveConfigPatch } from "../../services/configPersistenceService";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../context/AuthContext";
 import ModernLanding from "../../pages/ModernLanding";
@@ -21,6 +23,17 @@ const TABS = [
     { id: "footer", label: "Contacto / Footer", icon: <FiGlobe size={18} /> },
     { id: "cta_final", label: "Llamado a Acción", icon: <FiSend size={18} /> },
 ];
+
+const CONFIGURATION_SECTION_KEYS = new Set([
+    "agenda_doctor_settings", "almacenes", "bancos", "cajas",
+    "catalogo_cuentas", "categorias_inventario", "condiciones_pago",
+    "configuracion_contable", "consecutivos", "convenios", "doctor_settings",
+    "empresa_datos", "especialidades", "facturacion_electronica",
+    "factus", "factus_config", "formulario_pacientes", "impuestos",
+    "listas_precios", "metodos_pago", "parametros", "perfiles", "planes",
+    "plantillas_clinicas", "pestanas_medicas", "recursos_fisicos",
+    "sucursales", "terceros", "user_details", "usuarios"
+]);
 
 import { useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
@@ -166,16 +179,12 @@ export default function WebCms() {
         }
         setSaving(true);
         try {
-            console.log("Saving Config to Supabase for tenant:", tenantUUID);
-            const { error } = await supabase
-                .from("website_config")
-                .upsert({
-                    tenant_id: tenantUUID,
-                    config: config,
-                    updated_at: new Date().toISOString()
-                });
-
-            if (error) throw error;
+            const websitePatch = Object.fromEntries(
+                Object.entries(config).filter(
+                    ([key]) => key !== "isMaster" && !CONFIGURATION_SECTION_KEYS.has(key)
+                )
+            );
+            await saveConfigPatch(tenantUUID, websitePatch);
             alert("✅ SITIO ACTUALIZADO CORRECTAMENTE EN SUPABASE.");
         } catch (e) {
             console.error("Save Error:", e);
@@ -191,10 +200,11 @@ export default function WebCms() {
 
         try {
             const fileName = `${configDocId}/website_uploads/${Date.now()}_${file.name}`;
-            const { data, error } = await supabase.storage.from("clinical-files").upload(fileName, file);
-            if (error) throw error;
-            const { data: pubUrl } = supabase.storage.from("clinical-files").getPublicUrl(fileName);
-            updateItem(listKey, index, field, pubUrl.publicUrl);
+            const uploaded = await uploadOptimizedPublicFile({
+                bucket: "public-assets", path: fileName, file,
+                profile: "standard",
+            });
+            updateItem(listKey, index, field, uploaded.publicUrl);
         } catch (error) {
             console.error("Error uploading image:", error);
             alert(`Error subiendo imagen: ${error.message}`);
@@ -207,10 +217,11 @@ export default function WebCms() {
 
         try {
             const fileName = `${configDocId}/website_uploads/${Date.now()}_${file.name}`;
-            const { data, error } = await supabase.storage.from("clinical-files").upload(fileName, file);
-            if (error) throw error;
-            const { data: pubUrl } = supabase.storage.from("clinical-files").getPublicUrl(fileName);
-            setConfig(prev => ({ ...prev, [field]: pubUrl.publicUrl }));
+            const uploaded = await uploadOptimizedPublicFile({
+                bucket: "public-assets", path: fileName, file,
+                profile: "standard",
+            });
+            setConfig(prev => ({ ...prev, [field]: uploaded.publicUrl }));
         } catch (error) {
             console.error("Error uploading image:", error);
             alert(`Error subiendo imagen: ${error.message}`);
@@ -1046,4 +1057,3 @@ export default function WebCms() {
         </div>
     );
 }
-

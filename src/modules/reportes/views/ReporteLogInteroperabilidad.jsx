@@ -5,6 +5,7 @@ import { FiSearch, FiFileText, FiFilter, FiDatabase } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
+import { getAuditEvents } from "../../../services/reportDataService";
 export default function ReporteLogInteroperabilidad() {
   const { userProfile } = useAuth();
   const [logList, setLogList] = useState([]);
@@ -73,26 +74,28 @@ export default function ReporteLogInteroperabilidad() {
         } catch (e) {}
         setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
-        let snapLogs = [];
-        try {
-          const { data } = await supabase.from("ihce_logs").select("*").eq("tenant_id", userProfile.inquilino);
-          if (data) snapLogs = data;
-        } catch (e) {}
-        const listData = (snapLogs || []).map(l => {
-          const dateObj = l.created_at ? new Date(l.created_at) : (l.fecha ? new Date(l.fecha) : new Date());
+        const snapLogs = await getAuditEvents({
+          tenantId: userProfile.inquilino,
+          actions: ["IHCE_QUERY", "IHCE_SENT", "IHCE_ERROR"],
+          from: appliedFilters.fechaInicial,
+          to: appliedFilters.fechaFinal,
+        });
+        const listData = snapLogs.map((log) => {
+          const details = log.details || {};
+          const dateObj = new Date(log.created_at);
           return {
-            id: l.id,
+            id: log.id,
             fechaObj: dateObj,
-            fechaStr: isNaN(dateObj.getTime()) ? (l.fecha || "") : format(dateObj, "dd/MM/yyyy HH:mm"),
-            operacion: l.operacion || "CONSULTA_RDA",
-            sucursal: l.sucursal || l.oficina || (snapSuc && snapSuc[0]?.nombre) || "ATM CENTRO DEL DOLOR OROFACIAL",
-            profesional: l.profesional || l.doctor || "—",
-            paciente: l.pacienteNombre || l.paciente || "—",
-            numDocumento: l.pacienteDocumento || l.documento || "—",
-            estado: l.estado || "PROCESADO",
-            exito: l.exito || "SI",
-            identificadorRDA: l.identificadorRDA || l.rdaId || "RDA-2026-00192",
-            error: l.error || "—"
+            fechaStr: format(dateObj, "dd/MM/yyyy HH:mm"),
+            operacion: details.operacion || log.action,
+            sucursal: details.sucursal || (snapSuc && snapSuc[0]?.nombre) || "—",
+            profesional: details.profesional || "—",
+            paciente: details.paciente || "—",
+            numDocumento: details.documento || "—",
+            estado: details.estado || (log.action === "IHCE_ERROR" ? "ERROR" : "PROCESADO"),
+            exito: log.action === "IHCE_ERROR" ? "NO" : "SI",
+            identificadorRDA: details.identificadorRDA || details.rdaId || "—",
+            error: details.error || "—"
           };
         });
 

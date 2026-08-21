@@ -135,8 +135,8 @@ Deno.serve(async (request) => {
       if (!userId && !password) {
         throw new HttpError(400, "La contrasena es obligatoria para un usuario nuevo.");
       }
-      if (!isSuperadmin && normalizeRole(role) === "superadmin") {
-        throw new HttpError(403, "No puedes asignar el rol superadministrador.");
+      if (!isSuperadmin && protectedRoles.has(normalizeRole(role))) {
+        throw new HttpError(403, "Solo el superadministrador puede asignar roles administrativos.");
       }
 
       let authUser;
@@ -175,6 +175,7 @@ Deno.serve(async (request) => {
       const profile = {
         id: authUser.id,
         tenant_id: tenantId,
+        inquilino: tenantId,
         full_name: fullName,
         email,
         role,

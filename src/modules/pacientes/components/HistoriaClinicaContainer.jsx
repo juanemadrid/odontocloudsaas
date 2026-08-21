@@ -8,7 +8,9 @@ import {
     FiEdit2, 
     FiTrash2, 
     FiDownload,
-    FiPenTool
+    FiPenTool,
+    FiClock,
+    FiLock
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
@@ -272,6 +274,15 @@ export default function HistoriaClinicaContainer({ patient }) {
     };
 
     const handleEditDoc = (doc) => {
+        const isConsulta = (doc.tipoDocumento === 'Consulta' || doc.tipo === 'Consulta' || doc.titulo === 'Consulta Odontológica');
+        const isClosed = isConsulta && (doc.estado === 'Finalizada' || doc.finalizado === true || doc.firmado === true || doc.metadata?.estado === 'Finalizada' || doc.metadata?.finalizado === true);
+        
+        if (isClosed) {
+            toast.error("Esta consulta odontológica ya ha sido finalizada y no puede ser modificada (Registro Clínico Cerrado).");
+            handleViewDoc(doc);
+            return;
+        }
+
         setEditingDoc(doc);
         setSelectedDocType(doc.tipoDocumento);
         setIsViewOnly(false);
@@ -421,60 +432,213 @@ export default function HistoriaClinicaContainer({ patient }) {
                     </div>
                 ` : ''}
             `;
-        } else if (doc.tipoDocumento === "Consulta") {
-            const anteced = doc.antecedentes || [];
-            const alergias = doc.alergias || [];
+        } else if (doc.tipoDocumento === "Consulta" || doc.tipoDocumento === "Consulta Odontológica" || doc.tipo === "Consulta") {
+            const meta = doc.metadata || doc;
+            const anteced = meta.antecedentes || doc.antecedentes || [];
+            const alergias = meta.alergias || doc.alergias || [];
+            const antFam = meta.antFamiliares || doc.antFamiliares || [];
+            const medPrev = meta.medicamentosPrev || doc.medicamentosPrev || [];
+            const examen = meta.examenOdontologico || doc.examenOdontologico || {};
+            const dxPrinc = meta.dxPrincipalConsulta || doc.dxPrincipalConsulta;
+            const dxRels = meta.dxRelacionadosConsulta || doc.dxRelacionadosConsulta || [];
+
             contentHtml = `
-                <div class="section-title">Registro de Consulta Clínica</div>
-                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <div style="margin-bottom: 15px;">
-                        <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Motivo de Consulta</div>
-                        <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-top: 3px;">${doc.motivoConsulta || 'No registrado'}</div>
+                <div class="section-title">Registro de Consulta Odontológica</div>
+                
+                <!-- 1. Motivo de Consulta -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 18px;">
+                    <div style="margin-bottom: 12px;">
+                        <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">1. Motivo de Consulta</div>
+                        <div style="font-size: 13px; font-weight: 600; color: #1e293b; margin-top: 3px;">${meta.motivoConsulta || doc.motivoConsulta || 'No registrado'}</div>
                     </div>
-                    <div style="margin-bottom: 15px;">
-                        <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Enfermedad Actual</div>
-                        <div style="font-size: 12.5px; color: #334155; margin-top: 3px; white-space: pre-wrap;">${doc.enfermedadActual || 'No registrada'}</div>
-                    </div>
+                    ${(meta.enfermedadActual || doc.enfermedadActual) ? `
+                        <div>
+                            <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Enfermedad Actual</div>
+                            <div style="font-size: 12.5px; color: #334155; margin-top: 3px; white-space: pre-wrap;">${meta.enfermedadActual || doc.enfermedadActual}</div>
+                        </div>
+                    ` : ''}
                 </div>
 
-                ${anteced.length > 0 ? `
-                    <div class="section-title">Antecedentes Clínicos Registrados</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 100px;">Código CIE-10</th>
-                                <th>Nombre del Antecedente / Condición</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${anteced.map(a => `
-                                <tr>
-                                    <td class="font-mono" style="font-weight: 700;">${a.code}</td>
-                                    <td>${a.name}</td>
-                                </tr>
-                            `).map(item => item).join('')}
-                        </tbody>
-                    </table>
+                <!-- 2. Antecedentes -->
+                ${(anteced.length > 0 || alergias.length > 0 || antFam.length > 0 || medPrev.length > 0) ? `
+                    <div class="section-title">2. Antecedentes Clínicos</div>
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 18px;">
+                        ${anteced.length > 0 ? `
+                            <table>
+                                <thead><tr><th style="width: 100px;">CIE-10</th><th>Antecedentes Médicos</th><th>Observación</th></tr></thead>
+                                <tbody>
+                                    ${anteced.map(a => `<tr><td class="font-mono" style="font-weight: 700;">${a.code}</td><td>${a.name}</td><td>${a.obs || '-'}</td></tr>`).join('')}
+                                </tbody>
+                            </table>
+                        ` : ''}
+                        ${alergias.length > 0 ? `
+                            <table>
+                                <thead><tr><th style="width: 160px;">Tipo de Alergia</th><th>Observaciones / Reacción</th></tr></thead>
+                                <tbody>
+                                    ${alergias.map(al => `<tr><td><strong style="color: #ef4444;">${al.tipo}</strong></td><td>${al.obs || 'No detallada'}</td></tr>`).join('')}
+                                </tbody>
+                            </table>
+                        ` : ''}
+                        ${antFam.length > 0 ? `
+                            <table>
+                                <thead><tr><th style="width: 120px;">Parentesco</th><th style="width: 90px;">CIE-10</th><th>Antecedente Familiar</th><th>Observación</th></tr></thead>
+                                <tbody>
+                                    ${antFam.map(f => `<tr><td><strong>${f.parentesco}</strong></td><td class="font-mono">${f.code}</td><td>${f.name}</td><td>${f.obs || '-'}</td></tr>`).join('')}
+                                </tbody>
+                            </table>
+                        ` : ''}
+                        ${medPrev.length > 0 ? `
+                            <table>
+                                <thead><tr><th>Medicamentos en Uso</th><th>Dosis / Observación</th></tr></thead>
+                                <tbody>
+                                    ${medPrev.map(m => `<tr><td><strong>${m.nombre}</strong></td><td>${m.obs || '-'}</td></tr>`).join('')}
+                                </tbody>
+                            </table>
+                        ` : ''}
+                    </div>
                 ` : ''}
 
-                ${alergias.length > 0 ? `
-                    <div class="section-title" style="margin-top: 20px;">Alergias Conocidas</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 180px;">Tipo de Alergia / Agente</th>
-                                <th>Observaciones / Reacción</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${alergias.map(al => `
-                                <tr>
-                                    <td><strong style="color: #ef4444;">${al.tipo}</strong></td>
-                                    <td>${al.obs || 'Reacción no detallada'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <!-- 3. Examen Odontológico -->
+                ${(examen && (typeof examen === 'object') && Object.keys(examen).length > 0) ? `
+                    <div class="section-title">3. Examen Odontológico</div>
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 18px;">
+                        
+                        <!-- 1. Estado General -->
+                        ${(examen.estadoGeneral || examen.presionArterial || examen.frecuenciaCardiaca || examen.otrosSignos) ? `
+                            <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">1. Estado General / Signos:</strong>
+                                <div style="font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                    ${examen.estadoGeneral ? `<strong>Estado:</strong> ${examen.estadoGeneral}` : ''}
+                                    ${examen.presionArterial ? ` | <strong>PA:</strong> ${examen.presionArterial} mmHg` : ''}
+                                    ${examen.frecuenciaCardiaca ? ` | <strong>FC:</strong> ${examen.frecuenciaCardiaca} lpm` : ''}
+                                    ${examen.otrosSignos ? ` | <strong>Otros:</strong> ${examen.otrosSignos}` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- 2. Examen Extraoral -->
+                        ${(examen.simetriaFacial || examen.pielTejidos || examen.ganglios || examen.labios) ? `
+                            <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">2. Examen Extraoral:</strong>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                    <div><strong>Simetría:</strong> ${examen.simetriaFacial || 'Normal'} ${examen.simetriaFacialObs ? `<em>(${examen.simetriaFacialObs})</em>` : ''}</div>
+                                    <div><strong>Piel y tejidos:</strong> ${examen.pielTejidos || 'Normal'} ${examen.pielTejidosObs ? `<em>(${examen.pielTejidosObs})</em>` : ''}</div>
+                                    <div><strong>Ganglios:</strong> ${examen.ganglios || 'Sin alteraciones'} ${examen.gangliosObs ? `<em>(${examen.gangliosObs})</em>` : ''}</div>
+                                    <div><strong>Labios:</strong> ${examen.labios || 'Normal'} ${examen.labiosObs ? `<em>(${examen.labiosObs})</em>` : ''}</div>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- 3. ATM -->
+                        <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                            <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">3. Articulación Temporomandibular (ATM):</strong>
+                            <div style="font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                ${(Array.isArray(examen.atmItems) && examen.atmItems.length > 0) 
+                                    ? `<strong>Alteraciones:</strong> ${examen.atmItems.join(', ')}${examen.atmOtros ? ` | <em>Otros: ${examen.atmOtros}</em>` : ''}`
+                                    : (examen.atm || 'Sin alteraciones aparentes')
+                                }
+                            </div>
+                        </div>
+
+                        <!-- 4. Tejidos Blandos / Intraoral -->
+                        ${(examen.mucosaYugal || examen.paladar || examen.lengua || examen.pisoBoca || examen.glandulasSalivales || examen.orofaringe) ? `
+                            <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">4. Tejidos Blandos / Intraoral:</strong>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                    <div><strong>Mucosa yugal:</strong> ${examen.mucosaYugal || 'Normal'} ${examen.mucosaYugalObs ? `<em>(${examen.mucosaYugalObs})</em>` : ''}</div>
+                                    <div><strong>Paladar:</strong> ${examen.paladar || 'Normal'} ${examen.paladarObs ? `<em>(${examen.paladarObs})</em>` : ''}</div>
+                                    <div><strong>Lengua:</strong> ${examen.lengua || 'Normal'} ${examen.lenguaObs ? `<em>(${examen.lenguaObs})</em>` : ''}</div>
+                                    <div><strong>Piso de boca:</strong> ${examen.pisoBoca || 'Normal'} ${examen.pisoBocaObs ? `<em>(${examen.pisoBocaObs})</em>` : ''}</div>
+                                    <div><strong>Glándulas:</strong> ${examen.glandulasSalivales || 'Normal'} ${examen.glandulasSalivalesObs ? `<em>(${examen.glandulasSalivalesObs})</em>` : ''}</div>
+                                    <div><strong>Orofaringe:</strong> ${examen.orofaringe || 'Normal'} ${examen.orofaringeObs ? `<em>(${examen.orofaringeObs})</em>` : ''}</div>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- 5. Periodonto -->
+                        ${(examen.encias || examen.higieneOral || examen.placaBacteriana || examen.calculo || examen.movilidadDental || examen.periodontoOtros) ? `
+                            <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">5. Periodonto:</strong>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                    <div><strong>Encías:</strong> ${Array.isArray(examen.encias) ? examen.encias.join(', ') : (examen.encias || 'Normales')}</div>
+                                    <div><strong>Higiene oral:</strong> ${examen.higieneOral || 'Buena'}</div>
+                                    <div><strong>Placa bacteriana:</strong> ${examen.placaBacteriana || 'Ausente'}</div>
+                                    <div><strong>Cálculo:</strong> ${examen.calculo || 'Ausente'}</div>
+                                    <div><strong>Movilidad dental:</strong> ${examen.movilidadDental || 'No'}</div>
+                                    ${examen.periodontoOtros ? `<div><strong>Otros:</strong> ${examen.periodontoOtros}</div>` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- 6. Oclusión -->
+                        <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                            <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">6. Oclusión:</strong>
+                            <div style="font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                ${Array.isArray(examen.oclusionItems) ? examen.oclusionItems.join(', ') : (examen.oclusion || 'Normal')}
+                                ${examen.oclusionObs ? ` | <em>${examen.oclusionObs}</em>` : ''}
+                            </div>
+                        </div>
+
+                        <!-- 7. Hallazgos adicionales -->
+                        ${(examen.hallazgosAdicionales || examen.otrosHallazgos) ? `
+                            <div>
+                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">7. Hallazgos Clínicos Adicionales:</strong>
+                                <div style="font-size: 12px; color: #1e293b; margin-top: 3px; white-space: pre-wrap;">${examen.hallazgosAdicionales || examen.otrosHallazgos}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+
+                <!-- 4. Diagnóstico -->
+                ${(dxPrinc || dxRels.length > 0 || meta.diagnosticoNotas || doc.diagnosticoNotas) ? `
+                    <div class="section-title">4. Diagnóstico</div>
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 18px;">
+                        ${dxPrinc ? `
+                            <div style="margin-bottom: 10px;">
+                                <span style="font-size: 10px; font-weight: 800; color: #2563eb; text-transform: uppercase;">Principal:</span>
+                                <strong style="font-size: 12.5px; color: #1e293b; margin-left: 6px;">[${dxPrinc.code}] ${dxPrinc.name}</strong>
+                            </div>
+                        ` : ''}
+                        ${dxRels.length > 0 ? `
+                            <div style="margin-bottom: 10px;">
+                                <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Relacionados:</div>
+                                <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #334155;">
+                                    ${dxRels.map(r => `<li><strong>[${r.code}]</strong> ${r.name} ${r.obs ? `<em>(${r.obs})</em>` : ''}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        ${(meta.diagnosticoNotas || doc.diagnosticoNotas) ? `
+                            <div style="font-size: 12px; color: #475569; margin-top: 6px; font-style: italic;">
+                                <strong>Notas:</strong> ${meta.diagnosticoNotas || doc.diagnosticoNotas}
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+
+                <!-- 5. Plan de Tratamiento -->
+                ${(meta.planTratamiento || doc.planTratamiento || meta.recomendaciones || doc.recomendaciones) ? `
+                    <div class="section-title">5. Plan de Tratamiento y Recomendaciones</div>
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 18px;">
+                        ${(meta.planTratamiento || doc.planTratamiento) ? `
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Procedimientos y Plan de Tratamiento</div>
+                                <div style="font-size: 12.5px; color: #1e293b; margin-top: 3px; white-space: pre-wrap;">${meta.planTratamiento || doc.planTratamiento}</div>
+                            </div>
+                        ` : ''}
+                        ${(meta.recomendaciones || doc.recomendaciones) ? `
+                            <div>
+                                <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Conducta y Recomendaciones</div>
+                                <div style="font-size: 12.5px; color: #334155; margin-top: 3px; white-space: pre-wrap;">${meta.recomendaciones || doc.recomendaciones}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+
+                <!-- Fallback content if everything else was empty -->
+                ${(!meta.motivoConsulta && !doc.motivoConsulta && doc.contenido) ? `
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap;">
+                        ${doc.contenido}
+                    </div>
                 ` : ''}
             `;
         } else {
@@ -1341,7 +1505,7 @@ export default function HistoriaClinicaContainer({ patient }) {
                                 <FiPlus size={14} /> Nueva orden
                             </button>
                             <button onClick={() => handleOpenModal("Consulta")} className="bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full py-2 px-4 font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors shadow-sm">
-                                <FiPlus size={14} /> Nueva consulta
+                                <FiPlus size={14} /> Consulta Odontológica
                             </button>
                             <button onClick={() => handleOpenModal("Alerta")} className="bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full py-2 px-4 font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors shadow-sm">
                                 <FiPlus size={14} /> Nueva alerta
@@ -1408,57 +1572,99 @@ export default function HistoriaClinicaContainer({ patient }) {
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredDocs.map(doc => (
-                                        <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors group">
-                                            <td className="px-4 py-4 align-top">
-                                                <div className="text-xs font-medium text-slate-600">
-                                                    {new Date(doc.fechaIso).toLocaleDateString('es-ES')}
-                                                </div>
-                                                <div className="text-[10px] text-slate-400 mt-0.5">
-                                                    {new Date(doc.fechaIso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-4 align-top">
-                                                <div className="text-sm font-medium text-slate-700">{doc.tipoDocumento}</div>
-                                                {doc.diagnostico && <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-500 mt-1 truncate max-w-[200px]">{doc.diagnostico}</div>}
-                                            </td>
-                                            <td className="px-4 py-4 align-top">
-                                                <div className="text-sm text-slate-600 truncate max-w-[200px]">{doc.profesional}</div>
-                                            </td>
-                                            <td className="px-4 py-4 align-top">
-                                                <div className="text-sm text-slate-500 truncate max-w-[200px]">{doc.transcribe}</div>
-                                            </td>
-                                            <td className="px-3 py-3 align-middle w-[160px] min-w-[160px] shrink-0">
-                                                <div className="flex items-center flex-nowrap gap-1">
-                                                    <button onClick={() => handleViewDoc(doc)} className="w-6 h-6 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg flex items-center justify-center transition-colors shrink-0" title="Ver detalle">
-                                                        <FiEye size={11} strokeWidth={2.5} />
-                                                    </button>
-                                                    <button onClick={() => handlePrintDoc(doc)} className="w-6 h-6 bg-cyan-100 hover:bg-cyan-200 text-cyan-600 rounded-lg flex items-center justify-center transition-colors shrink-0" title="Imprimir/Descargar">
-                                                        <FiDownload size={11} strokeWidth={2.5} />
-                                                    </button>
-                                                    <button onClick={() => handleEditDoc(doc)} className="w-6 h-6 bg-emerald-100 hover:bg-emerald-200 text-emerald-600 rounded-lg flex items-center justify-center transition-colors shrink-0" title="Editar">
-                                                        <FiEdit2 size={11} strokeWidth={2.5} />
-                                                    </button>
-                                                    {doc.tipoDocumento === "Receta" && (
-                                                        <button 
-                                                            onClick={() => handleSignPrescription(doc)} 
-                                                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
-                                                                (doc.recetaItems || []).length > 0 && (doc.recetaItems || []).every(item => item.doctorSignature)
-                                                                    ? 'bg-indigo-500 hover:bg-indigo-600 text-white' 
-                                                                    : 'bg-violet-100 hover:bg-violet-200 text-violet-600'
-                                                            }`} 
-                                                            title="Firmar Receta"
-                                                        >
-                                                            <FiPenTool size={11} strokeWidth={2.5} />
+                                    filteredDocs.map(doc => {
+                                        const isConsulta = (doc.tipoDocumento === 'Consulta' || doc.tipo === 'Consulta' || doc.titulo === 'Consulta Odontológica');
+                                        const isFinalizada = isConsulta && (doc.estado === 'Finalizada' || doc.finalizado === true || doc.firmado === true || doc.metadata?.estado === 'Finalizada' || doc.metadata?.finalizado === true);
+                                        const isEnProceso = isConsulta && !isFinalizada;
+
+                                        return (
+                                            <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors group">
+                                                <td className="px-4 py-4 align-top">
+                                                    <div className="text-xs font-medium text-slate-600">
+                                                        {new Date(doc.fechaIso).toLocaleDateString('es-ES')}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                                        {new Date(doc.fechaIso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-4 align-top">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="text-sm font-medium text-slate-700">{doc.tipoDocumento}</span>
+                                                        {isFinalizada && (
+                                                            <span className="px-2 py-0.5 text-[9.5px] font-black rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wide inline-flex items-center gap-1">
+                                                                <FiLock size={9} /> Finalizada
+                                                            </span>
+                                                        )}
+                                                        {isEnProceso && (
+                                                            <span className="px-2 py-0.5 text-[9.5px] font-black rounded-full bg-amber-100 text-amber-800 border border-amber-200 uppercase tracking-wide inline-flex items-center gap-1">
+                                                                <FiClock size={9} /> En proceso
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {doc.diagnostico && <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-500 mt-1 truncate max-w-[200px]">{doc.diagnostico}</div>}
+                                                </td>
+                                                <td className="px-4 py-4 align-top">
+                                                    <div className="text-sm text-slate-600 truncate max-w-[200px]">{doc.profesional}</div>
+                                                </td>
+                                                <td className="px-4 py-4 align-top">
+                                                    <div className="text-sm text-slate-500 truncate max-w-[200px]">{doc.transcribe}</div>
+                                                </td>
+                                                <td className="px-3 py-3 align-middle w-[160px] min-w-[160px] shrink-0">
+                                                    <div className="flex items-center flex-nowrap gap-1">
+                                                        <button onClick={() => handleViewDoc(doc)} className="w-6 h-6 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Ver detalle">
+                                                            <FiEye size={11} strokeWidth={2.5} />
                                                         </button>
-                                                    )}
-                                                    <button onClick={() => handleDeleteDoc(doc.id)} className="w-6 h-6 bg-rose-100 hover:bg-rose-200 text-rose-500 rounded-lg flex items-center justify-center transition-colors shrink-0" title="Eliminar">
-                                                        <FiTrash2 size={11} strokeWidth={2.5} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))
+                                                        <button onClick={() => handlePrintDoc(doc)} className="w-6 h-6 bg-cyan-100 hover:bg-cyan-200 text-cyan-600 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Imprimir/Descargar">
+                                                            <FiDownload size={11} strokeWidth={2.5} />
+                                                        </button>
+
+                                                        {isFinalizada ? (
+                                                            <button 
+                                                                onClick={() => handleEditDoc(doc)} 
+                                                                className="w-6 h-6 bg-slate-100 text-slate-400 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-not-allowed opacity-75" 
+                                                                title="Consulta finalizada (Registro clínico cerrado - No editable)"
+                                                            >
+                                                                <FiLock size={11} strokeWidth={2.5} />
+                                                            </button>
+                                                        ) : isEnProceso ? (
+                                                            <button 
+                                                                onClick={() => handleEditDoc(doc)} 
+                                                                className="w-6 h-6 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer" 
+                                                                title="Continuar diligenciando consulta"
+                                                            >
+                                                                <FiEdit2 size={11} strokeWidth={2.5} />
+                                                            </button>
+                                                        ) : (
+                                                            <button 
+                                                                onClick={() => handleEditDoc(doc)} 
+                                                                className="w-6 h-6 bg-emerald-100 hover:bg-emerald-200 text-emerald-600 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer" 
+                                                                title="Editar"
+                                                            >
+                                                                <FiEdit2 size={11} strokeWidth={2.5} />
+                                                            </button>
+                                                        )}
+
+                                                        {doc.tipoDocumento === "Receta" && (
+                                                            <button 
+                                                                onClick={() => handleSignPrescription(doc)} 
+                                                                className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
+                                                                    (doc.recetaItems || []).length > 0 && (doc.recetaItems || []).every(item => item.doctorSignature)
+                                                                        ? 'bg-indigo-500 hover:bg-indigo-600 text-white' 
+                                                                        : 'bg-violet-100 hover:bg-violet-200 text-violet-600'
+                                                                }`} 
+                                                                title="Firmar Receta"
+                                                            >
+                                                                <FiPenTool size={11} strokeWidth={2.5} />
+                                                            </button>
+                                                        )}
+                                                        <button onClick={() => handleDeleteDoc(doc.id)} className="w-6 h-6 bg-rose-100 hover:bg-rose-200 text-rose-500 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Eliminar">
+                                                            <FiTrash2 size={11} strokeWidth={2.5} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
                                 )}
                             </tbody>
                         </table>

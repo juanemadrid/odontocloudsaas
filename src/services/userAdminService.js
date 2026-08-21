@@ -1,158 +1,33 @@
-// src/services/userAdminService.js
 import supabase from "../lib/supabaseClient";
 
+const extractFunctionError = async (error) => {
+  let message = error?.message || "No fue posible completar la operacion de usuarios.";
+  try {
+    const details = await error?.context?.json();
+    message = details?.error || message;
+  } catch {
+    // Algunas respuestas de Functions no incluyen un cuerpo JSON.
+  }
+  return message;
+};
+
 /**
- * Invoca las funciones administrativas para gestión de usuarios.
- * Incluye tolerancia a fallos y fallback automático a RPC/Tablas si la Edge Function no está desplegada o falla por CORS en entorno local.
+ * Toda operacion que afecta Supabase Auth pasa por la Edge Function autenticada.
+ * No existe fallback en el navegador: fallar de forma segura evita crear perfiles
+ * huerfanos o permitir cambios de rol/contrasena sin autorizacion del servidor.
  */
 const invokeAdminUsers = async (action, payload = {}) => {
-  // ── FALLBACK DIRECTO RPC / TABLAS ──
-  if (action === "upsert_user") {
-    const user = payload.user || {};
-    const tenantId = user.tenantId || user.inquilino;
-    const email = user.email?.toLowerCase().trim();
-    const fullName = user.fullName || `${user.nombre || ''} ${user.apellido || ''}`.trim() || email;
-    const role = user.role || "usuario";
+  const { data, error } = await supabase.functions.invoke("admin-users", {
+    body: { action, ...payload },
+  });
 
-    let createdAuthUserId = user.id || null;
-
-    // A. Intentar RPC admin_create_clinic_user si viene contraseña
-    if (user.password && email && tenantId) {
-      try {
-        const { data: rpcData, error: rpcErr } = await supabase.rpc("admin_create_clinic_user", {
-          p_email: email,
-          p_password: user.password,
-          p_full_name: fullName,
-          p_tenant_id: tenantId,
-          p_role: role
-        });
-
-        if (!rpcErr && rpcData?.user_id) {
-          createdAuthUserId = rpcData.user_id;
-        } else {
-          console.warn("RPC admin_create_clinic_user aviso:", rpcErr?.message || rpcData);
-        }
-      } catch (e) {
-        console.warn("Fallback RPC admin_create_clinic_user error:", e);
-      }
-
-      // B. Si no se creó por RPC, intentar crear la cuenta Auth mediante supabase.auth.signUp
-      if (!createdAuthUserId) {
-        try {
-          const { data: signUpData, error: signUpErr } = await supabase.auth['signUp']({
-            email: email,
-            password: user.password,
-            options: {
-              data: {
-                full_name: fullName,
-                tenant_id: tenantId,
-                role: role
-              }
-            }
-          });
-
-          if (!signUpErr && signUpData?.user?.id) {
-            createdAuthUserId = signUpData.user.id;
-          } else if (signUpErr) {
-            console.warn("Supabase Auth signUp aviso:", signUpErr.message);
-          }
-        } catch (sErr) {
-          console.warn("Error en supabase.auth.signUp fallback:", sErr);
-        }
-      }
-    }
-
-    // C. Guardar en tabla pública de perfiles (public.profiles)
-    const userId = createdAuthUserId || user.id || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
-
-    const profilePayload = {
-      email,
-      full_name: fullName,
-      role: role,
-      tenant_id: tenantId,
-      inquilino: tenantId,
-      activo: user.activo ?? true
-    };
-    if (user.apellido) profilePayload.apellido = user.apellido;
-    if (user.telefono) profilePayload.telefono = user.telefono;
-    if (user.tipoDocumento || user.tipo_documento) profilePayload.tipo_documento = user.tipoDocumento || user.tipo_documento;
-    if (user.numeroDocumento || user.numero_documento) profilePayload.numero_documento = user.numeroDocumento || user.numero_documento;
-    if (user.especialidad) profilePayload.especialidad = user.especialidad;
-    if (user.registroMedico || user.registro_medico) profilePayload.registro_medico = user.registroMedico || user.registro_medico;
-    if (user.sucursalId || user.sucursal_id) profilePayload.sucursal_id = user.sucursalId || user.sucursal_id;
-
-    try {
-      const { data: existingProf } = await supabase.from("profiles").select("id").eq("email", email).maybeSingle();
-      if (existingProf?.id) {
-        await supabase.from("profiles").update(profilePayload).eq("id", existingProf.id);
-      } else {
-        await supabase.from("profiles").upsert({ id: userId, ...profilePayload });
-      }
-    } catch (dbErr) {
-      console.warn("Excepción al guardar en tabla profiles:", dbErr);
-    }
-
-    return {
-      success: true,
-      user: {
-        id: userId,
-        email,
-        fullName,
-        role: role
-      }
-    };
+  if (error) {
+    throw new Error(await extractFunctionError(error));
   }
-
-  // ── FALLBACK 2: Activar / Desactivar Usuario ──
-  if (action === "set_active") {
-    const { userId, active } = payload;
-    if (userId) {
-      try {
-        await supabase.from("profiles").update({ activo: active }).eq("id", userId);
-      } catch (e) {
-        console.warn("Error al cambiar estado activo en profiles:", e);
-      }
-    }
-    return { success: true };
+  if (!data?.success) {
+    throw new Error(data?.error || "La operacion de usuarios fue rechazada.");
   }
-
-  // ── FALLBACK 3: Eliminar Usuario ──
-  if (action === "delete_user") {
-    const { userId, email } = payload;
-    if (userId || email) {
-      try {
-        if (userId) {
-          await supabase.from("profiles").delete().eq("id", userId);
-        }
-        if (email) {
-          await supabase.from("profiles").delete().eq("email", email.toLowerCase().trim());
-        }
-      } catch (e) {
-        console.warn("Error al eliminar usuario en profiles:", e);
-      }
-    }
-    return { success: true };
-  }
-
-  // ── FALLBACK 4: Cambiar Contraseña ──
-  if (action === "change_password") {
-    const { email, password, tenantId } = payload;
-    if (email && password && tenantId) {
-      try {
-        await supabase.rpc("admin_create_clinic_user", {
-          p_email: email,
-          p_password: password,
-          p_full_name: "Usuario",
-          p_tenant_id: tenantId
-        });
-      } catch (e) {
-        console.warn("Error al cambiar contraseña por RPC:", e);
-      }
-    }
-    return { success: true };
-  }
-
-  return { success: true, user: payload.user || {} };
+  return data;
 };
 
 export const upsertManagedUser = (user) =>

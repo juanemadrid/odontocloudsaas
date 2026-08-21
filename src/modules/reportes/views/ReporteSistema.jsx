@@ -107,7 +107,10 @@ export default function ReporteSistema() {
       try {
         let snapshot = [];
         try {
-          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          const { data } = await supabase
+            .from("profiles")
+            .select("id, full_name, email, role, activo, created_at")
+            .eq("tenant_id", userProfile.inquilino);
           if (data) snapshot = data;
         } catch (e) {}
         
@@ -143,9 +146,9 @@ export default function ReporteSistema() {
         try {
           const { data } = await supabase
             .from("audit_logs")
-            .select("*")
+            .select("id, action, details, device_info, performed_by, created_at")
             .eq("tenant_id", userProfile.inquilino)
-            .order("timestamp", { ascending: false })
+            .order("created_at", { ascending: false })
             .limit(150);
           if (data) logsRaw = data;
         } catch (e) {}

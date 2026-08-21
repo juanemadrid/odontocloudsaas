@@ -5,6 +5,7 @@ import { FiSearch, FiFileText, FiFilter, FiCheckCircle, FiAlertCircle, FiMessage
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
+import { getAuditEvents } from "../../../services/reportDataService";
 export default function ReporteLogWhatsApp() {
   const { userProfile } = useAuth();
   const [logList, setLogList] = useState([]);
@@ -66,84 +67,34 @@ export default function ReporteLogWhatsApp() {
         setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
         // 2. Cargar Logs de WhatsApp Business API en Supabase
-        let snapLogs = [];
-        try {
-          const { data } = await supabase.from("whatsapp_logs").select("*").eq("tenant_id", userProfile.inquilino);
-          if (data) snapLogs = data;
-        } catch (e) {}
-        const listData = [];
-
-        (snapLogs || []).forEach(l => {
-          const dateObj = l.created_at ? new Date(l.created_at) : (l.fecha ? new Date(l.fecha) : new Date());
-
-          listData.push({
-            id: l.id,
+        const snapLogs = await getAuditEvents({
+          tenantId: userProfile.inquilino,
+          actions: ["WHATSAPP_SENT", "WHATSAPP_ERROR"],
+          from: appliedFilters.fechaInicial,
+          to: appliedFilters.fechaFinal,
+        });
+        const listData = snapLogs.map((log) => {
+          const details = log.details || {};
+          const dateObj = new Date(log.created_at);
+          const failed = log.action === "WHATSAPP_ERROR";
+          return {
+            id: log.id,
             fechaObj: dateObj,
-            fechaHoraStr: isNaN(dateObj.getTime()) ? (l.fecha || "") : format(dateObj, "dd/MM/yyyy HH:mm:ss"),
-            destinatario: l.pacienteNombre || l.destinatario || "—",
-            celular: l.celular || l.phone || "—",
-            plantilla: l.plantilla || l.tipoMensaje || "RECORDATORIO_CITA",
-            mensaje: l.mensaje || l.body || "Recordatorio de cita médica programada.",
-            estado: l.estado || "ENTREGADO",
-            codigoRespuesta: l.codigoRespuesta || "HTTP 200 OK (wamid.HBgL...)"
-          });
+            fechaHoraStr: format(dateObj, "dd/MM/yyyy HH:mm:ss"),
+            destinatario: details.destinatario || "Protegido",
+            celular: details.recipientHash ? `Hash ${details.recipientHash.slice(0, 12)}…` : "Protegido",
+            plantilla: details.action || "Mensaje",
+            mensaje: "Contenido no almacenado por seguridad.",
+            estado: failed ? "FALLIDO" : "ENVIADO",
+            codigoRespuesta: failed
+              ? (details.error || "Error de envío")
+              : (details.messageId || "Aceptado por WhatsApp API"),
+          };
         });
 
-        // Datos de ejemplo realistas si no existen logs en la BD aún
-        if (listData.length === 0) {
-          const sampleData = [
-            {
-              id: "1",
-              fechaObj: new Date("2026-07-22T14:30:00"),
-              fechaHoraStr: "22/07/2026 14:30:12",
-              destinatario: "ELIECER JOSE HERNANDEZ DEL CASTILLO",
-              celular: "+57 300 123 4567",
-              plantilla: "confirmacion_cita_v1",
-              mensaje: "Hola Eliecer, confirmamos tu cita odontológica para mañana 10:00 AM en nuestra sede Principal.",
-              estado: "ENTREGADO",
-              codigoRespuesta: "HTTP 200 OK (wamid.HBgL...)"
-            },
-            {
-              id: "2",
-              fechaObj: new Date("2026-07-22T09:15:00"),
-              fechaHoraStr: "22/07/2026 09:15:44",
-              destinatario: "Carolina Pastrana Alcala",
-              celular: "+57 312 987 6543",
-              plantilla: "recordatorio_control",
-              mensaje: "Estimada Carolina, ha pasado 6 meses desde tu último control odontológico. Haz clic aquí para agendar.",
-              estado: "LEIDO",
-              codigoRespuesta: "HTTP 200 OK (wamid.HBgL...)"
-            },
-            {
-              id: "3",
-              fechaObj: new Date("2026-07-21T18:45:00"),
-              fechaHoraStr: "21/07/2026 18:45:02",
-              destinatario: "Katherin Buelvas Paternina",
-              celular: "+57 320 555 1234",
-              plantilla: "saludo_cumpleanos",
-              mensaje: "¡Feliz Cumpleaños Katherin! En Clínica Dental te deseamos un excelente día. Disfruta un 15% de dto.",
-              estado: "ENVIADO",
-              codigoRespuesta: "HTTP 200 OK (wamid.HBgL...)"
-            },
-            {
-              id: "4",
-              fechaObj: new Date("2026-07-20T11:05:00"),
-              fechaHoraStr: "20/07/2026 11:05:18",
-              destinatario: "Julio Alejandro de la Ossa Salcedo",
-              celular: "+57 310 444 9988",
-              plantilla: "recordatorio_cita_v2",
-              mensaje: "Recordatorio: Tu cita de Ortodoncia es mañana a las 3:00 PM con el Dr. Juan.",
-              estado: "FALLIDO",
-              codigoRespuesta: "HTTP 400 ERROR (131026: Undeliverable)"
-            }
-          ];
-          setLogList(sampleData);
-          filterData(sampleData, appliedFilters, "");
-        } else {
-          listData.sort((a, b) => b.fechaObj - a.fechaObj);
-          setLogList(listData);
-          filterData(listData, appliedFilters, "");
-        }
+        listData.sort((a, b) => b.fechaObj - a.fechaObj);
+        setLogList(listData);
+        filterData(listData, appliedFilters, "");
 
       } catch (error) {
         console.error("Error cargando log de WhatsApp:", error);

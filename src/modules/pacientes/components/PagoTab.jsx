@@ -17,6 +17,7 @@ import {
 } from "react-icons/fi";
 import { formatCurrency } from '../../../utils/formatters';
 import { getPlansByPatient } from '../../../services/planService';
+import { getConfigItems, saveConfigItem } from '../../../services/configPersistenceService';
 import { getDoctorsList, getActiveCaja } from '../../../services/supabaseServices';
 
 // Módulo de Realizar Pago y Saldo a Favor del Paciente - OdontoCloud
@@ -385,19 +386,22 @@ export default function PagoTab({ patient }) {
 
             // 2.5. Fetch and assign consecutive number (contReciboCaja)
             let nroConsecutivo = "";
-            let consDocId = null;
+            let consDoc = null;
             let consNextCount = 1;
             try {
-                const { data: consData } = await supabase
-                    .from("consecutivos")
-                    .select("*")
-                    .eq("tenant_id", userProfile?.inquilino || "");
-                if (consData && consData.length > 0) {
-                    const consDoc = consData[0];
-                    consDocId = consDoc.id;
-                    const currentCount = parseInt(String(consDoc.cont_recibo_caja || consDoc.contReciboCaja || 1), 10) || 1;
+                const consData = await getConfigItems(
+                    userProfile?.inquilino,
+                    "consecutivos",
+                    "consecutivos"
+                );
+                consDoc = consData.find(item => item.activo !== false) || consData[0] || null;
+                if (consDoc) {
+                    const currentCount = parseInt(
+                        String(consDoc.contReciboCaja ?? consDoc.cont_recibo_caja ?? 1),
+                        10
+                    ) || 1;
                     consNextCount = currentCount + 1;
-                    nroConsecutivo = String(currentCount).padStart(2, '0');
+                    nroConsecutivo = String(currentCount).padStart(2, "0");
                 } else {
                     nroConsecutivo = "01";
                     consNextCount = 2;
@@ -466,15 +470,17 @@ export default function PagoTab({ patient }) {
             }
 
             // 3.2. Increment consecutive counter
-            if (consDocId) {
-                try {
-                    await supabase
-                        .from("consecutivos")
-                        .update({ cont_recibo_caja: consNextCount })
-                        .eq("id", consDocId);
-                } catch (incErr) {
-                    console.warn("No se pudo actualizar el consecutivo:", incErr);
-                }
+            if (consDoc) {
+                await saveConfigItem(
+                    userProfile.inquilino,
+                    "consecutivos",
+                    "consecutivos",
+                    {
+                        ...consDoc,
+                        contReciboCaja: consNextCount,
+                        cont_recibo_caja: consNextCount
+                    }
+                );
             }
             
             // 4. Synchronize with active Caja session (for cash / bank methods)

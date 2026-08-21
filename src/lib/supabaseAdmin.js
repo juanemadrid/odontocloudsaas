@@ -31,10 +31,8 @@ export const adminChangePassword = async (userEmail, newPassword) => {
         });
         return { success: true, via: 'edge_function' };
     } catch (edgeErr) {
-        console.warn("Edge Function no disponible para cambiar contraseña, ejecutando fallback:", edgeErr?.message);
+        throw new Error(edgeErr?.message || rpcErr?.message || "No se pudo actualizar la contraseña.");
     }
-
-    return { success: true, message: `Los datos fueron guardados. El usuario puede iniciar sesión con su nueva clave.` };
 };
 
 export default { adminChangePassword };

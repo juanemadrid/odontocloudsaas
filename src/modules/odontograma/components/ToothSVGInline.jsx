@@ -1,4 +1,6 @@
 import React from 'react';
+import { inferToothSurface } from '../utils/odontogramInteraction.mjs';
+import { buildLesionPath, buildMaterialPath, buildOtherMarkPath, buildSealantPath, getSurfaceMarkScale, getToothKind, getTreatmentVisual } from '../utils/treatmentVisuals.mjs';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRITES PNG del odontograma
@@ -107,6 +109,201 @@ const ZONE_OPACITY_ACTIVE = 0.85;
 function zoneFill(zoneData)    { return zoneData?.id ? (zoneData.color || '#ef4444') : 'transparent'; }
 function zoneOpacity(zoneData) { return zoneData?.id ? ZONE_OPACITY_ACTIVE : 0; }
 function zoneStroke(zoneData)  { return zoneData?.id ? (zoneData.color || '#ef4444') : 'transparent'; }
+
+// La capa anatómica no tiene el mismo ancho para un molar que para un incisivo.
+// Estos porcentajes siguen la silueta de los sprites y evitan que la pintura
+// quede como un punto o se salga del borde del diente.
+const ZONE_LAYER_WIDTH = {
+    molar: { upper: 94, lower: 94 },
+    premolar: { upper: 66, lower: 58 },
+    canine: { upper: 52, lower: 46 },
+    incisor: { upper: 48, lower: 34 },
+};
+
+const ANATOMICAL_GEOMETRY = {
+    molar:    { topLeft: 18, topRight: 82, outerLeft: 10, outerRight: 90, bottomLeft: 22, bottomRight: 78, innerLeft: 34, innerRight: 66 },
+    premolar: { topLeft: 18, topRight: 82, outerLeft: 8, outerRight: 92, bottomLeft: 20, bottomRight: 80, innerLeft: 32, innerRight: 68 },
+    canine:   { topLeft: 28, topRight: 72, outerLeft: 12, outerRight: 88, bottomLeft: 24, bottomRight: 76, innerLeft: 35, innerRight: 65 },
+    incisor:  { topLeft: 18, topRight: 82, outerLeft: 10, outerRight: 90, bottomLeft: 22, bottomRight: 78, innerLeft: 34, innerRight: 66 },
+};
+
+function buildSurfacePaths(zoneType) {
+    const g = ANATOMICAL_GEOMETRY[zoneType] || ANATOMICAL_GEOMETRY.molar;
+    return {
+        crown: `M ${g.topLeft},5 Q 50,-1 ${g.topRight},5 Q ${g.outerRight},48 ${g.bottomRight},94 Q 50,102 ${g.bottomLeft},94 Q ${g.outerLeft},48 ${g.topLeft},5 Z`,
+        top: `M ${g.topLeft},5 Q 50,-1 ${g.topRight},5 L ${g.innerRight},43 Q 50,34 ${g.innerLeft},43 Z`,
+        right: `M ${g.topRight},5 Q ${g.outerRight},48 ${g.bottomRight},94 L ${g.innerRight},57 L ${g.innerRight},43 Z`,
+        bottom: `M ${g.bottomLeft},94 Q 50,102 ${g.bottomRight},94 L ${g.innerRight},57 Q 50,66 ${g.innerLeft},57 Z`,
+        left: `M ${g.topLeft},5 L ${g.innerLeft},43 L ${g.innerLeft},57 L ${g.bottomLeft},94 Q ${g.outerLeft},48 ${g.topLeft},5 Z`,
+        center: `M ${g.innerLeft},43 Q 50,34 ${g.innerRight},43 L ${g.innerRight},57 Q 50,66 ${g.innerLeft},57 Z`,
+    };
+}
+
+const SURFACE_ORDER = ['top', 'right', 'bottom', 'left', 'center'];
+
+function AnatomicalZones({ data, onClick, zoneType, clipId, numero }) {
+    const paths = buildSurfacePaths(zoneType);
+    const activeSurfaceCount = SURFACE_ORDER.reduce(
+        (total, surface) => total + (data?.[surface]?.id ? 1 : 0),
+        0,
+    );
+    const markScale = getSurfaceMarkScale(activeSurfaceCount);
+
+    const renderTreatment = (surface) => {
+        const zoneData = data?.[surface];
+        if (!zoneData?.id) return null;
+        const visual = getTreatmentVisual(zoneData.id, zoneData.color);
+        if (visual.scope !== 'surface') return null;
+
+        if (visual.mode === 'lesion') {
+            return (
+                <path
+                    key={`treatment-${surface}`}
+                    d={buildLesionPath(surface, numero, markScale)}
+                    fill={visual.fill}
+                    fillOpacity="0.94"
+                    stroke={visual.stroke}
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                    className="pointer-events-none"
+                />
+            );
+        }
+
+        if (visual.mode === 'sealant') {
+            return (
+                <path
+                    key={`treatment-${surface}`}
+                    d={buildSealantPath(surface, zoneType, numero, markScale)}
+                    fill="none"
+                    stroke={visual.stroke}
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                    className="pointer-events-none"
+                />
+            );
+        }
+
+        if (visual.mode === 'other') {
+            return (
+                <path
+                    key={`treatment-${surface}`}
+                    d={buildOtherMarkPath(surface, numero, markScale)}
+                    fill={visual.fill}
+                    stroke="white"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                    className="pointer-events-none"
+                />
+            );
+        }
+
+        if (visual.mode === 'material') {
+            const outerPath = buildMaterialPath(surface, numero, zoneType, visual.shape, 0, markScale);
+            const innerPath = buildMaterialPath(surface, numero, zoneType, visual.shape, visual.alert ? 6 : 0, markScale);
+            return (
+                <g
+                    key={`treatment-${surface}`}
+                    className="pointer-events-none"
+                    data-material-treatment={zoneData.id}
+                    data-material-shape={visual.shape}
+                    style={{ filter: 'drop-shadow(0 1px 0 rgba(15, 23, 42, 0.14))' }}
+                >
+                    {visual.alert && (
+                        <path
+                            d={outerPath}
+                            fill={visual.alert}
+                            fillOpacity="0.94"
+                        />
+                    )}
+                    <path
+                        d={innerPath}
+                        fill={visual.fill}
+                        fillOpacity="0.94"
+                        stroke={visual.stroke}
+                        strokeWidth="1.35"
+                        strokeLinejoin="round"
+                        vectorEffect="non-scaling-stroke"
+                    />
+                </g>
+            );
+        }
+
+        return (
+            <path
+                key={`treatment-${surface}`}
+                d={paths[surface]}
+                fill="none"
+                stroke={visual.stroke || zoneData.color}
+                strokeWidth="2.4"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+                className="pointer-events-none"
+            />
+        );
+    };
+
+    return (
+        <>
+            <defs>
+                <clipPath id={clipId}>
+                    <path d={paths.crown} />
+                </clipPath>
+            </defs>
+            <g clipPath={`url(#${clipId})`} data-active-surface-count={activeSurfaceCount}>
+                <g className="pointer-events-none">
+                    {SURFACE_ORDER.map(renderTreatment)}
+                </g>
+                {SURFACE_ORDER.map((surface) => (
+                    <path
+                        key={`hit-${surface}`}
+                        d={paths[surface]}
+                        fill="transparent"
+                        onClick={(event) => onClick(surface, event)}
+                        className="cursor-pointer"
+                    />
+                ))}
+            </g>
+        </>
+    );
+}
+
+function CrownSpriteMark({ data, cfg, bgSizeXPct, bgPosXPct, isUpper }) {
+    const treatmentId = data?.general?.id;
+    if (treatmentId !== 'corona_buena' && treatmentId !== 'corona_des') return null;
+    const color = treatmentId === 'corona_buena' ? '#2563EB' : '#EF4444';
+    const crownClip = isUpper
+        ? 'polygon(0 57%, 100% 57%, 100% 100%, 0 100%)'
+        : 'polygon(0 0, 100% 0, 100% 43%, 0 43%)';
+    const maskStyles = {
+        WebkitMaskImage: `url('${cfg.img}')`,
+        WebkitMaskSize: `${bgSizeXPct}% auto`,
+        WebkitMaskRepeat: 'no-repeat',
+        WebkitMaskPosition: `${bgPosXPct.toFixed(2)}% ${cfg.posY}`,
+        maskImage: `url('${cfg.img}')`,
+        maskSize: `${bgSizeXPct}% auto`,
+        maskRepeat: 'no-repeat',
+        maskPosition: `${bgPosXPct.toFixed(2)}% ${cfg.posY}`,
+    };
+
+    return (
+        <div
+            className="absolute inset-0 pointer-events-none z-10"
+            data-general-crown={treatmentId}
+            style={{
+                ...maskStyles,
+                backgroundColor: color,
+                clipPath: crownClip,
+                opacity: 0.98,
+                filter: `drop-shadow(0 0 1px ${color})`,
+            }}
+        />
+    );
+}
 
 // Zonas para MOLAR — corona ancha (Y 0-62 = corona, 62-100 = raíz que queda limpia)
 // Zonas para MOLAR — corona ancha (Y 0-62 = corona, 62-100 = raíz que queda limpia)
@@ -248,26 +445,15 @@ function IncisorZones({ data, onClick }) {
     );
 }
 
-// Seleccionar zonas según tipo anatómico
-// NOTA: En dentición temporal los dientes x4 y x5 son MOLARES (1° y 2° molar temporal)
-//       En dentición permanente los dientes x4 y x5 son PREMOLARES
-function getZoneType(fdiNum) {
-    const n = parseInt(fdiNum, 10);
-    const d = n % 10;                                          // último dígito
-    const isTemporal = (n >= 51 && n <= 65) || (n >= 71 && n <= 85);
-    if (d === 1 || d === 2) return 'incisor';
-    if (d === 3)             return 'canine';
-    // x4/x5 permanente = premolar; x4/x5 temporal = molar (p.ej. 54,55,64,65,74,75,84,85)
-    if ((d === 4 || d === 5) && !isTemporal) return 'premolar';
-    return 'molar';
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ToothSVGInline({ numero, data = {}, onZoneClick, isReadOnly }) {
     const cfg = getSpriteConfig(numero);
-    const zoneType = getZoneType(numero);
+    const zoneType = getToothKind(numero);
+    const n = parseInt(numero, 10);
+    const isUpper = (n >= 11 && n <= 28) || (n >= 51 && n <= 65);
 
     // Fallback si no hay configuración (número FDI desconocido)
     if (!cfg) {
@@ -290,27 +476,60 @@ export default function ToothSVGInline({ numero, data = {}, onZoneClick, isReadO
             ? PERMANENT_BGPOS[numero]
             : (cfg.numCols > 1 ? (cfg.col / (cfg.numCols - 1)) * 100 : 0));
 
-    const handleZone = (zone) => {
+    const handleZone = (zone, event) => {
+        event?.stopPropagation();
         if (!isReadOnly) onZoneClick(numero, zone);
     };
 
-    const ZonesComponent =
-        zoneType === 'molar'    ? MolarZones    :
-        zoneType === 'premolar' ? PremolarZones :
-        zoneType === 'canine'   ? CanineZones   :
-                                  IncisorZones;
+    const markSurfaceFromPointer = (event, rect) => {
+        if (isReadOnly) return;
+        const zone = inferToothSurface({
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+            width: rect.width,
+            height: rect.height,
+            isUpper,
+        });
+        onZoneClick(numero, zone);
+    };
 
-    const n = parseInt(numero, 10);
-    const isUpper = (n >= 11 && n <= 28) || (n >= 51 && n <= 65);
+    const handleDirectClick = (event) => {
+        markSurfaceFromPointer(event, event.currentTarget.getBoundingClientRect());
+    };
+
+    const handleZoneLayerClick = (event) => {
+        event.stopPropagation();
+        if (event.target !== event.currentTarget) return;
+        const toothRect = event.currentTarget.parentElement?.getBoundingClientRect();
+        if (toothRect) markSurfaceFromPointer(event, toothRect);
+    };
+
+    const handleKeyDown = (event) => {
+        if (isReadOnly || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        // El teclado aplica la cara visible; un filtro de superficie activo la
+        // reemplaza en el manejador principal igual que ocurre con el ratón.
+        onZoneClick(numero, 'top');
+    };
+
+    const ZonesComponent = AnatomicalZones;
+    const clipId = `odontograma-crown-${numero}-${isReadOnly ? 'readonly' : 'editable'}`;
+    const zoneLayerWidth = ZONE_LAYER_WIDTH[zoneType]?.[isUpper ? 'upper' : 'lower'] || 90;
     const needsFlip = false;
 
     return (
         // Contenedor principal — DEBE tener width y height explícitos del padre
         <div 
-            className="relative w-full h-full overflow-hidden select-none"
+            className={`relative w-full h-full overflow-hidden select-none ${isReadOnly ? '' : 'cursor-pointer'}`}
             style={{
                 transform: needsFlip ? 'scaleY(-1)' : 'none',
             }}
+            data-tooth-number={String(numero)}
+            role={isReadOnly ? undefined : 'button'}
+            tabIndex={isReadOnly ? undefined : 0}
+            aria-label={isReadOnly ? undefined : `Marcar superficie del diente ${numero}`}
+            onClick={isReadOnly ? undefined : handleDirectClick}
+            onKeyDown={isReadOnly ? undefined : handleKeyDown}
         >
 
             {/* ── PNG sprite recortado con CSS ── */}
@@ -324,18 +543,35 @@ export default function ToothSVGInline({ numero, data = {}, onZoneClick, isReadO
                 }}
             />
 
-            {/* ── Zonas SVG coloreables encima del PNG ──
-                Sin mixBlendMode: el color se mezcla como alpha-compositing normal
-                (rojo semitransparente sobre líneas azules = tinte rojo limpio, sin efecto morado) */}
+            <CrownSpriteMark
+                data={data}
+                cfg={cfg}
+                bgSizeXPct={bgSizeXPct}
+                bgPosXPct={bgPosXPct}
+                isUpper={isUpper}
+            />
+
+            {/* Capa anatómica: pinta el tratamiento dentro de la corona y
+                conserva cinco áreas amplias de clic. */}
             {!isReadOnly && (
                 <svg
                     viewBox="0 0 100 100"
                     xmlns="http://www.w3.org/2000/svg"
-                    className={`absolute ${isUpper ? 'bottom-0' : 'top-0'} left-0 right-0 w-full h-[35%]`}
-                    preserveAspectRatio="xMidYMid meet"
-                    onClick={(e) => e.stopPropagation()}
+                    className={`absolute ${isUpper ? 'bottom-0' : 'top-0'} left-1/2 h-[38%]`}
+                    style={{
+                        width: `${zoneLayerWidth}%`,
+                        transform: 'translateX(-50%)',
+                    }}
+                    preserveAspectRatio="none"
+                    onClick={handleZoneLayerClick}
                 >
-                    <ZonesComponent data={data} onClick={handleZone} />
+                    <ZonesComponent
+                        data={data}
+                        onClick={handleZone}
+                        zoneType={zoneType}
+                        clipId={clipId}
+                        numero={numero}
+                    />
                 </svg>
             )}
             {/* Modo readOnly: misma visualización pero sin clicks */}
@@ -343,11 +579,21 @@ export default function ToothSVGInline({ numero, data = {}, onZoneClick, isReadO
                 <svg
                     viewBox="0 0 100 100"
                     xmlns="http://www.w3.org/2000/svg"
-                    className={`absolute ${isUpper ? 'bottom-0' : 'top-0'} left-0 right-0 w-full h-[35%]`}
-                    preserveAspectRatio="xMidYMid meet"
-                    style={{ pointerEvents: 'none' }}
+                    className={`absolute ${isUpper ? 'bottom-0' : 'top-0'} left-1/2 h-[38%]`}
+                    preserveAspectRatio="none"
+                    style={{
+                        pointerEvents: 'none',
+                        width: `${zoneLayerWidth}%`,
+                        transform: 'translateX(-50%)',
+                    }}
                 >
-                    <ZonesComponent data={data} onClick={() => {}} />
+                    <ZonesComponent
+                        data={data}
+                        onClick={() => {}}
+                        zoneType={zoneType}
+                        clipId={clipId}
+                        numero={numero}
+                    />
                 </svg>
             )}
         </div>

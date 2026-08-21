@@ -11,6 +11,7 @@ import supabase from "../lib/supabaseClient";
 
 import { usePermissions } from "../hooks/usePermissions";
 import CommandPalette from "../components/CommandPalette";
+import { getConfigCached, invalidateConfigCache } from "../hooks/useConfig";
 
 import UserProfileModal from "../components/UserProfileModal";
 
@@ -54,7 +55,10 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
 
     useEffect(() => {
         if (!inquilino) return;
-        const fetchNotifsAndTenant = async () => {
+
+        let cancelled = false;
+
+        const fetchNotifications = async () => {
             try {
                 const { data: notifData } = await supabase
                     .from("notificaciones")
@@ -63,38 +67,56 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                     .eq("target", "admin")
                     .order("created_at", { ascending: false })
                     .limit(15);
-                setNotificaciones(notifData || []);
-            } catch { setNotificaciones([]); }
 
+                if (!cancelled) setNotificaciones(notifData || []);
+            } catch {
+                if (!cancelled) setNotificaciones([]);
+            }
+        };
+
+        const fetchClinicConfig = async (force = false) => {
             try {
-                const [tRes, cRes] = await Promise.all([
+                if (force) invalidateConfigCache(inquilino);
+
+                const [tRes, config] = await Promise.all([
                     supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
-                    supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
+                    getConfigCached(inquilino),
                 ]);
+
+                if (cancelled) return;
+
                 const tData = tRes.data || {};
-                const cData = cRes.data?.config?.empresa_datos || {};
+                const cData = config?.empresa_datos || {};
 
                 setClinicConfig({
                     ...cData,
                     ...tData,
                     logo_url: tData.logo_url || tData.logo || cData.logoUrl || ""
                 });
-            } catch { /* ignore */ }
+            } catch {
+                // Keep the last valid branding if a refresh fails temporarily.
+            }
         };
 
-        fetchNotifsAndTenant();
+        fetchNotifications();
+        fetchClinicConfig();
 
         const handleTenantUpdated = () => {
-            fetchNotifsAndTenant();
+            fetchClinicConfig(true);
         };
         window.addEventListener("tenant-updated", handleTenantUpdated);
 
         const channel = supabase
             .channel(`admin-notifs-${inquilino}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'notificaciones', filter: `tenant_id=eq.${inquilino}` }, fetchNotifsAndTenant)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'notificaciones', filter: `tenant_id=eq.${inquilino}` },
+                fetchNotifications
+            )
             .subscribe();
 
         return () => {
+            cancelled = true;
             supabase.removeChannel(channel);
             window.removeEventListener("tenant-updated", handleTenantUpdated);
         };

@@ -1,5 +1,6 @@
 import React from 'react';
 import InteractiveTooth from './InteractiveTooth';
+import { DENTITION_ROWS, getDentitionVisibility } from '../utils/odontogramInteraction.mjs';
 
 // Ancho de cada slot de diente — mismo valor para el selector circular y la imagen
 // 2.5vw = 32px @ 1284px viewport, 40px @ 1600px  → encaja sin overflow
@@ -12,13 +13,7 @@ export default function OdontogramaVisual({
     activeToothId, 
     surfaceFilter 
 }) {
-    const RowUpperPermanent = [18, 17, 16, 15, 14, 13, 12, 11,   21, 22, 23, 24, 25, 26, 27, 28];
-    const RowUpperTemp      = [55, 54, 53, 52, 51,               61, 62, 63, 64, 65];
-    const RowLowerTemp      = [85, 84, 83, 82, 81,               71, 72, 73, 74, 75];
-    const RowLowerPermanent = [48, 47, 46, 45, 44, 43, 42, 41,   31, 32, 33, 34, 35, 36, 37, 38];
-
-    const showAdult = tipoDenticion === 'adulto' || tipoDenticion === 'completo';
-    const showChild = tipoDenticion === 'nino'   || tipoDenticion === 'completo';
+    const { showPermanent, showTemporary } = getDentitionVisibility(tipoDenticion);
 
     const renderRow = (teethArray) => {
         const halfLen = Math.floor(teethArray.length / 2);
@@ -57,8 +52,8 @@ export default function OdontogramaVisual({
 
                 {/* Arcada Superior */}
                 <div className="flex flex-col items-center w-full">
-                    {showAdult && renderRow(RowUpperPermanent)}
-                    {showChild && renderRow(RowUpperTemp)}
+                    {showPermanent && renderRow(DENTITION_ROWS.upperPermanent)}
+                    {showTemporary && renderRow(DENTITION_ROWS.upperTemporary)}
                 </div>
 
                 {/* Plano oclusal */}
@@ -72,8 +67,8 @@ export default function OdontogramaVisual({
 
                 {/* Arcada Inferior */}
                 <div className="flex flex-col items-center w-full">
-                    {showChild && renderRow(RowLowerTemp)}
-                    {showAdult && renderRow(RowLowerPermanent)}
+                    {showTemporary && renderRow(DENTITION_ROWS.lowerTemporary)}
+                    {showPermanent && renderRow(DENTITION_ROWS.lowerPermanent)}
                 </div>
 
             </div>

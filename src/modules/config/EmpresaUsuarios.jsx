@@ -11,7 +11,13 @@ import {
 } from "../../services/userAdminService";
 
 import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiX, FiCheck, FiFilter, FiUser, FiArrowLeft, FiArrowRight, FiSave, FiInfo, FiMail, FiPhone, FiCreditCard, FiMapPin, FiActivity, FiLayers, FiChevronRight, FiChevronLeft, FiChevronsRight, FiChevronsLeft, FiEye, FiEyeOff, FiHelpCircle } from "react-icons/fi";
-import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
+import {
+    deleteConfigItem,
+    getConfigItems,
+    getConfigSection,
+    saveConfigItem,
+    saveConfigSection,
+} from "../../services/configPersistenceService";
 import Input from "../../components/ui/Input";
 
 const normalizeDate = (val) => {
@@ -57,6 +63,20 @@ const extractNombreApellido = (rawNombre, rawApellido, rawFullName) => {
         }
     }
     return { nombre: nom, apellido: ape };
+};
+const resolveTenantPlan = (tenant) => {
+    const rawPlan = tenant?.plan;
+    const plan = rawPlan && typeof rawPlan === "object" ? rawPlan : { id: rawPlan };
+    const key = String(plan.id || tenant?.planId || "consultorio").toLowerCase();
+    const fallbackLimit = key.includes("enterp")
+        ? 999
+        : (key.includes("clinica") || key.includes("clínica") || key.includes("pro") ? 12 : 2);
+
+    return {
+        ...plan,
+        name: plan.name || (fallbackLimit === 999 ? "Enterprise" : fallbackLimit === 12 ? "Clínica" : "Consultorio"),
+        maxUsers: Number(plan.maxUsers ?? fallbackLimit),
+    };
 };
 
 export default function EmpresaUsuarios() {
@@ -139,14 +159,22 @@ export default function EmpresaUsuarios() {
         if (!userProfile?.inquilino) return;
         setLoading(true);
         try {
-            const [uRes, sData, cRes, configUsersData] = await Promise.all([
+            const [
+                uRes,
+                sData,
+                userDetailsMap,
+                configUsersData,
+                configuredProfiles,
+                configuredSpecialties
+            ] = await Promise.all([
                 supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
                 getConfigItems(userProfile.inquilino, "sucursales", "sucursales"),
-                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle(),
-                getConfigItems(userProfile.inquilino, "usuarios", null)
+                getConfigSection(userProfile.inquilino, "user_details", {}),
+                getConfigItems(userProfile.inquilino, "usuarios", null),
+                getConfigItems(userProfile.inquilino, "perfiles", null),
+                getConfigItems(userProfile.inquilino, "especialidades", "especialidades")
             ]);
-
-            const userDetailsMap = cRes.data?.config?.user_details || {};
+            if (uRes.error) throw uRes.error;
             const profilesMap = new Map();
 
             // A. Cargar usuarios desde public.profiles
@@ -184,7 +212,7 @@ export default function EmpresaUsuarios() {
                     direccion: detail.direccion || "",
                     genero: detail.genero || "Masculino",
                     fechaNacimiento: normalizeDate(detail.fechaNacimiento || u.fecha_nacimiento || u.fechaNacimiento || ""),
-                    password: detail.password || u.password || "",
+                    password: "",
                     esDoctor,
                     activo: u.activo !== false
                 });
@@ -220,7 +248,7 @@ export default function EmpresaUsuarios() {
                     direccion: u.direccion || existing.direccion || "",
                     genero: u.genero || existing.genero || "Masculino",
                     fechaNacimiento: normalizeDate(u.fechaNacimiento || existing.fechaNacimiento || ""),
-                    password: u.password || existing.password || "",
+                    password: "",
                     esDoctor: u.esDoctor ?? existing.esDoctor ?? true,
                     activo: u.activo !== false
                 });
@@ -228,13 +256,13 @@ export default function EmpresaUsuarios() {
 
             const mergedUsersList = Array.from(profilesMap.values());
 
-            const rolesList = (cRes.data?.config?.perfiles || []).map(p => ({
+            const rolesList = configuredProfiles.map(p => ({
                 id: p.nombre || p.id,
                 nombre: p.nombre
             }));
 
             // Extraer especialidades de website_config → formato {id, nombre}
-            const rawEspecialidades = cRes.data?.config?.especialidades || [];
+            const rawEspecialidades = configuredSpecialties;
             const defaultEspecialidades = [
                 "Odontología General", "Ortodoncia", "Endodoncia", "Periodoncia",
                 "Cirugía Oral", "Odontopediatría", "Estética Dental",
@@ -331,8 +359,8 @@ export default function EmpresaUsuarios() {
             });
         } else {
             // Validar límite máximo de usuarios del plan de la clínica
-            const tenantPlanObj = userProfile?.tenant?.plan || {};
-            const maxUsersLimit = tenantPlanObj.maxUsers || 2;
+            const tenantPlanObj = resolveTenantPlan(userProfile?.tenant);
+            const maxUsersLimit = tenantPlanObj.maxUsers;
             const currentCount = users.length;
 
             if (currentCount >= maxUsersLimit) {
@@ -415,8 +443,8 @@ export default function EmpresaUsuarios() {
 
         // Validar límite de usuarios antes de guardar un nuevo usuario
         if (!editId) {
-            const tenantPlanObj = userProfile?.tenant?.plan || {};
-            const maxUsersLimit = tenantPlanObj.maxUsers || 2;
+            const tenantPlanObj = resolveTenantPlan(userProfile?.tenant);
+            const maxUsersLimit = tenantPlanObj.maxUsers;
             const currentCount = users.length;
             if (currentCount >= maxUsersLimit) {
                 return toast.error(`⚠️ Has alcanzado el límite máximo de ${maxUsersLimit} usuario(s) de tu plan actual (${tenantPlanObj.name || 'Consultorio'}). Actualiza tu plan para agregar más usuarios.`);
@@ -426,10 +454,11 @@ export default function EmpresaUsuarios() {
         setSaving(true);
         try {
             // 2. Validar duplicación de correo en la base de datos (tabla profiles)
-            const { data: dbCheck } = await supabase
+            const { data: dbCheck, error: dbCheckError } = await supabase
                 .from("profiles")
                 .select("id, full_name, email")
                 .ilike("email", targetEmail);
+            if (dbCheckError) throw dbCheckError;
 
             const dbDuplicate = dbCheck?.find(p => p.id !== editId);
             if (dbDuplicate) {
@@ -459,81 +488,47 @@ export default function EmpresaUsuarios() {
             });
             const targetId = res?.user?.id || editId || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
             
-            // Guardar configuración extendida de usuario (sucursales, especialidades, etc.) en website_config
-            try {
-                const { data: cfgData } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", userProfile.inquilino)
-                    .maybeSingle();
+            // Guardar únicamente metadatos no sensibles del usuario.
+            const currentUserDetails = await getConfigSection(
+                userProfile.inquilino,
+                "user_details",
+                {}
+            );
+            const userDetail = {
+                nombre: formData.nombre.trim(),
+                apellido: formData.apellido.trim(),
+                tipoDocumento: formData.tipoDocumento || "Cédula de ciudadanía",
+                numeroDocumento: formData.numeroDocumento?.trim() || "",
+                telefonoMovil: formData.telefonoMovil?.trim() || "",
+                telefonoFijo: formData.telefonoFijo?.trim() || "",
+                direccion: formData.direccion?.trim() || "",
+                genero: formData.genero || "Masculino",
+                fechaNacimiento: formData.fechaNacimiento || "",
+                sucursales: formData.sucursales || [],
+                especialidades: formData.especialidades || [],
+                esDoctor: formData.esDoctor || false,
+                esLaboratory: formData.esLaboratory || false,
+                seeOtherDoctorsData: formData.seeOtherDoctorsData || false,
+                comisionPorcentaje: formData.comisionPorcentaje || 0,
+                clinicalDocsWithLogo: formData.clinicalDocsWithLogo !== false,
+                clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
+                encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
+                formaPago: formData.formaPago || "Realizadas y pagadas"
+            };
+            await saveConfigSection(userProfile.inquilino, "user_details", {
+                ...(currentUserDetails || {}),
+                [targetId]: userDetail
+            });
 
-                const currentConfig = cfgData?.config || {};
-                const userDetails = currentConfig.user_details || {};
-
-                userDetails[targetId] = {
-                    nombre: formData.nombre.trim(),
-                    apellido: formData.apellido.trim(),
-                    tipoDocumento: formData.tipoDocumento || "Cédula de ciudadanía",
-                    numeroDocumento: formData.numeroDocumento?.trim() || "",
-                    telefonoMovil: formData.telefonoMovil?.trim() || "",
-                    telefonoFijo: formData.telefonoFijo?.trim() || "",
-                    direccion: formData.direccion?.trim() || "",
-                    genero: formData.genero || "Masculino",
-                    fechaNacimiento: formData.fechaNacimiento || "",
-                    sucursales: formData.sucursales || [],
-                    especialidades: formData.especialidades || [],
-                    esDoctor: formData.esDoctor || false,
-                    esLaboratory: formData.esLaboratory || false,
-                    seeOtherDoctorsData: formData.seeOtherDoctorsData || false,
-                    comisionPorcentaje: formData.comisionPorcentaje || 0,
-                    clinicalDocsWithLogo: formData.clinicalDocsWithLogo !== undefined ? formData.clinicalDocsWithLogo : true,
-                    clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
-                    encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
-                    formaPago: formData.formaPago || "Realizadas y pagadas"
-                };
-
-                await supabase
-                    .from("website_config")
-                    .upsert({
-                        tenant_id: userProfile.inquilino,
-                        config: {
-                            ...currentConfig,
-                            user_details: userDetails
-                        }
-                    }, { onConflict: "tenant_id" });
-
-                // Persistencia unificada a través de configPersistenceService
-                await saveConfigItem(userProfile.inquilino, "usuarios", null, {
-                    id: targetId,
-                    nombre: formData.nombre.trim(),
-                    apellido: formData.apellido.trim(),
-                    nombreCompleto: fullName,
-                    email: targetEmail,
-                    rol: roleName,
-                    profileId: roleName,
-                    tipoDocumento: formData.tipoDocumento || "Cédula de ciudadanía",
-                    numeroDocumento: formData.numeroDocumento?.trim() || "",
-                    telefonoMovil: formData.telefonoMovil?.trim() || "",
-                    telefonoFijo: formData.telefonoFijo?.trim() || "",
-                    direccion: formData.direccion?.trim() || "",
-                    genero: formData.genero || "Masculino",
-                    fechaNacimiento: formData.fechaNacimiento || "",
-                    password: formData.password || "",
-                    sucursales: formData.sucursales || [],
-                    especialidades: formData.especialidades || [],
-                    esDoctor: formData.esDoctor || false,
-                    esLaboratory: formData.esLaboratory || false,
-                    seeOtherDoctorsData: formData.seeOtherDoctorsData || false,
-                    comisionPorcentaje: formData.comisionPorcentaje || 0,
-                    clinicalDocsWithLogo: formData.clinicalDocsWithLogo !== undefined ? formData.clinicalDocsWithLogo : true,
-                    clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
-                    encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
-                    formaPago: formData.formaPago || "Realizadas y pagadas",
-                    activo: true
-                });
-            } catch (cfgErr) {
-                console.warn("Error guardando detalles extendidos en website_config:", cfgErr);
-            }
+            await saveConfigItem(userProfile.inquilino, "usuarios", null, {
+                id: targetId,
+                ...userDetail,
+                nombreCompleto: fullName,
+                email: targetEmail,
+                rol: roleName,
+                profileId: roleName,
+                activo: true
+            });
 
             toast.success(editId ? 'Usuario actualizado correctamente' : 'Usuario creado con éxito');
             setModalOpen(false);
@@ -583,29 +578,19 @@ export default function EmpresaUsuarios() {
             await deleteManagedUser(userToDelete.id);
             await deleteConfigItem(userProfile.inquilino, "usuarios", "usuarios", userToDelete.id);
 
-            // También limpiar user_details de website_config si aplica
-            try {
-                const { data: cfgData } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", userProfile.inquilino)
-                    .maybeSingle();
-
-                if (cfgData?.config?.user_details && cfgData.config.user_details[userToDelete.id]) {
-                    const nextUserDetails = { ...cfgData.config.user_details };
-                    delete nextUserDetails[userToDelete.id];
-                    await supabase
-                        .from("website_config")
-                        .update({
-                            config: {
-                                ...cfgData.config,
-                                user_details: nextUserDetails
-                            }
-                        })
-                        .eq("tenant_id", userProfile.inquilino);
-                }
-            } catch (cfgErr) {
-                console.warn("Error limpiando website_config en eliminación:", cfgErr);
+            const currentUserDetails = await getConfigSection(
+                userProfile.inquilino,
+                "user_details",
+                {}
+            );
+            if (currentUserDetails?.[userToDelete.id]) {
+                const nextUserDetails = { ...currentUserDetails };
+                delete nextUserDetails[userToDelete.id];
+                await saveConfigSection(
+                    userProfile.inquilino,
+                    "user_details",
+                    nextUserDetails
+                );
             }
 
             toast.success('Usuario eliminado correctamente');
@@ -1341,6 +1326,3 @@ export default function EmpresaUsuarios() {
         </div >
     );
 }
-
-
-

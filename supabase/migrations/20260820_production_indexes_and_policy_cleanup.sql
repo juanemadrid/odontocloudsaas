@@ -1,0 +1,36 @@
+-- Production hardening: cover every currently unindexed foreign key.
+-- Statements are idempotent and do not modify application rows or access rules.
+
+create index if not exists actividad_tenant_id_idx on public.actividad (tenant_id);
+create index if not exists catalogo_procedimientos_tenant_id_idx on public.catalogo_procedimientos (tenant_id);
+create index if not exists citas_consultorio_id_idx on public.citas (consultorio_id);
+create index if not exists citas_paciente_id_idx on public.citas (paciente_id);
+create index if not exists citas_profesional_id_idx on public.citas (profesional_id);
+create index if not exists documentos_clinicos_paciente_id_idx on public.documentos_clinicos (paciente_id);
+create index if not exists entidades_tenant_id_idx on public.entidades (tenant_id);
+create index if not exists evoluciones_paciente_id_idx on public.evoluciones (paciente_id);
+create index if not exists evoluciones_profesional_id_idx on public.evoluciones (profesional_id);
+create index if not exists facturas_paciente_id_idx on public.facturas (paciente_id);
+create index if not exists formulaciones_evolucion_id_idx on public.formulaciones (evolucion_id);
+create index if not exists formulaciones_profesional_id_idx on public.formulaciones (profesional_id);
+create index if not exists formulaciones_tenant_id_idx on public.formulaciones (tenant_id);
+create index if not exists liquidaciones_profesional_id_idx on public.liquidaciones (profesional_id);
+create index if not exists liquidaciones_tenant_id_idx on public.liquidaciones (tenant_id);
+create index if not exists movimientos_caja_caja_id_idx on public.movimientos_caja (caja_id);
+create index if not exists notas_credito_factura_id_idx on public.notas_credito (factura_id);
+create index if not exists notas_credito_tenant_id_idx on public.notas_credito (tenant_id);
+create index if not exists notas_debito_factura_id_idx on public.notas_debito (factura_id);
+create index if not exists notas_debito_tenant_id_idx on public.notas_debito (tenant_id);
+create index if not exists odontogramas_paciente_id_idx on public.odontogramas (paciente_id);
+create index if not exists outbound_message_log_user_id_idx on public.outbound_message_log (user_id);
+create index if not exists pagos_factura_id_idx on public.pagos (factura_id);
+create index if not exists patient_portal_sessions_patient_id_idx on public.patient_portal_sessions (patient_id);
+create index if not exists patient_portal_sessions_tenant_id_idx on public.patient_portal_sessions (tenant_id);
+create index if not exists recibos_caja_paciente_id_idx on public.recibos_caja (paciente_id);
+create index if not exists recibos_caja_tenant_id_idx on public.recibos_caja (tenant_id);
+create index if not exists rips_archivos_tenant_id_idx on public.rips_archivos (tenant_id);
+create index if not exists saldos_favor_paciente_id_idx on public.saldos_favor (paciente_id);
+create index if not exists saldos_favor_tenant_id_idx on public.saldos_favor (tenant_id);
+create index if not exists subscription_change_requests_processed_by_idx on public.subscription_change_requests (processed_by);
+create index if not exists subscription_change_requests_requested_by_idx on public.subscription_change_requests (requested_by);
+create index if not exists treatment_plans_paciente_id_idx on public.treatment_plans (paciente_id);

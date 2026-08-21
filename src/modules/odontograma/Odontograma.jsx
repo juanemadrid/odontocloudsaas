@@ -324,6 +324,7 @@ export default function Odontograma({ embeddedPatient }) {
                     estado: h.estado || d.estado || "Abierto",
                     creado: d.created_at,
                     creadoPor: h.creadoPor || d.creado_por || "usuario@sistema.com",
+                    tipoDenticion: h.tipoDenticion || d.tipo_denticion || "completo",
                     profesional: h.profesional || d.profesional || "Profesional de Planta"
                 };
             }));
@@ -350,6 +351,7 @@ export default function Odontograma({ embeddedPatient }) {
                         data: {},
                         plan: [],
                         estado: "Abierto",
+                        tipoDenticion: "completo",
                         creadoPor: creador,
                         profesional: prof
                     },
@@ -365,6 +367,7 @@ export default function Odontograma({ embeddedPatient }) {
                 plan: h.plan || [], 
                 observaciones: data.observaciones || "", 
                 estado: h.estado || "Abierto",
+                tipoDenticion: h.tipoDenticion || "completo",
                 creadoPor: h.creadoPor || creador,
                 profesional: h.profesional || prof
             });
@@ -380,6 +383,7 @@ export default function Odontograma({ embeddedPatient }) {
         setOdontogramaData(s.data || {});
         setPlanTratamiento(s.plan || []);
         setObservaciones(s.observaciones || "");
+        setTipoDenticion(s.tipoDenticion || "completo");
         setViewMode("EDITOR");
     };
 
@@ -707,29 +711,42 @@ export default function Odontograma({ embeddedPatient }) {
             };
         });
 
-        if (selectedToolId === "borrador") return;
+        if (selectedToolId === "borrador") {
+            setPlanTratamiento(prev => prev.filter(item => {
+                if (String(item.diente) !== String(dienteId)) return true;
+                return targetZona !== "Completo" && item.zona !== targetZona;
+            }));
+            return;
+        }
 
         const label = tool.label;
         const zonaLabel = isGeneralTool ? "Pieza Completa" : getClinicalZonaLabel(dienteId, targetZona);
         const fullDescription = isGeneralTool ? label : `${label} - ${zonaLabel}`;
-        
-        setPlanTratamiento(prev => [...prev,
-            { 
+        const planZone = (isGeneralTool || targetZona === "Completo") ? "Completo" : targetZona;
+        const nextItem = {
                 diente: dienteId, 
-                zona: (isGeneralTool || targetZona === "Completo") ? "Completo" : targetZona,
+                zona: planZone,
                 zonaLabel: zonaLabel, 
                 tratamiento: fullDescription, 
                 color: tool.color, 
                 estado: "Planificado", 
                 fechaISO: new Date().toISOString(),
                 toolId: tool.id
-            }
-        ]);
+            };
+
+        setPlanTratamiento(prev => {
+            const existingIndex = prev.findIndex(item =>
+                String(item.diente) === String(dienteId) && item.zona === planZone
+            );
+            if (existingIndex < 0) return [...prev, nextItem];
+            const next = [...prev];
+            next[existingIndex] = nextItem;
+            return next;
+        });
     };
 
     const handleSurfaceFilterChange = (newSurfaceId) => {
-        const nextSurface = surfaceFilter === newSurfaceId ? null : newSurfaceId;
-        setSurfaceFilter(nextSurface);
+        setSurfaceFilter(newSurfaceId);
         setActiveToothId(null);
     };
 
@@ -745,6 +762,7 @@ export default function Odontograma({ embeddedPatient }) {
                         data: odontogramaData,
                         plan: planTratamiento,
                         estado: newEstado,
+                        tipoDenticion,
                         creadoPor: currentSesion.creadoPor || userProfile?.email || "usuario@sistema.com",
                         profesional: currentSesion.profesional || userProfile?.nombreCompleto || "Profesional de Planta"
                     },
@@ -985,7 +1003,7 @@ export default function Odontograma({ embeddedPatient }) {
                     <div style={{ position: "absolute", left: "-9999px", top: "-9999px", width: "900px" }} ref={printTargetRef}>
                         <OdontogramaVisual
                             odontogramaData={printingSesion.data || {}}
-                            tipoDenticion="completo"
+                            tipoDenticion={printingSesion.tipoDenticion || "completo"}
                         />
                     </div>
                 )}
@@ -1083,7 +1101,8 @@ export default function Odontograma({ embeddedPatient }) {
                             ].map(surf => (
                                 <label key={surf.id} className="flex items-center gap-2 cursor-pointer group">
                                     <input
-                                        type="checkbox"
+                                        type="radio"
+                                        name="odontograma-superficie"
                                         checked={surfaceFilter === surf.id}
                                         onChange={() => handleSurfaceFilterChange(surf.id)}
                                         className="w-4 h-4 text-indigo-600 bg-slate-50 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"

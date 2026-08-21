@@ -26,7 +26,6 @@ const CONFIG_ITEMS = [
     { label: "Parámetros", slug: "parametros", icon: FiSettings },
     { label: "Recursos físicos", slug: "recursos-fisicos", icon: FiServer },
     { label: "Plantillas Doc. Clínicos", slug: "plantillas-clinicas", icon: FiFileText },
-    { label: "Pestañas Consulta Med.", slug: "pestanas-consulta", icon: FiLayout },
     { label: "Cargas", slug: "cargas", icon: FiSettings },
     { label: "Impuestos", slug: "impuestos", icon: FiCreditCard },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiList },

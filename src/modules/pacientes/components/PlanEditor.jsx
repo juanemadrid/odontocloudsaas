@@ -150,25 +150,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             try {
                 const { getFactusCredentialsForTenant } = await import('../../../services/factusAdminService');
                 const creds = await getFactusCredentialsForTenant(inquilino);
-                if (creds) {
-                    setFactusCredentials(creds);
-                } else {
-                    const { data: d } = await supabase
-                        .from('tenants')
-                        .select('*')
-                        .eq('id', inquilino)
-                        .maybeSingle();
-                    if (d && d.factusClientId && d.factusClientSecret) {
-                        setFactusCredentials({
-                            factusClientId:         d.factusClientId,
-                            factusClientSecret:     d.factusClientSecret,
-                            username:               d.factusUsername,
-                            password:               d.factusPassword,
-                            factusTestMode:         d.factusTestMode !== undefined ? d.factusTestMode : true,
-                            factusNumberingRangeId: d.factusNumberingRangeId || null,
-                        });
-                    }
-                }
+                setFactusCredentials(creds || null);
             } catch (e) { console.error('Error loading Factus credentials:', e); }
         })();
     }, [inquilino]);

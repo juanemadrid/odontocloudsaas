@@ -9,6 +9,8 @@ const AuthContext = createContext({
   signIn: () => Promise.resolve(),
 });
 
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
@@ -24,9 +26,10 @@ export const AuthProvider = ({ children }) => {
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
           const parsed = JSON.parse(cached);
-          // Descartar caché si no tiene inquilino válido
-          if (parsed && parsed.inquilino) {
-            console.log("AuthContext - Usando caché con inquilino:", parsed.inquilino);
+          const cacheAge = Date.now() - Number(parsed?.cachedAt || 0);
+          // Reusar únicamente perfiles completos y recientes. Así una suspensión
+          // o cambio de permisos no queda oculto durante toda la sesión.
+          if (parsed && parsed.inquilino && cacheAge >= 0 && cacheAge < PROFILE_CACHE_TTL_MS) {
             return parsed;
           } else {
             console.warn("AuthContext - Caché inválido (sin inquilino), recargando...");
@@ -48,56 +51,13 @@ export const AuthProvider = ({ children }) => {
         console.warn("AuthContext - Error al obtener perfil desde Supabase:", error.message);
       }
 
-      // Auto-recuperación de perfil si el usuario está en auth.users pero no tiene fila en public.profiles
-      if (!profile && authUser.email) {
-        console.warn("AuthContext - Perfil no encontrado para el usuario autenticado, iniciando auto-recuperación...");
-        const meta = authUser.user_metadata || {};
-        const tenantId = meta.tenant_id;
-        const fullName = meta.full_name || authUser.email;
-        const userRole = meta.role || "admin";
-
-        if (tenantId) {
-          try {
-            // 1. Asegurar la clínica en public.tenants
-            await supabase.from("tenants").upsert([{
-              id: tenantId,
-              nombre: `Clínica ${fullName}`,
-              activo: true
-            }]);
-
-            // 2. Crear el perfil en public.profiles
-            await supabase.from("profiles").upsert([{
-              id: authUser.id,
-              email: authUser.email.toLowerCase().trim(),
-              full_name: fullName,
-              role: userRole,
-              tenant_id: tenantId,
-              activo: true
-            }]);
-
-            // 3. Re-consultar perfil recién sanado
-            const { data: healedProfile } = await supabase
-              .from("profiles")
-              .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
-              .eq("id", authUser.id)
-              .maybeSingle();
-
-            if (healedProfile) {
-              profile = healedProfile;
-            }
-          } catch (healErr) {
-            console.error("AuthContext - Error durante auto-recuperación de perfil:", healErr);
-          }
-        }
-      }
-
       if (profile) {
-        // Asignar fallback seguro si la relación tenant no pudo unirse por RLS
+        // Nunca inventar ni reutilizar el tenant de otra clínica. Si la relación
+        // no está disponible, conservar sólo el tenant_id autorizado del perfil.
         if (!profile.tenant) {
           profile.tenant = {
-            id: profile.tenant_id || "2e573a5a-70b2-4175-8332-4ebfa9bc0836",
-            nombre: "ATM Centro del Dolor",
-            activo: true
+            id: profile.tenant_id,
+            nombre: "Clínica"
           };
         }
 
@@ -177,6 +137,7 @@ export const AuthProvider = ({ children }) => {
 
         const fullProfile = {
           ...profile,
+          cachedAt: Date.now(),
           uid: profile.id,
           rol: (profile.role || "odontologo").trim().toLowerCase(),
           role: profile.role,
@@ -208,17 +169,15 @@ export const AuthProvider = ({ children }) => {
         return fullProfile;
       }
 
-      // Fallback: leer tenant_id y rol desde el JWT (user_metadata)
-      // Esto funciona cuando RLS aún no permite leer profiles pero el JWT ya tiene los datos
-      const meta = authUser.user_metadata || {};
-      const isSuperAdminEmail = authUser.email?.toLowerCase() === "madridsystem@outlook.es";
-      const isAtmEmail = authUser.email?.toLowerCase() === "atmcentrodeldolor@gmail.com";
-      const jwtTenantId = meta.tenant_id || (isAtmEmail ? "2e573a5a-70b2-4175-8332-4ebfa9bc0836" : (isSuperAdminEmail ? "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" : "2e573a5a-70b2-4175-8332-4ebfa9bc0836"));
-      const jwtRole = meta.role || (isSuperAdminEmail ? "superadmin" : "admin");
-      const jwtName = meta.full_name || (isAtmEmail ? "ATM Centro del Dolor" : authUser.email?.split("@")[0]?.toUpperCase() || "Usuario");
+      // Único fallback permitido: app_metadata, que sólo puede escribir el
+      // servidor. user_metadata nunca decide tenant ni rol.
+      const appMeta = authUser.app_metadata || {};
+      const userMeta = authUser.user_metadata || {};
+      const jwtTenantId = appMeta.tenant_id || null;
+      const jwtRole = appMeta.role || null;
+      const jwtName = userMeta.full_name || authUser.email?.split("@")[0]?.toUpperCase() || "Usuario";
 
-      if (jwtTenantId) {
-        console.log("AuthContext - Usando fallback JWT para tenant_id:", jwtTenantId);
+      if (jwtTenantId && jwtRole) {
 
         // Intentar cargar datos del tenant
         let tenantInfo = { id: jwtTenantId, nombre: "Mi Clínica", nombreComercial: "Mi Clínica" };
@@ -251,6 +210,7 @@ export const AuthProvider = ({ children }) => {
           id: authUser.id,
           email: authUser.email,
           rol: jwtRole.trim().toLowerCase(),
+          cachedAt: Date.now(),
           role: jwtRole,
           inquilino: jwtTenantId,
           tenant_id: jwtTenantId,
@@ -307,26 +267,29 @@ export const AuthProvider = ({ children }) => {
     });
 
     // Escuchar cambios de autenticación en tiempo real en Supabase
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("AuthContext - Evento Supabase Auth:", event);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
-
-      if (session?.user) {
-        setUser(session.user);
-        const prof = await fetchUserProfile(session.user);
-        if (isMounted && prof) {
-          setUserProfile(prev => {
-            if (prev && prev.id === prof.id && prev.tenant_id === prof.tenant_id && prev.role === prof.role && prev.nombreCompleto === prof.nombreCompleto && prev.tenant?.id === prof.tenant?.id) {
-              return prev;
-            }
-            return prof;
-          });
+      // Supabase advierte que hacer llamadas async dentro del callback puede
+      // bloquear el cliente. Diferir el trabajo elimina la carrera del primer login.
+      window.setTimeout(async () => {
+        if (!isMounted) return;
+        if (session?.user) {
+          setUser(session.user);
+          const prof = await fetchUserProfile(session.user);
+          if (isMounted) {
+            setUserProfile(prev => {
+              if (prev && prof && prev.id === prof.id && prev.tenant_id === prof.tenant_id && prev.role === prof.role && prev.nombreCompleto === prof.nombreCompleto && prev.tenant?.id === prof.tenant?.id) {
+                return prev;
+              }
+              return prof;
+            });
+          }
+        } else {
+          setUser(null);
+          setUserProfile(null);
         }
-      } else {
-        setUser(null);
-        setUserProfile(null);
-      }
-      if (isMounted) setLoading(false);
+        if (isMounted) setLoading(false);
+      }, 0);
     });
 
     const handleTenantUpdated = async () => {

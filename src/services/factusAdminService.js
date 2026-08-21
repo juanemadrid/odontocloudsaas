@@ -121,7 +121,10 @@ export const getSucursalQuota = async (_sucursalId, tenantId) => {
       facturacionCuota: cuota,
       facturacionUsadas: usadas,
       disponibles: Math.max(0, cuota - usadas),
-      facturacionPlan: status.facturacionPlan || "personalizado"
+      facturacionPlan: status.facturacionPlan || "personalizado",
+      configured: status.configured === true,
+      factusTestMode: status.factusTestMode !== false,
+      factusNumberingRangeId: status.factusNumberingRangeId || null
     };
   } catch (error) {
     console.error("Error al obtener cuota de Factus:", error);
@@ -129,7 +132,10 @@ export const getSucursalQuota = async (_sucursalId, tenantId) => {
       facturacionCuota: 0,
       facturacionUsadas: 0,
       disponibles: 0,
-      facturacionPlan: "Sin configurar"
+      facturacionPlan: "Sin configurar",
+      configured: false,
+      factusTestMode: true,
+      factusNumberingRangeId: null
     };
   }
 };

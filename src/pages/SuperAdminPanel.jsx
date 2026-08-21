@@ -9,8 +9,10 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell } from "react-icons/fi";
 import "../styles/modern.css";
-import "../styles/utilities.css";
+import superAdminUtilities from "../styles/utilities.css?inline";
 import "../styles/theme.css";
+
+const SUPERADMIN_UTILITIES_STYLE_ID = "odontocloud-superadmin-utilities";
 
 const IconClinic = ({ className = "w-4 h-4" }) => (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -47,6 +49,15 @@ export default function SuperAdminPanel() {
     };
 
     useLayoutEffect(() => {
+        // These legacy utility names overlap Tailwind classes used by the clinic
+        // dashboard. Keep them local to the SuperAdmin route so a client-side
+        // logout/account switch cannot leave stale CSS behind until a refresh.
+        document.getElementById(SUPERADMIN_UTILITIES_STYLE_ID)?.remove();
+        const utilitiesStyle = document.createElement("style");
+        utilitiesStyle.id = SUPERADMIN_UTILITIES_STYLE_ID;
+        utilitiesStyle.textContent = superAdminUtilities;
+        document.head.appendChild(utilitiesStyle);
+
         // Enforce white background immediately to prevent style bleeding
         document.documentElement.style.setProperty("background-color", "#ffffff", "important");
         document.body.style.setProperty("background-color", "#ffffff", "important");
@@ -58,6 +69,7 @@ export default function SuperAdminPanel() {
 
         return () => {
             document.body.style.removeProperty("background-color");
+            utilitiesStyle.remove();
             document.body.style.removeProperty("background-image");
             document.documentElement.style.removeProperty("background-color");
             document.body.classList.remove("light-theme-forced");

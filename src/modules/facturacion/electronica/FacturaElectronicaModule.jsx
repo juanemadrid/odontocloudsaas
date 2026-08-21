@@ -128,17 +128,8 @@ export default function FacturaElectronicaModule() {
     }
     setDownloadingId(factura.id);
     try {
-      const { getFactusCredentialsForTenant } = await import("../../../services/factusAdminService");
-      const tenantCreds = await getFactusCredentialsForTenant(inquilino) || {};
-      const token = await factusService.getToken({
-        factusClientId: tenantCreds.factusClientId,
-        factusClientSecret: tenantCreds.factusClientSecret,
-        factusUsername: tenantCreds.factusUsername || tenantCreds.username,
-        factusPassword: tenantCreds.factusPassword || tenantCreds.password,
-        factusTestMode: tenantCreds.factusTestMode ?? true,
-      });
       const blob = await factusService.downloadInvoicePDF(
-        factura.factusInvoiceNumber, token, tenantCreds.factusTestMode ?? true
+        factura.factusInvoiceNumber
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

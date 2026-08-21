@@ -3,14 +3,14 @@
 // ===============================
 import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
 
-import Agenda from "../modules/agenda/Agenda";
-import Pacientes from "../modules/pacientes/Pacientes";
-import Odontograma from "../modules/odontograma/Odontograma";
-import Reportes from "../modules/reportes/Reportes";
-import AdministracionRouter from "../modules/administracion/AdministracionRouter";
-import ConfigRouter from "../modules/config/ConfigRouter";
-import FinancieroRouter from "../modules/financiero/FinancieroRouter";
-import Caja from "../modules/caja/Caja";
+const Agenda = React.lazy(() => import("../modules/agenda/Agenda"));
+const Pacientes = React.lazy(() => import("../modules/pacientes/Pacientes"));
+const Odontograma = React.lazy(() => import("../modules/odontograma/Odontograma"));
+const Reportes = React.lazy(() => import("../modules/reportes/Reportes"));
+const AdministracionRouter = React.lazy(() => import("../modules/administracion/AdministracionRouter"));
+const ConfigRouter = React.lazy(() => import("../modules/config/ConfigRouter"));
+const FinancieroRouter = React.lazy(() => import("../modules/financiero/FinancieroRouter"));
+const Caja = React.lazy(() => import("../modules/caja/Caja"));
 
 import DashboardLayout from "../layout/DashboardLayout";
 import ErrorBoundary from "../components/shared/ErrorBoundary";
@@ -1654,7 +1654,9 @@ export default function Dashboard() {
       {activeModule !== "Inicio" && (
         <div className="h-full w-full">
           <ErrorBoundary>
-            {renderModuleContent()}
+            <Suspense fallback={<div style={{ padding: 16 }}>Cargando módulo…</div>}>
+              {renderModuleContent()}
+            </Suspense>
           </ErrorBoundary>
         </div>
       )}

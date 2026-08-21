@@ -1,5 +1,6 @@
 // src/services/adminService.js
 import supabase from "../lib/supabaseClient";
+import { uploadOptimizedPublicFile } from "./storageUploadService";
 
 export const GLOBAL_CONFIG_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 
@@ -121,148 +122,6 @@ export const getTenants = async () => {
 /**
  * Registrar una nueva Clínica (Tenant) en Supabase PostgreSQL sin bloqueos RLS
  */
-export const createTenant = async (tenantData) => {
-    const adminPassword = String(tenantData.adminPassword || "");
-    if (adminPassword.length < 8) {
-        throw new Error("La contrasena inicial debe tener al menos 8 caracteres.");
-    }
-
-    const clinicName = tenantData.name || tenantData.nombre || "Nueva Clínica";
-    const adminEmail = tenantData.adminEmail || tenantData.contactEmail || "";
-    const planId = tenantData.planId || "free";
-    const planDuration = tenantData.planDuration || "monthly";
-
-    // 1. Creación Directa y Aprovisionamiento en PostgreSQL & website_config
-    const tenantId = crypto.randomUUID();
-
-    // a) Inserción en la tabla de PostgreSQL 'tenants'
-    const { data: dbTenant, error: dbErr } = await supabase
-        .from("tenants")
-        .insert([{
-            id: tenantId,
-            nombre: clinicName,
-            nit: tenantData.nit || "",
-            plan: planId,
-            activo: true
-        }])
-        .select()
-        .maybeSingle();
-
-    if (dbErr) {
-        console.warn("Advertencia al insertar en tabla tenants:", dbErr.message);
-    }
-
-    // b) Sincronización en website_config global
-    const { data: existingRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-        .maybeSingle();
-
-    const currentConfig = existingRow?.config || {};
-    const registeredTenants = Array.isArray(currentConfig.registered_tenants) ? currentConfig.registered_tenants : [];
-
-    const newTenantObj = {
-        id: tenantId,
-        nombre: clinicName,
-        name: clinicName,
-        nit: tenantData.nit || "",
-        telefono: tenantData.telefono || "",
-        direccion: tenantData.address || tenantData.direccion || "",
-        ciudad: tenantData.ciudad || "",
-        contactEmail: tenantData.contactEmail || tenantData.email || adminEmail,
-        adminName: tenantData.adminName || "",
-        adminEmail: adminEmail,
-        plan: planId,
-        planId: planId,
-        planDuration: planDuration,
-        activo: true,
-        createdAt: new Date().toISOString()
-    };
-
-    const updatedTenants = [...registeredTenants.filter(t => t?.id !== tenantId), newTenantObj];
-
-    const { error: wcErr } = await supabase
-        .from("website_config")
-        .upsert({
-            tenant_id: GLOBAL_CONFIG_TENANT_ID,
-            config: { ...currentConfig, registered_tenants: updatedTenants }
-        });
-
-    if (wcErr && dbErr) {
-        throw new Error(`No fue posible registrar la clínica: ${dbErr?.message || wcErr?.message}`);
-    }
-
-    // c) Creación y aprovisionamiento automático de la cuenta Auth y perfil de administrador para cualquier clínica
-    if (adminEmail && adminPassword) {
-        let rpcSuccess = false;
-        try {
-            const { data: rpcRes, error: rpcErr } = await supabase.rpc("admin_create_clinic_user", {
-                p_email: adminEmail.trim(),
-                p_password: adminPassword,
-                p_full_name: tenantData.adminName || `Administrador ${clinicName}`,
-                p_tenant_id: tenantId
-            });
-
-            if (!rpcErr && rpcRes?.success) {
-                rpcSuccess = true;
-            } else if (rpcErr) {
-                console.warn("Nota al aprovisionar usuario mediante RPC:", rpcErr?.message);
-            }
-        } catch (rpcErr) {
-            console.warn("Nota al aprovisionar usuario mediante RPC:", rpcErr?.message);
-        }
-
-        // Fallback automático si la función RPC aún no está creada en Supabase
-        if (!rpcSuccess) {
-            try {
-                // 1. Asegurar la inserción/actualización de la clínica en la tabla nativa public.tenants
-                await supabase.from("tenants").upsert([{
-                    id: tenantId,
-                    nombre: clinicName,
-                    plan: planId,
-                    activo: true
-                }]);
-
-                // 2. Crear cuenta en Supabase Auth
-                const { data: signUpData } = await supabase.auth['signUp']({
-                    email: adminEmail.trim(),
-                    password: adminPassword,
-                    options: {
-                        data: {
-                            full_name: tenantData.adminName || `Administrador ${clinicName}`,
-                            tenant_id: tenantId,
-                            role: 'admin'
-                        }
-                    }
-                });
-
-                const createdUserId = signUpData?.user?.id;
-                if (createdUserId) {
-                    await supabase.from("profiles").upsert([{
-                        id: createdUserId,
-                        email: adminEmail.trim(),
-                        full_name: tenantData.adminName || `Administrador ${clinicName}`,
-                        role: 'admin',
-                        tenant_id: tenantId,
-                        activo: true
-                    }]);
-                }
-            } catch (fallbackErr) {
-                console.warn("Error en fallback de aprovisionamiento automático:", fallbackErr?.message);
-            }
-        }
-    }
-
-    return {
-        id: tenantId,
-        nombre: clinicName,
-        adminEmail,
-        planId,
-        activo: true
-    };
-};
-
 /**
  * Actualizar detalles de una Clínica
  */
@@ -844,11 +703,13 @@ export const updateGlobalConfig = async (configData) => {
 
 export const uploadFile = async (file, folder = "general") => {
     const fileExt = file.name ? file.name.split(".").pop() : "jpg";
-    const filePath = `${folder}/${Date.now()}.${fileExt}`;
-    const { error } = await supabase.storage.from("public-assets").upload(filePath, file);
-    if (error) throw error;
-    const { data: { publicUrl } } = supabase.storage.from("public-assets").getPublicUrl(filePath);
-    return publicUrl;
+    const uploaded = await uploadOptimizedPublicFile({
+        bucket: "public-assets",
+        path: `${folder}/${Date.now()}.${fileExt}`,
+        file,
+        profile: "avatar",
+    });
+    return uploaded.publicUrl;
 };
 
 export const updateTenantPlan = async (tenantId, planId) => {
@@ -859,6 +720,53 @@ export const grantFreeMonth = async () => {
     return true;
 };
 
+const invokeRegisterClinic = async (action, payload = {}) => {
+    const { data, error } = await supabase.functions.invoke("register-clinic", {
+        body: { action, ...payload }
+    });
+
+    if (error) {
+        let message = error.message || "No fue posible completar la operacion de clinicas.";
+        try {
+            const details = await error.context?.json();
+            message = details?.error || message;
+        } catch {
+            // La respuesta de Functions puede no incluir JSON.
+        }
+        throw new Error(message);
+    }
+    if (!data?.success) {
+        throw new Error(data?.error || "La operacion de clinicas fue rechazada.");
+    }
+    return data;
+};
+
+export const createTenant = async (tenantData) => {
+    const clinicName = tenantData.name || tenantData.nombre || "Nueva Clinica";
+    const adminEmail = tenantData.adminEmail || tenantData.contactEmail || "";
+    const response = await invokeRegisterClinic("create_clinic", {
+        clinicName,
+        adminName: tenantData.adminName || `Administrador ${clinicName}`,
+        adminEmail,
+        adminPassword: String(tenantData.adminPassword || ""),
+        requestedPlan: tenantData.planId || tenantData.plan || "free",
+        planDuration: tenantData.planDuration || "monthly",
+        nit: tenantData.nit || "",
+        telefono: tenantData.telefono || "",
+        direccion: tenantData.address || tenantData.direccion || "",
+        ciudad: tenantData.ciudad || "",
+        contactEmail: tenantData.contactEmail || tenantData.email || adminEmail
+    });
+
+    return {
+        id: response.tenantId,
+        nombre: clinicName,
+        adminEmail,
+        planId: tenantData.planId || "free",
+        activo: true
+    };
+};
+
 export const createSubscriptionRequest = async ({
     adminEmail,
     adminPassword,
@@ -866,148 +774,42 @@ export const createSubscriptionRequest = async ({
     clinicName,
     requestedPlan
 }) => {
-    try {
-        const { data: existingRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-            .maybeSingle();
-
-        const currentConfig = existingRow?.config || {};
-        const requests = Array.isArray(currentConfig.subscription_requests) ? currentConfig.subscription_requests : [];
-
-        const newRequest = {
-            id: "req-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5),
-            tenantName: clinicName || "Nueva Clínica",
-            adminName: adminName || "",
-            adminEmail: adminEmail || "",
-            adminPassword: adminPassword || "",
-            requestedPlanName: typeof requestedPlan === "object" ? (requestedPlan?.name || "Trial") : (requestedPlan || "Trial"),
-            requestedPlanId: typeof requestedPlan === "object" ? (requestedPlan?.id || "trial") : (requestedPlan || "trial"),
-            createdAt: new Date().toISOString(),
-            status: "pending"
-        };
-
-        const updatedRequests = [newRequest, ...requests.filter(r => r.adminEmail !== adminEmail || r.status !== "pending")];
-
-        const { error } = await supabase
-            .from("website_config")
-            .upsert({
-                tenant_id: GLOBAL_CONFIG_TENANT_ID,
-                config: {
-                    ...currentConfig,
-                    subscription_requests: updatedRequests
-                },
-                updated_at: new Date().toISOString()
-            });
-
-        if (error) throw error;
-        return newRequest;
-    } catch (err) {
-        console.error("Error al guardar solicitud de demostración:", err);
-        throw err;
-    }
+    const response = await invokeRegisterClinic("submit_request", {
+        adminEmail,
+        adminPassword,
+        adminName,
+        clinicName,
+        requestedPlan
+    });
+    return response.request;
 };
 
 export const getSubscriptionRequests = async () => {
-    try {
-        const { data: existingRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-            .maybeSingle();
+    const { data, error } = await supabase
+        .from("subscription_requests")
+        .select("id, tenant_name, admin_name, admin_email, requested_plan_id, requested_plan_name, status, created_at")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+    if (error) throw error;
 
-        const requests = existingRow?.config?.subscription_requests || [];
-        return requests.filter(r => r.status === "pending");
-    } catch (err) {
-        console.error("Error al obtener solicitudes:", err);
-        return [];
-    }
+    return (data || []).map(request => ({
+        id: request.id,
+        tenantName: request.tenant_name,
+        adminName: request.admin_name,
+        adminEmail: request.admin_email,
+        requestedPlanId: request.requested_plan_id,
+        requestedPlanName: request.requested_plan_name,
+        status: request.status,
+        createdAt: request.created_at
+    }));
 };
 
 export const approveSubscriptionRequest = async (requestId) => {
-    try {
-        // 1. Obtener la solicitud destino
-        const { data: rowBefore } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-            .maybeSingle();
-
-        const requestsBefore = rowBefore?.config?.subscription_requests || [];
-        const targetReq = requestsBefore.find(r => r.id === requestId);
-
-        if (!targetReq) {
-            throw new Error("No se encontró la solicitud especificada.");
-        }
-
-        // 2. Crear la clínica oficialmente en el sistema
-        await createTenant({
-            name: targetReq.tenantName,
-            adminName: targetReq.adminName,
-            adminEmail: targetReq.adminEmail,
-            adminPassword: targetReq.adminPassword,
-            planId: targetReq.requestedPlanId || "consultorio",
-            planDuration: "monthly"
-        });
-
-        // 3. Re-consultar la configuración fresca para no sobrescribir registered_tenants creados por createTenant
-        const { data: rowAfter } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-            .maybeSingle();
-
-        const freshConfig = rowAfter?.config || {};
-        const freshRequests = freshConfig.subscription_requests || [];
-
-        const updatedRequests = freshRequests.map(r => r.id === requestId ? { ...r, status: "approved", approvedAt: new Date().toISOString() } : r);
-
-        await supabase
-            .from("website_config")
-            .upsert({
-                tenant_id: GLOBAL_CONFIG_TENANT_ID,
-                config: {
-                    ...freshConfig,
-                    subscription_requests: updatedRequests
-                },
-                updated_at: new Date().toISOString()
-            });
-
-        return true;
-    } catch (err) {
-        console.error("Error al aprobar solicitud:", err);
-        throw err;
-    }
+    await invokeRegisterClinic("approve_request", { requestId });
+    return true;
 };
 
 export const rejectSubscriptionRequest = async (requestId, reason = "") => {
-    try {
-        const { data: existingRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
-            .maybeSingle();
-
-        const currentConfig = existingRow?.config || {};
-        const requests = currentConfig.subscription_requests || [];
-
-        const updatedRequests = requests.map(r => r.id === requestId ? { ...r, status: "rejected", rejectReason: reason, rejectedAt: new Date().toISOString() } : r);
-
-        await supabase
-            .from("website_config")
-            .upsert({
-                tenant_id: GLOBAL_CONFIG_TENANT_ID,
-                config: {
-                    ...currentConfig,
-                    subscription_requests: updatedRequests
-                },
-                updated_at: new Date().toISOString()
-            });
-
-        return true;
-    } catch (err) {
-        console.error("Error al rechazar solicitud:", err);
-        throw err;
-    }
+    await invokeRegisterClinic("reject_request", { requestId, reason });
+    return true;
 };

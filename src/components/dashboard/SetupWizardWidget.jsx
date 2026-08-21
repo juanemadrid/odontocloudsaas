@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../lib/supabaseClient";
+import { getConfigItems } from "../../services/configPersistenceService";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
@@ -7,32 +8,32 @@ import { FiCheckCircle, FiArrowRight, FiSettings, FiUsers, FiAlertCircle } from 
 
 const CHECKS = [
     { id: "tenant", label: "Datos Clínica", check: async (inq) => {
-        const { data } = await supabase.from("tenants").select("nit, nombre_comercial, telefono").eq("id", inq).single();
-        return !!(data?.nit && data?.nombre_comercial && data?.telefono);
+        const { data, error } = await supabase
+            .from("tenants")
+            .select("nit, nombre, telefono")
+            .eq("id", inq)
+            .single();
+        if (error) throw error;
+        return !!(data?.nit && data?.nombre && data?.telefono);
     }},
     { id: "sucursales", label: "Sedes", check: async (inq) => {
-        const { count } = await supabase.from("sucursales").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
-        return (count || 0) > 0;
+        return (await getConfigItems(inq, "sucursales", "sucursales")).length > 0;
     }},
     { id: "recursos-fisicos", label: "Consultorios", check: async (inq) => {
-        const { count } = await supabase.from("recursos_fisicos").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
-        return (count || 0) > 0;
+        return (await getConfigItems(inq, "recursos_fisicos", "consultorios")).length > 0;
     }},
     { id: "especialidades", label: "Especialidades", check: async (inq) => {
-        const { count } = await supabase.from("especialidades").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
-        return (count || 0) > 0;
+        return (await getConfigItems(inq, "especialidades", "especialidades")).length > 0;
     }},
     { id: "usuarios", label: "Doctores", check: async (inq) => {
         const { count } = await supabase.from("profiles").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
         return (count || 0) > 1;
     }},
     { id: "listas-precios", label: "Lista Precios", check: async (inq) => {
-        const { count } = await supabase.from("listas_precios").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
-        return (count || 0) > 0;
+        return (await getConfigItems(inq, "listas_precios", "listas_precios")).length > 0;
     }},
     { id: "consecutivos", label: "Facturación", check: async (inq) => {
-        const { count } = await supabase.from("consecutivos").select("id", { count: "exact", head: true }).eq("tenant_id", inq);
-        return (count || 0) > 0;
+        return (await getConfigItems(inq, "consecutivos", "consecutivos")).length > 0;
     }}
 ];
 

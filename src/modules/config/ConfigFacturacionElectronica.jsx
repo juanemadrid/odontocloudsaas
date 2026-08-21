@@ -3,121 +3,138 @@
  * Rediseño corporativo compacto e institucional
  */
 import React, { useState, useEffect } from "react";
-import supabase from "../../lib/supabaseClient";
+import {
+    getConfigItems,
+    getConfigSection,
+    saveConfigSection,
+} from "../../services/configPersistenceService";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { FiSave, FiInfo, FiFileText, FiZap, FiAlertCircle, FiMapPin } from "react-icons/fi";
 import { getSucursalQuota } from "../../services/factusAdminService";
+import { testFactusCredentials } from "../../services/factusProxyService";
+
+const EMPTY_DIAN_DATA = {
+    dianResolucion: "",
+    dianPrefijo: "",
+    dianRangoDesde: 1,
+    dianRangoHasta: 1000,
+    dianClaveTecnica: "",
+    dianFechaResolucion: ""
+};
 
 export default function ConfigFacturacionElectronica() {
     const { userProfile } = useAuth();
     const toast = useToast();
+    const tenantId = userProfile?.inquilino;
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-
-    // Sucursales list
+    const [testing, setTesting] = useState(false);
     const [sucursales, setSucursales] = useState([]);
     const [selectedSucursalId, setSelectedSucursalId] = useState("");
-
-    // Quota info (per sucursal or tenant fallback)
     const [quota, setQuota] = useState(null);
+    const [billingConfig, setBillingConfig] = useState({});
+    const [dianData, setDianData] = useState(EMPTY_DIAN_DATA);
 
-    // DIAN resolution data — per sucursal
-    const [dianData, setDianData] = useState({
-        dianResolucion: "",
-        dianPrefijo: "",
-        dianRangoDesde: 1,
-        dianRangoHasta: 1000,
-        dianClaveTecnica: "",
-        dianFechaResolucion: ""
-    });
-
-    useEffect(() => {
-        if (userProfile?.inquilino) {
-            initLoad();
-        }
-    }, [userProfile]);
-
-    const initLoad = async () => {
-        setLoading(true);
-        try {
-            const { data: snapSuc } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
-            const listSuc = (snapSuc || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-            setSucursales(listSuc);
-
-            const initialSucId = listSuc.length > 0 ? listSuc[0].id : "";
-            setSelectedSucursalId(initialSucId);
-            await loadSucursalData(initialSucId);
-        } catch (e) {
-            console.error(e);
-            if (toast?.error) toast.error("Error al cargar sedes");
-        } finally {
-            setLoading(false);
-        }
+    const getSavedDianData = (sucId, config = billingConfig) => {
+        const key = sucId || "general";
+        return config?.por_sucursal?.[key] || config?.general || EMPTY_DIAN_DATA;
     };
 
-    const loadSucursalData = async (sucId) => {
+    const loadSucursalData = async (sucId, config = billingConfig) => {
         setLoading(true);
         try {
-            let sucursalDocData = null;
-            let tenantDocData = null;
-
-            const { data: tenantSnap } = await supabase.from("tenants").select("*").eq("id", userProfile.inquilino).maybeSingle();
-            if (tenantSnap) tenantDocData = tenantSnap;
-
-            if (sucId) {
-                const { data: sucSnap } = await supabase.from("sucursales").select("*").eq("id", sucId).maybeSingle();
-                if (sucSnap) sucursalDocData = sucSnap;
-            }
-
-            const quotaData = await getSucursalQuota(sucId, userProfile.inquilino);
+            const quotaData = await getSucursalQuota(sucId, tenantId);
             setQuota(quotaData);
-
-            const src = sucursalDocData?.dianResolucion ? sucursalDocData : (tenantDocData || {});
-            setDianData({
-                dianResolucion:      src.dianResolucion      || "",
-                dianPrefijo:         src.dianPrefijo         || "",
-                dianRangoDesde:      src.dianRangoDesde      || 1,
-                dianRangoHasta:      src.dianRangoHasta      || 1000,
-                dianClaveTecnica:    src.dianClaveTecnica    || "",
-                dianFechaResolucion: src.dianFechaResolucion || "",
-            });
-        } catch (e) {
-            console.error(e);
+            setDianData({ ...EMPTY_DIAN_DATA, ...getSavedDianData(sucId, config) });
+        } catch (error) {
+            console.error(error);
             if (toast?.error) toast.error("Error al cargar datos de facturación de la sede");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleSucursalChange = async (e) => {
-        const newSucId = e.target.value;
-        setSelectedSucursalId(newSucId);
-        await loadSucursalData(newSucId);
+    const initLoad = async () => {
+        setLoading(true);
+        try {
+            const [savedBranches, savedBillingConfig] = await Promise.all([
+                getConfigItems(tenantId, "sucursales", "sucursales"),
+                getConfigSection(tenantId, "facturacion_electronica", {})
+            ]);
+            const list = [...savedBranches].sort(
+                (a, b) => (a.nombre || "").localeCompare(b.nombre || "")
+            );
+            const config = savedBillingConfig || {};
+            const initialSucursalId = list[0]?.id || "";
+
+            setSucursales(list);
+            setBillingConfig(config);
+            setSelectedSucursalId(initialSucursalId);
+            await loadSucursalData(initialSucursalId, config);
+        } catch (error) {
+            console.error(error);
+            if (toast?.error) toast.error("Error al cargar la configuración de facturación");
+            setLoading(false);
+        }
     };
 
-    const handleSave = async (e) => {
-        if (e) e.preventDefault();
+    useEffect(() => {
+        if (tenantId) initLoad();
+    }, [tenantId]);
+
+    const handleSucursalChange = async (event) => {
+        const newSucursalId = event.target.value;
+        setSelectedSucursalId(newSucursalId);
+        await loadSucursalData(newSucursalId);
+    };
+
+    const handleSave = async (event) => {
+        if (event) event.preventDefault();
+        if (Number(dianData.dianRangoHasta) < Number(dianData.dianRangoDesde)) {
+            if (toast?.warning) toast.warning("El rango final no puede ser menor que el rango inicial.");
+            return;
+        }
+
         setSaving(true);
         try {
-            const payload = {
+            const key = selectedSucursalId || "general";
+            const storedData = {
                 ...dianData,
                 updated_at: new Date().toISOString(),
-                updated_by: userProfile.uid || userProfile.id,
+                updated_by: userProfile.uid || userProfile.id
+            };
+            const updatedConfig = {
+                ...billingConfig,
+                por_sucursal: {
+                    ...(billingConfig?.por_sucursal || {}),
+                    [key]: storedData
+                }
             };
 
-            if (selectedSucursalId) {
-                await supabase.from("sucursales").update(payload).eq("id", selectedSucursalId);
-            }
-
-            await supabase.from("tenants").update(payload).eq("id", userProfile.inquilino);
-
+            await saveConfigSection(tenantId, "facturacion_electronica", updatedConfig);
+            setBillingConfig(updatedConfig);
             if (toast?.success) toast.success("Configuración de facturación electrónica guardada");
-        } catch (e) {
-            console.error(e);
-            if (toast?.error) toast.error("Error al guardar cambios");
+        } catch (error) {
+            console.error(error);
+            if (toast?.error) toast.error("Error al guardar cambios: " + (error.message || ""));
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleTestConnection = async () => {
+        setTesting(true);
+        try {
+            await testFactusCredentials({});
+            const refreshedQuota = await getSucursalQuota(selectedSucursalId, tenantId);
+            setQuota(refreshedQuota);
+            if (toast?.success) toast.success("Conexión con Factus verificada correctamente.");
+        } catch (error) {
+            console.error(error);
+            if (toast?.error) toast.error(error.message || "No fue posible conectar con Factus.");
+        } finally {
+            setTesting(false);
         }
     };
 
@@ -147,6 +164,11 @@ export default function ConfigFacturacionElectronica() {
                     <div>
                         <h1 className="text-[16px] font-bold text-slate-800 tracking-tight">Facturación Electrónica DIAN</h1>
                         <p className="text-[11px] text-slate-500 font-medium">Resolución DIAN, prefijos de comprobante y saldo de folios</p>
+                        <p className={`text-[10px] font-bold mt-0.5 ${quota?.configured ? "text-emerald-600" : "text-amber-600"}`}>
+                            {quota?.configured
+                                ? `Factus conectado · ${quota.factusTestMode ? "Ambiente de pruebas" : "Producción"}`
+                                : "Factus todavía no tiene credenciales completas"}
+                        </p>
                     </div>
                 </div>
 
@@ -166,6 +188,16 @@ export default function ConfigFacturacionElectronica() {
                             </select>
                         </div>
                     )}
+
+                    <button
+                        type="button"
+                        onClick={handleTestConnection}
+                        disabled={testing || !quota?.configured}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-1.5 rounded-lg text-[12px] font-bold flex items-center gap-1.5 transition-all cursor-pointer border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <FiZap size={14} />
+                        <span>{testing ? "Probando..." : "Probar Factus"}</span>
+                    </button>
 
                     <button
                         onClick={handleSave}

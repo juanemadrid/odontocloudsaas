@@ -8,6 +8,7 @@ import {
     FiPrinter, FiX, FiInfo, FiLoader, FiMail
 } from 'react-icons/fi';
 import { formatCurrency } from '../../../utils/formatters';
+import { getConfigSection } from '../../../services/configPersistenceService';
 
 const fmtDate = (iso) => {
     if (!iso) return '\u2014';
@@ -398,28 +399,35 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
         if (!userProfile?.inquilino) return;
         (async () => {
             try {
-                const { data: d } = await supabase
-                    .from('tenants')
-                    .select('*')
-                    .eq('id', userProfile.inquilino)
-                    .maybeSingle();
-                if (d) {
-                    setTenant({
-                        nit: d.nit || '',
-                        razonSocial: d.razonSocial || '',
-                        nombreComercial: d.name || d.nombreComercial || '',
-                        direccion: d.address || d.direccion || '',
-                        telefono: d.phone || d.telefono || '',
-                        email: d.email || '',
-                        logoUrl: d.logo || d.logoUrl || '',
-                        ciudad: d.ciudad || '',
-                        dianResolucion: d.dianResolucion || '',
-                        dianPrefijo: d.dianPrefijo || '',
-                        dianRangoDesde: d.dianRangoDesde || '',
-                        dianRangoHasta: d.dianRangoHasta || '',
-                        dianFechaResolucion: d.dianFechaResolucion || ''
-                    });
-                }
+                const [tenantResult, companyConfig, billingConfig] = await Promise.all([
+                    supabase
+                        .from('tenants')
+                        .select('*')
+                        .eq('id', userProfile.inquilino)
+                        .maybeSingle(),
+                    getConfigSection(userProfile.inquilino, 'empresa_datos', {}),
+                    getConfigSection(userProfile.inquilino, 'facturacion_electronica', {})
+                ]);
+                if (tenantResult.error) throw tenantResult.error;
+
+                const d = tenantResult.data || {};
+                const branchBilling = billingConfig?.por_sucursal || {};
+                const dian = branchBilling.general || Object.values(branchBilling)[0] || {};
+                setTenant({
+                    nit: d.nit || companyConfig.nit || '',
+                    razonSocial: companyConfig.razonSocial || d.nombre || '',
+                    nombreComercial: companyConfig.nombreComercial || d.nombre || '',
+                    direccion: companyConfig.direccion || d.direccion || '',
+                    telefono: companyConfig.telefono || companyConfig.celular || d.telefono || '',
+                    email: companyConfig.email || '',
+                    logoUrl: companyConfig.logoUrl || d.logo_url || '',
+                    ciudad: companyConfig.ciudad || d.ciudad || '',
+                    dianResolucion: dian.dianResolucion || '',
+                    dianPrefijo: dian.dianPrefijo || '',
+                    dianRangoDesde: dian.dianRangoDesde || '',
+                    dianRangoHasta: dian.dianRangoHasta || '',
+                    dianFechaResolucion: dian.dianFechaResolucion || ''
+                });
             } catch (e) { console.error(e); }
         })();
     }, [userProfile]);

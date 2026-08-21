@@ -1,201 +1,237 @@
 // src/services/configPersistenceService.js
 import supabase from "../lib/supabaseClient";
+import { getConfigCached, setConfigCache } from "../hooks/useConfig";
 
 /**
- * Servicio unificado de persistencia para todos los submódulos de Configuración en Supabase.
- * Soporta tablas dedicadas en PostgreSQL y sincronización con el JSON website_config.
+ * Persistencia unificada de configuración por clínica.
+ * website_config conserva el modelo completo y las tablas dedicadas reciben
+ * únicamente las columnas que realmente existen en PostgreSQL.
  */
 
-// ── 1. Obtener lista de ítems de configuración ──
+const TABLE_PAYLOAD_BUILDERS = {
+    bancos: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        nombre: item.nombre || "",
+        tipo_cuenta: item.tipo_cuenta || item.tipoCuenta || "Ahorros",
+        numero_cuenta: item.numero_cuenta || item.numeroCuenta || "",
+        activo: item.activo !== false,
+    }),
+    consecutivos: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        tipo: item.tipo || item.nombre || "general",
+        prefijo: item.prefijo || item.fvPrefijo || item.fePrefijoFactura || "",
+        ultimo_numero: Number(
+            item.ultimo_numero ?? item.contReciboCaja ?? item.fvNumActual ?? item.feNumActual ?? 0
+        ) || 0,
+    }),
+    consultorios: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        sucursal_id: item.sucursal_id || item.sucursalId || null,
+        nombre: item.nombre || "",
+        ubicacion: item.ubicacion || item.descripcion || "",
+        activo: item.activo !== false,
+    }),
+    especialidades: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        nombre: item.nombre || "",
+        descripcion: item.descripcion || "",
+        activo: item.activo !== false,
+    }),
+    listas_precios: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        nombre: item.nombre || "",
+        descripcion: item.descripcion || "",
+        activa: item.activa !== false,
+    }),
+    sucursales: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        nombre: item.nombre || "",
+        direccion: item.direccion || "",
+        telefono: item.telefono || item.telCelular || "",
+        activo: item.activo !== false,
+    }),
+};
+
+const isPersistedTable = (tableName) => Boolean(TABLE_PAYLOAD_BUILDERS[tableName]);
+
+export const getConfigSection = async (tenantId, configKey, fallbackValue = null) => {
+    if (!tenantId) return fallbackValue;
+    const config = await getConfigCached(tenantId);
+    return config?.[configKey] ?? fallbackValue;
+};
+
+export const saveConfigSection = async (tenantId, configKey, value) => {
+    if (!tenantId) throw new Error("Falta el identificador de la clínica.");
+    if (!/^[a-z0-9_]{1,80}$/.test(configKey || "")) {
+        throw new Error("La sección de configuración no es válida.");
+    }
+
+    const { data, error } = await supabase.rpc("set_tenant_config_section", {
+        p_tenant_id: tenantId,
+        p_key: configKey,
+        p_value: value,
+    });
+
+    if (error) throw error;
+    const updatedConfig = data || {
+        ...(await getConfigCached(tenantId)),
+        [configKey]: value,
+        updatedAt: new Date().toISOString(),
+    };
+    setConfigCache(tenantId, updatedConfig);
+    return updatedConfig;
+};
+
+export const saveConfigPatch = async (tenantId, patch) => {
+    if (!tenantId) throw new Error("Falta el identificador de la clínica.");
+    if (!patch || Array.isArray(patch) || typeof patch !== "object") {
+        throw new Error("El parche de configuración no es válido.");
+    }
+
+    const { data, error } = await supabase.rpc("merge_tenant_config", {
+        p_tenant_id: tenantId,
+        p_patch: patch,
+    });
+    if (error) throw error;
+
+    const updatedConfig = data || {
+        ...(await getConfigCached(tenantId)),
+        ...patch,
+        updatedAt: new Date().toISOString(),
+    };
+    setConfigCache(tenantId, updatedConfig);
+    return updatedConfig;
+};
+
 export const getConfigItems = async (tenantId, configKey, tableName) => {
     if (!tenantId) return [];
 
     try {
         let tableData = [];
 
-        // A. Intentar consultar la tabla dedicada en Supabase PostgreSQL
-        if (tableName) {
+        if (isPersistedTable(tableName)) {
             try {
                 const { data, error, status } = await supabase
                     .from(tableName)
                     .select("*")
                     .eq("tenant_id", tenantId);
 
-                if (!error && status >= 200 && status < 300 && Array.isArray(data) && data.length > 0) {
-                    tableData = data.map(d => ({
-                        id: d.id,
-                        nombre: d.nombre || d.name || "",
-                        ...d
+                if (error) throw error;
+                if (status >= 200 && status < 300 && Array.isArray(data)) {
+                    tableData = data.map(item => ({
+                        id: item.id,
+                        nombre: item.nombre || item.name || "",
+                        ...item,
                     }));
                 }
-            } catch (e) {
-                // Silencioso: fallback directo a website_config
+            } catch (error) {
+                console.warn(
+                    `No se pudo leer la tabla ${tableName}; se usará la configuración de la clínica:`,
+                    error.message
+                );
             }
         }
 
-        // B. Siempre consultar website_config (aquí se sincronizan TODOS los campos, incluidos permisos)
-        const { data: cfgRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", tenantId)
-            .maybeSingle();
+        const currentConfig = await getConfigCached(tenantId);
+        const configData = Array.isArray(currentConfig?.[configKey])
+            ? currentConfig[configKey]
+            : [];
 
-        const wcData = Array.isArray(cfgRow?.config?.[configKey]) ? cfgRow.config[configKey] : [];
-
-        // C. Si hay datos en la tabla dedicada, fusionar con website_config para recuperar campos extra
-        if (tableData.length > 0) {
-            return tableData.map(item => {
-                const wcItem = wcData.find(w => w.id === item.id);
-                if (!wcItem) return item;
-                // wcItem tiene todos los campos guardados (incl. permisos).
-                // Los campos de la tabla dedicada tienen prioridad, pero si permisos no está en la tabla, viene de wcItem.
-                return {
-                    ...wcItem,   // base: todo lo de website_config
-                    ...item,     // override: campos de la tabla dedicada
-                    permisos: item.permisos ?? wcItem.permisos  // permisos: tabla primero, fallback a wcItem
-                };
+        // Unión completa: los registros que existen solo en JSON no desaparecen
+        // cuando la tabla dedicada ya contiene otros registros.
+        const merged = new Map();
+        configData.forEach(item => merged.set(String(item.id), item));
+        tableData.forEach(item => {
+            const key = String(item.id);
+            const configItem = merged.get(key) || {};
+            merged.set(key, {
+                ...configItem,
+                ...item,
+                permisos: item.permisos ?? configItem.permisos,
             });
-        }
+        });
 
-        // D. Fallback: si no hay tabla dedicada o está vacía, usar website_config
-        if (wcData.length > 0) return wcData;
-
-        return [];
-    } catch (err) {
-        console.error(`Error al obtener ${configKey} desde Supabase:`, err);
-        return [];
+        return Array.from(merged.values());
+    } catch (error) {
+        console.error(`Error al obtener ${configKey} desde Supabase:`, error);
+        throw error;
     }
 };
 
-
-// ── 2. Guardar / Editar ítem de configuración ──
 export const saveConfigItem = async (tenantId, configKey, tableName, itemData) => {
     if (!tenantId) throw new Error("Falta el identificador de la clínica.");
 
-    const id = itemData.id || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+    const id = itemData.id || crypto.randomUUID();
     const now = new Date().toISOString();
-
     const payload = {
         ...itemData,
         id,
         tenant_id: tenantId,
-        actualizado: now
+        actualizado: now,
     };
 
-    let savedInTable = false;
-
-    // A. Guardar en la tabla dedicada si existe
-    if (tableName) {
-        try {
-            if (itemData.id) {
-                const { error, status } = await supabase
-                    .from(tableName)
-                    .update(payload)
-                    .eq("id", itemData.id);
-                if (!error && status < 300) savedInTable = true;
-            } else {
-                const { error, status } = await supabase
-                    .from(tableName)
-                    .insert([{ ...payload, created_at: now }]);
-                if (!error && status < 300) savedInTable = true;
-            }
-        } catch (e) {
-            console.warn(`No se pudo guardar en tabla ${tableName}, guardando en website_config JSON:`, e.message);
-        }
+    if (isPersistedTable(tableName)) {
+        const tablePayload = TABLE_PAYLOAD_BUILDERS[tableName](payload);
+        // Upsert keeps the operational table synchronized even when the item
+        // previously existed only inside website_config JSON.
+        const query = supabase
+            .from(tableName)
+            .upsert([tablePayload], { onConflict: "id" });
+        const { error } = await query;
+        if (error) throw error;
     }
 
-    // B. Siempre sincronizar en website_config JSON
-    try {
-        const { data: cfgRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", tenantId)
-            .maybeSingle();
+    const currentConfig = await getConfigCached(tenantId);
+    const currentList = Array.isArray(currentConfig?.[configKey])
+        ? currentConfig[configKey]
+        : [];
+    const exists = currentList.some(item => item.id === id);
+    const updatedList = exists
+        ? currentList.map(item => item.id === id ? { ...item, ...payload } : item)
+        : [...currentList, payload];
 
-        const currentConfig = cfgRow?.config || {};
-        const currentList = Array.isArray(currentConfig[configKey]) ? currentConfig[configKey] : [];
-
-        let updatedList;
-        const exists = currentList.some(i => i.id === id);
-        if (exists) {
-            updatedList = currentList.map(i => i.id === id ? { ...i, ...payload } : i);
-        } else {
-            updatedList = [...currentList, payload];
-        }
-
-        const newConfig = {
-            ...currentConfig,
-            [configKey]: updatedList,
-            updatedAt: now
-        };
-
-        const { error: upsertErr } = await supabase
-            .from("website_config")
-            .upsert({ tenant_id: tenantId, config: newConfig }, { onConflict: "tenant_id" });
-
-        if (upsertErr) throw upsertErr;
-    } catch (err) {
-        console.error(`Error al guardar ${configKey} en website_config:`, err);
-        if (!savedInTable) throw err;
-    }
-
+    await saveConfigSection(tenantId, configKey, updatedList);
     return payload;
 };
 
-// ── 3. ELIMINAR ítem de configuración de Supabase ──
 export const deleteConfigItem = async (tenantId, configKey, tableName, id) => {
-    if (!tenantId || !id) throw new Error("Falta el identificador de la clínica o del ítem.");
-
-    let deletedFromTable = false;
-
-    // A. Eliminar de la tabla dedicada si existe
-    if (tableName) {
-        try {
-            const { error, status } = await supabase
-                .from(tableName)
-                .delete()
-                .eq("id", id);
-            if (!error && status < 300) deletedFromTable = true;
-        } catch (e) {
-            console.warn(`No se pudo eliminar de la tabla ${tableName}:`, e.message);
-        }
+    if (!tenantId || !id) {
+        throw new Error("Falta el identificador de la clínica o del ítem.");
     }
 
-    // B. Eliminar de website_config JSON
-    try {
-        const { data: cfgRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", tenantId)
-            .maybeSingle();
-
-        if (cfgRow?.config) {
-            const currentConfig = cfgRow.config;
-            const currentList = Array.isArray(currentConfig[configKey]) ? currentConfig[configKey] : [];
-            const filteredList = currentList.filter(i => i.id !== id);
-
-            const newConfig = {
-                ...currentConfig,
-                [configKey]: filteredList,
-                updatedAt: new Date().toISOString()
-            };
-
-            const { error: upsertErr } = await supabase
-                .from("website_config")
-                .upsert({ tenant_id: tenantId, config: newConfig }, { onConflict: "tenant_id" });
-
-            if (upsertErr) throw upsertErr;
-        }
-    } catch (err) {
-        console.error(`Error al eliminar ${configKey} de website_config:`, err);
-        if (!deletedFromTable) throw err;
+    if (isPersistedTable(tableName)) {
+        const { error } = await supabase
+            .from(tableName)
+            .delete()
+            .eq("id", id)
+            .eq("tenant_id", tenantId);
+        if (error) throw error;
     }
+
+    const currentConfig = await getConfigCached(tenantId);
+    const currentList = Array.isArray(currentConfig?.[configKey])
+        ? currentConfig[configKey]
+        : [];
+    await saveConfigSection(
+        tenantId,
+        configKey,
+        currentList.filter(item => item.id !== id)
+    );
 
     return { success: true, id };
 };
 
 export default {
     getConfigItems,
+    getConfigSection,
+    saveConfigSection,
+    saveConfigPatch,
     saveConfigItem,
-    deleteConfigItem
+    deleteConfigItem,
 };

@@ -4,7 +4,7 @@ import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { FiPlus, FiSearch, FiFileText, FiImage, FiTrash2, FiDownload, FiUploadCloud, FiEdit, FiEye, FiX } from "react-icons/fi";
 import { getDoctorsList } from "../../../services/supabaseServices";
-import { removePrivateFile, resolvePrivateFileUrl, uploadPrivateFile } from "../../../services/privateStorageService";
+import { privateFileReference, removePrivateFile, resolvePrivateFileUrl, uploadPrivateFile } from "../../../services/privateStorageService";
 
 
 export default function PatientRxTab({ patient, onUpdate }) {
@@ -81,7 +81,10 @@ export default function PatientRxTab({ patient, onUpdate }) {
     const images = useMemo(() => {
         let list = rxImagenesList.map(item => ({
             ...item,
-            url: signedUrls[item.path || item.url] || item.url
+            // No cargar un enlace firmado persistido: puede estar vencido y
+            // fallar antes de que se genere el enlace actualizado.
+            url: signedUrls[item.path || item.url]
+                || (String(item.url || "").includes("/storage/v1/object/sign/") ? "" : item.url)
         }));
         if (filter.trim()) {
             const q = filter.toLowerCase();
@@ -107,9 +110,10 @@ export default function PatientRxTab({ patient, onUpdate }) {
         setUploading(true);
         try {
             let url, path;
+            let uploadMetadata = null;
             
             if (editingImage) {
-                url = editingImage.url;
+                url = editingImage.path ? privateFileReference(editingImage.path) : editingImage.url;
                 path = editingImage.path;
                 
                 if (selectedFile) {
@@ -118,10 +122,12 @@ export default function PatientRxTab({ patient, onUpdate }) {
                         tenantId: userProfile?.inquilino || patient?.tenant_id || patient?.inquilino,
                         relativePath: `pacientes/${patient.id}/rx/${Date.now()}_${safe}`,
                         file: selectedFile,
-                        upsert: true
+                        upsert: true,
+                        optimizationProfile: "clinical"
                     });
                     path = uploaded.path;
-                    url = uploaded.signedUrl;
+                    url = uploaded.reference;
+                    uploadMetadata = uploaded;
                 }
             } else {
                 const safe = (selectedFile.name || "archivo").replace(/\s+/g, "_");
@@ -129,10 +135,12 @@ export default function PatientRxTab({ patient, onUpdate }) {
                     tenantId: userProfile?.inquilino || patient?.tenant_id || patient?.inquilino,
                     relativePath: `pacientes/${patient.id}/rx/${Date.now()}_${safe}`,
                     file: selectedFile,
-                    upsert: true
+                    upsert: true,
+                    optimizationProfile: "clinical"
                 });
                 path = uploaded.path;
-                url = uploaded.signedUrl;
+                url = uploaded.reference;
+                uploadMetadata = uploaded;
             }
 
             const itemData = {
@@ -144,8 +152,8 @@ export default function PatientRxTab({ patient, onUpdate }) {
                 creador: currentUserName,
                 fechaAsocISO: fechaAsoc,
                 path,
-                type: selectedFile ? selectedFile.type : editingImage.type,
-                size: selectedFile ? selectedFile.size : editingImage.size,
+                type: uploadMetadata?.contentType || (selectedFile ? selectedFile.type : editingImage.type),
+                size: uploadMetadata?.storedBytes || (selectedFile ? selectedFile.size : editingImage.size),
                 uploadedAtMS: editingImage ? editingImage.uploadedAtMS : Date.now(),
                 uploadedAtISO: editingImage ? editingImage.uploadedAtISO : new Date().toISOString()
             };

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from "react";
 import { FiArrowLeft, FiSave, FiList, FiType, FiCalendar, FiCheckSquare, FiHash, FiTrash2, FiFileText } from "react-icons/fi";
-import supabase from "../../lib/supabaseClient";
+import { getConfigItems, saveConfigItem } from "../../services/configPersistenceService";
 import { useToast } from "../../context/ToastContext";
 
 export default function PestanaEditor({ id, onBack, inquilino, userEmail, currentOrder }) {
@@ -22,11 +22,12 @@ export default function PestanaEditor({ id, onBack, inquilino, userEmail, curren
     const loadTab = async () => {
         setLoading(true);
         try {
-            const { data } = await supabase.from("pestanas_medicas").select("*").eq("id", id).maybeSingle();
-            if (data) {
-                setNombre(data.nombre || "");
-                setDescripcion(data.descripcion || "");
-                setFields(data.campos || []);
+            const tabs = await getConfigItems(inquilino, "pestanas_medicas", null);
+            const tab = tabs.find((item) => String(item.id) === String(id));
+            if (tab) {
+                setNombre(tab.nombre || "");
+                setDescripcion(tab.descripcion || "");
+                setFields(tab.campos || []);
             }
         } catch (e) {
             console.error(e);
@@ -43,6 +44,7 @@ export default function PestanaEditor({ id, onBack, inquilino, userEmail, curren
         setLoading(true);
         try {
             const payload = {
+                ...(id ? { id } : {}),
                 tenant_id: inquilino,
                 inquilino,
                 nombre,
@@ -52,16 +54,9 @@ export default function PestanaEditor({ id, onBack, inquilino, userEmail, curren
                 updated_by: userEmail
             };
 
-            if (id) {
-                await supabase.from("pestanas_medicas").update(payload).eq("id", id);
-                toast.success("Pestaña actualizada");
-            } else {
-                payload.orden = currentOrder || 0;
-                payload.created_at = new Date().toISOString();
-                payload.created_by = userEmail;
-                await supabase.from("pestanas_medicas").insert([payload]);
-                toast.success("Pestaña creada");
-            }
+            if (!id) payload.orden = currentOrder || 0;
+            await saveConfigItem(inquilino, "pestanas_medicas", null, payload);
+            toast.success(id ? "Pestaña actualizada" : "Pestaña creada");
             onBack();
         } catch (e) {
             console.error(e);

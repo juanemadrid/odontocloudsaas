@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FiX, FiCheck, FiCamera, FiImage, FiBox, FiSave, FiDollarSign, FiTag, FiFileText } from "react-icons/fi";
 import { subscribeToCategories } from "../../services/resourceService";
 import { useAuth } from "../../context/AuthContext";
-import supabase from "../../lib/supabaseClient";
+import { uploadOptimizedPublicFile } from "../../services/storageUploadService";
 
 const initialProductoState = {
     imagen: "",
@@ -76,10 +76,14 @@ export default function ModalProducto({ item = null, categoria = "", onClose, on
         setIsUploading(true);
         try {
             const filePath = `${inquilino}/productos/${Date.now()}_${file.name}`;
-            const { error } = await supabase.storage.from("clinical-files").upload(filePath, file, { upsert: true });
-            if (error) throw error;
-            const { data: { publicUrl } } = supabase.storage.from("clinical-files").getPublicUrl(filePath);
-            setFormData(prev => ({ ...prev, imagen: publicUrl }));
+            const uploaded = await uploadOptimizedPublicFile({
+                bucket: "clinical-files",
+                path: filePath,
+                file,
+                profile: "avatar",
+                upsert: true,
+            });
+            setFormData(prev => ({ ...prev, imagen: uploaded.publicUrl }));
         } catch (error) {
             console.error("Error al subir imagen:", error);
             alert("No se pudo subir la imagen.");

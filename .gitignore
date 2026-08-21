@@ -12,3 +12,5 @@ taxi_sabana
 *.log
 .codex-agenda-preview-1.patch
 scripts/*.mjs
+!scripts/test-config-integration.mjs
+!scripts/test-production-readiness.mjs

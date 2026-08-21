@@ -54,6 +54,40 @@ export default function ConfigSuscripcion() {
         load();
     }, []);
 
+    const createChangeRequest = async ({
+        requestType,
+        requestedPlanId,
+        requestedPlanName,
+        planDuration = "monthly",
+        paymentStatus
+    }) => {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        if (!authData?.user?.id) throw new Error("La sesión no está disponible.");
+
+        const { error } = await supabase
+            .from("subscription_change_requests")
+            .insert([{
+                tenant_id: userProfile.inquilino,
+                requested_by: authData.user.id,
+                requester_email: authData.user.email || userProfile.email || "",
+                tenant_name: tenant.name || tenant.nombre || "Clínica",
+                tenant_phone: tenant.telCelular || tenant.telefono || "",
+                request_type: requestType,
+                current_plan_id: tenant.planId || tenant.plan || "custom",
+                requested_plan_id: requestedPlanId,
+                requested_plan_name: requestedPlanName,
+                plan_duration: planDuration,
+                payment_status: paymentStatus,
+                status: "pending"
+            }]);
+
+        if (error?.code === "23505") {
+            throw new Error("Ya existe una solicitud pendiente para esta clínica.");
+        }
+        if (error) throw error;
+    };
+
     const handleRequestUpgrade = async (newPlan) => {
         if (isSuperAdmin) {
             if (toast?.info) toast.info("Como SuperAdmin, puedes modificar los planes directamente en la base de datos.");
@@ -64,23 +98,17 @@ export default function ConfigSuscripcion() {
 
         setRequesting(newPlan.id);
         try {
-            await supabase.from("subscription_requests").insert([{
-                tenant_id: userProfile.inquilino,
-                inquilino: userProfile.inquilino,
-                tenant_name: tenant.name,
-                current_plan_id: tenant.planId || "custom",
-                requested_plan_id: newPlan.id,
-                requested_plan_name: newPlan.name,
-                plan_duration: selectedDuration,
-                status: "pending",
-                payment_status: "awaiting_validation",
-                tenant_phone: tenant.telCelular || "",
-                created_at: new Date().toISOString()
-            }]);
+            await createChangeRequest({
+                requestType: "upgrade",
+                requestedPlanId: newPlan.id,
+                requestedPlanName: newPlan.name,
+                planDuration: selectedDuration,
+                paymentStatus: "awaiting_validation"
+            });
             if (toast?.success) toast.success("Solicitud enviada. Redirigiendo a WhatsApp para adjuntar comprobante...");
 
             const phone = globalConfig.adminPhone || "573124119846";
-            const msg = `Hola OdontoCloud, he realizado el pago para el plan *${newPlan.name}* de mi clínica *${tenant.name}*. Adjunto comprobante para activación.`;
+            const msg = `Hola OdontoCloud, he realizado el pago para el plan *${newPlan.name}* de mi clínica *${tenant.name || tenant.nombre || 'Clínica'}*. Adjunto comprobante para activación.`;
             const wpUrl = `https://wa.me/${phone.replace(/\s+/g, '')}?text=${encodeURIComponent(msg)}`;
 
             setTimeout(() => {
@@ -106,18 +134,16 @@ export default function ConfigSuscripcion() {
         if (!window.confirm("¿Deseas solicitar un mes de prueba gratuito?")) return;
         setRequesting("trial");
         try {
-            await addDoc(collection(db, "subscription_requests"), {
-                inquilino: userProfile.inquilino,
-                tenantName: tenant.name,
+            await createChangeRequest({
+                requestType: "trial",
+                requestedPlanId: "trial",
                 requestedPlanName: "MES DE PRUEBA (SOLICITUD)",
-                status: "pending",
-                paymentStatus: "trial_request",
-                tenantPhone: tenant.telCelular || "",
-                createdAt: serverTimestamp()
+                planDuration: "monthly",
+                paymentStatus: "trial_request"
             });
             if (toast?.success) toast.success("Solicitud enviada.");
             const phone = globalConfig.adminPhone || "573124119846";
-            const message = `Hola OdontoCloud, solicito activar el *MES DE PRUEBA* para mi clínica *${tenant.name}*.`;
+            const message = `Hola OdontoCloud, solicito activar el *MES DE PRUEBA* para mi clínica *${tenant.name || tenant.nombre || 'Clínica'}*.`;
             window.open(`https://wa.me/${phone.replace(/\s+/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
         } catch (error) {
             console.error(error);

@@ -1949,7 +1949,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
     return (
         <div className="w-full h-full bg-slate-50 flex flex-col animate-fadeIn overflow-hidden">
                 {/* 1. THE COMPACT HUD (Header) */}
-                <div className="bg-white px-4 md:px-6 py-2.5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20 shadow-[0_2px_15px_-5px_rgba(0,0,0,0.05)] relative">
+                <div className="patient-details-header bg-white px-4 md:px-6 py-2.5 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20 shadow-[0_2px_15px_-5px_rgba(0,0,0,0.05)] relative">
                     <div className="flex items-center gap-4">
                         <div className="relative group shrink-0">
                             {fotoPreview ? <img src={fotoPreview} alt="Foto" className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-50 shadow-sm" /> : <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black text-lg ring-2 ring-slate-50 shadow-md">{(patient.nombreCompleto || "P")[0]}</div>}
@@ -2003,11 +2003,11 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
                 {/* 2. STUDIO WORKSPACE (Sidebar + Content) */}
                 <FormProvider {...methods}>
-                    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                    <div className="patient-details-workspace flex-1 flex flex-col lg:flex-row overflow-hidden">
                         {/* SIDEBAR */}
-                        <aside className="w-full lg:w-60 bg-white border-b lg:border-b-0 lg:border-r border-slate-100 overflow-x-auto lg:overflow-y-auto p-3 flex flex-row lg:flex-col shrink-0 custom-scrollbar-hidden lg:custom-scrollbar scrollbar-hide">
+                        <aside className="patient-details-sidebar w-full lg:w-60 bg-white border-b lg:border-b-0 lg:border-r border-slate-100 overflow-x-auto lg:overflow-y-auto p-3 flex flex-row lg:flex-col shrink-0 custom-scrollbar-hidden lg:custom-scrollbar scrollbar-hide">
                             <SidebarSectionTitle>Información General</SidebarSectionTitle>
-                            <div className="flex lg:flex-col gap-1 min-w-max lg:min-w-0">
+                            <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
                                 <SidebarButton icon={FiUser} label="Datos personales" active={activeTab === "datos"} onClick={() => handleTabChange("datos")} />
                                 <SidebarButton icon={FiTrendingUp} label="Marketing" active={activeTab === "mark"} onClick={() => handleTabChange("mark")} />
                                 <SidebarButton icon={FiShield} label="EPS" active={activeTab === "eps"} onClick={() => handleTabChange("eps")} />
@@ -2019,7 +2019,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                             </div>
 
                             <SidebarSectionTitle>Historia Clínica</SidebarSectionTitle>
-                            <div className="flex lg:flex-col gap-1 min-w-max lg:min-w-0">
+                            <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
                                 {can("Pacientes", "Historia clínica", "consultar") && (
                                     <SidebarButton icon={FiClipboard} label="Doc. Clínicos" active={activeTab === "hc"} onClick={() => handleTabChange("hc")} />
                                 )}
@@ -2038,12 +2038,12 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                             </div>
 
                             <SidebarSectionTitle>Inteligencia Artificial</SidebarSectionTitle>
-                            <div className="flex lg:flex-col gap-1 min-w-max lg:min-w-0">
+                            <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
                                 <SidebarButton icon={FiCpu} label="Copiloto IA Insights" active={activeTab === "ai_insights"} onClick={() => handleTabChange("ai_insights")} />
                             </div>
 
                             <SidebarSectionTitle>Facturación</SidebarSectionTitle>
-                            <div className="flex lg:flex-col gap-1 min-w-max lg:min-w-0">
+                            <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
                                 {can("Caja", "Caja", "consultar") && (
                                     <>
                                         <SidebarButton 

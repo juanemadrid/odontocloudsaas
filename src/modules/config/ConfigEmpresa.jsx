@@ -7,6 +7,9 @@ import React, { useState, useEffect, useRef } from "react";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
+import { configureSispro, getSisproConfig } from "../../services/tenantSecretsService";
+import { getConfigSection, saveConfigSection } from "../../services/configPersistenceService";
+import { uploadOptimizedPublicFile } from "../../services/storageUploadService";
 import { FiSave, FiUpload, FiImage, FiMapPin, FiPhone, FiMail, FiBriefcase, FiFileText } from "react-icons/fi";
 
 export default function ConfigEmpresa() {
@@ -15,6 +18,7 @@ export default function ConfigEmpresa() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [sisproHasPassword, setSisproHasPassword] = useState(false);
     const fileInputRef = useRef(null);
 
     // Estado del formulario
@@ -53,13 +57,17 @@ export default function ConfigEmpresa() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [tRes, cRes] = await Promise.all([
+            const [tRes, cRes, sisproConfig] = await Promise.all([
                 supabase.from("tenants").select("*").eq("id", userProfile.inquilino).maybeSingle(),
-                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle()
+                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle(),
+                getSisproConfig(userProfile.inquilino).catch(() => null)
             ]);
 
+            if (tRes.error) throw tRes.error;
+            if (cRes.error) throw cRes.error;
             const data = tRes.data || {};
             const extraConfig = cRes.data?.config?.empresa_datos || {};
+            const privateSispro = sisproConfig || {};
 
             setFormData(prev => ({
                 ...prev,
@@ -77,14 +85,15 @@ export default function ConfigEmpresa() {
                 zonaHoraria: data.zonaHoraria || extraConfig.zonaHoraria || "America/Bogota",
                 cuentaContable: data.cuentaContable || extraConfig.cuentaContable || "",
                 esIps: data.esIps ?? extraConfig.esIps ?? false,
-                sisproUsuario: data.sisproUsuario || extraConfig.sisproUsuario || "",
-                sisproTipoDoc: data.sisproTipoDoc || extraConfig.sisproTipoDoc || "CC",
-                sisproPassword: data.sisproPassword || extraConfig.sisproPassword || "",
-                codigoPrestador: data.codigoPrestador || extraConfig.codigoPrestador || "",
+                sisproUsuario: privateSispro.sisproUsuario || extraConfig.sisproUsuario || "",
+                sisproTipoDoc: privateSispro.sisproTipoDoc || extraConfig.sisproTipoDoc || "CC",
+                sisproPassword: "",
+                codigoPrestador: privateSispro.codigoPrestador || extraConfig.codigoPrestador || "",
                 logoUrl: data.logo_url || data.logo || extraConfig.logoUrl || "",
                 ciudad: data.ciudad || extraConfig.ciudad || "",
                 codigoPostal: data.codigoPostal || extraConfig.codigoPostal || ""
             }));
+            setSisproHasPassword(Boolean(privateSispro.hasPassword || extraConfig.sisproPassword));
         } catch (error) {
             console.error("Error cargando datos de empresa:", error);
             toast.error("Error al cargar información");
@@ -97,6 +106,21 @@ export default function ConfigEmpresa() {
         if (e) e.preventDefault();
         setSaving(true);
         try {
+            const {
+                sisproUsuario,
+                sisproTipoDoc,
+                sisproPassword,
+                codigoPrestador,
+                ...empresaPublicData
+            } = formData;
+
+            await configureSispro(userProfile.inquilino, {
+                sisproUsuario,
+                sisproTipoDoc,
+                sisproPassword,
+                codigoPrestador
+            });
+
             const tenantPayload = {
                 id: userProfile.inquilino,
                 nombre: formData.nombreComercial || formData.razonSocial || "Clínica",
@@ -110,25 +134,11 @@ export default function ConfigEmpresa() {
             const { error: tErr } = await supabase.from("tenants").upsert(tenantPayload);
             if (tErr) throw tErr;
 
-            // Sincronizar la totalidad de los datos en website_config JSON para durabilidad completa
-            const { data: cfgRow } = await supabase
-                .from("website_config")
-                .select("config")
-                .eq("tenant_id", userProfile.inquilino)
-                .maybeSingle();
-
-            const currentConfig = cfgRow?.config || {};
-            const newConfig = {
-                ...currentConfig,
-                empresa_datos: { ...formData },
-                updatedAt: new Date().toISOString()
-            };
-
-            const { error: wcErr } = await supabase.from("website_config").upsert(
-                { tenant_id: userProfile.inquilino, config: newConfig },
-                { onConflict: "tenant_id" }
+            await saveConfigSection(
+                userProfile.inquilino,
+                "empresa_datos",
+                { ...empresaPublicData }
             );
-            if (wcErr) throw wcErr;
 
             // Limpiar caché de sesión de AuthContext para asegurar recarga limpia en F5
             try {
@@ -139,6 +149,8 @@ export default function ConfigEmpresa() {
             } catch (e) {}
 
             window.dispatchEvent(new CustomEvent("tenant-updated"));
+            setSisproHasPassword(Boolean(sisproPassword || sisproHasPassword));
+            setFormData(prev => ({ ...prev, sisproPassword: "" }));
             toast.success("Información guardada correctamente");
         } catch (error) {
             console.error("Error guardando empresa:", error);
@@ -162,54 +174,43 @@ export default function ConfigEmpresa() {
             return;
         }
 
-        if (file.size > 2 * 1024 * 1024) {
-            toast.error("La imagen es demasiado grande (máx 2MB)");
-            return;
-        }
-
         setUploading(true);
         try {
-            // Convertir la imagen directamente a DataURL Base64 para almacenamiento autónomo instantáneo
-            const finalUrl = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = () => reject(new Error("Error leyendo archivo"));
-                reader.readAsDataURL(file);
+            const extension = (file.name?.split(".").pop() || "jpg").toLowerCase();
+            const uploaded = await uploadOptimizedPublicFile({
+                bucket: "public-assets",
+                path: `${userProfile.inquilino}/branding/logo-${Date.now()}.${extension}`,
+                file,
+                profile: "avatar"
             });
+            const finalUrl = uploaded.publicUrl;
+            if (!finalUrl) throw new Error("Storage no devolvió la URL del logo.");
 
             setFormData(prev => ({ ...prev, logoUrl: finalUrl }));
 
-            // Guardar automáticamente en Supabase (tenants y website_config)
-            if (userProfile?.inquilino && finalUrl) {
-                await supabase.from("tenants").update({ logo_url: finalUrl }).eq("id", userProfile.inquilino);
+            if (userProfile?.inquilino) {
+                const { error: tenantError } = await supabase
+                    .from("tenants")
+                    .update({ logo_url: finalUrl })
+                    .eq("id", userProfile.inquilino);
+                if (tenantError) throw tenantError;
 
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", userProfile.inquilino)
-                    .maybeSingle();
-
-                const currentConfig = cfgRow?.config || {};
-                const newConfig = {
-                    ...currentConfig,
-                    empresa_datos: {
-                        ...(currentConfig.empresa_datos || {}),
-                        logoUrl: finalUrl
-                    },
-                    updatedAt: new Date().toISOString()
-                };
-
-                await supabase.from("website_config").upsert(
-                    { tenant_id: userProfile.inquilino, config: newConfig },
-                    { onConflict: "tenant_id" }
+                const companyConfig = await getConfigSection(
+                    userProfile.inquilino,
+                    "empresa_datos",
+                    {}
                 );
+                await saveConfigSection(userProfile.inquilino, "empresa_datos", {
+                    ...(companyConfig || {}),
+                    logoUrl: finalUrl
+                });
 
                 try {
                     const uid = userProfile?.id || userProfile?.uid;
-                    if (uid) {
-                        sessionStorage.removeItem(`oc_user_profile_${uid}`);
-                    }
-                } catch (e) {}
+                    if (uid) sessionStorage.removeItem(`oc_user_profile_${uid}`);
+                } catch {
+                    // sessionStorage puede no estar disponible en todos los entornos.
+                }
 
                 window.dispatchEvent(new CustomEvent("tenant-updated"));
             }

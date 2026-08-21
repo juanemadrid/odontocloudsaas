@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FiSave, FiX, FiCamera, FiBox, FiUploadCloud } from "react-icons/fi";
-import supabase from "../../../lib/supabaseClient";
+import { uploadOptimizedPublicFile } from "../../../services/storageUploadService";
 import { toast } from "sonner";
 
 const initialFormState = {
@@ -57,10 +57,14 @@ export default function ProductoForm({ item, categories, inquilino, onSave, onCa
     setIsUploading(true);
     try {
       const filePath = `${inquilino}/inventario/${Date.now()}_${file.name}`;
-      const { error } = await supabase.storage.from("clinical-files").upload(filePath, file, { upsert: true });
-      if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from("clinical-files").getPublicUrl(filePath);
-      setForm(prev => ({ ...prev, imagen: publicUrl }));
+      const uploaded = await uploadOptimizedPublicFile({
+        bucket: "clinical-files",
+        path: filePath,
+        file,
+        profile: "avatar",
+        upsert: true,
+      });
+      setForm(prev => ({ ...prev, imagen: uploaded.publicUrl }));
       toast.success("Imagen cargada con éxito");
     } catch (error) {
       console.error("Error uploading image:", error);
