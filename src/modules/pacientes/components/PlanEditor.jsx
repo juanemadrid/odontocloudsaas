@@ -1120,17 +1120,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             {/* Main Area: The Invoice Editor */}
             <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar pb-32">
                 <div className="max-w-6xl mx-auto space-y-4">
-                    {hasPayments && (
-                        <div className="bg-amber-50 border border-amber-100 rounded-3xl p-5 flex items-center gap-4 text-amber-800 shrink-0 animate-fadeIn shadow-sm">
-                            <FiAlertCircle size={24} className="text-amber-500 shrink-0" />
-                            <div>
-                                <p className="text-[11px] font-black uppercase tracking-widest leading-none text-amber-600 mb-1">Modificación Protegida</p>
-                                <p className="text-[10px] font-bold text-amber-500/80 uppercase tracking-wider leading-normal">
-                                    Este plan de tratamiento tiene pagos registrados. Los tratamientos ya pagados o abonados no pueden modificarse ni eliminarse. Sin embargo, puede agregar nuevos tratamientos a este plan.
-                                </p>
-                            </div>
-                        </div>
-                    )}
+
                     {!hasPayments && items.some(it => isItemRealized(it.id)) && (
                         <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-5 flex items-center gap-4 shrink-0 animate-fadeIn shadow-sm">
                             <FiCheck size={24} className="text-indigo-500 shrink-0" />
