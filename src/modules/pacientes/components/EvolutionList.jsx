@@ -406,16 +406,12 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
         ? 'text-amber-700 bg-amber-50 border-amber-200'
         : isNota
         ? 'text-purple-700 bg-purple-50 border-purple-200'
-        : isFinalized
-        ? 'text-emerald-800 bg-emerald-100 border-emerald-300'
         : 'text-[#5a8a2e] bg-[#f0f9e8] border-[#c5e4a0]';
 
     const badgeLabel = isRemission 
         ? 'Remisión' 
         : isNota 
         ? 'Nota Aclaratoria' 
-        : isFinalized
-        ? 'Finalizado'
         : 'Evolución';
 
     return (
