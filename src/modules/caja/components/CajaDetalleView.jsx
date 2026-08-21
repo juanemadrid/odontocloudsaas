@@ -253,137 +253,98 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   const clinicEmail = tenantConfig?.email || userProfile?.email || "";
   const clinicLogo = tenantConfig?.logo || tenantConfig?.logoUrl || userProfile?.logoUrl || userProfile?.logo || "";
 
-  // Exportar movimientos a Excel con diseño profesional azul
-  const handleExportMovimientos = () => {
+  // Exportar movimientos a Excel (.xlsx) nativo sin advertencias de formato
+  const handleExportMovimientos = async () => {
     if (movimientos.length === 0) {
       window.alert("No hay movimientos para exportar.");
       return;
     }
 
-    const clinicTitle = sucursalNombre.toUpperCase();
-    const clinicNitStr = clinicNit || "—";
-    const fechaAperturaStr = fmtDate(caja.fechaApertura || caja.created_at);
-    const usuarioElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
-      ? userProfile.nombreCompleto
-      : (userProfile?.nombre && !userProfile.nombre.includes("@"))
-      ? userProfile.nombre
-      : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
-      ? caja.usuarioNombre
-      : "Guillermo Rodríguez";
+    try {
+      const XLSX = await import("xlsx");
 
-    // Generar filas estilizadas en HTML con compatibilidad total con Microsoft Excel
-    const tableRowsHtml = movimientos.map((m, idx) => {
-      const isEg = m.tipo === "egreso";
-      const montoFormateado = isEg 
-        ? `- $ ${Number(m.monto || 0).toLocaleString('es-CO')}` 
-        : `$ ${Number(m.monto || 0).toLocaleString('es-CO')}`;
-      const saldoFormateado = `$ ${Number(balanceMap[m.id] ?? totalCaja).toLocaleString('es-CO')}`;
-      const rowBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
-      const badgeBg = isEg ? "#fee2e2" : "#dcfce7";
-      const badgeColor = isEg ? "#991b1b" : "#166534";
-      const montoColor = isEg ? "#dc2626" : "#16a34a";
+      const clinicTitle = sucursalNombre.toUpperCase();
+      const clinicNitStr = clinicNit || "—";
+      const fechaAperturaStr = fmtDate(caja.fechaApertura || caja.created_at);
+      const usuarioElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
+        ? userProfile.nombreCompleto
+        : (userProfile?.nombre && !userProfile.nombre.includes("@"))
+        ? userProfile.nombre
+        : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
+        ? caja.usuarioNombre
+        : "Guillermo Rodríguez";
 
-      return `
-        <tr style="background-color: ${rowBg};">
-          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #475569;">${fmtDate(m.fecha)}</td>
-          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold; background-color: ${badgeBg}; color: ${badgeColor}; text-transform: uppercase;">${isEg ? "Egreso" : "Ingreso"}</td>
-          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold; font-family: monospace; color: #1e293b;">${m.nroConsecutivo || m.consecutivo || "—"}</td>
-          <td style="padding: 10px; border: 1px solid #e2e8f0; font-size: 11px; font-weight: bold; color: #0f172a; text-transform: uppercase;">${m.pacienteNombre || m.tercero || "—"}</td>
-          <td style="padding: 10px; border: 1px solid #e2e8f0; font-size: 11px; color: #334155;">${m.concepto || (isEg ? "Egreso de Caja" : "Abono a tratamiento")}</td>
-          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #475569; text-transform: uppercase;">${m.metodoPago || "Efectivo"}</td>
-          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right; font-size: 12px; font-weight: bold; font-family: monospace; color: ${montoColor};">${montoFormateado}</td>
-          <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right; font-size: 12px; font-weight: bold; font-family: monospace; color: #0f172a; background-color: #f1f5f9;">${saldoFormateado}</td>
-        </tr>
-      `;
-    }).join("");
+      // Encabezado corporativo estructurado
+      const sheetData = [
+        [clinicTitle],
+        ["REPORTE DETALLADO DE MOVIMIENTOS DE CAJA"],
+        [`NIT: ${clinicNitStr}`, "", `Responsable: ${usuarioElaborador}`, "", `Apertura: ${fechaAperturaStr}`, "", `Exportado: ${fmtDate(new Date())}`],
+        [`Total Recaudos: $ ${totalIngresos.toLocaleString('es-CO')}`, "", `Total Gastos: $ ${totalEgresos.toLocaleString('es-CO')}`, "", `Saldo Actual en Caja: $ ${totalCaja.toLocaleString('es-CO')}`],
+        [],
+        [
+          "Fecha y Hora",
+          "Tipo",
+          "Consecutivo",
+          "Tercero / Paciente",
+          "Concepto / Detalle",
+          "Medio de Pago",
+          "Valor",
+          "Saldo Actual"
+        ]
+      ];
 
-    const excelHtml = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-        <head>
-          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-          <!--[if gte mso 9]>
-          <xml>
-            <x:ExcelWorkbook>
-              <x:ExcelWorksheets>
-                <x:ExcelWorksheet>
-                  <x:Name>Movimientos Caja</x:Name>
-                  <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
-                </x:ExcelWorksheet>
-              </x:ExcelWorksheets>
-            </x:ExcelWorkbook>
-          </xml>
-          <![endif]-->
-          <style>
-            body { font-family: 'Calibri', 'Segoe UI', Arial, sans-serif; }
-            table { border-collapse: collapse; width: 100%; }
-          </style>
-        </head>
-        <body>
-          <table>
-            <!-- Title Header Row -->
-            <tr>
-              <th colspan="8" style="background-color: #1e3a8a; color: #ffffff; font-size: 16px; font-weight: bold; text-align: center; padding: 14px; text-transform: uppercase; letter-spacing: 1px;">
-                ${clinicTitle}
-              </th>
-            </tr>
-            <tr>
-              <th colspan="8" style="background-color: #2563eb; color: #ffffff; font-size: 13px; font-weight: bold; text-align: center; padding: 8px; text-transform: uppercase;">
-                REPORTE DETALLADO DE MOVIMIENTOS DE CAJA
-              </th>
-            </tr>
-            <!-- Metadata Card Row -->
-            <tr style="background-color: #eff6ff;">
-              <td colspan="4" style="padding: 8px 12px; font-size: 11px; color: #1e40af; border: 1px solid #bfdbfe;">
-                <strong>NIT:</strong> ${clinicNitStr} &nbsp;|&nbsp; <strong>Responsable:</strong> ${usuarioElaborador}
-              </td>
-              <td colspan="4" style="padding: 8px 12px; font-size: 11px; color: #1e40af; border: 1px solid #bfdbfe; text-align: right;">
-                <strong>Apertura:</strong> ${fechaAperturaStr} &nbsp;|&nbsp; <strong>Exportado:</strong> ${fmtDate(new Date())}
-              </td>
-            </tr>
-            <!-- Summary Totals Row -->
-            <tr style="background-color: #f8fafc;">
-              <td colspan="3" style="padding: 10px; font-size: 12px; color: #16a34a; font-weight: bold; border: 1px solid #e2e8f0;">
-                TOTAL RECAUDOS: $ ${totalIngresos.toLocaleString('es-CO')}
-              </td>
-              <td colspan="2" style="padding: 10px; font-size: 12px; color: #dc2626; font-weight: bold; border: 1px solid #e2e8f0; text-align: center;">
-                TOTAL GASTOS: $ ${totalEgresos.toLocaleString('es-CO')}
-              </td>
-              <td colspan="3" style="padding: 10px; font-size: 13px; color: #1e3a8a; font-weight: 900; border: 1px solid #e2e8f0; text-align: right; background-color: #dbeafe;">
-                SALDO ACTUAL EN CAJA: $ ${totalCaja.toLocaleString('es-CO')}
-              </td>
-            </tr>
-            <tr><td colspan="8" style="height: 14px;"></td></tr>
+      movimientos.forEach(m => {
+        const isEg = m.tipo === "egreso";
+        const val = isEg ? -Number(m.monto || 0) : Number(m.monto || 0);
+        const sal = Number(balanceMap[m.id] ?? totalCaja);
+        sheetData.push([
+          fmtDate(m.fecha),
+          isEg ? "Egreso" : "Ingreso",
+          m.nroConsecutivo || m.consecutivo || "—",
+          m.pacienteNombre || m.tercero || "—",
+          m.concepto || (isEg ? "Egreso de Caja" : "Abono a tratamiento"),
+          m.metodoPago || "Efectivo",
+          val,
+          sal
+        ]);
+      });
 
-            <!-- Table Header Columns -->
-            <thead>
-              <tr>
-                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 140px;">Fecha y Hora</th>
-                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 100px;">Tipo</th>
-                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 120px;">Consecutivo</th>
-                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: left; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 220px;">Tercero / Paciente</th>
-                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: left; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 240px;">Concepto / Detalle</th>
-                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: center; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 130px;">Medio de Pago</th>
-                <th style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: bold; text-align: right; padding: 12px; border: 1px solid #1d4ed8; text-transform: uppercase; width: 130px;">Valor</th>
-                <th style="background-color: #1e3a8a; color: #ffffff; font-size: 11px; font-weight: bold; text-align: right; padding: 12px; border: 1px solid #172554; text-transform: uppercase; width: 140px;">Saldo Actual</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRowsHtml}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
 
-    const blob = new Blob(["\ufeff" + excelHtml], { type: "application/vnd.ms-excel;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Movimientos_Caja_${caja.id.slice(0, 8)}.xls`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      // Anchos de columna profesionales
+      ws['!cols'] = [
+        { wch: 22 }, // Fecha
+        { wch: 12 }, // Tipo
+        { wch: 16 }, // Consecutivo
+        { wch: 32 }, // Tercero / Paciente
+        { wch: 35 }, // Concepto
+        { wch: 18 }, // Medio de Pago
+        { wch: 18 }, // Valor
+        { wch: 18 }  // Saldo Actual
+      ];
+
+      // Formatear columnas numéricas
+      const range = XLSX.utils.decode_range(ws['!ref'] || "A1");
+      for (let R = 6; R <= range.e.r; ++R) {
+        const cellValor = ws[XLSX.utils.encode_cell({ r: R, c: 6 })];
+        if (cellValor) {
+          cellValor.t = 'n';
+          cellValor.z = '$ #,##0';
+        }
+        const cellSaldo = ws[XLSX.utils.encode_cell({ r: R, c: 7 })];
+        if (cellSaldo) {
+          cellSaldo.t = 'n';
+          cellSaldo.z = '$ #,##0';
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Movimientos_Caja");
+
+      XLSX.writeFile(wb, `Movimientos_Caja_${caja.id.slice(0, 8)}.xlsx`);
+    } catch (err) {
+      console.error("Error exportando a Excel:", err);
+    }
   };
 
   // Filtrar movimientos por búsqueda

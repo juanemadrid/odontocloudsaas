@@ -14,29 +14,54 @@ export const ReceiptPrintService = {
         window.alert("Generando recibo de caja...");
 
         try {
-            // Fetch plan details dynamically if planId is present
-            let totalPlan = "—";
-            let totalPagadoPlan = "—";
-            let saldoPlan = "—";
-            let planTitle = pago.planTitle || "Abono General";
+            // Fetch plan details dynamically if planId is present or query patient's active plan
+            let totalPlan = null;
+            let totalPagadoPlan = null;
+            let saldoPlan = null;
+            let planTitle = pago.planTitle;
 
-            if (pago.planId) {
-                const { data: planData } = await supabase
-                    .from("treatment_plans")
-                    .select("*")
-                    .eq("id", pago.planId)
-                    .maybeSingle();
-                if (planData) {
-                    totalPlan = Number(planData.total || 0);
-                    
-                    // Sum payments for this plan
-                    const { data: allPayments } = await supabase
-                        .from("pagos")
+            const targetPlanId = pago.planId || pago.plan_id;
+            const targetPatientId = patient.id || pago.pacienteId || pago.paciente_id;
+
+            if (targetPlanId) {
+                try {
+                    const { data: planData } = await supabase
+                        .from("treatment_plans")
                         .select("*")
-                        .eq("planId", pago.planId);
-                    totalPagadoPlan = (allPayments || []).reduce((sum, p) => sum + Number(p.monto || 0), 0);
-                    saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
-                }
+                        .eq("id", targetPlanId)
+                        .maybeSingle();
+                    if (planData) {
+                        planTitle = planData.title || planData.nombre || planTitle || "Tratamiento Odontológico";
+                        totalPlan = Number(planData.total || 0);
+                        
+                        const { data: allPayments } = await supabase
+                            .from("pagos")
+                            .select("*")
+                            .eq("planId", targetPlanId);
+                        totalPagadoPlan = (allPayments || []).reduce((sum, p) => sum + Number(p.monto || 0), 0);
+                        saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
+                    }
+                } catch (e) {}
+            } else if (targetPatientId && pago.tipo !== "egreso") {
+                try {
+                    const { data: pPlans } = await supabase
+                        .from("treatment_plans")
+                        .select("*")
+                        .eq("paciente_id", targetPatientId)
+                        .order("created_at", { ascending: false })
+                        .limit(1);
+                    if (pPlans && pPlans.length > 0) {
+                        const planData = pPlans[0];
+                        planTitle = planData.title || planData.nombre || "Tratamiento Odontológico";
+                        totalPlan = Number(planData.total || 0);
+                        const { data: allPayments } = await supabase
+                            .from("pagos")
+                            .select("*")
+                            .eq("pacienteId", targetPatientId);
+                        totalPagadoPlan = (allPayments || []).reduce((sum, p) => sum + Number(p.monto || 0), 0);
+                        saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
+                    }
+                } catch (e) {}
             }
 
             // Create hidden container
@@ -105,14 +130,12 @@ export const ReceiptPrintService = {
 
             const subtotalStr = `$ ${Number(pago.monto || 0).toLocaleString('es-CO')}`;
             const totalStr = `$ ${Number(pago.monto || 0).toLocaleString('es-CO')}`;
-            const totalPlanStr = typeof totalPlan === "number" ? `$ ${totalPlan.toLocaleString('es-CO')}` : "—";
-            const totalPagadoPlanStr = typeof totalPagadoPlan === "number" ? `$ ${totalPagadoPlan.toLocaleString('es-CO')}` : "—";
-            const saldoPlanStr = typeof saldoPlan === "number" ? `$ ${saldoPlan.toLocaleString('es-CO')}` : "—";
 
             const conceptStr = pago.concepto || "Abono a tratamiento";
-            const observationsStr = pago.notas || `Abono del plan ${pago.planTitle || ''}`;
+            const observationsStr = pago.notas || `Abono de tratamiento`;
 
             const isEgreso = pago.tipo === "egreso";
+            const hasPlanInfo = !isEgreso && typeof totalPlan === "number" && totalPlan > 0;
             const accentColor = isEgreso ? "#dc2626" : "#2563eb";
             const accentBg = isEgreso ? "#fef2f2" : "#eff6ff";
             const accentBorder = isEgreso ? "#fca5a5" : "#dbeafe";
@@ -219,24 +242,24 @@ export const ReceiptPrintService = {
                                 <span style="font-size: 18px; font-weight: 900;">${totalStr}</span>
                             </div>
 
-                            ${!isEgreso ? `
+                            ${hasPlanInfo ? `
                                 <div style="height: 1px; border-top: 1px dashed #cbd5e1; margin: 12px 0 6px 0;"></div>
 
                                 <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #64748b; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 8px;">Plan de Trat.:</span>
-                                    <span style="font-weight: 800; text-transform: uppercase; text-align: right; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${planTitle}">${planTitle}</span>
+                                    <span style="font-weight: 800; text-transform: uppercase; text-align: right;" title="${planTitle || 'Tratamiento'}">${planTitle || 'Tratamiento'}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #64748b; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 8px;">Total plan:</span>
-                                    <span style="font-family: monospace; font-weight: bold;">${totalPlanStr}</span>
+                                    <span style="font-family: monospace; font-weight: bold;">$ ${Number(totalPlan).toLocaleString('es-CO')}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #10b981; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 8px;">Total pagado:</span>
-                                    <span style="font-family: monospace; font-weight: bold;">${totalPagadoPlanStr}</span>
+                                    <span style="font-family: monospace; font-weight: bold;">$ ${Number(totalPagadoPlan || 0).toLocaleString('es-CO')}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #ef4444; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 8px;">Saldo restante:</span>
-                                    <span style="font-family: monospace; font-weight: bold;">${saldoPlanStr}</span>
+                                    <span style="font-family: monospace; font-weight: bold;">$ ${Number(saldoPlan || 0).toLocaleString('es-CO')}</span>
                                 </div>
                             ` : ''}
                         </div>
@@ -252,12 +275,6 @@ export const ReceiptPrintService = {
                             <p style="margin: 0; font-size: 12px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">${isEgreso ? "Recibido / Beneficiario" : "Aceptado por el Paciente"}</p>
                             <p style="margin: 4px 0; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Firma y Cédula / Sello</p>
                         </div>
-                    </div>
-
-                    <div style="margin-top: 50px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px;">
-                        <p style="margin: 0; font-size: 9px; color: #cbd5e1; font-weight: 800; text-transform: uppercase; letter-spacing: 4px;">
-                            Documento oficial generado por OdontoCloud Elite Pro
-                        </p>
                     </div>
                 </div>
             `;
