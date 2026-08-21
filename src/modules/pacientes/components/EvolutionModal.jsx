@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiX, FiCheck, FiTrash2, FiPlus, FiActivity, FiLock } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
+import { getDoctorsList } from '../../../services/supabaseServices';
 import { getPlansByPatient } from '../../../services/planService';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
@@ -251,127 +252,33 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
         const fetchData = async () => {
             try {
-                // ─── Cargar doctores des-normalizados (profesionales, profiles, website_config, patient, userProfile) ───
-                const mapDoctors = new Map();
-                const inquilino = userProfile?.inquilino || userProfile?.tenantId || patient?.inquilino || patient?.tenant_id;
+                // ─── Cargar ÚNICAMENTE doctores asignados a este paciente ───
+                let loadedDoctors = await getDoctorsList(userProfile, patient);
 
-                // A. Doctores asignados al paciente
-                const assignedList = (Array.isArray(patient?.profesionales) && patient.profesionales.length > 0)
-                    ? patient.profesionales
-                    : (Array.isArray(patient?.historial_medico?.profesionales) && patient.historial_medico.profesionales.length > 0)
-                        ? patient.historial_medico.profesionales
-                        : (patient?.profesional_nombre ? [{ id: patient.profesional_id || 'default-doc', nombre: patient.profesional_nombre }] : []);
-
-                assignedList.forEach(d => {
-                    const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
-                    const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-                    if (name.trim() && docId) {
-                        mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
+                // Si se está editando una evolución/nota existente y su doctor no está en la lista actual, incluirlo
+                if (initialData?.doctorId || initialData?.profesionalId) {
+                    const prevDocId = String(initialData.doctorId || initialData.profesionalId);
+                    const prevDocName = initialData.profesional || initialData.doctorName || initialData.profesionalNombre || "Doctor";
+                    if (!loadedDoctors.some(d => String(d.id) === prevDocId)) {
+                        loadedDoctors = [
+                            ...loadedDoctors,
+                            { id: prevDocId, nombre: prevDocName, nombreCompleto: prevDocName, email: '' }
+                        ];
                     }
-                });
-
-                // B. Cargar desde tabla profesionales
-                try {
-                    let query = supabase.from('profesionales').select('*');
-                    if (inquilino) {
-                        query = query.eq('tenant_id', inquilino);
-                    }
-                    const { data: profData } = await query;
-                    if (profData && Array.isArray(profData)) {
-                        profData.forEach(d => {
-                            if (d.activo !== false) {
-                                const name = d.nombre_completo || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
-                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-                                if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, {
-                                        id: docId,
-                                        nombre: name,
-                                        nombreCompleto: name,
-                                        email: d.correo || d.email || '',
-                                        raw: d
-                                    });
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn('Error cargando profesionales:', e);
                 }
 
-                // C. Cargar desde tabla profiles
-                try {
-                    let query = supabase.from('profiles').select('*');
-                    if (inquilino) query = query.eq('tenant_id', inquilino);
-                    const { data: profsData } = await query;
-                    if (profsData && Array.isArray(profsData)) {
-                        profsData.forEach(u => {
-                            const name = u.full_name || u.nombreCompleto || u.nombre || u.email || '';
-                            const docId = String(u.id || (name ? name.toLowerCase() : ''));
-                            if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn('Error cargando profiles:', e);
-                }
-
-                // D. Cargar desde website_config (usuarios / user_details / doctores)
-                try {
-                    if (inquilino) {
-                        const { data: cfgRow } = await supabase
-                            .from("website_config")
-                            .select("config")
-                            .eq("tenant_id", inquilino)
-                            .maybeSingle();
-
-                        if (cfgRow?.config) {
-                            const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
-                            const userDetails = cfgRow.config.user_details || {};
-                            const doctores = cfgRow.config.doctores || cfgRow.config.profesionales || [];
-
-                            usuarios.forEach(u => {
-                                const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
-                                const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
-                                if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '' });
-                                }
-                            });
-
-                            doctores.forEach(d => {
-                                const name = d.nombreCompleto || d.nombre || d.displayName || d.email || "";
-                                const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-                                if (name.trim() && docId && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '' });
-                                }
-                            });
-                        }
-                    }
-                } catch (e) {
-                    console.warn('Error cargando website_config:', e);
-                }
-
-                // E. SIEMPRE incluir al usuario actual en sesión (ej. Carlos Madrid / Doctor)
-                if (userProfile) {
+                // Fallback de seguridad si el paciente aún no tiene profesionales asignados
+                if (loadedDoctors.length === 0 && userProfile) {
                     const myId = String(userProfile.uid || userProfile.id || 'current_user');
                     const myName = userProfile.nombreCompleto ||
                         userProfile.nombre ||
                         `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() ||
                         userProfile.displayName ||
-                        userProfile.email ||
-                        "Doctor Principal";
-
-                    if (myName.trim() && !mapDoctors.has(myId)) {
-                        mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' });
-                    }
+                        "Doctor Asignado";
+                    loadedDoctors = [{ id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' }];
                 }
 
-                // F. Fallback por si la clínica es completamente nueva
-                if (mapDoctors.size === 0) {
-                    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '' });
-                }
-
-                let loadedDoctors = Array.from(mapDoctors.values());
+                setDoctors(loadedDoctors);
 
                 // Auto-seleccionar el primer doctor o el usuario actual si no hay nada seleccionado aún
                 if (loadedDoctors.length > 0 && !watch("doctorId")) {
@@ -379,8 +286,6 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     const matchedMyEntry = loadedDoctors.find(d => String(d.id) === currentUid);
                     setValue('doctorId', matchedMyEntry ? matchedMyEntry.id : loadedDoctors[0].id);
                 }
-
-                setDoctors(loadedDoctors);
 
                 // Cargar medicamentos registrados de la clínica (con fallback silencioso)
                 const DEFAULT_MEDS = ["Amoxicilina 500mg", "Ibuprofeno 600mg", "Paracetamol 500mg", "Clorhexidina 0.12%", "Naproxeno 500mg", "Azitromicina 500mg", "Clindamicina 300mg", "Ketorolaco 10mg", "Dexametasona 4mg"];
