@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
     FiCalendar, FiPlus, FiTrash2, FiSave, FiAlertCircle, 
-    FiCheckCircle, FiX, FiInfo, FiHome, FiArrowLeft, FiUserPlus
+    FiCheckCircle, FiX, FiInfo, FiHome, FiArrowLeft, FiUserPlus, FiSearch, FiUser
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
@@ -89,9 +89,14 @@ export default function PagosForm({ onCancel, onSuccess }) {
     // Form fields - Card 4: Observaciones
     const [observaciones, setObservaciones] = useState("");
 
-    // Lookups
+    // Lookups & Buscador
     const [profesionales, setProfesionales] = useState([]);
     const [terceros, setTerceros] = useState([]);
+    const [terceroSearchQuery, setTerceroSearchQuery] = useState("");
+    const [isSearchingTercero, setIsSearchingTercero] = useState(false);
+    const [selectedTerceroObj, setSelectedTerceroObj] = useState(null);
+    const searchContainerRef = useRef(null);
+
     const [miCajaAbierta, setMiCajaAbierta] = useState(null);
     const [bancosDisponibles, setBancosDisponibles] = useState([]);
     const [facturasCompraPendientes, setFacturasCompraPendientes] = useState([]);
@@ -110,6 +115,17 @@ export default function PagosForm({ onCancel, onSuccess }) {
         ciudad: "Sincelejo"
     });
 
+    // Cerrar menú de búsqueda al hacer clic afuera
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+                setIsSearchingTercero(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
     // Cargar datos iniciales
     useEffect(() => {
         if (!inquilino) return;
@@ -127,20 +143,58 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
                 const cfg = cfgRow?.config || {};
 
-                // 2. Cargar Terceros / Proveedores
+                // 2. Cargar Terceros y Pacientes unificados
                 let tercerosList = [];
                 try {
                     const { data: tDb } = await supabase
                         .from("terceros")
                         .select("*")
                         .eq("tenant_id", inquilino);
-                    if (tDb && tDb.length > 0) tercerosList = tDb;
+                    if (tDb && tDb.length > 0) {
+                        tercerosList = tDb.map(t => ({
+                            id: t.id,
+                            nombre: t.nombre || t.razon_social || t.nombre_completo || "Tercero",
+                            documento: t.numero_documento || t.documento || t.nit || t.nroDocumento || "",
+                            tipoDocumento: t.tipo_documento || t.tipoDocumento || "NIT",
+                            telefono: t.telefono || "",
+                            tipo: "tercero"
+                        }));
+                    }
                 } catch (e) {}
 
                 if (tercerosList.length === 0) {
-                    tercerosList = cfg.terceros || cfg.proveedores || [];
+                    const rawT = cfg.terceros || cfg.proveedores || [];
+                    tercerosList = rawT.map(t => ({
+                        id: t.id || t.documento || t.nombre,
+                        nombre: t.nombre || t.razonSocial || "Tercero",
+                        documento: t.documento || t.nit || t.nroDocumento || "",
+                        tipoDocumento: t.tipoDocumento || "NIT",
+                        telefono: t.telefono || "",
+                        tipo: "tercero"
+                    }));
                 }
-                setTerceros(tercerosList);
+
+                // Cargar Pacientes de la clínica
+                let pacientesList = [];
+                try {
+                    const { data: pDb } = await supabase
+                        .from("pacientes")
+                        .select("id, nombre, apellido, documento, tipo_documento, telefono")
+                        .eq("tenant_id", inquilino);
+                    if (pDb && pDb.length > 0) {
+                        pacientesList = pDb.map(p => ({
+                            id: p.id,
+                            nombre: `${p.nombre || ''} ${p.apellido || ''}`.trim() || "Paciente",
+                            documento: p.documento || "",
+                            tipoDocumento: p.tipo_documento || "CC",
+                            telefono: p.telefono || "",
+                            tipo: "paciente"
+                        }));
+                    }
+                } catch (e) {}
+
+                const unifiedTerceros = [...tercerosList, ...pacientesList];
+                setTerceros(unifiedTerceros);
 
                 // 3. Cargar Profesionales / Doctores
                 let profList = [];
@@ -279,6 +333,18 @@ export default function PagosForm({ onCancel, onSuccess }) {
         return items.reduce((acc, item) => acc + (parseFloat(item.total) || 0), 0);
     }, [items]);
 
+    // Filtrar Terceros y Pacientes en tiempo real por el buscador
+    const filteredTerceros = useMemo(() => {
+        const q = (terceroSearchQuery || "").toLowerCase().trim();
+        if (!q) return [];
+        return terceros.filter(t => {
+            const name = String(t.nombre || "").toLowerCase();
+            const doc = String(t.documento || t.nroDocumento || "").toLowerCase();
+            const tel = String(t.telefono || "").toLowerCase();
+            return name.includes(q) || doc.includes(q) || tel.includes(q);
+        }).slice(0, 20);
+    }, [terceros, terceroSearchQuery]);
+
     // Guardar nuevo Tercero desde Modal
     const handleSaveNewTercero = async (e) => {
         e.preventDefault();
@@ -322,8 +388,20 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     .upsert({ tenant_id: inquilino, config: currCfg });
             } catch (e) {}
 
-            setTerceros(prev => [...prev, nuevoTerceroObj]);
-            setTerceroId(nuevoTerceroObj.id || nuevoTerceroObj.nombre);
+            const formattedNew = {
+                id: nuevoTerceroObj.id,
+                nombre: nuevoTerceroObj.nombre,
+                documento: nuevoTerceroObj.nroDocumento,
+                tipoDocumento: nuevoTerceroObj.tipoDocumento,
+                telefono: nuevoTerceroObj.telefono,
+                tipo: "tercero"
+            };
+
+            setTerceros(prev => [formattedNew, ...prev]);
+            setSelectedTerceroObj(formattedNew);
+            setTerceroId(formattedNew.id);
+            setTerceroSearchQuery(formattedNew.nombre);
+            setIsSearchingTercero(false);
             setShowNewTerceroModal(false);
             setNewTerceroData({
                 nombre: "",
@@ -334,7 +412,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 direccion: "",
                 ciudad: "Sincelejo"
             });
-            toast.success("Tercero registrado correctamente");
+            toast.success("Tercero registrado correctamente ✅");
         } catch (err) {
             console.error("Error creating tercero:", err);
             toast.error("Error al registrar el tercero");
@@ -353,8 +431,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
             toast.error("Seleccione un Banco o Caja para el egreso");
             return;
         }
-        if (!terceroId) {
-            toast.error("Seleccione el Tercero o Proveedor");
+        if (!terceroId && !terceroSearchQuery.trim()) {
+            toast.error("Seleccione o busque el Tercero o Paciente");
             return;
         }
 
@@ -366,7 +444,11 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
         setSaving(true);
         try {
-            const selectedTercero = terceros.find(t => t.id === terceroId || t.nombre === terceroId);
+            const selectedTercero = selectedTerceroObj || terceros.find(t => t.id === terceroId || t.nombre === terceroId) || {
+                id: terceroId || `tercero_${Date.now()}`,
+                nombre: terceroSearchQuery || terceroId || "Tercero",
+                documento: ""
+            };
             const selectedProf = profesionales.find(p => p.id === profesionalId || p.nombre === profesionalId);
 
             const pagoRecord = {
@@ -379,8 +461,10 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 bancoCaja,
                 medioPago: bancoCaja,
                 terceroId: selectedTercero?.id || terceroId,
-                tercero: selectedTercero?.nombre || terceroId,
-                proveedor: selectedTercero?.nombre || terceroId,
+                tercero: selectedTercero?.nombre || terceroId || terceroSearchQuery,
+                proveedor: selectedTercero?.nombre || terceroId || terceroSearchQuery,
+                documentoTercero: selectedTercero?.documento || "",
+                tipoTercero: selectedTercero?.tipo || "tercero",
                 condicionPago,
                 pagoFacturasCompra,
                 facturasSeleccionadas,
@@ -597,28 +681,108 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     </div>
 
                     <div className="p-6 space-y-4 max-w-4xl">
-                        {/* Tercero */}
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
-                                Tercero <span className="text-rose-500">*</span>
+                        {/* Tercero / Paciente con Buscador Interactivo */}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600 pt-2">
+                                Tercero / Paciente <span className="text-rose-500">*</span>
                             </label>
-                            <div className="md:col-span-9 flex items-center gap-2">
-                                <select
-                                    value={terceroId}
-                                    onChange={(e) => setTerceroId(e.target.value)}
-                                    className="w-full max-w-md h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                                >
-                                    <option value="">Seleccione...</option>
-                                    {terceros.map((t) => (
-                                        <option key={t.id || t.nombre} value={t.id || t.nombre}>
-                                            {t.nombre} {t.nroDocumento ? `(${t.nroDocumento})` : ''}
-                                        </option>
-                                    ))}
-                                </select>
+                            <div className="md:col-span-9 flex items-start gap-2">
+                                <div ref={searchContainerRef} className="relative w-full max-w-md">
+                                    {/* Input de Búsqueda */}
+                                    <div className="relative flex items-center">
+                                        <FiSearch className="absolute left-3 text-slate-400 pointer-events-none" size={14} />
+                                        <input
+                                            type="text"
+                                            value={terceroSearchQuery}
+                                            onChange={(e) => {
+                                                setTerceroSearchQuery(e.target.value);
+                                                setIsSearchingTercero(true);
+                                                if (selectedTerceroObj && selectedTerceroObj.nombre !== e.target.value) {
+                                                    setSelectedTerceroObj(null);
+                                                    setTerceroId("");
+                                                }
+                                            }}
+                                            onFocus={() => setIsSearchingTercero(true)}
+                                            placeholder="Escribe nombre o documento..."
+                                            className={`w-full h-9 pl-9 pr-8 bg-white border ${selectedTerceroObj ? 'border-emerald-400 bg-emerald-50/20 font-medium text-slate-800' : 'border-slate-200 text-slate-700'} rounded text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all`}
+                                            required
+                                        />
+                                        {terceroSearchQuery && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setTerceroSearchQuery("");
+                                                    setSelectedTerceroObj(null);
+                                                    setTerceroId("");
+                                                    setIsSearchingTercero(false);
+                                                }}
+                                                className="absolute right-2.5 text-slate-400 hover:text-slate-600 p-0.5"
+                                                title="Limpiar búsqueda"
+                                            >
+                                                <FiX size={14} />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Badge de Selección Activa */}
+                                    {selectedTerceroObj && (
+                                        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-medium">
+                                            <span className={`font-bold uppercase text-[9px] px-1.5 py-0.2 rounded text-white ${
+                                                selectedTerceroObj.tipo === 'paciente' ? 'bg-purple-600' : 'bg-emerald-600'
+                                            }`}>
+                                                {selectedTerceroObj.tipo === 'paciente' ? 'Paciente' : 'Tercero'}
+                                            </span>
+                                            <span className="truncate">{selectedTerceroObj.nombre}</span>
+                                            {selectedTerceroObj.documento && (
+                                                <span className="text-emerald-600 text-[10px]">({selectedTerceroObj.tipoDocumento || 'Doc'}: {selectedTerceroObj.documento})</span>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Menú Flotante de Resultados Filtrados */}
+                                    {isSearchingTercero && terceroSearchQuery.trim().length > 0 && (
+                                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50 divide-y divide-slate-100">
+                                            {filteredTerceros.length > 0 ? (
+                                                filteredTerceros.map((t) => (
+                                                    <button
+                                                        key={t.id + t.tipo}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedTerceroObj(t);
+                                                            setTerceroId(t.id || t.nombre);
+                                                            setTerceroSearchQuery(t.nombre);
+                                                            setIsSearchingTercero(false);
+                                                        }}
+                                                        className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center justify-between text-xs transition-colors cursor-pointer"
+                                                    >
+                                                        <div className="flex flex-col">
+                                                            <span className="font-semibold text-slate-800">{t.nombre}</span>
+                                                            <span className="text-[10px] text-slate-500">
+                                                                {t.tipoDocumento || 'Doc'}: {t.documento || 'Sin doc'} {t.telefono ? `• Tel: ${t.telefono}` : ''}
+                                                            </span>
+                                                        </div>
+                                                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                                                            t.tipo === 'paciente' 
+                                                                ? 'bg-purple-100 text-purple-700' 
+                                                                : 'bg-emerald-100 text-emerald-700'
+                                                        }`}>
+                                                            {t.tipo === 'paciente' ? 'Paciente' : 'Tercero'}
+                                                        </span>
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className="p-3 text-center text-xs text-slate-500">
+                                                    No se encontraron terceros ni pacientes con "<strong>{terceroSearchQuery}</strong>"
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
                                 <button
                                     type="button"
                                     onClick={() => setShowNewTerceroModal(true)}
-                                    className="w-7 h-7 rounded-full bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-sm shrink-0"
+                                    className="w-8 h-8 rounded-full bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-sm shrink-0 active:scale-95 mt-0.5"
                                     title="Crear nuevo tercero"
                                 >
                                     <FiPlus size={16} />
