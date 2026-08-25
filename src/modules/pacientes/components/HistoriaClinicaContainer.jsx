@@ -16,7 +16,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { getAnamnesis } from "../../../services/clinicalService";
-import { getDoctorSignatureAndData } from "../../../services/doctorSignatureService";
+import { getDoctorSignatureAndData, validateDoctorCanSign } from "../../../services/doctorSignatureService";
 const DocClinicoModal = React.lazy(() => import("./DocClinicoModal"));
 
 const printHTMLInHiddenIframe = (htmlContent) => {
@@ -210,6 +210,14 @@ export default function HistoriaClinicaContainer({ patient }) {
     const confirmSignPrescription = async () => {
         const docObj = signModal.doc;
         setSignModal({ isOpen: false, doc: null });
+        if (!docObj) return;
+
+        const validation = validateDoctorCanSign(userProfile, docObj);
+        if (!validation.canSign) {
+            toast.error(validation.message || "Sólo el doctor asociado a este documento puede firmar");
+            return;
+        }
+
         try {
             const updatedItems = (docObj.recetaItems || []).map(item => ({
                 ...item,

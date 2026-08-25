@@ -196,3 +196,103 @@ export async function getDoctorSignatureAndData(doctorNameOrId, tenantId, curren
 
   return result;
 }
+
+/**
+ * Valida si el usuario logueado posee rol de doctor y es el profesional asociado
+ * a la evolución o documento clínico que se intenta firmar.
+ * Retorna { canSign: boolean, message: string }
+ */
+export function validateDoctorCanSign(currentUserProfile, docOrEvo) {
+  if (!currentUserProfile) {
+    return { canSign: false, message: "Sólo el doctor asociado a este documento puede firmar" };
+  }
+
+  // 1. Debe tener rol de doctor / odontólogo
+  if (!isDoctorRole(currentUserProfile)) {
+    return { canSign: false, message: "Sólo el doctor asociado a este documento puede firmar" };
+  }
+
+  if (!docOrEvo) return { canSign: true };
+
+  // Extraer nombre del doctor asociado al documento / evolución
+  const rawAssociatedDoctorName = (
+    docOrEvo.profesional || 
+    docOrEvo.doctor || 
+    docOrEvo.doctorName || 
+    docOrEvo.medico || 
+    docOrEvo.odontologo || 
+    docOrEvo.usuario_nombre ||
+    docOrEvo.created_by_name ||
+    ""
+  ).trim();
+
+  // Extraer ID del doctor asociado al documento / evolución
+  const rawAssociatedDoctorId = (
+    docOrEvo.created_by || 
+    docOrEvo.doctor_id || 
+    docOrEvo.doctorId || 
+    docOrEvo.usuario_id || 
+    ""
+  ).trim();
+
+  // Si no tiene doctor asociado explícito, el doctor tratante actual puede firmar
+  if (!rawAssociatedDoctorName && !rawAssociatedDoctorId) {
+    return { canSign: true };
+  }
+
+  const currentUserId = String(currentUserProfile.uid || currentUserProfile.id || "").trim().toLowerCase();
+  const currentUserName = String(
+    currentUserProfile.nombreCompleto || 
+    currentUserProfile.displayName || 
+    `${currentUserProfile.nombre || ''} ${currentUserProfile.apellido || ''}`.trim() || 
+    currentUserProfile.email ||
+    ""
+  ).trim();
+
+  const normalizeStr = (str) => 
+    String(str || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const normAssocId = rawAssociatedDoctorId.toLowerCase();
+  const normAssocName = normalizeStr(rawAssociatedDoctorName);
+  const normCurrentName = normalizeStr(currentUserName);
+
+  // Validar si coincide ID
+  if (normAssocId && currentUserId && normAssocId === currentUserId) {
+    return { canSign: true };
+  }
+
+  // Validar si coincide Nombre
+  if (normAssocName && normCurrentName) {
+    if (
+      normAssocName === normCurrentName ||
+      normAssocName.includes(normCurrentName) ||
+      normCurrentName.includes(normAssocName)
+    ) {
+      return { canSign: true };
+    }
+
+    const assocTokens = normAssocName.split(" ").filter(t => t.length > 2);
+    const currTokens = normCurrentName.split(" ").filter(t => t.length > 2);
+    const matchingTokens = assocTokens.filter(t => currTokens.includes(t));
+
+    // Si coinciden al menos 2 nombres/apellidos significativos, permitir
+    if (matchingTokens.length >= 2 || (assocTokens.length === 1 && matchingTokens.length === 1)) {
+      return { canSign: true };
+    }
+
+    // Nombres claramente diferentes (ej: "ELIECER JOSE HERNANDEZ" vs "GUILLERMO JOSE")
+    return { 
+      canSign: false, 
+      message: "Sólo el doctor asociado a este documento puede firmar" 
+    };
+  }
+
+  return { canSign: true };
+}
+

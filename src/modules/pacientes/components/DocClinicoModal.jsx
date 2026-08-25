@@ -13,7 +13,7 @@ import CUPSSearch from './CUPSSearch';
 import { PREDEFINED_TEMPLATES } from '../../../data/plantillasPredeterminadas';
 import { getConfigItems } from '../../../services/configPersistenceService';
 import { getDoctorsList } from '../../../services/supabaseServices';
-import { getDoctorSignatureAndData } from '../../../services/doctorSignatureService';
+import { getDoctorSignatureAndData, validateDoctorCanSign } from '../../../services/doctorSignatureService';
 
 
 export default function DocClinicoModal({ isOpen, onClose, patient, docType, initialData = null, isViewOnly = false }) {
@@ -1953,6 +1953,15 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                                                 <button 
                                                                     type="button"
                                                                     onClick={async () => {
+                                                                        const validation = validateDoctorCanSign(userProfile, {
+                                                                            profesional: formData?.profesional || initialData?.profesional,
+                                                                            created_by: initialData?.created_by || initialData?.usuario_id
+                                                                        });
+                                                                        if (!validation.canSign) {
+                                                                            toast.error(validation.message || "Sólo el doctor asociado a este documento puede firmar");
+                                                                            return;
+                                                                        }
+
                                                                         const updatedItems = [...recetaItems];
                                                                         updatedItems[idx] = { 
                                                                             ...item, 

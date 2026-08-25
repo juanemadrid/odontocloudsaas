@@ -3,7 +3,7 @@ import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter, FiLock } from 'react-icons/fi';
-import { getDoctorSignatureAndData } from '../../../services/doctorSignatureService';
+import { getDoctorSignatureAndData, validateDoctorCanSign } from '../../../services/doctorSignatureService';
 
 
 // SVG de Huella digital codificado para simulador
@@ -1026,7 +1026,14 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                 parsed = { ...evoObj };
             }
 
-            const doctorIdent = evoObj.profesional || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+            // Validar que únicamente el doctor asociado a la evolución pueda firmar
+            const validation = validateDoctorCanSign(userProfile, { ...evoObj, ...parsed });
+            if (!validation.canSign) {
+                toast.error(validation.message || "Sólo el doctor asociado a este documento puede firmar");
+                return;
+            }
+
+            const doctorIdent = evoObj.profesional || parsed.profesional || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
             const doctorData = await getDoctorSignatureAndData(doctorIdent, userProfile?.inquilino, userProfile);
 
             const doctorSignature = {
