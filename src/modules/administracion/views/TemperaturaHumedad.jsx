@@ -389,25 +389,25 @@ export default function TemperaturaHumedad() {
     });
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden animate-fadeIn space-y-4 p-4">
-      {/* Top Horizontal Sub-Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden animate-in fade-in duration-300 space-y-4 p-4 font-sans text-slate-800">
+      {/* Top Header & Sub-Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
             <FiThermometer size={16} />
           </div>
           <div>
-            <h3 className="text-[14px] font-bold text-slate-800 uppercase tracking-tight">Temperatura y Humedad</h3>
-            <span className="text-[10px] text-slate-400 font-medium block">Monitoreo de cadena de frío</span>
+            <h3 className="text-sm font-bold text-slate-800">Temperatura y Humedad</h3>
+            <span className="text-[11px] text-slate-500 font-normal block">Monitoreo de cadena de frío y áreas clínicas</span>
           </div>
         </div>
 
-        <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 flex-wrap">
+        <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 flex-wrap gap-1">
           {[
-            { id: "UBICACIONES", label: "Ubicaciones", icon: <FiMapPin size={13} /> },
-            { id: "REGISTRAR", label: "Registrar Medición", icon: <FiPlus size={13} /> },
-            { id: "ENLISTAR", label: "Enlistar Mediciones", icon: <FiList size={13} /> },
-            { id: "GRAFICAR", label: "Graficar Mediciones", icon: <FiTrendingUp size={13} /> }
+            { id: "UBICACIONES", label: "Ubicaciones", icon: <FiMapPin size={12} /> },
+            { id: "REGISTRAR", label: "Registrar Medición", icon: <FiPlus size={12} /> },
+            { id: "ENLISTAR", label: "Enlistar Mediciones", icon: <FiList size={12} /> },
+            { id: "GRAFICAR", label: "Graficar Mediciones", icon: <FiTrendingUp size={12} /> }
           ].map(tab => (
             <button
               key={tab.id}
@@ -415,10 +415,10 @@ export default function TemperaturaHumedad() {
                 setActiveSubTab(tab.id);
                 setLocationFormOpen(false);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer border-0 ${
                 activeSubTab === tab.id
-                  ? "bg-white text-blue-600 shadow-xs"
-                  : "text-slate-500 hover:text-slate-800 bg-transparent"
+                  ? "bg-white text-emerald-700 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900 bg-transparent"
               }`}
             >
               {tab.icon}
@@ -429,117 +429,118 @@ export default function TemperaturaHumedad() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col space-y-4">
+      <div className="flex-1 overflow-y-auto space-y-4">
         
         {/* --- VIEW: UBICACIONES --- */}
         {activeSubTab === "UBICACIONES" && (
-          <div className="flex-1 flex flex-col animate-fadeIn">
+          <div className="flex-1 flex flex-col space-y-4">
             {locationFormOpen ? (
-              <form onSubmit={handleSaveLocation} className="max-w-xl bg-slate-50 border border-slate-100 p-6 rounded-2xl space-y-6">
-                <div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ubicaciones / {editingLocation ? "Editar" : "Nueva"}</span>
-                  <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">Información básica</h4>
+              <form onSubmit={handleSaveLocation} className="max-w-lg bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-2xs space-y-4">
+                <div className="border-b border-slate-100 pb-2">
+                  <span className="text-[11px] font-semibold text-slate-500 block mb-0.5">Ubicaciones / {editingLocation ? "Editar" : "Nueva"}</span>
+                  <h4 className="text-xs font-bold text-slate-800">Información básica</h4>
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Nombre *</label>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-slate-600">Nombre de la ubicación *</label>
                   <input
                     type="text"
                     required
                     value={locationName}
                     onChange={(e) => setLocationName(e.target.value)}
-                    placeholder="Nombre de la ubicación"
-                    className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
+                    placeholder="Ej: CONSULTORIO 1 o REFRIGERADOR"
+                    className="w-full h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
                   />
                 </div>
 
-                <div className="flex gap-2 justify-end pt-4 border-t border-slate-200/50">
+                <div className="flex gap-2 justify-end pt-3 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setLocationFormOpen(false)}
-                    className="px-6 py-2.5 rounded-xl bg-white border border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-widest hover:bg-slate-50 transition-all"
+                    className="h-8 px-3.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={saving}
-                    className="px-8 py-2.5 rounded-xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100"
+                    className="h-8 px-4 rounded-lg bg-[#7cb342] hover:bg-[#689f38] text-white text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                   >
-                    Guardar
+                    {saving ? "Guardando..." : "Guardar"}
                   </button>
                 </div>
               </form>
             ) : (
               <>
                 {/* Locations Header Controls */}
-                <div className="flex justify-between items-center gap-4 mb-6">
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div className="relative w-full max-w-sm">
-                    <FiSearch size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <FiSearch size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Buscar ubicación..."
-                      className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-slate-200 text-[12px] font-bold text-slate-700 bg-slate-50/50 outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300"
+                      className="w-full h-8 pl-8 pr-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-400"
                     />
                   </div>
 
                   <button
                     onClick={handleNewLocation}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100"
+                    className="h-8 px-3.5 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer gap-1.5"
                   >
-                    <FiPlus size={15} strokeWidth={3} />
+                    <FiPlus size={13} />
                     <span>Nueva ubicación</span>
                   </button>
                 </div>
 
                 {/* Locations Table */}
-                <div className="flex-1 overflow-auto border border-slate-100 rounded-2xl">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        <th className="px-6 py-4">Nombre de la Ubicación</th>
-                        <th className="px-6 py-4 text-center">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100/60 text-slate-700">
-                      {locations.length === 0 ? (
-                        <tr>
-                          <td colSpan="2" className="px-6 py-20 text-center">
-                            <div className="text-3xl mb-3">📍</div>
-                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No hay ubicaciones registradas</p>
-                          </td>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                          <th className="py-2.5 px-4">Nombre de la Ubicación</th>
+                          <th className="py-2.5 px-3 text-center w-24">Acciones</th>
                         </tr>
-                      ) : (
-                        locations
-                          .filter(l => (l.nombre || "").toLowerCase().includes(searchQuery.toLowerCase()))
-                          .map(loc => (
-                            <tr key={loc.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 font-bold text-slate-800 text-[13px]">{loc.nombre}</td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center justify-center gap-2">
-                                  <button
-                                    onClick={() => handleEditLocation(loc)}
-                                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                                    title="Editar"
-                                  >
-                                    <FiEdit3 size={15} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteLocation(loc)}
-                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                                    title="Eliminar"
-                                  >
-                                    <FiTrash2 size={15} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {locations.length === 0 ? (
+                          <tr>
+                            <td colSpan="2" className="py-16 text-center text-slate-400 italic text-xs">
+                              No hay ubicaciones registradas
+                            </td>
+                          </tr>
+                        ) : (
+                          locations
+                            .filter(l => (l.nombre || "").toLowerCase().includes(searchQuery.toLowerCase()))
+                            .map(loc => (
+                              <tr key={loc.id} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-2.5 px-4 font-bold text-slate-800">{loc.nombre}</td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      onClick={() => handleEditLocation(loc)}
+                                      className="w-7 h-7 rounded-lg bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center transition-colors border border-slate-200 cursor-pointer"
+                                      title="Editar"
+                                    >
+                                      <FiEdit3 size={12} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteLocation(loc)}
+                                      className="w-7 h-7 rounded-lg bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-colors border border-slate-200 cursor-pointer"
+                                      title="Eliminar"
+                                    >
+                                      <FiTrash2 size={12} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </>
             )}
@@ -548,119 +549,115 @@ export default function TemperaturaHumedad() {
 
         {/* --- VIEW: REGISTRAR MEDICION --- */}
         {activeSubTab === "REGISTRAR" && (
-          <form onSubmit={handleSaveMedicion} className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
-            <div className="border-b border-slate-100 pb-4 mb-6 shrink-0">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Mediciones / Registrar</span>
-              <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Formulario de Medición</h3>
+          <form onSubmit={handleSaveMedicion} className="bg-white border border-slate-200 p-4 sm:p-5 rounded-xl shadow-2xs space-y-4 max-w-3xl">
+            <div className="border-b border-slate-100 pb-2">
+              <span className="text-[11px] font-semibold text-slate-500 block mb-0.5">Mediciones / {editingMedicion ? "Editar" : "Registrar"}</span>
+              <h3 className="text-xs font-bold text-slate-800">Formulario de Medición</h3>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-2 pb-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50/50 p-6 border border-slate-100 rounded-2xl">
-                
-                {/* Location Select */}
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Ubicación *</label>
-                  <select
-                    required
-                    value={medicionForm.ubicacionId}
-                    onChange={(e) => setMedicionForm({ ...medicionForm, ubicacionId: e.target.value })}
-                    className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  >
-                    <option value="">Seleccione...</option>
-                    {locations.map(loc => (
-                      <option key={loc.id} value={loc.id}>{loc.nombre}</option>
-                    ))}
-                  </select>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              
+              {/* Location Select */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-600">Ubicación *</label>
+                <select
+                  required
+                  value={medicionForm.ubicacionId}
+                  onChange={(e) => setMedicionForm({ ...medicionForm, ubicacionId: e.target.value })}
+                  className="w-full h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors cursor-pointer"
+                >
+                  <option value="">Seleccione...</option>
+                  {locations.map(loc => (
+                    <option key={loc.id} value={loc.id}>{loc.nombre}</option>
+                  ))}
+                </select>
+              </div>
 
-                {/* Fecha de Medida */}
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Fecha de medida *</label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={medicionForm.fechaMedida}
-                    onChange={(e) => setMedicionForm({ ...medicionForm, fechaMedida: e.target.value })}
-                    className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
-                </div>
+              {/* Fecha de Medida */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-600">Fecha de medida *</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={medicionForm.fechaMedida}
+                  onChange={(e) => setMedicionForm({ ...medicionForm, fechaMedida: e.target.value })}
+                  className="w-full h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
 
-                {/* Temperatura Interna */}
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Temperatura interna *</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    required
-                    value={medicionForm.temperaturaInterna}
-                    onChange={(e) => setMedicionForm({ ...medicionForm, temperaturaInterna: e.target.value })}
-                    placeholder="Temperatura interna"
-                    className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
-                </div>
+              {/* Temperatura Interna */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-600">Temperatura interna (°C) *</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  required
+                  value={medicionForm.temperaturaInterna}
+                  onChange={(e) => setMedicionForm({ ...medicionForm, temperaturaInterna: e.target.value })}
+                  placeholder="Ej: 4.5"
+                  className="w-full h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
 
-                {/* Temperatura Externa */}
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Temperatura externa *</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    required
-                    value={medicionForm.temperaturaExterna}
-                    onChange={(e) => setMedicionForm({ ...medicionForm, temperaturaExterna: e.target.value })}
-                    placeholder="Temperatura externa"
-                    className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
-                </div>
+              {/* Temperatura Externa */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-600">Temperatura externa (°C) *</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  required
+                  value={medicionForm.temperaturaExterna}
+                  onChange={(e) => setMedicionForm({ ...medicionForm, temperaturaExterna: e.target.value })}
+                  placeholder="Ej: 22.0"
+                  className="w-full h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
 
-                {/* Humedad */}
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Humedad *</label>
-                  <input
-                    type="number"
-                    step="1"
-                    required
-                    value={medicionForm.humedad}
-                    onChange={(e) => setMedicionForm({ ...medicionForm, humedad: e.target.value })}
-                    placeholder="Humedad"
-                    className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
-                </div>
+              {/* Humedad */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-600">Humedad (%) *</label>
+                <input
+                  type="number"
+                  step="1"
+                  required
+                  value={medicionForm.humedad}
+                  onChange={(e) => setMedicionForm({ ...medicionForm, humedad: e.target.value })}
+                  placeholder="Ej: 55"
+                  className="w-full h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
 
-                {/* Empty grid space for alignment */}
-                <div className="hidden md:block" />
+              <div className="hidden sm:block" />
 
-                {/* Observaciones */}
-                <div className="md:col-span-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Observaciones</label>
-                  <textarea
-                    rows="3"
-                    value={medicionForm.observaciones}
-                    onChange={(e) => setMedicionForm({ ...medicionForm, observaciones: e.target.value })}
-                    placeholder="Observaciones"
-                    className="w-full p-4 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  />
-                </div>
-
+              {/* Observaciones */}
+              <div className="sm:col-span-2 flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-600">Observaciones</label>
+                <textarea
+                  rows="2"
+                  value={medicionForm.observaciones}
+                  onChange={(e) => setMedicionForm({ ...medicionForm, observaciones: e.target.value })}
+                  placeholder="Notas u observaciones adicionales..."
+                  className="w-full p-2.5 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors resize-none"
+                />
               </div>
             </div>
 
             {/* Form Actions footer */}
-            <div className="flex gap-3 justify-end pt-4 border-t border-slate-100 shrink-0">
+            <div className="flex gap-2 justify-end pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => {
                   setEditingMedicion(null);
                   setActiveSubTab("ENLISTAR");
                 }}
-                className="px-6 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[11px] font-black text-slate-600 uppercase tracking-widest border border-slate-200/60 transition-all"
+                className="h-8 px-3.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="px-8 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-blue-100"
+                className="h-8 px-4 rounded-lg bg-[#7cb342] hover:bg-[#689f38] text-white text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
               >
                 {saving ? "Guardando..." : "Guardar"}
               </button>
@@ -670,36 +667,31 @@ export default function TemperaturaHumedad() {
 
         {/* --- VIEW: ENLISTAR MEDICIONES --- */}
         {activeSubTab === "ENLISTAR" && (
-          <div className="flex-1 flex flex-col animate-fadeIn space-y-6">
+          <div className="flex-1 flex flex-col space-y-4">
             
             {/* Top Card: Search / Filters */}
-            <div className="bg-slate-50/50 border border-slate-100 p-6 rounded-2xl">
-              <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Mediciones</h3>
-                <span className="text-[10px] font-bold text-slate-400">
-                  Temperatura y Humedad - Mediciones
-                </span>
-              </div>
-              
-              <div className="flex flex-wrap items-end gap-6">
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Fecha Inicial</label>
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-slate-600">Fecha inicial</label>
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                   max="9999-12-31" min="1900-01-01" />
+                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                    max="9999-12-31" min="1900-01-01" 
+                  />
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Fecha Final</label>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-slate-600">Fecha final</label>
                   <input
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                   max="9999-12-31" min="1900-01-01" />
+                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                    max="9999-12-31" min="1900-01-01" 
+                  />
                 </div>
 
                 <button
@@ -707,7 +699,7 @@ export default function TemperaturaHumedad() {
                     setAppliedStartDate(startDate);
                     setAppliedEndDate(endDate);
                   }}
-                  className="h-10 px-8 rounded-xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100"
+                  className="h-8 px-4 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer"
                 >
                   Buscar
                 </button>
@@ -715,26 +707,26 @@ export default function TemperaturaHumedad() {
             </div>
 
             {/* Bottom Card: Table & Create Action */}
-            <div className="bg-white border border-slate-100 p-6 rounded-2xl flex-1 flex flex-col overflow-hidden">
-              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-                <div className="flex flex-1 gap-3 w-full max-w-xl">
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+                <div className="flex flex-1 gap-2.5 w-full max-w-lg">
                   <div className="relative flex-1">
-                    <FiSearch size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <FiSearch size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Buscar por responsable..."
-                      className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-slate-200 text-[12px] font-bold text-slate-700 bg-slate-50/50 outline-none focus:border-blue-400 focus:bg-white transition-all placeholder:text-slate-300"
+                      className="w-full h-8 pl-8 pr-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-400"
                     />
                   </div>
                   
                   <select
                     value={filterUbicacion}
                     onChange={(e) => setFilterUbicacion(e.target.value)}
-                    className="px-3 py-2.5 rounded-2xl border border-slate-200 text-[12px] font-bold text-slate-700 bg-white outline-none focus:border-blue-400 shrink-0"
+                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 shrink-0 cursor-pointer"
                   >
-                    <option value="">Todas las Ubicaciones</option>
+                    <option value="">Todas las ubicaciones</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.id}>{loc.nombre}</option>
                     ))}
@@ -746,101 +738,100 @@ export default function TemperaturaHumedad() {
                     setEditingMedicion(null);
                     setActiveSubTab("REGISTRAR");
                   }}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100 w-full sm:w-auto justify-center"
+                  className="h-8 px-3.5 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer gap-1.5 w-full sm:w-auto"
                 >
-                  <FiPlus size={15} strokeWidth={3} />
-                  <span>+ Nueva medida</span>
+                  <FiPlus size={13} />
+                  <span>Nueva medida</span>
                 </button>
               </div>
 
               {/* Measurements Table */}
-              <div className="flex-1 overflow-auto border border-slate-100 rounded-2xl">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      <th className="px-6 py-4">Fecha de medida</th>
-                      <th className="px-6 py-4">Ubicación</th>
-                      <th className="px-6 py-4 text-center">Temp. Interna (°C)</th>
-                      <th className="px-6 py-4 text-center">Temp. Externa (°C)</th>
-                      <th className="px-6 py-4 text-center">Humedad (%)</th>
-                      <th className="px-6 py-4">Responsable</th>
-                      <th className="px-6 py-4 text-center">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100/60 text-slate-700">
-                    {filteredMediciones.length === 0 ? (
-                      <tr>
-                        <td colSpan="7" className="px-6 py-20 text-center">
-                          <div className="text-3xl mb-3">🌡️</div>
-                          <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No hay mediciones registradas</p>
-                        </td>
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                        <th className="py-2.5 px-3">Fecha de medida</th>
+                        <th className="py-2.5 px-3">Ubicación</th>
+                        <th className="py-2.5 px-3 text-center">Temp. Interna</th>
+                        <th className="py-2.5 px-3 text-center">Temp. Externa</th>
+                        <th className="py-2.5 px-3 text-center">Humedad</th>
+                        <th className="py-2.5 px-3">Responsable</th>
+                        <th className="py-2.5 px-3 text-center w-24">Acciones</th>
                       </tr>
-                    ) : (
-                      filteredMediciones.map(med => {
-                        let formattedDate = med.fechaMedida || "";
-                        if (formattedDate.includes("T")) {
-                          const [dPart, tPart] = formattedDate.split("T");
-                          const [yr, mo, dy] = dPart.split("-");
-                          formattedDate = `${dy}/${mo}/${yr} - ${tPart}`;
-                        }
-                        return (
-                          <tr key={med.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="font-bold text-[13px] text-slate-800">{formattedDate}</div>
-                            </td>
-                            <td className="px-6 py-4 font-bold text-slate-700 text-[12px]">{med.ubicacionNombre}</td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`px-2.5 py-1 rounded-full text-[12px] font-black ${
-                                med.temperaturaInterna > 25 || med.temperaturaInterna < 15
-                                  ? "bg-rose-50 text-rose-600 border border-rose-100"
-                                  : "bg-emerald-50 text-emerald-600 border border-emerald-100"
-                              }`}>
-                                {med.temperaturaInterna} °C
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`px-2.5 py-1 rounded-full text-[12px] font-black ${
-                                med.temperaturaExterna > 25 || med.temperaturaExterna < 15
-                                  ? "bg-rose-50 text-rose-600 border border-rose-100"
-                                  : "bg-emerald-50 text-emerald-600 border border-emerald-100"
-                              }`}>
-                                {med.temperaturaExterna} °C
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`px-2.5 py-1 rounded-full text-[12px] font-black ${
-                                med.humedad > 70 || med.humedad < 40
-                                  ? "bg-rose-50 text-rose-600 border border-rose-100"
-                                  : "bg-blue-50 text-blue-600 border border-blue-100"
-                              }`}>
-                                {med.humedad} %
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 font-bold text-slate-600 text-[12px]">{med.responsable}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => handleEditMedicion(med)}
-                                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                                  title="Editar"
-                                >
-                                  <FiEdit3 size={15} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteMedicion(med)}
-                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                                  title="Eliminar"
-                                >
-                                  <FiTrash2 size={15} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {filteredMediciones.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" className="py-16 text-center text-slate-400 italic text-xs">
+                            No hay mediciones registradas en este periodo
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredMediciones.map(med => {
+                          let formattedDate = med.fechaMedida || "";
+                          if (formattedDate.includes("T")) {
+                            const [dPart, tPart] = formattedDate.split("T");
+                            const [yr, mo, dy] = dPart.split("-");
+                            formattedDate = `${dy}/${mo}/${yr} - ${tPart}`;
+                          }
+                          return (
+                            <tr key={med.id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">{formattedDate}</td>
+                              <td className="py-2.5 px-3 font-bold text-slate-800">{med.ubicacionNombre}</td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold font-mono ${
+                                  med.temperaturaInterna > 25 || med.temperaturaInterna < 15
+                                    ? "bg-rose-50 text-rose-600 border border-rose-100"
+                                    : "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                                }`}>
+                                  {med.temperaturaInterna} °C
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold font-mono ${
+                                  med.temperaturaExterna > 25 || med.temperaturaExterna < 15
+                                    ? "bg-rose-50 text-rose-600 border border-rose-100"
+                                    : "bg-emerald-50 text-emerald-600 border border-emerald-100"
+                                }`}>
+                                  {med.temperaturaExterna} °C
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold font-mono ${
+                                  med.humedad > 70 || med.humedad < 40
+                                    ? "bg-rose-50 text-rose-600 border border-rose-100"
+                                    : "bg-blue-50 text-blue-600 border border-blue-100"
+                                }`}>
+                                  {med.humedad} %
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-600 text-xs">{med.responsable}</td>
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleEditMedicion(med)}
+                                    className="w-7 h-7 rounded-lg bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center transition-colors border border-slate-200 cursor-pointer"
+                                    title="Editar"
+                                  >
+                                    <FiEdit3 size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteMedicion(med)}
+                                    className="w-7 h-7 rounded-lg bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-colors border border-slate-200 cursor-pointer"
+                                    title="Eliminar"
+                                  >
+                                    <FiTrash2 size={12} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -848,52 +839,46 @@ export default function TemperaturaHumedad() {
 
         {/* --- VIEW: GRAFICAR MEDICIONES --- */}
         {activeSubTab === "GRAFICAR" && (
-          <div className="flex-1 flex flex-col animate-fadeIn space-y-6">
+          <div className="flex-1 flex flex-col space-y-4">
             
             {/* Filters Card */}
-            <div className="bg-slate-50/50 border border-slate-100 p-6 rounded-2xl">
-              <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Gráficos</h3>
-                <span className="text-[10px] font-bold text-slate-400">
-                  Temperatura y Humedad - Gráficos
-                </span>
-              </div>
-              
-              <div className="flex flex-wrap items-end gap-6">
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="flex flex-wrap items-end gap-3">
                 {/* Location Select */}
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Ubicación *</label>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-slate-600">Ubicación</label>
                   <select
-                    required
                     value={graphUbicacion}
                     onChange={(e) => setGraphUbicacion(e.target.value)}
-                    className="h-10 px-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all min-w-[200px]"
+                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors min-w-[180px] cursor-pointer"
                   >
-                    <option value="">Seleccione...</option>
+                    <option value="">Todas las ubicaciones</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.id}>{loc.nombre}</option>
                     ))}
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Fecha inicial</label>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-slate-600">Fecha inicial</label>
                   <input
                     type="date"
                     value={graphStartDate}
                     onChange={(e) => setGraphStartDate(e.target.value)}
-                    className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                   max="9999-12-31" min="1900-01-01" />
+                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                    max="9999-12-31" min="1900-01-01" 
+                  />
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">Fecha final</label>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-slate-600">Fecha final</label>
                   <input
                     type="date"
                     value={graphEndDate}
                     onChange={(e) => setGraphEndDate(e.target.value)}
-                    className="h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                   max="9999-12-31" min="1900-01-01" />
+                    className="h-8 px-3 rounded-lg border border-slate-200 text-xs font-normal text-slate-700 bg-white outline-none focus:border-emerald-500 transition-colors"
+                    max="9999-12-31" min="1900-01-01" 
+                  />
                 </div>
 
                 <button
@@ -902,7 +887,7 @@ export default function TemperaturaHumedad() {
                     setAppliedGraphStartDate(graphStartDate);
                     setAppliedGraphEndDate(graphEndDate);
                   }}
-                  className="h-10 px-8 rounded-xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100"
+                  className="h-8 px-4 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer"
                 >
                   Buscar
                 </button>
@@ -910,52 +895,57 @@ export default function TemperaturaHumedad() {
             </div>
 
             {chartData.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center">
-                <div className="text-4xl mb-3">📈</div>
-                <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Ingrese al menos una medición para graficar los datos</p>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-12 text-center text-slate-400 italic text-xs">
+                Ingrese o seleccione al menos una medición para graficar los datos en este periodo.
               </div>
             ) : (
-              <>
+              <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                <div className="border-b border-slate-100 pb-2">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                    Curva de Tendencias de Temperatura y Humedad
+                  </h3>
+                </div>
+
                 {/* Recharts Component */}
-                <div className="h-80 w-full bg-slate-50 border border-slate-100 p-6 rounded-3xl">
+                <div className="h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} fontWeight="bold" />
-                      <YAxis stroke="#94a3b8" fontSize={10} fontWeight="bold" />
-                      <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #e2e8f0" }} />
-                      <Legend wrapperStyle={{ fontSize: 11, fontWeight: "bold" }} />
-                      <Line type="monotone" dataKey="TempInt" name="Temp. Interna (°C)" stroke="#ef4444" strokeWidth={3} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="TempExt" name="Temp. Externa (°C)" stroke="#f59e0b" strokeWidth={3} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="Hum" name="Humedad (%)" stroke="#3b82f6" strokeWidth={3} activeDot={{ r: 6 }} />
+                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} />
+                      <YAxis stroke="#94a3b8" fontSize={10} />
+                      <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11 }} />
+                      <Legend wrapperStyle={{ fontSize: 11, fontWeight: 600 }} />
+                      <Line type="monotone" dataKey="TempInt" name="Temp. Interna (°C)" stroke="#ef4444" strokeWidth={2} activeDot={{ r: 5 }} />
+                      <Line type="monotone" dataKey="TempExt" name="Temp. Externa (°C)" stroke="#f59e0b" strokeWidth={2} activeDot={{ r: 5 }} />
+                      <Line type="monotone" dataKey="Hum" name="Humedad (%)" stroke="#3b82f6" strokeWidth={2} activeDot={{ r: 5 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
 
                 {/* Summary Metrics */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-2">
-                  <div className="bg-rose-50/40 border border-rose-100 p-5 rounded-2xl">
-                    <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest block mb-1">Temperatura Interna Máx</span>
-                    <span className="text-2xl font-black text-rose-700">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <div className="bg-rose-50/50 border border-rose-100 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-semibold text-rose-500 uppercase tracking-wide block mb-0.5">Temp. Interna Máx</span>
+                    <span className="text-lg font-bold text-rose-700 font-mono">
                       {Math.max(...chartData.map(d => d.TempInt))} °C
                     </span>
                   </div>
 
-                  <div className="bg-amber-50/40 border border-amber-100 p-5 rounded-2xl">
-                    <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest block mb-1">Temperatura Externa Máx</span>
-                    <span className="text-2xl font-black text-amber-700">
+                  <div className="bg-amber-50/50 border border-amber-100 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide block mb-0.5">Temp. Externa Máx</span>
+                    <span className="text-lg font-bold text-amber-700 font-mono">
                       {Math.max(...chartData.map(d => d.TempExt))} °C
                     </span>
                   </div>
                   
-                  <div className="bg-blue-50/40 border border-blue-100 p-5 rounded-2xl">
-                    <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest block mb-1">Humedad Máxima</span>
-                    <span className="text-2xl font-black text-blue-700">
+                  <div className="bg-blue-50/50 border border-blue-100 p-3.5 rounded-xl">
+                    <span className="text-[10px] font-semibold text-blue-500 uppercase tracking-wide block mb-0.5">Humedad Máxima</span>
+                    <span className="text-lg font-bold text-blue-700 font-mono">
                       {Math.max(...chartData.map(d => d.Hum))} %
                     </span>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}
