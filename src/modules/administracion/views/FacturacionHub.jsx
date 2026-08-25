@@ -18,6 +18,7 @@ import PagosList from "../../facturacion/pagos/PagosList";
 import PagosForm from "../../facturacion/pagos/PagosForm";
 import OrdenesCompraList from "../../facturacion/ordenescompra/OrdenesCompraList";
 import FacturasCompraList from "../../facturacion/facturascompra/FacturasCompraList";
+import FacturasCompraForm from "../../facturacion/facturascompra/FacturasCompraForm";
 
 const FACT_OPTIONS = [
   { id: "recibo",  label: "Recibo de caja",      icon: <FiFileText />,    color: "text-emerald-600", bg: "bg-emerald-50",   desc: "Comprobantes de ingreso de dinero" },
@@ -97,10 +98,13 @@ export default function FacturacionHub() {
     } else if (activeSubView === "fc") {
       content = <FacturasCompraList onNew={() => setActiveSubView("fc_form")} />;
       title = "Facturas de Compra";
+    } else if (activeSubView === "fc_form") {
+      content = <FacturasCompraForm onCancel={() => setActiveSubView("fc")} onSuccess={() => setActiveSubView("fc")} />;
+      title = "Nueva Factura de Compra";
     }
 
     // For form sub-views that are not yet built, show a coming-soon state
-    const formViews = ["tras_form", "pagos_form", "oc_form", "fc_form"];
+    const formViews = ["tras_form", "oc_form"];
     if (!content && formViews.includes(activeSubView)) {
       const parentKey = activeSubView.replace("_form", "");
       const opt = FACT_OPTIONS.find(o => o.id === parentKey);
