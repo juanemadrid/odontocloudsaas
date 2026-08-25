@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { toast } from "sonner";
 import supabase from "../lib/supabaseClient";
+import { getDoctorSignatureAndData } from "./doctorSignatureService";
 
 export const EvolutionPrintService = {
     generatePDF: async (evolutionsList = [], patient = {}, clinic = {}, userProfile = {}) => {
@@ -272,10 +273,17 @@ export const EvolutionPrintService = {
                 }).join('');
             }
 
-            // Signature & Footer
-            const docSignatureImg = (userProfile?.firmaElectronica || userProfile?.firma)
-                ? `<img src="${userProfile.firmaElectronica || userProfile.firma}" style="max-height: 55px; max-width: 180px; object-fit: contain;" crossOrigin="anonymous" />`
+            // Signature & Footer: Resolver doctor y firma del especialista
+            const primaryDoctorIdent = evolutionsList[0]?.profesional || evolutionsList[0]?.doctor || evolutionsList[0]?.especialista || patient?.doctorAsignado || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+            const doctorData = await getDoctorSignatureAndData(primaryDoctorIdent, tenantId, userProfile);
+
+            const docSignatureImg = (doctorData.isDoctor && doctorData.firma)
+                ? `<img src="${doctorData.firma}" style="max-height: 55px; max-width: 180px; object-fit: contain;" crossOrigin="anonymous" />`
                 : '';
+
+            const docName = doctorData.nombreCompleto || primaryDoctorIdent || (doctorData.isDoctor ? userProfile?.nombreCompleto : '') || 'Odontólogo Tratante';
+            const docLicense = doctorData.registroMedico ? `TP / Reg. Médico: ${doctorData.registroMedico}` : (userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Sello y Registro Médico');
+            const docSpecialty = doctorData.especialidad ? `${doctorData.especialidad}` : 'Especialista / Odontólogo';
 
             const footerHTML = `
                 <div style="margin-top: 50px; display: flex; justify-content: space-between; gap: 60px; padding: 0 20px;">
@@ -284,8 +292,9 @@ export const EvolutionPrintService = {
                             ${docSignatureImg}
                         </div>
                         <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">
-                            <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">Firma del Especialista / Odontólogo</p>
-                            <p style="margin: 3px 0 0 0; font-size: 9.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Sello y Registro Médico'}</p>
+                            <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">${docName}</p>
+                            <p style="margin: 2px 0 0 0; font-size: 9.5px; color: #64748b; font-weight: 800; text-transform: uppercase;">${docSpecialty}</p>
+                            <p style="margin: 2px 0 0 0; font-size: 9px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${docLicense}</p>
                         </div>
                     </div>
 

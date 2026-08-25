@@ -2,8 +2,11 @@ import React, { useState, useEffect, useRef } from "react";
 import supabase from "../../../lib/supabaseClient";
 import Button from "../../../components/ui/Button";
 import { toast } from "sonner";
+import { useAuth } from "../../../context/AuthContext";
+import { getDoctorSignatureAndData } from "../../../services/doctorSignatureService";
 
 export default function ConsentimientosTab({ paciente }) {
+    const { userProfile } = useAuth();
     const [view, setView] = useState("list"); // 'list', 'new'
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -110,14 +113,24 @@ export default function ConsentimientosTab({ paciente }) {
         const signatureData = canvas.toDataURL("image/png");
 
         try {
+            const docIdent = paciente?.doctorAsignado || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+            const doctorData = await getDoctorSignatureAndData(docIdent, userProfile?.inquilino, userProfile);
+
             await supabase.from("consentimientos_firmados").insert([{
                 paciente_id: paciente.id,
                 pacienteId: paciente.id,
                 pacienteNombre: paciente.nombreCompleto,
+                pacienteDocumento: `${paciente.tipoDocumento || 'C.C.'} ${paciente.nroDocumento || ''}`,
                 templateId: selectedTemplate.id,
                 templateTitle: selectedTemplate.title,
                 contentSnapshot: previewContent,
                 signatureData,
+                signatureUrl: signatureData,
+                doctorNombre: doctorData.nombreCompleto || docIdent || "Odontólogo Tratante",
+                doctorFirma: doctorData.firma || null,
+                doctorRegistro: doctorData.registroMedico || "",
+                doctorEspecialidad: doctorData.especialidad || "",
+                isDoctor: doctorData.isDoctor,
                 fecha: new Date().toISOString()
             }]);
             toast.success("Consentimiento informado guardado exitosamente.");
@@ -127,6 +140,126 @@ export default function ConsentimientosTab({ paciente }) {
             console.error(e);
             toast.error("Error al guardar el consentimiento. Intente nuevamente.");
         }
+    };
+
+    const handlePrintConsent = async (doc) => {
+        const docIdent = doc.doctorNombre || paciente?.doctorAsignado || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+        const doctorData = await getDoctorSignatureAndData(docIdent, userProfile?.inquilino, userProfile);
+        
+        const docFirma = doc.doctorFirma || (doctorData.isDoctor ? doctorData.firma : null);
+        const docNom = doc.doctorNombre || doctorData.nombreCompleto || (doctorData.isDoctor ? userProfile?.nombreCompleto : '') || 'Odontólogo Tratante';
+        const docReg = doc.doctorRegistro || doctorData.registroMedico || (doctorData.isDoctor ? userProfile?.registroMedico : '');
+        const docEsp = doc.doctorEspecialidad || doctorData.especialidad || '';
+        const patSig = doc.signatureData || doc.signatureUrl;
+
+        const w = window.open("", "_blank");
+        w.document.write(`
+            <html>
+                <head>
+                    <title>Consentimiento Informado - ${doc.templateTitle}</title>
+                    <style>
+                        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+                        body {
+                            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+                            padding: 40px;
+                            color: #1e293b;
+                            max-width: 800px;
+                            margin: 0 auto;
+                            line-height: 1.6;
+                        }
+                        h1 {
+                            font-size: 20px;
+                            font-weight: 800;
+                            text-align: center;
+                            text-transform: uppercase;
+                            color: #0f172a;
+                            border-bottom: 2px solid #e2e8f0;
+                            padding-bottom: 15px;
+                            margin-bottom: 30px;
+                        }
+                        .content {
+                            white-space: pre-wrap;
+                            font-size: 13px;
+                            line-height: 1.7;
+                            color: #334155;
+                            text-align: justify;
+                            margin-bottom: 60px;
+                        }
+                        .signatures-container {
+                            display: flex;
+                            justify-content: space-between;
+                            gap: 40px;
+                            margin-top: 40px;
+                        }
+                        .sig-card {
+                            flex: 1;
+                            text-align: center;
+                        }
+                        .sig-space {
+                            height: 70px;
+                            display: flex;
+                            align-items: flex-end;
+                            justify-content: center;
+                            margin-bottom: 6px;
+                        }
+                        .sig-img {
+                            max-height: 65px;
+                            max-width: 200px;
+                            object-fit: contain;
+                        }
+                        .sig-line {
+                            border-top: 1.5px solid #64748b;
+                            margin-bottom: 6px;
+                        }
+                        .sig-name {
+                            font-weight: 800;
+                            font-size: 12px;
+                            color: #0f172a;
+                            text-transform: uppercase;
+                        }
+                        .sig-role {
+                            font-size: 10px;
+                            font-weight: 700;
+                            color: #64748b;
+                            text-transform: uppercase;
+                        }
+                        .sig-doc {
+                            font-size: 9px;
+                            color: #94a3b8;
+                            margin-top: 2px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>${doc.templateTitle}</h1>
+                    <div class="content">${doc.contentSnapshot}</div>
+                    
+                    <div class="signatures-container">
+                        <!-- Firma Paciente -->
+                        <div class="sig-card">
+                            <div class="sig-space">
+                                ${patSig ? `<img src="${patSig}" class="sig-img" />` : ''}
+                            </div>
+                            <div class="sig-line"></div>
+                            <div class="sig-name">${doc.pacienteNombre || paciente.nombreCompleto}</div>
+                            <div class="sig-role">Firma del Paciente / Representante</div>
+                            <div class="sig-doc">${doc.pacienteDocumento || `${paciente.tipoDocumento || 'C.C.'} ${paciente.nroDocumento || ''}`}</div>
+                        </div>
+
+                        <!-- Firma Profesional / Odontólogo -->
+                        <div class="sig-card">
+                            <div class="sig-space">
+                                ${docFirma ? `<img src="${docFirma}" class="sig-img" />` : ''}
+                            </div>
+                            <div class="sig-line"></div>
+                            <div class="sig-name">${docNom}</div>
+                            <div class="sig-role">${docEsp ? `${docEsp} — ` : ''}Profesional Tratante</div>
+                            ${docReg ? `<div class="sig-doc">TP / Reg. Médico: ${docReg}</div>` : ''}
+                        </div>
+                    </div>
+                </body>
+            </html>
+        `);
     };
 
     // Views
@@ -199,40 +332,28 @@ export default function ConsentimientosTab({ paciente }) {
                         <tr>
                             <th className="p-3">Fecha</th>
                             <th className="p-3">Procedimiento</th>
-                            <th className="p-3 text-center">Firma</th>
+                            <th className="p-3 text-center">Firma Paciente</th>
+                            <th className="p-3 text-center">Firma Profesional</th>
                             <th className="p-3 text-center">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {loading ? <tr><td colSpan={4} className="p-4 text-center">Cargando...</td></tr> :
-                            history.length === 0 ? <tr><td colSpan={4} className="p-4 text-center text-slate-400">No hay consentimientos firmados.</td></tr> :
+                        {loading ? <tr><td colSpan={5} className="p-4 text-center">Cargando...</td></tr> :
+                            history.length === 0 ? <tr><td colSpan={5} className="p-4 text-center text-slate-400">No hay consentimientos firmados.</td></tr> :
                                 history.map(doc => (
                                     <tr key={doc.id} className="border-b hover:bg-slate-50">
-                                        <td className="p-3">{doc.createdAt?.seconds ? new Date(doc.createdAt.seconds * 1000).toLocaleDateString() : "Hoy"}</td>
+                                        <td className="p-3">{doc.createdAt?.seconds ? new Date(doc.createdAt.seconds * 1000).toLocaleDateString() : (doc.fecha ? new Date(doc.fecha).toLocaleDateString() : "Hoy")}</td>
                                         <td className="p-3 font-medium">{doc.templateTitle}</td>
                                         <td className="p-3 text-center">
-                                            {doc.signatureUrl ? <span className="text-green-600 text-xs">✅ Firmado</span> : <span className="text-red-500">Pendiente</span>}
+                                            {(doc.signatureUrl || doc.signatureData) ? <span className="text-green-600 font-bold text-xs">✅ Firmado</span> : <span className="text-red-500 text-xs">Pendiente</span>}
+                                        </td>
+                                        <td className="p-3 text-center">
+                                            {doc.doctorFirma ? <span className="text-green-600 font-bold text-xs">✅ Digital</span> : <span className="text-slate-400 text-xs">{doc.doctorNombre || 'Doctor'}</span>}
                                         </td>
                                         <td className="p-3 text-center">
                                             <button
-                                                className="text-blue-600 hover:underline text-xs"
-                                                onClick={() => {
-                                                    const w = window.open("", "_blank");
-                                                    w.document.write(`
-                                            <html>
-                                              <head><title>Consentimiento - ${doc.templateTitle}</title></head>
-                                              <body style="font-family: sans-serif; padding: 40px;">
-                                                <h1 style="text-align: center; margin-bottom: 30px;">${doc.templateTitle}</h1>
-                                                <div style="white-space: pre-wrap; margin-bottom: 50px; line-height: 1.6;">${doc.contentSnapshot}</div>
-                                                <div style="border-top: 1px solid #ccc; width: 300px; padding-top: 10px;">
-                                                    <img src="${doc.signatureUrl}" style="max-width: 200px; display: block; margin-bottom: 10px;" />
-                                                    <p style="font-weight: bold;">${doc.pacienteNombre}</p>
-                                                    <p style="color: #666; font-size: 12px;">Firma Digital - OdontoCloud</p>
-                                                </div>
-                                              </body>
-                                            </html>
-                                        `);
-                                                }}
+                                                className="text-blue-600 font-bold hover:underline text-xs"
+                                                onClick={() => handlePrintConsent(doc)}
                                             >
                                                 Ver / Imprimir
                                             </button>

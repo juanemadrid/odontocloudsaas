@@ -176,15 +176,85 @@ export default function UserProfileModal({ isOpen, onClose }) {
             };
 
             const userId = userProfile?.uid || userProfile?.id || user?.uid || user?.id;
+            const inquilino = userProfile?.inquilino || userProfile?.tenantId;
+
             if (userId) {
                 try {
                     await supabase.from("profiles").update({
                         full_name: `${nombre.trim()} ${apellido.trim()}`.trim(),
+                        telefono: telefono.trim(),
+                        registro_medico: registroMedico.trim(),
+                        tarjeta_profesional: registroMedico.trim(),
+                        firma: currentSignature,
+                        firma_url: currentSignature,
                         updated_at: new Date().toISOString()
                     }).eq("id", userId);
                 } catch (e) {
                     console.warn("Aviso al actualizar profiles en UserProfileModal:", e);
                 }
+
+                // Sincronizar en website_config (user_details)
+                if (inquilino) {
+                    try {
+                        const { data: cfgRow } = await supabase
+                            .from("website_config")
+                            .select("config")
+                            .eq("tenant_id", inquilino)
+                            .maybeSingle();
+
+                        const currentConfig = cfgRow?.config || {};
+                        const currentDetails = currentConfig.user_details || {};
+                        const prevUserDetail = currentDetails[userId] || {};
+
+                        const updatedUserDetail = {
+                            ...prevUserDetail,
+                            ...updatePayload,
+                            id: userId,
+                            uid: userId
+                        };
+
+                        const updatedDetailsMap = {
+                            ...currentDetails,
+                            [userId]: updatedUserDetail
+                        };
+
+                        // También actualizar lista de usuarios si existe
+                        let updatedUsuarios = currentConfig.usuarios || [];
+                        if (Array.isArray(updatedUsuarios) && updatedUsuarios.length > 0) {
+                            updatedUsuarios = updatedUsuarios.map(u => 
+                                (u.id === userId || u.uid === userId) ? { ...u, ...updatePayload } : u
+                            );
+                        }
+
+                        await supabase.from("website_config").upsert(
+                            { 
+                                tenant_id: inquilino, 
+                                config: { 
+                                    ...currentConfig, 
+                                    user_details: updatedDetailsMap,
+                                    usuarios: updatedUsuarios 
+                                } 
+                            },
+                            { onConflict: "tenant_id" }
+                        );
+                    } catch (e) {
+                        console.warn("Aviso al sincronizar website_config en UserProfileModal:", e);
+                    }
+                }
+
+                // Sincronizar tabla profesionales si es doctor
+                try {
+                    const isDoc = userProfile?.esDoctor || userProfile?.rol?.toLowerCase()?.includes('doctor') || userProfile?.role?.toLowerCase()?.includes('doctor');
+                    if (isDoc && inquilino) {
+                        await supabase.from("profesionales").update({
+                            nombre_completo: fullName,
+                            telefono: telefono.trim(),
+                            registro_medico: registroMedico.trim(),
+                            firma: currentSignature,
+                            updated_at: new Date().toISOString()
+                        }).match({ tenant_id: inquilino, id: userId });
+                    }
+                } catch (e) {}
             }
 
             // Sync local Auth state
@@ -195,7 +265,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
                 }));
             }
 
-            toast.success("Perfil de usuario guardado con éxito.");
+            toast.success("Perfil y firma digital guardados con éxito.");
             onClose();
         } catch (error) {
             console.error("Error al guardar perfil de usuario:", error);

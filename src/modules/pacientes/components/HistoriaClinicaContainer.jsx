@@ -16,6 +16,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { getAnamnesis } from "../../../services/clinicalService";
+import { getDoctorSignatureAndData } from "../../../services/doctorSignatureService";
 const DocClinicoModal = React.lazy(() => import("./DocClinicoModal"));
 
 const printHTMLInHiddenIframe = (htmlContent) => {
@@ -339,10 +340,14 @@ export default function HistoriaClinicaContainer({ patient }) {
         }
     };
 
-    const handlePrintDoc = (doc) => {
+    const handlePrintDoc = async (doc) => {
         const logoUrl = clinicConfig?.logo || "";
         const clinicName = clinicConfig?.nombreComercial || clinicConfig?.nombre || clinicConfig?.name || "CLÍNICA DENTAL";
         const isTemplate = doc.isTemplateDoc || !["Receta", "Orden", "Consulta", "Alerta"].includes(doc.tipoDocumento);
+
+        // Resolver la firma y datos del profesional tratante (solo si tiene rol de doctor)
+        const docProfIdentifier = doc.profesional || doc.doctor || doc.firmadoPor || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+        const doctorData = await getDoctorSignatureAndData(docProfIdentifier, userProfile?.inquilino, userProfile);
 
         let contentHtml = "";
         if (doc.tipoDocumento === "Receta") {
@@ -549,41 +554,43 @@ export default function HistoriaClinicaContainer({ patient }) {
                                     <div><strong>Paladar:</strong> ${examen.paladar || 'Normal'} ${examen.paladarObs ? `<em>(${examen.paladarObs})</em>` : ''}</div>
                                     <div><strong>Lengua:</strong> ${examen.lengua || 'Normal'} ${examen.lenguaObs ? `<em>(${examen.lenguaObs})</em>` : ''}</div>
                                     <div><strong>Piso de boca:</strong> ${examen.pisoBoca || 'Normal'} ${examen.pisoBocaObs ? `<em>(${examen.pisoBocaObs})</em>` : ''}</div>
-                                    <div><strong>Glándulas:</strong> ${examen.glandulasSalivales || 'Normal'} ${examen.glandulasSalivalesObs ? `<em>(${examen.glandulasSalivalesObs})</em>` : ''}</div>
+                                    <div><strong>Glándulas salivales:</strong> ${examen.glandulasSalivales || 'Normal'} ${examen.glandulasSalivalesObs ? `<em>(${examen.glandulasSalivalesObs})</em>` : ''}</div>
                                     <div><strong>Orofaringe:</strong> ${examen.orofaringe || 'Normal'} ${examen.orofaringeObs ? `<em>(${examen.orofaringeObs})</em>` : ''}</div>
                                 </div>
                             </div>
                         ` : ''}
 
                         <!-- 5. Periodonto -->
-                        ${(examen.encias || examen.higieneOral || examen.placaBacteriana || examen.calculo || examen.movilidadDental || examen.periodontoOtros) ? `
+                        ${(examen.encias?.length > 0 || examen.higieneOral || examen.placaBacteriana || examen.calculo || examen.movilidadDental || examen.periodontoOtros) ? `
                             <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
                                 <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">5. Periodonto:</strong>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; color: #1e293b; margin-top: 3px;">
-                                    <div><strong>Encías:</strong> ${Array.isArray(examen.encias) ? examen.encias.join(', ') : (examen.encias || 'Normales')}</div>
-                                    <div><strong>Higiene oral:</strong> ${examen.higieneOral || 'Buena'}</div>
-                                    <div><strong>Placa bacteriana:</strong> ${examen.placaBacteriana || 'Ausente'}</div>
-                                    <div><strong>Cálculo:</strong> ${examen.calculo || 'Ausente'}</div>
-                                    <div><strong>Movilidad dental:</strong> ${examen.movilidadDental || 'No'}</div>
-                                    ${examen.periodontoOtros ? `<div><strong>Otros:</strong> ${examen.periodontoOtros}</div>` : ''}
+                                <div style="font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                    ${examen.encias?.length > 0 ? `<strong>Encías:</strong> ${examen.encias.join(', ')} | ` : ''}
+                                    ${examen.higieneOral ? `<strong>Higiene:</strong> ${examen.higieneOral} | ` : ''}
+                                    ${examen.placaBacteriana ? `<strong>Placa:</strong> ${examen.placaBacteriana} | ` : ''}
+                                    ${examen.calculo ? `<strong>Cálculo:</strong> ${examen.calculo} | ` : ''}
+                                    ${examen.movilidadDental ? `<strong>Movilidad:</strong> ${examen.movilidadDental} | ` : ''}
+                                    ${examen.periodontoOtros ? `<strong>Otros:</strong> ${examen.periodontoOtros}` : ''}
                                 </div>
                             </div>
                         ` : ''}
 
                         <!-- 6. Oclusión -->
-                        <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
-                            <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">6. Oclusión:</strong>
-                            <div style="font-size: 12px; color: #1e293b; margin-top: 3px;">
-                                ${Array.isArray(examen.oclusionItems) ? examen.oclusionItems.join(', ') : (examen.oclusion || 'Normal')}
-                                ${examen.oclusionObs ? ` | <em>${examen.oclusionObs}</em>` : ''}
+                        ${(examen.oclusionItems?.length > 0 || examen.oclusionObs) ? `
+                            <div style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">6. Oclusión:</strong>
+                                <div style="font-size: 12px; color: #1e293b; margin-top: 3px;">
+                                    ${examen.oclusionItems?.length > 0 ? `<strong>Tipo:</strong> ${examen.oclusionItems.join(', ')} ` : ''}
+                                    ${examen.oclusionObs ? `<em>(Obs: ${examen.oclusionObs})</em>` : ''}
+                                </div>
                             </div>
-                        </div>
+                        ` : ''}
 
                         <!-- 7. Hallazgos adicionales -->
-                        ${(examen.hallazgosAdicionales || examen.otrosHallazgos) ? `
+                        ${examen.hallazgosAdicionales ? `
                             <div>
-                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">7. Hallazgos Clínicos Adicionales:</strong>
-                                <div style="font-size: 12px; color: #1e293b; margin-top: 3px; white-space: pre-wrap;">${examen.hallazgosAdicionales || examen.otrosHallazgos}</div>
+                                <strong style="font-size: 11px; color: #475569; text-transform: uppercase;">7. Hallazgos Adicionales:</strong>
+                                <div style="font-size: 12px; color: #1e293b; margin-top: 3px; white-space: pre-wrap;">${examen.hallazgosAdicionales}</div>
                             </div>
                         ` : ''}
                     </div>
@@ -827,30 +834,40 @@ export default function HistoriaClinicaContainer({ patient }) {
 
                 ${contentHtml}
 
-                <div class="footer-sig" style="margin-top: 80px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px;">
-                    <div class="sig-block" style="flex: 1; min-width: 180px; text-align: center; font-size: 11px;">
-                        <div style="height: 60px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 4px;">
-                            ${(userProfile?.firmaElectronica || userProfile?.firma) ? `<img src="${userProfile.firmaElectronica || userProfile.firma}" style="max-height: 55px; max-width: 200px; object-fit: contain;" />` : ''}
+                <div class="footer-sig" style="margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px;">
+                    <div class="sig-block" style="flex: 1; min-width: 200px; text-align: center; font-size: 11px;">
+                        <div style="height: 65px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 4px;">
+                            ${(doctorData.isDoctor && doctorData.firma) ? `<img src="${doctorData.firma}" style="max-height: 60px; max-width: 200px; object-fit: contain;" />` : ''}
                         </div>
-                        <div class="sig-line" style="border-top: 1px solid #94a3b8; margin-bottom: 5px;"></div>
-                        <div class="sig-title" style="font-weight: bold; color: #0f172a;">${doc.profesional || userProfile?.nombreCompleto || ''}</div>
-                        <div class="sig-subtitle" style="color: #64748b; font-size: 9px; text-transform: uppercase;">Profesional Tratante</div>
+                        <div class="sig-line" style="border-top: 1.5px solid #64748b; margin-bottom: 5px;"></div>
+                        <div class="sig-title" style="font-weight: 800; color: #0f172a; font-size: 12px; text-transform: uppercase;">
+                            ${doctorData.nombreCompleto || doc.profesional || 'Doctor Tratante'}
+                        </div>
+                        <div class="sig-subtitle" style="color: #64748b; font-size: 9.5px; text-transform: uppercase; font-weight: 700;">
+                            ${doctorData.especialidad ? `${doctorData.especialidad} — ` : ''}Profesional Tratante
+                        </div>
+                        ${doctorData.registroMedico ? `
+                            <div style="color: #475569; font-size: 9px; font-weight: 600; margin-top: 2px;">
+                                T.P. / Registro Médico: ${doctorData.registroMedico}
+                            </div>
+                        ` : ''}
                     </div>
                     
                     ${doc.terceraFirma ? `
                     <div class="sig-block" style="flex: 1; min-width: 180px; text-align: center; font-size: 11px;">
-                        <div style="height: 60px;"></div>
-                        <div class="sig-line" style="border-top: 1px solid #94a3b8; margin-bottom: 5px;"></div>
-                        <div class="sig-title" style="font-weight: bold; color: #0f172a;">${patient.nombreCompleto || ''}</div>
-                        <div class="sig-subtitle" style="color: #64748b; font-size: 9px; text-transform: uppercase;">Paciente / Aceptante</div>
+                        <div style="height: 65px;"></div>
+                        <div class="sig-line" style="border-top: 1.5px solid #64748b; margin-bottom: 5px;"></div>
+                        <div class="sig-title" style="font-weight: 800; color: #0f172a; font-size: 12px; text-transform: uppercase;">${patient.nombreCompleto || ''}</div>
+                        <div class="sig-subtitle" style="color: #64748b; font-size: 9.5px; text-transform: uppercase; font-weight: 700;">Paciente / Aceptante</div>
+                        <div style="color: #475569; font-size: 9px; font-weight: 600; margin-top: 2px;">Doc: ${patient.tipoDocumento || 'C.C.'} ${patient.nroDocumento || ''}</div>
                     </div>
                     ` : ''}
 
                     <div class="sig-block" style="flex: 1; min-width: 180px; text-align: center; font-size: 11px;">
-                        <div style="height: 60px;"></div>
-                        <div class="sig-line" style="border-top: 1px solid #94a3b8; margin-bottom: 5px;"></div>
-                        <div class="sig-title" style="font-weight: bold; color: #0f172a;">${doc.transcribe || ''}</div>
-                        <div class="sig-subtitle" style="color: #64748b; font-size: 9px; text-transform: uppercase;">Transcriptor / Auxiliar</div>
+                        <div style="height: 65px;"></div>
+                        <div class="sig-line" style="border-top: 1.5px solid #64748b; margin-bottom: 5px;"></div>
+                        <div class="sig-title" style="font-weight: 800; color: #0f172a; font-size: 12px; text-transform: uppercase;">${doc.transcribe || ''}</div>
+                        <div class="sig-subtitle" style="color: #64748b; font-size: 9.5px; text-transform: uppercase; font-weight: 700;">Transcriptor / Auxiliar</div>
                     </div>
                 </div>
             </body>

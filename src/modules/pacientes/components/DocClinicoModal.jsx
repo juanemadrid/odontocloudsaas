@@ -13,6 +13,7 @@ import CUPSSearch from './CUPSSearch';
 import { PREDEFINED_TEMPLATES } from '../../../data/plantillasPredeterminadas';
 import { getConfigItems } from '../../../services/configPersistenceService';
 import { getDoctorsList } from '../../../services/supabaseServices';
+import { getDoctorSignatureAndData } from '../../../services/doctorSignatureService';
 
 
 export default function DocClinicoModal({ isOpen, onClose, patient, docType, initialData = null, isViewOnly = false }) {
@@ -1198,6 +1199,17 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             };
 
             const tenantId = userProfile?.inquilino || patient.tenant_id || userProfile?.tenant_id;
+
+            // Enlazar firma digital y datos del doctor tratante
+            const docProfIdentifier = profesional || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+            const doctorData = await getDoctorSignatureAndData(docProfIdentifier, tenantId, userProfile);
+            if (doctorData.isDoctor) {
+                extraMetadata.isDoctor = true;
+                extraMetadata.doctorSignature = doctorData.firma || null;
+                extraMetadata.doctorRegistroMedico = doctorData.registroMedico || null;
+                extraMetadata.doctorEspecialidad = doctorData.especialidad || null;
+                extraMetadata.profesionalNombre = doctorData.nombreCompleto || profesional;
+            }
 
             const dbPayload = {
                 tenant_id: tenantId,
