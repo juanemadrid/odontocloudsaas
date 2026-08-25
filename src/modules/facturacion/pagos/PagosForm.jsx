@@ -16,29 +16,6 @@ const fmt = (n) =>
     maximumFractionDigits: 0,
   });
 
-const CONDICIONES_PAGO = [
-    "Contado",
-    "Crédito 8 días",
-    "Crédito 15 días",
-    "Crédito 30 días",
-    "Crédito 45 días",
-    "Crédito 60 días",
-    "Crédito 90 días"
-];
-
-const BANCOS_CAJAS_DEFAULT = [
-    "Caja Principal (Efectivo)",
-    "Caja Menor",
-    "Bancolombia - Cuenta Corriente",
-    "Bancolombia - Cuenta de Ahorros",
-    "Davivienda",
-    "Banco de Bogotá",
-    "BBVA",
-    "Nequi",
-    "Daviplata",
-    "Datáfono / Redeban"
-];
-
 export default function PagosForm({ onCancel, onSuccess }) {
     const { user, userProfile } = useAuth();
     const inquilino = userProfile?.inquilino || "";
@@ -51,6 +28,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
     const [fecha, setFecha] = useState(() => new Date().toISOString().split("T")[0]);
     const [profesionalId, setProfesionalId] = useState("");
     const [bancoCaja, setBancoCaja] = useState("");
+    const [medioPago, setMedioPago] = useState("");
 
     // Form fields - Card 2: Datos tercero
     const [terceroId, setTerceroId] = useState("");
@@ -82,6 +60,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
     const [miCajaAbierta, setMiCajaAbierta] = useState(null);
     const [bancosDisponibles, setBancosDisponibles] = useState([]);
+    const [mediosPagoList, setMediosPagoList] = useState([]);
+    const [condicionesPagoList, setCondicionesPagoList] = useState([]);
     const [facturasCompraPendientes, setFacturasCompraPendientes] = useState([]);
     const [facturasSeleccionadas, setFacturasSeleccionadas] = useState([]);
 
@@ -250,7 +230,56 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 }
                 setBancosDisponibles(bancosList);
 
-                // 6. Cargar Facturas de Compra pendientes
+                // 6. Cargar Condiciones de Pago creadas en el módulo
+                let condList = [];
+                try {
+                    const cpData = await getConfigItems(inquilino, "condiciones_pago", "condiciones_pago");
+                    if (cpData && cpData.length > 0) condList = cpData;
+                } catch (e) {}
+
+                if (condList.length === 0) {
+                    condList = cfg.condiciones_pago || [];
+                }
+
+                if (condList.length === 0) {
+                    condList = [
+                        { id: "contado", nombre: "Contado" },
+                        { id: "credito_30", nombre: "Crédito 30 días" }
+                    ];
+                }
+                setCondicionesPagoList(condList);
+
+                // 7. Cargar Medios de Pago creados en el sistema
+                let mpList = [];
+                try {
+                    const mpData = await getConfigItems(inquilino, "metodos_pago", null);
+                    if (mpData && mpData.length > 0) mpList = mpData;
+                } catch (e) {}
+
+                if (mpList.length === 0) {
+                    try {
+                        const { data: mpDb } = await supabase.from("metodos_pago").select("*").eq("tenant_id", inquilino);
+                        if (mpDb && mpDb.length > 0) mpList = mpDb;
+                    } catch (e) {}
+                }
+
+                if (mpList.length === 0) {
+                    mpList = cfg.metodos_pago || [];
+                }
+
+                if (mpList.length === 0) {
+                    mpList = [
+                        { id: "efectivo", nombre: "Efectivo" },
+                        { id: "transferencia", nombre: "Transferencia Bancaria" },
+                        { id: "tarjeta_debito", nombre: "Tarjeta Débito" },
+                        { id: "tarjeta_credito", nombre: "Tarjeta Crédito" },
+                        { id: "nequi", nombre: "Nequi" },
+                        { id: "daviplata", nombre: "Daviplata" }
+                    ];
+                }
+                setMediosPagoList(mpList);
+
+                // 8. Cargar Facturas de Compra pendientes
                 try {
                     const { data: fcDb } = await supabase
                         .from("facturas_compra")
@@ -414,8 +443,16 @@ export default function PagosForm({ onCancel, onSuccess }) {
             toast.error("Seleccione un Banco o Caja para el egreso");
             return;
         }
+        if (!medioPago) {
+            toast.error("Seleccione el medio de pago");
+            return;
+        }
         if (!terceroId && !terceroSearchQuery.trim()) {
             toast.error("Seleccione o busque el Tercero o Paciente");
+            return;
+        }
+        if (!condicionPago) {
+            toast.error("Seleccione la condición de pago");
             return;
         }
 
@@ -442,7 +479,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 profesionalId: selectedProf?.id || profesionalId,
                 profesional: selectedProf?.nombre || profesionalId || "",
                 bancoCaja,
-                medioPago: bancoCaja,
+                medioPago: medioPago || bancoCaja,
                 terceroId: selectedTercero?.id || terceroId,
                 tercero: selectedTercero?.nombre || terceroId || terceroSearchQuery,
                 proveedor: selectedTercero?.nombre || terceroId || terceroSearchQuery,
@@ -652,6 +689,31 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                 )}
                             </div>
                         </div>
+
+                        {/* Medio de pago */}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
+                                Medio de pago <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="md:col-span-9">
+                                <select
+                                    value={medioPago}
+                                    onChange={(e) => setMedioPago(e.target.value)}
+                                    className="w-full max-w-md h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    required
+                                >
+                                    <option value="">Seleccione medio de pago...</option>
+                                    {mediosPagoList.map((mp, idx) => {
+                                        const mpName = typeof mp === 'string' ? mp : (mp.nombre || mp.metodo || mp.label || "Medio");
+                                        return (
+                                            <option key={idx} value={mpName}>
+                                                {mpName}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -776,20 +838,25 @@ export default function PagosForm({ onCancel, onSuccess }) {
                         {/* Condición de pago */}
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
                             <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
-                                Condición de pago<span className="text-rose-500">*</span>
+                                Condición de pago <span className="text-rose-500">*</span>
                             </label>
                             <div className="md:col-span-9">
                                 <select
                                     value={condicionPago}
                                     onChange={(e) => setCondicionPago(e.target.value)}
                                     className="w-full max-w-md h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    required
                                 >
-                                    <option value="">Seleccione...</option>
-                                    {CONDICIONES_PAGO.map((cond, idx) => (
-                                        <option key={idx} value={cond}>
-                                            {cond}
-                                        </option>
-                                    ))}
+                                    <option value="">Seleccione condición...</option>
+                                    {condicionesPagoList.map((cond, idx) => {
+                                        const condName = typeof cond === 'string' ? cond : (cond.nombre || cond.label || cond.condicion || "Condición");
+                                        const diasInfo = cond.dias ? ` (${cond.dias} días)` : '';
+                                        return (
+                                            <option key={idx} value={condName}>
+                                                {condName}{diasInfo}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                             </div>
                         </div>
