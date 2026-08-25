@@ -3,6 +3,7 @@ import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter, FiLock } from 'react-icons/fi';
+import { getDoctorSignatureAndData } from '../../../services/doctorSignatureService';
 
 
 // SVG de Huella digital codificado para simulador
@@ -51,7 +52,7 @@ const printHTMLInHiddenIframe = (htmlContent) => {
 // ======================================================
 // FUNCIÓN: Imprimir una sola evolución al estilo unificado de Historia Clínica
 // ======================================================
-const printEvolution = (evo, patient, clinicInfo = {}) => {
+const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null) => {
     const logoUrl = clinicInfo.logo || '';
     const clinicName = clinicInfo.nombre || clinicInfo.name || 'CLÍNICA DENTAL';
     const clinicNit = clinicInfo.nit || '—';
@@ -77,6 +78,13 @@ const printEvolution = (evo, patient, clinicInfo = {}) => {
         .filter(Boolean);
 
     const docBadgeLabel = evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : 'Evolución';
+
+    // Resolver datos y firma del doctor
+    const doctorIdent = evo.profesional || evo.doctorSignature?.signature || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+    const doctorData = await getDoctorSignatureAndData(doctorIdent, clinicInfo.tenant_id || userProfile?.inquilino, userProfile);
+    const docSig = evo.doctorSignature?.signatureImage || (doctorData.isDoctor ? doctorData.firma : null);
+    const docNom = evo.doctorSignature?.signature || doctorData.nombreCompleto || evo.profesional || 'Doctor Tratante';
+    const docReg = evo.doctorSignature?.registroMedico || doctorData.registroMedico || '';
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -198,55 +206,47 @@ const printEvolution = (evo, patient, clinicInfo = {}) => {
     }
     .section-title {
       font-size: 11px;
-      font-weight: 800;
+      font-weight: 900;
       text-transform: uppercase;
-      color: #1e3a8a;
-      letter-spacing: 0.08em;
+      letter-spacing: 1px;
+      color: #2563eb;
+      margin-bottom: 12px;
       border-bottom: 2px solid #e2e8f0;
-      padding-bottom: 5px;
-      margin-top: 30px;
-      margin-bottom: 15px;
+      padding-bottom: 6px;
     }
     .document-item {
-      border: 1px solid #e2e8f0;
-      border-left: 4px solid #2563eb;
-      border-radius: 8px;
-      padding: 16px 20px;
-      margin-bottom: 15px;
       background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 20px;
     }
     .document-header {
       display: flex;
       justify-content: space-between;
-      font-size: 11px;
-      font-weight: 700;
-      border-bottom: 1px solid #f1f5f9;
-      padding-bottom: 6px;
-      margin-bottom: 10px;
-      color: #475569;
+      align-items: center;
+      margin-bottom: 12px;
+      font-size: 12px;
+      font-weight: 800;
     }
     .document-type {
       color: #2563eb;
-      font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
     }
     .document-body {
-      font-size: 11.5px;
+      font-size: 13px;
       color: #334155;
-      line-height: 1.5;
+      line-height: 1.6;
       white-space: pre-wrap;
-      word-break: break-word;
     }
     .proc-tag {
       display: inline-block;
+      padding: 3px 8px;
       background: #f0fdf4;
       border: 1px solid #bbf7d0;
       border-radius: 6px;
-      padding: 3px 8px;
-      font-size: 8pt;
+      font-size: 10px;
       font-weight: 800;
-      margin: 3px 4px 6px 0;
       color: #166534;
       text-transform: uppercase;
     }
@@ -263,8 +263,8 @@ const printEvolution = (evo, patient, clinicInfo = {}) => {
     }
     .sig-line {
       border-bottom: 1.5px solid #64748b;
-      height: 45px;
-      margin-bottom: 8px;
+      height: 55px;
+      margin-bottom: 6px;
       display: flex;
       align-items: flex-end;
       justify-content: center;
@@ -354,21 +354,23 @@ const printEvolution = (evo, patient, clinicInfo = {}) => {
 
     <div class="document-body">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
 
-    ${(evo.doctorSignature || evo.patientSignature) ? `
     <div class="signature-grid">
       <div class="sig-box">
         <div class="sig-line">
-          ${evo.doctorSignature?.signature ? `<span style="font-size:10px;font-weight:900;color:#1e293b;">${evo.doctorSignature.signature}</span>` : ''}
+          ${docSig ? `<img src="${docSig}" style="max-height:50px;max-width:180px;object-fit:contain;" />` : ''}
         </div>
-        <div class="sig-title">Doctor / Profesional</div>
+        <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase;">${docNom}</div>
+        <div class="sig-title">Profesional Tratante</div>
+        ${docReg ? `<div style="font-size: 9px; color: #64748b;">TP: ${docReg}</div>` : ''}
       </div>
       <div class="sig-box">
         <div class="sig-line">
-          ${evo.patientSignature ? `<img src="${evo.patientSignature}" style="max-height:40px;object-fit:contain;" />` : ''}
+          ${evo.patientSignature ? `<img src="${evo.patientSignature}" style="max-height:50px;max-width:180px;object-fit:contain;" />` : ''}
         </div>
-        <div class="sig-title">Paciente</div>
+        <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase;">${patientName}</div>
+        <div class="sig-title">Paciente / Aceptante</div>
       </div>
-    </div>` : ''}
+    </div>
   </div>
 </body>
 </html>`;
@@ -940,7 +942,7 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     };
 
     const handlePrintEvolution = (evo) => {
-        printEvolution(evo, patientObj, clinicInfo);
+        printEvolution(evo, patientObj, clinicInfo, userProfile);
     };
 
     useEffect(() => {
@@ -1024,8 +1026,14 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                 parsed = { ...evoObj };
             }
 
+            const doctorIdent = evoObj.profesional || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+            const doctorData = await getDoctorSignatureAndData(doctorIdent, userProfile?.inquilino, userProfile);
+
             const doctorSignature = {
-                signature: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || userProfile?.email || "Doctor",
+                signature: doctorData.nombreCompleto || userProfile?.nombreCompleto || userProfile?.nombre || "Doctor",
+                signatureImage: doctorData.firma || userProfile?.firmaElectronica || userProfile?.firma || null,
+                registroMedico: doctorData.registroMedico || userProfile?.registroMedico || "",
+                especialidad: doctorData.especialidad || userProfile?.especialidad || "",
                 signedAt: new Date().toISOString(),
                 signedBy: userProfile?.uid
             };
@@ -1045,7 +1053,7 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
             if (error) throw error;
 
             setEvolutions(prev => prev.map(e => e.id === evoObj.id ? { ...e, doctorSignature } : e));
-            toast.success("Evolución firmada por el profesional");
+            toast.success("Evolución firmada digitalmente por el profesional ✅");
         } catch (error) {
             console.error("Error signing evolution by doctor:", error);
             toast.error("Error al firmar como profesional");

@@ -43,12 +43,20 @@ export const AuthProvider = ({ children }) => {
       // Consultar perfil e información completa del tenant en Supabase
       let { data: profile, error } = await supabase
         .from("profiles")
-        .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
+        .select("id, role, full_name, tenant_id, telefono, registro_medico, tarjeta_profesional, firma, firma_url, foto_perfil, activo, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
         .eq("id", authUser.id)
         .maybeSingle();
 
       if (error) {
-        console.warn("AuthContext - Error al obtener perfil desde Supabase:", error.message);
+        // Fallback select without newer columns if table schema varies
+        try {
+          const { data: pBasic } = await supabase
+            .from("profiles")
+            .select("id, role, full_name, tenant_id, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
+            .eq("id", authUser.id)
+            .maybeSingle();
+          if (pBasic) profile = pBasic;
+        } catch {}
       }
 
       if (profile) {
@@ -73,6 +81,8 @@ export const AuthProvider = ({ children }) => {
         let permisosConfig = null;
         let extraLogo = "";
         let empresaNombre = "";
+        let userDetail = {};
+
         try {
           const { data: wData } = await supabase
             .from("website_config")
@@ -84,6 +94,8 @@ export const AuthProvider = ({ children }) => {
           empresaNombre = wData?.config?.empresa_datos?.nombre || 
                           wData?.config?.empresa_datos?.razonSocial || 
                           wData?.config?.empresa_datos?.nombreComercial || "";
+
+          userDetail = wData?.config?.user_details?.[authUser.id] || {};
 
           const perfiles = wData?.config?.perfiles || [];
           const userRoleName = (profile.role || "").trim().toLowerCase();
@@ -144,16 +156,35 @@ export const AuthProvider = ({ children }) => {
                                    empresaNombre || 
                                    "Clínica Odontológica";
 
+        const firmaResuelta = profile.firma || profile.firma_url || userDetail.firma || userDetail.firmaElectronica || null;
+        const regMedicoResuelto = profile.registro_medico || profile.tarjeta_profesional || userDetail.registroMedico || userDetail.tarjetaProfesional || "";
+        const fotoPerfilResuelta = profile.foto_perfil || userDetail.fotoPerfil || authUser.user_metadata?.avatar_url || "";
+        const telefonoResuelto = profile.telefono || userDetail.telefonoMovil || userDetail.telefono || "";
+        const esDoctorResuelto = userDetail.esDoctor ?? (
+            (profile.role || "").toLowerCase().includes('doctor') || 
+            (profile.role || "").toLowerCase().includes('odont') ||
+            (profile.role || "").toLowerCase().includes('especialista') ||
+            (profile.role || "").toLowerCase().includes('profesional')
+        );
+
         const fullProfile = {
           ...profile,
           cachedAt: Date.now(),
           uid: profile.id,
           rol: (profile.role || "odontologo").trim().toLowerCase(),
           role: profile.role,
+          esDoctor: esDoctorResuelto,
           permisos: permisosConfig,
           inquilino: profile.tenant_id,
-          nombre: profile.full_name,
-          nombreCompleto: profile.full_name,
+          nombre: profile.full_name || userDetail.nombreCompleto || "",
+          nombreCompleto: profile.full_name || userDetail.nombreCompleto || "",
+          telefono: telefonoResuelto,
+          telefonoMovil: telefonoResuelto,
+          registroMedico: regMedicoResuelto,
+          tarjetaProfesional: regMedicoResuelto,
+          firma: firmaResuelta,
+          firmaElectronica: firmaResuelta,
+          fotoPerfil: fotoPerfilResuelta,
           clinica: resolvedTenantName,
           tenantNombre: resolvedTenantName,
           tenant: {

@@ -36,30 +36,66 @@ export default function UserProfileModal({ isOpen, onClose }) {
     // Initialize Canvas with existing signature if present
     useEffect(() => {
         if (!isOpen) return;
-        setNombre(userProfile?.nombre || "");
-        setApellido(userProfile?.apellido || "");
-        setTelefono(userProfile?.telefono || userProfile?.telefonoMovil || "");
-        setRegistroMedico(userProfile?.registroMedico || userProfile?.tarjetaProfesional || "");
-        setFotoPerfil(userProfile?.fotoPerfil || userProfile?.photoURL || "");
-        setFirmaElectronica(userProfile?.firmaElectronica || userProfile?.firma || "");
-        setHuellaDigital(userProfile?.huellaDigital || "");
 
-        setTimeout(() => {
-            const canvas = canvasRef.current;
-            if (canvas) {
-                const ctx = canvas.getContext("2d");
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const initForm = async () => {
+            const userId = userProfile?.uid || userProfile?.id || user?.uid || user?.id;
+            const inquilino = userProfile?.inquilino || userProfile?.tenantId;
 
-                if (userProfile?.firmaElectronica || userProfile?.firma) {
-                    const img = new Image();
-                    img.onload = () => {
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    };
-                    img.src = userProfile.firmaElectronica || userProfile.firma;
-                }
+            let loadedFirma = userProfile?.firmaElectronica || userProfile?.firma || "";
+            let loadedReg = userProfile?.registroMedico || userProfile?.tarjetaProfesional || "";
+            let loadedNom = userProfile?.nombre || "";
+            let loadedApe = userProfile?.apellido || "";
+            let loadedTel = userProfile?.telefono || userProfile?.telefonoMovil || "";
+            let loadedFoto = userProfile?.fotoPerfil || userProfile?.photoURL || "";
+            let loadedHuella = userProfile?.huellaDigital || "";
+
+            // Consulta directa de respaldo a website_config y profiles para asegurar persistencia instantánea
+            if (userId && inquilino) {
+                try {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inquilino)
+                        .maybeSingle();
+                    const detail = cfgRow?.config?.user_details?.[userId] || {};
+                    if (detail.firma || detail.firmaElectronica) loadedFirma = detail.firma || detail.firmaElectronica;
+                    if (detail.registroMedico || detail.tarjetaProfesional) loadedReg = detail.registroMedico || detail.tarjetaProfesional;
+                    if (detail.nombre) loadedNom = detail.nombre;
+                    if (detail.apellido) loadedApe = detail.apellido;
+                    if (detail.telefonoMovil || detail.telefono) loadedTel = detail.telefonoMovil || detail.telefono;
+                    if (detail.fotoPerfil) loadedFoto = detail.fotoPerfil;
+                    if (detail.huellaDigital) loadedHuella = detail.huellaDigital;
+                } catch (e) {}
             }
-        }, 100);
-    }, [isOpen, userProfile]);
+
+            setNombre(loadedNom);
+            setApellido(loadedApe);
+            setTelefono(loadedTel);
+            setRegistroMedico(loadedReg);
+            setFotoPerfil(loadedFoto);
+            setFirmaElectronica(loadedFirma);
+            setHuellaDigital(loadedHuella);
+
+            setTimeout(() => {
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    const ctx = canvas.getContext("2d");
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    if (loadedFirma) {
+                        const img = new Image();
+                        img.crossOrigin = "anonymous";
+                        img.onload = () => {
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        };
+                        img.src = loadedFirma;
+                    }
+                }
+            }, 120);
+        };
+
+        initForm();
+    }, [isOpen, userProfile, user]);
 
     if (!isOpen) return null;
 
