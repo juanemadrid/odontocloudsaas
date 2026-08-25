@@ -561,7 +561,15 @@ export default function PagoTab({ patient }) {
         }
     };
 
-    const filteredPlans = plans.filter(p => {
+    // Filter plans with pending balance only (balance > 0)
+    const plansWithPendingBalance = plans.filter(p => {
+        const paid = getPlanPayments(p.id);
+        const total = Number(p.total || 0);
+        const balance = Math.max(0, total - paid);
+        return balance > 0;
+    });
+
+    const filteredPlans = plansWithPendingBalance.filter(p => {
         const matchesSearch = (p.title || p.nombre || "").toLowerCase().includes(searchTerm.toLowerCase());
         return matchesSearch;
     });
@@ -595,7 +603,7 @@ export default function PagoTab({ patient }) {
 
                         <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
                             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden md:block">
-                                Planes registrados: <span className="text-slate-700 font-mono text-sm">{plans.length}</span>
+                                Planes pendientes: <span className="text-slate-700 font-mono text-sm">{plansWithPendingBalance.length}</span>
                             </div>
                             <button 
                                 onClick={handleAddCredit}
@@ -625,7 +633,7 @@ export default function PagoTab({ patient }) {
                                         {filteredPlans.length === 0 ? (
                                             <tr>
                                                 <td colSpan="6" className="py-16 text-center text-slate-400 uppercase tracking-widest text-[11px]">
-                                                    No hay planes de tratamiento registrados
+                                                    No hay planes de tratamiento con saldo pendiente
                                                 </td>
                                             </tr>
                                         ) : (
