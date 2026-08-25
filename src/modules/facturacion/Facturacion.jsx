@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import FacturaElectronicaModule from "./electronica/FacturaElectronicaModule";
 import ReciboCaja from "./recibo/ReciboCaja";
+import Pagos from "./pagos/Pagos";
 import NotaCredito from "./nota/NotaCredito";
 import Liquidaciones from "./liquidacion/Liquidaciones";
 
 const TABS = [
   { id: "electronica", label: "Facturas Electrónicas" },
   { id: "recibos", label: "Recibos de Caja" },
+  { id: "pagos", label: "Pagos" },
   { id: "notas", label: "Notas de Crédito" },
   { id: "liquidaciones", label: "Liquidaciones" },
 ];
@@ -37,6 +39,7 @@ export default function Facturacion() {
       <div>
         {activeTab === "electronica" && <FacturaElectronicaModule />}
         {activeTab === "recibos" && <ReciboCaja />}
+        {activeTab === "pagos" && <Pagos />}
         {activeTab === "notas" && <NotaCredito />}
         {activeTab === "liquidaciones" && <Liquidaciones />}
       </div>

@@ -15,6 +15,7 @@ import NotaDebitoForm from "../../facturacion/nota/NotaDebitoForm";
 import Liquidaciones from "../../facturacion/liquidacion/Liquidaciones";
 import TrasladosList from "../../facturacion/traslados/TrasladosList";
 import PagosList from "../../facturacion/pagos/PagosList";
+import PagosForm from "../../facturacion/pagos/PagosForm";
 import OrdenesCompraList from "../../facturacion/ordenescompra/OrdenesCompraList";
 import FacturasCompraList from "../../facturacion/facturascompra/FacturasCompraList";
 
@@ -87,6 +88,9 @@ export default function FacturacionHub() {
     } else if (activeSubView === "pagos") {
       content = <PagosList onNew={() => setActiveSubView("pagos_form")} />;
       title = "Pagos a Proveedores";
+    } else if (activeSubView === "pagos_form") {
+      content = <PagosForm onCancel={() => setActiveSubView("pagos")} onSuccess={() => setActiveSubView("pagos")} />;
+      title = "Nuevo Pago";
     } else if (activeSubView === "oc") {
       content = <OrdenesCompraList onNew={() => setActiveSubView("oc_form")} />;
       title = "Órdenes de Compra";
