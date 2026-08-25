@@ -157,7 +157,7 @@ export default function FacturacionHub() {
             {NEW_BUTTON_LABELS[activeSubView] && (
               <button 
                 onClick={() => setActiveSubView(`${activeSubView}_form`)}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0"
+                className="bg-[#8dc63f] hover:bg-[#7cb035] text-white px-4 py-2 rounded-full text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
               >
                 <FiPlus size={15} />
                 <span>{NEW_BUTTON_LABELS[activeSubView]}</span>
