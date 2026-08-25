@@ -5,6 +5,8 @@ import {
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
+import { getActiveCaja } from "../../../services/supabaseServices";
+import { getConfigItems } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
 
 const fmt = (n) =>
@@ -90,7 +92,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
     // Lookups
     const [profesionales, setProfesionales] = useState([]);
     const [terceros, setTerceros] = useState([]);
-    const [bancosCajas, setBancosCajas] = useState(BANCOS_CAJAS_DEFAULT);
+    const [miCajaAbierta, setMiCajaAbierta] = useState(null);
+    const [bancosDisponibles, setBancosDisponibles] = useState([]);
     const [facturasCompraPendientes, setFacturasCompraPendientes] = useState([]);
     const [facturasSeleccionadas, setFacturasSeleccionadas] = useState([]);
 
@@ -113,6 +116,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
         const loadInitialData = async () => {
             setLoading(true);
             try {
+                const currentUserId = user?.id || userProfile?.uid || userProfile?.id;
+
                 // 1. Cargar configuración de la clínica
                 const { data: cfgRow } = await supabase
                     .from("website_config")
@@ -122,7 +127,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
                 const cfg = cfgRow?.config || {};
 
-                // Cargar Terceros / Proveedores
+                // 2. Cargar Terceros / Proveedores
                 let tercerosList = [];
                 try {
                     const { data: tDb } = await supabase
@@ -137,7 +142,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 }
                 setTerceros(tercerosList);
 
-                // Cargar Profesionales / Doctores
+                // 3. Cargar Profesionales / Doctores
                 let profList = [];
                 try {
                     const { data: pDb } = await supabase
@@ -162,12 +167,53 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 }
                 setProfesionales(profList);
 
-                // Cargar Bancos / Cajas
-                if (cfg.bancos_cajas && Array.isArray(cfg.bancos_cajas) && cfg.bancos_cajas.length > 0) {
-                    setBancosCajas(cfg.bancos_cajas);
+                // 4. Cargar la caja abierta exclusiva del usuario actual
+                let userCaja = null;
+                try {
+                    const activeCaja = await getActiveCaja(inquilino, currentUserId);
+                    if (
+                        activeCaja &&
+                        (activeCaja.estado || "").toLowerCase() === "abierta" &&
+                        (!activeCaja.usuario_id || String(activeCaja.usuario_id || activeCaja.usuarioId) === String(currentUserId))
+                    ) {
+                        userCaja = activeCaja;
+                    }
+                } catch (e) {}
+                setMiCajaAbierta(userCaja);
+
+                // 5. Cargar Bancos creados en el sistema
+                let bancosList = [];
+                try {
+                    const list = await getConfigItems(inquilino, "bancos", "bancos");
+                    if (list && list.length > 0) bancosList = list;
+                } catch (e) {}
+
+                if (bancosList.length === 0) {
+                    try {
+                        const { data: bDb } = await supabase.from("bancos").select("*").eq("tenant_id", inquilino);
+                        if (bDb && bDb.length > 0) bancosList = bDb;
+                    } catch (e) {}
                 }
 
-                // Cargar Facturas de Compra pendientes
+                if (bancosList.length === 0) {
+                    bancosList = cfg.bancos || cfg.cuentas_bancarias || [];
+                }
+
+                if (bancosList.length === 0) {
+                    bancosList = [
+                        { id: "bancolombia_ahorros", nombre: "Bancolombia - Cuenta de Ahorros" },
+                        { id: "bancolombia_corriente", nombre: "Bancolombia - Cuenta Corriente" },
+                        { id: "davivienda", nombre: "Davivienda" },
+                        { id: "banco_bogota", nombre: "Banco de Bogotá" },
+                        { id: "bbva", nombre: "BBVA" },
+                        { id: "nequi", nombre: "Nequi" },
+                        { id: "daviplata", nombre: "Daviplata" },
+                        { id: "datafono", nombre: "Datáfono / Redeban" }
+                    ];
+                }
+                setBancosDisponibles(bancosList);
+
+                // 6. Cargar Facturas de Compra pendientes
                 try {
                     const { data: fcDb } = await supabase
                         .from("facturas_compra")
@@ -184,7 +230,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
         };
 
         loadInitialData();
-    }, [inquilino]);
+    }, [inquilino, user, userProfile]);
 
     // Manejadores de Conceptos
     const handleAddConcepto = () => {
@@ -500,8 +546,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
                         </div>
 
                         {/* Banco/Caja */}
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600 pt-2">
                                 Banco/Caja <span className="text-rose-500">*</span>
                             </label>
                             <div className="md:col-span-9">
@@ -509,14 +555,34 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                     value={bancoCaja}
                                     onChange={(e) => setBancoCaja(e.target.value)}
                                     className="w-full max-w-md h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    required
                                 >
                                     <option value="">Seleccione...</option>
-                                    {bancosCajas.map((bc, idx) => (
-                                        <option key={idx} value={typeof bc === 'string' ? bc : bc.nombre}>
-                                            {typeof bc === 'string' ? bc : bc.nombre}
-                                        </option>
-                                    ))}
+                                    {miCajaAbierta && (
+                                        <optgroup label="Mi Caja Abierta">
+                                            <option value={`Caja: ${miCajaAbierta.nombre || 'Caja Principal'}`}>
+                                                {`Caja: ${miCajaAbierta.nombre || 'Caja Principal'} (Abierta)`}
+                                            </option>
+                                        </optgroup>
+                                    )}
+                                    <optgroup label="Bancos del Sistema">
+                                        {bancosDisponibles.map((b, idx) => {
+                                            const bName = typeof b === 'string' ? b : (b.nombre || b.nombreBanco || b.banco || "Banco");
+                                            const numCta = (b.numeroCuenta || b.numero) ? ` - N° ${b.numeroCuenta || b.numero}` : '';
+                                            const fullVal = bName.startsWith("Banco:") ? bName : `${bName}${numCta}`;
+                                            return (
+                                                <option key={idx} value={fullVal}>
+                                                    {fullVal}
+                                                </option>
+                                            );
+                                        })}
+                                    </optgroup>
                                 </select>
+                                {!miCajaAbierta && (
+                                    <p className="text-[11px] text-amber-600 font-medium mt-1.5 flex items-center gap-1">
+                                        <span>ℹ️</span> No tienes una caja abierta actualmente. Selecciona un banco existente para generar el pago.
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>
