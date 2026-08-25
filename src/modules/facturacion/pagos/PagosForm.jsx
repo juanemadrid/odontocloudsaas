@@ -16,23 +16,6 @@ const fmt = (n) =>
     maximumFractionDigits: 0,
   });
 
-const DEFAULT_CONCEPTOS = [
-    "Insumos Odontológicos",
-    "Materiales de Ortodoncia",
-    "Laboratorio Dental",
-    "Arriendo de Consultorio / Clínica",
-    "Servicios Públicos (Agua / Luz / Internet)",
-    "Mantenimiento de Equipos / Compresores",
-    "Honorarios Médicos / Especialistas",
-    "Nómina / Sueldos Auxiliares",
-    "Papelería y Aseo",
-    "Software, Hosting y Licencias",
-    "Publicidad y Marketing Digital",
-    "Impuestos y Retenciones",
-    "Comisiones Bancarias / Datáfono",
-    "Otros Egresos y Gastos Generales"
-];
-
 const CONDICIONES_PAGO = [
     "Contado",
     "Crédito 8 días",
@@ -896,17 +879,11 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                         <td className="py-2.5 px-4">
                                             <input
                                                 type="text"
-                                                list="conceptos-list"
                                                 value={item.concepto}
                                                 onChange={(e) => handleItemChange(item.id, "concepto", e.target.value)}
                                                 placeholder="Ej. Insumos dentales"
                                                 className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
                                             />
-                                            <datalist id="conceptos-list">
-                                                {DEFAULT_CONCEPTOS.map((c, idx) => (
-                                                    <option key={idx} value={c} />
-                                                ))}
-                                            </datalist>
                                         </td>
                                         <td className="py-2.5 px-4">
                                             <input
