@@ -42,7 +42,14 @@ export default function ConfigConsecutivos() {
         setLoading(true);
         try {
             const data = await getConfigItems(userProfile.inquilino, "consecutivos", "consecutivos");
-            const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", undefined, { sensitivity: "base" }));
+            const normalized = (data || []).map((item, idx) => {
+                const autoName = item.nombre || item.name || (item.tipo && item.tipo !== "general" ? item.tipo : null) || (item.fePrefijoFactura ? `Consecutivo ${item.fePrefijoFactura}` : (item.fvPrefijo ? `Consecutivo ${item.fvPrefijo}` : (idx === 0 ? "Consecutivo Principal" : `Consecutivo ${idx + 1}`)));
+                return {
+                    ...item,
+                    nombre: autoName,
+                };
+            });
+            const sorted = normalized.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", undefined, { sensitivity: "base" }));
             setConsecutivos(sorted);
         } catch (error) {
             console.error("Error cargando consecutivos:", error);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { FiCalendar, FiPlus, FiSearch, FiTrash2, FiEye, FiArrowLeft, FiSave, FiUploadCloud, FiClock, FiFileText } from "react-icons/fi";
+import { FiCalendar, FiPlus, FiSearch, FiTrash2, FiEye, FiArrowLeft, FiSave, FiUploadCloud, FiClock, FiCheckCircle } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
@@ -7,7 +7,7 @@ import { resolvePrivateFileUrl, uploadPrivateFile } from "../../services/private
 
 export default function Esterilizacion() {
   const { userProfile } = useAuth();
-  const inquilino = userProfile?.inquilino || "";
+  const inquilino = userProfile?.inquilino || userProfile?.tenant_id || "juanemadrid/odontocloudsaas";
 
   // View state: 'list' or 'new'
   const [view, setView] = useState("list");
@@ -27,14 +27,16 @@ export default function Esterilizacion() {
   const [cantidadCarga, setCantidadCarga] = useState(1);
   const [cargaItems, setCargaItems] = useState([]); // List of { concepto, cantidad }
   
-  const [nroPaquetes, setNroPaquetes] = useState(0);
+  const [nroPaquetes, setNroPaquetes] = useState(1);
   const [horaInicio, setHoraInicio] = useState("08:00 AM");
   const [horaFin, setHoraFin] = useState("09:00 AM");
-  const [temperatura, setTemperatura] = useState(121); // 121°C is standard for autoclave sterilization
-  const [presion, setPresion] = useState(15); // 15 psi is standard
+  const [temperatura, setTemperatura] = useState(121);
+  const [presion, setPresion] = useState(15);
   
   const [responsableTipo, setResponsableTipo] = useState("usuario"); // usuario or otro
+  const [responsableUsuario, setResponsableUsuario] = useState("");
   const [responsableOtro, setResponsableOtro] = useState("");
+  const [usersList, setUsersList] = useState([]);
 
   const [quimicoImg, setQuimicoImg] = useState("");
   const [biologicoImg, setBiologicoImg] = useState("");
@@ -49,6 +51,46 @@ export default function Esterilizacion() {
   // Detail Modal state
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [activeCycleDetail, setActiveCycleDetail] = useState(null);
+
+  // Load clinic users/staff for dropdown
+  useEffect(() => {
+    if (!inquilino) return;
+    const loadUsers = async () => {
+      try {
+        const [pRes, cfgRes] = await Promise.all([
+          supabase.from("profiles").select("*").eq("tenant_id", inquilino),
+          supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
+        ]);
+        
+        const map = new Map();
+        
+        (pRes.data || []).forEach(p => {
+          const name = p.nombreCompleto || p.nombre || p.full_name || p.email;
+          if (name) map.set(name.toUpperCase().trim(), name.toUpperCase().trim());
+        });
+
+        const cfgUsers = cfgRes.data?.config?.usuarios || [];
+        cfgUsers.forEach(u => {
+          const name = u.nombreCompleto || u.nombre || u.name;
+          if (name) map.set(name.toUpperCase().trim(), name.toUpperCase().trim());
+        });
+
+        const currentName = userProfile?.nombreCompleto || userProfile?.nombre;
+        if (currentName) {
+          map.set(currentName.toUpperCase().trim(), currentName.toUpperCase().trim());
+        }
+
+        const sorted = Array.from(map.values()).sort();
+        setUsersList(sorted);
+        if (currentName) {
+          setResponsableUsuario(currentName.toUpperCase().trim());
+        }
+      } catch (err) {
+        console.error("Error loading clinic users for sterilization:", err);
+      }
+    };
+    loadUsers();
+  }, [inquilino, userProfile]);
 
   const loadCycles = async () => {
     if (!inquilino) return;
@@ -111,13 +153,23 @@ export default function Esterilizacion() {
       return;
     }
 
-    setCargaItems(prev => [...prev, { concepto: conceptoCarga.toUpperCase(), cantidad: qty }]);
+    const newItem = { concepto: conceptoCarga.toUpperCase().trim(), cantidad: qty };
+    const updated = [...cargaItems, newItem];
+    setCargaItems(updated);
+    
+    // Auto-calcula la suma total de paquetes
+    const totalPkgs = updated.reduce((sum, item) => sum + (parseInt(item.cantidad) || 0), 0);
+    setNroPaquetes(totalPkgs);
+
     setConceptoCarga("");
     setCantidadCarga(1);
   };
 
   const handleRemoveCargaItem = (idx) => {
-    setCargaItems(prev => prev.filter((_, i) => i !== idx));
+    const updated = cargaItems.filter((_, i) => i !== idx);
+    setCargaItems(updated);
+    const totalPkgs = updated.reduce((sum, item) => sum + (parseInt(item.cantidad) || 0), 0);
+    setNroPaquetes(totalPkgs);
   };
 
   const handleImageUpload = async (e, type) => {
@@ -148,7 +200,7 @@ export default function Esterilizacion() {
       }
     } catch (error) {
       console.error("Error uploading image:", error);
-      toast.error("No se pudo subir la imagen.");
+      toast.error("Error al subir la imagen");
     } finally {
       if (type === "quimico") setUploadingQuimico(false);
       if (type === "biologico") setUploadingBiologico(false);
@@ -157,80 +209,87 @@ export default function Esterilizacion() {
 
   const handleSave = async (e) => {
     if (e) e.preventDefault();
+
     if (cargaItems.length === 0) {
-      toast.error("Debe agregar al menos un ítem a la carga.");
+      toast.error("Debe agregar al menos un ítem al contenido de la carga.");
       return;
     }
-    const finalResponsable = responsableTipo === "usuario" 
-      ? (userProfile?.nombreCompleto || userProfile?.nombre || "Usuario Clínico") 
-      : responsableOtro;
 
-    if (!finalResponsable.trim()) {
-      toast.error("Ingrese el nombre del responsable.");
+    const respName = responsableTipo === "usuario"
+      ? (responsableUsuario || "").trim()
+      : (responsableOtro || "").trim();
+
+    if (!respName) {
+      toast.error(responsableTipo === "usuario" ? "Seleccione un usuario responsable." : "Ingrese el nombre del responsable.");
       return;
     }
 
     setSaving(true);
+
     try {
-      const cycleData = {
-        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
-        tenant_id: inquilino,
+      const newCycle = {
+        id: `cycle_${Date.now()}`,
         fechaEsterilizacion,
         cargaItems,
-        nroPaquetes: parseInt(nroPaquetes) || 0,
+        nroPaquetes: parseInt(nroPaquetes) || 1,
         horaInicio,
         horaFin,
-        temperatura: parseFloat(temperatura) || 0,
-        presion: parseFloat(presion) || 0,
-        responsable: finalResponsable.toUpperCase(),
+        temperatura: parseFloat(temperatura) || 121,
+        presion: parseFloat(presion) || 15,
+        responsable: respName,
         quimicoImg,
         biologicoImg,
-        created_at: new Date().toISOString()
+        createdAt: new Date().toISOString()
       };
 
+      // 1. Save to DB table
+      let savedInTable = false;
       try {
-        await supabase.from("ciclos_esterilizacion").insert([cycleData]);
+        const { error: insErr } = await supabase
+          .from("ciclos_esterilizacion")
+          .insert({
+            ...newCycle,
+            tenant_id: inquilino
+          });
+        if (!insErr) savedInTable = true;
       } catch (e) {}
 
-      // Sincronizar en website_config JSON
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", inquilino)
-        .maybeSingle();
+      // 2. Save in website_config fallback
+      try {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
 
-      const currentConfig = cfgRow?.config || {};
-      const currentList = Array.isArray(currentConfig.ciclos_esterilizacion) ? currentConfig.ciclos_esterilizacion : [];
-      const newConfig = {
-        ...currentConfig,
-        ciclos_esterilizacion: [cycleData, ...currentList],
-        updatedAt: new Date().toISOString()
-      };
+        const currentConfig = cfgRow?.config || {};
+        const currentList = currentConfig.ciclos_esterilizacion || [];
+        const updatedList = [newCycle, ...currentList];
 
-      await supabase.from("website_config").upsert(
-        { tenant_id: inquilino, config: newConfig },
-        { onConflict: "tenant_id" }
-      );
+        await supabase
+          .from("website_config")
+          .upsert({
+            tenant_id: inquilino,
+            config: {
+              ...currentConfig,
+              ciclos_esterilizacion: updatedList
+            },
+            updated_at: new Date().toISOString()
+          }, { onConflict: "tenant_id" });
+      } catch (e) {}
 
-      toast.success("Ciclo de esterilización registrado con éxito");
+      toast.success("Ciclo de esterilización guardado exitosamente");
+      setView("list");
+      loadCycles();
 
       // Reset form
-      setFechaEsterilizacion(new Date().toISOString().split("T")[0]);
       setCargaItems([]);
-      setNroPaquetes(0);
-      setHoraInicio("08:00 AM");
-      setHoraFin("09:00 AM");
-      setTemperatura(121);
-      setPresion(15);
+      setConceptoCarga("");
+      setCantidadCarga(1);
       setQuimicoImg("");
       setBiologicoImg("");
       setQuimicoPreview("");
       setBiologicoPreview("");
-      setResponsableTipo("usuario");
-      setResponsableOtro("");
-
-      setView("list");
-      loadCycles();
     } catch (err) {
       console.error("Error saving sterilization cycle:", err);
       toast.error("Error al guardar el ciclo de esterilización");
@@ -239,15 +298,80 @@ export default function Esterilizacion() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("¿Está seguro de eliminar este ciclo de esterilización?")) return;
+  const handleDelete = async (cycleId) => {
+    if (!window.confirm("¿Está seguro de eliminar este registro de esterilización?")) return;
+
     try {
-      await supabase.from("ciclos_esterilizacion").delete().eq("id", id);
-      toast.success("Ciclo de esterilización eliminado");
-      setCycles(prev => prev.filter(c => c.id !== id));
-    } catch (e) {
-      console.error("Error deleting sterilization cycle:", e);
+      try {
+        await supabase
+          .from("ciclos_esterilizacion")
+          .delete()
+          .eq("tenant_id", inquilino)
+          .eq("id", cycleId);
+      } catch (e) {}
+
+      try {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        if (cfgRow?.config?.ciclos_esterilizacion) {
+          const updated = cfgRow.config.ciclos_esterilizacion.filter(c => c.id !== cycleId);
+          await supabase
+            .from("website_config")
+            .upsert({
+              tenant_id: inquilino,
+              config: {
+                ...cfgRow.config,
+                ciclos_esterilizacion: updated
+              },
+              updated_at: new Date().toISOString()
+            }, { onConflict: "tenant_id" });
+        }
+      } catch (e) {}
+
+      toast.success("Registro eliminado correctamente");
+      loadCycles();
+    } catch (err) {
+      console.error("Error deleting sterilization cycle:", err);
       toast.error("Error al eliminar el registro");
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      if (filteredCycles.length === 0) {
+        toast.warning("No hay registros para exportar");
+        return;
+      }
+
+      import("xlsx").then((XLSX) => {
+        const dataToExport = filteredCycles.map((c) => ({
+          "N° de lote": c.nroLote || c.consecutivo || "1",
+          "Fecha de esterilización": c.fechaEsterilizacion || "",
+          "Fecha de creación": (c.createdAt || c.created_at || "").split("T")[0] || c.fechaEsterilizacion,
+          "N° de carga": c.nroCarga || c.consecutivo || "1",
+          "N° de paquetes": c.nroPaquetes || 1,
+          "Contenido de la carga": (c.cargaItems || []).map(i => `${i.concepto} (x${i.cantidad})`).join(", "),
+          "Hora de inicio del ciclo": c.horaInicio || "",
+          "Hora de fin del ciclo": c.horaFin || "",
+          "Temperatura en grados": `${c.temperatura || 121} °C`,
+          "Presión en libras": `${c.presion || 15} PSI`,
+          "Responsable": (c.responsable || "").toUpperCase(),
+          "Activo": "Sí"
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Esterilización");
+        XLSX.writeFile(wb, `Reporte_Esterilizacion_${appliedRange.start}_${appliedRange.end}.xlsx`);
+        toast.success("Archivo Excel exportado con éxito");
+      });
+    } catch (err) {
+      console.error("Error exporting excel:", err);
+      toast.error("Error al exportar a Excel");
     }
   };
 
@@ -257,11 +381,12 @@ export default function Esterilizacion() {
       const matchesDate = date >= appliedRange.start && date <= appliedRange.end;
       if (!matchesDate) return false;
 
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
       if (q) {
         const resp = (c.responsable || "").toLowerCase();
         const itemsStr = (c.cargaItems || []).map(i => i.concepto).join(" ").toLowerCase();
-        return resp.includes(q) || itemsStr.includes(q);
+        const lote = String(c.nroLote || c.consecutivo || "").toLowerCase();
+        return resp.includes(q) || itemsStr.includes(q) || lote.includes(q);
       }
       return true;
     });
@@ -269,124 +394,202 @@ export default function Esterilizacion() {
 
   if (view === "list") {
     return (
-      <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="space-y-4 animate-in fade-in duration-300 w-full max-w-7xl mx-auto pb-12">
         
-        {/* Header / Add Button Row */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Autoclaves & Cargas</h3>
+        {/* ─── ENCABEZADO Y BREADCRUMB 1:1 ORALDRIVE ─── */}
+        <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-slate-800 tracking-tight">
+              Esterilización
+            </h2>
+            <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+              <span>🏠 Administración - Esterilización</span>
+            </div>
           </div>
+
           <button 
+            type="button"
             onClick={() => setView("new")}
-            className="h-10 px-6 flex items-center justify-center bg-[#8cc33f] text-white rounded-full text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95 shrink-0"
+            className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded-full transition-all cursor-pointer shadow-2xs shrink-0"
           >
-            <FiPlus className="mr-1.5" size={14} />
             Agregar ciclo
           </button>
         </div>
 
-        {/* Date Filter Upper Card (OralDrive style) */}
-        <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-          <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Fecha Inicial</label>
-              <div className="relative">
+        {/* ─── TARJETA DE FILTROS 1:1 ORALDRIVE ─── */}
+        <div className="mx-6 bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+          <form onSubmit={handleSearch} className="flex flex-col lg:flex-row items-center justify-center gap-6">
+            
+            {/* Fecha Inicial */}
+            <div className="flex items-center gap-3 w-full lg:w-auto">
+              <label className="text-xs font-normal text-slate-500 shrink-0 w-24 text-right">Fecha inicial</label>
+              <div className="relative flex-1 lg:w-48">
                 <input
                   type="date"
                   value={dateRange.start}
                   onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                  className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                 max="9999-12-31" min="1900-01-01" />
-                <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
+                  max="9999-12-31" min="1900-01-01" 
+                />
               </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Fecha Final</label>
-              <div className="relative">
+
+            {/* Fecha Final */}
+            <div className="flex items-center gap-3 w-full lg:w-auto">
+              <label className="text-xs font-normal text-slate-500 shrink-0 w-20 text-right">Fecha final</label>
+              <div className="relative flex-1 lg:w-48">
                 <input
                   type="date"
                   value={dateRange.end}
                   onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                  className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                 max="9999-12-31" min="1900-01-01" />
-                <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
+                  max="9999-12-31" min="1900-01-01" 
+                />
               </div>
             </div>
+
+            {/* Botón Buscar Verde */}
             <button
               type="submit"
-              className="h-11 px-8 flex items-center justify-center bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95"
+              className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded transition-all cursor-pointer shadow-2xs shrink-0"
             >
               Buscar
             </button>
           </form>
         </div>
 
-        {/* Lower Table Card */}
-        <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-6">
-          <div className="relative w-full max-w-md">
-            <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Buscar por responsable o carga..."
-              className="w-full h-10 pl-11 pr-4 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
+        {/* ─── TARJETA TABLA DATAGRID 1:1 ORALDRIVE ─── */}
+        <div className="mx-6 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+          
+          {/* Barra Superior DataGrid */}
+          <div className="p-3 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs text-slate-400">
+            <span className="italic text-[11px]">Drag a column header here to group by that column</span>
+            <div className="flex items-center gap-2">
+              {/* Botón Excel */}
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded hover:bg-emerald-50 text-emerald-600 transition-colors cursor-pointer"
+                title="Exportar a Excel"
+              >
+                <span className="text-xs font-bold font-mono">📊</span>
+              </button>
+
+              {/* Buscador */}
+              <div className="relative">
+                <FiSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                <input 
+                  type="text" 
+                  placeholder="Search..."
+                  className="h-7 pl-8 pr-2.5 w-44 bg-white border border-slate-200 rounded text-[11px] outline-none focus:border-sky-500"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="overflow-x-auto rounded-2xl border border-slate-50">
-            <table className="w-full text-left border-collapse min-w-[900px]">
+          {/* Tabla de Registros */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-[11px] min-w-[1300px]">
               <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <th className="px-6 py-4 pl-8 w-24 text-center">Nro</th>
-                  <th className="px-6 py-4">Fecha</th>
-                  <th className="px-6 py-4 text-center">Horario</th>
-                  <th className="px-6 py-4 text-center">Temp/Presión</th>
-                  <th className="px-6 py-4 text-center">Paquetes</th>
-                  <th className="px-6 py-4">Responsable</th>
-                  <th className="px-6 py-4 text-center pr-8 w-32">Acciones</th>
+                <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 font-bold whitespace-nowrap">
+                  <th className="py-2.5 px-3 border-r border-slate-200 w-20">N° de lote</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Fecha de esterilización</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Fecha de creación</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center w-20">N° de carga</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center w-24">N° de paquetes</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 min-w-[200px]">Contenido de la carga</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center">Hora de inicio del ciclo</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center">Hora de fin del ciclo</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center">Temperatura en grados</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center">Presión en libras</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Responsable</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center w-16">Activo</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center w-28">Control químico</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 text-center w-28">Control Biológico</th>
+                  <th className="py-2.5 px-3 text-center w-20">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
+              <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap">
                 {loading ? (
                   <tr>
-                    <td colSpan="7" className="px-8 py-20 text-center">
-                      <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                    <td colSpan="15" className="py-16 text-center text-slate-400">
+                      <div className="w-6 h-6 border-2 border-sky-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                      <span className="text-xs font-medium">Cargando registros...</span>
                     </td>
                   </tr>
                 ) : filteredCycles.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-8 py-20 text-center text-slate-400 italic">
-                      No se encontraron registros de esterilización.
+                    <td colSpan="15" className="py-12 text-center text-slate-400 text-xs">
+                      No data
                     </td>
                   </tr>
                 ) : (
                   filteredCycles.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="px-6 py-4 pl-8 text-center font-bold text-slate-400 font-mono">{c.consecutivo}</td>
-                      <td className="px-6 py-4 font-black text-slate-800 uppercase tracking-tight">{c.fechaEsterilizacion}</td>
-                      <td className="px-6 py-4 text-center font-semibold text-slate-500 font-mono">{c.horaInicio} - {c.horaFin}</td>
-                      <td className="px-6 py-4 text-center font-semibold text-blue-600 font-mono">{c.temperatura}°C / {c.presion} psi</td>
-                      <td className="px-6 py-4 text-center font-black text-slate-700 font-mono">{c.nroPaquetes}</td>
-                      <td className="px-6 py-4 font-bold text-slate-500 uppercase">{c.responsable}</td>
-                      <td className="px-6 py-4 text-center pr-8">
-                        <div className="flex items-center justify-center gap-2">
+                    <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-2 px-3 border-r border-slate-100 font-bold text-slate-700 text-center">{c.nroLote || c.consecutivo}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-slate-800 font-medium">{c.fechaEsterilizacion}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-slate-500">{(c.createdAt || c.created_at || "").split("T")[0] || c.fechaEsterilizacion}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center font-bold text-slate-600">{c.nroCarga || c.consecutivo}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center font-bold text-slate-800">{c.nroPaquetes || 1}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-slate-600 truncate max-w-xs" title={(c.cargaItems || []).map(i => `${i.concepto} (x${i.cantidad})`).join(", ")}>
+                        {(c.cargaItems || []).map(i => `${i.concepto} (x${i.cantidad})`).join(", ") || "—"}
+                      </td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-600 font-mono">{c.horaInicio}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-600 font-mono">{c.horaFin}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-800 font-semibold">{c.temperatura}°C</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-800 font-semibold">{c.presion} psi</td>
+                      <td className="py-2 px-3 border-r border-slate-100 font-medium text-slate-700 uppercase">{c.responsable}</td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" title="Activo" />
+                      </td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center">
+                        {c.quimicoImg ? (
+                          <a
+                            href={c.quimicoImg}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline"
+                          >
+                            Ver foto
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 text-[10px] italic">Sin comprobante</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 border-r border-slate-100 text-center">
+                        {c.biologicoImg ? (
+                          <a
+                            href={c.biologicoImg}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline"
+                          >
+                            Ver foto
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 text-[10px] italic">Sin comprobante</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => {
                               setActiveCycleDetail(c);
                               setShowDetailModal(true);
                             }}
-                            className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all shadow-sm"
+                            className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-sky-50 hover:text-sky-600 flex items-center justify-center transition-colors cursor-pointer"
                             title="Ver detalles"
                           >
-                            <FiEye size={13} />
+                            <FiEye size={12} />
                           </button>
                           <button
                             onClick={() => handleDelete(c.id)}
-                            className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-all shadow-sm"
+                            className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
                             title="Eliminar"
                           >
-                            <FiTrash2 size={13} />
+                            <FiTrash2 size={12} />
                           </button>
                         </div>
                       </td>
@@ -400,60 +603,59 @@ export default function Esterilizacion() {
 
         {/* Details View Modal */}
         {showDetailModal && activeCycleDetail && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[1000] animate-in fade-in duration-200">
-            <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-              <div className="px-6 py-5 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
-                  Detalle del Ciclo de Esterilización #{activeCycleDetail.consecutivo}
-                </h3>
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Detalle del Ciclo #{activeCycleDetail.consecutivo}
+                  </h3>
+                  <p className="text-xs text-slate-400">Fecha: {activeCycleDetail.fechaEsterilizacion}</p>
+                </div>
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="text-xs font-black text-slate-400 hover:text-slate-600"
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer border-0 bg-transparent"
                 >
                   Cerrar
                 </button>
               </div>
 
-              <div className="p-8 space-y-6 overflow-y-auto text-xs font-bold text-slate-600">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex justify-between border-b border-slate-50 pb-2 col-span-2 md:col-span-1">
-                    <span className="text-slate-400">Fecha:</span>
-                    <span className="text-slate-800">{activeCycleDetail.fechaEsterilizacion}</span>
+              <div className="p-5 space-y-5 overflow-y-auto text-xs text-slate-600">
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-100">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Horario:</span>
+                    <span className="font-semibold text-slate-700">{activeCycleDetail.horaInicio} - {activeCycleDetail.horaFin}</span>
                   </div>
-                  <div className="flex justify-between border-b border-slate-50 pb-2 col-span-2 md:col-span-1">
-                    <span className="text-slate-400">Paquetes:</span>
-                    <span className="text-slate-800">{activeCycleDetail.nroPaquetes}</span>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Temperatura / Presión:</span>
+                    <span className="font-semibold text-blue-600">{activeCycleDetail.temperatura}°C / {activeCycleDetail.presion} psi</span>
                   </div>
-                  <div className="flex justify-between border-b border-slate-50 pb-2 col-span-2 md:col-span-1">
-                    <span className="text-slate-400">Horario:</span>
-                    <span className="text-slate-800">{activeCycleDetail.horaInicio} - {activeCycleDetail.horaFin}</span>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Número de Paquetes:</span>
+                    <span className="font-semibold text-slate-700">{activeCycleDetail.nroPaquetes}</span>
                   </div>
-                  <div className="flex justify-between border-b border-slate-50 pb-2 col-span-2 md:col-span-1">
-                    <span className="text-slate-400">Temperatura/Presión:</span>
-                    <span className="text-blue-600">{activeCycleDetail.temperatura}°C / {activeCycleDetail.presion} psi</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-50 pb-2 col-span-2">
-                    <span className="text-slate-400">Responsable:</span>
-                    <span className="text-slate-800 uppercase">{activeCycleDetail.responsable}</span>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Responsable:</span>
+                    <span className="font-semibold text-slate-800 uppercase">{activeCycleDetail.responsable}</span>
                   </div>
                 </div>
 
                 {/* Table of items inside cycle */}
-                <div className="space-y-2 pt-2">
-                  <span className="text-slate-400 block mb-1">Carga de instrumental:</span>
-                  <div className="border border-slate-100 rounded-xl overflow-hidden">
-                    <table className="w-full text-left">
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-700">Contenido de la carga:</h4>
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                          <th className="px-4 py-2">Concepto</th>
-                          <th className="px-4 py-2 text-center w-28">Cantidad</th>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                          <th className="px-3 py-2">Concepto</th>
+                          <th className="px-3 py-2 text-center w-24">Cantidad</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-slate-100">
                         {activeCycleDetail.cargaItems?.map((itm, idx) => (
-                          <tr key={idx} className="border-t border-slate-50 text-[11px]">
-                            <td className="px-4 py-2 font-black text-slate-700 uppercase">{itm.concepto}</td>
-                            <td className="px-4 py-2 text-center font-mono text-slate-500 font-bold">{itm.cantidad}</td>
+                          <tr key={idx}>
+                            <td className="px-3 py-2 font-semibold text-slate-700 uppercase">{itm.concepto}</td>
+                            <td className="px-3 py-2 text-center font-bold text-slate-600">{itm.cantidad}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -462,24 +664,24 @@ export default function Esterilizacion() {
                 </div>
 
                 {/* Image verification blocks */}
-                <div className="grid grid-cols-2 gap-6 pt-4">
-                  <div className="flex flex-col gap-2">
-                    <span className="text-slate-400 block">Control Químico:</span>
-                    <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <span className="text-xs font-bold text-slate-700 block mb-1.5">Control Químico:</span>
+                    <div className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
                       {activeCycleDetail.quimicoImg ? (
-                        <img src={activeCycleDetail.quimicoImg} alt="Quimico" className="w-full h-full object-cover" />
+                        <img src={activeCycleDetail.quimicoImg} alt="Control Químico" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-[10px] text-slate-450 italic">Sin cargar</span>
+                        <span className="text-xs text-slate-400 italic">Sin comprobante</span>
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <span className="text-slate-400 block">Control Biológico:</span>
-                    <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
-                      {activeCycleDetail.biologcioImg || activeCycleDetail.biologicoImg ? (
-                        <img src={activeCycleDetail.biologcioImg || activeCycleDetail.biologicoImg} alt="Biologico" className="w-full h-full object-cover" />
+                  <div>
+                    <span className="text-xs font-bold text-slate-700 block mb-1.5">Control Biológico:</span>
+                    <div className="border border-slate-200 rounded-lg overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
+                      {activeCycleDetail.biologicoImg ? (
+                        <img src={activeCycleDetail.biologicoImg} alt="Control Biológico" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-[10px] text-slate-450 italic">Sin cargar</span>
+                        <span className="text-xs text-slate-400 italic">Sin comprobante</span>
                       )}
                     </div>
                   </div>
@@ -494,286 +696,333 @@ export default function Esterilizacion() {
 
   // Create Cycle Form View (New)
   return (
-    <div className="max-w-4xl mx-auto animate-in fade-in duration-500 space-y-6 pb-20">
+    <div className="w-full max-w-6xl mx-auto animate-in fade-in duration-300 space-y-4 pb-12">
       
-      {/* Back Button and Save Button Header */}
-      <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex items-center justify-between">
-        <button 
-          onClick={() => setView("list")}
-          className="h-10 px-5 rounded-full border border-slate-200 text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all flex items-center gap-2"
-        >
-          <FiArrowLeft size={14} />
-          Volver a la lista
-        </button>
+      {/* ─── ENCABEZADO Y BREADCRUMB 1:1 ORALDRIVE ─── */}
+      <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-200 shrink-0">
+        <div className="flex items-center gap-3">
+          <button 
+            type="button"
+            onClick={() => setView("list")}
+            className="w-7 h-7 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer mr-1"
+            title="Volver"
+          >
+            <FiArrowLeft size={14} />
+          </button>
+          <h2 className="text-sm font-bold text-slate-800 tracking-tight">
+            Nuevo ciclo
+          </h2>
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+            <span>🏠 - Esterilización - Nuevo ciclo</span>
+          </div>
+        </div>
 
         <button 
+          type="button"
           onClick={handleSave}
           disabled={saving || cargaItems.length === 0}
-          className="h-10 px-8 rounded-full bg-[#8cc33f] hover:bg-[#7db02b] text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-[#8cc33f]/20 transition-all flex items-center gap-2"
+          className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded-full transition-all cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
         >
-          <FiSave size={15} />
           {saving ? "Guardando..." : "Guardar"}
         </button>
       </div>
 
-      <form onSubmit={handleSave} className="bg-white p-8 rounded-[28px] border border-slate-100 shadow-sm space-y-8">
-        <div className="border-b border-slate-50 pb-3">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Ciclo</h3>
+      {/* ─── TARJETA CICLO 1:1 ORALDRIVE ─── */}
+      <div className="mx-6 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        <div className="px-6 py-3.5 border-b border-slate-100 bg-white">
+          <h3 className="text-xs font-bold text-slate-700">Ciclo</h3>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Fecha esterilización */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha esterilización *</label>
-            <div className="relative">
+        <form onSubmit={handleSave} className="p-8 space-y-5 max-w-4xl">
+          
+          {/* 1. Fecha esterilización */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              Fecha esterilización*
+            </label>
+            <div className="relative w-full sm:w-64">
               <input
                 type="date"
                 required
-                className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
                 value={fechaEsterilizacion}
                 onChange={e => setFechaEsterilizacion(e.target.value)}
-               max="9999-12-31" min="1900-01-01" />
-              <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                max="9999-12-31" min="1900-01-01" 
+              />
             </div>
           </div>
 
-          {/* Dummy element for grid layout balance */}
-          <div />
-
-          {/* Add Item to load section */}
-          <div className="flex flex-col gap-2 md:col-span-2 bg-slate-50/50 p-6 rounded-2xl border border-slate-100 space-y-4">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contenido de la carga *</span>
-            <div className="flex flex-col sm:flex-row gap-3">
+          {/* 2. Contenido de la carga */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              Contenido de la carga*
+            </label>
+            <div className="flex flex-wrap items-center gap-2.5 flex-1">
               <input
                 type="text"
-                placeholder="Nombre o concepto de ítem a esterilizar..."
-                className="flex-1 h-11 px-4 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all bg-white"
+                placeholder="agregar ítems"
+                className="w-full sm:w-72 h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
                 value={conceptoCarga}
                 onChange={e => setConceptoCarga(e.target.value)}
               />
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Cantidad</span>
                 <input
                   type="number"
-                  placeholder="Cantidad"
-                  className="w-24 h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all text-center bg-white"
+                  min="1"
+                  className="w-16 h-8 px-2 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 text-center"
                   value={cantidadCarga}
                   onChange={e => setCantidadCarga(e.target.value)}
                 />
                 <button
                   type="button"
                   onClick={handleAddCargaItem}
-                  className="h-11 px-6 rounded-xl bg-[#8cc33f] hover:bg-[#7db02b] text-white text-xs font-black uppercase tracking-widest transition-all shadow-md shadow-[#8cc33f]/10"
+                  className="h-8 px-4 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded transition-all cursor-pointer shadow-2xs shrink-0"
                 >
                   Agregar
                 </button>
               </div>
             </div>
-
-            {/* Load Items List Table */}
-            {cargaItems.length > 0 && (
-              <div className="border border-slate-100 rounded-xl overflow-hidden bg-white mt-4 animate-fadeIn">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                      <th className="px-4 py-3 pl-6">Concepto</th>
-                      <th className="px-4 py-3 text-center w-28">Cantidad</th>
-                      <th className="px-4 py-3 text-center pr-6 w-24">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cargaItems.map((itm, idx) => (
-                      <tr key={idx} className="border-t border-slate-50 text-[12px] text-slate-700">
-                        <td className="px-4 py-2.5 pl-6 font-black text-slate-800 uppercase tracking-tight">{itm.concepto}</td>
-                        <td className="px-4 py-2.5 text-center font-mono text-slate-500 font-bold">{itm.cantidad}</td>
-                        <td className="px-4 py-2.5 text-center pr-6">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveCargaItem(idx)}
-                            className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-wider bg-slate-50 px-2.5 py-1 rounded"
-                          >
-                            Eliminar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
 
-          {/* Número de paquetes */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Número de paquetes *</label>
+          {/* Tabla de ítems agregados */}
+          {cargaItems.length > 0 && (
+            <div className="sm:ml-48 max-w-xl border border-slate-200 rounded overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
+                    <th className="py-2 px-3">Concepto</th>
+                    <th className="py-2 px-3 text-center w-24">Cantidad</th>
+                    <th className="py-2 px-3 text-center w-20">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {cargaItems.map((itm, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50">
+                      <td className="py-2 px-3 font-semibold text-slate-800 uppercase">{itm.concepto}</td>
+                      <td className="py-2 px-3 text-center font-bold text-slate-600">{itm.cantidad}</td>
+                      <td className="py-2 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCargaItem(idx)}
+                          className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer border-0 bg-transparent mx-auto"
+                          title="Eliminar"
+                        >
+                          <FiTrash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* 3. Número de paquetes */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              Numero de paquetes*
+            </label>
             <input
               type="number"
+              min="1"
               required
-              className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all text-center"
+              className="w-full sm:w-64 h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
               value={nroPaquetes}
               onChange={e => setNroPaquetes(e.target.value)}
             />
           </div>
 
-          <div /> {/* Grid separator */}
-
-          {/* Hora Inicio */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hora Inicio *</label>
-            <div className="relative">
+          {/* 4. Hora inicio */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              Hora inicio
+            </label>
+            <div className="relative w-full sm:w-64">
               <input
                 type="text"
-                required
-                placeholder="Ej: 04:50 pm"
-                className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                placeholder="08:00 am"
+                className="w-full h-8 px-3 pr-8 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
                 value={horaInicio}
                 onChange={e => setHoraInicio(e.target.value)}
               />
-              <FiClock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              <FiClock className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
             </div>
           </div>
 
-          {/* Hora Fin */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Hora Fin *</label>
-            <div className="relative">
+          {/* 5. Hora fin */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              Hora fin
+            </label>
+            <div className="relative w-full sm:w-64">
               <input
                 type="text"
-                required
-                placeholder="Ej: 05:50 pm"
-                className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                placeholder="09:00 am"
+                className="w-full h-8 px-3 pr-8 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
                 value={horaFin}
                 onChange={e => setHoraFin(e.target.value)}
               />
-              <FiClock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              <FiClock className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
             </div>
           </div>
 
-          {/* Temperatura */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Temperatura (°C) *</label>
+          {/* 6. Temperatura */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              Temperatura*
+            </label>
             <input
               type="number"
               step="0.1"
               required
-              className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all text-center"
+              className="w-full sm:w-64 h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
               value={temperatura}
               onChange={e => setTemperatura(e.target.value)}
             />
           </div>
 
-          {/* Presión */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Presión en libras *</label>
+          {/* 7. Presión en libras */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              Presión en libras*
+            </label>
             <input
               type="number"
               step="0.1"
               required
-              className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all text-center"
+              className="w-full sm:w-64 h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
               value={presion}
               onChange={e => setPresion(e.target.value)}
             />
           </div>
 
-          {/* Responsable */}
-          <div className="flex flex-col gap-3 md:col-span-2 bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Responsable *</span>
-            
-            <div className="flex items-center gap-6 mt-1 ml-1">
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-600">
-                <input
-                  type="radio"
-                  name="responsableTipo"
-                  value="usuario"
-                  checked={responsableTipo === "usuario"}
-                  onChange={() => setResponsableTipo("usuario")}
-                  className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                />
-                <span>Usuario del sistema</span>
-              </label>
+          {/* 8. Responsable */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-start gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0 pt-1">
+              Responsable
+            </label>
+            <div className="w-full sm:w-96 space-y-2">
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-600">
+                  <input
+                    type="radio"
+                    name="responsableTipo"
+                    value="usuario"
+                    checked={responsableTipo === "usuario"}
+                    onChange={() => setResponsableTipo("usuario")}
+                    className="w-3.5 h-3.5 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                  />
+                  <span>Usuario</span>
+                </label>
 
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-600">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-600">
+                  <input
+                    type="radio"
+                    name="responsableTipo"
+                    value="otro"
+                    checked={responsableTipo === "otro"}
+                    onChange={() => setResponsableTipo("otro")}
+                    className="w-3.5 h-3.5 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                  />
+                  <span>Libre</span>
+                </label>
+              </div>
+
+              {responsableTipo === "usuario" ? (
+                <select
+                  value={responsableUsuario}
+                  onChange={e => setResponsableUsuario(e.target.value)}
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all cursor-pointer font-medium"
+                  required
+                >
+                  <option value="">Seleccione...</option>
+                  {usersList.map((userName, i) => (
+                    <option key={i} value={userName}>{userName}</option>
+                  ))}
+                </select>
+              ) : (
                 <input
-                  type="radio"
-                  name="responsableTipo"
-                  value="otro"
-                  checked={responsableTipo === "otro"}
-                  onChange={() => setResponsableTipo("otro")}
-                  className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                  type="text"
+                  required
+                  placeholder="Nombre del responsable..."
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all uppercase font-medium"
+                  value={responsableOtro}
+                  onChange={e => setResponsableOtro(e.target.value)}
                 />
-                <span>Otro</span>
-              </label>
+              )}
             </div>
-
-            {responsableTipo === "usuario" ? (
-              <select
-                disabled
-                className="w-full h-11 px-4 bg-slate-100 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed mt-2"
-              >
-                <option>{(userProfile?.nombreCompleto || userProfile?.nombre || "Cargando usuario...").toUpperCase()}</option>
-              </select>
-            ) : (
-              <input
-                type="text"
-                required
-                placeholder="Nombre del responsable del ciclo"
-                className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all bg-white mt-2 uppercase"
-                value={responsableOtro}
-                onChange={e => setResponsableOtro(e.target.value)}
-              />
-            )}
           </div>
-        </div>
 
-        {/* Chemical Control Upload */}
-        <div className="flex flex-col gap-3">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Control químico</span>
-          <div className="border border-dashed border-slate-200 rounded-2xl bg-slate-50/50 p-6 flex flex-col items-center justify-center gap-4 relative cursor-pointer group min-h-[140px]">
-            <input 
-              type="file" 
-              accept="image/*" 
-              className="absolute inset-0 opacity-0 cursor-pointer z-10"
-              onChange={e => handleImageUpload(e, "quimico")}
-              disabled={uploadingQuimico}
-            />
-            {uploadingQuimico ? (
-              <span className="text-xs text-slate-400 animate-pulse font-black uppercase tracking-widest">Subiendo...</span>
-            ) : quimicoPreview ? (
-              <img src={quimicoPreview} alt="Quimico" className="max-h-[120px] object-contain rounded-lg" />
-            ) : (
-              <div className="text-center space-y-2">
-                <FiUploadCloud size={24} className="text-slate-300 mx-auto group-hover:scale-105 transition-transform" />
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-tight">Arrastra o click para cargar la foto.</p>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Cargue su imagen aquí</p>
+          {/* 9. Control químico */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-start gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0 pt-2">
+              Control químico
+            </label>
+            <div className="w-full sm:w-[480px]">
+              <div className="border border-dashed border-slate-200 rounded bg-white p-6 flex flex-col items-center justify-center gap-2 relative cursor-pointer hover:bg-slate-50/70 transition-colors min-h-[100px]">
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                  onChange={e => handleImageUpload(e, "quimico")}
+                  disabled={uploadingQuimico}
+                />
+                {uploadingQuimico ? (
+                  <span className="text-xs text-sky-600 font-semibold animate-pulse">Subiendo imagen...</span>
+                ) : quimicoPreview ? (
+                  <img src={quimicoPreview} alt="Control Químico" className="max-h-[100px] object-contain rounded" />
+                ) : (
+                  <div className="text-center space-y-1">
+                    <p className="text-xs text-slate-600">Arrastra o click para cargar la foto.</p>
+                    <p className="text-[11px] text-slate-400">Cargue su imagen aquí</p>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
 
-        {/* Biological Control Upload */}
-        <div className="flex flex-col gap-3">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Control biológico</span>
-          <div className="border border-dashed border-slate-200 rounded-2xl bg-slate-50/50 p-6 flex flex-col items-center justify-center gap-4 relative cursor-pointer group min-h-[140px]">
-            <input 
-              type="file" 
-              accept="image/*" 
-              className="absolute inset-0 opacity-0 cursor-pointer z-10"
-              onChange={e => handleImageUpload(e, "biologico")}
-              disabled={uploadingBiologico}
-            />
-            {uploadingBiologico ? (
-              <span className="text-xs text-slate-400 animate-pulse font-black uppercase tracking-widest">Subiendo...</span>
-            ) : biologicoPreview ? (
-              <img src={biologicoPreview} alt="Biologico" className="max-h-[120px] object-contain rounded-lg" />
-            ) : (
-              <div className="text-center space-y-2">
-                <FiUploadCloud size={24} className="text-slate-300 mx-auto group-hover:scale-105 transition-transform" />
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-tight">Arrastra o click para cargar la foto.</p>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Cargue su imagen aquí</p>
+          {/* 10. Control biológico */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-start gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0 pt-2">
+              Control biológico
+            </label>
+            <div className="w-full sm:w-[480px]">
+              <div className="border border-dashed border-slate-200 rounded bg-white p-6 flex flex-col items-center justify-center gap-2 relative cursor-pointer hover:bg-slate-50/70 transition-colors min-h-[100px]">
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                  onChange={e => handleImageUpload(e, "biologico")}
+                  disabled={uploadingBiologico}
+                />
+                {uploadingBiologico ? (
+                  <span className="text-xs text-sky-600 font-semibold animate-pulse">Subiendo imagen...</span>
+                ) : biologicoPreview ? (
+                  <img src={biologicoPreview} alt="Control Biológico" className="max-h-[100px] object-contain rounded" />
+                ) : (
+                  <div className="text-center space-y-1">
+                    <p className="text-xs text-slate-600">Arrastra o click para cargar la foto.</p>
+                    <p className="text-[11px] text-slate-400">Cargue su imagen aquí</p>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
+
+      {/* ─── BOTÓN GUARDAR INFERIOR 1:1 ORALDRIVE ─── */}
+      <div className="mx-6 flex justify-end">
+        <button 
+          type="button"
+          onClick={handleSave}
+          disabled={saving || cargaItems.length === 0}
+          className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded-full transition-all cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
+        >
+          {saving ? "Guardando..." : "Guardar"}
+        </button>
+      </div>
     </div>
   );
 }

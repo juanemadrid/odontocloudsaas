@@ -57,54 +57,54 @@ export default function MovimientosInventario() {
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-4 animate-in fade-in duration-300 font-sans text-slate-800">
       {/* Header Search toolbar */}
-      <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="relative w-full max-w-md">
-          <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="relative w-full max-w-sm">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
           <input 
             type="text" 
             placeholder="Buscar en el historial de movimientos..."
-            className="w-full h-10 pl-11 pr-4 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
+            className="w-full h-8 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
           />
         </div>
         <button
           onClick={loadLogs}
-          className="h-10 px-5 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full text-xs font-black uppercase tracking-widest transition-all"
+          className="h-8 px-3.5 flex items-center justify-center bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors cursor-pointer"
         >
           Actualizar
         </button>
       </div>
 
       {/* Movements Table */}
-      <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                <th className="px-8 py-4 pl-8">Fecha</th>
-                <th className="px-6 py-4">Concepto / Insumo</th>
-                <th className="px-6 py-4 text-center">Tipo Movimiento</th>
-                <th className="px-6 py-4 text-center">Cantidad</th>
-                <th className="px-6 py-4">Responsable</th>
-                <th className="px-6 py-4 pr-8">Detalles / Notas</th>
+              <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                <th className="py-2.5 px-3">Fecha</th>
+                <th className="py-2.5 px-3">Concepto / Insumo</th>
+                <th className="py-2.5 px-3 text-center">Tipo movimiento</th>
+                <th className="py-2.5 px-3 text-center">Cantidad</th>
+                <th className="py-2.5 px-3">Responsable</th>
+                <th className="py-2.5 px-3">Detalles / Notas</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
+            <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-8 py-20 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Cargando movimientos...</span>
+                  <td colSpan="6" className="py-16 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-xs font-medium text-slate-400">Cargando movimientos...</span>
                     </div>
                   </td>
                 </tr>
               ) : filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-8 py-20 text-center text-slate-400 italic">
+                  <td colSpan="6" className="py-16 text-center text-slate-400 italic text-xs">
                     No se encontraron registros de movimientos.
                   </td>
                 </tr>
@@ -113,29 +113,29 @@ export default function MovimientosInventario() {
                   const isIngress = log.tipo === "Recepción";
                   const isEgress = log.tipo === "Salida";
                   return (
-                    <tr key={log.id} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="px-8 py-4 pl-8 font-semibold text-slate-500 font-mono">{log.fecha}</td>
-                      <td className="px-6 py-4 font-black text-slate-800 uppercase tracking-tight">{log.itemNombre}</td>
-                      <td className="px-6 py-4 text-center">
+                    <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">{log.fecha}</td>
+                      <td className="py-2.5 px-3 font-bold text-slate-800">{log.itemNombre}</td>
+                      <td className="py-2.5 px-3 text-center">
                         {isIngress ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-emerald-100">
-                            <FiArrowDownLeft size={11} /> Recepción
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[10px] font-bold border border-emerald-200">
+                            <FiArrowDownLeft size={10} /> Recepción
                           </span>
                         ) : isEgress ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 bg-rose-50 text-rose-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-rose-100">
-                            <FiArrowUpRight size={11} /> Salida
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 text-rose-600 rounded text-[10px] font-bold border border-rose-200">
+                            <FiArrowUpRight size={10} /> Salida
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-wider border border-blue-100">
-                            <FiSliders size={11} /> Ajuste
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold border border-blue-200">
+                            <FiSliders size={10} /> Ajuste
                           </span>
                         )}
                       </td>
-                      <td className={`px-6 py-4 text-center font-black font-mono text-[14px] ${isIngress ? "text-emerald-600" : isEgress ? "text-rose-500" : "text-blue-600"}`}>
+                      <td className={`py-2.5 px-3 text-center font-bold font-mono ${isIngress ? "text-emerald-600" : isEgress ? "text-rose-600" : "text-blue-600"}`}>
                         {isIngress ? "+" : isEgress ? "-" : ""}{log.cantidad}
                       </td>
-                      <td className="px-6 py-4 font-bold text-slate-500 uppercase">{log.responsable || "—"}</td>
-                      <td className="px-6 py-4 pr-8 text-slate-400 font-medium max-w-xs truncate" title={log.notas}>
+                      <td className="py-2.5 px-3 text-slate-600 font-medium">{log.responsable || "—"}</td>
+                      <td className="py-2.5 px-3 text-slate-500 font-normal max-w-xs truncate" title={log.notas}>
                         {log.notas || (log.motivo ? `Salida por: ${log.motivo}` : "—")}
                       </td>
                     </tr>

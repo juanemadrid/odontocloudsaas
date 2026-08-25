@@ -150,8 +150,8 @@ export default function AgendaSidebar({
                             </div>
                         )}
 
-                        {/* "Todas las sedes" siempre visible */}
-                        <div className="flex flex-col gap-1 mt-1">
+                        {/* "Todas las sedes" y lista de sedes con scroll dedicado */}
+                        <div className="flex flex-col gap-1 max-h-[220px] overflow-y-auto custom-scrollbar pr-0.5 mt-1">
                             <button
                                 onClick={() => { onSelectBranch(''); toggleSection('sucursal'); }}
                                 className={`text-left text-[10px] py-2 px-3 rounded-xl transition-all font-black uppercase tracking-tight flex items-center gap-2 ${

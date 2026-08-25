@@ -196,25 +196,25 @@ export default function ConfigurarResiduos() {
     }, [residues, searchTerm]);
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-4 animate-in fade-in duration-300 font-sans text-slate-800">
             {/* Tabs choices */}
             <div className="flex border-b border-slate-200">
                 <button
                     onClick={() => setActiveSubTab("tipos")}
-                    className={`px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                    className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
                         activeSubTab === "tipos"
-                            ? "border-blue-600 text-blue-600"
-                            : "border-transparent text-slate-400 hover:text-slate-600"
+                            ? "border-[#7cb342] text-[#7cb342]"
+                            : "border-transparent text-slate-500 hover:text-slate-700"
                     }`}
                 >
                     Tipos de residuos
                 </button>
                 <button
                     onClick={() => setActiveSubTab("indicadores")}
-                    className={`px-6 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                    className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
                         activeSubTab === "indicadores"
-                            ? "border-blue-600 text-blue-600"
-                            : "border-transparent text-slate-400 hover:text-slate-600"
+                            ? "border-[#7cb342] text-[#7cb342]"
+                            : "border-transparent text-slate-500 hover:text-slate-700"
                     }`}
                 >
                     Indicadores
@@ -224,73 +224,92 @@ export default function ConfigurarResiduos() {
             {activeSubTab === "tipos" ? (
                 <>
                     {/* Toolbar */}
-                    <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-                        <div className="relative w-full max-w-md">
-                            <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="relative w-full max-w-sm">
+                            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                             <input 
                                 type="text" 
-                                placeholder="Buscar..."
-                                className="w-full h-10 pl-11 pr-4 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
+                                placeholder="Buscar residuo..."
+                                className="w-full h-8 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
                         </div>
                         <button 
                             onClick={handleOpenAdd}
-                            className="h-10 px-6 flex items-center justify-center bg-[#8cc33f] text-white rounded-full text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95 shrink-0"
+                            className="h-8 px-3.5 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer gap-1.5"
                         >
-                            <FiPlus className="mr-1.5" size={14} />
+                            <FiPlus size={13} />
                             Agregar residuo
                         </button>
                     </div>
 
                     {/* Table */}
-                    <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
+                            <table className="w-full text-left border-collapse text-xs">
                                 <thead>
-                                    <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        <th className="px-8 py-4">Nombre del residuo</th>
-                                        <th className="px-6 py-4">Color</th>
-                                        <th className="px-6 py-4 text-center pr-8 w-28">Opciones</th>
+                                    <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                        <th className="py-2.5 px-4">Nombre del residuo</th>
+                                        <th className="py-2.5 px-3">Color</th>
+                                        <th className="py-2.5 px-3 text-center w-24">Opciones</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
+                                <tbody className="divide-y divide-slate-100 text-slate-700">
                                     {loading ? (
                                         <tr>
-                                            <td colSpan="3" className="px-8 py-20 text-center">
-                                                <div className="flex flex-col items-center gap-4">
-                                                    <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                                                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Cargando tipos de residuos...</span>
+                                            <td colSpan="3" className="py-16 text-center">
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                                                    <span className="text-xs font-medium text-slate-400">Cargando tipos de residuos...</span>
                                                 </div>
                                             </td>
                                         </tr>
                                     ) : filteredResidues.length === 0 ? (
                                         <tr>
-                                            <td colSpan="3" className="px-8 py-20 text-center text-slate-400 italic">
+                                            <td colSpan="3" className="py-16 text-center text-slate-400 italic text-xs">
                                                 No se encontraron registros.
                                             </td>
                                         </tr>
                                     ) : (
                                         filteredResidues.map(item => (
-                                            <tr key={item.id} className="hover:bg-slate-50/30 transition-colors">
-                                                <td className="px-8 py-4 font-bold text-slate-800 uppercase tracking-tight">{item.nombre}</td>
-                                                <td className="px-6 py-4 font-semibold text-slate-500">{item.color}</td>
-                                                <td className="px-6 py-4 text-center pr-8 flex items-center justify-center gap-2">
-                                                    <button 
-                                                        onClick={() => handleOpenEdit(item)}
-                                                        className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all shadow-sm"
-                                                        title="Editar"
-                                                    >
-                                                        <FiEdit2 size={13} />
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handleDelete(item.id)}
-                                                        className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-all shadow-sm"
-                                                        title="Eliminar"
-                                                    >
-                                                        <FiTrash2 size={13} />
-                                                    </button>
+                                            <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                                                <td className="py-2.5 px-4 font-bold text-slate-800">{item.nombre}</td>
+                                                <td className="py-2.5 px-3">
+                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700">
+                                                        <span 
+                                                            className="w-2 h-2 rounded-full" 
+                                                            style={{
+                                                                backgroundColor: item.color === "Rojo" ? "#ef4444" :
+                                                                                 item.color === "Verde" ? "#22c55e" :
+                                                                                 item.color === "Blanco" ? "#e2e8f0" :
+                                                                                 item.color === "Negro" ? "#0f172a" :
+                                                                                 item.color === "Amarillo" ? "#eab308" :
+                                                                                 item.color === "Azul" ? "#3b82f6" :
+                                                                                 item.color === "Gris" ? "#94a3b8" :
+                                                                                 item.color === "Púrpura" ? "#a855f7" : "#cbd5e1"
+                                                            }} 
+                                                        />
+                                                        {item.color}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2.5 px-3 text-center">
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        <button 
+                                                            onClick={() => handleOpenEdit(item)}
+                                                            className="w-7 h-7 rounded-lg bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center transition-colors border border-slate-200 cursor-pointer"
+                                                            title="Editar"
+                                                        >
+                                                            <FiEdit2 size={12} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDelete(item.id)}
+                                                            className="w-7 h-7 rounded-lg bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-colors border border-slate-200 cursor-pointer"
+                                                            title="Eliminar"
+                                                        >
+                                                            <FiTrash2 size={12} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))
@@ -301,48 +320,48 @@ export default function ConfigurarResiduos() {
                     </div>
                 </>
             ) : (
-                <div className="bg-white p-8 rounded-[28px] border border-slate-100 shadow-sm text-center py-20">
-                    <p className="text-slate-400 italic text-sm">Los indicadores se calculan automáticamente en base a las cargas diarias reportadas.</p>
+                <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-2xs text-center py-16">
+                    <p className="text-slate-400 italic text-xs">Los indicadores se calculan automáticamente en base a las cargas diarias reportadas.</p>
                 </div>
             )}
 
             {/* Modal Dialog */}
             {showModal && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[1000] animate-in fade-in duration-200">
-                    <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[1000] animate-in fade-in duration-200 p-4">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
                         {/* Header */}
-                        <div className="px-6 py-5 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
+                        <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
+                            <h3 className="text-xs font-bold text-slate-800">
                                 {editId ? "Editar residuo" : "Nuevo residuo"}
                             </h3>
                             <button 
                                 onClick={() => setShowModal(false)}
-                                className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-100 flex items-center justify-center transition-all"
+                                className="w-6 h-6 rounded-lg text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
                             >
-                                <FiX size={16} />
+                                <FiX size={14} />
                             </button>
                         </div>
 
                         {/* Form */}
-                        <form onSubmit={handleSave} className="p-6 space-y-6">
-                            <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tipo de residuo *</label>
+                        <form onSubmit={handleSave} className="p-4 space-y-3.5">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[11px] font-semibold text-slate-600">Tipo de residuo *</label>
                                 <input 
                                     type="text"
-                                    placeholder="Ingrese el nombre del residuo"
-                                    className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all"
+                                    placeholder="Nombre del residuo"
+                                    className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                                     value={nombre}
                                     onChange={e => setNombre(e.target.value)}
                                     required
                                 />
                             </div>
 
-                            <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Color *</label>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[11px] font-semibold text-slate-600">Color *</label>
                                 <select
                                     value={color}
                                     onChange={e => setColor(e.target.value)}
-                                    className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all cursor-pointer"
+                                    className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors cursor-pointer"
                                 >
                                     {COLORS.map(c => (
                                         <option key={c} value={c}>{c}</option>
@@ -351,18 +370,18 @@ export default function ConfigurarResiduos() {
                             </div>
 
                             {/* Buttons */}
-                            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                            <div className="pt-2 border-t border-slate-100 flex justify-end gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setShowModal(false)}
-                                    className="h-10 px-6 rounded-full text-xs font-black uppercase tracking-widest text-slate-400 border border-slate-200 hover:bg-slate-50 transition-all active:scale-95"
+                                    className="h-8 px-3.5 rounded-lg text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
                                 >
                                     Cerrar
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="h-10 px-8 rounded-full text-xs font-black uppercase tracking-widest text-white bg-[#8cc33f] hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95"
+                                    className="h-8 px-4 rounded-lg text-xs font-semibold text-white bg-[#7cb342] hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                                 >
                                     {saving ? "Guardando..." : "Guardar"}
                                 </button>

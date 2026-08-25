@@ -103,21 +103,21 @@ export default function AjustesInventario({ items, onLoadRequired }) {
   };
 
   return (
-    <div className="max-w-xl mx-auto animate-in fade-in duration-500">
-      <div className="bg-white p-8 rounded-[28px] border border-slate-100 shadow-sm space-y-6">
-        <div className="border-b border-slate-50 pb-3">
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Ajuste manual de inventario</h3>
-          <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Corrección de stock por conteo físico o mermas</p>
+    <div className="max-w-lg mx-auto animate-in fade-in duration-300 font-sans text-slate-800">
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+        <div className="border-b border-slate-100 pb-2">
+          <h3 className="text-sm font-bold text-slate-800">Ajuste manual de inventario</h3>
+          <p className="text-xs text-slate-500 font-normal mt-0.5">Corrección de stock por conteo físico o mermas</p>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-6">
+        <form onSubmit={handleSave} className="space-y-3.5">
           {/* Autocomplete Select Product */}
-          <div className="flex flex-col gap-2 relative" onClick={e => e.stopPropagation()}>
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Producto *</label>
+          <div className="flex flex-col gap-1 relative" onClick={e => e.stopPropagation()}>
+            <label className="text-[11px] font-semibold text-slate-600">Producto *</label>
             {selectedItem ? (
-              <div className="flex items-center gap-3 w-full h-11 px-4 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700">
-                <FiBox className="text-blue-500 shrink-0" />
-                <span className="flex-1 truncate uppercase">
+              <div className="flex items-center gap-2.5 w-full h-8 px-3 border border-slate-200 rounded-lg bg-slate-50 text-xs font-medium text-slate-700">
+                <FiBox className="text-emerald-600 shrink-0" size={13} />
+                <span className="flex-1 truncate">
                   {selectedItem.nombre} {selectedItem.marca ? `(${selectedItem.marca})` : ""}
                 </span>
                 <button
@@ -126,7 +126,7 @@ export default function AjustesInventario({ items, onLoadRequired }) {
                     setSelectedItem(null);
                     setSearchQuery("");
                   }}
-                  className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-wider bg-white border border-slate-200 px-3 py-1 rounded-lg shadow-sm"
+                  className="text-[10px] font-semibold text-rose-500 hover:text-rose-700 border border-slate-200 px-2 py-0.5 rounded bg-white cursor-pointer"
                 >
                   Cambiar
                 </button>
@@ -136,7 +136,7 @@ export default function AjustesInventario({ items, onLoadRequired }) {
                 <input
                   type="text"
                   placeholder="Escriba nombre del producto..."
-                  className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition-all"
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
@@ -145,9 +145,9 @@ export default function AjustesInventario({ items, onLoadRequired }) {
                   onFocus={() => setShowDropdown(true)}
                 />
                 {showDropdown && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-50">
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto divide-y divide-slate-100">
                     {filteredProducts.length === 0 ? (
-                      <div className="px-4 py-3 text-xs text-slate-400 italic">No se encontraron productos</div>
+                      <div className="px-3 py-2 text-xs text-slate-400 italic">No se encontraron productos</div>
                     ) : (
                       filteredProducts.map(p => (
                         <button
@@ -158,13 +158,13 @@ export default function AjustesInventario({ items, onLoadRequired }) {
                             setSearchQuery("");
                             setShowDropdown(false);
                           }}
-                          className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                          className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors flex flex-col cursor-pointer"
                         >
-                          <span className="text-xs font-black text-slate-800 uppercase">
+                          <span className="text-xs font-bold text-slate-800">
                             {p.nombre}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-bold">
-                            MARCA: {p.marca || "—"} | STOCK ACTUAL: {p.cantidad} {p.unidad}
+                          <span className="text-[10px] text-slate-400">
+                            Marca: {p.marca || "—"} | Stock actual: {p.cantidad} {p.unidad}
                           </span>
                         </button>
                       ))
@@ -176,47 +176,48 @@ export default function AjustesInventario({ items, onLoadRequired }) {
           </div>
 
           {/* Tipo de Ajuste */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Ajuste *</label>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-semibold text-slate-600">Tipo de ajuste *</label>
             <select
               required
-              className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all cursor-pointer"
+              className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors cursor-pointer"
               value={tipoAjuste}
               onChange={e => setTipoAjuste(e.target.value)}
             >
-              <option value="ingreso">SUMAR AL STOCK EXISTENTE</option>
-              <option value="retiro">RESTAR DEL STOCK EXISTENTE</option>
-              <option value="reemplazo">REEMPLAZAR CON VALOR EXACTO (FISICO CONTEO)</option>
+              <option value="ingreso">Sumar al stock existente</option>
+              <option value="retiro">Restar del stock existente</option>
+              <option value="reemplazo">Reemplazar con valor exacto (conteo físico)</option>
             </select>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Fecha */}
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha de Ajuste *</label>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-semibold text-slate-600">Fecha de ajuste *</label>
               <div className="relative">
                 <input
                   type="date"
                   required
-                  className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                  className="w-full h-8 px-3 pl-8 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                   value={fecha}
                   onChange={e => setFecha(e.target.value)}
-                 max="9999-12-31" min="1900-01-01" />
-                <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  max="9999-12-31" min="1900-01-01" 
+                />
+                <FiCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
               </div>
             </div>
 
             {/* Cantidad */}
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                {tipoAjuste === "reemplazo" ? "Nuevo Stock Físico *" : "Cantidad a Ajustar *"}
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-semibold text-slate-600">
+                {tipoAjuste === "reemplazo" ? "Nuevo stock físico *" : "Cantidad a ajustar *"}
               </label>
               <input
                 type="number"
                 step="0.01"
                 required
                 placeholder="Ej: 5"
-                className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                 value={cantidad}
                 onChange={e => setCantidad(e.target.value)}
               />
@@ -224,26 +225,28 @@ export default function AjustesInventario({ items, onLoadRequired }) {
           </div>
 
           {/* Motivo de Salida */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Motivo del Ajuste *</label>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-semibold text-slate-600">Motivo del ajuste *</label>
             <textarea
-              rows="3"
+              rows="2"
               required
-              placeholder="Detalle los motivos del ajuste físico (ej: Auditoría física de inventario julio 2026)..."
-              className="w-full p-4 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all resize-none"
+              placeholder="Detalle los motivos del ajuste físico..."
+              className="w-full p-2.5 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors resize-none"
               value={motivo}
               onChange={e => setMotivo(e.target.value)}
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={saving || !selectedItem}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-          >
-            <FiAlertTriangle size={15} />
-            {saving ? "Procesando..." : "Aplicar Ajuste Físico"}
-          </button>
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={saving || !selectedItem}
+              className="w-full h-8 bg-[#7cb342] hover:bg-[#689f38] text-white rounded-lg text-xs font-semibold shadow-2xs transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <FiAlertTriangle size={13} />
+              {saving ? "Procesando..." : "Aplicar Ajuste Físico"}
+            </button>
+          </div>
         </form>
       </div>
     </div>

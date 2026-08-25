@@ -145,26 +145,26 @@ export default function IndicadoresResiduos() {
     }, [logs, appliedYear]);
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-4 animate-in fade-in duration-300 font-sans text-slate-800">
             {/* Filter toolbar */}
-            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-                <form onSubmit={handleSearch} className="flex flex-col md:flex-row md:items-end gap-6">
-                    <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Año a totalizar</label>
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <form onSubmit={handleSearch} className="flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-semibold text-slate-600">Año a consultar</label>
                         <div className="relative">
                             <input
                                 type="number"
                                 value={year}
                                 onChange={(e) => setYear(e.target.value)}
                                 placeholder="Ej: 2026"
-                                className="h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all w-48"
+                                className="h-8 px-3 pl-8 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors w-36"
                             />
-                            <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <FiCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                         </div>
                     </div>
                     <button
                         type="submit"
-                        className="h-11 px-8 flex items-center justify-center bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95"
+                        className="h-8 px-4 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer"
                     >
                         Buscar
                     </button>
@@ -172,35 +172,53 @@ export default function IndicadoresResiduos() {
             </div>
 
             {/* Matrix table */}
-            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-6">
-                <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                    <table className="w-full text-left border-collapse min-w-[900px]">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        Planilla de Indicadores Mensuales ({appliedYear})
+                    </h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
                         <thead>
-                            <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                <th className="px-6 py-4 pl-8 w-24">Mes</th>
-                                <th className="px-6 py-4 text-center border-l border-slate-100 bg-rose-600/90 text-white w-32">IDD</th>
-                                <th className="px-6 py-4 text-center border-l border-slate-100 bg-orange-500/90 text-white w-32">IDI</th>
-                                <th className="px-6 py-4 text-center border-l border-slate-100 bg-blue-500/90 text-white w-32">IDS</th>
-                                <th className="px-6 py-4 text-center border-l border-slate-100 bg-slate-500/90 text-white w-32">IDR</th>
-                                <th className="px-6 py-4 text-center border-l border-slate-100 bg-emerald-600/90 text-white w-32">IDRa</th>
+                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                <th className="py-2.5 px-4 w-28">Mes</th>
+                                <th className="py-2.5 px-3 text-center border-l border-slate-100">IDD (Infecciosos)</th>
+                                <th className="py-2.5 px-3 text-center border-l border-slate-100">IDI (Cortopunzantes)</th>
+                                <th className="py-2.5 px-3 text-center border-l border-slate-100">IDS (Químicos)</th>
+                                <th className="py-2.5 px-3 text-center border-l border-slate-100">IDR (Reciclables)</th>
+                                <th className="py-2.5 px-3 text-center border-l border-slate-100">IDRa (Radioactivos)</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-mono">
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="6" className="px-8 py-20 text-center font-sans text-slate-400 italic">
-                                        Calculando planilla de indicadores...
+                                    <td colSpan="6" className="py-16 text-center text-slate-400 italic text-xs">
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                                            <span>Calculando planilla de indicadores...</span>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : (
                                 monthlyStats.map(row => (
-                                    <tr key={row.mes} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-3 pl-8 font-bold font-sans text-slate-800">{row.mes}</td>
-                                        <td className="px-6 py-3 text-center border-l border-slate-50 font-bold text-slate-500">{row.idd > 0 ? row.idd.toFixed(2) : 0}</td>
-                                        <td className="px-6 py-3 text-center border-l border-slate-50 font-bold text-slate-500">{row.idi > 0 ? row.idi.toFixed(2) : 0}</td>
-                                        <td className="px-6 py-3 text-center border-l border-slate-50 font-bold text-slate-500">{row.ids > 0 ? row.ids.toFixed(2) : 0}</td>
-                                        <td className="px-6 py-3 text-center border-l border-slate-50 font-bold text-slate-500">{row.idr > 0 ? row.idr.toFixed(2) : 0}</td>
-                                        <td className="px-6 py-3 text-center border-l border-slate-50 font-bold text-slate-500">{row.idra > 0 ? row.idra.toFixed(2) : 0}</td>
+                                    <tr key={row.mes} className="hover:bg-slate-50/60 transition-colors">
+                                        <td className="py-2 px-4 font-semibold text-slate-800">{row.mes}</td>
+                                        <td className="py-2 px-3 text-center border-l border-slate-50 font-mono text-[11px]">
+                                            {row.idd > 0 ? <span className="font-semibold text-rose-600">{row.idd.toFixed(2)}%</span> : <span className="text-slate-400">0.00%</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-center border-l border-slate-50 font-mono text-[11px]">
+                                            {row.idi > 0 ? <span className="font-semibold text-amber-600">{row.idi.toFixed(2)}%</span> : <span className="text-slate-400">0.00%</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-center border-l border-slate-50 font-mono text-[11px]">
+                                            {row.ids > 0 ? <span className="font-semibold text-blue-600">{row.ids.toFixed(2)}%</span> : <span className="text-slate-400">0.00%</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-center border-l border-slate-50 font-mono text-[11px]">
+                                            {row.idr > 0 ? <span className="font-semibold text-slate-700">{row.idr.toFixed(2)}%</span> : <span className="text-slate-400">0.00%</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-center border-l border-slate-50 font-mono text-[11px]">
+                                            {row.idra > 0 ? <span className="font-semibold text-emerald-600">{row.idra.toFixed(2)}%</span> : <span className="text-slate-400">0.00%</span>}
+                                        </td>
                                     </tr>
                                 ))
                             )}
@@ -210,17 +228,17 @@ export default function IndicadoresResiduos() {
             </div>
 
             {/* Graphic Indicators Panel */}
-            <div className="bg-white p-8 rounded-[28px] border border-slate-100 shadow-sm space-y-8">
-                <div className="border-b border-slate-50 pb-3 flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
-                        Indicador gráfico
+            <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                <div className="border-b border-slate-100 pb-2">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        Indicador gráfico ({appliedYear})
                     </h3>
                 </div>
 
                 {/* Graphic Bars Wrapper */}
-                <div className="h-80 w-full relative flex items-end justify-between border-b border-slate-200 pb-2 px-4 select-none">
+                <div className="h-64 w-full relative flex items-end justify-between border-b border-slate-200 pb-2 px-2 select-none">
                     {/* Y-axis gridlines */}
-                    <div className="absolute inset-x-0 bottom-2 top-0 flex flex-col justify-between pointer-events-none opacity-20 text-[10px] font-bold text-slate-400">
+                    <div className="absolute inset-x-0 bottom-2 top-0 flex flex-col justify-between pointer-events-none opacity-20 text-[10px] font-medium text-slate-400">
                         <div className="border-b border-slate-300 w-full pt-1 flex justify-end">100%</div>
                         <div className="border-b border-slate-300 w-full flex justify-end">80%</div>
                         <div className="border-b border-slate-300 w-full flex justify-end">60%</div>
@@ -232,65 +250,65 @@ export default function IndicadoresResiduos() {
                     {/* Bars for each month */}
                     {monthlyStats.map(m => {
                         return (
-                            <div key={m.mes} className="flex-1 flex flex-col items-center justify-end h-full gap-2 z-10 relative">
-                                <div className="flex items-end gap-0.5 justify-center h-56 w-full max-w-[48px]">
+                            <div key={m.mes} className="flex-1 flex flex-col items-center justify-end h-full gap-1.5 z-10 relative">
+                                <div className="flex items-end gap-0.5 justify-center h-44 w-full max-w-[40px]">
                                     {/* IDD */}
                                     <div 
-                                        className="w-1.5 bg-rose-500 rounded-t-sm transition-all duration-700 hover:scale-x-125 cursor-help"
+                                        className="w-1.5 bg-rose-500 rounded-t-sm transition-all duration-500 hover:scale-x-125 cursor-help"
                                         style={{ height: `${m.idd * 0.95}%` }}
                                         title={`IDD (${m.mes}): ${m.idd.toFixed(1)}%`}
                                     />
                                     {/* IDI */}
                                     <div 
-                                        className="w-1.5 bg-orange-500 rounded-t-sm transition-all duration-700 hover:scale-x-125 cursor-help"
+                                        className="w-1.5 bg-amber-500 rounded-t-sm transition-all duration-500 hover:scale-x-125 cursor-help"
                                         style={{ height: `${m.idi * 0.95}%` }}
                                         title={`IDI (${m.mes}): ${m.idi.toFixed(1)}%`}
                                     />
                                     {/* IDS */}
                                     <div 
-                                        className="w-1.5 bg-blue-500 rounded-t-sm transition-all duration-700 hover:scale-x-125 cursor-help"
+                                        className="w-1.5 bg-blue-500 rounded-t-sm transition-all duration-500 hover:scale-x-125 cursor-help"
                                         style={{ height: `${m.ids * 0.95}%` }}
                                         title={`IDS (${m.mes}): ${m.ids.toFixed(1)}%`}
                                     />
                                     {/* IDR */}
                                     <div 
-                                        className="w-1.5 bg-slate-400 rounded-t-sm transition-all duration-700 hover:scale-x-125 cursor-help"
+                                        className="w-1.5 bg-slate-400 rounded-t-sm transition-all duration-500 hover:scale-x-125 cursor-help"
                                         style={{ height: `${m.idr * 0.95}%` }}
                                         title={`IDR (${m.mes}): ${m.idr.toFixed(1)}%`}
                                     />
                                     {/* IDRa */}
                                     <div 
-                                        className="w-1.5 bg-emerald-500 rounded-t-sm transition-all duration-700 hover:scale-x-125 cursor-help"
+                                        className="w-1.5 bg-emerald-500 rounded-t-sm transition-all duration-500 hover:scale-x-125 cursor-help"
                                         style={{ height: `${m.idra * 0.95}%` }}
                                         title={`IDRa (${m.mes}): ${m.idra.toFixed(1)}%`}
                                     />
                                 </div>
-                                <span className="text-[10px] font-bold text-slate-500 tracking-tight">{m.mes.slice(0, 3)}</span>
+                                <span className="text-[10px] font-medium text-slate-500">{m.mes.slice(0, 3)}</span>
                             </div>
                         );
                     })}
                 </div>
 
                 {/* Legend keys */}
-                <div className="flex flex-wrap items-center justify-center gap-6 text-[10px] font-black uppercase tracking-wider text-slate-500 pt-2">
-                    <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 bg-rose-500 rounded-full inline-block" />
-                        <span>IDD (Infecciosos / Biosanitarios)</span>
+                <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] font-medium text-slate-600 pt-1">
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 bg-rose-500 rounded-full inline-block" />
+                        <span>IDD (Infecciosos)</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 bg-orange-500 rounded-full inline-block" />
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 bg-amber-500 rounded-full inline-block" />
                         <span>IDI (Cortopunzantes)</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 bg-blue-500 rounded-full inline-block" />
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 bg-blue-500 rounded-full inline-block" />
                         <span>IDS (Químicos)</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 bg-slate-400 rounded-full inline-block" />
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 bg-slate-400 rounded-full inline-block" />
                         <span>IDR (Reciclables)</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 bg-emerald-500 rounded-full inline-block" />
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block" />
                         <span>IDRa (Radioactivos)</span>
                     </div>
                 </div>

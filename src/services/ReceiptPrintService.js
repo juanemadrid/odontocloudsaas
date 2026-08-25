@@ -117,13 +117,14 @@ export const ReceiptPrintService = {
             const patientDoc = patient.nroDocumento || "—";
             const patientDocType = patient.tipoDocumento || "CC";
             const patientAddress = patient.lugarResidencia || patient.direccion || "—";
-            const patientCity = patient.ciudadDomicilio || "—";
-            const patientPhone = patient.celular || "—";
-
-            // Use the consecutive number if saved on the pago, else show "S/N"
-            const receiptNumber = pago.nroConsecutivo
-                ? `No. ${pago.nroConsecutivo}`
-                : `S/N`;
+            const patientCity = patient.ciudadDomicilio || patient.ciudad || "—";
+            const patientPhone = patient.celular || patient.telefono || "—";
+            // Clean consecutive number (avoid "No. No. REC-...")
+            let rawConsecutive = String(pago.nroConsecutivo || "").trim();
+            if (rawConsecutive.startsWith("No.")) {
+                rawConsecutive = rawConsecutive.replace(/^No\.\s*/i, "");
+            }
+            const receiptNumber = rawConsecutive ? rawConsecutive : "S/N";
 
             const date = pago.fecha ? (pago.fecha.toDate ? pago.fecha.toDate() : new Date(pago.fecha)) : new Date();
             const formattedDate = date.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });

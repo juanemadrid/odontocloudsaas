@@ -207,336 +207,360 @@ export default function Inventario() {
   }, [items, searchTerm]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 w-full p-4 md:p-6 max-w-[1400px] mx-auto animate-in fade-in duration-500">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 font-sans text-slate-800 animate-in fade-in duration-300">
       
-      {/* 1. Left sub-navigation sidebar */}
-      <div className="w-full lg:w-64 shrink-0 flex flex-col gap-6">
-        <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-6">
-          <div className="border-b border-slate-50 pb-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Información general</span>
+      {/* Header & Breadcrumb */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <FiBox className="w-4 h-4" />
           </div>
-
-          <div className="flex flex-col gap-1.5">
-            {/* Tab: Productos */}
-            <div className="relative group/tooltip">
-              <button
-                onClick={() => {
-                  setCurrentModule("productos");
-                  setShowForm(false);
-                }}
-                className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-between transition-all ${
-                  currentModule === "productos" && !showForm
-                    ? "bg-blue-50 text-blue-600 border border-blue-100/50"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                }`}
-              >
-                <span>Productos</span>
-                <FiChevronRight size={14} className={currentModule === "productos" ? "opacity-100" : "opacity-0"} />
-              </button>
-              {/* Tooltip */}
-              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-56 p-3 bg-slate-800 text-white text-[10px] font-medium leading-relaxed rounded-xl shadow-xl border border-slate-700/50 opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity z-50">
-                Son los productos que ofrece la empresa, para la venta y/o compra. Estos también pueden ser de consumo interno.
-              </div>
+          <div>
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400">
+              <span>Administración</span>
+              <FiChevronRight size={12} />
+              <span className="text-emerald-600 font-bold">Inventario</span>
             </div>
-
-            {/* Tab: Gestión inventario */}
-            <button
-              onClick={() => {
-                setCurrentModule("gestion");
-                setShowForm(false);
-              }}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-between transition-all ${
-                currentModule === "gestion" && !showForm
-                  ? "bg-blue-50 text-blue-600 border border-blue-100/50"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              <span>Gestión inventario</span>
-              <FiChevronRight size={14} className={currentModule === "gestion" ? "opacity-100" : "opacity-0"} />
-            </button>
-
-            {/* Tab: Recepción producto */}
-            <button
-              onClick={() => {
-                setCurrentModule("recepcion");
-                setShowForm(false);
-              }}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-between transition-all ${
-                currentModule === "recepcion" && !showForm
-                  ? "bg-blue-50 text-blue-600 border border-blue-100/50"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              <span>Recepción producto</span>
-              <FiChevronRight size={14} className={currentModule === "recepcion" ? "opacity-100" : "opacity-0"} />
-            </button>
-
-            {/* Tab: Salida producto */}
-            <button
-              onClick={() => {
-                setCurrentModule("salida");
-                setShowForm(false);
-              }}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-between transition-all ${
-                currentModule === "salida" && !showForm
-                  ? "bg-blue-50 text-blue-600 border border-blue-100/50"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              <span>Salida producto</span>
-              <FiChevronRight size={14} className={currentModule === "salida" ? "opacity-100" : "opacity-0"} />
-            </button>
-
-            {/* Tab: Listado de inventario */}
-            <button
-              onClick={() => {
-                setCurrentModule("listado");
-                setShowForm(false);
-              }}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-between transition-all ${
-                currentModule === "listado" && !showForm
-                  ? "bg-blue-50 text-blue-600 border border-blue-100/50"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              <span>Listado de inventario</span>
-              <FiChevronRight size={14} className={currentModule === "listado" ? "opacity-100" : "opacity-0"} />
-            </button>
-
-            {/* Tab: Listado de movimientos */}
-            <button
-              onClick={() => {
-                setCurrentModule("movimientos");
-                setShowForm(false);
-              }}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-between transition-all ${
-                currentModule === "movimientos" && !showForm
-                  ? "bg-blue-50 text-blue-600 border border-blue-100/50"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              <span>Listado de movimientos</span>
-              <FiChevronRight size={14} className={currentModule === "movimientos" ? "opacity-100" : "opacity-0"} />
-            </button>
-
-            {/* Tab: Ajustes de inventario */}
-            <button
-              onClick={() => {
-                setCurrentModule("ajustes");
-                setShowForm(false);
-              }}
-              className={`w-full text-left px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-between transition-all ${
-                currentModule === "ajustes" && !showForm
-                  ? "bg-blue-50 text-blue-600 border border-blue-100/50"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              <span>Ajustes de inventario</span>
-              <FiChevronRight size={14} className={currentModule === "ajustes" ? "opacity-100" : "opacity-0"} />
-            </button>
+            <h1 className="text-sm font-bold text-slate-800 tracking-tight">Gestión de Inventarios y Productos</h1>
           </div>
+        </div>
+        <div className="text-xs text-slate-500 font-medium hidden md:block">
+          Control de stock, entradas, salidas y catálogo
         </div>
       </div>
 
-      {/* 2. Right Module Content Area */}
-      <div className="flex-1 min-w-0">
-        {showForm ? (
-          <ProductoForm 
-            item={activeFormItem}
-            categories={categoriesToDisplay}
-            inquilino={inquilino}
-            onSave={handleSaveProduct}
-            onCancel={() => {
-              setShowForm(false);
-              setActiveFormItem(null);
-            }}
-          />
-        ) : ["gestion", "salida", "listado", "movimientos", "ajustes"].includes(currentModule) && !selectedAlmacen ? (
-          <div className="max-w-xl mx-auto animate-in fade-in duration-500">
-            <form onSubmit={handleSelectAlmacen} className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-              <div className="px-8 py-5 border-b border-slate-50 bg-slate-50/50">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">Almacén a usar</h3>
-              </div>
-              
-              <div className="p-8 space-y-6">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Almacén a usar *</label>
-                  <select
-                    required
-                    className="w-full h-11 px-4 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all cursor-pointer"
-                    value={tempAlmacenId}
-                    onChange={e => setTempAlmacenId(e.target.value)}
-                  >
-                    <option value="">Seleccione...</option>
-                    {almacenes.map(a => (
-                      <option key={a.id} value={a.id}>{a.nombre.toUpperCase()}</option>
-                    ))}
-                  </select>
-                </div>
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        {/* 1. Left sub-navigation sidebar */}
+        <div className="w-full lg:w-56 shrink-0">
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+            <div className="px-2 pb-1 border-b border-slate-100">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Información general</span>
+            </div>
 
-                <div className="flex justify-end pt-4 border-t border-slate-50">
-                  <button
-                    type="submit"
-                    className="h-10 px-8 rounded-full bg-[#8cc33f] hover:bg-[#7db02b] text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95"
-                  >
-                    Aceptar
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Shared Warehouse Indicator */}
-            {["gestion", "salida", "listado", "movimientos", "ajustes"].includes(currentModule) && selectedAlmacen && (
-              <div className="bg-white px-6 py-4 rounded-[22px] border border-slate-100 shadow-sm flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2.5 text-xs font-black text-slate-500 uppercase tracking-wider">
-                  <FiDatabase className="text-blue-600 shrink-0" />
-                  <span>Almacén en uso:</span>
-                  <span className="text-blue-600 font-extrabold">{selectedAlmacen.nombre}</span>
-                </div>
+            <div className="flex flex-col gap-1">
+              {/* Tab: Productos */}
+              <div className="relative group/tooltip">
                 <button
                   onClick={() => {
-                    setSelectedAlmacen(null);
-                    localStorage.removeItem("selected_almacen_inventario");
+                    setCurrentModule("productos");
+                    setShowForm(false);
                   }}
-                  className="px-4 py-1.5 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 text-[10px] font-black uppercase tracking-widest border border-slate-200 hover:border-rose-100 transition-all active:scale-95 shrink-0"
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                    currentModule === "productos" && !showForm
+                      ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                  }`}
                 >
-                  Cambiar almacén
+                  <span>Productos</span>
+                  <FiChevronRight size={13} className={currentModule === "productos" ? "opacity-100 text-emerald-600" : "opacity-0"} />
                 </button>
-              </div>
-            )}
-
-            {/* Products (Price list) */}
-            {currentModule === "productos" && (
-              <ProductosList 
-                items={items}
-                loading={loading}
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                onNew={() => {
-                  setActiveFormItem(null);
-                  setShowForm(true);
-                }}
-                onEdit={(item) => {
-                  setActiveFormItem(item);
-                  setShowForm(true);
-                }}
-                onDelete={handleDeleteProduct}
-              />
-            )}
-
-            {/* Gestión inventario (Quick adjustments card grid) */}
-            {currentModule === "gestion" && (
-              <div className="space-y-6">
-                <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-                  <div className="relative w-full max-w-md">
-                    <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Buscar por nombre o referencia..."
-                      className="w-full h-10 pl-11 pr-4 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-full px-5 py-2">
-                    <div className="w-2 h-2 rounded-full bg-[#8cc33f]" />
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">Total: {items.length}</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {loading ? (
-                    <div className="col-span-full py-20 text-center font-bold text-slate-400">Cargando gestión...</div>
-                  ) : filteredQuickList.length === 0 ? (
-                    <div className="col-span-full py-20 text-center font-bold text-slate-400">No hay productos registrados</div>
-                  ) : (
-                    filteredQuickList.map(item => {
-                      const isLow = (item.cantidad || 0) <= (item.minimo || 5);
-                      return (
-                        <div key={item.id} className={`bg-white rounded-[28px] p-6 border ${isLow ? 'border-rose-100' : 'border-slate-100'} shadow-sm space-y-4 hover:shadow-md transition-all flex flex-col justify-between`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                              <UnidadBadge unidad={item.unidad} />
-                              {isLow && (
-                                <span className="px-2 py-0.5 bg-rose-50 text-rose-500 rounded-lg text-[9px] font-black uppercase tracking-wider border border-rose-100">
-                                  <FiAlertTriangle className="inline mr-1" size={10} /> Bajo Stock
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight leading-tight mb-1">{item.nombre}</h4>
-                            <p className="text-[11px] text-slate-400 font-semibold">{item.marca ? `MARCA: ${item.marca}` : "Sin marca"}</p>
-                          </div>
-
-                          <div className="pt-4 border-t border-slate-50 space-y-4">
-                            <div className="flex items-end justify-between">
-                              <div className="flex flex-col">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Stock Actual</span>
-                                <span className={`text-[28px] font-black leading-none mt-1 font-mono ${isLow ? 'text-rose-500' : 'text-slate-800'}`}>
-                                  {item.cantidad}
-                                </span>
-                              </div>
-                              <div className="flex flex-col items-end">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mínimo</span>
-                                <span className="text-[13px] font-black text-slate-600 mt-1 font-mono">{item.minimo || 5}</span>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => handleStockChange(item, -1)}
-                                className="py-2 rounded-xl bg-slate-50 hover:bg-rose-50 hover:text-rose-500 border border-slate-100 hover:border-rose-100 text-slate-400 transition-all active:scale-95 flex items-center justify-center"
-                              >
-                                <FiMinus size={15} />
-                              </button>
-                              <button
-                                onClick={() => handleStockChange(item, 1)}
-                                className="py-2 rounded-xl bg-slate-50 hover:bg-emerald-50 hover:text-emerald-500 border border-slate-100 hover:border-emerald-100 text-slate-400 transition-all active:scale-95 flex items-center justify-center"
-                              >
-                                <FiPlus size={15} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
+                {/* Tooltip */}
+                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-52 p-2.5 bg-slate-800 text-white text-[11px] font-normal leading-snug rounded-lg shadow-xl border border-slate-700 opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity z-50">
+                  Son los productos que ofrece la empresa, para la venta y/o compra. Estos también pueden ser de consumo interno.
                 </div>
               </div>
-            )}
 
-            {/* Recepción producto */}
-            {currentModule === "recepcion" && (
-              <RecepcionProducto items={items} />
-            )}
+              {/* Tab: Gestión inventario */}
+              <button
+                onClick={() => {
+                  setCurrentModule("gestion");
+                  setShowForm(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                  currentModule === "gestion" && !showForm
+                    ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                }`}
+              >
+                <span>Gestión inventario</span>
+                <FiChevronRight size={13} className={currentModule === "gestion" ? "opacity-100 text-emerald-600" : "opacity-0"} />
+              </button>
 
-            {/* Salida producto */}
-            {currentModule === "salida" && (
-              <SalidaProducto items={items} />
-            )}
+              {/* Tab: Recepción producto */}
+              <button
+                onClick={() => {
+                  setCurrentModule("recepcion");
+                  setShowForm(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                  currentModule === "recepcion" && !showForm
+                    ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                }`}
+              >
+                <span>Recepción producto</span>
+                <FiChevronRight size={13} className={currentModule === "recepcion" ? "opacity-100 text-emerald-600" : "opacity-0"} />
+              </button>
 
-            {/* Listado de inventario */}
-            {currentModule === "listado" && (
-              <ListadoInventario 
-                items={items}
-                loading={loading}
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-              />
-            )}
+              {/* Tab: Salida producto */}
+              <button
+                onClick={() => {
+                  setCurrentModule("salida");
+                  setShowForm(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                  currentModule === "salida" && !showForm
+                    ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                }`}
+              >
+                <span>Salida producto</span>
+                <FiChevronRight size={13} className={currentModule === "salida" ? "opacity-100 text-emerald-600" : "opacity-0"} />
+              </button>
 
-            {/* Listado de movimientos */}
-            {currentModule === "movimientos" && (
-              <MovimientosInventario />
-            )}
+              {/* Tab: Listado de inventario */}
+              <button
+                onClick={() => {
+                  setCurrentModule("listado");
+                  setShowForm(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                  currentModule === "listado" && !showForm
+                    ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                }`}
+              >
+                <span>Listado de inventario</span>
+                <FiChevronRight size={13} className={currentModule === "listado" ? "opacity-100 text-emerald-600" : "opacity-0"} />
+              </button>
 
-            {/* Ajustes de inventario */}
-            {currentModule === "ajustes" && (
-              <AjustesInventario items={items} />
-            )}
+              {/* Tab: Listado de movimientos */}
+              <button
+                onClick={() => {
+                  setCurrentModule("movimientos");
+                  setShowForm(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                  currentModule === "movimientos" && !showForm
+                    ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                }`}
+              >
+                <span>Listado de movimientos</span>
+                <FiChevronRight size={13} className={currentModule === "movimientos" ? "opacity-100 text-emerald-600" : "opacity-0"} />
+              </button>
+
+              {/* Tab: Ajustes de inventario */}
+              <button
+                onClick={() => {
+                  setCurrentModule("ajustes");
+                  setShowForm(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                  currentModule === "ajustes" && !showForm
+                    ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-100"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
+                }`}
+              >
+                <span>Ajustes de inventario</span>
+                <FiChevronRight size={13} className={currentModule === "ajustes" ? "opacity-100 text-emerald-600" : "opacity-0"} />
+              </button>
+            </div>
           </div>
-        )}
+        </div>
+
+        {/* 2. Right Module Content Area */}
+        <div className="flex-1 min-w-0 w-full">
+          {showForm ? (
+            <ProductoForm 
+              item={activeFormItem}
+              categories={categoriesToDisplay}
+              inquilino={inquilino}
+              onSave={handleSaveProduct}
+              onCancel={() => {
+                setShowForm(false);
+                setActiveFormItem(null);
+              }}
+            />
+          ) : ["gestion", "salida", "listado", "movimientos", "ajustes"].includes(currentModule) && !selectedAlmacen ? (
+            <div className="max-w-md mx-auto animate-in fade-in duration-300">
+              <form onSubmit={handleSelectAlmacen} className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">Almacén a usar</h3>
+                </div>
+                
+                <div className="p-5 space-y-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-semibold text-slate-600">Almacén a usar *</label>
+                    <select
+                      required
+                      className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 outline-none focus:border-emerald-500 transition-colors cursor-pointer"
+                      value={tempAlmacenId}
+                      onChange={e => setTempAlmacenId(e.target.value)}
+                    >
+                      <option value="">Seleccione...</option>
+                      {almacenes.map(a => (
+                        <option key={a.id} value={a.id}>{a.nombre.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t border-slate-100">
+                    <button
+                      type="submit"
+                      className="h-8 px-5 rounded-lg bg-[#7cb342] hover:bg-[#689f38] text-white text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer"
+                    >
+                      Aceptar
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Shared Warehouse Indicator */}
+              {["gestion", "salida", "listado", "movimientos", "ajustes"].includes(currentModule) && selectedAlmacen && (
+                <div className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                    <FiDatabase className="text-emerald-600 shrink-0" size={14} />
+                    <span>Almacén en uso:</span>
+                    <span className="text-emerald-700 font-bold">{selectedAlmacen.nombre}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedAlmacen(null);
+                      localStorage.removeItem("selected_almacen_inventario");
+                    }}
+                    className="px-3 py-1 rounded-md bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600 text-[11px] font-semibold border border-slate-200 hover:border-rose-200 transition-colors cursor-pointer"
+                  >
+                    Cambiar almacén
+                  </button>
+                </div>
+              )}
+
+              {/* Products (Price list) */}
+              {currentModule === "productos" && (
+                <ProductosList 
+                  items={items}
+                  loading={loading}
+                  searchTerm={searchTerm}
+                  setSearchTerm={setSearchTerm}
+                  onNew={() => {
+                    setActiveFormItem(null);
+                    setShowForm(true);
+                  }}
+                  onEdit={(item) => {
+                    setActiveFormItem(item);
+                    setShowForm(true);
+                  }}
+                  onDelete={handleDeleteProduct}
+                />
+              )}
+
+              {/* Gestión inventario (Quick adjustments card grid) */}
+              {currentModule === "gestion" && (
+                <div className="space-y-4">
+                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="relative w-full max-w-sm">
+                      <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                      <input 
+                        type="text" 
+                        placeholder="Buscar por nombre o referencia..."
+                        className="w-full h-8 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shrink-0">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#7cb342]" />
+                      <span className="text-[11px] font-semibold text-slate-600">Total: {items.length}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {loading ? (
+                      <div className="col-span-full py-16 text-center text-xs font-medium text-slate-400">Cargando inventario...</div>
+                    ) : filteredQuickList.length === 0 ? (
+                      <div className="col-span-full py-16 text-center text-xs font-medium text-slate-400">No hay productos registrados</div>
+                    ) : (
+                      filteredQuickList.map(item => {
+                        const isLow = (item.cantidad || 0) <= (item.minimo || 5);
+                        return (
+                          <div key={item.id} className={`bg-white rounded-xl p-4 border ${isLow ? 'border-rose-200 bg-rose-50/20' : 'border-slate-200'} shadow-2xs space-y-3 hover:shadow-xs transition-shadow flex flex-col justify-between`}>
+                            <div>
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <UnidadBadge unidad={item.unidad} />
+                                {isLow && (
+                                  <span className="px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded text-[10px] font-bold border border-rose-200">
+                                    <FiAlertTriangle className="inline mr-1" size={10} /> Bajo Stock
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="text-xs font-bold text-slate-800 tracking-tight leading-snug mb-0.5">{item.nombre}</h4>
+                              <p className="text-[11px] text-slate-400 font-medium">{item.marca ? `Marca: ${item.marca}` : "Sin marca"}</p>
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-100 space-y-3">
+                              <div className="flex items-end justify-between">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stock Actual</span>
+                                  <span className={`text-xl font-bold leading-none mt-0.5 font-mono ${isLow ? 'text-rose-600' : 'text-slate-800'}`}>
+                                    {item.cantidad}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mínimo</span>
+                                  <span className="text-xs font-bold text-slate-600 mt-0.5 font-mono">{item.minimo || 5}</span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={() => handleStockChange(item, -1)}
+                                  className="h-7 rounded-lg bg-slate-50 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 hover:border-rose-200 text-slate-500 transition-colors active:scale-95 flex items-center justify-center cursor-pointer"
+                                  title="Restar 1"
+                                >
+                                  <FiMinus size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleStockChange(item, 1)}
+                                  className="h-7 rounded-lg bg-slate-50 hover:bg-emerald-50 hover:text-emerald-600 border border-slate-200 hover:border-emerald-200 text-slate-500 transition-colors active:scale-95 flex items-center justify-center cursor-pointer"
+                                  title="Sumar 1"
+                                >
+                                  <FiPlus size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Recepción producto */}
+              {currentModule === "recepcion" && (
+                <RecepcionProducto items={items} />
+              )}
+
+              {/* Salida producto */}
+              {currentModule === "salida" && (
+                <SalidaProducto items={items} />
+              )}
+
+              {/* Listado de inventario */}
+              {currentModule === "listado" && (
+                <ListadoInventario 
+                  items={items}
+                  loading={loading}
+                  searchTerm={searchTerm}
+                  setSearchTerm={setSearchTerm}
+                />
+              )}
+
+              {/* Listado de movimientos */}
+              {currentModule === "movimientos" && (
+                <MovimientosInventario />
+              )}
+
+              {/* Ajustes de inventario */}
+              {currentModule === "ajustes" && (
+                <AjustesInventario items={items} />
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
     </div>

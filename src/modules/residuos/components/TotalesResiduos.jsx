@@ -121,26 +121,26 @@ export default function TotalesResiduos() {
     }, [logs, types, appliedYear]);
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-4 animate-in fade-in duration-300 font-sans text-slate-800">
             {/* Filter toolbar */}
-            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-                <form onSubmit={handleSearch} className="flex flex-col md:flex-row md:items-end gap-6">
-                    <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Año a totalizar</label>
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <form onSubmit={handleSearch} className="flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-semibold text-slate-600">Año a totalizar</label>
                         <div className="relative">
                             <input
                                 type="number"
                                 value={year}
                                 onChange={(e) => setYear(e.target.value)}
                                 placeholder="Ej: 2026"
-                                className="h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all w-48"
+                                className="h-8 px-3 pl-8 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors w-36"
                             />
-                            <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <FiCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                         </div>
                     </div>
                     <button
                         type="submit"
-                        className="h-11 px-8 flex items-center justify-center bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95"
+                        className="h-8 px-4 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer"
                     >
                         Buscar
                     </button>
@@ -148,49 +148,70 @@ export default function TotalesResiduos() {
             </div>
 
             {/* Matrix table */}
-            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-6">
-                <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                    <table className="w-full text-left border-collapse min-w-[1600px]">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        Planilla de Totales Anuales ({appliedYear})
+                    </h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
                         <thead>
-                            <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                <th className="px-4 py-4 pl-6 w-24">Mes</th>
+                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                <th className="py-2.5 px-3 w-28">Mes</th>
                                 {types.map(t => (
                                     <th 
                                         key={t.id} 
-                                        className={`px-3 py-4 text-center text-[9px] border-l border-slate-100 text-white truncate max-w-[120px] ${
-                                            t.color === "Rojo" ? "bg-rose-600" :
-                                            t.color === "Verde" ? "bg-emerald-600" :
-                                            t.color === "Negro" ? "bg-slate-800" :
-                                            t.color === "Blanco" ? "bg-slate-400" :
-                                            "bg-blue-600"
-                                        }`}
+                                        className="py-2 px-2.5 text-center text-[10px] border-l border-slate-100 font-semibold text-slate-700 whitespace-nowrap"
                                         title={t.nombre}
                                     >
-                                        {t.nombre}
+                                        <div className="flex items-center justify-center gap-1">
+                                            <span 
+                                                className="w-1.5 h-1.5 rounded-full shrink-0" 
+                                                style={{
+                                                    backgroundColor: t.color === "Rojo" ? "#ef4444" :
+                                                                     t.color === "Verde" ? "#22c55e" :
+                                                                     t.color === "Blanco" ? "#94a3b8" :
+                                                                     t.color === "Negro" ? "#0f172a" :
+                                                                     t.color === "Amarillo" ? "#eab308" :
+                                                                     t.color === "Azul" ? "#3b82f6" :
+                                                                     t.color === "Gris" ? "#64748b" :
+                                                                     t.color === "Púrpura" ? "#a855f7" : "#cbd5e1"
+                                                }}
+                                            />
+                                            <span className="truncate max-w-[100px]">{t.nombre}</span>
+                                        </div>
                                     </th>
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-mono">
+                        <tbody className="divide-y divide-slate-100 text-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={types.length + 1} className="px-8 py-20 text-center font-sans text-slate-400 italic">
-                                        Cargando matriz de totales anuales...
+                                    <td colSpan={types.length + 1} className="py-16 text-center text-slate-400 italic text-xs">
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                                            <span>Cargando matriz de totales anuales...</span>
+                                        </div>
                                     </td>
                                 </tr>
                             ) : matrix.rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={types.length + 1} className="px-8 py-20 text-center font-sans text-slate-400 italic">
+                                    <td colSpan={types.length + 1} className="py-16 text-center text-slate-400 italic text-xs">
                                         No hay datos disponibles.
                                     </td>
                                 </tr>
                             ) : (
                                 matrix.rows.map(row => (
-                                    <tr key={row.mes} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-4 py-3 pl-6 font-bold font-sans text-slate-800">{row.mes}</td>
+                                    <tr key={row.mes} className="hover:bg-slate-50/60 transition-colors">
+                                        <td className="py-2 px-3 font-semibold text-slate-800">{row.mes}</td>
                                         {types.map(t => (
-                                            <td key={t.id} className="px-3 py-3 text-center border-l border-slate-50 font-bold text-slate-500">
-                                                {row[t.nombre] > 0 ? row[t.nombre].toFixed(1) : 0}
+                                            <td key={t.id} className="py-2 px-2 text-center border-l border-slate-50 font-mono text-[11px] text-slate-600">
+                                                {row[t.nombre] > 0 ? (
+                                                    <span className="font-semibold text-emerald-600">{row[t.nombre].toFixed(1)}</span>
+                                                ) : (
+                                                    <span className="text-slate-400">0</span>
+                                                )}
                                             </td>
                                         ))}
                                     </tr>
@@ -200,10 +221,10 @@ export default function TotalesResiduos() {
                         {/* Footer row */}
                         {!loading && types.length > 0 && (
                             <tfoot>
-                                <tr className="bg-slate-50 font-bold text-xs text-slate-800 border-t border-slate-200">
-                                    <td className="px-4 py-4 pl-6 uppercase font-black text-[10px]">Total</td>
+                                <tr className="bg-slate-100/70 font-bold text-xs text-slate-800 border-t border-slate-200">
+                                    <td className="py-2.5 px-3 uppercase font-bold text-[11px] text-slate-800">Total Anual</td>
                                     {types.map(t => (
-                                        <td key={t.id} className="px-3 py-4 text-center border-l border-slate-100 font-black text-blue-600 font-mono">
+                                        <td key={t.id} className="py-2.5 px-2 text-center border-l border-slate-200 font-bold text-emerald-700 font-mono text-xs">
                                             {matrix.colTotals[t.nombre] > 0 ? matrix.colTotals[t.nombre].toFixed(1) : 0}
                                         </td>
                                     ))}

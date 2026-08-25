@@ -552,7 +552,7 @@ export default function Agenda() {
                     ${sidebarVisible ? 'w-64 opacity-100' : 'w-0 opacity-0 pointer-events-none'}
                     hidden lg:flex flex-col h-full
                 `}>
-                    <div className="w-64 shrink-0">
+                    <div className="w-64 flex flex-col h-full min-h-0 overflow-y-auto custom-scrollbar">
                         <AgendaSidebar
                             selectedDate={selectedDate}
                             onDateChange={setSelectedDate}

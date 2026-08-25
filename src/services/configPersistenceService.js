@@ -56,6 +56,23 @@ const TABLE_PAYLOAD_BUILDERS = {
         telefono: item.telefono || item.telCelular || "",
         activo: item.activo !== false,
     }),
+    medicamentos: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        tipo: item.tipo || "Otros",
+        codigo: item.codigo || "",
+        principio_activo: item.principio_activo || item.nombre || "",
+        nombre: item.nombre || item.principio_activo || "",
+        descripcion: item.descripcion || "",
+        marca: item.marca || "",
+    }),
+    planes_formulacion: (item) => ({
+        id: item.id,
+        tenant_id: item.tenant_id,
+        nombre: item.nombre || "",
+        descripcion: item.descripcion || "",
+        medicamentos: item.medicamentos || [],
+    }),
 };
 
 const isPersistedTable = (tableName) => Boolean(TABLE_PAYLOAD_BUILDERS[tableName]);
@@ -150,9 +167,11 @@ export const getConfigItems = async (tenantId, configKey, tableName) => {
         tableData.forEach(item => {
             const key = String(item.id);
             const configItem = merged.get(key) || {};
+            const resolvedNombre = item.nombre || configItem.nombre || item.name || configItem.name || item.tipo || configItem.tipo || "";
             merged.set(key, {
                 ...configItem,
                 ...item,
+                nombre: resolvedNombre,
                 permisos: item.permisos ?? configItem.permisos,
             });
         });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { getConfigItems } from "../../../services/configPersistenceService";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -13,18 +14,19 @@ export default function ReporteMedicamentos() {
   const [profesionales, setProfesionales] = useState([]);
   const [sucursalesList, setSucursalesList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [hasSearched, setHasSearched] = useState(false);
 
   // Filtros idénticos a OralDrive
-  const [fechaInicial, setFechaInicial] = useState("2025-07-01");
+  const [fechaInicial, setFechaInicial] = useState("2025-08-01");
   const [fechaFinal, setFechaFinal] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [oficina, setOficina] = useState("TODAS");
+  const [oficina, setOficina] = useState("ATM CENTRO DEL DOLOR OROFACIAL");
   const [selectedProfesional, setSelectedProfesional] = useState("Todos");
 
   // Estado de filtros aplicados
   const [appliedFilters, setAppliedFilters] = useState({
-    fechaInicial: "2025-07-01",
+    fechaInicial: "2025-08-01",
     fechaFinal: format(new Date(), "yyyy-MM-dd"),
-    oficina: "TODAS",
+    oficina: "ATM CENTRO DEL DOLOR OROFACIAL",
     profesional: "Todos"
   });
 
@@ -61,19 +63,33 @@ export default function ReporteMedicamentos() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!userProfile?.inquilino) return;
+      const tenantId = userProfile?.inquilino || userProfile?.tenant_id || "juanemadrid/odontocloudsaas";
       setLoading(true);
       try {
-        let snapSuc = [];
+        let listSucursales = [];
         try {
-          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
-          if (data) snapSuc = data;
+          const cfgSucursales = await getConfigItems(tenantId, "sucursales", "sucursales");
+          if (Array.isArray(cfgSucursales) && cfgSucursales.length > 0) {
+            cfgSucursales.forEach(s => {
+              const name = s.nombre || s.nombreSucursal || s.nombreComercial || s.name;
+              if (name && !listSucursales.some(item => item.nombre.toLowerCase() === name.toLowerCase())) {
+                listSucursales.push({ id: s.id, nombre: name });
+              }
+            });
+          }
         } catch (e) {}
-        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
+
+        if (listSucursales.length === 0) {
+          listSucursales.push({ id: "PRINCIPAL", nombre: "ATM CENTRO DEL DOLOR OROFACIAL" });
+        }
+        setSucursalesList(listSucursales);
+        if (listSucursales.length > 0) {
+          setOficina(listSucursales[0].nombre);
+        }
 
         let snapUsuarios = [];
         try {
-          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", tenantId);
           if (data) snapUsuarios = data;
         } catch (e) {}
         const listProfs = [];
@@ -89,7 +105,7 @@ export default function ReporteMedicamentos() {
 
         let snapFormulaciones = [];
         try {
-          const { data } = await supabase.from("formulaciones").select("*").eq("tenant_id", userProfile.inquilino);
+          const { data } = await supabase.from("formulaciones").select("*").eq("tenant_id", tenantId);
           if (data) snapFormulaciones = data;
         } catch (e) {}
         const listMeds = [];
@@ -98,7 +114,7 @@ export default function ReporteMedicamentos() {
           const items = f.medicamentos || f.items || [f];
           items.forEach(m => {
             listMeds.push({
-              id: `${f.id}_${m.nombre || m.medicamento}`,
+              id: `${f.id}_${m.nombre || m.medicamento || Math.random()}`,
               fechaCreacion: f.fecha || f.created_at || f.createdAt,
               sucursal: f.sucursal || f.oficina || "ATM CENTRO DEL DOLOR OROFACIAL",
               profesional: f.profesionalNombre || f.doctor || f.profesional || "—",
@@ -113,13 +129,18 @@ export default function ReporteMedicamentos() {
         });
 
         listMeds.sort((a, b) => {
-          const dateA = a.fechaCreacion?.seconds || (a.fechaCreacion ? new Date(a.fechaCreacion).getTime() / 1000 : 0);
-          const dateB = b.fechaCreacion?.seconds || (b.fechaCreacion ? new Date(b.fechaCreacion).getTime() / 1000 : 0);
+          const dateA = a.fechaCreacion ? new Date(a.fechaCreacion).getTime() : 0;
+          const dateB = b.fechaCreacion ? new Date(b.fechaCreacion).getTime() : 0;
           return dateB - dateA;
         });
 
         setAllMedicines(listMeds);
-        filterData(listMeds, appliedFilters, "");
+        filterData(listMeds, {
+          fechaInicial,
+          fechaFinal,
+          oficina: listSucursales[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+          profesional: "Todos"
+        }, "");
 
       } catch (error) {
         console.error("Error cargando reporte de medicamentos:", error);
@@ -129,42 +150,54 @@ export default function ReporteMedicamentos() {
     };
 
     fetchData();
-  }, [userProfile?.inquilino]);
+  }, [userProfile]);
 
-  const filterData = (sourceList, filters, quickSearch) => {
-    let result = sourceList.filter(m => {
-      // Filtro por Fechas
-      const targetDate = m.fechaCreacion ? (m.fechaCreacion.toDate ? m.fechaCreacion.toDate() : new Date(m.fechaCreacion)) : null;
-      if (targetDate) {
-        const init = new Date(filters.fechaInicial + "T00:00:00");
-        const end = new Date(filters.fechaFinal + "T23:59:59");
-        if (targetDate < init || targetDate > end) return false;
-      }
+  const filterData = (data, filters, search) => {
+    let result = [...data];
 
-      // Filtro por Profesional
-      if (filters.profesional !== "Todos") {
-        const profTarget = filters.profesional.toLowerCase();
-        const mProf = (m.profesional || "").toLowerCase();
-        if (!mProf.includes(profTarget) && !profTarget.includes(mProf)) return false;
-      }
+    if (filters.fechaInicial) {
+      const initDate = new Date(filters.fechaInicial + "T00:00:00");
+      result = result.filter(m => {
+        if (!m.fechaCreacion) return true;
+        const itemDate = new Date(m.fechaCreacion);
+        return itemDate >= initDate;
+      });
+    }
 
-      return true;
-    });
+    if (filters.fechaFinal) {
+      const endDate = new Date(filters.fechaFinal + "T23:59:59");
+      result = result.filter(m => {
+        if (!m.fechaCreacion) return true;
+        const itemDate = new Date(m.fechaCreacion);
+        return itemDate <= endDate;
+      });
+    }
 
-    if (quickSearch && quickSearch.trim() !== "") {
-      const term = quickSearch.toLowerCase();
-      result = result.filter(m => (
-        (m.principioActivo && m.principioActivo.toLowerCase().includes(term)) ||
-        (m.paciente && m.paciente.toLowerCase().includes(term)) ||
-        (m.profesional && m.profesional.toLowerCase().includes(term)) ||
-        (m.codigo && m.codigo.toLowerCase().includes(term))
-      ));
+    if (filters.oficina && filters.oficina !== "TODAS") {
+      result = result.filter(m => 
+        (m.sucursal || "").toLowerCase().includes(filters.oficina.toLowerCase())
+      );
+    }
+
+    if (filters.profesional && filters.profesional !== "Todos") {
+      result = result.filter(m => 
+        (m.profesional || "").toLowerCase().includes(filters.profesional.toLowerCase())
+      );
+    }
+
+    if (search && search.trim()) {
+      const q = search.toLowerCase().trim();
+      result = result.filter(m => 
+        m.paciente?.toLowerCase().includes(q) ||
+        m.profesional?.toLowerCase().includes(q) ||
+        m.principioActivo?.toLowerCase().includes(q) ||
+        m.codigo?.toLowerCase().includes(q) ||
+        m.sucursal?.toLowerCase().includes(q)
+      );
     }
 
     setFilteredMedicines(result);
   };
-
-  const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearchClick = () => {
     setHasSearched(true);
@@ -182,7 +215,7 @@ export default function ReporteMedicamentos() {
     const rows = filteredMedicines.map(m => {
       const formatDateStr = (d) => {
         if (!d) return "";
-        const dt = d.toDate ? d.toDate() : new Date(d);
+        const dt = new Date(d);
         return isNaN(dt.getTime()) ? "" : format(dt, "dd/MM/yyyy HH:mm");
       };
 
@@ -206,15 +239,15 @@ export default function ReporteMedicamentos() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 overflow-hidden font-sans text-slate-700">
+    <div className="flex flex-col h-full bg-[#f4f6f9] overflow-y-auto custom-scrollbar font-sans text-slate-700 pb-16">
       
       {/* ─── ENCABEZADO Y BREADCRUMB ─── */}
-      <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-slate-100 shrink-0">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-black text-slate-800 tracking-tight">Reporte medicamentos</h2>
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+      <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-base font-bold text-slate-800 tracking-tight">Reporte medicamentos</h2>
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
             <span>🏠 Reportes</span>
-            <span>/</span>
+            <span>-</span>
             <span className="text-slate-500 font-bold">Reporte medicamentos</span>
           </div>
         </div>
@@ -222,80 +255,95 @@ export default function ReporteMedicamentos() {
         {/* Botón Generar reporte en Excel (Azul OralDrive) */}
         <button
           onClick={handleExportExcel}
-          className="flex items-center gap-2 px-4 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white text-[11px] font-bold rounded-xl shadow-sm transition-all"
+          className="flex items-center gap-2 px-4 py-1.5 bg-[#009beb] hover:bg-[#0087cd] text-white text-xs font-bold rounded shadow-2xs transition-all cursor-pointer"
         >
           <span>Generar reporte en excel</span>
         </button>
       </div>
 
-      {/* ─── ÁREA DE FILTROS (DISEÑO EXACTO ORALDRIVE) ─── */}
-      <div className="mx-5 mt-3 p-5 bg-white rounded-xl border border-slate-100 shadow-sm shrink-0">
-        
-        {/* Fila 1: Fecha inicial / Fecha final */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 mb-1">Fecha inicial</label>
-            <input
-              type="date"
-              value={fechaInicial}
-              onChange={(e) => setFechaInicial(e.target.value)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-sky-500 transition-all"
-             max="9999-12-31" min="1900-01-01" />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-slate-500 mb-1">Fecha final</label>
-            <input
-              type="date"
-              value={fechaFinal}
-              onChange={(e) => setFechaFinal(e.target.value)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-sky-500 transition-all"
-             max="9999-12-31" min="1900-01-01" />
-          </div>
-        </div>
-
-        {/* Fila 2: Oficina / Profesional + Botón Buscar */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-end">
+      {/* ─── ÁREA DE FILTROS (DISEÑO 1:1 ORALDRIVE ALINEADO HORIZONTALMENTE) ─── */}
+      <div className="mx-6 mt-4 p-6 bg-white rounded-xl border border-slate-200/80 shadow-2xs shrink-0">
+        <div className="max-w-4xl mx-auto space-y-4">
           
-          <div className="md:col-span-2">
-            <label className="block text-[11px] font-bold text-slate-500 mb-1">Oficina</label>
-            <select
-              value={oficina}
-              onChange={(e) => setOficina(e.target.value)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-sky-500 transition-all uppercase"
-            >
-              <option value="TODAS">TODAS LAS OFICINAS / SUCURSALES</option>
-              {sucursalesList.map(s => (
-                <option key={s.id} value={s.nombre}>{s.nombre}</option>
-              ))}
-            </select>
+          {/* Fila 1: Fecha inicial y Fecha final */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+            
+            {/* Fecha inicial */}
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-normal text-slate-500 w-24 text-right shrink-0">Fecha inicial</label>
+              <div className="relative flex items-center flex-1">
+                <input
+                  type="date"
+                  value={fechaInicial}
+                  onChange={(e) => setFechaInicial(e.target.value)}
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all pr-8"
+                  max="9999-12-31"
+                  min="1900-01-01"
+                />
+              </div>
+            </div>
+
+            {/* Fecha final */}
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-normal text-slate-500 w-24 text-right shrink-0">Fecha final</label>
+              <div className="relative flex items-center flex-1">
+                <input
+                  type="date"
+                  value={fechaFinal}
+                  onChange={(e) => setFechaFinal(e.target.value)}
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all pr-8"
+                  max="9999-12-31"
+                  min="1900-01-01"
+                />
+              </div>
+            </div>
+
           </div>
 
-          <div className="md:col-span-2">
-            <label className="block text-[11px] font-bold text-slate-500 mb-1">Profesional</label>
-            <select
-              value={selectedProfesional}
-              onChange={(e) => setSelectedProfesional(e.target.value)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-sky-500 transition-all uppercase"
-            >
-              <option value="Todos">Todos</option>
-              {profesionales.map(prof => (
-                <option key={prof.id} value={prof.nombre}>{prof.nombre}</option>
-              ))}
-            </select>
-          </div>
+          {/* Fila 2: Oficina, Profesional y Botón Buscar */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 items-center">
+            
+            {/* Oficina */}
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-normal text-slate-500 w-24 text-right shrink-0">Oficina</label>
+              <select
+                value={oficina}
+                onChange={(e) => setOficina(e.target.value)}
+                className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all uppercase cursor-pointer"
+              >
+                <option value="TODAS">TODAS</option>
+                {sucursalesList.map(s => (
+                  <option key={s.id} value={s.nombre}>{s.nombre}</option>
+                ))}
+              </select>
+            </div>
 
-          <div className="md:col-span-1">
-            <button
-              onClick={handleSearchClick}
-              className="w-full h-9 px-6 bg-[#7cb342] hover:bg-[#689f38] text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5"
-            >
-              <span>Buscar</span>
-            </button>
+            {/* Profesional + Botón Buscar */}
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-normal text-slate-500 w-24 text-right shrink-0">Profesional</label>
+              <div className="flex items-center gap-3 flex-1">
+                <select
+                  value={selectedProfesional}
+                  onChange={(e) => setSelectedProfesional(e.target.value)}
+                  className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all cursor-pointer"
+                >
+                  <option value="Todos">Todos</option>
+                  {profesionales.map(prof => (
+                    <option key={prof.id} value={prof.nombre}>{prof.nombre}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleSearchClick}
+                  className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded transition-all cursor-pointer shadow-2xs shrink-0"
+                >
+                  Buscar
+                </button>
+              </div>
+            </div>
+
           </div>
 
         </div>
-
       </div>
 
       {/* ─── TABLA DE RESULTADOS DATAGRID (SÓLO TRAS DAR CLIC EN BUSCAR) ─── */}

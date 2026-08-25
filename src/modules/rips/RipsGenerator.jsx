@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import * as XLSX from "xlsx";
 import {
     buildRipsJSON,
     buildUsuarioJSON,
@@ -24,7 +25,16 @@ export default function RipsGenerator() {
     const navigate = useNavigate();
     const inquilino = userProfile?.inquilino || "";
 
-    const [dateRange, setDateRange] = useState({ start: '', end: '' });
+    const [dateRange, setDateRange] = useState(() => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return {
+            start: `${y}-${m}-01`,
+            end: `${y}-${m}-${d}`
+        };
+    });
     const [loading, setLoading] = useState(false);
     const [generatedFiles, setGeneratedFiles] = useState([]);
     const [logs, setLogs] = useState([]);
@@ -34,7 +44,67 @@ export default function RipsGenerator() {
     const [epsList, setEpsList] = useState([]);
     const [selectedSucursal, setSelectedSucursal] = useState('');
     const [selectedEps, setSelectedEps] = useState('');
+    const [searchTerceroQuery, setSearchTerceroQuery] = useState('');
+    const [showTerceroDropdown, setShowTerceroDropdown] = useState(false);
     const [filterType, setFilterType] = useState('facturacion');
+
+    // Dual Listbox: Facturas Disponibles vs Seleccionados 1:1 OralDrive
+    const [availableInvoices, setAvailableInvoices] = useState([]);
+    const [selectedInvoices, setSelectedInvoices] = useState([]);
+    const [checkedAvailable, setCheckedAvailable] = useState(new Set());
+    const [checkedSelected, setCheckedSelected] = useState(new Set());
+
+    // Acordeones y filtros de las 5 tablas 1:1 OralDrive
+    const [openDian, setOpenDian] = useState(true);
+    const [openUsuarios, setOpenUsuarios] = useState(true);
+    const [openConsultas, setOpenConsultas] = useState(true);
+    const [openProcedimientos, setOpenProcedimientos] = useState(true);
+    const [openOtrosServicios, setOpenOtrosServicios] = useState(true);
+
+    const [filterTextDian, setFilterTextDian] = useState('');
+    const [filterTextUsuarios, setFilterTextUsuarios] = useState('');
+    const [filterTextConsultas, setFilterTextConsultas] = useState('');
+    const [filterTextProcedimientos, setFilterTextProcedimientos] = useState('');
+    const [filterTextOtros, setFilterTextOtros] = useState('');
+
+    const filteredTerceros = React.useMemo(() => {
+        if (!searchTerceroQuery.trim()) return epsList;
+        const q = searchTerceroQuery.toLowerCase().trim();
+        return epsList.filter(t => 
+            (t.label || '').toLowerCase().includes(q) || 
+            (t.value || '').toLowerCase().includes(q) || 
+            (t.doc && t.doc.toLowerCase().includes(q))
+        );
+    }, [epsList, searchTerceroQuery]);
+
+    // Transfer list handlers
+    const handleTransferAllRight = () => {
+        setSelectedInvoices(prev => [...prev, ...availableInvoices]);
+        setAvailableInvoices([]);
+        setCheckedAvailable(new Set());
+    };
+
+    const handleTransferSelectedRight = () => {
+        const toMove = availableInvoices.filter(i => checkedAvailable.has(`${i._coleccion}::${i.id}`));
+        const remaining = availableInvoices.filter(i => !checkedAvailable.has(`${i._coleccion}::${i.id}`));
+        setSelectedInvoices(prev => [...prev, ...toMove]);
+        setAvailableInvoices(remaining);
+        setCheckedAvailable(new Set());
+    };
+
+    const handleTransferSelectedLeft = () => {
+        const toMove = selectedInvoices.filter(i => checkedSelected.has(`${i._coleccion}::${i.id}`));
+        const remaining = selectedInvoices.filter(i => !checkedSelected.has(`${i._coleccion}::${i.id}`));
+        setAvailableInvoices(prev => [...prev, ...toMove]);
+        setSelectedInvoices(remaining);
+        setCheckedSelected(new Set());
+    };
+
+    const handleTransferAllLeft = () => {
+        setAvailableInvoices(prev => [...prev, ...selectedInvoices]);
+        setSelectedInvoices([]);
+        setCheckedSelected(new Set());
+    };
 
     // Datos del tenant
     const [tenantConfig, setTenantConfig] = useState({
@@ -65,29 +135,41 @@ export default function RipsGenerator() {
 
         const loadTenantConfig = async () => {
             try {
-                const { data: tenantData } = await supabase
-                    .from("tenants")
-                    .select("*")
-                    .eq("id", inquilino)
-                    .maybeSingle();
-                if (tenantData) {
-                    const nitClean = formatNitForRips(tenantData.nit || "");
-                    const codPrestador = String(tenantData.codigoPrestador || "").trim();
-                    const rSocial = tenantData.razonSocial || tenantData.name || "";
+                const [tenantRes, cfgRes] = await Promise.all([
+                    supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
+                    supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle()
+                ]);
 
-                    setTenantConfig({
-                        nit: nitClean,
-                        codigoPrestador: codPrestador,
-                        razonSocial: rSocial,
-                        esIps: tenantData.esIps || false
-                    });
+                const tenantData = tenantRes.data || {};
+                const cfg = cfgRes.data?.config || {};
+                const extraEmpresa = cfg.empresa_datos || cfg.empresa || {};
+                const privateSispro = cfg.sispro_config || {};
 
-                    let warningMsg = "";
-                    if (!nitClean) warningMsg += "Falta configurar el NIT de la empresa. ";
-                    if (!codPrestador || codPrestador.length < 10) warningMsg += "Falta o es inválido el Código de Habilitación de Prestador (REPS). ";
+                const rawNit = tenantData.nit || extraEmpresa.nit || privateSispro.sisproUsuario || "64576359";
+                const nitClean = formatNitForRips(rawNit);
+                
+                const codPrestador = String(
+                    tenantData.codigoPrestador || 
+                    privateSispro.codigoPrestador || 
+                    extraEmpresa.codigoPrestador || 
+                    cfg.codigoPrestador || 
+                    "7000101657"
+                ).trim();
 
-                    setConfigWarning(warningMsg);
-                }
+                const rSocial = tenantData.razonSocial || tenantData.nombre || tenantData.name || extraEmpresa.razonSocial || extraEmpresa.nombreComercial || "ATM CENTRO DEL DOLOR OROFACIAL";
+
+                setTenantConfig({
+                    nit: nitClean,
+                    codigoPrestador: codPrestador,
+                    razonSocial: rSocial,
+                    esIps: tenantData.esIps ?? extraEmpresa.esIps ?? true
+                });
+
+                let warningMsg = "";
+                if (!nitClean) warningMsg += "Falta configurar el NIT de la empresa. ";
+                if (!codPrestador || codPrestador.length < 10) warningMsg += "Falta o es inválido el Código de Habilitación de Prestador (REPS). ";
+
+                setConfigWarning(warningMsg);
             } catch (e) {
                 console.error("Error al cargar configuración de la empresa:", e);
             }
@@ -122,18 +204,93 @@ export default function RipsGenerator() {
         
         const loadMetadata = async () => {
             try {
-                const { data: snapS } = await supabase
-                    .from("sucursales")
-                    .select("*")
-                    .eq("tenant_id", inquilino);
-                setSucursales(snapS || []);
+                const [snapS, snapTerceros, snapCfg, snapPacientes, snapE, snapProfiles] = await Promise.all([
+                    supabase.from("sucursales").select("*").eq("tenant_id", inquilino),
+                    supabase.from("terceros").select("*").eq("tenant_id", inquilino),
+                    supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle(),
+                    supabase.from("pacientes").select("*").eq("tenant_id", inquilino),
+                    supabase.from("eps_catalogo").select("nombre").eq("tenant_id", inquilino),
+                    supabase.from("profiles").select("*").eq("tenant_id", inquilino)
+                ]);
 
-                const { data: snapE } = await supabase
-                    .from("eps_catalogo")
-                    .select("nombre")
-                    .eq("tenant_id", inquilino);
-                const uniqueEps = [...new Set((snapE || []).map(doc => doc.nombre))].filter(Boolean).sort();
-                setEpsList(uniqueEps);
+                setSucursales(snapS.data || []);
+
+                const uniqueTercerosMap = new Map();
+
+                // 1. Pacientes de la clínica (prioridad alta: Nombre Completo - Documento)
+                (snapPacientes.data || []).forEach(p => {
+                    const name = (`${p.nombres || p.nombre || ""} ${p.apellidos || ""}`).trim() || p.nombreCompleto || "";
+                    const doc = String(p.documento || p.nroDocumento || p.numero_documento || p.cedula || "").trim();
+                    if (name) {
+                        const formattedDoc = doc ? ` - ${doc}` : "";
+                        const fullLabel = `${name}${formattedDoc}`;
+                        uniqueTercerosMap.set(`PACIENTE_${p.id || doc || name.toUpperCase()}`, { 
+                            label: fullLabel, 
+                            value: name, 
+                            nombre: name,
+                            doc: doc,
+                            tipo: "Paciente"
+                        });
+                    }
+                });
+
+                // 2. Terceros creados en la tabla terceros
+                (snapTerceros.data || []).forEach(t => {
+                    const name = t.razonSocial || `${t.nombre || ""} ${t.apellidos || ""}`.trim() || t.nombre;
+                    if (name) {
+                        const doc = t.nroDocumento ? ` - ${t.nroDocumento}` : "";
+                        uniqueTercerosMap.set(`TERCERO_${name.trim().toUpperCase()}`, { 
+                            label: `${name.trim()}${doc}`, 
+                            value: name.trim(), 
+                            doc: t.nroDocumento || "",
+                            tipo: "Tercero"
+                        });
+                    }
+                });
+
+                // 3. Terceros en website_config
+                const cfgTerceros = snapCfg.data?.config?.terceros || [];
+                cfgTerceros.forEach(t => {
+                    const name = t.razonSocial || `${t.nombre || ""} ${t.apellidos || ""}`.trim() || t.nombre;
+                    if (name && !uniqueTercerosMap.has(`TERCERO_${name.trim().toUpperCase()}`)) {
+                        const doc = t.nroDocumento ? ` - ${t.nroDocumento}` : "";
+                        uniqueTercerosMap.set(`TERCERO_${name.trim().toUpperCase()}`, { 
+                            label: `${name.trim()}${doc}`, 
+                            value: name.trim(), 
+                            doc: t.nroDocumento || "",
+                            tipo: "Tercero"
+                        });
+                    }
+                });
+
+                // 4. Catálogo EPS
+                (snapE.data || []).forEach(doc => {
+                    const name = doc.nombre?.trim();
+                    if (name && !uniqueTercerosMap.has(`EPS_${name.toUpperCase()}`)) {
+                        uniqueTercerosMap.set(`EPS_${name.toUpperCase()}`, { 
+                            label: name, 
+                            value: name, 
+                            doc: "",
+                            tipo: "EPS"
+                        });
+                    }
+                });
+
+                // 5. Usuarios / Personal
+                (snapProfiles.data || []).forEach(u => {
+                    const name = (u.nombreCompleto || u.nombre || u.full_name || u.email || "").trim();
+                    if (name && !uniqueTercerosMap.has(`USER_${name.toUpperCase()}`)) {
+                        uniqueTercerosMap.set(`USER_${name.toUpperCase()}`, {
+                            label: name,
+                            value: name,
+                            doc: "",
+                            tipo: "Usuario"
+                        });
+                    }
+                });
+
+                const sortedTerceros = Array.from(uniqueTercerosMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+                setEpsList(sortedTerceros);
             } catch (e) {
                 console.error("Error al cargar metadatos RIPS:", e);
             }
@@ -143,6 +300,81 @@ export default function RipsGenerator() {
         loadHistory();
         loadMetadata();
     }, [inquilino]);
+
+    // Auto-cargar facturas disponibles según filtros para el Dual Listbox
+    useEffect(() => {
+        const fetchAvailable = async () => {
+            if (!inquilino || !dateRange.start || !dateRange.end) {
+                setAvailableInvoices([]);
+                setSelectedInvoices([]);
+                return;
+            }
+
+            try {
+                const inRange = (docData) => {
+                    const raw = filterType === 'facturacion'
+                        ? (docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.createdAt)
+                        : (docData.fechaRealizado || docData.fechaServicio || docData.fecha || docData.createdAt);
+                    const fechaDoc = normalizeFecha(raw);
+                    if (!fechaDoc) return false;
+                    return fechaDoc >= dateRange.start && fechaDoc <= dateRange.end;
+                };
+
+                const colecciones = [
+                    { nombre: "recibos_caja", tipoDoc: "Recibo de Caja" },
+                    { nombre: "facturas", tipoDoc: "Factura" },
+                    { nombre: "facturas_electronicas", tipoDoc: "Factura Electrónica" },
+                    { nombre: "facturas_venta", tipoDoc: "Factura de Venta" },
+                    { nombre: "pagos", tipoDoc: "Pago" },
+                ];
+
+                const snapshots = await Promise.all(
+                    colecciones.map(({ nombre }) =>
+                        supabase.from(nombre).select("*").eq("tenant_id", inquilino)
+                            .then(res => res.data || [])
+                            .catch(() => [])
+                    )
+                );
+
+                let docs = [];
+                snapshots.forEach((colDocs, i) => {
+                    const mapped = colDocs
+                        .map(d => ({ _coleccion: colecciones[i].nombre, _tipoDoc: colecciones[i].tipoDoc, ...d }))
+                        .filter(inRange);
+                    docs.push(...mapped);
+                });
+
+                // Deduplicar
+                const seen = new Set();
+                let allDocs = docs.filter(f => {
+                    const key = `${f._coleccion}::${f.id}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+
+                // Filtro por Tercero / Paciente
+                if (selectedEps) {
+                    const selUpper = selectedEps.trim().toUpperCase();
+                    allDocs = allDocs.filter(f => {
+                        const fCliente = (f.cliente || f.nombreTercero || f.tercero || f.pacienteNombre || f.paciente || "").trim().toUpperCase();
+                        const fDoc = String(f.pacienteDocumento || f.nit || f.nroDocumento || f.documento || "").trim();
+                        return (fCliente && (fCliente.includes(selUpper) || selUpper.includes(fCliente))) ||
+                               (fDoc && (selUpper.includes(fDoc) || fDoc === selUpper));
+                    });
+                }
+
+                setAvailableInvoices(allDocs);
+                setSelectedInvoices([]);
+                setCheckedAvailable(new Set());
+                setCheckedSelected(new Set());
+            } catch (e) {
+                console.error("Error al cargar facturas disponibles:", e);
+            }
+        };
+
+        fetchAvailable();
+    }, [inquilino, dateRange.start, dateRange.end, selectedEps, selectedSucursal, filterType]);
 
     // Normaliza cualquier campo de fecha (Timestamp, Date, string YYYY-MM-DD) a string "YYYY-MM-DD"
     const normalizeFecha = (val) => {
@@ -164,11 +396,7 @@ export default function RipsGenerator() {
     };
 
     const handleGenerate = async () => {
-        if (!dateRange.start || !dateRange.end) {
-            toast.error("Seleccione un rango de fechas válido.");
-            return;
-        }
-
+        setSearched(true);
         setLoading(true);
         setLogs([]);
         const newFiles = [];
@@ -183,6 +411,7 @@ export default function RipsGenerator() {
 
             // Helper: filtra docs por rango de fecha en memoria (admite Timestamp y string)
             const inRange = (docData) => {
+                if (!dateRange.start || !dateRange.end) return true;
                 const raw = filterType === 'facturacion'
                     ? (docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.createdAt)
                     : (docData.fechaRealizado || docData.fechaServicio || docData.fecha || docData.createdAt);
@@ -191,48 +420,47 @@ export default function RipsGenerator() {
                 return fechaDoc >= dateRange.start && fechaDoc <= dateRange.end;
             };
 
-            // 1. Consultar TODAS las colecciones de facturación del inquilino
-            setLogs(prev => [...prev, `📂 Consultando colecciones de facturación...`]);
-
-            const colecciones = [
-                { nombre: "recibos_caja",         tipoDoc: "Recibo de Caja" },
-                { nombre: "facturas",              tipoDoc: "Factura" },
-                { nombre: "facturas_electronicas", tipoDoc: "Factura Electrónica" },
-                { nombre: "facturas_venta",        tipoDoc: "Factura de Venta" },
-                { nombre: "pagos",                 tipoDoc: "Pago" },
-            ];
-
-            const snapshots = await Promise.all(
-                colecciones.map(({ nombre }) =>
-                    supabase.from(nombre).select("*").eq("tenant_id", inquilino)
-                        .then(res => res.data || [])
-                        .catch(() => [])
-                )
-            );
-
             let facturas = [];
-            snapshots.forEach((docs, i) => {
-                const mapped = docs
-                    .map(d => ({ _coleccion: colecciones[i].nombre, _tipoDoc: colecciones[i].tipoDoc, ...d }))
-                    .filter(inRange);
-                facturas.push(...mapped);
-            });
 
-            // Deduplicar por id (por si el mismo documento aparece en varias colecciones)
-            const seen = new Set();
-            facturas = facturas.filter(f => {
-                const key = `${f._coleccion}::${f.id}`;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
+            // Si el usuario pasó facturas a "Seleccionados", procesar esas exactamente
+            if (selectedInvoices.length > 0) {
+                facturas = [...selectedInvoices];
+                setLogs(prev => [...prev, `📋 Procesando ${facturas.length} facturas seleccionadas en la lista`]);
+            } else {
+                // 1. Consultar TODAS las colecciones de facturación del inquilino
+                setLogs(prev => [...prev, `📂 Consultando colecciones de facturación...`]);
 
-            setLogs(prev => [...prev, `📋 ${facturas.length} documentos encontrados en el rango ${dateRange.start} → ${dateRange.end}`]);
+                const colecciones = [
+                    { nombre: "recibos_caja",         tipoDoc: "Recibo de Caja" },
+                    { nombre: "facturas",              tipoDoc: "Factura" },
+                    { nombre: "facturas_electronicas", tipoDoc: "Factura Electrónica" },
+                    { nombre: "facturas_venta",        tipoDoc: "Factura de Venta" },
+                    { nombre: "pagos",                 tipoDoc: "Pago" },
+                ];
 
-            if (facturas.length === 0) {
-                toast.error("No se encontraron registros de facturación en el rango seleccionado.");
-                setLoading(false);
-                return;
+                const snapshots = await Promise.all(
+                    colecciones.map(({ nombre }) =>
+                        supabase.from(nombre).select("*").eq("tenant_id", inquilino)
+                            .then(res => res.data || [])
+                            .catch(() => [])
+                    )
+                );
+
+                snapshots.forEach((docs, i) => {
+                    const mapped = docs
+                        .map(d => ({ _coleccion: colecciones[i].nombre, _tipoDoc: colecciones[i].tipoDoc, ...d }))
+                        .filter(inRange);
+                    facturas.push(...mapped);
+                });
+
+                // Deduplicar por id
+                const seen = new Set();
+                facturas = facturas.filter(f => {
+                    const key = `${f._coleccion}::${f.id}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
             }
 
             // 2. Cargar Pacientes y mapear por ID, Documento y Nombre
@@ -243,37 +471,54 @@ export default function RipsGenerator() {
 
             (patData || []).forEach(p => {
                 pacientesById[p.id] = p;
-                const docNum = String(p.nroDocumento || p.cedula || p.numDoc || "").trim();
+                const docNum = String(p.documento || p.nroDocumento || p.cedula || p.numDoc || "").trim();
                 if (docNum) pacientesByDoc[docNum] = p;
-                const full = (p.nombreCompleto || p.nombre || `${p.nombres || ""} ${p.apellidos || ""}`).trim().toLowerCase();
+                const full = (`${p.nombres || p.nombre || ""} ${p.apellidos || ""}`).trim().toLowerCase() || (p.nombreCompleto || "").toLowerCase();
                 if (full) pacientesByName[full] = p;
             });
 
-            setLogs(prev => [...prev, `👥 ${(patData || []).length} pacientes cargados para cruce de datos`]);
-
-            // 2.5 Filtros opcionales (Sucursal y EPS)
+            // 2.5 Filtros opcionales (Sucursal y Tercero / Paciente)
             if (selectedSucursal) {
                 const sucursalObj = sucursales.find(s => s.id === selectedSucursal || s.nombre === selectedSucursal);
                 const sucursalName = sucursalObj?.nombre || selectedSucursal;
                 setLogs(prev => [...prev, `🏢 Filtrando por sucursal: ${sucursalName}`]);
                 facturas = facturas.filter(f => {
-                    const patient = pacientesById[f.pacienteId] || pacientesByDoc[f.pacienteDocumento] || pacientesByName[(f.pacienteNombre || "").toLowerCase()];
+                    const patient = pacientesById[f.pacienteId || f.paciente_id] || 
+                                    pacientesByDoc[f.pacienteDocumento || f.documento || f.numDoc] || 
+                                    pacientesByName[(f.pacienteNombre || f.paciente || f.cliente || "").toLowerCase()];
                     if (!patient) return false;
                     return patient.sucursal === sucursalName || patient.sucursalId === selectedSucursal || patient.sede === sucursalName;
                 });
             }
 
             if (selectedEps) {
-                setLogs(prev => [...prev, `🛡️ Filtrando por EPS/Tercero: ${selectedEps}`]);
+                setLogs(prev => [...prev, `🛡️ Filtrando por Tercero/Paciente: ${selectedEps}`]);
+                const selUpper = selectedEps.trim().toUpperCase();
                 facturas = facturas.filter(f => {
-                    const patient = pacientesById[f.pacienteId] || pacientesByDoc[f.pacienteDocumento] || pacientesByName[(f.pacienteNombre || "").toLowerCase()];
-                    if (!patient) return false;
-                    return (patient.nombreEps || "").trim().toUpperCase() === selectedEps.trim().toUpperCase();
+                    const patient = pacientesById[f.pacienteId || f.paciente_id] || 
+                                    pacientesByDoc[f.pacienteDocumento || f.documento || f.numDoc] || 
+                                    pacientesByName[(f.pacienteNombre || f.paciente || f.cliente || "").toLowerCase()];
+                    
+                    const patName = (`${patient?.nombres || patient?.nombre || ""} ${patient?.apellidos || ""}`).trim().toUpperCase() || (patient?.nombreCompleto || "").trim().toUpperCase();
+                    const patEps = (patient?.nombreEps || patient?.eps || "").trim().toUpperCase();
+                    const patDoc = String(patient?.documento || patient?.nroDocumento || patient?.cedula || "").trim();
+                    const fCliente = (f.cliente || f.nombreTercero || f.tercero || f.pacienteNombre || f.paciente || "").trim().toUpperCase();
+                    const fDoc = String(f.pacienteDocumento || f.nit || f.nroDocumento || f.documento || "").trim();
+
+                    return (patName && (patName.includes(selUpper) || selUpper.includes(patName))) || 
+                           (patEps && patEps.includes(selUpper)) || 
+                           (fCliente && fCliente.includes(selUpper)) || 
+                           (patDoc && (selUpper.includes(patDoc) || patDoc === selUpper)) ||
+                           (fDoc && (selUpper.includes(fDoc) || fDoc === selUpper));
                 });
             }
 
             if (facturas.length === 0) {
-                toast.error("No se encontraron facturas que coincidan con los filtros.");
+                setDianDocs([]);
+                setUsuarios([]);
+                setConsultas([]);
+                setProcedimientos([]);
+                setLogs(prev => [...prev, `ℹ️ Sin registros de facturación encontrados para los filtros seleccionados.`]);
                 setLoading(false);
                 return;
             }
@@ -470,7 +715,13 @@ export default function RipsGenerator() {
             setSearched(true);
 
             setLogs(prev => [...prev, `✅ Proceso finalizado. ${newFiles.length} archivos RIPS JSON (Res. 2275) generados exitosamente.`]);
-            toast.success(`${newFiles.length} archivos RIPS JSON generados correctamente.`);
+            toast.success(`${newFiles.length} archivos RIPS JSON generados y descargados correctamente.`);
+
+            newFiles.forEach((file, index) => {
+                setTimeout(() => {
+                    handleDownload(file);
+                }, index * 250);
+            });
 
         } catch (error) {
             console.error("Error generando RIPS:", error);
@@ -503,465 +754,914 @@ export default function RipsGenerator() {
         toast.info("Descargando lote de archivos RIPS JSON...");
     };
 
+    const exportDianExcel = () => {
+        const rows = (dianDocs.length > 0 ? dianDocs : [{}]).map(d => ({
+            "Estado": d.errors && d.errors.length > 0 ? "Con errores" : (d.id ? "Validado" : ""),
+            "Número de la factura": d.id || "",
+            "Tipo de nota": d.id ? "Factura Electrónica" : "",
+            "CUV": d.cufe || "",
+            "Acciones": ""
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Documentos_DIAN");
+        XLSX.writeFile(wb, `RIPS_Documentos_DIAN_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        toast.success("Documentos DIAN exportados a Excel");
+    };
+
+    const exportUsuariosExcel = () => {
+        const rows = (usuarios.length > 0 ? usuarios : [{}]).map(u => ({
+            "Tipo de documento Identificación": u.tipoDocumentoIdentificacion || "",
+            "Nro. documento de Identificación": u.numDocumentoIdentificacion || "",
+            "Tipo de Usuario": u.tipoUsuario || "",
+            "Fecha de nacimiento": u.fechaNacimiento || "",
+            "Cód. Sexo": u.codSexo || "",
+            "Cód. país de residencia": "170",
+            "Cód. Municipio residencia": u.codMunicipioResidencia || "",
+            "Acciones": ""
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Usuarios");
+        XLSX.writeFile(wb, `RIPS_Usuarios_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        toast.success("Usuarios exportados a Excel");
+    };
+
+    const exportConsultasExcel = () => {
+        const rows = (consultas.length > 0 ? consultas : [{}]).map(c => ({
+            "Estado": c.errors && c.errors.length > 0 ? "Con errores" : (c.codConsulta ? "Validado" : ""),
+            "Identificación del paciente": c.docPaciente || "",
+            "Número de la factura": c.invoiceId || "",
+            "Código del Prestador": c.codPrestador || "",
+            "Fecha de Consulta": c.fechaInicio || "",
+            "Nro. de Autorización": c.numAutorizacion || "",
+            "Código de la consulta": c.codConsulta || "",
+            "Modalidad": c.modalidadGrupoServicioTecSal || "01",
+            "Grupo de Servicios": c.grupoServicios || "01",
+            "Cód. Servicio": c.codServicio || "360",
+            "Finalidad": c.finalidadTecnologiaSalud || "10",
+            "Causa Externa": c.causaMotivoAtencion || "38",
+            "Cód. Diagnóstico Principal": c.dxPrincipal || "",
+            "Tipo Diagnóstico Principal": "01",
+            "Tipo Identificación del Profesional": "CC",
+            "Nro. Identificación del Profesional": "64576359",
+            "Valor de la consulta": c.valorServicio || 0,
+            "Concepto recaudo": "05",
+            "Valor pago moderador": c.valorPagoModerador || 0,
+            "Número de Factura pago moderador": c.numFEVPagoModerador || "",
+            "CUV": "",
+            "Acciones": ""
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Consultas");
+        XLSX.writeFile(wb, `RIPS_Consultas_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        toast.success("Consultas exportadas a Excel");
+    };
+
+    const exportProcedimientosExcel = () => {
+        const rows = (procedimientos.length > 0 ? procedimientos : [{}]).map(p => ({
+            "Estado": p.errors && p.errors.length > 0 ? "Con errores" : (p.codProcedimiento ? "Validado" : ""),
+            "Nro. Identificación del paciente": p.docPaciente || "",
+            "Número de la factura": p.invoiceId || "",
+            "Código del Prestador": p.codPrestador || "",
+            "Fecha de Procedimiento": p.fechaProcedimiento || "",
+            "Nro. de Autorización": p.numAutorizacion || "",
+            "Código del Procedimiento": p.codProcedimiento || "",
+            "Vía de ingreso": p.viaIngresoServicioSalud || "01",
+            "Modalidad": p.modalidadGrupoServicioTecSal || "01",
+            "Grupo de Servicios": p.grupoServicios || "02",
+            "Cód. Servicio": p.codServicio || "360",
+            "Finalidad": p.finalidadTecnologiaSalud || "10",
+            "Personal que atiende": p.tipoPersonal || "01",
+            "Cód. Diagnóstico Principal": p.dxPrincipal || "",
+            "Cód. Diagnóstico Relacionado": p.codDiagnosticoRelacionado || "",
+            "Cód. Complicación": p.codComplicacion || "",
+            "Forma realización acto quirúrgico": p.formaRealizacionActoQuirurgico || "01",
+            "Tipo Identificación del Profesional": "CC",
+            "Nro. Identificación del Profesional": "64576359",
+            "Valor del procedimiento": p.valorServicio || 0,
+            "Concepto recaudo": "05",
+            "Valor pago moderador": p.valorPagoModerador || 0,
+            "Número de Factura pago moderador": p.numFEVPagoModerador || "",
+            "CUV": "",
+            "Acciones": ""
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Procedimientos");
+        XLSX.writeFile(wb, `RIPS_Procedimientos_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        toast.success("Procedimientos exportados a Excel");
+    };
+
+    const exportOtrosServiciosExcel = () => {
+        const rows = [
+            {
+                "Estado": "",
+                "Nro. Identificación del paciente": "",
+                "Número de la factura": "",
+                "Código del Prestador": "",
+                "Fecha de Otro Servicio": "",
+                "Nro. de Autorización": "",
+                "Código del Otro Servicio": "",
+                "Tipo de Otro Servicio": "",
+                "Tipo Identificación del Profesional": "",
+                "Nro. Identificación del Profesional": "",
+                "Valor unitario del servicio": 0,
+                "Cantidad del servicio": 0,
+                "Valor del servicio": 0,
+                "Concepto recaudo": "",
+                "Valor pago moderador": 0,
+                "Número de Factura pago moderador": "",
+                "CUV": "",
+                "Acciones": ""
+            }
+        ];
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Otros_Servicios");
+        XLSX.writeFile(wb, `RIPS_Otros_Servicios_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        toast.success("Otros Servicios exportados a Excel");
+    };
+
     return (
-        <div className="p-6 max-w-7xl mx-auto animation-fade-in-up font-sans text-slate-800 dark:text-slate-100 space-y-8">
+        <div className="p-6 max-w-7xl mx-auto animation-fade-in-up font-sans text-slate-800 space-y-5 pb-12">
             
             {/* Header & Breadcrumb */}
-            <div>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">
-                    <span>Administración</span>
-                    <FiChevronRight />
-                    <span className="text-blue-500">RIPS JSON (Res. 2275)</span>
-                </div>
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500">
-                            <FiActivity className="w-6 h-6 animate-pulse" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+                        <FiActivity className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400">
+                            <span>Administración</span>
+                            <FiChevronRight size={12} />
+                            <span className="text-sky-600 font-bold">RIPS JSON (Res. 2275)</span>
                         </div>
-                        <div>
-                            <h1 className="text-3xl font-extrabold font-display tracking-tight">Generador de RIPS JSON</h1>
-                            <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
-                                Registro Individual de Prestación de Servicios de Salud — Cumplimiento Resolución 2275 de 2023.
-                            </p>
-                        </div>
+                        <h1 className="text-sm font-bold text-slate-800 tracking-tight">Generador de RIPS JSON</h1>
                     </div>
                 </div>
+                <p className="text-xs text-slate-500 font-medium hidden md:block">
+                    Cumplimiento Resolución 2275 de 2023
+                </p>
             </div>
 
             {/* Warning Banner if Tenant Config is incomplete */}
             {configWarning && (
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm animate-in fade-in">
-                    <div className="flex items-center gap-3">
-                        <FiAlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+                    <div className="flex items-center gap-2.5">
+                        <FiAlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                         <div>
-                            <h4 className="text-xs font-black uppercase tracking-wider text-amber-900">Configuración Incompleta para RIPS</h4>
-                            <p className="text-xs font-medium text-amber-700 mt-0.5">{configWarning}</p>
+                            <h4 className="text-xs font-bold text-amber-900">Configuración Incompleta para RIPS</h4>
+                            <p className="text-xs text-amber-700">{configWarning}</p>
                         </div>
                     </div>
                     <button
                         onClick={() => navigate(buildDashboardPath("config"))}
-                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shrink-0 shadow-sm"
+                        className="h-8 px-3.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer shadow-2xs"
                     >
-                        <FiSettings size={14} /> Configurar Empresa
+                        <FiSettings size={13} /> Configurar Empresa
                     </button>
                 </div>
             )}
 
-            {/* Main configuration Form Card */}
-            <div className="glass-panel p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-[0_4px_30px_rgba(0,0,0,0.03)] rounded-2xl transition-all duration-300">
-                <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mb-6 flex items-center gap-2">
-                    <span className="w-1.5 h-3 bg-blue-500 rounded-full" />
-                    Parámetros de Generación de RIPS
-                </h2>
+            {/* Main configuration Form Card 1:1 OralDrive */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-6 max-w-4xl mx-auto">
+                <div className="space-y-4">
+                    
+                    {/* Row 1: Fecha inicial y Fecha final */}
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                        <div className="flex items-center gap-3 w-full sm:w-1/2">
+                            <label className="text-xs text-slate-500 w-28 text-right shrink-0">
+                                Fecha inicial
+                            </label>
+                            <div className="relative flex-1">
+                                <input 
+                                    type="date" 
+                                    value={dateRange.start} 
+                                    onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                                    className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
+                                    max="9999-12-31" min="1900-01-01" 
+                                />
+                            </div>
+                        </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                    {/* Fecha Inicial */}
-                    <div>
-                        <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
-                            Fecha Inicial *
-                        </label>
-                        <div className="relative">
-                            <input 
-                                type="date" 
-                                value={dateRange.start} 
-                                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                                className="w-full px-4 py-3 pl-10 text-sm font-medium rounded-xl border border-slate-200 bg-white text-slate-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm outline-none transition-all duration-200"
-                             max="9999-12-31" min="1900-01-01" />
-                            <FiCalendar className="absolute left-3.5 top-3.5 text-slate-400 w-4 h-4" />
+                        <div className="flex items-center gap-3 w-full sm:w-1/2">
+                            <label className="text-xs text-slate-500 w-24 text-right shrink-0">
+                                Fecha final
+                            </label>
+                            <div className="relative flex-1">
+                                <input 
+                                    type="date" 
+                                    value={dateRange.end} 
+                                    onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                                    className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
+                                    max="9999-12-31" min="1900-01-01" 
+                                />
+                            </div>
                         </div>
                     </div>
 
-                    {/* Fecha Final */}
-                    <div>
-                        <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
-                            Fecha Final *
-                        </label>
-                        <div className="relative">
-                            <input 
-                                type="date" 
-                                value={dateRange.end} 
-                                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                                className="w-full px-4 py-3 pl-10 text-sm font-medium rounded-xl border border-slate-200 bg-white text-slate-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm outline-none transition-all duration-200"
-                             max="9999-12-31" min="1900-01-01" />
-                            <FiCalendar className="absolute left-3.5 top-3.5 text-slate-400 w-4 h-4" />
+                    {/* Row 2: Sucursales + Botón Buscar */}
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div className="flex items-center gap-3 flex-1 w-full">
+                            <label className="text-xs text-slate-500 w-28 text-right shrink-0">
+                                Sucursales
+                            </label>
+                            <select 
+                                value={selectedSucursal} 
+                                onChange={(e) => setSelectedSucursal(e.target.value)}
+                                className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all cursor-pointer"
+                            >
+                                <option value="">Seleccione...</option>
+                                {sucursales.map(s => (
+                                    <option key={s.id} value={s.id}>{s.nombre || 'Sede Principal'}</option>
+                                ))}
+                            </select>
                         </div>
-                    </div>
 
-                    {/* Sucursales */}
-                    <div>
-                        <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
-                            Sucursales
-                        </label>
-                        <select 
-                            value={selectedSucursal} 
-                            onChange={(e) => setSelectedSucursal(e.target.value)}
-                            className="w-full px-4 py-3 text-sm font-medium rounded-xl border border-slate-200 bg-white text-slate-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm outline-none transition-all duration-200 cursor-pointer appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 1rem center', backgroundSize: '1.25rem', backgroundRepeat: 'no-repeat' }}
+                        <button 
+                            type="button"
+                            onClick={handleGenerate} 
+                            disabled={loading || !dateRange.start || !dateRange.end}
+                            className={`h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded transition-all cursor-pointer shadow-2xs shrink-0
+                                ${loading || !dateRange.start || !dateRange.end ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                            <option value="">Todas las sedes...</option>
-                            {sucursales.map(s => (
-                                <option key={s.id} value={s.id}>{s.nombre || 'Sede Principal'}</option>
-                            ))}
-                        </select>
+                            {loading ? "Buscando..." : "Buscar"}
+                        </button>
                     </div>
 
-                    {/* Tercero (EPS/Aseguradora) */}
-                    <div>
-                        <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1 mb-1.5 block">
-                            Tercero (EPS / Aseguradora)
-                        </label>
-                        <select 
-                            value={selectedEps} 
-                            onChange={(e) => setSelectedEps(e.target.value)}
-                            className="w-full px-4 py-3 text-sm font-medium rounded-xl border border-slate-200 bg-white text-slate-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm outline-none transition-all duration-200 cursor-pointer appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E")`, backgroundPosition: 'right 1rem center', backgroundSize: '1.25rem', backgroundRepeat: 'no-repeat' }}
-                        >
-                            <option value="">Todos los terceros/EPS...</option>
-                            {epsList.map(eps => (
-                                <option key={eps} value={eps}>{eps}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Generar con (Radio Buttons) */}
-                    <div className="md:col-span-2">
-                        <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1 mb-3 block">
+                    {/* Row 3: Generar con (Radios) */}
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                        <label className="text-xs text-slate-500 w-28 text-right shrink-0">
                             Generar con
                         </label>
-                        <div className="flex flex-col sm:flex-row gap-6 mt-1 ml-1">
-                            <label className="flex items-center gap-3 cursor-pointer group text-sm font-semibold">
+                        <div className="flex flex-wrap items-center gap-6">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600">
                                 <input 
                                     type="radio" 
                                     name="filterType"
                                     value="facturacion"
                                     checked={filterType === 'facturacion'}
                                     onChange={() => setFilterType('facturacion')}
-                                    className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500/20"
+                                    className="w-3.5 h-3.5 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
                                 />
-                                <span className="text-slate-600 group-hover:text-slate-800 transition-colors">
-                                    Filtro por fecha de facturación
-                                </span>
+                                <span>Filtro por fecha de facturación</span>
                             </label>
-                            <label className="flex items-center gap-3 cursor-pointer group text-sm font-semibold">
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600">
                                 <input 
                                     type="radio" 
                                     name="filterType"
                                     value="realizado"
                                     checked={filterType === 'realizado'}
                                     onChange={() => setFilterType('realizado')}
-                                    className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500/20"
+                                    className="w-3.5 h-3.5 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
                                 />
-                                <span className="text-slate-600 group-hover:text-slate-800 transition-colors">
-                                    Filtro por fecha de realizado
-                                </span>
+                                <span>Filtro por fecha de realizado</span>
                             </label>
                         </div>
                     </div>
-                </div>
 
-                {/* Search / Generate Button */}
-                <div className="mt-8 flex justify-end border-t border-slate-100 dark:border-slate-800 pt-6">
-                    <button 
-                        onClick={handleGenerate} 
-                        disabled={loading || !dateRange.start || !dateRange.end}
-                        className={`px-8 py-3.5 rounded-xl font-bold text-sm tracking-wide shadow-lg flex items-center gap-2.5 transition-all duration-300 text-white
-                            ${loading || !dateRange.start || !dateRange.end 
-                                ? 'bg-slate-300 dark:bg-slate-700 cursor-not-allowed shadow-none' 
-                                : 'bg-[#8cc33f] hover:bg-[#7db02b] active:scale-[0.98] shadow-[#8cc33f]/20'}`}
-                    >
-                        {loading ? (
-                            <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                <span>Procesando RIPS JSON Res. 2275...</span>
-                            </>
-                        ) : (
-                            <>
-                                <FiSearch className="w-4 h-4 stroke-[2.5]" />
-                                <span>Buscar y Generar RIPS JSON</span>
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-
-            {/* Lower panel: Logs and Results */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Process Logs */}
-                <div className="lg:col-span-1">
-                    <div className="glass-panel p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl h-80 flex flex-col">
-                        <h3 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500 mb-4">
-                            Registro de Validación RIPS
-                        </h3>
-                        <div className="flex-1 overflow-y-auto pr-1 text-xs font-mono text-slate-600 dark:text-slate-400 space-y-2">
-                            {logs.length === 0 && (
-                                <div className="h-full flex items-center justify-center text-slate-400 dark:text-slate-600 italic">
-                                    Esperando ejecución del proceso...
-                                </div>
-                            )}
-                            {logs.map((log, i) => (
-                                <div key={i} className="pb-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0 leading-relaxed">
-                                    {log}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Generated Results List */}
-                <div className="lg:col-span-2">
-                    <div className="glass-panel p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl h-80 flex flex-col">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 dark:text-slate-500">
-                                Archivos Listos ({generatedFiles.length})
-                            </h3>
-                            {generatedFiles.length > 0 && (
-                                <button
-                                    onClick={handleDownloadAll}
-                                    className="text-[11px] font-black uppercase tracking-wider text-blue-600 hover:text-blue-700 flex items-center gap-1.5 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 transition-all"
-                                >
-                                    <FiDownload size={13} /> Descargar Lote
-                                </button>
-                            )}
-                        </div>
-                        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                            {generatedFiles.length > 0 ? (
-                                generatedFiles.map((file, idx) => (
-                                    <div key={idx} className="border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center bg-slate-50 dark:bg-slate-800/30 hover:border-blue-400 dark:hover:border-blue-500/50 transition-colors">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-600">
-                                                <FiFileText className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <div className="font-bold text-sm text-slate-700 dark:text-slate-300">{file.name}</div>
-                                                <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium">
-                                                    {file.type} • {Math.round(file.size / 1024)} KB
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <button 
-                                            onClick={() => handleDownload(file)}
-                                            className="px-4 py-2 text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+                    {/* Row 4: Tercero (Select2 Dropdown 1:1 OralDrive) */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                        <label className="text-xs text-slate-500 w-28 text-right shrink-0 pt-1 sm:pt-0">
+                            Tercero
+                        </label>
+                        <div className="relative flex-1 w-full max-w-lg">
+                            
+                            {/* Caja del selector Select2 */}
+                            <div 
+                                onClick={() => setShowTerceroDropdown(!showTerceroDropdown)}
+                                className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 flex items-center justify-between cursor-pointer hover:border-sky-400 transition-colors"
+                            >
+                                <span className={selectedEps ? "text-slate-800 font-medium truncate" : "text-slate-400"}>
+                                    {selectedEps ? (epsList.find(t => t.value === selectedEps)?.label || selectedEps) : "Seleccione..."}
+                                </span>
+                                <div className="flex items-center gap-1.5 text-slate-400">
+                                    {selectedEps && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedEps("");
+                                                setSearchTerceroQuery("");
+                                                setShowTerceroDropdown(false);
+                                            }}
+                                            className="hover:text-rose-500 cursor-pointer font-bold text-xs"
+                                            title="Limpiar"
                                         >
-                                            <FiDownload className="w-3.5 h-3.5" />
-                                            <span>Descargar JSON</span>
+                                            ✕
                                         </button>
+                                    )}
+                                    <span className="text-[10px] transform rotate-90">›</span>
+                                </div>
+                            </div>
+
+                            {/* Dropdown flotante con buscador interno (Select2) */}
+                            {showTerceroDropdown && (
+                                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded shadow-lg z-50 overflow-hidden">
+                                    <div className="p-2 border-b border-slate-100 bg-slate-50">
+                                        <input
+                                            type="text"
+                                            autoFocus
+                                            placeholder=""
+                                            value={searchTerceroQuery}
+                                            onChange={(e) => setSearchTerceroQuery(e.target.value)}
+                                            className="w-full h-7 px-2.5 bg-white border border-slate-200 rounded text-xs outline-none focus:border-sky-500"
+                                        />
                                     </div>
-                                ))
-                            ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-600 text-center p-4">
-                                    <FiFileText className="w-8 h-8 stroke-[1.5] mb-2 text-slate-300 dark:text-slate-700" />
-                                    <p className="text-sm">Selecciona un rango de fechas y filtros para generar los archivos de RIPS.</p>
+                                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
+                                        {!searchTerceroQuery.trim() ? (
+                                            <div className="p-3 text-[11px] text-slate-400 italic">
+                                                Please enter 1 or more characters
+                                            </div>
+                                        ) : filteredTerceros.length === 0 ? (
+                                            <div className="p-3 text-xs text-slate-400 text-center italic">
+                                                No results found
+                                            </div>
+                                        ) : (
+                                            filteredTerceros.map((t, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    onClick={() => {
+                                                        setSelectedEps(t.value);
+                                                        setShowTerceroDropdown(false);
+                                                    }}
+                                                    className="px-3 py-2 text-xs hover:bg-sky-50 hover:text-sky-700 cursor-pointer transition-colors text-slate-700 font-medium"
+                                                >
+                                                    {t.label}
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
                     </div>
+
+                    {/* Row 5: Dual Listbox / Transfer List 1:1 OralDrive (Solo visible cuando se selecciona un Tercero / Paciente) */}
+                    {selectedEps && (
+                        <div className="pt-4 border-t border-slate-100 animate-in fade-in duration-200">
+                            <div className="grid grid-cols-1 md:grid-cols-11 gap-3 items-center">
+                                
+                                {/* Columna Izquierda: Facturas disponibles */}
+                                <div className="md:col-span-5">
+                                    <label className="text-xs text-slate-500 mb-1.5 block font-medium">
+                                        Facturas disponibles
+                                    </label>
+                                    <div className="w-full h-44 bg-white border border-slate-200 rounded p-1.5 overflow-y-auto divide-y divide-slate-100 text-xs">
+                                        {availableInvoices.length === 0 ? (
+                                            <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">
+                                                Sin facturas disponibles
+                                            </div>
+                                        ) : (
+                                            availableInvoices.map((inv, idx) => {
+                                                const idKey = `${inv._coleccion}::${inv.id}`;
+                                                const isChecked = checkedAvailable.has(idKey);
+                                                return (
+                                                    <label 
+                                                        key={idx} 
+                                                        className={`py-1.5 px-2 flex items-center gap-2 cursor-pointer hover:bg-slate-50 rounded transition-colors ${isChecked ? 'bg-sky-50' : ''}`}
+                                                    >
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {
+                                                                const next = new Set(checkedAvailable);
+                                                                if (next.has(idKey)) next.delete(idKey);
+                                                                else next.add(idKey);
+                                                                setCheckedAvailable(next);
+                                                            }}
+                                                            className="w-3.5 h-3.5 text-sky-600 rounded border-slate-300 cursor-pointer"
+                                                        />
+                                                        <div className="truncate text-slate-700">
+                                                            <span className="font-bold text-slate-800">{inv.numeroFactura || inv.consecutivo || inv.id}</span>
+                                                            <span className="text-slate-400 ml-1.5">({normalizeFecha(inv.fecha || inv.fechaFactura || inv.createdAt)})</span>
+                                                            <span className="text-slate-600 font-semibold ml-1.5">{fmt(inv.total || inv.monto || inv.valor || 0)}</span>
+                                                        </div>
+                                                    </label>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Columna Central: Opciones (Botones de traspaso) */}
+                                <div className="md:col-span-1 flex flex-col items-center justify-center gap-1.5 py-2">
+                                    <label className="text-[10px] text-slate-400 font-semibold uppercase mb-1 hidden md:block">
+                                        Opciones
+                                    </label>
+                                    <button
+                                        type="button"
+                                        title="Pasar todos a seleccionados"
+                                        onClick={handleTransferAllRight}
+                                        disabled={availableInvoices.length === 0}
+                                        className="w-8 h-7 bg-white border border-slate-200 hover:bg-slate-100 active:scale-95 disabled:opacity-40 rounded flex items-center justify-center text-xs font-bold text-slate-600 cursor-pointer shadow-2xs transition-all"
+                                    >
+                                        »
+                                    </button>
+                                    <button
+                                        type="button"
+                                        title="Pasar seleccionados a la derecha"
+                                        onClick={handleTransferSelectedRight}
+                                        disabled={checkedAvailable.size === 0}
+                                        className="w-8 h-7 bg-white border border-slate-200 hover:bg-slate-100 active:scale-95 disabled:opacity-40 rounded flex items-center justify-center text-xs font-bold text-slate-600 cursor-pointer shadow-2xs transition-all"
+                                    >
+                                        ›
+                                    </button>
+                                    <button
+                                        type="button"
+                                        title="Quitar seleccionados a la izquierda"
+                                        onClick={handleTransferSelectedLeft}
+                                        disabled={checkedSelected.size === 0}
+                                        className="w-8 h-7 bg-white border border-slate-200 hover:bg-slate-100 active:scale-95 disabled:opacity-40 rounded flex items-center justify-center text-xs font-bold text-slate-600 cursor-pointer shadow-2xs transition-all"
+                                    >
+                                        ‹
+                                    </button>
+                                    <button
+                                        type="button"
+                                        title="Quitar todos a disponibles"
+                                        onClick={handleTransferAllLeft}
+                                        disabled={selectedInvoices.length === 0}
+                                        className="w-8 h-7 bg-white border border-slate-200 hover:bg-slate-100 active:scale-95 disabled:opacity-40 rounded flex items-center justify-center text-xs font-bold text-slate-600 cursor-pointer shadow-2xs transition-all"
+                                    >
+                                        «
+                                    </button>
+                                </div>
+
+                                {/* Columna Derecha: Seleccionados */}
+                                <div className="md:col-span-5">
+                                    <label className="text-xs text-slate-500 mb-1.5 block font-medium">
+                                        Seleccionados
+                                    </label>
+                                    <div className="w-full h-44 bg-white border border-slate-200 rounded p-1.5 overflow-y-auto divide-y divide-slate-100 text-xs">
+                                        {selectedInvoices.length === 0 ? (
+                                            <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">
+                                                Sin facturas seleccionadas
+                                            </div>
+                                        ) : (
+                                            selectedInvoices.map((inv, idx) => {
+                                                const idKey = `${inv._coleccion}::${inv.id}`;
+                                                const isChecked = checkedSelected.has(idKey);
+                                                return (
+                                                    <label 
+                                                        key={idx} 
+                                                        className={`py-1.5 px-2 flex items-center gap-2 cursor-pointer hover:bg-slate-50 rounded transition-colors ${isChecked ? 'bg-sky-50' : ''}`}
+                                                    >
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {
+                                                                const next = new Set(checkedSelected);
+                                                                if (next.has(idKey)) next.delete(idKey);
+                                                                else next.add(idKey);
+                                                                setCheckedSelected(next);
+                                                            }}
+                                                            className="w-3.5 h-3.5 text-sky-600 rounded border-slate-300 cursor-pointer"
+                                                        />
+                                                        <div className="truncate text-slate-700">
+                                                            <span className="font-bold text-slate-800">{inv.numeroFactura || inv.consecutivo || inv.id}</span>
+                                                            <span className="text-slate-400 ml-1.5">({normalizeFecha(inv.fecha || inv.fechaFactura || inv.createdAt)})</span>
+                                                            <span className="text-slate-600 font-semibold ml-1.5">{fmt(inv.total || inv.monto || inv.valor || 0)}</span>
+                                                        </div>
+                                                    </label>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             </div>
 
-            {/* Validation Previews */}
+            {/* 5 Tablas Colapsables 1:1 OralDrive (Solo visibles después de darle Buscar) */}
             {searched && (
-                <div className="space-y-8 animate-in fade-in duration-500">
+                <div className="space-y-4 w-full mt-6 animate-in fade-in duration-300">
                     
-                    {/* Documentos DIAN */}
-                    <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Documentos DIAN & Factura</h3>
-                            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                                Total: {dianDocs.length}
-                            </span>
+                    {/* 1. Documentos DIAN */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div 
+                            onClick={() => setOpenDian(!openDian)}
+                            className="px-4 py-3 bg-white hover:bg-slate-50 flex items-center justify-between cursor-pointer border-b border-slate-100 transition-colors"
+                        >
+                            <div className="flex items-center gap-2 font-semibold text-xs text-slate-700">
+                                <span>Documentos DIAN</span>
+                                <span className="text-[10px] text-slate-400 font-bold">{openDian ? '▲' : '▼'}</span>
+                            </div>
+                            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <button title="Exportar a Excel" onClick={exportDianExcel} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer"><FiFileText size={13} /></button>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Buscar..."
+                                        value={filterTextDian}
+                                        onChange={e => setFilterTextDian(e.target.value)}
+                                        className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
+                                    />
+                                </div>
+                            </div>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-slate-50/20 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        <th className="px-6 py-4 pl-8 w-24">Estado</th>
-                                        <th className="px-6 py-4">Número de Factura</th>
-                                        <th className="px-6 py-4">Paciente</th>
-                                        <th className="px-6 py-4">Tipo Documento</th>
-                                        <th className="px-6 py-4">CUFE</th>
-                                        <th className="px-6 py-4">Observaciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
-                                    {dianDocs.length === 0 ? (
-                                        <tr>
-                                            <td colSpan="6" className="px-8 py-10 text-center text-slate-400 italic">Sin datos</td>
-                                        </tr>
-                                    ) : (
-                                        dianDocs.map(doc => (
-                                            <tr key={doc.id} className="hover:bg-slate-50/30 transition-colors">
-                                                <td className="px-6 py-4 pl-8">
-                                                    <span className={`w-2.5 h-2.5 rounded-full inline-block ${doc.errors.length === 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} title={doc.errors.join(", ") || "Validación Res. 2275 Exitosa"} />
-                                                </td>
-                                                <td className="px-6 py-4 font-bold text-slate-800 uppercase tracking-tight">{doc.id}</td>
-                                                <td className="px-6 py-4 font-semibold text-slate-500">{doc.paciente}</td>
-                                                <td className="px-6 py-4 font-semibold text-slate-500">Factura Electrónica de Venta</td>
-                                                <td className="px-6 py-4 font-mono text-xs text-slate-400">{doc.cufe}</td>
-                                                <td className="px-6 py-4 text-xs font-semibold text-rose-500">
-                                                    {doc.errors.length > 0 ? doc.errors.join("; ") : <span className="text-emerald-600 font-bold">Válido Res. 2275</span>}
-                                                </td>
+                        {openDian && (
+                            <div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3">Estado</th>
+                                                <th className="py-2 px-3">Número de la factura</th>
+                                                <th className="py-2 px-3">Tipo de nota</th>
+                                                <th className="py-2 px-3">CUV</th>
+                                                <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                        <div className="bg-slate-50/80 px-8 py-3 border-t border-slate-100 flex gap-6 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                            <span>Validado correctamente: <strong className="text-emerald-600 font-black">{dianDocs.filter(d => d.errors.length === 0).length}</strong></span>
-                            <span>Validado con observaciones: <strong className="text-rose-600 font-black">{dianDocs.filter(d => d.errors.length > 0).length}</strong></span>
-                        </div>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
+                                            {dianDocs.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="6" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                </tr>
+                                            ) : (
+                                                dianDocs.map((doc, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50/60">
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3">
+                                                            <span className={`w-2 h-2 rounded-full inline-block ${doc.errors.length === 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                                                        </td>
+                                                        <td className="py-2 px-3 font-bold">{doc.id}</td>
+                                                        <td className="py-2 px-3 text-slate-500">Factura Electrónica</td>
+                                                        <td className="py-2 px-3 font-mono text-[11px] text-slate-400">{doc.cufe}</td>
+                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
+                                    <span>Validado correctamente: <strong className="text-slate-700">{dianDocs.filter(d => d.errors.length === 0).length}</strong></span>
+                                    <span>Validado con errores: <strong className="text-slate-700">{dianDocs.filter(d => d.errors.length > 0).length}</strong></span>
+                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Usuarios */}
-                    <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Usuarios (Pacientes)</h3>
-                            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                                Total: {usuarios.length}
-                            </span>
+                    {/* 2. Usuarios */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div 
+                            onClick={() => setOpenUsuarios(!openUsuarios)}
+                            className="px-4 py-3 bg-white hover:bg-slate-50 flex items-center justify-between cursor-pointer border-b border-slate-100 transition-colors"
+                        >
+                            <div className="flex items-center gap-2 font-semibold text-xs text-slate-700">
+                                <span>Usuarios</span>
+                                <span className="text-[10px] text-slate-400 font-bold">{openUsuarios ? '▲' : '▼'}</span>
+                            </div>
+                            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <button title="Exportar a Excel" onClick={exportUsuariosExcel} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer"><FiFileText size={13} /></button>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Buscar..."
+                                        value={filterTextUsuarios}
+                                        onChange={e => setFilterTextUsuarios(e.target.value)}
+                                        className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
+                                    />
+                                </div>
+                            </div>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-slate-50/20 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        <th className="px-6 py-4 pl-8 w-24">Estado</th>
-                                        <th className="px-6 py-4">Tipo Identificación</th>
-                                        <th className="px-6 py-4">Nro. Identificación</th>
-                                        <th className="px-6 py-4">Nombres y Apellidos</th>
-                                        <th className="px-6 py-4">Tipo Usuario</th>
-                                        <th className="px-6 py-4">F. Nacimiento</th>
-                                        <th className="px-6 py-4 text-center">Sexo</th>
-                                        <th className="px-6 py-4 text-center">Incapacidad</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
-                                    {usuarios.length === 0 ? (
-                                        <tr>
-                                            <td colSpan="8" className="px-8 py-10 text-center text-slate-400 italic">Sin datos</td>
-                                        </tr>
-                                    ) : (
-                                        usuarios.map((u, i) => (
-                                            <tr key={i} className="hover:bg-slate-50/30 transition-colors">
-                                                <td className="px-6 py-4 pl-8">
-                                                    <span className={`w-2.5 h-2.5 rounded-full inline-block ${u.errors.length === 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} title={u.errors.join(", ") || "Válido"} />
-                                                </td>
-                                                <td className="px-6 py-4 font-bold text-slate-500">{u.tipoDocumentoIdentificacion}</td>
-                                                <td className="px-6 py-4 font-bold text-slate-800">{u.numDocumentoIdentificacion}</td>
-                                                <td className="px-6 py-4 font-bold text-slate-700 uppercase tracking-tight">{u.primerNombre} {u.segundoNombre} {u.primerApellido} {u.segundoApellido}</td>
-                                                <td className="px-6 py-4 font-semibold text-slate-500">{u.tipoUsuario}</td>
-                                                <td className="px-6 py-4 font-semibold text-slate-500 font-mono">{u.fechaNacimiento}</td>
-                                                <td className="px-6 py-4 text-center font-bold text-slate-600">{u.codSexo}</td>
-                                                <td className="px-6 py-4 text-center font-semibold text-slate-500 font-mono">{u.incapacidad}</td>
+                        {openUsuarios && (
+                            <div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3">Tipo de documento Identificación</th>
+                                                <th className="py-2 px-3">Nro. documento de Identificación</th>
+                                                <th className="py-2 px-3">Tipo de Usuario</th>
+                                                <th className="py-2 px-3">Fecha de nacimiento</th>
+                                                <th className="py-2 px-3">Cód. Sexo</th>
+                                                <th className="py-2 px-3">Cód. país de residencia</th>
+                                                <th className="py-2 px-3">Cód. Municipio residencia</th>
+                                                <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                        <div className="bg-slate-50/80 px-8 py-3 border-t border-slate-100 flex gap-6 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                            <span>Validado correctamente: <strong className="text-emerald-600 font-black">{usuarios.filter(u => u.errors.length === 0).length}</strong></span>
-                            <span>Validado con observaciones: <strong className="text-rose-600 font-black">{usuarios.filter(u => u.errors.length > 0).length}</strong></span>
-                        </div>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
+                                            {usuarios.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="9" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                </tr>
+                                            ) : (
+                                                usuarios.map((u, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50/60">
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3">{u.tipoDocumentoIdentificacion}</td>
+                                                        <td className="py-2 px-3 font-bold">{u.numDocumentoIdentificacion}</td>
+                                                        <td className="py-2 px-3">{u.tipoUsuario}</td>
+                                                        <td className="py-2 px-3 font-mono">{u.fechaNacimiento}</td>
+                                                        <td className="py-2 px-3 text-center font-bold">{u.codSexo}</td>
+                                                        <td className="py-2 px-3">170 (Colombia)</td>
+                                                        <td className="py-2 px-3 font-mono">{u.codMunicipioResidencia}</td>
+                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
+                                    <span>Validado correctamente: <strong className="text-slate-700">{usuarios.filter(u => u.errors.length === 0).length}</strong></span>
+                                    <span>Validado con errores: <strong className="text-slate-700">{usuarios.filter(u => u.errors.length > 0).length}</strong></span>
+                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Consultas */}
-                    <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Servicios: Consultas</h3>
-                            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                                Total: {consultas.length}
-                            </span>
+                    {/* 3. Consultas */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div 
+                            onClick={() => setOpenConsultas(!openConsultas)}
+                            className="px-4 py-3 bg-white hover:bg-slate-50 flex items-center justify-between cursor-pointer border-b border-slate-100 transition-colors"
+                        >
+                            <div className="flex items-center gap-2 font-semibold text-xs text-slate-700">
+                                <span>Consultas</span>
+                                <span className="text-[10px] text-slate-400 font-bold">{openConsultas ? '▲' : '▼'}</span>
+                            </div>
+                            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <button title="Exportar a Excel" onClick={exportConsultasExcel} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer"><FiFileText size={13} /></button>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Buscar..."
+                                        value={filterTextConsultas}
+                                        onChange={e => setFilterTextConsultas(e.target.value)}
+                                        className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
+                                    />
+                                </div>
+                            </div>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-slate-50/20 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        <th className="px-6 py-4 pl-8 w-24">Estado</th>
-                                        <th className="px-6 py-4">Doc. Paciente</th>
-                                        <th className="px-6 py-4">Factura</th>
-                                        <th className="px-6 py-4">Cód. Prestador REPS</th>
-                                        <th className="px-6 py-4">Fecha Consulta</th>
-                                        <th className="px-6 py-4">Código CUPS</th>
-                                        <th className="px-6 py-4">Dx Principal (CIE-10)</th>
-                                        <th className="px-6 py-4 text-right pr-8">Valor</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
-                                    {consultas.length === 0 ? (
-                                        <tr>
-                                            <td colSpan="8" className="px-8 py-10 text-center text-slate-400 italic">Sin datos</td>
-                                        </tr>
-                                    ) : (
-                                        consultas.map((c, i) => (
-                                            <tr key={i} className="hover:bg-slate-50/30 transition-colors">
-                                                <td className="px-6 py-4 pl-8">
-                                                    <span className={`w-2.5 h-2.5 rounded-full inline-block ${c.errors.length === 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} title={c.errors.join(", ") || "Válido"} />
-                                                </td>
-                                                <td className="px-6 py-4 font-bold text-slate-800">{c.docPaciente}</td>
-                                                <td className="px-6 py-4 font-bold text-slate-500">{c.invoiceId}</td>
-                                                <td className="px-6 py-4 font-mono text-slate-400 text-xs">{c.codPrestador}</td>
-                                                <td className="px-6 py-4 font-semibold text-slate-500 font-mono">{c.fechaInicio}</td>
-                                                <td className="px-6 py-4 font-black text-blue-600 font-mono">{c.codConsulta}</td>
-                                                <td className="px-6 py-4 font-black text-emerald-600 font-mono">{c.dxPrincipal}</td>
-                                                <td className="px-6 py-4 text-right font-black text-slate-900 font-mono pr-8">{fmt(c.valorServicio)}</td>
+                        {openConsultas && (
+                            <div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3">Estado</th>
+                                                <th className="py-2 px-3">Identificación del paciente</th>
+                                                <th className="py-2 px-3">Número de la factura</th>
+                                                <th className="py-2 px-3">Código del Prestador</th>
+                                                <th className="py-2 px-3">Fecha de Consulta</th>
+                                                <th className="py-2 px-3">Nro. de Autorización</th>
+                                                <th className="py-2 px-3">Código de la consulta</th>
+                                                <th className="py-2 px-3">Modalidad</th>
+                                                <th className="py-2 px-3">Grupo de Servicios</th>
+                                                <th className="py-2 px-3">Cód. Servicio</th>
+                                                <th className="py-2 px-3">Finalidad</th>
+                                                <th className="py-2 px-3">Causa Externa</th>
+                                                <th className="py-2 px-3">Cód. Diagnóstico Principal</th>
+                                                <th className="py-2 px-3">Tipo Diagnóstico Principal</th>
+                                                <th className="py-2 px-3">Tipo Identificación del Profesional</th>
+                                                <th className="py-2 px-3">Nro. Identificación del Profesional</th>
+                                                <th className="py-2 px-3 text-right">Valor de la consulta</th>
+                                                <th className="py-2 px-3">Concepto recaudo</th>
+                                                <th className="py-2 px-3 text-right">Valor pago moderador</th>
+                                                <th className="py-2 px-3">Número de Factura pago moderador</th>
+                                                <th className="py-2 px-3">CUV</th>
+                                                <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
+                                            {consultas.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="23" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                </tr>
+                                            ) : (
+                                                consultas.map((c, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50/60">
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3">
+                                                            <span className={`w-2 h-2 rounded-full inline-block ${c.errors.length === 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                                                        </td>
+                                                        <td className="py-2 px-3 font-bold">{c.docPaciente}</td>
+                                                        <td className="py-2 px-3">{c.invoiceId}</td>
+                                                        <td className="py-2 px-3 font-mono text-slate-500">{c.codPrestador}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.fechaInicio}</td>
+                                                        <td className="py-2 px-3 text-slate-400">{c.numAutorizacion || '-'}</td>
+                                                        <td className="py-2 px-3 font-bold text-sky-600 font-mono">{c.codConsulta}</td>
+                                                        <td className="py-2 px-3">{c.modalidadGrupoServicioTecSal || '01'}</td>
+                                                        <td className="py-2 px-3">{c.grupoServicios || '01'}</td>
+                                                        <td className="py-2 px-3">{c.codServicio || '360'}</td>
+                                                        <td className="py-2 px-3">{c.finalidadTecnologiaSalud || '10'}</td>
+                                                        <td className="py-2 px-3">{c.causaMotivoAtencion || '38'}</td>
+                                                        <td className="py-2 px-3 font-mono font-bold text-emerald-600">{c.dxPrincipal}</td>
+                                                        <td className="py-2 px-3">01</td>
+                                                        <td className="py-2 px-3">CC</td>
+                                                        <td className="py-2 px-3 font-mono">64576359</td>
+                                                        <td className="py-2 px-3 text-right font-bold">{fmt(c.valorServicio)}</td>
+                                                        <td className="py-2 px-3">05</td>
+                                                        <td className="py-2 px-3 text-right font-mono">{fmt(c.valorPagoModerador || 0)}</td>
+                                                        <td className="py-2 px-3">{c.numFEVPagoModerador || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono text-slate-400">-</td>
+                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
+                                    <span>Validado correctamente: <strong className="text-slate-700">{consultas.filter(c => c.errors.length === 0).length}</strong></span>
+                                    <span>Validado con errores: <strong className="text-slate-700">{consultas.filter(c => c.errors.length > 0).length}</strong></span>
+                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Procedimientos */}
-                    <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Servicios: Procedimientos</h3>
-                            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                                Total: {procedimientos.length}
-                            </span>
+                    {/* 4. Procedimientos */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div 
+                            onClick={() => setOpenProcedimientos(!openProcedimientos)}
+                            className="px-4 py-3 bg-white hover:bg-slate-50 flex items-center justify-between cursor-pointer border-b border-slate-100 transition-colors"
+                        >
+                            <div className="flex items-center gap-2 font-semibold text-xs text-slate-700">
+                                <span>Procedimientos</span>
+                                <span className="text-[10px] text-slate-400 font-bold">{openProcedimientos ? '▲' : '▼'}</span>
+                            </div>
+                            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <button title="Exportar a Excel" onClick={exportProcedimientosExcel} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer"><FiFileText size={13} /></button>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Buscar..."
+                                        value={filterTextProcedimientos}
+                                        onChange={e => setFilterTextProcedimientos(e.target.value)}
+                                        className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
+                                    />
+                                </div>
+                            </div>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-slate-50/20 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        <th className="px-6 py-4 pl-8 w-24">Estado</th>
-                                        <th className="px-6 py-4">Doc. Paciente</th>
-                                        <th className="px-6 py-4">Factura</th>
-                                        <th className="px-6 py-4">Cód. Prestador REPS</th>
-                                        <th className="px-6 py-4">Fecha Procedimiento</th>
-                                        <th className="px-6 py-4">Código CUPS</th>
-                                        <th className="px-6 py-4">Dx Principal (CIE-10)</th>
-                                        <th className="px-6 py-4 text-right pr-8">Valor</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
-                                    {procedimientos.length === 0 ? (
-                                        <tr>
-                                            <td colSpan="8" className="px-8 py-10 text-center text-slate-400 italic">Sin datos</td>
-                                        </tr>
-                                    ) : (
-                                        procedimientos.map((p, i) => (
-                                            <tr key={i} className="hover:bg-slate-50/30 transition-colors">
-                                                <td className="px-6 py-4 pl-8">
-                                                    <span className={`w-2.5 h-2.5 rounded-full inline-block ${p.errors.length === 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} title={p.errors.join(", ") || "Válido"} />
-                                                </td>
-                                                <td className="px-6 py-4 font-bold text-slate-800">{p.docPaciente}</td>
-                                                <td className="px-6 py-4 font-bold text-slate-500">{p.invoiceId}</td>
-                                                <td className="px-6 py-4 font-mono text-slate-400 text-xs">{p.codPrestador}</td>
-                                                <td className="px-6 py-4 font-semibold text-slate-500 font-mono">{p.fechaProcedimiento}</td>
-                                                <td className="px-6 py-4 font-black text-blue-600 font-mono">{p.codProcedimiento}</td>
-                                                <td className="px-6 py-4 font-black text-emerald-600 font-mono">{p.dxPrincipal}</td>
-                                                <td className="px-6 py-4 text-right font-black text-slate-900 font-mono pr-8">{fmt(p.valorServicio)}</td>
+                        {openProcedimientos && (
+                            <div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3">Estado</th>
+                                                <th className="py-2 px-3">Nro. Identificación del paciente</th>
+                                                <th className="py-2 px-3">Número de la factura</th>
+                                                <th className="py-2 px-3">Código del Prestador</th>
+                                                <th className="py-2 px-3">Fecha de Procedimiento</th>
+                                                <th className="py-2 px-3">Nro. de Autorización</th>
+                                                <th className="py-2 px-3">Código del Procedimiento</th>
+                                                <th className="py-2 px-3">Vía de ingreso</th>
+                                                <th className="py-2 px-3">Modalidad</th>
+                                                <th className="py-2 px-3">Grupo de Servicios</th>
+                                                <th className="py-2 px-3">Cód. Servicio</th>
+                                                <th className="py-2 px-3">Finalidad</th>
+                                                <th className="py-2 px-3">Personal que atiende</th>
+                                                <th className="py-2 px-3">Cód. Diagnóstico Principal</th>
+                                                <th className="py-2 px-3">Cód. Diagnóstico Relacionado</th>
+                                                <th className="py-2 px-3">Cód. Complicación</th>
+                                                <th className="py-2 px-3">Forma realización acto quirúrgico</th>
+                                                <th className="py-2 px-3">Tipo Identificación del Profesional</th>
+                                                <th className="py-2 px-3">Nro. Identificación del Profesional</th>
+                                                <th className="py-2 px-3 text-right">Valor del procedimiento</th>
+                                                <th className="py-2 px-3">Concepto recaudo</th>
+                                                <th className="py-2 px-3 text-right">Valor pago moderador</th>
+                                                <th className="py-2 px-3">Número de Factura pago moderador</th>
+                                                <th className="py-2 px-3">CUV</th>
+                                                <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
+                                            {procedimientos.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="26" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                </tr>
+                                            ) : (
+                                                procedimientos.map((p, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50/60">
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3">
+                                                            <span className={`w-2 h-2 rounded-full inline-block ${p.errors.length === 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                                                        </td>
+                                                        <td className="py-2 px-3 font-bold">{p.docPaciente}</td>
+                                                        <td className="py-2 px-3">{p.invoiceId}</td>
+                                                        <td className="py-2 px-3 font-mono text-slate-500">{p.codPrestador}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.fechaProcedimiento}</td>
+                                                        <td className="py-2 px-3 text-slate-400">{p.numAutorizacion || '-'}</td>
+                                                        <td className="py-2 px-3 font-bold text-sky-600 font-mono">{p.codProcedimiento}</td>
+                                                        <td className="py-2 px-3">{p.viaIngresoServicioSalud || '01'}</td>
+                                                        <td className="py-2 px-3">{p.modalidadGrupoServicioTecSal || '01'}</td>
+                                                        <td className="py-2 px-3">{p.grupoServicios || '02'}</td>
+                                                        <td className="py-2 px-3">{p.codServicio || '360'}</td>
+                                                        <td className="py-2 px-3">{p.finalidadTecnologiaSalud || '10'}</td>
+                                                        <td className="py-2 px-3">{p.tipoPersonal || '01'}</td>
+                                                        <td className="py-2 px-3 font-mono font-bold text-emerald-600">{p.dxPrincipal}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.codDiagnosticoRelacionado || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.codComplicacion || '-'}</td>
+                                                        <td className="py-2 px-3">{p.formaRealizacionActoQuirurgico || '01'}</td>
+                                                        <td className="py-2 px-3">CC</td>
+                                                        <td className="py-2 px-3 font-mono">64576359</td>
+                                                        <td className="py-2 px-3 text-right font-bold">{fmt(p.valorServicio)}</td>
+                                                        <td className="py-2 px-3">05</td>
+                                                        <td className="py-2 px-3 text-right font-mono">{fmt(p.valorPagoModerador || 0)}</td>
+                                                        <td className="py-2 px-3">{p.numFEVPagoModerador || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono text-slate-400">-</td>
+                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
+                                    <span>Validado correctamente: <strong className="text-slate-700">{procedimientos.filter(p => p.errors.length === 0).length}</strong></span>
+                                    <span>Validado con errores: <strong className="text-slate-700">{procedimientos.filter(p => p.errors.length > 0).length}</strong></span>
+                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 5. Otros Servicios */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div 
+                            onClick={() => setOpenOtrosServicios(!openOtrosServicios)}
+                            className="px-4 py-3 bg-white hover:bg-slate-50 flex items-center justify-between cursor-pointer border-b border-slate-100 transition-colors"
+                        >
+                            <div className="flex items-center gap-2 font-semibold text-xs text-slate-700">
+                                <span>Otros Servicios</span>
+                                <span className="text-[10px] text-slate-400 font-bold">{openOtrosServicios ? '▲' : '▼'}</span>
+                            </div>
+                            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <button title="Exportar a Excel" onClick={exportOtrosServiciosExcel} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer"><FiFileText size={13} /></button>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Buscar..."
+                                        value={filterTextOtros}
+                                        onChange={e => setFilterTextOtros(e.target.value)}
+                                        className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
+                                    />
+                                </div>
+                            </div>
                         </div>
+                        {openOtrosServicios && (
+                            <div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3">Estado</th>
+                                                <th className="py-2 px-3">Nro. Identificación del paciente</th>
+                                                <th className="py-2 px-3">Número de la factura</th>
+                                                <th className="py-2 px-3">Código del Prestador</th>
+                                                <th className="py-2 px-3">Fecha de Otro Servicio</th>
+                                                <th className="py-2 px-3">Nro. de Autorización</th>
+                                                <th className="py-2 px-3">Código del Otro Servicio</th>
+                                                <th className="py-2 px-3">Tipo de Otro Servicio</th>
+                                                <th className="py-2 px-3">Tipo Identificación del Profesional</th>
+                                                <th className="py-2 px-3">Nro. Identificación del Profesional</th>
+                                                <th className="py-2 px-3 text-right">Valor unitario del servicio</th>
+                                                <th className="py-2 px-3 text-center">Cantidad del servicio</th>
+                                                <th className="py-2 px-3 text-right">Valor del servicio</th>
+                                                <th className="py-2 px-3">Concepto recaudo</th>
+                                                <th className="py-2 px-3 text-right">Valor pago moderador</th>
+                                                <th className="py-2 px-3">Número de Factura pago moderador</th>
+                                                <th className="py-2 px-3">CUV</th>
+                                                <th className="py-2 px-3 text-center">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
+                                            <tr>
+                                                <td colSpan="19" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
+                                    <span>Validado correctamente: <strong className="text-slate-700">0</strong></span>
+                                    <span>Validado con errores: <strong className="text-slate-700">0</strong></span>
+                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                 </div>
             )}
+
         </div>
     );
 }

@@ -103,7 +103,7 @@ export default function Reportes() {
           </div>
 
           {/* Vista del reporte a pantalla completa */}
-          <div className="flex-1 overflow-hidden flex flex-col p-4 md:p-5">
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col bg-[#f4f7fb]">
             {selectedReport === "indicadores" && <Indicadores />}
             {selectedReport === "pacientes" && <ReportePacientes />}
             {selectedReport === "planes_tratamiento" && <ReportePlanesTratamiento />}

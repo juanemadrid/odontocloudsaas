@@ -128,7 +128,27 @@ export default function ReportarResiduos() {
                 created_at: new Date().toISOString()
             };
 
-            setLogs(prev => [inserted, ...prev]);
+            try {
+                await supabase.from("registro_residuos").insert([reportItem]);
+            } catch (e) {}
+
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", inquilino)
+                .maybeSingle();
+
+            const currentConfig = cfgRow?.config || {};
+            const currentList = Array.isArray(currentConfig.registro_residuos) ? currentConfig.registro_residuos : logs;
+            const updatedList = [reportItem, ...currentList];
+
+            await supabase.from("website_config").upsert(
+                { tenant_id: inquilino, config: { ...currentConfig, registro_residuos: updatedList } },
+                { onConflict: "tenant_id" }
+            );
+
+            toast.success("Reporte de residuo guardado con éxito");
+            setLogs(prev => [reportItem, ...prev]);
             setShowModal(false);
         } catch (err) {
             console.error("Error saving residue report:", err);
@@ -141,7 +161,25 @@ export default function ReportarResiduos() {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este reporte de residuo?")) return;
         try {
-            await supabase.from("registro_residuos").delete().eq("id", id);
+            try {
+                await supabase.from("registro_residuos").delete().eq("id", id);
+            } catch (e) {}
+
+            const { data: cfgRow } = await supabase
+                .from("website_config")
+                .select("config")
+                .eq("tenant_id", inquilino)
+                .maybeSingle();
+
+            const currentConfig = cfgRow?.config || {};
+            const currentList = Array.isArray(currentConfig.registro_residuos) ? currentConfig.registro_residuos : logs;
+            const updatedList = currentList.filter(l => l.id !== id);
+
+            await supabase.from("website_config").upsert(
+                { tenant_id: inquilino, config: { ...currentConfig, registro_residuos: updatedList } },
+                { onConflict: "tenant_id" }
+            );
+
             toast.success("Reporte de residuo eliminado");
             setLogs(prev => prev.filter(l => l.id !== id));
         } catch (e) {
@@ -160,41 +198,43 @@ export default function ReportarResiduos() {
             const name = (log.residuoNombre || "").toLowerCase();
             const term = searchTerm.toLowerCase();
             return name.includes(term);
-        }).sort((a, b) => b.fechaHora.localeCompare(a.fechaHora));
+        }).sort((a, b) => (b.fechaHora || "").localeCompare(a.fechaHora || ""));
     }, [logs, appliedRange, searchTerm]);
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Upper filter card (OralDrive style) */}
-            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
-                <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-                    <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Fecha Inicial</label>
+        <div className="space-y-4 animate-in fade-in duration-300 font-sans text-slate-800">
+            {/* Upper filter card */}
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <form onSubmit={handleSearch} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-semibold text-slate-600">Fecha inicial</label>
                         <div className="relative">
                             <input
                                 type="date"
                                 value={dateRange.start}
                                 onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                                className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                             max="9999-12-31" min="1900-01-01" />
-                            <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                className="w-full h-8 px-3 pl-8 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
+                                max="9999-12-31" min="1900-01-01" 
+                            />
+                            <FiCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                         </div>
                     </div>
-                    <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Fecha Final</label>
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-semibold text-slate-600">Fecha final</label>
                         <div className="relative">
                             <input
                                 type="date"
                                 value={dateRange.end}
                                 onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                                className="w-full h-11 px-4 pl-11 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                             max="9999-12-31" min="1900-01-01" />
-                            <FiCalendar className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                                className="w-full h-8 px-3 pl-8 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
+                                max="9999-12-31" min="1900-01-01" 
+                            />
+                            <FiCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                         </div>
                     </div>
                     <button
                         type="submit"
-                        className="h-11 px-8 flex items-center justify-center bg-[#8cc33f] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95"
+                        className="h-8 px-4 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer"
                     >
                         Buscar
                     </button>
@@ -202,97 +242,100 @@ export default function ReportarResiduos() {
             </div>
 
             {/* Lower table card */}
-            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm space-y-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="relative w-full max-w-md">
-                        <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="relative w-full max-w-sm">
+                        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                         <input
                             type="text"
-                            placeholder="Buscar..."
-                            className="w-full h-10 pl-11 pr-4 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-600 outline-none focus:bg-white focus:border-blue-500 transition-all"
+                            placeholder="Buscar en reportes..."
+                            className="w-full h-8 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
                     </div>
                     <button
                         onClick={handleOpenAdd}
-                        className="h-10 px-6 flex items-center justify-center bg-[#8cc33f] text-white rounded-full text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95 shrink-0"
+                        className="h-8 px-3.5 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer gap-1.5"
                     >
+                        <FiPlusCircle size={13} />
                         Reportar
                     </button>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <th className="px-6 py-4 pl-8">Fecha hora ingreso</th>
-                                <th className="px-6 py-4">Tipo de residuo</th>
-                                <th className="px-6 py-4">Peso (kg)</th>
-                                <th className="px-6 py-4 text-center pr-8 w-28">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
-                            {loading ? (
-                                <tr>
-                                    <td colSpan="4" className="px-8 py-10 text-center">
-                                        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                                    </td>
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
+                                    <th className="py-2.5 px-3">Fecha hora ingreso</th>
+                                    <th className="py-2.5 px-3">Tipo de residuo</th>
+                                    <th className="py-2.5 px-3 text-center">Peso (kg)</th>
+                                    <th className="py-2.5 px-3 text-center w-24">Acciones</th>
                                 </tr>
-                            ) : filteredLogs.length === 0 ? (
-                                <tr>
-                                    <td colSpan="4" className="px-8 py-14 text-center text-slate-400 italic">
-                                        No se encontraron registros de residuos en este periodo.
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredLogs.map(log => (
-                                    <tr key={log.id} className="hover:bg-slate-50/30 transition-colors">
-                                        <td className="px-6 py-4 pl-8 font-semibold text-slate-500 font-mono">{log.fechaHora}</td>
-                                        <td className="px-6 py-4 font-black text-slate-800 uppercase tracking-tight">{log.residuoNombre}</td>
-                                        <td className="px-6 py-4 font-black text-blue-600 font-mono">{log.cantidad.toFixed(2)}</td>
-                                        <td className="px-6 py-4 text-center pr-8">
-                                            <button
-                                                onClick={() => handleDelete(log.id)}
-                                                className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-all shadow-sm mx-auto"
-                                                title="Eliminar"
-                                            >
-                                                <FiTrash2 size={13} />
-                                            </button>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan="4" className="py-16 text-center">
+                                            <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
                                         </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                ) : filteredLogs.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="4" className="py-16 text-center text-slate-400 italic text-xs">
+                                            No se encontraron registros de residuos en este periodo.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredLogs.map(log => (
+                                        <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                                            <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">{log.fechaHora}</td>
+                                            <td className="py-2.5 px-3 font-bold text-slate-800">{log.residuoNombre}</td>
+                                            <td className="py-2.5 px-3 text-center font-bold font-mono text-emerald-600">{Number(log.cantidad || 0).toFixed(2)}</td>
+                                            <td className="py-2.5 px-3 text-center">
+                                                <button
+                                                    onClick={() => handleDelete(log.id)}
+                                                    className="w-7 h-7 rounded-lg bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-colors border border-slate-200 cursor-pointer mx-auto"
+                                                    title="Eliminar"
+                                                >
+                                                    <FiTrash2 size={12} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             {/* Modal Dialog */}
             {showModal && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[1000] animate-in fade-in duration-200">
-                    <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[1000] animate-in fade-in duration-200 p-4">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
                         {/* Header */}
-                        <div className="px-6 py-5 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
+                        <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
+                            <h3 className="text-xs font-bold text-slate-800">
                                 Nuevo reporte
                             </h3>
                             <button
                                 onClick={() => setShowModal(false)}
-                                className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-100 flex items-center justify-center transition-all"
+                                className="w-6 h-6 rounded-lg text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
                             >
-                                <FiX size={16} />
+                                <FiX size={14} />
                             </button>
                         </div>
 
                         {/* Form */}
-                        <form onSubmit={handleSave} className="p-8 space-y-6">
+                        <form onSubmit={handleSave} className="p-4 space-y-3.5">
                             {/* Fecha Hora */}
-                            <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Fecha hora ingreso *</label>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[11px] font-semibold text-slate-600">Fecha y hora ingreso *</label>
                                 <input
                                     type="text"
-                                    className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                                    className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                                     value={fechaHora}
                                     onChange={e => setFechaHora(e.target.value)}
                                     required
@@ -300,28 +343,28 @@ export default function ReportarResiduos() {
                             </div>
 
                             {/* Tipo de residuo */}
-                            <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tipo de residuo *</label>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[11px] font-semibold text-slate-600">Tipo de residuo *</label>
                                 <select
                                     value={selectedTypeId}
                                     onChange={e => setSelectedTypeId(e.target.value)}
-                                    className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all cursor-pointer"
+                                    className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors cursor-pointer"
                                     required
                                 >
                                     <option value="">Seleccione...</option>
                                     {types.map(t => (
-                                        <option key={t.id} value={t.id}>{t.nombre.toUpperCase()}</option>
+                                        <option key={t.id} value={t.id}>{t.nombre}</option>
                                     ))}
                                 </select>
                             </div>
 
                             {/* Peso */}
-                            <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Peso(kg) *</label>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[11px] font-semibold text-slate-600">Peso (kg) *</label>
                                 <input
                                     type="number"
                                     step="0.01"
-                                    className="w-full h-11 px-4 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                                    className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                                     value={peso}
                                     onChange={e => setPeso(e.target.value)}
                                     required
@@ -329,18 +372,18 @@ export default function ReportarResiduos() {
                             </div>
 
                             {/* Actions */}
-                            <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                            <div className="pt-2 border-t border-slate-100 flex justify-end gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setShowModal(false)}
-                                    className="h-10 px-6 rounded-full text-xs font-black uppercase tracking-widest text-slate-400 border border-slate-200 hover:bg-slate-50 transition-all active:scale-95"
+                                    className="h-8 px-3.5 rounded-lg text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
                                 >
                                     Cerrar
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={saving || types.length === 0}
-                                    className="h-10 px-8 rounded-full text-xs font-black uppercase tracking-widest text-white bg-[#8cc33f] hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95"
+                                    className="h-8 px-4 rounded-lg text-xs font-semibold text-white bg-[#7cb342] hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                                 >
                                     {saving ? "Guardando..." : "Guardar"}
                                 </button>
