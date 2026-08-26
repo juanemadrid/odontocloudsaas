@@ -607,7 +607,7 @@ export default function PagoTab({ patient }) {
                             </div>
                             <button 
                                 onClick={handleAddCredit}
-                                className="w-full sm:w-auto px-6 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                                className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                             >
                                 <FiPlusCircle size={15} strokeWidth={2.5} /> Adicionar saldo a favor
                             </button>

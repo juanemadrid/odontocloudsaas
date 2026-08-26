@@ -180,59 +180,61 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             {/* Backdrop */}
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs animate-fadeIn" onClick={onClose} />
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-fadeIn" onClick={onClose} />
             
             {/* Modal Content */}
-            <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden animate-zoomIn border border-slate-100 max-h-[90vh] flex flex-col">
+            <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-zoomIn border border-slate-200/80 max-h-[90vh] flex flex-col">
                 
                 {/* Header */}
-                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/70 shrink-0">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-[#8CC63F]/10 text-[#8CC63F] flex items-center justify-center">
-                            <FiPlusCircle size={18} />
+                        <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                            <FiDollarSign size={18} />
                         </div>
                         <div>
-                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Adicionar Saldo a Favor</h3>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Recibo de caja / Ingreso adelantado</p>
+                            <h3 className="text-sm font-bold text-slate-800 tracking-tight">Adicionar Saldo a Favor</h3>
+                            <p className="text-xs text-slate-500">Recibo de caja / Ingreso adelantado</p>
                         </div>
                     </div>
                     <button 
                         type="button"
                         onClick={onClose} 
-                        className="w-8 h-8 bg-white border border-slate-100 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:border-slate-200 transition-all shadow-xs"
+                        className="w-8 h-8 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-all shadow-xs cursor-pointer"
                     >
                         <FiX size={16} />
                     </button>
                 </div>
 
                 <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col min-h-0">
-                    <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-4">
+                    <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-5">
                         
                         {/* Section 1: Datos de Registro */}
                         <div>
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1.5 mb-3 flex items-center gap-1.5">
-                                <FiCalendar size={12} className="text-[#8CC63F]" /> Información de Registro
+                            <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-2 mb-3 flex items-center gap-2">
+                                <FiCalendar size={13} className="text-blue-600" /> Información de Registro
                             </h4>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                                         Fecha *
                                     </label>
                                     <input 
                                         type="date"
                                         {...register("fecha", { required: true })}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#8CC63F] focus:ring-2 focus:ring-[#8CC63F]/20 transition-all"
-                                     max="9999-12-31" min="1900-01-01" />
+                                        className="w-full bg-white border border-slate-200 rounded-xl py-2 px-3 text-xs font-medium text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all shadow-xs"
+                                        max="9999-12-31" 
+                                        min="1900-01-01" 
+                                    />
                                 </div>
                                 
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                                         Doctor / Responsable
                                     </label>
                                     <select 
                                         {...register("doctor")}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#8CC63F] focus:ring-2 focus:ring-[#8CC63F]/20 transition-all uppercase cursor-pointer"
+                                        className="w-full bg-white border border-slate-200 rounded-xl py-2 px-3 text-xs font-medium text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all uppercase cursor-pointer shadow-xs"
                                     >
                                         <option value="">Seleccione profesional...</option>
                                         {doctors.map(d => (
@@ -245,28 +247,28 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
 
                         {/* Section 2: Paciente & Monto */}
                         <div>
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1.5 mb-3 flex items-center gap-1.5">
-                                <FiUser size={12} className="text-[#8CC63F]" /> Paciente & Valor
+                            <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-2 mb-3 flex items-center gap-2">
+                                <FiUser size={13} className="text-blue-600" /> Paciente & Valor
                             </h4>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-3.5">
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                                         Paciente
                                     </label>
                                     <input 
                                         readOnly
                                         disabled
                                         value={patient?.nombreCompleto || `${patient?.nombres || ""} ${patient?.apellidos || ""}`.trim() || "Paciente"}
-                                        className="w-full bg-slate-100/70 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-bold text-slate-500 uppercase cursor-not-allowed"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs font-medium text-slate-500 uppercase cursor-not-allowed"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                                         Monto a Ingresar *
                                     </label>
                                     <div className="relative">
-                                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">$</span>
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">$</span>
                                         <input 
                                             type="text"
                                             inputMode="numeric"
@@ -275,7 +277,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                                                 required: "El monto es obligatorio",
                                                 onChange: handleAmountChange
                                             })}
-                                            className={"w-full bg-slate-50 border rounded-xl py-2.5 pl-8 pr-3.5 text-xs font-bold font-mono text-slate-800 outline-none focus:bg-white focus:ring-2 transition-all " + (errors.valorDisplay ? 'border-rose-300 focus:ring-rose-500/20' : 'border-slate-200 focus:border-[#8CC63F] focus:ring-[#8CC63F]/20')}
+                                            className={"w-full bg-white border rounded-xl py-2 pl-7 pr-3 text-xs font-bold font-mono text-slate-800 outline-none focus:ring-4 transition-all shadow-xs " + (errors.valorDisplay ? 'border-rose-300 focus:ring-rose-500/20' : 'border-slate-200 focus:border-blue-500 focus:ring-blue-500/10')}
                                         />
                                         <input type="hidden" {...register("valor")} />
                                     </div>
@@ -285,7 +287,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
 
                             {/* Medio de Pago */}
                             <div className="space-y-1.5">
-                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                                     Medio de Pago *
                                 </label>
                                 <div className="grid grid-cols-3 gap-2">
@@ -299,10 +301,10 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                                                     setValue("medio", m);
                                                     setValue("referencia", "");
                                                 }}
-                                                className={`py-2 px-3 rounded-xl border text-[11px] font-bold uppercase transition-all flex items-center justify-center gap-1.5 ${
+                                                className={`py-2 px-3 rounded-xl border text-xs font-bold uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                                                     isSelected 
-                                                        ? 'bg-[#8CC63F] border-[#8CC63F] text-white shadow-md shadow-[#8CC63F]/20' 
-                                                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-white'
+                                                        ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20' 
+                                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                                                 }`}
                                             >
                                                 <span>{m}</span>
@@ -315,14 +317,14 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                             {/* Referencia opcional/requerida */}
                             {requiresReference && (
                                 <div className="mt-3 space-y-1 animate-fadeIn">
-                                    <label className="block text-[11px] font-bold text-amber-700 uppercase tracking-wider">
+                                    <label className="block text-xs font-bold text-amber-700 uppercase tracking-wider">
                                         Número de Referencia / Comprobante *
                                     </label>
                                     <input 
                                         type="text"
                                         placeholder="EJ: 0012345678..."
                                         {...register("referencia", { required: requiresReference })}
-                                        className={"w-full bg-amber-50/60 border rounded-xl py-2.5 px-3.5 text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 transition-all " + (errors.referencia ? 'border-rose-300 focus:ring-rose-500/20' : 'border-amber-200 focus:border-amber-400 focus:ring-amber-500/20')}
+                                        className={"w-full bg-amber-50/60 border rounded-xl py-2 px-3 text-xs font-bold text-slate-800 outline-none focus:ring-4 transition-all " + (errors.referencia ? 'border-rose-300 focus:ring-rose-500/20' : 'border-amber-200 focus:border-amber-400 focus:ring-amber-500/10')}
                                     />
                                     {errors.referencia && <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest mt-1">La referencia es obligatoria</p>}
                                 </div>
@@ -330,14 +332,14 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
 
                             {/* Observaciones */}
                             <div className="mt-3">
-                                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                                     Notas / Observaciones
                                 </label>
                                 <textarea 
                                     rows={2}
                                     {...register("observaciones")}
                                     placeholder="Notas adicionales sobre este ingreso..."
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-[#8CC63F] focus:ring-2 focus:ring-[#8CC63F]/20 transition-all custom-scrollbar resize-none"
+                                    className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all custom-scrollbar resize-none shadow-xs"
                                 />
                             </div>
                         </div>
@@ -345,25 +347,25 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                     </div>
 
                     {/* Footer */}
-                    <div className="px-6 py-3.5 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50 shrink-0">
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase">
-                            <FiBriefcase size={13} className="text-slate-400" />
-                            <span>Operador: <strong className="text-slate-600">{userProfile?.nombreCompleto || 'Sistema'}</strong></span>
+                    <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/70 shrink-0">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                            <FiBriefcase size={14} className="text-slate-400" />
+                            <span>Operador: <strong className="text-slate-700 font-bold">{userProfile?.nombreCompleto || 'Sistema'}</strong></span>
                         </div>
                         <div className="flex items-center gap-2 w-full sm:w-auto">
                             <button 
                                 type="button"
                                 onClick={onClose}
-                                className="flex-1 sm:flex-initial px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full font-black text-[11px] uppercase tracking-wider transition-all active:scale-95"
+                                className="flex-1 sm:flex-initial px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shadow-xs"
                             >
                                 Cancelar
                             </button>
                             <button 
                                 type="submit"
                                 disabled={loading}
-                                className="flex-1 sm:flex-initial px-5 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-wider shadow-lg shadow-[#8CC63F]/20 transition-all active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                className="flex-1 sm:flex-initial px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                             >
-                                {loading ? <FiLoader className="animate-spin" size={14} /> : <FiCheck size={14} strokeWidth={3} />}
+                                {loading ? <FiLoader className="animate-spin" size={14} /> : <FiCheck size={14} strokeWidth={2.5} />}
                                 {loading ? "Guardando..." : "Guardar Saldo a Favor"}
                             </button>
                         </div>

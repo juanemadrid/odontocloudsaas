@@ -232,38 +232,38 @@ export default function SaldoTab({ patient }) {
             <div className="flex-1 flex flex-col min-h-0 bg-slate-50/30">
                 
                 {/* TOOLBAR */}
-                <div className="px-6 md:px-10 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/50 backdrop-blur-sm border-b border-slate-100/50">
+                <div className="px-6 md:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/60 backdrop-blur-sm border-b border-slate-100">
                     <div className="relative w-full sm:w-96">
-                        <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                        <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input 
                             type="text" 
                             placeholder="Buscar en recibos de caja..." 
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-[11px] font-bold text-slate-600 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 transition-all placeholder:text-slate-200 uppercase"
+                            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all placeholder:text-slate-400 uppercase"
                         />
                     </div>
                     
                     <button 
                         onClick={() => setModalOpen(true)}
-                        className="w-full sm:w-auto px-8 py-3 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-xl shadow-[#8CC63F]/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                        className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
                     >
-                         <FiPlus size={16} strokeWidth={3} /> Adicionar saldo a favor
+                         <FiPlus size={16} strokeWidth={2.5} /> Adicionar saldo a favor
                     </button>
                 </div>
 
                 {/* TABLE (Saldo a Favor History Style) */}
-                <div className="flex-1 overflow-auto custom-scrollbar p-6 pt-2">
-                    <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+                <div className="flex-1 overflow-auto custom-scrollbar p-6 pt-3">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                         <table className="w-full text-left border-collapse min-w-[700px]">
-                            <thead className="bg-slate-50/80 border-b border-slate-100">
+                            <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
-                                    <th className="py-4 px-8 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
-                                    <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Medio de Pago</th>
-                                    <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Notas / Referencia</th>
-                                    <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Registrado Por</th>
-                                    <th className="py-4 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th>
-                                    <th className="py-4 px-8 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
+                                    <th className="py-3 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
+                                    <th className="py-3 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Medio de Pago</th>
+                                    <th className="py-3 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Notas / Referencia</th>
+                                    <th className="py-3 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Registrado Por</th>
+                                    <th className="py-3 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor</th>
+                                    <th className="py-3 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50 text-[12px] font-bold text-slate-600">
