@@ -3,6 +3,7 @@
 // ===============================
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import supabase from "../lib/supabaseClient";
 import "../styles/login.css";
 import fondo from "/assets/fondo.png";
@@ -12,6 +13,7 @@ const BASE_PATH = import.meta.env.BASE_URL || "/odontocloudsaas/";
 
 const Login = () => {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -163,14 +165,8 @@ const Login = () => {
     const emailClean = email.trim().toLowerCase();
 
     try {
-      // Autenticar primero. El estado se valida después bajo RLS, sin exponer
-      // una búsqueda anónima por correo.
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: emailClean,
-        password: password
-      });
-
-      if (authError) throw authError;
+      // Autenticar a través de AuthContext para activar el control estricto de sesión única
+      const data = await signIn(emailClean, password);
 
       const user = data.user;
       let normalizedRol = "recepcionista";
