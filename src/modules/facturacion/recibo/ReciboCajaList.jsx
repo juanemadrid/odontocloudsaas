@@ -487,7 +487,7 @@ export default function ReciboCajaList({ onNew }) {
                             title="Exportar a Excel"
                             onClick={() => toast && toast.success("Exportando listado de recibos...")}
                         >
-                            <FiFileSpreadsheet size={16} />
+                            <FiFileText size={16} />
                         </button>
                     </div>
 
