@@ -274,6 +274,8 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+
   const getDeviceSessionId = () => {
     let id = localStorage.getItem("odc_device_session_id");
     if (!id) {
@@ -286,7 +288,6 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let isMounted = true;
     let sessionChannel = null;
-    const currentDeviceSessionId = getDeviceSessionId();
 
     // Timeout de seguridad: si en 8 segundos no terminó de cargar, desbloquear
     const safetyTimeout = setTimeout(() => {
@@ -310,10 +311,12 @@ export const AuthProvider = ({ children }) => {
       sessionChannel
         .on("broadcast", { event: "force_logout_previous" }, (payload) => {
           const incomingId = payload?.payload?.sessionId;
-          // Solo cerrar si proviene de otro dispositivo diferente
-          if (incomingId && incomingId !== currentDeviceSessionId) {
+          const currentLocalId = localStorage.getItem("odc_device_session_id");
+          // Solo cerrar si proviene de otro dispositivo con id diferente
+          if (incomingId && incomingId !== currentLocalId) {
             console.warn("AuthContext - Se ha iniciado sesión desde otro dispositivo.");
-            logout();
+            setSessionExpiredNotice(true);
+            logout(false);
           }
         })
         .subscribe();
@@ -392,7 +395,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const signIn = async (email, password) => {
-    // Generar nuevo session ID para el nuevo inicio de sesión
+    // Generar nuevo session ID exclusivo para este inicio de sesión
     const newSessionId = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
     try {
       localStorage.setItem("odc_device_session_id", newSessionId);
@@ -418,7 +421,7 @@ export const AuthProvider = ({ children }) => {
             });
             setTimeout(() => {
               try { supabase.removeChannel(notifyChannel); } catch {}
-            }, 1000);
+            }, 1500);
           }
         });
       } catch (e) {
@@ -426,10 +429,14 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
+    setSessionExpiredNotice(false);
     return data;
   };
 
-  const logout = async () => {
+  const logout = async (clearNotice = true) => {
+    if (clearNotice) {
+      setSessionExpiredNotice(false);
+    }
     try {
       sessionStorage.clear();
     } catch (e) {}
@@ -454,5 +461,36 @@ export const AuthProvider = ({ children }) => {
     signIn
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      {/* Modal de Aviso Amigable: Sesión Iniciada en Otro Dispositivo */}
+      {sessionExpiredNotice && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 text-center space-y-5 animate-scaleIn">
+            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner text-2xl">
+              💻📱
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                Sesión iniciada en otro dispositivo
+              </h3>
+              <p className="text-xs text-slate-600 font-medium mt-2 leading-relaxed">
+                Tu cuenta ha sido abierta recientemente en otro computador o teléfono. Para evitar conflictos de datos y proteger tu cuenta, esta sesión ha sido cerrada en este equipo.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSessionExpiredNotice(false);
+                window.location.reload();
+              }}
+              className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black tracking-wider uppercase shadow-lg shadow-blue-500/25 transition-all transform active:scale-95"
+            >
+              Iniciar Sesión en este Equipo
+            </button>
+          </div>
+        </div>
+      )}
+    </AuthContext.Provider>
+  );
 };
