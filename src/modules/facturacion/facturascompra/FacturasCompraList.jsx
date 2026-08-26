@@ -325,15 +325,6 @@ export default function FacturasCompraList({ onNew }) {
             <span className="text-slate-700 font-semibold">Facturas de compra</span>
           </div>
         </div>
-
-        {onNew && (
-          <button
-            onClick={onNew}
-            className="px-6 py-2.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-2 active:scale-95 cursor-pointer self-start md:self-auto"
-          >
-            <FiPlus size={16} /> + Nueva factura compra
-          </button>
-        )}
       </div>
 
       {/* Card 1: Filtros de Fecha y Búsqueda */}

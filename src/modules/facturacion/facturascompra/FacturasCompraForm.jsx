@@ -329,6 +329,34 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         }));
     };
 
+    // Anticipos disponibles pertenecientes exclusivamente al Tercero seleccionado y SIN factura asociada previa
+    const anticiposFiltradosPorTercero = useMemo(() => {
+        if (!terceroId && !selectedTerceroObj && !terceroSearchQuery) return [];
+        const tId = String(selectedTerceroObj?.id || terceroId || "");
+        const tNom = String(selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase().trim();
+        const tDoc = String(selectedTerceroObj?.documento || "").toLowerCase().trim();
+
+        return anticiposDisponibles.filter(p => {
+            const pTerceroId = String(p.terceroId || p.proveedorId || "");
+            const pTerceroNom = String(p.tercero || p.proveedor || "").toLowerCase().trim();
+            const pDoc = String(p.documentoTercero || p.documento || "").toLowerCase().trim();
+
+            const matchTercero = 
+                (tId && pTerceroId === tId) ||
+                (tNom && pTerceroNom === tNom) ||
+                (tDoc && pDoc && pDoc === tDoc) ||
+                (pTerceroNom && tNom && (pTerceroNom.includes(tNom) || tNom.includes(pTerceroNom)));
+
+            // Solo pagos que NO tengan ya factura asociada
+            const tieneFactura = p.facturaCompraId || p.factura_compra_id || p.asociadoFactura || (p.facturasAsociadas && p.facturasAsociadas.length > 0);
+            
+            // Y que no esté ya añadido en anticiposSeleccionados
+            const yaSeleccionado = anticiposSeleccionados.some(a => String(a.idOriginal) === String(p.id));
+
+            return matchTercero && !tieneFactura && !yaSeleccionado;
+        });
+    }, [anticiposDisponibles, terceroId, selectedTerceroObj, terceroSearchQuery, anticiposSeleccionados]);
+
     // Manejo de Anticipos
     const handleAddAnticipo = () => {
         if (!selectedAnticipoDoc) {
@@ -336,16 +364,23 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             return;
         }
         const docObj = anticiposDisponibles.find(a => String(a.id) === String(selectedAnticipoDoc) || String(a.consecutivo || a.nroPago) === String(selectedAnticipoDoc));
-        const val = docObj ? (docObj.monto || docObj.total || 0) : 0;
+        if (!docObj) {
+            toast.error("Documento de anticipo no encontrado");
+            return;
+        }
+        const val = docObj.monto !== undefined ? docObj.monto : (docObj.total || 0);
         
         const newAnticipo = {
             id: Date.now(),
-            documento: docObj?.nroPago || docObj?.id || selectedAnticipoDoc,
-            valor: val
+            idOriginal: docObj.id,
+            documento: docObj.nroPago || docObj.consecutivo || docObj.id || selectedAnticipoDoc,
+            valor: val,
+            fecha: docObj.fecha
         };
 
         setAnticiposSeleccionados(prev => [...prev, newAnticipo]);
         setSelectedAnticipoDoc("");
+        toast.success("Anticipo asociado correctamente ✅");
     };
 
     const handleRemoveAnticipo = (id) => {
@@ -400,13 +435,13 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
     // Filtrar Terceros / Pacientes en tiempo real
     const filteredTerceros = useMemo(() => {
         const q = (terceroSearchQuery || "").toLowerCase().trim();
-        if (!q) return [];
+        if (!q) return terceros.slice(0, 30);
         return terceros.filter(t => {
             const name = String(t.nombre || "").toLowerCase();
             const doc = String(t.documento || t.nroDocumento || "").toLowerCase();
             const tel = String(t.telefono || "").toLowerCase();
             return name.includes(q) || doc.includes(q) || tel.includes(q);
-        }).slice(0, 20);
+        }).slice(0, 30);
     }, [terceros, terceroSearchQuery]);
 
     // Guardar nuevo Tercero desde Modal
@@ -489,7 +524,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             toast.error("La fecha es requerida");
             return;
         }
-        if (!nroFactura || nroFactura.trim() === "") {
+        if (!docSoporteDian && (!nroFactura || nroFactura.trim() === "")) {
             toast.error("El número de factura es obligatorio");
             return;
         }
@@ -518,7 +553,9 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             const selectedProf = profesionales.find(p => p.id === profesionalId || p.nombre === profesionalId);
 
             const docSoporteFormatted = docSoporteDian ? "Documento soporte" : "Factura de compra";
-            const fullDocCode = prefijo ? `${prefijo} - ${nroFactura}` : nroFactura;
+            const fullDocCode = docSoporteDian
+                ? (prefijo ? `${prefijo}-DS-${Date.now().toString().slice(-4)}` : `DS-${Date.now().toString().slice(-4)}`)
+                : (prefijo ? `${prefijo} - ${nroFactura}` : nroFactura);
 
             const facturaRecord = {
                 id: `fc_${Date.now()}`,
@@ -530,7 +567,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 docSoporteDian,
                 tipoDoc: docSoporteFormatted,
                 tipoDocumento: docSoporteFormatted,
-                prefijo,
+                prefijo: docSoporteDian ? "DS" : prefijo,
                 nroFactura: fullDocCode,
                 documentoNumero: fullDocCode,
                 terceroId: selectedTercero?.id || terceroId,
@@ -581,6 +618,22 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                     .upsert({ tenant_id: inquilino, config: currentCfg, updated_at: new Date().toISOString() });
             } catch (e) {
                 console.warn("website_config facturas_compra sync notice:", e);
+            }
+
+            // 3. Vincular pagos de anticipos para marcarlos como asociados a esta factura
+            for (const ant of anticiposSeleccionados) {
+                if (ant.idOriginal) {
+                    try {
+                        await supabase
+                            .from("pagos_proveedor")
+                            .update({ 
+                                facturaCompraId: facturaRecord.id,
+                                facturaCompraDoc: facturaRecord.nroFactura,
+                                asociadoFactura: true
+                            })
+                            .eq("id", ant.idOriginal);
+                    } catch (e) {}
+                }
             }
 
             toast.success("Factura de compra registrada exitosamente ✅");
@@ -725,33 +778,44 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                             </div>
                         </div>
 
-                        {/* Prefijo y #Factura */}
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600 flex items-center justify-end gap-1">
-                                Prefijo <span title="Prefijo de la factura (ej. FC, DS)" className="text-slate-400 cursor-help"><FiInfo size={12} /></span>
-                            </label>
-                            <div className="md:col-span-9 flex items-center gap-4">
-                                <input
-                                    type="text"
-                                    value={prefijo}
-                                    onChange={(e) => setPrefijo(e.target.value)}
-                                    placeholder="Prefijo..."
-                                    className="w-24 h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                                />
-                                
-                                <label className="text-xs font-medium text-slate-600 flex items-center gap-1">
-                                    #Factura <span className="text-rose-500">*</span> <span title="Número consecutivo de la factura" className="text-slate-400 cursor-help"><FiInfo size={12} /></span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={nroFactura}
-                                    onChange={(e) => setNroFactura(e.target.value)}
-                                    placeholder="0"
-                                    className="w-32 h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                                    required
-                                />
+                        {/* Prefijo y #Factura (Ocultos automáticamente si es Documento Soporte DIAN) */}
+                        {docSoporteDian ? (
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                                <div className="md:col-start-4 md:col-span-9">
+                                    <div className="inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-800">
+                                        <FiCheckCircle className="text-emerald-600 shrink-0" size={15} />
+                                        <span>Documento Soporte Electrónico DIAN (Consecutivo asignado automáticamente al transmitir por API Factus)</span>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                                <label className="md:col-span-3 text-right text-xs font-medium text-slate-600 flex items-center justify-end gap-1">
+                                    Prefijo <span title="Prefijo de la factura (ej. FC, DS)" className="text-slate-400 cursor-help"><FiInfo size={12} /></span>
+                                </label>
+                                <div className="md:col-span-9 flex items-center gap-4">
+                                    <input
+                                        type="text"
+                                        value={prefijo}
+                                        onChange={(e) => setPrefijo(e.target.value)}
+                                        placeholder="Prefijo..."
+                                        className="w-24 h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
+                                    />
+                                    
+                                    <label className="text-xs font-medium text-slate-600 flex items-center gap-1">
+                                        #Factura <span className="text-rose-500">*</span> <span title="Número consecutivo de la factura" className="text-slate-400 cursor-help"><FiInfo size={12} /></span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={nroFactura}
+                                        onChange={(e) => setNroFactura(e.target.value)}
+                                        placeholder="0"
+                                        className="w-32 h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -1047,17 +1111,21 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                 onChange={(e) => setSelectedAnticipoDoc(e.target.value)}
                                 className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
                             >
-                                <option value="">Seleccione...</option>
-                                {anticiposDisponibles.map(a => (
+                                <option value="">
+                                    {anticiposFiltradosPorTercero.length === 0 
+                                        ? (selectedTerceroObj || terceroSearchQuery ? "No hay pagos/anticipos sin factura para este tercero" : "Seleccione primero un tercero/paciente...") 
+                                        : "Seleccione pago / anticipo..."}
+                                </option>
+                                {anticiposFiltradosPorTercero.map(a => (
                                     <option key={a.id} value={a.id}>
-                                        {a.nroPago || a.id} - {a.proveedor || a.tercero || "Egreso"} ({fmt(a.monto || a.total)})
+                                        {a.nroPago || a.consecutivo || a.id} - {a.proveedor || a.tercero || "Egreso"} ({fmt(a.monto || a.total)}) {a.fecha ? `• Fecha: ${a.fecha}` : ''}
                                     </option>
                                 ))}
                             </select>
                             <button
                                 type="button"
                                 onClick={handleAddAnticipo}
-                                className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-xs shrink-0"
+                                className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-xs shrink-0 cursor-pointer active:scale-95"
                                 title="Asociar anticipo"
                             >
                                 <FiPlus size={16} />
