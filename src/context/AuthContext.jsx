@@ -322,10 +322,31 @@ export const AuthProvider = ({ children }) => {
         .subscribe();
     };
 
+    const verifyActiveDeviceSession = (authUser) => {
+      if (!authUser) return true;
+      const serverSessionId = authUser.user_metadata?.active_device_session_id;
+      const currentLocalId = localStorage.getItem("odc_device_session_id");
+      if (serverSessionId && currentLocalId && serverSessionId !== currentLocalId) {
+        console.warn("AuthContext - Sesión reemplazada por otro dispositivo (Server Check).");
+        setSessionExpiredNotice(true);
+        logout(false);
+        return false;
+      }
+      return true;
+    };
+
     // Inicializar sesión Supabase
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!isMounted) return;
       if (session?.user) {
+        const isValid = verifyActiveDeviceSession(session.user);
+        if (!isValid) {
+          if (isMounted) {
+            clearTimeout(safetyTimeout);
+            setLoading(false);
+          }
+          return;
+        }
         setUser(session.user);
         setupSingleSessionChannel(session.user.id);
         const prof = await fetchUserProfile(session.user);
@@ -352,6 +373,9 @@ export const AuthProvider = ({ children }) => {
       window.setTimeout(async () => {
         if (!isMounted) return;
         if (session?.user) {
+          const isValid = verifyActiveDeviceSession(session.user);
+          if (!isValid) return;
+
           setUser(session.user);
           setupSingleSessionChannel(session.user.id);
           const prof = await fetchUserProfile(session.user);
@@ -374,6 +398,19 @@ export const AuthProvider = ({ children }) => {
       }, 0);
     });
 
+    // Verificación periódica y al reactivar la pestaña/pantalla del celular o computador
+    const handleVisibilityOrFocus = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && isMounted) {
+          verifyActiveDeviceSession(session.user);
+        }
+      } catch {}
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
     const handleTenantUpdated = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user && isMounted) {
@@ -387,6 +424,8 @@ export const AuthProvider = ({ children }) => {
       isMounted = false;
       clearTimeout(safetyTimeout);
       subscription?.unsubscribe();
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
       window.removeEventListener("tenant-updated", handleTenantUpdated);
       if (sessionChannel) {
         try { supabase.removeChannel(sessionChannel); } catch {}
@@ -408,8 +447,17 @@ export const AuthProvider = ({ children }) => {
     });
     if (error) throw error;
 
-    // Notificar a otras sesiones previas en otros computadores para que se cierren
+    // Actualizar metadata en el servidor de Supabase para invalidar cualquier otro dispositivo
     if (data?.user?.id) {
+      try {
+        await supabase.auth.updateUser({
+          data: { active_device_session_id: newSessionId }
+        });
+      } catch (e) {
+        console.warn("Error actualizando active_device_session_id:", e);
+      }
+
+      // Notificar en tiempo real a otras sesiones activas
       try {
         const notifyChannel = supabase.channel(`user-session-${data.user.id}`);
         notifyChannel.subscribe((status) => {
@@ -421,7 +469,7 @@ export const AuthProvider = ({ children }) => {
             });
             setTimeout(() => {
               try { supabase.removeChannel(notifyChannel); } catch {}
-            }, 1500);
+            }, 2000);
           }
         });
       } catch (e) {
