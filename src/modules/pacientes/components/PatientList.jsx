@@ -44,7 +44,16 @@ export default function PatientList({
         setShowToggleConfirm(true);
     };
 
-    const hasSearchTerm = Boolean(searchTerm && searchTerm.trim());
+    const formatRegistrationDate = (p) => {
+        const raw = p?.created_at || p?.createdAt || p?.creado || p?.fecha_creacion || p?.fecha_registro || p?.updated_at;
+        if (!raw) return "—";
+        if (typeof raw === "object" && raw?.seconds) {
+            return new Date(raw.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) return "—";
+        return d.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+    };
 
     return (
         <div className="p-4 md:p-6 w-full max-w-[1800px] mx-auto space-y-4">
@@ -190,9 +199,7 @@ export default function PatientList({
                                         </div>
                                     </td>
                                     <td className="py-2.5 px-4 hidden md:table-cell text-slate-500 font-medium text-[11px]">
-                                        {p.createdAt?.seconds
-                                            ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })
-                                            : (p.creado?.seconds ? new Date(p.creado.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' }) : "—")}
+                                        {formatRegistrationDate(p)}
                                     </td>
                                     <td className="py-2.5 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>

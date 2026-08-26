@@ -342,7 +342,17 @@ export default function ConsentimientosTab({ paciente }) {
                             history.length === 0 ? <tr><td colSpan={5} className="p-4 text-center text-slate-400">No hay consentimientos firmados.</td></tr> :
                                 history.map(doc => (
                                     <tr key={doc.id} className="border-b hover:bg-slate-50">
-                                        <td className="p-3">{doc.createdAt?.seconds ? new Date(doc.createdAt.seconds * 1000).toLocaleDateString() : (doc.fecha ? new Date(doc.fecha).toLocaleDateString() : "Hoy")}</td>
+                                        <td className="p-3">
+                                            {(() => {
+                                                const dVal = doc.created_at || doc.createdAt || doc.fecha;
+                                                if (!dVal) return "Hoy";
+                                                if (typeof dVal === "object" && dVal.seconds) {
+                                                    return new Date(dVal.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+                                                }
+                                                const parsed = new Date(dVal);
+                                                return isNaN(parsed.getTime()) ? "Hoy" : parsed.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
+                                            })()}
+                                        </td>
                                         <td className="p-3 font-medium">{doc.templateTitle}</td>
                                         <td className="p-3 text-center">
                                             {(doc.signatureUrl || doc.signatureData) ? <span className="text-green-600 font-bold text-xs">✅ Firmado</span> : <span className="text-red-500 text-xs">Pendiente</span>}
