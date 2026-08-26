@@ -196,8 +196,9 @@ export default function HeroSection({ config = {}, onShowTrial }) {
     const { clinicSlug } = useParams();
     const slug = clinicSlug || config?.slug;
     const clinicBase = slug ? `/c/${slug}` : "";
-
-    const clinicName = config.name || "Clínica Dental";
+    const clinicName = config.name && config.name !== "Clínica Dental" && config.name !== "CL NICA DENTAL" && config.name !== "Nombre de tu Clínica"
+        ? config.name 
+        : "ATM CENTRO DEL DOLOR OROFACIAL";
     const clinicSlogan = config.heroTitle || config.slogan || `Bienvenidos a ${clinicName}`;
     const clinicSubtitle = config.heroSubtitle || config.description || "Ofrecemos atención odontológica de alto nivel con tecnología de punta y un equipo comprometido con tu bienestar.";
     const clinicPhone = (config.contactPhone || "3015768935").replace(/\D/g, "");

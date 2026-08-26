@@ -11,6 +11,7 @@ import VivaHeader from "../../layout/VivaHeader";
 import VivaFooter from "../../layout/VivaFooter";
 import IdentitySection from "../../pages/landing/IdentitySection";
 import ServicesSection from "../../pages/landing/ServicesSection";
+import { slugify } from "../../utils/tenantConfigHelper";
 import { FiMonitor, FiSmartphone, FiLayout, FiImage, FiType, FiUsers, FiMessageSquare, FiSend, FiGlobe, FiPlus, FiTrash2, FiMaximize, FiEdit, FiHash, FiZap, FiExternalLink } from "react-icons/fi";
 
 const TABS = [
@@ -131,11 +132,12 @@ export default function WebCms() {
                 .maybeSingle();
 
             const data = row?.config || {};
+            const empresaData = data.empresa_datos || {};
             const clinicName = isSuperAdmin 
                 ? (data.name || baseConfig.name) 
-                : (data.name && data.name !== "OdontoCloud" 
+                : (data.name && data.name !== "OdontoCloud" && data.name !== "Clínica Dental" && data.name !== "CL NICA DENTAL" && data.name !== "Nombre de tu Clínica"
                     ? data.name 
-                    : (userProfile?.empresaNombre || userProfile?.tenant?.name || "Clínica Dental"));
+                    : (userProfile?.empresaNombre || empresaData.nombreComercial || empresaData.razonSocial || userProfile?.tenant?.name || "ATM CENTRO DEL DOLOR OROFACIAL"));
 
             const isSoftwareTitle = (t) => !t || t.toLowerCase().includes("gestiona tu clínica") || t.toLowerCase().includes("software");
             const heroTitle = (!isSuperAdmin && isSoftwareTitle(data.heroTitle))
@@ -150,6 +152,8 @@ export default function WebCms() {
                 ? "Agendar Cita"
                 : (data.heroBtn1Text || baseConfig.heroBtn1Text);
 
+            const calculatedSlug = isSuperAdmin ? "general" : (data.slug || userProfile?.tenant?.slug || slugify(clinicName) || "atm");
+
             setConfig({
                 ...baseConfig,
                 ...data,
@@ -158,7 +162,7 @@ export default function WebCms() {
                 heroTitle,
                 heroSubtitle,
                 heroBtn1Text,
-                slug: isSuperAdmin ? "general" : (userProfile?.tenant?.slug || ""),
+                slug: calculatedSlug,
                 services: data.services || baseConfig.services || [],
                 doctors: data.doctors || baseConfig.doctors || [],
                 testimonials: data.testimonials || baseConfig.testimonials || [],
@@ -977,7 +981,7 @@ export default function WebCms() {
                                         </svg>
                                         <span className="text-slate-400">https://</span>
                                         <span className="font-semibold text-slate-800">
-                                            {isSuperAdmin ? "portal.odontocloud.pro" : `portal.odontocloud.pro/c/${config?.slug || userProfile?.tenant?.slug || (userProfile?.empresaNombre || config?.name || "atm").toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')}`}
+                                            {isSuperAdmin ? "portal.odontocloud.pro" : `portal.odontocloud.pro/c/${config?.slug || userProfile?.tenant?.slug || slugify(config?.name || userProfile?.empresaNombre || "atm")}`}
                                         </span>
                                     </div>
                                 </div>
@@ -988,7 +992,7 @@ export default function WebCms() {
                                         onClick={() => {
                                             const baseUrl = import.meta.env.BASE_URL;
                                             const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-                                            const liveSlug = config?.slug || userProfile?.tenant?.slug || (userProfile?.empresaNombre || config?.name || "atm").toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
+                                            const liveSlug = config?.slug || userProfile?.tenant?.slug || slugify(config?.name || userProfile?.empresaNombre || "atm");
                                             const url = isSuperAdmin ? `${cleanBase}/` : `${cleanBase}/c/${liveSlug}`;
                                             window.open(url, '_blank');
                                         }}

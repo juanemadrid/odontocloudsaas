@@ -151,22 +151,6 @@ export default function ClinicSedesPage() {
                                 </div>
                             </motion.div>
                         ))}
-
-                        {/* Coming Soon card */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 24 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ delay: locations.length * 0.1 }}
-                            className="bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 p-10 flex flex-col items-center justify-center text-center gap-4 min-h-[400px]"
-                        >
-                            <div className="text-5xl opacity-30">🏗️</div>
-                            <div>
-                                <span className="inline-block px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest bg-amber-100 text-amber-700 mb-3">Próximamente</span>
-                                <h3 className="text-xl font-black text-slate-400 mb-2">Nueva Sede</h3>
-                                <p className="text-sm text-slate-400">Estamos creciendo para estar más cerca de ti.</p>
-                            </div>
-                        </motion.div>
                     </div>
 
                     {/* Contact CTA */}
