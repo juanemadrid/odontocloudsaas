@@ -55,6 +55,8 @@ export default function PatientList({
         return d.toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' });
     };
 
+    const hasSearchTerm = Boolean(searchTerm && searchTerm.trim());
+
     return (
         <div className="p-4 md:p-6 w-full max-w-[1800px] mx-auto space-y-4">
 
