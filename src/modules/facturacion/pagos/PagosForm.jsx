@@ -7,6 +7,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getActiveCaja } from "../../../services/supabaseServices";
 import { getConfigItems } from "../../../services/configPersistenceService";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { toast } from "sonner";
 
 const fmt = (n) =>
@@ -159,28 +160,32 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 const unifiedTerceros = [...tercerosList, ...pacientesList];
                 setTerceros(unifiedTerceros);
 
-                // 3. Cargar Profesionales / Doctores
+                // 3. Cargar Profesionales / Doctores exclusivamente
                 let profList = [];
                 try {
                     const { data: pDb } = await supabase
                         .from("profiles")
-                        .select("id, full_name, role, activo")
+                        .select("*")
                         .eq("tenant_id", inquilino);
                     if (pDb && pDb.length > 0) {
-                        profList = pDb.map(p => ({
-                            id: p.id,
-                            nombre: p.full_name || "Doctor",
-                            role: p.role
-                        }));
+                        profList = pDb
+                            .filter(p => isDoctorUser(p))
+                            .map(p => ({
+                                id: p.id,
+                                nombre: p.full_name || p.nombre || "Doctor",
+                                role: p.role
+                            }));
                     }
                 } catch (e) {}
 
                 if (profList.length === 0) {
                     const cfgProfs = cfg.profesionales || cfg.doctores || [];
-                    profList = cfgProfs.map(p => ({
-                        id: p.id || p.uid || p.nombre,
-                        nombre: p.nombre || p.nombreCompleto || "Doctor"
-                    }));
+                    profList = cfgProfs
+                        .filter(p => isDoctorUser(p))
+                        .map(p => ({
+                            id: p.id || p.uid || p.nombre,
+                            nombre: p.nombre || p.nombreCompleto || "Doctor"
+                        }));
                 }
                 setProfesionales(profList);
 
@@ -663,24 +668,18 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                 >
                                     <option value="">Seleccione...</option>
                                     {miCajaAbierta && (
-                                        <optgroup label="Mi Caja Abierta">
-                                            <option value={`Caja: ${miCajaAbierta.nombre || 'Caja Principal'}`}>
-                                                {`Caja: ${miCajaAbierta.nombre || 'Caja Principal'} (Abierta)`}
-                                            </option>
-                                        </optgroup>
+                                        <option value={miCajaAbierta.nombre || 'Caja Principal'}>
+                                            {miCajaAbierta.nombre || 'Caja Principal'}
+                                        </option>
                                     )}
-                                    <optgroup label="Bancos del Sistema">
-                                        {bancosDisponibles.map((b, idx) => {
-                                            const bName = typeof b === 'string' ? b : (b.nombre || b.nombreBanco || b.banco || "Banco");
-                                            const numCta = (b.numeroCuenta || b.numero) ? ` - N° ${b.numeroCuenta || b.numero}` : '';
-                                            const fullVal = bName.startsWith("Banco:") ? bName : `${bName}${numCta}`;
-                                            return (
-                                                <option key={idx} value={fullVal}>
-                                                    {fullVal}
-                                                </option>
-                                            );
-                                        })}
-                                    </optgroup>
+                                    {bancosDisponibles.map((b, idx) => {
+                                        const bName = typeof b === 'string' ? b : (b.nombre || b.nombreBanco || b.banco || "Banco");
+                                        return (
+                                            <option key={idx} value={bName}>
+                                                {bName}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                                 {!miCajaAbierta && (
                                     <p className="text-[11px] text-amber-600 font-medium mt-1.5 flex items-center gap-1">

@@ -7,6 +7,7 @@ import {
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getConfigItems } from "../../../services/configPersistenceService";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { toast } from "sonner";
 
 const fmt = (n) =>
@@ -174,28 +175,32 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
 
                 setTerceros([...tercerosList, ...pacientesList]);
 
-                // 3. Cargar Profesionales / Doctores
+                // 3. Cargar Profesionales / Doctores exclusivamente
                 let profList = [];
                 try {
                     const { data: pDb } = await supabase
                         .from("profiles")
-                        .select("id, full_name, role, activo")
+                        .select("*")
                         .eq("tenant_id", inquilino);
                     if (pDb && pDb.length > 0) {
-                        profList = pDb.map(p => ({
-                            id: p.id,
-                            nombre: p.full_name || "Doctor",
-                            role: p.role
-                        }));
+                        profList = pDb
+                            .filter(p => isDoctorUser(p))
+                            .map(p => ({
+                                id: p.id,
+                                nombre: p.full_name || p.nombre || "Doctor",
+                                role: p.role
+                            }));
                     }
                 } catch (e) {}
 
                 if (profList.length === 0) {
                     const cfgProfs = cfg.profesionales || cfg.doctores || [];
-                    profList = cfgProfs.map(p => ({
-                        id: p.id || p.uid || p.nombre,
-                        nombre: p.nombre || p.nombreCompleto || "Doctor"
-                    }));
+                    profList = cfgProfs
+                        .filter(p => isDoctorUser(p))
+                        .map(p => ({
+                            id: p.id || p.uid || p.nombre,
+                            nombre: p.nombre || p.nombreCompleto || "Doctor"
+                        }));
                 }
                 setProfesionales(profList);
 
