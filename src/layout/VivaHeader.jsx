@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { FiLogIn, FiUser } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import "../styles/landing.css";
 import "../styles/inner.css";
@@ -259,19 +260,38 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
                         </div>
                     </div>
 
-                    {/* MOBILE TOGGLE */}
-                    <button onClick={toggleMobileMenu} className={`lg:hidden ml-auto p-2 rounded-lg transition-colors ${isTransparent ? 'text-white hover:bg-white/10' : 'text-slate-800 hover:bg-slate-100'}`}>
-                        {mobileMenuOpen ? (
-                            <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                        ) : (
-                            <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
-                        )}
-                    </button>
+                    {/* MOBILE ACTIONS & TOGGLE */}
+                    <div className="lg:hidden ml-auto flex items-center gap-2">
+                        {/* Direct Iniciar Sesión button on Mobile Header */}
+                        <Link
+                            to={user ? getDashboardPath() : "/login"}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs active:scale-95 border ${
+                                isTransparent 
+                                    ? 'bg-white/20 text-white border-white/40 hover:bg-white/30 backdrop-blur-md' 
+                                    : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-600 hover:text-white'
+                            }`}
+                        >
+                            <FiLogIn size={13} />
+                            <span>{user ? "Mi Cuenta" : "Iniciar Sesión"}</span>
+                        </Link>
+
+                        <button 
+                            onClick={toggleMobileMenu} 
+                            aria-label="Abrir menú"
+                            className={`p-2 rounded-lg transition-colors cursor-pointer ${isTransparent ? 'text-white hover:bg-white/10' : 'text-slate-800 hover:bg-slate-100'}`}
+                        >
+                            {mobileMenuOpen ? (
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                            ) : (
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            )}
+                        </button>
+                    </div>
                 </div>
 
-                {/* MOBILE MENU */}
-                <div className={`lg:hidden absolute top-full left-0 w-full glass-premium-light border-t border-white/50 shadow-2xl transition-all duration-300 origin-top overflow-hidden ${mobileMenuOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                    <div className="viva-container flex flex-col p-6 gap-2 text-left">
+                {/* MOBILE MENU DRAWER */}
+                <div className={`lg:hidden absolute top-full left-0 w-full glass-premium-light border-t border-white/50 shadow-2xl transition-all duration-300 origin-top overflow-hidden ${mobileMenuOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                    <div className="viva-container flex flex-col p-6 gap-2 text-left bg-white/95 backdrop-blur-xl">
                         {menuItems.map((item) => (
                             <a
                                 key={item.name}
@@ -280,22 +300,76 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
                                     setMobileMenuOpen(false);
                                     handleNavClick(e, item);
                                 }}
-                                className="text-sm font-bold uppercase tracking-wider text-slate-700 hover:text-blue-600 py-3 border-b border-slate-100/50 flex justify-between items-center group cursor-pointer"
+                                className="text-sm font-bold uppercase tracking-wider text-slate-700 hover:text-blue-600 py-3 border-b border-slate-100/80 flex justify-between items-center group cursor-pointer"
                             >
                                 {item.name}
                                 <span className="text-slate-300 group-hover:text-blue-600">→</span>
                             </a>
                         ))}
+
+                        {/* Iniciar Sesión in Mobile Menu */}
+                        <Link
+                            to={user ? getDashboardPath() : "/login"}
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="text-sm font-bold uppercase tracking-wider text-blue-600 hover:text-blue-700 py-3 border-b border-slate-100/80 flex justify-between items-center group cursor-pointer"
+                        >
+                            <div className="flex items-center gap-2">
+                                <FiLogIn size={16} className="text-blue-600" />
+                                <span>{user ? "Mi Panel / Cuenta" : "Iniciar Sesión"}</span>
+                            </div>
+                            <span className="text-blue-400 group-hover:text-blue-600">→</span>
+                        </Link>
+
+                        {!isMaster && (
+                            <button
+                                onClick={() => {
+                                    setMobileMenuOpen(false);
+                                    if (isPreview) {
+                                        alert("En vista previa: simula el acceso al portal de pacientes.");
+                                        return;
+                                    }
+                                    const portalUrl = clinicBase ? `${clinicBase}/portal` : (slug ? `/c/${slug}/portal` : "/portal");
+                                    navigate(portalUrl);
+                                }}
+                                className="text-sm font-bold uppercase tracking-wider text-slate-600 hover:text-blue-600 py-3 border-b border-slate-100/80 flex justify-between items-center group cursor-pointer bg-transparent border-0 text-left w-full"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <FiUser size={16} className="text-slate-500" />
+                                    <span>Acceso Pacientes</span>
+                                </div>
+                                <span className="text-slate-300 group-hover:text-blue-600">→</span>
+                            </button>
+                        )}
+
                         <button
                             onClick={() => {
                                 setMobileMenuOpen(false);
-                                const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
-                                const msg = encodeURIComponent(`Hola, quisiera agendar una cita en ${displayName}.`);
-                                window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
+                                if (isPreview) {
+                                    const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
+                                    const msg = encodeURIComponent(`Hola, quisiera solicitar información en ${displayName}.`);
+                                    window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
+                                    return;
+                                }
+                                if (isMaster) {
+                                    if (user) {
+                                        navigate(getDashboardPath());
+                                    } else {
+                                        const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
+                                        const msg = encodeURIComponent("Hola, quisiera solicitar una demostración de OdontoCloud.");
+                                        window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
+                                    }
+                                } else {
+                                    const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
+                                    const msg = encodeURIComponent(`Hola, quisiera agendar una cita en ${displayName}.`);
+                                    window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
+                                }
                             }}
-                            className="mt-4 w-full bg-blue-600 text-white py-3.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-700 shadow-xl border-0 cursor-pointer"
+                            className="mt-4 w-full text-white py-3.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl border-0 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-all"
+                            style={{
+                                backgroundColor: isMaster ? '#2563eb' : (config?.primaryColor || '#1e3a8a')
+                            }}
                         >
-                            {isMaster ? "Solicitar Demostración" : "Agendar Cita Ahora"}
+                            <span>{isMaster ? (user ? "Ir a Mi Panel" : "Solicitar Demostración") : (config.heroBtn1Text || "Agendar Cita Ahora")}</span>
                         </button>
                     </div>
                 </div>
