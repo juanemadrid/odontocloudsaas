@@ -3,6 +3,7 @@
 
 import supabase from "../lib/supabaseClient";
 import { getConfigSection, saveConfigSection } from "./configPersistenceService";
+import { isDoctorUser } from "../utils/doctorHelpers";
 
 // ===============================================================
 // 1. RECIBOS DE CAJA
@@ -675,91 +676,93 @@ export const getDoctorsList = async (userProfile, patient = null) => {
 
   // 2. If NO patient is provided (global/tenant context), load all tenant professionals/doctors:
   const mapDoctors = new Map();
-  const inquilino = userProfile?.inquilino || userProfile?.tenantId;
+  const inquilino = typeof userProfile === 'string' 
+    ? userProfile 
+    : (userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id);
 
-  // A. Tabla profesionales (Doctores / Odontólogos registrados en la clínica)
+  if (!inquilino) {
+    return [];
+  }
+
   try {
-    let query = supabase.from('profesionales').select('*');
-    if (inquilino) {
-      query = query.eq('tenant_id', inquilino);
-    }
-    const { data: profData } = await query;
-    if (profData && Array.isArray(profData)) {
-      profData.forEach(d => {
+    const [profesionalesRes, profilesRes, configRes] = await Promise.all([
+      supabase.from('profesionales').select('*').eq('tenant_id', inquilino),
+      supabase.from('profiles').select('*').eq('tenant_id', inquilino),
+      supabase.from('website_config').select('config').eq('tenant_id', inquilino).maybeSingle()
+    ]);
+
+    const userDetails = configRes.data?.config?.user_details || {};
+    const configUsuarios = configRes.data?.config?.usuarios || configRes.data?.config?.users || [];
+    const configDoctores = configRes.data?.config?.doctores || configRes.data?.config?.profesionales || [];
+
+    // A. Tabla profesionales
+    if (profesionalesRes.data && Array.isArray(profesionalesRes.data)) {
+      profesionalesRes.data.forEach(d => {
         if (d.activo !== false) {
           const name = d.nombre_completo || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
           const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
           if (name.trim() && docId && !mapDoctors.has(docId)) {
-            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.correo || d.email || '', raw: d });
+            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.correo || d.email || '', role: d.especialidad || 'Doctor', raw: d });
           }
         }
       });
     }
-  } catch (e) {}
 
-  // B. Tabla profiles (Únicamente perfiles con rol de doctor/odontólogo)
-  try {
-    let query = supabase.from('profiles').select('*');
-    if (inquilino) query = query.eq('tenant_id', inquilino);
-    const { data: profsData } = await query;
-    if (profsData && Array.isArray(profsData)) {
-      profsData.forEach(u => {
-        const rol = (u.rol || u.role || '').toLowerCase();
-        const isDoc = u.esDoctor === true || u.is_doctor === true || rol.includes('doctor') || rol.includes('odontolog') || rol.includes('especialista') || rol.includes('profesional');
-        if (isDoc) {
-          const name = u.full_name || u.nombreCompleto || u.nombre || u.email || '';
+    // B. Tabla profiles (Cruzado con user_details)
+    if (profilesRes.data && Array.isArray(profilesRes.data)) {
+      profilesRes.data.forEach(u => {
+        if (u.activo === false) return;
+        const detail = userDetails[u.id] || {};
+        if (isDoctorUser(u, detail)) {
+          const name = u.full_name || u.nombreCompleto || u.nombre || `${u.nombre || ''} ${u.apellido || ''}`.trim() || detail.nombreCompleto || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || u.email || '';
           const docId = String(u.id || (name ? name.toLowerCase() : ''));
           if (name.trim() && docId && !mapDoctors.has(docId)) {
-            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', raw: u });
+            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', role: u.role || detail.rol || 'Doctor', raw: { ...detail, ...u } });
           }
         }
       });
     }
-  } catch (e) {}
 
-  // D. website_config (Doctores y usuarios con rol clínico únicamente)
-  try {
-    if (inquilino) {
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", inquilino)
-        .maybeSingle();
-
-      if (cfgRow?.config) {
-        const userDetails = cfgRow.config.user_details || {};
-        const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
-        const doctores = cfgRow.config.doctores || cfgRow.config.profesionales || [];
-
-        usuarios.forEach(u => {
-          const detail = userDetails[u.id || u.uid] || {};
-          const rol = (u.rol || u.role || detail.rol || detail.role || '').toLowerCase();
-          const isDoc = u.esDoctor === true || detail.esDoctor === true || rol.includes('doctor') || rol.includes('odontolog') || rol.includes('especialista') || rol.includes('profesional');
-          if (isDoc) {
-            const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
-            const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
-            if (name.trim() && docId && !mapDoctors.has(docId)) {
-              mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', raw: u });
-            }
-          }
-        });
-
-        doctores.forEach(d => {
-          const name = d.nombreCompleto || d.nombre || d.displayName || d.email || "";
-          const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
-          if (name.trim() && docId && !mapDoctors.has(docId)) {
-            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', raw: d });
-          }
-        });
+    // C. user_details en website_config (Usuarios con esDoctor: true)
+    Object.entries(userDetails).forEach(([uid, detail]) => {
+      if (detail && isDoctorUser(detail, detail)) {
+        const name = detail.nombreCompleto || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || detail.nombre || detail.email || '';
+        const docId = String(uid || (name ? name.toLowerCase() : ''));
+        if (name.trim() && docId && !mapDoctors.has(docId)) {
+          mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: detail.email || '', role: detail.rol || 'Doctor', raw: detail });
+        }
       }
-    }
-  } catch (e) {}
+    });
 
-  // E. Usuario actual (solo si es doctor)
-  if (userProfile) {
-    const rol = (userProfile.rol || userProfile.role || '').toLowerCase();
-    const isDoc = userProfile.esDoctor === true || rol.includes('doctor') || rol.includes('odontolog') || rol.includes('especialista') || rol.includes('profesional');
-    if (isDoc) {
+    // D. usuarios en website_config
+    configUsuarios.forEach(u => {
+      if (u.activo === false) return;
+      const detail = userDetails[u.id || u.uid] || {};
+      if (isDoctorUser(u, detail)) {
+        const name = u.nombreCompleto || u.nombre || `${u.nombre || ''} ${u.apellido || ''}`.trim() || detail.nombreCompleto || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || u.email || '';
+        const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
+        if (name.trim() && docId && !mapDoctors.has(docId)) {
+          mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', role: u.rol || detail.rol || 'Doctor', raw: { ...detail, ...u } });
+        }
+      }
+    });
+
+    // E. doctores / profesionales en website_config
+    configDoctores.forEach(d => {
+      const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim() || d.displayName || d.email || "";
+      const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+      if (name.trim() && docId && !mapDoctors.has(docId)) {
+        mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', role: d.rol || 'Doctor', raw: d });
+      }
+    });
+
+  } catch (err) {
+    console.warn("getDoctorsList error:", err);
+  }
+
+  // F. Usuario actual (siempre y cuando sea doctor)
+  if (userProfile && typeof userProfile === 'object') {
+    if (isDoctorUser(userProfile)) {
       const myId = String(userProfile.uid || userProfile.id || 'current_user');
       const myName = userProfile.nombreCompleto ||
         userProfile.nombre ||
@@ -768,14 +771,14 @@ export const getDoctorsList = async (userProfile, patient = null) => {
         "Doctor Principal";
 
       if (myName.trim() && !mapDoctors.has(myId)) {
-        mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' });
+        mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '', role: userProfile.rol || 'Doctor' });
       }
     }
   }
 
-  // F. Fallback por si la clínica es nueva y no hay ningún doctor registrado
+  // G. Fallback si no hay ningún doctor
   if (mapDoctors.size === 0) {
-    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '' });
+    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '', role: 'Doctor' });
   }
 
   return Array.from(mapDoctors.values()).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));

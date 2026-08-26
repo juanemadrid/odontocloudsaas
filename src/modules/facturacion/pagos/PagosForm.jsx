@@ -5,7 +5,7 @@ import {
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
-import { getActiveCaja } from "../../../services/supabaseServices";
+import { getActiveCaja, getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { toast } from "sonner";
@@ -161,33 +161,18 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 setTerceros(unifiedTerceros);
 
                 // 3. Cargar Profesionales / Doctores exclusivamente
-                let profList = [];
                 try {
-                    const { data: pDb } = await supabase
-                        .from("profiles")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    if (pDb && pDb.length > 0) {
-                        profList = pDb
-                            .filter(p => isDoctorUser(p))
-                            .map(p => ({
-                                id: p.id,
-                                nombre: p.full_name || p.nombre || "Doctor",
-                                role: p.role
-                            }));
+                    const dList = await getDoctorsList(userProfile || { inquilino });
+                    if (dList && dList.length > 0) {
+                        setProfesionales(dList.map(d => ({
+                            id: d.id,
+                            nombre: d.nombreCompleto || d.nombre,
+                            role: d.role
+                        })));
                     }
-                } catch (e) {}
-
-                if (profList.length === 0) {
-                    const cfgProfs = cfg.profesionales || cfg.doctores || [];
-                    profList = cfgProfs
-                        .filter(p => isDoctorUser(p))
-                        .map(p => ({
-                            id: p.id || p.uid || p.nombre,
-                            nombre: p.nombre || p.nombreCompleto || "Doctor"
-                        }));
+                } catch (e) {
+                    console.warn("getDoctorsList notice in PagosForm:", e);
                 }
-                setProfesionales(profList);
 
                 // 4. Cargar la caja abierta exclusiva del usuario actual
                 let userCaja = null;

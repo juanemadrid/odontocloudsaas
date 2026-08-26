@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
-import { getActiveCaja } from "../../../services/supabaseServices";
+import { getActiveCaja, getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, saveConfigItem } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 
@@ -104,39 +104,18 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         if (!inquilino) return;
         setLoading(true);
         try {
-            // 1. Professionals (from profiles table, fallback to profesionales or website_config)
-            let profsList = [];
+            // 1. Professionals (Doctores)
             try {
-                const { data: profData } = await supabase
-                    .from("profiles")
-                    .select("*")
-                    .eq("tenant_id", inquilino);
-                if (profData && profData.length > 0) profsList = profData;
-            } catch (e) {}
-
-            if (profsList.length === 0) {
-                try {
-                    const { data: profData2 } = await supabase
-                        .from("profesionales")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    if (profData2 && profData2.length > 0) profsList = profData2;
-                } catch (e) {}
+                const dList = await getDoctorsList(userProfile || { inquilino });
+                if (dList && dList.length > 0) {
+                    setProfesionales(dList.map(d => ({ 
+                        id: d.id, 
+                        nombre: d.nombreCompleto || d.nombre 
+                    })));
+                }
+            } catch (e) {
+                console.warn("getDoctorsList notice in ReciboCajaForm:", e);
             }
-
-            if (profsList.length === 0) {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-                profsList = cfgRow?.config?.profesionales || cfgRow?.config?.profiles || [];
-            }
-
-            setProfesionales(profsList.filter(d => isDoctorUser(d)).map(d => ({ 
-                id: d.id, 
-                nombre: d.full_name || d.nombre_completo || d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim() || d.email 
-            })));
 
             // 2. Patients / Terceros
             let pacsList = [];
