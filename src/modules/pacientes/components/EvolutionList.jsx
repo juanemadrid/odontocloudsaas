@@ -26,27 +26,38 @@ const getSelectedProcedures = (plantillaItems, planItemsLookup = {}) => {
 
 const printHTMLInHiddenIframe = (htmlContent) => {
     let iframe = document.getElementById("oc-print-iframe");
-    if (!iframe) {
-        iframe = document.createElement("iframe");
-        iframe.id = "oc-print-iframe";
-        iframe.style.position = "fixed";
-        iframe.style.right = "0";
-        iframe.style.bottom = "0";
-        iframe.style.width = "0px";
-        iframe.style.height = "0px";
-        iframe.style.border = "none";
-        iframe.style.visibility = "hidden";
-        document.body.appendChild(iframe);
+    if (iframe) {
+        try { document.body.removeChild(iframe); } catch {}
     }
+    iframe = document.createElement("iframe");
+    iframe.id = "oc-print-iframe";
+    iframe.style.position = "fixed";
+    iframe.style.top = "-9999px";
+    iframe.style.left = "-9999px";
+    iframe.style.width = "1024px";
+    iframe.style.height = "768px";
+    iframe.style.border = "none";
+    document.body.appendChild(iframe);
+
     const doc = iframe.contentWindow.document;
     doc.open();
     doc.write(htmlContent);
     doc.close();
 
-    setTimeout(() => {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-    }, 150);
+    const triggerPrint = () => {
+        try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        } catch (e) {
+            console.error("Error al imprimir iframe:", e);
+        }
+    };
+
+    iframe.onload = () => {
+        setTimeout(triggerPrint, 150);
+    };
+
+    setTimeout(triggerPrint, 400);
 };
 
 // ======================================================
@@ -76,6 +87,8 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
         .filter(v => v?.checked)
         .map(v => v.desc || v.procedimiento || v.nombre || '')
         .filter(Boolean);
+
+    const docBadgeLabel = evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : 'Evolución';
 
     // Resolver datos y firma del doctor (SOLO si la evolución fue firmada por el doctor)
     const isDoctorSigned = Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage);
