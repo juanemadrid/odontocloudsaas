@@ -9,17 +9,20 @@ import './styles/theme.css'
 import './styles/global.css'
 
 import { ToastProvider } from './context/ToastContext'
+import { SedeProvider } from './context/SedeContext'
 
 const baseUrl = import.meta.env.BASE_URL ? import.meta.env.BASE_URL.replace(/\/$/, '') : '';
 
 createRoot(document.getElementById('root')).render(
     <HelmetProvider>
         <AuthProvider>
-            <ToastProvider>
-                <BrowserRouter basename={baseUrl}>
-                    <App />
-                </BrowserRouter>
-            </ToastProvider>
+            <SedeProvider>
+                <ToastProvider>
+                    <BrowserRouter basename={baseUrl}>
+                        <App />
+                    </BrowserRouter>
+                </ToastProvider>
+            </SedeProvider>
         </AuthProvider>
     </HelmetProvider>
 )

@@ -15,6 +15,7 @@ import Servicios from "./pages/Servicios";
 import Planes from "./pages/Planes";
 import { FAQPage } from "./pages/SectionPages";
 import PatientPortal from "./modules/portal/PatientPortal";
+import DigitalSignaturePublicPage from "./pages/DigitalSignaturePublicPage";
 import CmsPreview from "./pages/CmsPreview";
 import ResetPassword from "./pages/ResetPassword";
 import ClinicServiciosPage from "./pages/landing/ClinicServiciosPage";
@@ -103,6 +104,9 @@ export default function App() {
           user ? <RoleBridge /> : <Login />
         } />
         <Route path="/reset-password" element={<ResetPassword />} />
+
+        {/* Firma Digital & Documento Clínico Público para Pacientes */}
+        <Route path="/portal-paciente/firma-digital" element={<DigitalSignaturePublicPage />} />
 
         {/* Portal Page - Standalone */}
         <Route path="/c/:clinicSlug/portal" element={<PatientPortal />} />

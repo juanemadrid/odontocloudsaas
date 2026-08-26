@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
     FiHome, FiCalendar, FiUsers, FiFileText, FiBox,
     FiActivity, FiSettings, FiLogOut, FiMenu, FiX, FiClock, FiCheckCircle, FiLayout, FiPieChart, FiGrid, FiSearch, FiDollarSign, FiBriefcase, FiBell, FiCheck, FiSlash, FiUser, FiMessageSquare,
-    FiAlertCircle
+    FiAlertCircle, FiHelpCircle
 } from "react-icons/fi";
 import logo from "/assets/logo.png"; // Asegúrate de que esta ruta sea correcta
 import { useAuth } from "../context/AuthContext";
@@ -14,10 +14,15 @@ import CommandPalette from "../components/CommandPalette";
 import { getConfigCached, invalidateConfigCache } from "../hooks/useConfig";
 
 import UserProfileModal from "../components/UserProfileModal";
+import SedeSelector from "../components/SedeSelector";
+import OdontoHelpAssistantModal from "../components/OdontoHelpAssistantModal";
 
 export default function DashboardLayout({ children, title, subtitle, basePath = "/dashboard_admin" }) {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [profileModalOpen, setProfileModalOpen] = useState(false);
+    const [helpModalOpen, setHelpModalOpen] = useState(false);
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const userMenuRef = useRef(null);
     const [pendingNavigationPath, setPendingNavigationPath] = useState(null);
     const [collapsedDesktop, setCollapsedDesktop] = useState(() => {
         try {
@@ -26,6 +31,16 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             return false;
         }
     });
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+                setUserMenuOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     useEffect(() => {
         const handleOpenProfile = () => setProfileModalOpen(true);
@@ -250,8 +265,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
         { id: 'pacientes', icon: FiUsers, label: 'PACIENTES' },
         { id: 'caja', icon: FiDollarSign, label: 'CAJA' },
         { id: 'administracion', icon: FiBriefcase, label: 'ADMINISTRACIÓN' },
-        { id: 'reportes', icon: FiPieChart, label: 'REPORTES' },
-        { id: 'config', icon: FiSettings, label: 'CONFIGURACIÓN' }
+        { id: 'reportes', icon: FiPieChart, label: 'REPORTES' }
     ];
 
     const filteredNavItems = useMemo(() => {
@@ -262,7 +276,6 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             if (item.id === 'caja') return can("Caja", "Caja", "consultar");
             if (item.id === 'administracion') return can("Administración", "Gestion Administración", "consultar");
             if (item.id === 'reportes') return can("Reportes", "Gestion Reportes", "consultar");
-            if (item.id === 'config') return can("Configuración", "Gestion Configuración", "consultar");
             return true;
         });
     }, [userProfile, can]);
@@ -419,52 +432,141 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                             })}
                         </div>
                     </nav>
-
-
-
-                    {/* User Profile / Logout - Refined v2 */}
-                    <div className="p-4 relative group/user mt-auto flex flex-col gap-2 justify-center">
-                        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-100/80 to-transparent" />
-
-                        <button
-                            onClick={() => setProfileModalOpen(true)}
-                            title={collapsedDesktop ? "Perfil de usuario / Firma" : ""}
-                            className={`flex items-center justify-center transition-all duration-300 active:scale-95 group shadow-sm bg-blue-50/50 border border-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white ${collapsedDesktop ? 'w-10 h-10 rounded-xl px-0' : 'w-full gap-3 px-5 py-3 rounded-[18px]'}`}
-                        >
-                            <FiUser className="h-4 w-4 shrink-0 transition-transform group-hover:scale-110" />
-                            {!collapsedDesktop && (
-                                <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">Perfil de usuario</span>
-                            )}
-                        </button>
-
-                        <button
-                            onClick={handleLogout}
-                            title={collapsedDesktop ? "Cerrar sesión" : ""}
-                            className={`flex items-center justify-center transition-all duration-300 active:scale-95 group shadow-sm bg-red-50/50 border border-red-100 text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 ${collapsedDesktop ? 'w-10 h-10 rounded-xl px-0' : 'w-full gap-3 px-5 py-3 rounded-[18px]'}`}
-                        >
-                            <FiLogOut className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1" />
-                            {!collapsedDesktop && (
-                                <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">Cerrar sesión</span>
-                            )}
-                        </button>
-                    </div>
                 </div>
             </aside>
 
             {/* Content Area */}
             <div className={`flex-1 flex flex-col min-w-0 min-h-screen relative z-1 transition-all duration-500 ${collapsedDesktop ? 'lg:pl-20' : 'lg:pl-64'}`}>
-                {/* Mobile Header */}
-                <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 lg:hidden flex items-center justify-between px-6 h-16 sticky top-0 z-40">
-                    <button
-                        onClick={() => setSidebarOpen(true)}
-                        className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500"
-                    >
-                        <FiMenu size={20} />
-                    </button>
-                    <span className="text-sm font-black text-slate-800 uppercase tracking-widest leading-none">
-                        {(title || "Escritorio")}
-                    </span>
-                    <div className="w-10" />
+                {/* Top Header Bar - Multi-Sede & User Controls (Oral Drive Style) */}
+                <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-30 shadow-xs px-4 sm:px-6 h-14 flex items-center justify-between">
+                    {/* Left: Mobile Menu Toggle & Sede Selector */}
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setSidebarOpen(true)}
+                            className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200/60 lg:hidden flex items-center justify-center text-slate-500 hover:text-slate-800"
+                        >
+                            <FiMenu size={18} />
+                        </button>
+                        <SedeSelector />
+                    </div>
+
+                    {/* Right: Quick actions & User identity */}
+                    <div className="flex items-center gap-3 sm:gap-4 text-xs font-semibold text-slate-600">
+                        {/* Ayuda / Asistente IA */}
+                        <button
+                            type="button"
+                            onClick={() => setHelpModalOpen(true)}
+                            className="flex items-center gap-1.5 text-slate-600 hover:text-blue-600 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
+                            title="Centro de ayuda y asistente IA"
+                        >
+                            <FiHelpCircle size={15} className="text-blue-600" />
+                            <span className="hidden sm:inline font-bold">Ayuda</span>
+                        </button>
+
+                        {/* Notificaciones */}
+                        <button
+                            type="button"
+                            onClick={() => setNotificationsOpen(true)}
+                            className="relative p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
+                            title="Notificaciones"
+                        >
+                            <FiBell size={16} />
+                            {notificaciones.filter(n => !n.read).length > 0 && (
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
+                            )}
+                        </button>
+
+                        {/* Configuración rápida */}
+                        <button
+                            type="button"
+                            onClick={() => navigate(`${basePath}/Configuracion`)}
+                            className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
+                            title="Configuración"
+                        >
+                            <FiSettings size={16} />
+                        </button>
+
+                        <div className="h-4 w-px bg-slate-200 hidden sm:block" />
+
+                        {/* User Profile Dropdown */}
+                        <div className="relative" ref={userMenuRef}>
+                            <button
+                                type="button"
+                                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                                className="flex items-center gap-2 hover:opacity-80 transition-opacity text-left cursor-pointer select-none"
+                            >
+                                <div className="w-7 h-7 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-bold flex items-center justify-center text-[10px] overflow-hidden shrink-0">
+                                    {(userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL) ? (
+                                        <img
+                                            src={userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL}
+                                            alt="Foto perfil"
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        (userProfile?.full_name || userProfile?.nombre || user?.email || "U").charAt(0).toUpperCase()
+                                    )}
+                                </div>
+                                <span className="hidden sm:inline-block font-bold text-[11px] text-slate-700 uppercase tracking-wide truncate max-w-[160px]">
+                                    {userProfile?.full_name || userProfile?.nombre || user?.email?.split("@")[0] || "USUARIO"}
+                                </span>
+                            </button>
+
+                            {/* Dropdown flotante de Perfil y Cerrar Sesión */}
+                            {userMenuOpen && (
+                                <div className="absolute right-0 top-10 z-50 animate-fadeIn min-w-[200px] bg-white rounded-xl shadow-2xl border border-slate-100 p-1.5 text-xs">
+                                    <div className="px-3 py-2 border-b border-slate-50 flex items-center gap-2.5">
+                                        <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs overflow-hidden shrink-0">
+                                            {(userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL) ? (
+                                                <img
+                                                    src={userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL}
+                                                    alt="Foto perfil"
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                (userProfile?.full_name || userProfile?.nombre || user?.email || "U").charAt(0).toUpperCase()
+                                            )}
+                                        </div>
+                                        <div className="truncate">
+                                            <div className="font-bold text-slate-800 truncate">
+                                                {userProfile?.full_name || userProfile?.nombre || "Usuario"}
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 truncate">
+                                                {user?.email || ""}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="py-1 space-y-0.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setUserMenuOpen(false);
+                                                setProfileModalOpen(true);
+                                            }}
+                                            className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 text-slate-700 hover:bg-slate-50 font-semibold transition-colors cursor-pointer"
+                                        >
+                                            <FiUser size={13} className="text-blue-600" />
+                                            <span>Mi Perfil & Firma</span>
+                                        </button>
+
+                                        <div className="h-px bg-slate-100 my-1" />
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setUserMenuOpen(false);
+                                                handleLogout();
+                                            }}
+                                            className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 text-rose-600 hover:bg-rose-50 font-semibold transition-colors cursor-pointer"
+                                        >
+                                            <FiLogOut size={13} />
+                                            <span>Cerrar sesión</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </header>
 
                 <main className="flex-1 p-4 sm:p-6 lg:p-8">
@@ -489,6 +591,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             </div>
             <CommandPalette />
             <UserProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
+            <OdontoHelpAssistantModal isOpen={helpModalOpen} onClose={() => setHelpModalOpen(false)} />
 
             {/* Notifications Slide-over Panel */}
             {notificationsOpen && (

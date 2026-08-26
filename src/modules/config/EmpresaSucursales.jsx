@@ -361,6 +361,8 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
                 ...(item?.id ? { id: item.id } : {})
             });
 
+            window.dispatchEvent(new CustomEvent("sedes-updated"));
+
             if (toast?.success) toast.success(item?.id ? "Sucursal actualizada correctamente" : "Sucursal creada correctamente");
             onBack();
         } catch (e) {
@@ -760,6 +762,7 @@ export default function EmpresaSucursales() {
         try {
             await deleteConfigItem(inquilino, "sucursales", "sucursales", row.id);
             setRows(prev => prev.filter(r => String(r.id) !== String(row.id)));
+            window.dispatchEvent(new CustomEvent("sedes-updated"));
             if (toast?.success) toast.success("Sucursal eliminada correctamente");
             else alert("✅ Sucursal eliminada correctamente");
         } catch (e) {

@@ -29,7 +29,6 @@ export default function PagosForm({ onCancel, onSuccess }) {
     const [fecha, setFecha] = useState(() => new Date().toISOString().split("T")[0]);
     const [profesionalId, setProfesionalId] = useState("");
     const [bancoCaja, setBancoCaja] = useState("");
-    const [medioPago, setMedioPago] = useState("");
 
     // Form fields - Card 2: Datos tercero
     const [terceroId, setTerceroId] = useState("");
@@ -37,16 +36,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
     const [pagoFacturasCompra, setPagoFacturasCompra] = useState(false);
 
     // Form fields - Card 3: Items / Conceptos
-    const [items, setItems] = useState([
-        {
-            id: Date.now(),
-            concepto: "",
-            descripcion: "",
-            precioUnitario: 0,
-            cantidad: 1,
-            total: 0
-        }
-    ]);
+    const [items, setItems] = useState([]);
 
     // Form fields - Card 4: Observaciones
     const [observaciones, setObservaciones] = useState("");
@@ -66,17 +56,63 @@ export default function PagosForm({ onCancel, onSuccess }) {
     const [facturasCompraPendientes, setFacturasCompraPendientes] = useState([]);
     const [facturasSeleccionadas, setFacturasSeleccionadas] = useState([]);
 
+    // Nombre de la caja o del usuario/responsable que atiende la caja
+    const userCajaLabel = useMemo(() => {
+        if (miCajaAbierta) {
+            return (
+                miCajaAbierta.usuario_nombre ||
+                miCajaAbierta.responsable ||
+                userProfile?.full_name ||
+                userProfile?.nombre_completo ||
+                [userProfile?.nombre, userProfile?.apellido].filter(Boolean).join(" ") ||
+                miCajaAbierta.nombre ||
+                "CAJA PRINCIPAL"
+            ).toUpperCase();
+        }
+        const name =
+            userProfile?.full_name ||
+            userProfile?.nombre_completo ||
+            [userProfile?.nombre, userProfile?.apellido].filter(Boolean).join(" ") ||
+            user?.email?.split("@")[0] ||
+            "";
+        return name ? name.toUpperCase() : "CAJA PRINCIPAL";
+    }, [miCajaAbierta, userProfile, user]);
+
     // Modal Crear Tercero
     const [showNewTerceroModal, setShowNewTerceroModal] = useState(false);
     const [savingTercero, setSavingTercero] = useState(false);
     const [newTerceroData, setNewTerceroData] = useState({
         nombre: "",
-        tipoDocumento: "NIT",
+        apellidos: "",
+        tipoDocumento: "CC",
         nroDocumento: "",
+        razonSocial: "",
         telefono: "",
-        email: "",
         direccion: "",
-        ciudad: "Sincelejo"
+        pais: "Colombia",
+        ciudad: "",
+        email: ""
+    });
+
+    // Modal Nuevo Concepto
+    const [showNewConceptoModal, setShowNewConceptoModal] = useState(false);
+    const [newConceptoData, setNewConceptoData] = useState({
+        concepto: "",
+        descripcion: "",
+        cantidad: 1,
+        precioUnitario: 0,
+        impuesto: ""
+    });
+
+    // Modal Asociar Factura
+    const [showAsociarFacturaModal, setShowAsociarFacturaModal] = useState(false);
+    const [asociarFacturaData, setAsociarFacturaData] = useState({
+        facturaId: "",
+        facturaObj: null,
+        cantidad: 1,
+        pendientePorPagar: 0,
+        valorAPagar: 0,
+        impuesto: ""
     });
 
     // Cerrar menú de búsqueda al hacer clic afuera
@@ -290,31 +326,51 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
     // Manejadores de Conceptos
     const handleAddConcepto = () => {
+        setNewConceptoData({
+            concepto: "",
+            descripcion: "",
+            cantidad: 1,
+            precioUnitario: 0,
+            impuesto: ""
+        });
+        setShowNewConceptoModal(true);
+    };
+
+    const handleSaveConceptoModal = (e) => {
+        e.preventDefault();
+        if (!newConceptoData.concepto.trim()) {
+            toast.error("El nombre del concepto es obligatorio");
+            return;
+        }
+        const pu = parseFloat(newConceptoData.precioUnitario) || 0;
+        const cant = parseFloat(newConceptoData.cantidad) || 1;
+        const total = pu * cant;
+
         setItems(prev => [
             ...prev,
             {
                 id: Date.now() + Math.random(),
-                concepto: "",
-                descripcion: "",
-                precioUnitario: 0,
-                cantidad: 1,
-                total: 0
+                concepto: newConceptoData.concepto.trim(),
+                descripcion: newConceptoData.descripcion.trim(),
+                precioUnitario: pu,
+                cantidad: cant,
+                impuesto: newConceptoData.impuesto,
+                total: total
             }
         ]);
+
+        setShowNewConceptoModal(false);
+        setNewConceptoData({
+            concepto: "",
+            descripcion: "",
+            cantidad: 1,
+            precioUnitario: 0,
+            impuesto: ""
+        });
+        toast.success("Concepto agregado");
     };
 
     const handleRemoveConcepto = (id) => {
-        if (items.length === 1) {
-            setItems([{
-                id: Date.now(),
-                concepto: "",
-                descripcion: "",
-                precioUnitario: 0,
-                cantidad: 1,
-                total: 0
-            }]);
-            return;
-        }
         setItems(prev => prev.filter(item => item.id !== id));
     };
 
@@ -350,7 +406,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
     // Guardar nuevo Tercero desde Modal
     const handleSaveNewTercero = async (e) => {
         e.preventDefault();
-        if (!newTerceroData.nombre.trim()) {
+        const displayName = [newTerceroData.nombre, newTerceroData.apellidos].filter(Boolean).join(" ").trim() || newTerceroData.razonSocial || "Tercero";
+        if (!displayName.trim()) {
             toast.error("El nombre del tercero es obligatorio");
             return;
         }
@@ -360,13 +417,17 @@ export default function PagosForm({ onCancel, onSuccess }) {
             const nuevoTerceroObj = {
                 id: `tercero_${Date.now()}`,
                 tenant_id: inquilino,
-                nombre: newTerceroData.nombre.trim(),
-                tipoDocumento: newTerceroData.tipoDocumento,
+                nombre: displayName,
+                nombreSolo: newTerceroData.nombre.trim(),
+                apellidos: newTerceroData.apellidos.trim(),
+                razonSocial: newTerceroData.razonSocial.trim(),
+                tipoDocumento: newTerceroData.tipoDocumento || "CC",
                 nroDocumento: newTerceroData.nroDocumento.trim(),
                 telefono: newTerceroData.telefono.trim(),
                 email: newTerceroData.email.trim(),
                 direccion: newTerceroData.direccion.trim(),
-                ciudad: newTerceroData.ciudad.trim(),
+                pais: newTerceroData.pais || "Colombia",
+                ciudad: newTerceroData.ciudad.trim() || "Sincelejo",
                 created_at: new Date().toISOString()
             };
 
@@ -407,12 +468,15 @@ export default function PagosForm({ onCancel, onSuccess }) {
             setShowNewTerceroModal(false);
             setNewTerceroData({
                 nombre: "",
-                tipoDocumento: "NIT",
+                apellidos: "",
+                tipoDocumento: "CC",
                 nroDocumento: "",
+                razonSocial: "",
                 telefono: "",
-                email: "",
                 direccion: "",
-                ciudad: "Sincelejo"
+                pais: "Colombia",
+                ciudad: "",
+                email: ""
             });
             toast.success("Tercero registrado correctamente ✅");
         } catch (err) {
@@ -423,6 +487,98 @@ export default function PagosForm({ onCancel, onSuccess }) {
         }
     };
 
+    // Facturas de compra disponibles para el tercero
+    const availableFacturasCompra = useMemo(() => {
+        const tName = (selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase();
+        const tDoc = (selectedTerceroObj?.documento || "").toLowerCase();
+        if (!facturasCompraPendientes || facturasCompraPendientes.length === 0) return [];
+        return facturasCompraPendientes.filter(fc => {
+            if (!tName && !tDoc) return true;
+            const fcProv = (fc.proveedor || fc.tercero || "").toLowerCase();
+            const fcDoc = (fc.documentoTercero || fc.nit || "").toLowerCase();
+            return (tName && fcProv.includes(tName)) || (tDoc && fcDoc.includes(tDoc)) || true;
+        });
+    }, [facturasCompraPendientes, selectedTerceroObj, terceroSearchQuery]);
+
+    const handleAddFactura = () => {
+        setAsociarFacturaData({
+            facturaId: "",
+            facturaObj: null,
+            cantidad: 1,
+            pendientePorPagar: 0,
+            valorAPagar: 0,
+            impuesto: ""
+        });
+        setShowAsociarFacturaModal(true);
+    };
+
+    const handleSelectFacturaChange = (fcId) => {
+        if (!fcId || fcId === "no_seleccionar") {
+            setAsociarFacturaData(prev => ({
+                ...prev,
+                facturaId: "",
+                facturaObj: null,
+                pendientePorPagar: 0,
+                valorAPagar: 0
+            }));
+            return;
+        }
+        const fc = facturasCompraPendientes.find(f => String(f.id) === String(fcId));
+        if (fc) {
+            const saldo = parseFloat(fc.saldo_pendiente || fc.total || fc.monto || 0);
+            setAsociarFacturaData(prev => ({
+                ...prev,
+                facturaId: fc.id,
+                facturaObj: fc,
+                pendientePorPagar: saldo,
+                valorAPagar: saldo
+            }));
+        }
+    };
+
+    const handleSaveAsociarFacturaModal = (e) => {
+        e.preventDefault();
+        const valPagar = parseFloat(asociarFacturaData.valorAPagar) || 0;
+        if (valPagar <= 0) {
+            toast.error("El valor a pagar debe ser mayor a 0");
+            return;
+        }
+
+        const fc = asociarFacturaData.facturaObj;
+        const num = fc ? (fc.numero || `FC-${fc.id}`) : "Factura de compra";
+        const desc = fc ? (fc.descripcion || fc.proveedor || fc.tercero || "Factura de compra") : (selectedTerceroObj?.nombre ? `Pago factura ${selectedTerceroObj.nombre}` : "Pago de factura");
+
+        setItems(prev => [
+            ...prev,
+            {
+                id: Date.now() + Math.random(),
+                concepto: num,
+                descripcion: desc,
+                precioUnitario: valPagar,
+                cantidad: parseFloat(asociarFacturaData.cantidad) || 1,
+                impuesto: asociarFacturaData.impuesto,
+                total: valPagar * (parseFloat(asociarFacturaData.cantidad) || 1),
+                facturaId: fc?.id || null,
+                isFactura: true
+            }
+        ]);
+
+        if (fc?.id) {
+            setFacturasSeleccionadas(prev => [...prev, fc.id]);
+        }
+
+        setShowAsociarFacturaModal(false);
+        setAsociarFacturaData({
+            facturaId: "",
+            facturaObj: null,
+            cantidad: 1,
+            pendientePorPagar: 0,
+            valorAPagar: 0,
+            impuesto: ""
+        });
+        toast.success("Factura asociada al pago");
+    };
+
     // Guardar Pago
     const handleSavePago = async () => {
         if (!fecha) {
@@ -430,11 +586,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
             return;
         }
         if (!bancoCaja) {
-            toast.error("Seleccione un Banco o Caja para el egreso");
-            return;
-        }
-        if (!medioPago) {
-            toast.error("Seleccione el medio de pago");
+            toast.error("Seleccione un Banco o Caja para el pago");
             return;
         }
         if (!terceroId && !terceroSearchQuery.trim()) {
@@ -469,7 +621,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 profesionalId: selectedProf?.id || profesionalId,
                 profesional: selectedProf?.nombre || profesionalId || "",
                 bancoCaja,
-                medioPago: medioPago || bancoCaja,
+                medioPago: bancoCaja,
                 terceroId: selectedTercero?.id || terceroId,
                 tercero: selectedTercero?.nombre || terceroId || terceroSearchQuery,
                 proveedor: selectedTercero?.nombre || terceroId || terceroSearchQuery,
@@ -640,8 +792,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
                         </div>
 
                         {/* Banco/Caja */}
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600 pt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
                                 Banco/Caja <span className="text-rose-500">*</span>
                             </label>
                             <div className="md:col-span-9">
@@ -652,46 +804,17 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                     required
                                 >
                                     <option value="">Seleccione...</option>
-                                    {miCajaAbierta && (
-                                        <option value={miCajaAbierta.nombre || 'Caja Principal'}>
-                                            {miCajaAbierta.nombre || 'Caja Principal'}
-                                        </option>
-                                    )}
+                                    {/* Opción de Caja / Responsable de la sesión actual */}
+                                    <option value={userCajaLabel}>
+                                        {userCajaLabel}
+                                    </option>
+                                    {/* Bancos y Cuentas registradas */}
                                     {bancosDisponibles.map((b, idx) => {
                                         const bName = typeof b === 'string' ? b : (b.nombre || b.nombreBanco || b.banco || "Banco");
+                                        if (bName.toUpperCase() === userCajaLabel.toUpperCase()) return null;
                                         return (
                                             <option key={idx} value={bName}>
                                                 {bName}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                                {!miCajaAbierta && (
-                                    <p className="text-[11px] text-amber-600 font-medium mt-1.5 flex items-center gap-1">
-                                        <span>ℹ️</span> No tienes una caja abierta actualmente. Selecciona un banco existente para generar el pago.
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Medio de pago */}
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
-                                Medio de pago <span className="text-rose-500">*</span>
-                            </label>
-                            <div className="md:col-span-9">
-                                <select
-                                    value={medioPago}
-                                    onChange={(e) => setMedioPago(e.target.value)}
-                                    className="w-full max-w-md h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                                    required
-                                >
-                                    <option value="">Seleccione medio de pago...</option>
-                                    {mediosPagoList.map((mp, idx) => {
-                                        const mpName = typeof mp === 'string' ? mp : (mp.nombre || mp.metodo || mp.label || "Medio");
-                                        return (
-                                            <option key={idx} value={mpName}>
-                                                {mpName}
                                             </option>
                                         );
                                     })}
@@ -865,51 +988,31 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                 </button>
                             </div>
                         </div>
-
-                        {/* Si el toggle está activo y hay facturas de compra */}
-                        {pagoFacturasCompra && (
-                            <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                                <h4 className="text-xs font-bold text-slate-700 mb-2">Facturas de compra pendientes del tercero</h4>
-                                {facturasCompraPendientes.length === 0 ? (
-                                    <p className="text-xs text-slate-400 italic">No hay facturas de compra pendientes para este tercero.</p>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {facturasCompraPendientes.map(fc => (
-                                            <label key={fc.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={facturasSeleccionadas.includes(fc.id)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setFacturasSeleccionadas(prev => [...prev, fc.id]);
-                                                        } else {
-                                                            setFacturasSeleccionadas(prev => prev.filter(id => id !== fc.id));
-                                                        }
-                                                    }}
-                                                    className="rounded text-[#8dc63f] focus:ring-[#8dc63f]"
-                                                />
-                                                <span className="font-semibold">{fc.numero || `FC-${fc.id}`}</span> — <span>{fc.proveedor || fc.tercero}</span> — <span className="font-bold">{fmt(fc.total || fc.monto)}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        )}
                     </div>
                 </div>
 
                 {/* ========================================================= */}
-                {/* CARD 3: TABLA DE CONCEPTOS                               */}
+                {/* CARD 3: TABLA DE CONCEPTOS / FACTURAS                     */}
                 {/* ========================================================= */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
                     <div className="flex items-center justify-end">
-                        <button
-                            type="button"
-                            onClick={handleAddConcepto}
-                            className="px-5 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
-                        >
-                            + Nuevo concepto
-                        </button>
+                        {pagoFacturasCompra ? (
+                            <button
+                                type="button"
+                                onClick={handleAddFactura}
+                                className="px-5 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
+                            >
+                                + Añadir factura
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={handleAddConcepto}
+                                className="px-5 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
+                            >
+                                + Nuevo concepto
+                            </button>
+                        )}
                     </div>
 
                     <div className="overflow-x-auto border border-slate-100 rounded-lg">
@@ -918,68 +1021,54 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                 <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-white">
                                     <th className="py-3 px-4 w-[28%]">Concepto</th>
                                     <th className="py-3 px-4 w-[32%]">Descripción</th>
-                                    <th className="py-3 px-4 w-[16%]">Precio unitario</th>
+                                    <th className="py-3 px-4 w-[16%]">
+                                        {pagoFacturasCompra ? "Precio" : "Precio unitario"}
+                                    </th>
                                     <th className="py-3 px-4 w-[10%]">Cantidad</th>
                                     <th className="py-3 px-4 w-[10%]">Total</th>
                                     <th className="py-3 px-4 w-[4%] text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {items.map((item) => (
-                                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="py-2.5 px-4">
-                                            <input
-                                                type="text"
-                                                value={item.concepto}
-                                                onChange={(e) => handleItemChange(item.id, "concepto", e.target.value)}
-                                                placeholder="Ej. Insumos dentales"
-                                                className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                                            />
-                                        </td>
-                                        <td className="py-2.5 px-4">
-                                            <input
-                                                type="text"
-                                                value={item.descripcion}
-                                                onChange={(e) => handleItemChange(item.id, "descripcion", e.target.value)}
-                                                placeholder="Detalle o justificación..."
-                                                className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                                            />
-                                        </td>
-                                        <td className="py-2.5 px-4">
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                step="1000"
-                                                value={item.precioUnitario || ""}
-                                                onChange={(e) => handleItemChange(item.id, "precioUnitario", e.target.value)}
-                                                placeholder="0"
-                                                className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                                            />
-                                        </td>
-                                        <td className="py-2.5 px-4">
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                value={item.cantidad || ""}
-                                                onChange={(e) => handleItemChange(item.id, "cantidad", e.target.value)}
-                                                className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                                            />
-                                        </td>
-                                        <td className="py-2.5 px-4 font-bold text-slate-800">
-                                            {fmt(item.total)}
-                                        </td>
-                                        <td className="py-2.5 px-4 text-center">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleRemoveConcepto(item.id)}
-                                                className="text-slate-400 hover:text-rose-500 p-1 transition-colors"
-                                                title="Eliminar concepto"
-                                            >
-                                                <FiTrash2 size={15} />
-                                            </button>
+                                {items.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="py-8 text-center text-slate-400 text-xs italic">
+                                            {pagoFacturasCompra 
+                                                ? "Haga clic en '+ Añadir factura' para asociar una factura de compra." 
+                                                : "Haga clic en '+ Nuevo concepto' para agregar un concepto de pago."}
                                         </td>
                                     </tr>
-                                ))}
+                                ) : (
+                                    items.map((item) => (
+                                        <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="py-2.5 px-4 font-semibold text-slate-800">
+                                                {item.concepto}
+                                            </td>
+                                            <td className="py-2.5 px-4 text-slate-600">
+                                                {item.descripcion || "—"}
+                                            </td>
+                                            <td className="py-2.5 px-4 text-slate-700">
+                                                {fmt(item.precioUnitario)}
+                                            </td>
+                                            <td className="py-2.5 px-4 text-slate-700">
+                                                {item.cantidad}
+                                            </td>
+                                            <td className="py-2.5 px-4 font-bold text-slate-800">
+                                                {fmt(item.total)}
+                                            </td>
+                                            <td className="py-2.5 px-4 text-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveConcepto(item.id)}
+                                                    className="text-slate-400 hover:text-rose-500 p-1 transition-colors"
+                                                    title="Eliminar"
+                                                >
+                                                    <FiTrash2 size={15} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -1041,122 +1130,500 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
             </div>
 
-            {/* MODAL CREAR NUEVO TERCERO */}
+            {/* MODAL CREAR NUEVO TERCERO - 100% IDÉNTICO A ORAL DRIVE */}
             {showNewTerceroModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scaleIn">
-                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                                <FiUserPlus className="text-[#8dc63f]" /> Registrar Nuevo Tercero / Proveedor
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden animate-scaleIn">
+                        {/* Header */}
+                        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-white">
+                            <h3 className="text-sm font-semibold text-slate-800">
+                                Nuevo tercero <span className="text-rose-500">*</span>
                             </h3>
                             <button
                                 type="button"
                                 onClick={() => setShowNewTerceroModal(false)}
-                                className="text-slate-400 hover:text-rose-500 p-1"
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors"
                             >
                                 <FiX size={18} />
                             </button>
                         </div>
 
-                        <form onSubmit={handleSaveNewTercero} className="p-6 space-y-4 text-xs">
-                            <div>
-                                <label className="block text-slate-600 font-semibold mb-1">Nombre o Razón Social *</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={newTerceroData.nombre}
-                                    onChange={(e) => setNewTerceroData({ ...newTerceroData, nombre: e.target.value })}
-                                    placeholder="Ej. Distribuidora Dental del Norte S.A.S"
-                                    className="w-full h-9 px-3 border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
-                                />
+                        {/* Form Body */}
+                        <form onSubmit={handleSaveNewTercero} className="p-6 space-y-3 text-xs">
+                            {/* Nombre */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Nombre <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="text"
+                                        required
+                                        value={newTerceroData.nombre}
+                                        onChange={(e) => setNewTerceroData({ ...newTerceroData, nombre: e.target.value })}
+                                        placeholder="Nombre del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Tipo Documento</label>
+                            {/* Apellidos */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Apellidos
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="text"
+                                        value={newTerceroData.apellidos}
+                                        onChange={(e) => setNewTerceroData({ ...newTerceroData, apellidos: e.target.value })}
+                                        placeholder="Apellidos del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Tipo de documento */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Tipo de documento <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
                                     <select
+                                        required
                                         value={newTerceroData.tipoDocumento}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, tipoDocumento: e.target.value })}
-                                        className="w-full h-9 px-2 border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     >
+                                        <option value="">Seleccione...</option>
+                                        <option value="CC">Cédula de ciudadanía</option>
                                         <option value="NIT">NIT</option>
-                                        <option value="CC">Cédula de Ciudadanía (CC)</option>
-                                        <option value="CE">Cédula de Extranjería (CE)</option>
-                                        <option value="PP">Pasaporte</option>
+                                        <option value="CE">Cédula de extranjería</option>
+                                        <option value="PAS">Pasaporte</option>
+                                        <option value="TI">Tarjeta de identidad</option>
+                                        <option value="RC">Registro civil</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Número Documento</label>
+                            </div>
+
+                            {/* Número de documento */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Número de documento <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
                                     <input
                                         type="text"
+                                        required
                                         value={newTerceroData.nroDocumento}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, nroDocumento: e.target.value })}
-                                        placeholder="900.123.456-7"
-                                        className="w-full h-9 px-3 border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
+                                        placeholder="Nro. de documento del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Teléfono / Celular</label>
+                            {/* Razón social */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Razón social
+                                </label>
+                                <div className="md:col-span-8">
                                     <input
                                         type="text"
+                                        value={newTerceroData.razonSocial}
+                                        onChange={(e) => setNewTerceroData({ ...newTerceroData, razonSocial: e.target.value })}
+                                        placeholder="Razón social del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Teléfono */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Teléfono <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="text"
+                                        required
                                         value={newTerceroData.telefono}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, telefono: e.target.value })}
-                                        placeholder="300 123 4567"
-                                        className="w-full h-9 px-3 border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Correo Electrónico</label>
-                                    <input
-                                        type="email"
-                                        value={newTerceroData.email}
-                                        onChange={(e) => setNewTerceroData({ ...newTerceroData, email: e.target.value })}
-                                        placeholder="contacto@proveedor.com"
-                                        className="w-full h-9 px-3 border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
+                                        placeholder="Teléfono del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Dirección</label>
+                            {/* Dirección */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Dirección <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
                                     <input
                                         type="text"
+                                        required
                                         value={newTerceroData.direccion}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, direccion: e.target.value })}
-                                        placeholder="Calle 16 # 17-68"
-                                        className="w-full h-9 px-3 border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
+                                        placeholder="Dirección del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-slate-600 font-semibold mb-1">Ciudad</label>
+                            </div>
+
+                            {/* País de domicilio */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    País de domicilio
+                                </label>
+                                <div className="md:col-span-8">
+                                    <select
+                                        value={newTerceroData.pais}
+                                        onChange={(e) => setNewTerceroData({ ...newTerceroData, pais: e.target.value })}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    >
+                                        <option value="">Seleccione...</option>
+                                        <option value="Colombia">Colombia</option>
+                                        <option value="Venezuela">Venezuela</option>
+                                        <option value="Ecuador">Ecuador</option>
+                                        <option value="Perú">Perú</option>
+                                        <option value="Panamá">Panamá</option>
+                                        <option value="Estados Unidos">Estados Unidos</option>
+                                        <option value="España">España</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Ciudad de domicilio */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Ciudad de domicilio
+                                </label>
+                                <div className="md:col-span-8">
                                     <input
                                         type="text"
                                         value={newTerceroData.ciudad}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, ciudad: e.target.value })}
-                                        placeholder="Sincelejo"
-                                        className="w-full h-9 px-3 border border-slate-200 rounded text-xs outline-none focus:border-blue-500"
+                                        placeholder="Ciudad del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     />
                                 </div>
                             </div>
 
-                            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
+                            {/* Correo electrónico */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Correo electrónico
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="email"
+                                        value={newTerceroData.email}
+                                        onChange={(e) => setNewTerceroData({ ...newTerceroData, email: e.target.value })}
+                                        placeholder="Correo del tercero"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
                                 <button
                                     type="button"
                                     onClick={() => setShowNewTerceroModal(false)}
-                                    className="px-4 py-2 border border-slate-200 text-slate-600 rounded-full font-bold hover:bg-slate-50 transition-colors"
+                                    className="px-4 py-1.5 text-xs text-slate-600 hover:text-slate-800 font-semibold transition-colors"
                                 >
-                                    Cancelar
+                                    Cerrar
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={savingTercero}
-                                    className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full font-bold shadow transition-all disabled:opacity-50"
+                                    className="px-6 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold shadow-sm transition-all disabled:opacity-50"
                                 >
-                                    {savingTercero ? "Guardando..." : "Guardar Tercero"}
+                                    {savingTercero ? "Guardando..." : "Guardar"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL 1: NUEVO CONCEPTO - 100% IDÉNTICO A ORAL DRIVE */}
+            {showNewConceptoModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden animate-scaleIn">
+                        {/* Header */}
+                        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-white">
+                            <h3 className="text-sm font-semibold text-slate-800">
+                                Nuevo concepto
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowNewConceptoModal(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors"
+                            >
+                                <FiX size={18} />
+                            </button>
+                        </div>
+
+                        {/* Form Body */}
+                        <form onSubmit={handleSaveConceptoModal} className="p-6 space-y-3.5 text-xs">
+                            {/* Concepto */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Concepto <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="text"
+                                        required
+                                        value={newConceptoData.concepto}
+                                        onChange={(e) => setNewConceptoData({ ...newConceptoData, concepto: e.target.value })}
+                                        placeholder="Ingrese el nombre del concepto"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Descripción */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Descripción
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="text"
+                                        value={newConceptoData.descripcion}
+                                        onChange={(e) => setNewConceptoData({ ...newConceptoData, descripcion: e.target.value })}
+                                        placeholder="Ingrese la descripción del concepto"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Cantidad */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Cantidad <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        required
+                                        value={newConceptoData.cantidad}
+                                        onChange={(e) => setNewConceptoData({ ...newConceptoData, cantidad: e.target.value })}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Precio unitario */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Precio unitario <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="1000"
+                                        required
+                                        value={newConceptoData.precioUnitario || ""}
+                                        onChange={(e) => setNewConceptoData({ ...newConceptoData, precioUnitario: e.target.value })}
+                                        placeholder="$0"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Impuesto */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Impuesto
+                                </label>
+                                <div className="md:col-span-8 flex items-center gap-2">
+                                    <select
+                                        value={newConceptoData.impuesto}
+                                        onChange={(e) => setNewConceptoData({ ...newConceptoData, impuesto: e.target.value })}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    >
+                                        <option value="">Seleccione</option>
+                                        <option value="exento">Exento (0%)</option>
+                                        <option value="iva_5">IVA (5%)</option>
+                                        <option value="iva_19">IVA (19%)</option>
+                                        <option value="inc_8">INC (8%)</option>
+                                        <option value="retefuente_25">ReteFuente (2.5%)</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center shrink-0 transition-all shadow-sm active:scale-95"
+                                        title="Agregar impuesto"
+                                    >
+                                        <FiPlus size={14} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowNewConceptoModal(false)}
+                                    className="px-4 py-1.5 text-xs text-slate-600 hover:text-slate-800 font-semibold transition-colors"
+                                >
+                                    Cerrar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-6 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold shadow-sm transition-all active:scale-95"
+                                >
+                                    Agregar
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL 2: ASOCIAR FACTURA - 100% IDÉNTICO A ORAL DRIVE */}
+            {showAsociarFacturaModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden animate-scaleIn">
+                        {/* Header */}
+                        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-white">
+                            <h3 className="text-sm font-semibold text-slate-800">
+                                Asociar factura
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowAsociarFacturaModal(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors"
+                            >
+                                <FiX size={18} />
+                            </button>
+                        </div>
+
+                        {/* Form Body */}
+                        <form onSubmit={handleSaveAsociarFacturaModal} className="p-6 space-y-3.5 text-xs">
+                            {/* Factura de compra */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <div className="md:col-span-4 text-right flex items-center justify-end gap-1">
+                                    <span className="text-xs font-medium text-slate-600">Factura de compra*</span>
+                                    <span title="Seleccione la factura de compra pendiente que desea pagar" className="cursor-help text-slate-400">
+                                        <FiInfo size={13} />
+                                    </span>
+                                </div>
+                                <div className="md:col-span-8">
+                                    <select
+                                        value={asociarFacturaData.facturaId}
+                                        onChange={(e) => handleSelectFacturaChange(e.target.value)}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    >
+                                        <option value="">No seleccionar factura</option>
+                                        {facturasCompraPendientes.map((fc) => (
+                                            <option key={fc.id} value={fc.id}>
+                                                {fc.numero || `FC-${fc.id}`} - {fc.proveedor || fc.tercero || "Proveedor"} ({fmt(fc.saldo_pendiente || fc.total || fc.monto)})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Cantidad */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Cantidad*
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={asociarFacturaData.cantidad}
+                                        onChange={(e) => setAsociarFacturaData({ ...asociarFacturaData, cantidad: e.target.value })}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Pendiente por pagar */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Pendiente por pagar
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={fmt(asociarFacturaData.pendientePorPagar)}
+                                        className="w-full h-8 px-3 bg-slate-50 border border-slate-200 rounded text-xs text-slate-500 cursor-not-allowed select-none outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Valor a pagar */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Valor a pagar*
+                                </label>
+                                <div className="md:col-span-8">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="1000"
+                                        required
+                                        value={asociarFacturaData.valorAPagar || ""}
+                                        onChange={(e) => setAsociarFacturaData({ ...asociarFacturaData, valorAPagar: e.target.value })}
+                                        placeholder="$0"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Impuesto */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
+                                    Impuesto
+                                </label>
+                                <div className="md:col-span-8 flex items-center gap-2">
+                                    <select
+                                        value={asociarFacturaData.impuesto}
+                                        onChange={(e) => setAsociarFacturaData({ ...asociarFacturaData, impuesto: e.target.value })}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    >
+                                        <option value="">Seleccione</option>
+                                        <option value="exento">Exento (0%)</option>
+                                        <option value="iva_5">IVA (5%)</option>
+                                        <option value="iva_19">IVA (19%)</option>
+                                        <option value="inc_8">INC (8%)</option>
+                                        <option value="retefuente_25">ReteFuente (2.5%)</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center shrink-0 transition-all shadow-sm active:scale-95"
+                                        title="Agregar impuesto"
+                                    >
+                                        <FiPlus size={14} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                                <button
+                                    type="submit"
+                                    className="px-6 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold shadow-sm transition-all active:scale-95"
+                                >
+                                    Añadir
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAsociarFacturaModal(false)}
+                                    className="px-4 py-1.5 text-xs text-slate-600 hover:text-slate-800 font-semibold transition-colors"
+                                >
+                                    Cerrar
                                 </button>
                             </div>
                         </form>

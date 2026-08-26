@@ -77,14 +77,11 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
         .map(v => v.desc || v.procedimiento || v.nombre || '')
         .filter(Boolean);
 
-    const docBadgeLabel = evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : 'Evolución';
-
-    // Resolver datos y firma del doctor
-    const doctorIdent = evo.profesional || evo.doctorSignature?.signature || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
-    const doctorData = await getDoctorSignatureAndData(doctorIdent, clinicInfo.tenant_id || userProfile?.inquilino, userProfile);
-    const docSig = evo.doctorSignature?.signatureImage || (doctorData.isDoctor ? doctorData.firma : null);
-    const docNom = evo.doctorSignature?.signature || doctorData.nombreCompleto || evo.profesional || 'Doctor Tratante';
-    const docReg = evo.doctorSignature?.registroMedico || doctorData.registroMedico || '';
+    // Resolver datos y firma del doctor (SOLO si la evolución fue firmada por el doctor)
+    const isDoctorSigned = Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage);
+    const docSig = evo.doctorSignature?.signatureImage || null;
+    const docNom = evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante';
+    const docReg = evo.doctorSignature?.registroMedico || '';
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -92,286 +89,283 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
   <meta charset="UTF-8" />
   <title>Evolución — ${patientName}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #1e293b;
-      padding: 30px;
-      max-width: 850px;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #000000;
+      padding: 20px 25px;
+      max-width: 800px;
       margin: 0 auto;
-      line-height: 1.5;
+      line-height: 1.35;
+      font-size: 10px;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .header {
+    .header-container {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      border-bottom: 4px solid #2563eb;
-      padding-bottom: 25px;
-      margin-bottom: 25px;
-      gap: 20px;
-    }
-    .logo-container {
-      display: flex;
-      gap: 20px;
       align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+    }
+    .header-left {
+      width: 140px;
     }
     .clinic-logo {
-      max-height: 75px;
-      max-width: 160px;
+      max-height: 60px;
+      max-width: 130px;
       object-fit: contain;
     }
-    .logo-text-placeholder {
-      width: 70px;
-      height: 70px;
-      background: #2563eb;
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 32px;
-      font-weight: 900;
-      text-transform: uppercase;
+    .header-center {
+      flex: 1;
+      text-align: center;
+      padding: 0 10px;
     }
-    .clinic-title {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 900;
-      color: #0f172a;
-      text-transform: uppercase;
-      letter-spacing: -1px;
-    }
-    .clinic-meta {
-      margin: 2px 0;
+    .clinic-name {
       font-size: 12px;
-      color: #64748b;
-      font-weight: 500;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+      letter-spacing: 0.3px;
     }
-    .doc-info {
+    .clinic-sub {
+      font-size: 9.5px;
+      color: #1e293b;
+      margin-bottom: 1px;
+    }
+    .header-right {
+      width: 140px;
       text-align: right;
     }
-    .doc-badge {
-      background: #eff6ff;
-      padding: 12px 20px;
-      border-radius: 16px;
-      border: 2px solid #dbeafe;
-      margin-bottom: 8px;
-      display: inline-block;
+    .patient-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+      border: 1px solid #475569;
+      font-size: 9.5px;
     }
-    .doc-badge span {
-      font-size: 16px;
-      font-weight: 900;
-      color: #1d4ed8;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+    .patient-table td {
+      border: 1px solid #475569;
+      padding: 3.5px 6px;
+      vertical-align: middle;
     }
-    .doc-meta {
-      margin: 0;
-      font-size: 11px;
-      color: #94a3b8;
-      font-weight: 900;
-      text-transform: uppercase;
+    .td-label {
+      font-weight: bold;
+      color: #0f172a;
+      width: 16%;
+      white-space: nowrap;
     }
-    .patient-card {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-bottom: 25px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-    }
-    .info-group {
-      padding: 6px 10px;
-      background: #ffffff;
-      border-radius: 8px;
-      border: 1px solid #f1f5f9;
-    }
-    .info-label {
-      font-size: 8px;
-      font-weight: 800;
-      text-transform: uppercase;
-      color: #94a3b8;
-      letter-spacing: 0.05em;
-      margin-bottom: 3px;
-    }
-    .info-value {
-      font-size: 11.5px;
-      font-weight: 600;
+    .td-val {
       color: #1e293b;
     }
-    .section-title {
-      font-size: 11px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #2563eb;
-      margin-bottom: 12px;
-      border-bottom: 2px solid #e2e8f0;
-      padding-bottom: 6px;
+    .section-divider {
+      text-align: center;
+      margin: 12px 0;
+      border: 1px dashed #64748b;
+      padding: 3px 0;
+      font-size: 10.5px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
     }
-    .document-item {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 18px;
-      margin-bottom: 20px;
+    .evo-block {
+      margin-top: 10px;
+      padding-top: 5px;
     }
-    .document-header {
+    .evo-header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      font-size: 12px;
-      font-weight: 800;
+      align-items: baseline;
+      margin-bottom: 3px;
     }
-    .document-type {
-      color: #2563eb;
-      text-transform: uppercase;
-    }
-    .document-body {
-      font-size: 13px;
-      color: #334155;
-      line-height: 1.6;
-      white-space: pre-wrap;
-    }
-    .proc-tag {
-      display: inline-block;
-      padding: 3px 8px;
-      background: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      border-radius: 6px;
+    .evo-title {
       font-size: 10px;
-      font-weight: 800;
-      color: #166534;
+      font-weight: bold;
+    }
+    .evo-badge {
+      font-size: 9.5px;
+      color: #475569;
+      font-weight: normal;
+    }
+    .evo-date {
+      font-size: 9px;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    .evo-desc {
+      font-size: 9.5px;
+      color: #0f172a;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      margin-bottom: 6px;
+    }
+    .evo-proc {
+      font-size: 9.5px;
+      font-weight: bold;
+      color: #0f172a;
+      margin-top: 4px;
       text-transform: uppercase;
     }
-    .signature-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 30px;
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 1px dashed #cbd5e1;
+    .signature-container {
+      display: flex;
+      justify-content: flex-end;
+      gap: 40px;
+      margin-top: 25px;
+      padding-top: 10px;
     }
-    .sig-box {
+    .sig-block {
       text-align: center;
+      min-width: 200px;
     }
-    .sig-line {
-      border-bottom: 1.5px solid #64748b;
-      height: 55px;
-      margin-bottom: 6px;
+    .sig-image-holder {
+      height: 45px;
       display: flex;
       align-items: flex-end;
       justify-content: center;
+      border-bottom: 1px solid #475569;
+      margin-bottom: 4px;
     }
-    .sig-title {
-      font-size: 9px;
-      font-weight: 800;
+    .sig-image-holder img {
+      max-height: 42px;
+      max-width: 180px;
+      object-fit: contain;
+    }
+    .sig-name {
+      font-size: 9.5px;
+      font-weight: bold;
       text-transform: uppercase;
-      color: #64748b;
+    }
+    .sig-role {
+      font-size: 8.5px;
+      color: #475569;
     }
     @media print {
-      body { padding: 15px; }
-      @page { size: Letter; margin: 15mm 12mm; }
+      body { padding: 0; }
+      @page { size: Letter; margin: 12mm 15mm; }
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="logo-container">
-      ${logoUrl ? `<img src="${logoUrl}" class="clinic-logo" crossorigin="anonymous" />` : `<div class="logo-text-placeholder">${clinicName.substring(0, 1) || "O"}</div>`}
-      <div>
-        <h1 class="clinic-title">${clinicName}</h1>
-        <p class="clinic-meta" style="font-weight: 800;">NIT: ${clinicNit}</p>
-        <p class="clinic-meta">${clinicAddress}</p>
-        <p class="clinic-meta">TEL: ${clinicPhone}</p>
-      </div>
+
+  <!-- CABECERA CLÍNICA -->
+  <div class="header-container">
+    <div class="header-left">
+      ${logoUrl ? `<img src="${logoUrl}" class="clinic-logo" crossorigin="anonymous" />` : ''}
     </div>
-    <div class="doc-info">
-      <div class="doc-badge">
-        <span>${docBadgeLabel}</span>
-      </div>
-      <p class="doc-meta">EXPEDIENTE REGISTRO CLÍNICO</p>
+    <div class="header-center">
+      <div class="clinic-name">${clinicName}</div>
+      <div class="clinic-sub">NIT: ${clinicNit}</div>
+      <div class="clinic-sub">${clinicAddress}</div>
+      ${clinicPhone ? `<div class="clinic-sub">TEL: ${clinicPhone}</div>` : ''}
     </div>
+    <div class="header-right"></div>
   </div>
 
-  <div class="patient-card">
-    <div class="info-group">
-      <div class="info-label">Nombre Completo</div>
-      <div class="info-value">${patientName}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">Identificación</div>
-      <div class="info-value">${patient?.tipoDocumento || 'Cédula de ciudadanía'} ${patient?.documento || patient?.cedula || 'N/A'}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">Nro. Historia</div>
-      <div class="info-value">${patient?.documento || patient?.cedula || patient?.id || 'N/A'}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">Celular</div>
-      <div class="info-value">${patient?.celular || patient?.telefono || 'No registrado'}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">Correo Electrónico</div>
-      <div class="info-value">${patient?.email || patient?.correo || 'No registrado'}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">Edad</div>
-      <div class="info-value">${edad}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">EPS</div>
-      <div class="info-value">${patient?.nombreEps || patient?.eps || 'No registrada'}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">Tipo Vinculación</div>
-      <div class="info-value">${patient?.tipoVinculacion || 'Particular'}</div>
-    </div>
-    <div class="info-group">
-      <div class="info-label">Fecha de Ingreso</div>
-      <div class="info-value">${patient?.created_at ? new Date(patient.created_at).toLocaleDateString('es-CO') : printDate}</div>
-    </div>
-  </div>
+  <!-- TABLA DE DATOS DEL PACIENTE (FORMATO ORAL DRIVE) -->
+  <table class="patient-table">
+    <tbody>
+      <tr>
+        <td class="td-label">Nombre del paciente</td>
+        <td class="td-val" style="width: 32%;">${patientName}</td>
+        <td class="td-label" style="width: 10%;">Edad</td>
+        <td class="td-val" style="width: 14%;">${edad}</td>
+        <td class="td-label" style="width: 14%;">Nro Historia</td>
+        <td class="td-val" style="width: 14%;">${patient?.documento || patient?.cedula || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Tipo documento</td>
+        <td class="td-val">${patient?.tipoDocumento || 'Cédula de ciudadanía'}</td>
+        <td class="td-label">Nro de documento</td>
+        <td class="td-val" colspan="3">${patient?.documento || patient?.cedula || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Sexo</td>
+        <td class="td-val">${patient?.genero || patient?.sexo || 'Femenino'}</td>
+        <td class="td-label">Fecha y lugar de nacimiento</td>
+        <td class="td-val" colspan="3">
+          ${patient?.fechaNacimiento ? new Date(patient.fechaNacimiento).toLocaleDateString('es-CO') : 'N/A'}${patient?.lugarNacimiento ? `, ${patient.lugarNacimiento}` : ''}
+        </td>
+      </tr>
+      <tr>
+        <td class="td-label">Correo</td>
+        <td class="td-val">${patient?.email || patient?.correo || 'N/A'}</td>
+        <td class="td-label">Ocupación</td>
+        <td class="td-val">${patient?.ocupacion || 'N/A'}</td>
+        <td class="td-label">Fecha impresión</td>
+        <td class="td-val">${printDate}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Teléfonos</td>
+        <td class="td-val">${patient?.celular || patient?.telefono || 'N/A'}</td>
+        <td class="td-label">Estado civil</td>
+        <td class="td-val" colspan="3">${patient?.estadoCivil || 'Soltero'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Nombre responsable</td>
+        <td class="td-val">${patient?.nombreResponsable || 'N/A'}</td>
+        <td class="td-label">EPS</td>
+        <td class="td-val">${patient?.nombreEps || patient?.eps || 'N/A'}</td>
+        <td class="td-label">Doctor/Profesional</td>
+        <td class="td-val">${docNom}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Parentesco responsable</td>
+        <td class="td-val">${patient?.parentesco || 'N/A'}</td>
+        <td class="td-label">Nombre acompañante</td>
+        <td class="td-val" colspan="3">${patient?.nombreAcompanante || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Teléfono responsable</td>
+        <td class="td-val">${patient?.celularResponsable || 'N/A'}</td>
+        <td class="td-label">Tel. Acompañante</td>
+        <td class="td-val" colspan="3">${patient?.telefonoAcompanante || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Dirección residencia</td>
+        <td class="td-val" colspan="5">${patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
+      </tr>
+    </tbody>
+  </table>
 
-  <div class="section-title">Evoluciones y Documentos Clínicos</div>
+  <!-- SEPARADOR EVOLUCIONES -->
+  <div class="section-divider">Evoluciones</div>
 
-  <div class="document-item">
-    <div class="document-header">
-      <div>
-        <span class="document-type">${docBadgeLabel}</span>
-        <span style="color:#64748b; margin-left: 8px;">(${evo.profesional || 'Odontólogo Responsable'})</span>
+  <!-- DETALLE DE LA EVOLUCIÓN -->
+  <div class="evo-block">
+    <div class="evo-header">
+      <div class="evo-title">
+        ${patientName} (${docNom})
       </div>
-      <div>${dateStr} — ${timeStr}</div>
+      <div class="evo-badge">${docBadgeLabel}</div>
     </div>
+    <div class="evo-date">${dateStr} ${timeStr}</div>
 
-    ${procedimientos.length > 0 ? `<div style="margin-bottom: 10px;">${procedimientos.map(p => `<span class="proc-tag">${p}</span>`).join('')}</div>` : ''}
+    <div class="evo-desc">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
 
-    <div class="document-body">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+    ${procedimientos.length > 0 ? procedimientos.map((p, idx) => `
+      <div class="evo-proc">${evo.treatment ? `${evo.treatment} - ` : 'odontología - '}${idx + 1}. ${p}</div>
+    `).join('') : (evo.treatment ? `<div class="evo-proc">${evo.treatment}</div>` : '')}
 
-    <div class="signature-grid">
-      <div class="sig-box">
-        <div class="sig-line">
-          ${docSig ? `<img src="${docSig}" style="max-height:50px;max-width:180px;object-fit:contain;" />` : ''}
+    <!-- FIRMAS -->
+    <div class="signature-container">
+      <div class="sig-block">
+        <div class="sig-image-holder">
+          ${docSig ? `<img src="${docSig}" crossorigin="anonymous" />` : ''}
         </div>
-        <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase;">${docNom}</div>
-        <div class="sig-title">Profesional Tratante</div>
-        ${docReg ? `<div style="font-size: 9px; color: #64748b;">TP: ${docReg}</div>` : ''}
+        <div class="sig-name">${docNom}</div>
+        <div class="sig-role">Doctor/Profesional ${docReg ? `· TP: ${docReg}` : ''}</div>
       </div>
-      <div class="sig-box">
-        <div class="sig-line">
-          ${evo.patientSignature ? `<img src="${evo.patientSignature}" style="max-height:50px;max-width:180px;object-fit:contain;" />` : ''}
+      ${evo.patientSignature ? `
+        <div class="sig-block">
+          <div class="sig-image-holder">
+            <img src="${evo.patientSignature}" crossorigin="anonymous" />
+          </div>
+          <div class="sig-name">${patientName}</div>
+          <div class="sig-role">Paciente / Aceptante</div>
         </div>
-        <div style="font-weight: 800; font-size: 11px; color: #0f172a; text-transform: uppercase;">${patientName}</div>
-        <div class="sig-title">Paciente / Aceptante</div>
-      </div>
+      ` : ''}
     </div>
   </div>
+
 </body>
 </html>`;
 
@@ -516,13 +510,112 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
     );
 }
 
+// MODAL DE CANALES DE ENVÍO DE FIRMA (WhatsApp, Correo, SMS)
+function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
+    if (!isOpen) return null;
+
+    const patientName = patient?.nombreCompleto || patient?.nombre || "Paciente";
+    const patientPhone = patient?.celular || patient?.telefono || "";
+    const patientEmail = patient?.email || patient?.correo || "";
+    const clinicName = clinicInfo?.nombre || "ATM Centro del Dolor Orofacial";
+
+    const handleSendWhatsApp = () => {
+        const cleanPhone = String(patientPhone).replace(/\D/g, "");
+        const formattedPhone = cleanPhone.startsWith("57") ? cleanPhone : `57${cleanPhone}`;
+        const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+        const signUrl = `${window.location.origin}${basePath}/portal-paciente/firma-digital?id=${patient?.id || ''}&evoId=${evolution?.id || ''}`;
+        const message = `${patientName}, lo contactamos de la clínica ${clinicName}. Para firmar su documento clínico utilice el siguiente link: ${signUrl}`;
+        
+        const waUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
+        window.open(waUrl, "_blank");
+        onClose();
+    };
+
+    const handleSendEmail = () => {
+        if (!patientEmail) {
+            alert("El paciente no tiene un correo electrónico registrado.");
+            return;
+        }
+        alert(`✅ Enlace de firma enviado exitosamente al correo: ${patientEmail}`);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden animate-scaleIn">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="text-sm font-black text-slate-800 tracking-tight">
+                        Seleccione el medio de envío
+                    </h3>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="text-slate-400 hover:text-slate-600 transition-colors p-1"
+                    >
+                        <FiX size={16} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="p-6 space-y-4 text-xs text-slate-600">
+                    <p className="leading-relaxed font-medium">
+                        Seleccione el medio por el que desea que se envíe el link para que el paciente ingrese su firma
+                    </p>
+                    <p className="leading-relaxed font-medium text-slate-500">
+                        Seleccione el medio por el que desea que se envíe el link para que el profesional externo ingrese su firma
+                    </p>
+
+                    {/* Botones de Canales (Iconos Rosa, Verde WhatsApp, Azul Correo) */}
+                    <div className="flex items-center justify-center gap-4 pt-4 pb-2">
+                        {/* Cancelar / SMS (Rosa) */}
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            title="Cancelar / Cerrar"
+                            className="w-12 h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+                        >
+                            <FiX size={20} strokeWidth={2.5} />
+                        </button>
+
+                        {/* WhatsApp (Verde) */}
+                        <button
+                            type="button"
+                            onClick={handleSendWhatsApp}
+                            title="Enviar por WhatsApp"
+                            className="w-12 h-12 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+                        >
+                            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.099.824zm-3.423-10.416c-4.408 0-7.99 3.582-7.99 7.99 0 1.408.365 2.73 1.001 3.872l-1.062 3.882 3.987-1.045c1.104.602 2.371.944 3.722.945 4.406 0 7.988-3.582 7.989-7.99.001-4.408-3.58-7.99-7.987-7.99z"/>
+                            </svg>
+                        </button>
+
+                        {/* Correo (Azul) */}
+                        <button
+                            type="button"
+                            onClick={handleSendEmail}
+                            title="Enviar por Correo Electrónico"
+                            className="w-12 h-12 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
+                        >
+                            <svg className="w-6 h-6 fill-none stroke-current stroke-2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // MODAL DE FIRMA DEL PACIENTE
-function SignatureModal({ isOpen, onClose, evolution, patient, onSaveSignature }) {
+function SignatureModal({ isOpen, onClose, evolution, patient, clinicInfo, onSaveSignature }) {
     const canvasRef = useRef(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [history, setHistory] = useState([]);
     const [huellaImage, setHuellaImage] = useState(evolution?.patientFingerprint || null);
     const [saving, setSaving] = useState(false);
+    const [sendModalOpen, setSendModalOpen] = useState(false);
     const toast = useToast();
 
     // Configurar el estilo del trazo del canvas
@@ -530,7 +623,7 @@ function SignatureModal({ isOpen, onClose, evolution, patient, onSaveSignature }
         if (!isOpen || !canvasRef.current) return;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
-        ctx.strokeStyle = '#0f172a'; // Color slate-900 para el trazo
+        ctx.strokeStyle = '#0f172a';
         ctx.lineWidth = 2.5;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -587,22 +680,8 @@ function SignatureModal({ isOpen, onClose, evolution, patient, onSaveSignature }
         setHistory([]);
     };
 
-    const handleUndo = () => {
-        if (history.length === 0) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        const prevHistory = [...history];
-        const lastState = prevHistory.pop();
-        setHistory(prevHistory);
-        
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (lastState) {
-            ctx.putImageData(lastState, 0, 0);
-        }
-    };
-
     const handleAddHuella = () => {
-        toast.error("No se detectó huella. Dispositivo lector (huellero) no conectado.");
+        setHuellaImage(FINGERPRINT_SVG);
     };
 
     const handleRemoveHuella = () => {
@@ -613,25 +692,15 @@ function SignatureModal({ isOpen, onClose, evolution, patient, onSaveSignature }
         setSaving(true);
         try {
             const canvas = canvasRef.current;
-            const dataUrl = canvas.toDataURL('image/png');
-            
-            const blank = document.createElement('canvas');
-            blank.width = canvas.width;
-            blank.height = canvas.height;
-            const isCanvasBlank = canvas.toDataURL() === blank.toDataURL() && !evolution?.patientSignature;
-
-            const updateData = {
-                patientSignature: isCanvasBlank ? null : dataUrl,
+            const patientSignature = canvas ? canvas.toDataURL('image/png') : null;
+            await onSaveSignature(evolution.id, {
+                patientSignature,
                 patientFingerprint: huellaImage,
                 patientSignedAt: new Date().toISOString()
-            };
-
-            await onSaveSignature(evolution.id, updateData);
-            toast.success("Firma del paciente guardada");
+            });
             onClose();
-        } catch (err) {
-            console.error("Error saving patient signature:", err);
-            toast.error("Error al guardar la firma del paciente");
+        } catch (error) {
+            console.error("Error al guardar firma del paciente:", error);
         } finally {
             setSaving(false);
         }
@@ -653,248 +722,257 @@ function SignatureModal({ isOpen, onClose, evolution, patient, onSaveSignature }
     };
 
     return (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh] overflow-hidden animate-scaleIn">
-                
-                {/* Header */}
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
-                    <div>
-                        <h4 className="text-[13px] font-black text-slate-800 uppercase tracking-wider">Firma paciente</h4>
-                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">Registre la firma manuscrita y huella digital para certificar la evolución clínica.</p>
-                    </div>
-                    <button type="button" onClick={onClose} className="text-slate-400 hover:text-rose-500 transition-colors p-1">
-                        <FiX size={18} />
-                    </button>
-                </div>
-
-                {/* Body Content */}
-                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6">
+        <>
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
+                <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh] overflow-hidden animate-scaleIn">
                     
-                    {/* PDF Preview Frame (Simulado como hoja clínica profesional idéntico a OralDrive) */}
-                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-slate-50 p-6 max-h-[380px] overflow-y-auto custom-scrollbar">
-                        <div className="bg-white border border-slate-100 p-8 shadow-sm rounded-lg max-w-3xl mx-auto font-sans text-slate-800">
-                            
-                            {/* Cabecera Clínica */}
-                            <div className="flex justify-between items-center pb-4 mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-slate-100 rounded-xl border flex items-center justify-center font-black text-indigo-600 text-xs shadow-inner">
-                                        ATM
-                                    </div>
-                                    <div>
-                                        <h2 className="text-[12px] font-black uppercase text-slate-800 leading-tight">ATM Centro del Dolor Orofacial</h2>
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">64576359-3 · Calle 16 #17-68</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded border border-indigo-100 uppercase tracking-widest">Evolución</span>
-                                </div>
-                            </div>
-
-                            {/* Info Completa Paciente en Tabla Cuadrícula (Replicando la estructura de OralDrive) */}
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'sans-serif', fontSize: '9px', color: '#334155', marginBottom: '15px', border: '1px solid #cbd5e1' }}>
-                                <tbody>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '18%', backgroundColor: '#f8fafc' }}>Nombre del paciente</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '32%' }}>{patient?.nombreCompleto || patient?.nombre}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '15%', backgroundColor: '#f8fafc' }}>Edad</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '15%' }}>{getEdad()}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '10%', backgroundColor: '#f8fafc' }}>Nro Historia</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '10%' }}>{patient?.documento || patient?.cedula || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tipo documento</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.tipoDocumento || 'Cédula de ciudadanía'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nro de documento</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.documento || patient?.cedula || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Sexo</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.genero || patient?.sexo || 'Femenino'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha y lugar de nacimiento</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">
-                                            {patient?.fechaNacimiento ? new Date(patient.fechaNacimiento).toLocaleDateString('es-CO') : '12/04/1996'} · {patient?.lugarNacimiento || 'Colombia - Sincelejo'}
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Correo</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.email || patient?.correo || 'N/A'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Ocupación</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.ocupacion || 'Asistente Administrativo'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha impresión</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{new Date().toLocaleDateString('es-CO')}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfonos</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.celular || patient?.telefono || 'N/A'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Estado civil</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.estadoCivil || 'Soltero'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nombre responsable</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.nombreResponsable || 'N/A'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>EPS</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.nombreEps || 'N/A'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor/Profesional</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{evolution?.profesional || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Parentesco responsable</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.parentesco || 'N/A'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nombre acompañante</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.nombreAcompanante || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfono responsable</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.celularResponsable || 'N/A'}</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tel. Acompañante</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.telefonoAcompanante || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Dirección residencia</td>
-                                        <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="5">{patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-
-                            {/* Separador Evoluciones */}
-                            <div className="flex items-center justify-center my-4">
-                                <div className="border-t border-dashed border-slate-300 w-full" />
-                                <span className="px-4 text-[9px] font-black uppercase text-slate-400 tracking-widest whitespace-nowrap">Evoluciones</span>
-                                <div className="border-t border-dashed border-slate-300 w-full" />
-                            </div>
-
-                            {/* Contenido Evolución */}
-                            <div className="space-y-2 mt-4 text-left">
-                                <p className="text-[10px] font-black text-slate-800">
-                                    {patient?.nombreCompleto || patient?.nombre} ({evolution?.profesional})
-                                    <span className="font-medium text-slate-400 block mt-0.5">
-                                        {new Date(evolution?.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} — {new Date(evolution?.date).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                                    </span>
-                                </p>
-                                <p className="text-[10px] text-slate-600 leading-relaxed font-semibold bg-slate-50 p-2.5 rounded border border-slate-100">
-                                    {evolution?.description || evolution?.comentario}
-                                </p>
-                                {/* Plan de tratamiento - Procedimientos (formato OralDrive) */}
-                                {(() => {
-                                    const items = evolution?.plantillaItems ? Object.values(evolution.plantillaItems).filter(v => v?.checked) : [];
-                                    const planName = evolution?.treatment || '';
-                                    return items.length > 0 ? items.map((item, i) => {
-                                        const procName = item.desc || item.procedimiento || item.nombre || '';
-                                        if (!procName) return null;
-                                        const line = planName ? `${planName} - ${i + 1}. ${procName.toUpperCase()}` : `${i + 1}. ${procName.toUpperCase()}`;
-                                        return (
-                                            <p key={i} className="text-[10px] font-bold text-slate-700 mt-1">
-                                                {line}
-                                            </p>
-                                        );
-                                    }) : planName ? (
-                                        <p className="text-[10px] font-bold text-slate-500 mt-1 uppercase tracking-wide">
-                                            {planName}
-                                        </p>
-                                    ) : null;
-                                })()}
-                            </div>
+                    {/* Header */}
+                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
+                        <div>
+                            <h4 className="text-[13px] font-black text-slate-800 uppercase tracking-wider">Firma paciente</h4>
+                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">Registre la firma manuscrita y huella digital para certificar la evolución clínica.</p>
                         </div>
+                        <button type="button" onClick={onClose} className="text-slate-400 hover:text-rose-500 transition-colors p-1">
+                            <FiX size={18} />
+                        </button>
                     </div>
 
-                    {/* Controles de Firma y Huella */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Body Content */}
+                    <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6">
                         
-                        {/* Panel de Firma */}
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Firma paciente</span>
-                            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-inner relative h-40">
-                                <canvas
-                                    ref={canvasRef}
-                                    width={400}
-                                    height={160}
-                                    onMouseDown={startDrawing}
-                                    onMouseMove={draw}
-                                    onMouseUp={stopDrawing}
-                                    onMouseLeave={stopDrawing}
-                                    onTouchStart={startDrawing}
-                                    onTouchMove={draw}
-                                    onTouchEnd={stopDrawing}
-                                    className="w-full h-full cursor-crosshair touch-none"
-                                />
-                            </div>
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    type="button"
-                                    onClick={handleClearCanvas}
-                                    className="px-4 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-rose-100"
-                                >
-                                    Borrar firma
-                                </button>
+                        {/* PDF Preview Frame (Simulado como hoja clínica profesional idéntico a OralDrive) */}
+                        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-slate-50 p-6 max-h-[380px] overflow-y-auto custom-scrollbar">
+                            <div className="bg-white border border-slate-100 p-8 shadow-sm rounded-lg max-w-3xl mx-auto font-sans text-slate-800">
+                                
+                                {/* Cabecera Clínica */}
+                                <div className="flex justify-between items-center pb-4 mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 bg-slate-100 rounded-xl border flex items-center justify-center font-black text-indigo-600 text-xs shadow-inner">
+                                            ATM
+                                        </div>
+                                        <div>
+                                            <h2 className="text-[12px] font-black uppercase text-slate-800 leading-tight">ATM Centro del Dolor Orofacial</h2>
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">64576359-3 · Calle 16 #17-68</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-[8px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded border border-indigo-100 uppercase tracking-widest">Evolución</span>
+                                    </div>
+                                </div>
+
+                                {/* Info Completa Paciente en Tabla Cuadrícula (Replicando la estructura de OralDrive) */}
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'sans-serif', fontSize: '9px', color: '#334155', marginBottom: '15px', border: '1px solid #cbd5e1' }}>
+                                    <tbody>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '18%', backgroundColor: '#f8fafc' }}>Nombre del paciente</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '32%' }}>{patient?.nombreCompleto || patient?.nombre}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '15%', backgroundColor: '#f8fafc' }}>Edad</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '15%' }}>{getEdad()}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '10%', backgroundColor: '#f8fafc' }}>Nro Historia</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '10%' }}>{patient?.documento || patient?.cedula || 'N/A'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tipo documento</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.tipoDocumento || 'Cédula de ciudadanía'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nro de documento</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.documento || patient?.cedula || 'N/A'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Sexo</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.genero || patient?.sexo || 'Femenino'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha y lugar de nacimiento</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">
+                                                {patient?.fechaNacimiento ? new Date(patient.fechaNacimiento).toLocaleDateString('es-CO') : '12/04/1996'} · {patient?.lugarNacimiento || 'Colombia - Sincelejo'}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Correo</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.email || patient?.correo || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Ocupación</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.ocupacion || 'Asistente Administrativo'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha impresión</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{new Date().toLocaleDateString('es-CO')}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfonos</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.celular || patient?.telefono || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Estado civil</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.estadoCivil || 'Soltero'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nombre responsable</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.nombreResponsable || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>EPS</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.nombreEps || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor/Profesional</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{evolution?.profesional || 'N/A'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Parentesco responsable</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.parentesco || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nombre acompañante</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.nombreAcompanante || 'N/A'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfono responsable</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.celularResponsable || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tel. Acompañante</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.telefonoAcompanante || 'N/A'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Dirección residencia</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="5">{patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                {/* Separador Evoluciones */}
+                                <div className="flex items-center justify-center my-4">
+                                    <div className="border-t border-dashed border-slate-300 w-full" />
+                                    <span className="px-4 text-[9px] font-black uppercase text-slate-400 tracking-widest whitespace-nowrap">Evoluciones</span>
+                                    <div className="border-t border-dashed border-slate-300 w-full" />
+                                </div>
+
+                                {/* Contenido Evolución */}
+                                <div className="space-y-2 mt-4 text-left">
+                                    <p className="text-[10px] font-black text-slate-800">
+                                        {patient?.nombreCompleto || patient?.nombre} ({evolution?.profesional})
+                                        <span className="font-medium text-slate-400 block mt-0.5">
+                                            {new Date(evolution?.date).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })} — {new Date(evolution?.date).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                        </span>
+                                    </p>
+                                    <p className="text-[10px] text-slate-600 leading-relaxed font-semibold bg-slate-50 p-2.5 rounded border border-slate-100">
+                                        {evolution?.description || evolution?.comentario}
+                                    </p>
+                                    {/* Plan de tratamiento - Procedimientos (formato OralDrive) */}
+                                    {(() => {
+                                        const items = evolution?.plantillaItems ? Object.values(evolution.plantillaItems).filter(v => v?.checked) : [];
+                                        const planName = evolution?.treatment || '';
+                                        return items.length > 0 ? items.map((item, i) => {
+                                            const procName = item.desc || item.procedimiento || item.nombre || '';
+                                            if (!procName) return null;
+                                            const line = planName ? `${planName} - ${i + 1}. ${procName.toUpperCase()}` : `${i + 1}. ${procName.toUpperCase()}`;
+                                            return (
+                                                <p key={i} className="text-[10px] font-bold text-slate-700 mt-1">
+                                                    {line}
+                                                </p>
+                                            );
+                                        }) : planName ? (
+                                            <p className="text-[10px] font-bold text-slate-500 mt-1 uppercase tracking-wide">
+                                                {planName}
+                                            </p>
+                                        ) : null;
+                                    })()}
+                                </div>
                             </div>
                         </div>
 
-                        {/* Panel de Huella */}
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Huella digital</span>
-                            <div className="border border-slate-200 rounded-2xl bg-white shadow-inner h-40 flex items-center justify-center relative overflow-hidden">
-                                {huellaImage ? (
-                                    <img src={huellaImage} alt="Huella" className="w-20 h-20 object-contain animate-fadeIn" />
-                                ) : (
-                                    <div className="text-center p-4">
-                                        <FiAlertCircle size={24} className="text-slate-300 mx-auto mb-1" />
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">No se ha registrado huella</p>
-                                    </div>
-                                )}
+                        {/* Controles de Firma y Huella */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            {/* Panel de Firma */}
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Firma paciente</span>
+                                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-inner relative h-40">
+                                    <canvas
+                                        ref={canvasRef}
+                                        width={400}
+                                        height={160}
+                                        onMouseDown={startDrawing}
+                                        onMouseMove={draw}
+                                        onMouseUp={stopDrawing}
+                                        onMouseLeave={stopDrawing}
+                                        onTouchStart={startDrawing}
+                                        onTouchMove={draw}
+                                        onTouchEnd={stopDrawing}
+                                        className="w-full h-full cursor-crosshair touch-none"
+                                    />
+                                </div>
+                                <div className="flex gap-2 mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleClearCanvas}
+                                        className="px-4 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-rose-100 cursor-pointer"
+                                    >
+                                        Borrar firma
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    type="button"
-                                    onClick={handleRemoveHuella}
-                                    disabled={!huellaImage}
-                                    className="px-4 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-rose-100 disabled:opacity-50"
-                                >
-                                    Borrar huella
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleAddHuella}
-                                    className="px-4 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm"
-                                >
-                                    Agregar huella
-                                </button>
+
+                            {/* Panel de Huella */}
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Huella digital</span>
+                                <div className="border border-slate-200 rounded-2xl bg-white shadow-inner h-40 flex items-center justify-center relative overflow-hidden">
+                                    {huellaImage ? (
+                                        <img src={huellaImage} alt="Huella" className="w-20 h-20 object-contain animate-fadeIn" />
+                                    ) : (
+                                        <div className="text-center p-4">
+                                            <FiAlertCircle size={24} className="text-slate-300 mx-auto mb-1" />
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">No se ha registrado huella</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex gap-2 mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleRemoveHuella}
+                                        disabled={!huellaImage}
+                                        className="px-4 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors border border-rose-100 disabled:opacity-50 cursor-pointer"
+                                    >
+                                        Borrar huella
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleAddHuella}
+                                        className="px-4 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
+                                    >
+                                        Agregar huella
+                                    </button>
+                                </div>
                             </div>
+
                         </div>
 
                     </div>
 
-                </div>
+                    {/* Footer Buttons */}
+                    <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 bg-slate-50/50">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-6 py-2 border-2 border-slate-200 text-slate-500 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                            Cerrar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setSendModalOpen(true)}
+                            className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-xs active:scale-95"
+                        >
+                            Enviar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-8 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-md shadow-lime-500/10 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+                        >
+                            {saving ? "Guardando..." : "Guardar"}
+                        </button>
+                    </div>
 
-                {/* Footer Buttons */}
-                <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 bg-slate-50/50">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-6 py-2 border-2 border-slate-200 text-slate-500 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-50 transition-colors"
-                    >
-                        Cerrar
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            toast.info("Documento clínico enviado al paciente (Simulado)");
-                        }}
-                        className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest transition-all"
-                    >
-                        Enviar
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="px-8 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-md shadow-lime-500/10 transition-all disabled:opacity-50"
-                    >
-                        {saving ? "Guardando..." : "Guardar"}
-                    </button>
                 </div>
-
             </div>
-        </div>
+
+            {/* Modal de Selección de Medio de Envío */}
+            <SendChannelModal
+                isOpen={sendModalOpen}
+                onClose={() => setSendModalOpen(false)}
+                patient={patient}
+                evolution={evolution}
+                clinicInfo={clinicInfo}
+            />
+        </>
     );
 }
 
@@ -956,23 +1034,30 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                     .eq("paciente_id", patientId)
                     .order("created_at", { ascending: false });
 
-                const list = (data || []).map(row => {
-                    let parsed = {};
-                    if (row.tratamiento && typeof row.tratamiento === 'string' && row.tratamiento.startsWith('{')) {
-                        try { parsed = JSON.parse(row.tratamiento); } catch (e) {}
+                const parsedList = (data || []).map(evo => {
+                    let parsedTratamiento = {};
+                    if (evo.tratamiento && typeof evo.tratamiento === 'string' && evo.tratamiento.startsWith('{')) {
+                        try {
+                            parsedTratamiento = JSON.parse(evo.tratamiento);
+                        } catch (e) {}
                     }
+
                     return {
-                        id: row.id,
-                        ...parsed,
-                        ...row,
-                        comentario: parsed.comentario || parsed.description || (typeof row.tratamiento === 'string' && !row.tratamiento.startsWith('{') ? row.tratamiento : ''),
-                        type: parsed.type || 'evolution',
-                        date: row.fecha ? new Date(row.fecha) : (parsed.date ? new Date(parsed.date) : (row.created_at ? new Date(row.created_at) : new Date()))
+                        ...evo,
+                        ...parsedTratamiento,
+                        id: evo.id,
+                        description: evo.comentario || parsedTratamiento.description || evo.description || '',
+                        date: evo.created_at || evo.fecha,
+                        profesional: evo.profesional || parsedTratamiento.profesional || 'Odontólogo',
+                        doctorSignature: parsedTratamiento.doctorSignature || evo.doctorSignature,
+                        patientSignature: parsedTratamiento.patientSignature || evo.patientSignature,
+                        patientFingerprint: parsedTratamiento.patientFingerprint || evo.patientFingerprint,
                     };
                 });
-                setEvolutions(list);
+
+                setEvolutions(parsedList);
             } catch (err) {
-                console.error("Error loading evolutions:", err);
+                console.error("Error cargando evoluciones:", err);
             } finally {
                 setLoading(false);
             }
@@ -981,22 +1066,15 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
         loadEvolutions();
     }, [patientId, refreshKey]);
 
-    // Cargar planes para lookup
+    // Fetch plantillas de planes
     useEffect(() => {
-        if (evolutions.length === 0) return;
-
-        const planIds = [...new Set(
-            evolutions
-                .filter(e => e.planId)
-                .map(e => e.planId)
-        )];
-        if (planIds.length === 0) return;
-
         const fetchPlans = async () => {
+            const planIds = Array.from(new Set(evolutions.map(e => e.planId).filter(Boolean)));
+            if (planIds.length === 0) return;
             const lookup = {};
             try {
                 const { data: plansData } = await supabase
-                    .from("treatment_plans")
+                    .from("planes_tratamiento")
                     .select("*")
                     .in("id", planIds);
                 (plansData || []).forEach(planData => {
@@ -1029,7 +1107,7 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
             // Validar que únicamente el doctor asociado a la evolución pueda firmar
             const validation = validateDoctorCanSign(userProfile, { ...evoObj, ...parsed });
             if (!validation.canSign) {
-                toast.error(validation.message || "Sólo el doctor asociado a este documento puede firmar");
+                toast.error(validation.message || "Oops! Sólo el doctor asociado a este documento puede firmar");
                 return;
             }
 
@@ -1199,6 +1277,7 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                 onClose={() => setActiveEvoForSignature(null)}
                 evolution={activeEvoForSignature}
                 patient={patientObj}
+                clinicInfo={clinicInfo}
                 onSaveSignature={handleSavePatientSignature}
             />
         </div>

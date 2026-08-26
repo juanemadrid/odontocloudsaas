@@ -209,30 +209,30 @@ export default function PagosList({ onNew }) {
   return (
     <div className="bg-[#f8fafc] text-slate-700 pb-16 animate-fadeIn font-sans">
       
-      {/* Header & Breadcrumbs (sólo si no está incrustado en FacturacionHub con onNew) */}
-      {!onNew && (
-        <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm">
-          <div className="max-w-[1300px] mx-auto flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight">Pagos</h1>
-              <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
-                <FiHome className="text-slate-400" size={13} />
-                <span>Facturación</span>
-                <span>›</span>
-                <span className="text-slate-700 font-semibold">Pagos</span>
-              </div>
+      {/* Header & Breadcrumbs */}
+      <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-[1300px] mx-auto flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-slate-800 tracking-tight">Pagos</h1>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
+              <FiHome className="text-slate-400" size={13} />
+              <span>Facturación</span>
+              <span>›</span>
+              <span className="text-slate-700 font-semibold">Pagos</span>
             </div>
+          </div>
 
+          {onNew && (
             <button
               type="button"
               onClick={onNew}
-              className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
+              className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
             >
               <FiPlus size={15} /> Nuevo pago
             </button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       <div className="max-w-[1300px] mx-auto px-6 py-6 space-y-6">
         
