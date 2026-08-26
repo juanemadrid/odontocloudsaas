@@ -274,10 +274,35 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const getDeviceSessionId = () => {
+    let id = sessionStorage.getItem("odc_device_session_id");
+    if (!id) {
+      id = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+      try { sessionStorage.setItem("odc_device_session_id", id); } catch {}
+    }
+    return id;
+  };
+
   useEffect(() => {
     let isMounted = true;
+    let sessionChannel = null;
+    const currentDeviceSessionId = getDeviceSessionId();
 
-    // Timeout de seguridad: si en 8 segundos no terminó de cargar, desbloquear
+    // Sincronizar identificador activo en localStorage
+    try {
+      localStorage.setItem("odc_active_session_id", currentDeviceSessionId);
+    } catch {}
+
+    // 1. Escuchar si otra pestaña del mismo navegador inicia sesión con otra cuenta o sesión
+    const handleStorageChange = (e) => {
+      if (e.key === "odc_active_session_id" && e.newValue && e.newValue !== currentDeviceSessionId) {
+        console.warn("AuthContext - Nueva sesión detectada en otra pestaña. Cerrando sesión actual...");
+        logout();
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    // 2. Timeout de seguridad: si en 8 segundos no terminó de cargar, desbloquear
     const safetyTimeout = setTimeout(() => {
       if (isMounted) {
         console.warn("AuthContext - Timeout de seguridad: forzando loading=false");
@@ -285,11 +310,44 @@ export const AuthProvider = ({ children }) => {
       }
     }, 8000);
 
+    // Función para suscribirse al canal de sesión única del usuario
+    const setupSingleSessionChannel = (userId) => {
+      if (!userId) return;
+      if (sessionChannel) {
+        try { supabase.removeChannel(sessionChannel); } catch {}
+      }
+
+      sessionChannel = supabase.channel(`user-session-${userId}`, {
+        config: { broadcast: { self: false } }
+      });
+
+      sessionChannel
+        .on("broadcast", { event: "force_logout_previous" }, (payload) => {
+          const incomingId = payload?.payload?.sessionId;
+          if (incomingId && incomingId !== currentDeviceSessionId) {
+            console.warn("AuthContext - Se ha iniciado sesión desde otro dispositivo.");
+            alert("⚠️ Se ha iniciado sesión con tu cuenta desde otro dispositivo o ventana. Por seguridad, esta sesión ha sido cerrada.");
+            logout();
+          }
+        })
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            // Notificar a cualquier sesión previa en otro dispositivo que se cierre
+            sessionChannel.send({
+              type: "broadcast",
+              event: "force_logout_previous",
+              payload: { sessionId: currentDeviceSessionId, timestamp: Date.now() }
+            });
+          }
+        });
+    };
+
     // Inicializar sesión Supabase
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!isMounted) return;
       if (session?.user) {
         setUser(session.user);
+        setupSingleSessionChannel(session.user.id);
         const prof = await fetchUserProfile(session.user);
         if (isMounted) setUserProfile(prof);
       } else {
@@ -311,12 +369,11 @@ export const AuthProvider = ({ children }) => {
     // Escuchar cambios de autenticación en tiempo real en Supabase
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
-      // Supabase advierte que hacer llamadas async dentro del callback puede
-      // bloquear el cliente. Diferir el trabajo elimina la carrera del primer login.
       window.setTimeout(async () => {
         if (!isMounted) return;
         if (session?.user) {
           setUser(session.user);
+          setupSingleSessionChannel(session.user.id);
           const prof = await fetchUserProfile(session.user);
           if (isMounted) {
             setUserProfile(prev => {
@@ -329,6 +386,9 @@ export const AuthProvider = ({ children }) => {
         } else {
           setUser(null);
           setUserProfile(null);
+          if (sessionChannel) {
+            try { supabase.removeChannel(sessionChannel); } catch {}
+          }
         }
         if (isMounted) setLoading(false);
       }, 0);
@@ -348,10 +408,22 @@ export const AuthProvider = ({ children }) => {
       clearTimeout(safetyTimeout);
       subscription?.unsubscribe();
       window.removeEventListener("tenant-updated", handleTenantUpdated);
+      window.removeEventListener("storage", handleStorageChange);
+      if (sessionChannel) {
+        try { supabase.removeChannel(sessionChannel); } catch {}
+      }
     };
   }, []);
 
   const signIn = async (email, password) => {
+    // Limpiar cachés y regenerar session id antes del login
+    try { sessionStorage.clear(); } catch {}
+    const newSessionId = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    try {
+      sessionStorage.setItem("odc_device_session_id", newSessionId);
+      localStorage.setItem("odc_active_session_id", newSessionId);
+    } catch {}
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password
@@ -365,13 +437,14 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.clear();
     } catch (e) {}
     try {
+      localStorage.removeItem("odc_session");
+      localStorage.removeItem("odc_active_session_id");
+    } catch (e) {}
+    try {
       await supabase.auth.signOut();
     } catch (e) {
       console.warn("AuthContext - Error durante logout de Supabase:", e);
     }
-    try {
-      localStorage.removeItem("odc_session");
-    } catch (e) {}
     setUser(null);
     setUserProfile(null);
   };
