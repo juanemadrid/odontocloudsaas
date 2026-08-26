@@ -313,8 +313,8 @@ export const AuthProvider = ({ children }) => {
           const incomingId = payload?.payload?.sessionId;
           const currentLocalId = localStorage.getItem("odc_device_session_id");
           // Solo cerrar si proviene de otro dispositivo con id diferente
-          if (incomingId && incomingId !== currentLocalId) {
-            console.warn("AuthContext - Se ha iniciado sesión desde otro dispositivo.");
+          if (incomingId && currentLocalId && incomingId !== currentLocalId) {
+            console.warn("AuthContext - Se ha iniciado sesión desde otro dispositivo (Realtime).");
             setSessionExpiredNotice(true);
             logout(false);
           }
@@ -322,16 +322,19 @@ export const AuthProvider = ({ children }) => {
         .subscribe();
     };
 
-    const verifyActiveDeviceSession = (authUser) => {
-      if (!authUser) return true;
-      const serverSessionId = authUser.user_metadata?.active_device_session_id;
-      const currentLocalId = localStorage.getItem("odc_device_session_id");
-      if (serverSessionId && currentLocalId && serverSessionId !== currentLocalId) {
-        console.warn("AuthContext - Sesión reemplazada por otro dispositivo (Server Check).");
-        setSessionExpiredNotice(true);
-        logout(false);
-        return false;
-      }
+    const verifySessionWithServer = async () => {
+      try {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (!currentUser) return true;
+        const serverSessionId = currentUser.user_metadata?.active_device_session_id;
+        const currentLocalId = localStorage.getItem("odc_device_session_id");
+        if (serverSessionId && currentLocalId && serverSessionId !== currentLocalId) {
+          console.warn("AuthContext - Sesión reemplazada por otro dispositivo (Verificación Servidor).");
+          setSessionExpiredNotice(true);
+          logout(false);
+          return false;
+        }
+      } catch (err) {}
       return true;
     };
 
@@ -339,18 +342,12 @@ export const AuthProvider = ({ children }) => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!isMounted) return;
       if (session?.user) {
-        const isValid = verifyActiveDeviceSession(session.user);
-        if (!isValid) {
-          if (isMounted) {
-            clearTimeout(safetyTimeout);
-            setLoading(false);
-          }
-          return;
-        }
         setUser(session.user);
         setupSingleSessionChannel(session.user.id);
         const prof = await fetchUserProfile(session.user);
         if (isMounted) setUserProfile(prof);
+        // Validar contra servidor
+        verifySessionWithServer();
       } else {
         setUser(null);
         setUserProfile(null);
@@ -373,9 +370,6 @@ export const AuthProvider = ({ children }) => {
       window.setTimeout(async () => {
         if (!isMounted) return;
         if (session?.user) {
-          const isValid = verifyActiveDeviceSession(session.user);
-          if (!isValid) return;
-
           setUser(session.user);
           setupSingleSessionChannel(session.user.id);
           const prof = await fetchUserProfile(session.user);
@@ -387,6 +381,7 @@ export const AuthProvider = ({ children }) => {
               return prof;
             });
           }
+          verifySessionWithServer();
         } else {
           setUser(null);
           setUserProfile(null);
@@ -398,14 +393,18 @@ export const AuthProvider = ({ children }) => {
       }, 0);
     });
 
-    // Verificación periódica y al reactivar la pestaña/pantalla del celular o computador
-    const handleVisibilityOrFocus = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user && isMounted) {
-          verifyActiveDeviceSession(session.user);
-        }
-      } catch {}
+    // Verificación periódica activa cada 3.5 segundos contra el servidor
+    const heartbeatInterval = setInterval(() => {
+      if (isMounted && localStorage.getItem("odc_device_session_id")) {
+        verifySessionWithServer();
+      }
+    }, 3500);
+
+    // Verificación inmediata al reactivar la pestaña o desbloquear celular
+    const handleVisibilityOrFocus = () => {
+      if (isMounted) {
+        verifySessionWithServer();
+      }
     };
 
     window.addEventListener("focus", handleVisibilityOrFocus);
@@ -423,6 +422,7 @@ export const AuthProvider = ({ children }) => {
     return () => {
       isMounted = false;
       clearTimeout(safetyTimeout);
+      clearInterval(heartbeatInterval);
       subscription?.unsubscribe();
       window.removeEventListener("focus", handleVisibilityOrFocus);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
@@ -459,7 +459,9 @@ export const AuthProvider = ({ children }) => {
 
       // Notificar en tiempo real a otras sesiones activas
       try {
-        const notifyChannel = supabase.channel(`user-session-${data.user.id}`);
+        const notifyChannel = supabase.channel(`user-session-${data.user.id}`, {
+          config: { broadcast: { self: false } }
+        });
         notifyChannel.subscribe((status) => {
           if (status === "SUBSCRIBED") {
             notifyChannel.send({
@@ -469,7 +471,7 @@ export const AuthProvider = ({ children }) => {
             });
             setTimeout(() => {
               try { supabase.removeChannel(notifyChannel); } catch {}
-            }, 2000);
+            }, 2500);
           }
         });
       } catch (e) {
