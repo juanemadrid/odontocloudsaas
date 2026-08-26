@@ -532,12 +532,26 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
     const patientEmail = patient?.email || patient?.correo || "";
     const clinicName = clinicInfo?.nombre || "ATM Centro del Dolor Orofacial";
 
-    const handleSendWhatsApp = () => {
+    const handleSendWhatsApp = async () => {
         const cleanPhone = String(patientPhone).replace(/\D/g, "");
         const formattedPhone = cleanPhone.startsWith("57") ? cleanPhone : `57${cleanPhone}`;
         const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
-        const signUrl = `${window.location.origin}${basePath}/portal-paciente/firma-digital?id=${patient?.id || ''}&evoId=${evolution?.id || ''}`;
-        const message = `${patientName}, lo contactamos de la clínica ${clinicName}. Para firmar su documento clínico utilice el siguiente link: ${signUrl}`;
+        const longUrl = `${window.location.origin}${basePath}/portal-paciente/firma-digital?id=${patient?.id || ''}&evoId=${evolution?.id || ''}`;
+        
+        let finalSignUrl = longUrl;
+        try {
+            const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
+            if (res.ok) {
+                const short = await res.text();
+                if (short && short.startsWith("http")) {
+                    finalSignUrl = short.trim();
+                }
+            }
+        } catch (e) {
+            console.warn("Could not shorten URL, using long URL:", e);
+        }
+
+        const message = `Hola ${patientName}, lo contactamos de la clínica ${clinicName}. Para firmar su documento clínico de forma digital y segura utilice el siguiente enlace: ${finalSignUrl}`;
         
         const waUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
         window.open(waUrl, "_blank");
