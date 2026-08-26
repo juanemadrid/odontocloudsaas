@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "../../../context/AuthContext";
+import { useSede } from "../../../context/SedeContext";
 import { createOrUpdatePatient } from "../../../services/patientService";
 import { useAudit } from "../../../hooks/useAudit";
 import supabase from "../../../lib/supabaseClient";
@@ -137,6 +138,7 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
 
 export function useAgenda() {
     const { userProfile } = useAuth();
+    const { activeSede, sedesList } = useSede();
     const { logAction } = useAudit();
     const inquilino = userProfile?.inquilino;
 
@@ -154,10 +156,28 @@ export function useAgenda() {
     const [priceList, setPriceList] = useState([]);
     const [patientsMap, setPatientsMap] = useState({});
 
-    // Filters
+    // Filters - Sincronizado por defecto con la sede activa seleccionada en el menú superior
     const [filterDocId, setFilterDocId] = useState("");
-    const [filterBranchId, setFilterBranchId] = useState("");
+    const [filterBranchId, setFilterBranchId] = useState(() => activeSede?.id || "");
     const [filterChairId, setFilterChairId] = useState("");
+
+    // Sincronizar filterBranchId cuando el usuario cambia la sede en el selector superior
+    useEffect(() => {
+        if (activeSede?.id) {
+            setFilterBranchId(activeSede.id);
+        }
+    }, [activeSede?.id]);
+
+    useEffect(() => {
+        const handleSedeChange = (e) => {
+            const newSedeId = e.detail?.sedeId || e.detail?.sede?.id;
+            if (newSedeId) {
+                setFilterBranchId(newSedeId);
+            }
+        };
+        window.addEventListener("sede-changed", handleSedeChange);
+        return () => window.removeEventListener("sede-changed", handleSedeChange);
+    }, []);
 
     // === Role & Permission Check for Doctor Isolation ===
     const rolActual = (userProfile?.rol || "").trim().toLowerCase();
@@ -318,7 +338,7 @@ export function useAgenda() {
                 setDoctors(docsList);
 
                 // Branches — sucursales
-                setBranches(sucursalesData || []);
+                setBranches(sedesList && sedesList.length > 0 ? sedesList : (sucursalesData || []));
 
                 // Recursos físicos / Consultorios — fusionar tabla PostgreSQL y website_config
                 const chairsMap = new Map();
@@ -459,11 +479,23 @@ export function useAgenda() {
                 };
             });
 
+            const effectiveBranchId = filterBranchId || activeSede?.id || "";
+            const isMultiSede = (sedesList && sedesList.length > 1) || (branches && branches.length > 1);
+
             const visible = mapped.filter(ev => {
                 const inRange = ev.start >= start && ev.start <= end;
                 const activeDocFilter = isDoctorOnly ? loggedInDoctorId : filterDocId;
                 const matchDoc = !activeDocFilter || ev.doctorId === activeDocFilter || ev.resourceId === activeDocFilter || ev.profesional_id === activeDocFilter;
-                const matchBranch = !filterBranchId || ev.sucursalId === filterBranchId || ev.sucursal_id === filterBranchId;
+                
+                const matchBranch = !isMultiSede || !effectiveBranchId || effectiveBranchId === "TODAS" ||
+                    String(ev.sucursalId) === String(effectiveBranchId) ||
+                    String(ev.sucursal_id) === String(effectiveBranchId) ||
+                    (activeSede?.nombre && String(ev.sucursalId || "").toUpperCase() === String(activeSede.nombre).toUpperCase()) ||
+                    (sedesList?.find(s => String(s.id) === String(effectiveBranchId))?.nombre && (
+                        String(ev.sucursalId || "").toUpperCase() === String(sedesList.find(s => String(s.id) === String(effectiveBranchId)).nombre).toUpperCase()
+                    )) ||
+                    (!ev.sucursalId && !ev.sucursal_id && activeSede?.esPrincipal);
+
                 const matchChair = !filterChairId || ev.consultorioId === filterChairId || ev.consultorio_id === filterChairId || ev.sillonId === filterChairId || ev.recursoId === filterChairId;
                 return inRange && matchDoc && matchBranch && matchChair;
             }).sort((a, b) => (a.start || 0) - (b.start || 0));
@@ -474,7 +506,7 @@ export function useAgenda() {
         } finally {
             setLoading(false);
         }
-    }, [inquilino, viewMode, selectedDate, isDoctorOnly, loggedInDoctorId, filterDocId, filterBranchId, filterChairId]);
+    }, [inquilino, viewMode, selectedDate, isDoctorOnly, loggedInDoctorId, filterDocId, filterBranchId, filterChairId, activeSede, sedesList, branches]);
 
     // === Load Appointments Effect & Subscription ===
     useEffect(() => {

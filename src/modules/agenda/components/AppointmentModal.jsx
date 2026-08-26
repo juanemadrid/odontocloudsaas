@@ -10,6 +10,7 @@ import { searchPatients, checkDocumentExists } from "../../../services/patientSe
 import { FiUser, FiCalendar, FiPhone, FiExternalLink, FiSearch, FiCreditCard, FiAlertCircle } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
+import { useSede } from "../../../context/SedeContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { sendConfirmation } from "../../../services/WhatsAppService";
 import { dispatchAutomationEvent } from "../../../services/AutomationService";
@@ -84,6 +85,7 @@ export default function AppointmentModal({
     const toast = useToast();
     const navigate = useNavigate();
     const { userProfile } = useAuth();
+    const { activeSede } = useSede();
     const { can } = usePermissions();
     const hasWritePermission = initialData?.id ? can("Agenda", "Agenda", "editar") : can("Agenda", "Agenda", "crear");
     const inquilino = userProfile?.inquilino;
@@ -210,7 +212,7 @@ export default function AppointmentModal({
                     fechaNacimiento: "",
                     doctorId: initialData?.doctorId || "",
                     consultorioId: initialData?.consultorioId || "",
-                    sucursalId: initialData?.sucursalId || (branches?.[0]?.id || ""),
+                    sucursalId: initialData?.sucursalId || activeSede?.id || (branches?.[0]?.id || ""),
                     especialidadId: initialData?.especialidadId || "",
                     entidadId: initialData?.entidadId || "",
                     precioItemId: initialData?.precioItemId || "",
@@ -230,7 +232,7 @@ export default function AppointmentModal({
             wasOpenRef.current = false;
             lastInitialDataIdRef.current = null;
         }
-    }, [isOpen, initialData?.id, branches, reset]);
+    }, [isOpen, initialData?.id, branches, activeSede?.id, reset]);
 
     // Search Logic
     useEffect(() => {
