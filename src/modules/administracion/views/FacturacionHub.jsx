@@ -3,7 +3,7 @@ import {
   FiFileText, FiPlusCircle, FiMinusCircle, FiDollarSign, 
   FiRepeat, FiTruck, FiShoppingBag, FiLayers, FiCreditCard, FiArrowRight, FiChevronRight, FiPlus
 } from "react-icons/fi";
-import FinancialDashboard from "../../financiero/components/FinancialDashboard";
+import FacturaElectronicaModule from "../../facturacion/electronica/FacturaElectronicaModule";
 import ReciboCajaList from "../../facturacion/recibo/ReciboCajaList";
 import ReciboCajaForm from "../../facturacion/recibo/ReciboCajaForm";
 import SaldoFavorList from "../../facturacion/saldo/SaldoFavorList";
@@ -29,7 +29,7 @@ const FACT_OPTIONS = [
   { id: "tras",    label: "Traslados",            icon: <FiRepeat />,      color: "text-slate-600",   bg: "bg-slate-50",     desc: "Movimiento entre cuentas" },
   { id: "pagos",   label: "Pagos",                icon: <FiCreditCard />,  color: "text-indigo-600",  bg: "bg-indigo-50",    desc: "Gestión de egresos y proveedores" },
   { id: "oc",      label: "Ordenes de compra",    icon: <FiShoppingBag />, color: "text-cyan-600",    bg: "bg-cyan-50",      desc: "Solicitudes de insumos" },
-  { id: "fv",      label: "Factura de venta",     icon: <FiDollarSign />,  color: "text-emerald-700", bg: "bg-emerald-100",  desc: "Facturación principal de servicios" },
+  { id: "fv",      label: "Factura de venta",     icon: <FiDollarSign />,  color: "text-emerald-700", bg: "bg-emerald-100",  desc: "Facturación principal y electrónica" },
   { id: "fc",      label: "Facturas de compra",   icon: <FiTruck />,       color: "text-amber-600",   bg: "bg-amber-50",     desc: "Registro de facturas recibidas" },
 ];
 
@@ -54,7 +54,7 @@ export default function FacturacionHub() {
     let title = "";
 
     if (activeSubView === "fv") {
-      content = <FinancialDashboard />;
+      content = <FacturaElectronicaModule />;
       title = "Facturación de Venta";
     } else if (activeSubView === "recibo") {
       content = <ReciboCajaList onNew={() => setActiveSubView("recibo_form")} />;
