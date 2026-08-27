@@ -473,23 +473,41 @@ export default function ReporteFinanciero() {
 
         // 6. Cargar Facturas de Venta / Facturas Electrónicas
         try {
-          const { data: snapFacturas } = await supabase
-            .from("facturas")
-            .select("*")
-            .eq("tenant_id", tenantId);
+          let snapFacturas = [];
+          try {
+            const { data: feDb } = await supabase
+              .from("facturas_electronicas")
+              .select("*")
+              .eq("tenant_id", tenantId);
+            if (feDb && feDb.length > 0) snapFacturas.push(...feDb);
+          } catch (e) {}
+
+          try {
+            const { data: fDb } = await supabase
+              .from("facturas")
+              .select("*")
+              .eq("tenant_id", tenantId);
+            if (fDb && fDb.length > 0) {
+              fDb.forEach(f => {
+                if (!snapFacturas.some(c => c.id === f.id || (c.factusInvoiceNumber && c.factusInvoiceNumber === f.numero))) {
+                  snapFacturas.push(f);
+                }
+              });
+            }
+          } catch (e) {}
 
           (snapFacturas || []).sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).forEach((f, fIdx) => {
             const pacId = f.paciente_id || f.pacienteId;
-            const pac = pacDict[pacId] || pacDict[f.documento] || {};
-            const pacNom = f.paciente_nombre || pac.nombreCompleto || "Paciente";
-            const pacDoc = f.paciente_documento || pac.nroDocumento || "";
+            const pac = pacDict[pacId] || pacDict[f.documento] || pacDict[f.pacienteDocumento] || {};
+            const pacNom = f.pacienteNombre || f.paciente_nombre || pac.nombreCompleto || "Paciente";
+            const pacDoc = f.pacienteDocumento || f.paciente_documento || pac.nroDocumento || "";
 
             const totalNum = Number(f.total || f.monto || 0);
             const subtotalNum = Number(f.subtotal || totalNum);
             const ivaNum = Number(f.iva || 0);
             const descNum = Number(f.descuento || 0);
             
-            const storedCons = f.nro_factura || f.numero_factura || f.nroConsecutivo || f.numero;
+            const storedCons = f.factusInvoiceNumber || f.nro_factura || f.numero_factura || f.nroConsecutivo || f.numero;
             const nroDoc = storedCons && !isNaN(Number(storedCons))
               ? (f.prefijo ? `${f.prefijo}${storedCons}` : `FCEV-${storedCons}`)
               : (storedCons || `FCEV-${1201 + fIdx}`);
@@ -497,25 +515,25 @@ export default function ReporteFinanciero() {
             const isAnulado = (f.estado || "").toLowerCase() === "anulado";
             const rawObs = f.notas || f.observaciones || "";
             const cleanObs = cleanObservaciones(rawObs);
-            const refClean = cleanDocReferencia(f.resolucion, String(nroDoc));
+            const refClean = cleanDocReferencia(f.resolucion || f.cufe, String(nroDoc));
 
             allRows.push({
               id: `fac_${f.id}`,
               rawId: f.id,
               numeroDocumento: nroDoc,
-              tipoDocumento: f.tipo_factura || "Factura de venta+",
-              fechaCreacion: f.created_at || new Date().toISOString(),
-              fechaSeleccionada: f.fecha || f.created_at || new Date().toISOString(),
+              tipoDocumento: "Factura de venta+",
+              fechaCreacion: f.created_at || f.fechaISO || new Date().toISOString(),
+              fechaSeleccionada: f.fecha || f.fechaISO || f.created_at || new Date().toISOString(),
               valor: totalNum,
               consecutivo: "Principal",
               docReferencia: refClean,
-              documentosAsociados: f.cufe ? `CUFE: ${String(f.cufe).slice(0, 10)}...` : "—",
+              documentosAsociados: (f.factusCufe || f.cufe) ? `CUFE: ${String(f.factusCufe || f.cufe).slice(0, 10)}...` : "—",
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
               profesional: f.profesional_nombre || f.profesional || "Guillermo Rodriguez",
               profesionalId: f.profesional_id || "",
-              formaPago: f.metodo_pago || f.forma_pago || "Efectivo",
+              formaPago: f.medioPago || f.metodo_pago || f.forma_pago || "Efectivo",
               subtotal: subtotalNum,
               descuento: descNum,
               iva: ivaNum,
