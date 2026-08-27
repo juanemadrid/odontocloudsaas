@@ -27,6 +27,12 @@ createRoot(document.getElementById('root')).render(
     </HelmetProvider>
 )
 
+// Manejo automático de nuevas versiones / chunks antiguos tras nuevo despliegue
+window.addEventListener('vite:preloadError', (event) => {
+    console.warn('Nueva versión detectada o error al cargar chunk. Recargando página...');
+    window.location.reload();
+});
+
 // Clean up development service workers
 if ('serviceWorker' in navigator && import.meta.env.DEV) {
     navigator.serviceWorker.getRegistrations().then((registrations) => {

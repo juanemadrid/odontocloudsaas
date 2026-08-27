@@ -14,6 +14,16 @@ class ErrorBoundary extends React.Component {
     componentDidCatch(error, errorInfo) {
         console.error("Dashboard Module Error:", error, errorInfo);
         this.setState({ errorInfo });
+
+        // Si es un error de versión/chunk de Vite tras un nuevo despliegue
+        const errMsg = String(error?.message || "");
+        if (errMsg.includes("dynamically imported module") || errMsg.includes("Loading chunk")) {
+            const hasReloaded = sessionStorage.getItem("chunk_reload_done");
+            if (!hasReloaded) {
+                sessionStorage.setItem("chunk_reload_done", "true");
+                window.location.reload();
+            }
+        }
     }
 
     render() {
