@@ -722,6 +722,315 @@ export const generateElectronicInvoiceHtml = ({
 </html>`;
 };
 
+export const generateReciboCajaHtml = ({
+  recibo = {},
+  patient = {},
+  tenant = {},
+  planInfo = {},
+}) => {
+  const patientName =
+    patient?.nombreCompleto ||
+    [patient?.nombres || patient?.nombre, patient?.apellidos || patient?.apellido]
+      .filter(Boolean)
+      .join(" ")
+      .trim() ||
+    recibo?.pacienteNombre ||
+    "Consumidor Final";
+
+  const patientAddress =
+    patient?.lugarResidencia ||
+    patient?.direccion ||
+    recibo?.pacienteDireccion ||
+    "—";
+
+  const patientCity =
+    patient?.ciudadDomicilio ||
+    patient?.ciudad ||
+    patient?.municipio ||
+    recibo?.pacienteCiudad ||
+    "—";
+
+  const patientDocType =
+    patient?.tipoDocumento ||
+    patient?.tipo_documento ||
+    recibo?.pacienteTipoDocumento ||
+    "CC";
+
+  const patientDocNumber =
+    patient?.nroDocumento ||
+    patient?.documento ||
+    patient?.cedula ||
+    recibo?.pacienteDocumento ||
+    "—";
+
+  const docTypeLabel = getDocumentTypeLabel(patientDocType);
+  const docNumberFormatted = formatDocNumber(patientDocNumber);
+
+  const issueDate =
+    recibo?.fecha ||
+    recibo?.fecha_emision ||
+    recibo?.created_at ||
+    new Date();
+
+  const fechaExpFormatted = formatDateSlash(issueDate);
+
+  const nroRecibo =
+    recibo?.nroConsecutivo ||
+    recibo?.consecutivo ||
+    recibo?.numero ||
+    (recibo?.id ? recibo.id.slice(-4).toUpperCase() : "2026");
+
+  const elaboradoPor =
+    recibo?.profesionalNombre ||
+    recibo?.profesional ||
+    recibo?.creadoPor ||
+    tenant?.nombreComercial ||
+    "—";
+
+  const paymentMethodLabel = getPaymentMethodLabel(
+    recibo?.medioPago || recibo?.metodo || recibo?.medio_pago || "10"
+  );
+
+  const rawConceptos = recibo?.conceptos || [];
+  let itemRowsHtml = "";
+  let calculatedTotal = 0;
+
+  if (rawConceptos.length > 0) {
+    itemRowsHtml = rawConceptos
+      .map((c) => {
+        const qty = parseFloat(c.cantidad || 1) || 1;
+        const price = parseFloat(c.precioUnitario || c.precio || c.valor || 0) || 0;
+        const line = c.total !== undefined ? parseFloat(c.total) : price * qty;
+        calculatedTotal += line;
+        return `
+        <tr>
+          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${c.concepto || c.descripcion || "Servicio Odontológico"}</td>
+          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(price)}</td>
+          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: center; vertical-align: middle;">${qty}</td>
+          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(line)}</td>
+        </tr>`;
+      })
+      .join("");
+  } else {
+    calculatedTotal = parseFloat(recibo?.total || recibo?.monto || 0);
+    itemRowsHtml = `
+      <tr>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${recibo?.concepto || "Abono a tratamiento"}</td>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(calculatedTotal)}</td>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: center; vertical-align: middle;">1</td>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(calculatedTotal)}</td>
+      </tr>`;
+  }
+
+  const finalTotal = recibo?.total !== undefined ? parseFloat(recibo.total) : (recibo?.monto !== undefined ? parseFloat(recibo.monto) : calculatedTotal);
+
+  const clinicName =
+    tenant?.nombreComercial ||
+    tenant?.razonSocial ||
+    tenant?.nombre ||
+    "ATM Centro del Dolor Orofacial";
+
+  const clinicNit = tenant?.nit ? `NIT ${tenant.nit}` : "";
+  const clinicAddress = tenant?.direccion || "";
+  const clinicCity = tenant?.ciudad ? ` - ${tenant.ciudad}` : "";
+  const clinicPhone = tenant?.telefono || tenant?.celular || "";
+  const clinicEmail = tenant?.email || "";
+
+  const logoHtml = tenant?.logoUrl
+    ? `<img src="${tenant.logoUrl}" style="max-height: 80px; max-width: 170px; object-fit: contain; display: block;" alt="Logo" />`
+    : `<div style="font-size: 18px; font-weight: bold; color: #333; line-height: 1.1; text-transform: uppercase;">${clinicName}</div>`;
+
+  const observacionesText = recibo?.observaciones || recibo?.notas || "";
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Recibo de Caja No.${nroRecibo}</title>
+  <style>
+    @page { size: portrait; margin: 10mm 12mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      color: #000;
+      background: #fff;
+      padding: 16px 20px;
+      max-width: 780px;
+      margin: 0 auto;
+      line-height: 1.25;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .header-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    .header-logo { width: 25%; vertical-align: middle; text-align: left; }
+    .header-company { width: 50%; text-align: center; vertical-align: middle; font-size: 11px; line-height: 1.35; }
+    .company-title { font-size: 13px; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; }
+    .header-meta { width: 25%; text-align: right; vertical-align: middle; }
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    .info-table td { border: 1px solid #111; padding: 4.5px 7px; font-size: 10.5px; vertical-align: middle; }
+    .info-table td.lbl { font-weight: bold; font-size: 9.5px; text-transform: uppercase; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    .items-table th { border: 1px solid #111; font-weight: bold; font-size: 10.5px; padding: 5px 8px; text-align: left; }
+    .items-table td { border: 1px solid #111; }
+    .summary-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    .obs-cell { width: 58%; vertical-align: top; padding-right: 12px; font-size: 10.5px; }
+    .totals-cell { width: 42%; vertical-align: top; }
+    .totals-inner-table { width: 100%; border-collapse: collapse; }
+    .totals-inner-table td { padding: 4px 8px; font-size: 11px; }
+    .totals-inner-table td.tot-label { font-weight: bold; text-align: right; width: 45%; }
+    .totals-inner-table td.tot-val { font-weight: bold; text-align: right; width: 55%; white-space: nowrap; }
+    .signatures-table { width: 100%; border-collapse: collapse; margin-top: 50px; margin-bottom: 20px; }
+    .sig-block { width: 50%; text-align: center; vertical-align: bottom; padding: 0 30px; }
+    .sig-line { border-top: 1px solid #000; width: 85%; margin: 0 auto 6px auto; }
+    .sig-title { font-size: 9.5px; font-weight: bold; text-transform: uppercase; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <table class="header-table">
+    <tr>
+      <td class="header-logo">${logoHtml}</td>
+      <td class="header-company">
+        <div class="company-title">${clinicName}</div>
+        ${clinicNit ? `<div>${clinicNit}</div>` : ""}
+        ${clinicAddress || clinicCity ? `<div>${clinicAddress}${clinicCity}</div>` : ""}
+        ${clinicPhone ? `<div>${clinicPhone}</div>` : ""}
+        ${clinicEmail ? `<div>${clinicEmail}</div>` : ""}
+      </td>
+      <td class="header-meta">
+        <div style="text-align: right;">
+          <div style="font-size: 12px; font-weight: normal;">Recibo de caja</div>
+          <div style="font-size: 15px; font-weight: bold; margin-top: 2px;">No.${nroRecibo}</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="info-table">
+    <tr>
+      <td class="lbl" style="width: 16%;">SEÑOR(A)</td>
+      <td style="width: 38%; font-weight: 500;">${patientName}</td>
+      <td class="lbl" style="width: 26%;">FECHA DE EXPEDICIÓN (DD/MM/AA)</td>
+      <td style="width: 20%; text-align: center;">${fechaExpFormatted}</td>
+    </tr>
+    <tr>
+      <td class="lbl">DIRECCIÓN</td>
+      <td>${patientAddress}</td>
+      <td class="lbl"></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="lbl">CIUDAD</td>
+      <td>${patientCity}</td>
+      <td class="lbl">${docTypeLabel}</td>
+      <td style="text-align: center; font-weight: 500;">${docNumberFormatted}</td>
+    </tr>
+    <tr>
+      <td class="lbl">TELÉFONO</td>
+      <td>${patient?.telefono || patient?.celular || "—"}</td>
+      <td class="lbl"></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="lbl">ELABORADO POR</td>
+      <td>${elaboradoPor}</td>
+      <td class="lbl">MEDIO DE PAGO</td>
+      <td style="text-align: center;">${paymentMethodLabel}</td>
+    </tr>
+  </table>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width: 60%;">Concepto</th>
+        <th style="width: 15%; text-align: right;">Precio</th>
+        <th style="width: 10%; text-align: center;">Cantidad</th>
+        <th style="width: 15%; text-align: right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemRowsHtml}
+    </tbody>
+  </table>
+
+  <table class="summary-table">
+    <tr>
+      <td class="obs-cell">
+        <div style="font-weight: bold; margin-bottom: 4px;">Observaciones:</div>
+        <div>${observacionesText}</div>
+      </td>
+      <td class="totals-cell">
+        <table class="totals-inner-table">
+          <tr>
+            <td class="tot-label">Subtotal</td>
+            <td class="tot-val">${formatCOP(finalTotal)}</td>
+          </tr>
+          <tr>
+            <td class="tot-label">Total</td>
+            <td class="tot-val">${formatCOP(finalTotal)}</td>
+          </tr>
+          ${planInfo?.planTitle ? `
+          <tr>
+            <td class="tot-label">P. de trat.</td>
+            <td class="tot-val">${planInfo.planTitle}</td>
+          </tr>` : ""}
+          ${planInfo?.totalPlan !== undefined ? `
+          <tr>
+            <td class="tot-label">Total plan</td>
+            <td class="tot-val">${formatCOP(planInfo.totalPlan)}</td>
+          </tr>` : ""}
+          ${planInfo?.totalPagado !== undefined ? `
+          <tr>
+            <td class="tot-label">Total pagado</td>
+            <td class="tot-val">${formatCOP(planInfo.totalPagado)}</td>
+          </tr>` : ""}
+          ${planInfo?.saldo !== undefined ? `
+          <tr>
+            <td class="tot-label">Saldo total</td>
+            <td class="tot-val">${formatCOP(planInfo.saldo)}</td>
+          </tr>` : ""}
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table class="signatures-table">
+    <tr>
+      <td class="sig-block">
+        <div class="sig-line"></div>
+        <div class="sig-title">ELABORADO POR</div>
+      </td>
+      <td class="sig-block">
+        <div class="sig-line"></div>
+        <div class="sig-title">ACEPTADA, FIRMA Y/O SELLO Y FECHA</div>
+      </td>
+    </tr>
+  </table>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 200);
+    };
+  </script>
+</body>
+</html>`;
+};
+
+export const printReciboCaja = (data) => {
+  const html = generateReciboCajaHtml(data);
+  const win = window.open("", "_blank", "width=800,height=900");
+  if (!win) {
+    alert("Por favor permite las ventanas emergentes para imprimir el recibo.");
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+};
+
 export const printElectronicInvoice = (data) => {
   const html = generateElectronicInvoiceHtml(data);
   const win = window.open('', '_blank', 'width=800,height=900');
@@ -737,4 +1046,6 @@ export const printElectronicInvoice = (data) => {
 export default {
   generateElectronicInvoiceHtml,
   printElectronicInvoice,
+  generateReciboCajaHtml,
+  printReciboCaja,
 };
