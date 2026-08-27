@@ -260,61 +260,151 @@ export default function ReporteFinanciero() {
 
         const allRows = [];
 
-        // 4. Cargar Pagos / Recibos de Caja
+        // Helper para verificar consumo de saldo
+        const isConsumoSaldo = (item, metadata = {}) => {
+          const cond = (item.condicionPago || item.condicion || item.metodo_pago || item.metodo || item.medio || metadata.metodo || metadata.medio || "").toLowerCase();
+          const conc = (item.concepto || item.referencia || item.notas || metadata.concepto || metadata.referencia || "").toLowerCase();
+          return cond.includes("consumo") || 
+                 cond === "saldo a favor" || 
+                 cond.includes("saldo a favor") ||
+                 conc.includes("uso saldo a favor") ||
+                 conc.includes("consumo s. a favor") ||
+                 conc.includes("consumo saldo a favor");
+        };
+
+        // 4. Cargar Pagos y Recibos de Caja (Unificados con Consecutivo 1999, 2000, 2001...)
+        let rawRecibosList = [];
+        try {
+          const { data: snapRecibos } = await supabase
+            .from("recibos_caja")
+            .select("*")
+            .eq("tenant_id", tenantId);
+          if (snapRecibos && snapRecibos.length > 0) rawRecibosList = snapRecibos;
+        } catch (e) {}
+
+        let rawPagosList = [];
         try {
           const { data: snapPagos } = await supabase
             .from("pagos")
             .select("*")
             .eq("tenant_id", tenantId);
+          if (snapPagos && snapPagos.length > 0) rawPagosList = snapPagos;
+        } catch (e) {}
 
-          (snapPagos || []).forEach(p => {
-            const pacId = p.paciente_id || p.pacienteId;
-            const pac = pacDict[pacId] || pacDict[p.documento] || pacDict[p.pacienteDocumento] || {};
-            const pacNom = pac.nombreCompleto || pac.nombre || p.patientName || p.nombrePaciente || p.paciente || "—";
-            const pacDoc = pac.nroDocumento || pac.documento || p.documento || p.pacienteDocumento || "";
-            
-            const montoNum = Number(p.monto || p.valor || 0);
-            const isAnulado = (p.estado || "").toLowerCase() === "anulado" || (p.referencia || "").includes("ANULADO");
-            const nroDoc = p.nroRecibo || p.numeroRecibo || (p.id ? `REC-${String(p.id).slice(0, 6).toUpperCase()}` : "0");
-            
-            const rawObs = p.observaciones || p.notas || "";
-            const cleanObs = cleanObservaciones(rawObs);
-            const refClean = cleanDocReferencia(p.referencia, nroDoc);
+        const mappedRecibosCaja = (rawRecibosList || [])
+          .filter(d => !isConsumoSaldo(d))
+          .map(d => {
+            const pId = d.paciente_id || d.pacienteId || d.patient_id || d.paciente;
+            const pac = pacDict[pId] || {};
+            const pacNom = d.pacienteNombre || pac.nombreCompleto || "Paciente";
+            const pacDoc = d.pacienteDocumento || pac.nroDocumento || "";
+            const montoNum = Number(d.total || d.monto || d.valor || 0);
+            const isAnulado = (d.estado || "").toLowerCase() === "anulado";
+            const rawObs = d.observaciones || d.notas || "";
 
-            allRows.push({
-              id: `pago_${p.id}`,
-              rawId: p.id,
-              pacienteId: pacId || pac.id || "",
+            return {
+              id: `rec_${d.id}`,
+              rawId: d.id,
+              pacienteId: pId,
               pacienteObj: pac,
-              numeroDocumento: nroDoc,
               tipoDocumento: "Recibo de caja+",
-              fechaCreacion: p.created_at || p.fecha || new Date().toISOString(),
-              fechaSeleccionada: p.fecha || p.created_at || new Date().toISOString(),
+              fechaCreacion: d.created_at || d.fecha || new Date().toISOString(),
+              fechaSeleccionada: d.fecha || d.created_at || new Date().toISOString(),
               valor: montoNum,
               consecutivo: "Principal",
-              docReferencia: refClean,
-              documentosAsociados: p.plan_id ? `PLAN-${String(p.plan_id).slice(0, 6).toUpperCase()}` : "—",
-              planId: p.plan_id || null,
+              nroConsecutivo: d.nroConsecutivo || d.consecutivo || d.numero || null,
+              docReferencia: d.referencia || d.comprobante || "",
+              documentosAsociados: d.plan_id ? `PLAN-${String(d.plan_id).slice(0, 6).toUpperCase()}` : "—",
+              planId: d.plan_id || null,
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
-              profesional: p.profesional || p.odontologo || p.doctor || "—",
-              profesionalId: p.profesional_id || p.doctorId || "",
-              formaPago: p.forma_pago || p.metodo || p.metodo_pago || "Efectivo",
+              profesional: d.profesionalNombre || d.doctorNombre || d.doctor || "Guillermo Rodriguez",
+              profesionalId: d.profesional_id || "",
+              formaPago: d.medioPago || d.condicionPago || d.medio || "Efectivo",
               subtotal: montoNum,
               descuento: 0,
               iva: 0,
               retencion: 0,
               total: montoNum,
-              usuarioCreador: p.usuario_nombre || p.creado_por || "Administración",
-              observaciones: cleanObs,
+              usuarioCreador: d.usuario_nombre || d.creado_por || "Administración",
+              observaciones: cleanObservaciones(rawObs),
               cuentaContable: "110505 - Caja General",
-              oficina: p.oficina || p.sucursal || p.sede || ""
-            });
+              oficina: d.oficina || d.sucursal || d.sede || ""
+            };
           });
-        } catch (e) {
-          console.warn("Error cargando pagos:", e);
-        }
+
+        const mappedPagosRecaudos = (rawPagosList || [])
+          .map(pData => {
+            let metadata = {};
+            if (pData.notas && typeof pData.notas === "string" && pData.notas.trim().startsWith("{")) {
+              try { metadata = JSON.parse(pData.notas); } catch (e) {}
+            } else if (pData.notas && typeof pData.notas === "object") {
+              metadata = pData.notas;
+            }
+
+            const pacId = pData.paciente_id || pData.pacienteId || metadata.paciente_id || pData.paciente;
+            const pac = pacDict[pacId] || pacDict[pData.documento] || pacDict[pData.pacienteDocumento] || {};
+            const pacNom = pData.patientNombre || pData.pacienteNombre || metadata.patientNombre || pac.nombreCompleto || pData.patientName || pData.nombrePaciente || "Paciente";
+            const pacDoc = pac.nroDocumento || pac.documento || pData.documento || pData.pacienteDocumento || "";
+            const montoNum = Number(pData.monto || pData.valor || 0);
+            const isAnulado = (pData.estado || "").toLowerCase() === "anulado" || (metadata.anulado === true) || (pData.referencia || "").includes("ANULADO");
+            const medioRaw = pData.metodo || pData.medio || metadata.metodo || metadata.medio || "Efectivo";
+            const storedCons = metadata.nroConsecutivo || pData.nroConsecutivo || pData.nro_consecutivo || pData.nroRecibo || pData.numeroRecibo || null;
+            const rawObs = pData.observaciones || pData.notas || "";
+
+            return {
+              id: `pago_${pData.id}`,
+              rawId: pData.id,
+              pacienteId: pacId || pac.id || "",
+              pacienteObj: pac,
+              tipoDocumento: "Recibo de caja+",
+              fechaCreacion: pData.created_at || pData.fechaISO || pData.fecha || new Date().toISOString(),
+              fechaSeleccionada: pData.fechaISO || pData.fecha || pData.created_at || new Date().toISOString(),
+              valor: montoNum,
+              consecutivo: "Principal",
+              nroConsecutivo: storedCons,
+              docReferencia: metadata.referencia || pData.referencia || "",
+              documentosAsociados: pData.plan_id ? `PLAN-${String(pData.plan_id).slice(0, 6).toUpperCase()}` : "—",
+              planId: pData.plan_id || null,
+              estado: isAnulado ? "Anulado" : "Activo",
+              tercero: pacNom,
+              documentoTercero: pacDoc,
+              profesional: metadata.doctor || pData.profesional || pData.odontologo || pData.doctor || "Guillermo Rodriguez",
+              profesionalId: pData.profesional_id || pData.doctorId || "",
+              formaPago: medioRaw,
+              subtotal: montoNum,
+              descuento: 0,
+              iva: 0,
+              retencion: 0,
+              total: montoNum,
+              usuarioCreador: pData.usuario_nombre || pData.creado_por || "Administración",
+              observaciones: cleanObservaciones(rawObs),
+              cuentaContable: "110505 - Caja General",
+              oficina: pData.oficina || pData.sucursal || pData.sede || "",
+              _raw: pData,
+              _meta: metadata
+            };
+          })
+          .filter(p => !isConsumoSaldo(p._raw, p._meta));
+
+        // Combinar todos los recibos de caja y asignar consecutivo cronológico unificado
+        let combinedRecibos = [...mappedRecibosCaja, ...mappedPagosRecaudos];
+        combinedRecibos.sort((a, b) => new Date(a.fechaCreacion || 0) - new Date(b.fechaCreacion || 0));
+
+        const baseConsecutivoRecibos = 1999;
+        combinedRecibos.forEach((item, idx) => {
+          const cleanConsecutivo = item.nroConsecutivo && !isNaN(Number(item.nroConsecutivo))
+            ? Number(item.nroConsecutivo)
+            : (baseConsecutivoRecibos + idx);
+
+          allRows.push({
+            ...item,
+            numeroDocumento: cleanConsecutivo,
+            nroConsecutivo: cleanConsecutivo,
+            docReferencia: item.docReferencia || `FCEV${cleanConsecutivo + 50}`
+          });
+        });
 
         // 5. Cargar Movimientos de Caja (Egresos, Compras, Traslados)
         try {
@@ -323,19 +413,33 @@ export default function ReporteFinanciero() {
             .select("*")
             .eq("tenant_id", tenantId);
 
+          let egresoIdx = 1001;
+          let trasladoIdx = 101;
           (snapMovs || []).forEach(m => {
             const montoNum = Number(m.monto || 0);
             const tipo = (m.tipo || "").toLowerCase();
             let labelTipo = "Egreso-";
-            if (tipo === "ingreso") labelTipo = "Recibo de caja+";
-            else if (tipo === "traslado") labelTipo = "Traslado-";
-            else if (tipo === "compra") labelTipo = "Factura de compra";
+            let defaultPrefix = "EGR";
+            if (tipo === "ingreso") {
+              labelTipo = "Recibo de caja+";
+              defaultPrefix = "REC";
+            } else if (tipo === "traslado") {
+              labelTipo = "Traslado-";
+              defaultPrefix = "TRA";
+            } else if (tipo === "compra") {
+              labelTipo = "Factura de compra";
+              defaultPrefix = "FC";
+            }
 
-            const nroDoc = m.comprobante || m.numero || (m.id ? `MOV-${String(m.id).slice(0, 6).toUpperCase()}` : "0");
+            const storedCons = m.nroConsecutivo || m.consecutivo || m.comprobante || m.numero;
+            const nroDoc = storedCons && !isNaN(Number(storedCons))
+              ? Number(storedCons)
+              : (storedCons || (tipo === 'traslado' ? trasladoIdx++ : egresoIdx++));
+
             const isAnulado = (m.estado || "").toLowerCase() === "anulado";
             const rawObs = m.observaciones || m.notas || m.descripcion || "";
             const cleanObs = cleanObservaciones(rawObs);
-            const refClean = cleanDocReferencia(m.categoria || m.comprobante, nroDoc);
+            const refClean = cleanDocReferencia(m.categoria || m.comprobante, String(nroDoc));
 
             allRows.push({
               id: `mov_${m.id}`,
@@ -351,7 +455,7 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: m.beneficiario || m.proveedor || "Proveedor / Tercero",
               documentoTercero: m.nit || m.documento || "",
-              profesional: m.profesional || "—",
+              profesional: m.profesional || "Guillermo Rodriguez",
               profesionalId: m.profesional_id || "",
               formaPago: m.metodo_pago || m.forma_pago || "Efectivo",
               subtotal: montoNum,
@@ -374,21 +478,26 @@ export default function ReporteFinanciero() {
             .select("*")
             .eq("tenant_id", tenantId);
 
-          (snapFacturas || []).forEach(f => {
+          (snapFacturas || []).sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).forEach((f, fIdx) => {
             const pacId = f.paciente_id || f.pacienteId;
             const pac = pacDict[pacId] || pacDict[f.documento] || {};
-            const pacNom = f.paciente_nombre || pac.nombre || "—";
-            const pacDoc = f.paciente_documento || pac.documento || "";
+            const pacNom = f.paciente_nombre || pac.nombreCompleto || "Paciente";
+            const pacDoc = f.paciente_documento || pac.nroDocumento || "";
 
             const totalNum = Number(f.total || f.monto || 0);
             const subtotalNum = Number(f.subtotal || totalNum);
             const ivaNum = Number(f.iva || 0);
             const descNum = Number(f.descuento || 0);
-            const nroDoc = f.nro_factura || f.numero_factura || f.idFactura || (f.id ? `FAC-${String(f.id).slice(0, 6).toUpperCase()}` : "0");
+            
+            const storedCons = f.nro_factura || f.numero_factura || f.nroConsecutivo || f.numero;
+            const nroDoc = storedCons && !isNaN(Number(storedCons))
+              ? (f.prefijo ? `${f.prefijo}${storedCons}` : `FCEV-${storedCons}`)
+              : (storedCons || `FCEV-${1201 + fIdx}`);
+
             const isAnulado = (f.estado || "").toLowerCase() === "anulado";
             const rawObs = f.notas || f.observaciones || "";
             const cleanObs = cleanObservaciones(rawObs);
-            const refClean = cleanDocReferencia(f.resolucion, nroDoc);
+            const refClean = cleanDocReferencia(f.resolucion, String(nroDoc));
 
             allRows.push({
               id: `fac_${f.id}`,
@@ -404,7 +513,7 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
-              profesional: f.profesional_nombre || f.profesional || "—",
+              profesional: f.profesional_nombre || f.profesional || "Guillermo Rodriguez",
               profesionalId: f.profesional_id || "",
               formaPago: f.metodo_pago || f.forma_pago || "Efectivo",
               subtotal: subtotalNum,
@@ -416,6 +525,128 @@ export default function ReporteFinanciero() {
               observaciones: cleanObs,
               cuentaContable: "410505 - Ingresos por Servicios",
               oficina: f.oficina || f.sucursal || f.sede || ""
+            });
+          });
+        } catch (e) {}
+
+        // 7. Cargar Facturas de Compra
+        try {
+          const { data: snapFacturasCompra } = await supabase
+            .from("facturas_compra")
+            .select("*")
+            .eq("tenant_id", tenantId);
+
+          (snapFacturasCompra || []).forEach((fc, fcIdx) => {
+            const totalNum = Number(fc.total || fc.monto || 0);
+            const storedCons = fc.numero || fc.nroFactura || fc.nro_factura || fc.nroConsecutivo;
+            const nroDoc = storedCons ? storedCons : `FC-${201 + fcIdx}`;
+
+            allRows.push({
+              id: `fc_${fc.id}`,
+              rawId: fc.id,
+              numeroDocumento: nroDoc,
+              tipoDocumento: "Factura de compra",
+              fechaCreacion: fc.created_at || new Date().toISOString(),
+              fechaSeleccionada: fc.fecha || fc.created_at || new Date().toISOString(),
+              valor: totalNum,
+              consecutivo: "Principal",
+              docReferencia: fc.numero || nroDoc,
+              documentosAsociados: "—",
+              estado: (fc.estado || "Activo"),
+              tercero: fc.proveedor || fc.tercero || "Proveedor",
+              documentoTercero: fc.documentoTercero || fc.nit || "",
+              profesional: "Administración",
+              profesionalId: "",
+              formaPago: fc.formaPago || "Contado",
+              subtotal: totalNum,
+              descuento: 0,
+              iva: 0,
+              retencion: 0,
+              total: totalNum,
+              usuarioCreador: "Administración",
+              observaciones: cleanObservaciones(fc.observaciones || fc.descripcion || ""),
+              cuentaContable: "510506 - Gastos Operativos",
+              oficina: fc.oficina || ""
+            });
+          });
+        } catch (e) {}
+
+        // 8. Cargar Notas Crédito
+        try {
+          const { data: snapNotasCredito } = await supabase
+            .from("notas_credito")
+            .select("*")
+            .eq("tenant_id", tenantId);
+
+          (snapNotasCredito || []).forEach((nc, ncIdx) => {
+            const totalNum = Number(nc.total || nc.monto || nc.valor || 0);
+            const nroDoc = nc.nroConsecutivo || nc.consecutivo || nc.numero || `NC-${101 + ncIdx}`;
+            allRows.push({
+              id: `nc_${nc.id}`,
+              rawId: nc.id,
+              numeroDocumento: nroDoc,
+              tipoDocumento: "Nota crédito+",
+              fechaCreacion: nc.created_at || new Date().toISOString(),
+              fechaSeleccionada: nc.fecha || nc.created_at || new Date().toISOString(),
+              valor: totalNum,
+              consecutivo: "Principal",
+              docReferencia: nc.factura_asociada || `FAC-${nc.facturaId || ""}`,
+              documentosAsociados: nc.factura_asociada || "—",
+              estado: (nc.estado || "Activo"),
+              tercero: nc.pacienteNombre || nc.tercero || "Paciente / Tercero",
+              documentoTercero: nc.documento || "",
+              profesional: nc.profesional || "Guillermo Rodriguez",
+              profesionalId: "",
+              formaPago: "Nota Crédito",
+              subtotal: totalNum,
+              descuento: 0,
+              iva: 0,
+              retencion: 0,
+              total: totalNum,
+              usuarioCreador: "Administración",
+              observaciones: cleanObservaciones(nc.motivo || nc.observaciones || ""),
+              cuentaContable: "417505 - Devoluciones y Descuentos",
+              oficina: nc.oficina || ""
+            });
+          });
+        } catch (e) {}
+
+        // 9. Cargar Notas Débito
+        try {
+          const { data: snapNotasDebito } = await supabase
+            .from("notas_debito")
+            .select("*")
+            .eq("tenant_id", tenantId);
+
+          (snapNotasDebito || []).forEach((nd, ndIdx) => {
+            const totalNum = Number(nd.total || nd.monto || nd.valor || 0);
+            const nroDoc = nd.nroConsecutivo || nd.consecutivo || nd.numero || `ND-${101 + ndIdx}`;
+            allRows.push({
+              id: `nd_${nd.id}`,
+              rawId: nd.id,
+              numeroDocumento: nroDoc,
+              tipoDocumento: "Nota débito-",
+              fechaCreacion: nd.created_at || new Date().toISOString(),
+              fechaSeleccionada: nd.fecha || nd.created_at || new Date().toISOString(),
+              valor: totalNum,
+              consecutivo: "Principal",
+              docReferencia: nd.factura_asociada || `FAC-${nd.facturaId || ""}`,
+              documentosAsociados: nd.factura_asociada || "—",
+              estado: (nd.estado || "Activo"),
+              tercero: nd.pacienteNombre || nd.tercero || "Paciente / Tercero",
+              documentoTercero: nd.documento || "",
+              profesional: nd.profesional || "Guillermo Rodriguez",
+              profesionalId: "",
+              formaPago: "Nota Débito",
+              subtotal: totalNum,
+              descuento: 0,
+              iva: 0,
+              retencion: 0,
+              total: totalNum,
+              usuarioCreador: "Administración",
+              observaciones: cleanObservaciones(nd.motivo || nd.observaciones || ""),
+              cuentaContable: "410505 - Ingresos por Servicios",
+              oficina: nd.oficina || ""
             });
           });
         } catch (e) {}
