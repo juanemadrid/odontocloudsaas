@@ -388,14 +388,6 @@ export default function ReciboCajaList({ onNew }) {
                         Facturación - Recibo de caja
                     </span>
                 </div>
-
-                <button
-                    onClick={handleCreateNew}
-                    className="bg-[#8CC63F] hover:bg-[#7bb335] text-white px-4 py-2 rounded-lg font-bold text-[12px] shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
-                >
-                    <FiPlus size={16} />
-                    <span>+ Recibo de caja</span>
-                </button>
             </div>
 
             {/* Date Range Search Bar */}
