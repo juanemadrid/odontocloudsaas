@@ -115,6 +115,7 @@ export default function ReporteFinanciero() {
     tipoDocumento: true,
     fechaCreacion: true,
     fechaSeleccionada: true,
+    concepto: true,
     valor: true,
     consecutivo: true,
     docReferencia: true,
@@ -139,6 +140,7 @@ export default function ReporteFinanciero() {
     tipoDocumento: "Tipo de documento",
     fechaCreacion: "Fecha creación",
     fechaSeleccionada: "Fecha seleccionada",
+    concepto: "Concepto",
     valor: "Valor",
     consecutivo: "Consecutivo",
     docReferencia: "Doc. Referencia",
@@ -310,6 +312,7 @@ export default function ReporteFinanciero() {
               tipoDocumento: "Recibo de caja+",
               fechaCreacion: d.created_at || d.fecha || new Date().toISOString(),
               fechaSeleccionada: d.fecha || d.created_at || new Date().toISOString(),
+              concepto: d.concepto || d.motivo || (Array.isArray(d.conceptos) && d.conceptos[0]?.concepto) || d.descripcion || "Recibo de caja",
               valor: montoNum,
               consecutivo: "Principal",
               nroConsecutivo: d.nroConsecutivo || d.consecutivo || d.numero || null,
@@ -361,6 +364,7 @@ export default function ReporteFinanciero() {
               tipoDocumento: "Recibo de caja+",
               fechaCreacion: pData.created_at || pData.fechaISO || pData.fecha || new Date().toISOString(),
               fechaSeleccionada: pData.fechaISO || pData.fecha || pData.created_at || new Date().toISOString(),
+              concepto: metadata.concepto || pData.concepto || (Array.isArray(pData.items) && pData.items[0]?.concepto) || pData.descripcion || "Abono a tratamiento",
               valor: montoNum,
               consecutivo: "Principal",
               nroConsecutivo: storedCons,
@@ -448,6 +452,7 @@ export default function ReporteFinanciero() {
               tipoDocumento: labelTipo,
               fechaCreacion: m.created_at || new Date().toISOString(),
               fechaSeleccionada: m.fecha || m.created_at || new Date().toISOString(),
+              concepto: m.concepto || m.descripcion || m.categoria || m.motivo || (tipo === 'traslado' ? "Traslado de fondos" : "Egreso de caja"),
               valor: montoNum,
               consecutivo: "Principal",
               docReferencia: refClean,
@@ -524,6 +529,7 @@ export default function ReporteFinanciero() {
               tipoDocumento: "Factura de venta+",
               fechaCreacion: f.created_at || f.fechaISO || new Date().toISOString(),
               fechaSeleccionada: f.fecha || f.fechaISO || f.created_at || new Date().toISOString(),
+              concepto: f.concepto || (Array.isArray(f.items) && f.items[0]?.descripcion) || (Array.isArray(f.conceptos) && f.conceptos[0]?.concepto) || f.descripcion || "Consulta / Tratamiento Odontológico",
               valor: totalNum,
               consecutivo: "Principal",
               docReferencia: refClean,
@@ -566,6 +572,7 @@ export default function ReporteFinanciero() {
               tipoDocumento: "Factura de compra",
               fechaCreacion: fc.created_at || new Date().toISOString(),
               fechaSeleccionada: fc.fecha || fc.created_at || new Date().toISOString(),
+              concepto: fc.concepto || fc.descripcion || (Array.isArray(fc.items) && fc.items[0]?.concepto) || "Compra de insumos / Materiales",
               valor: totalNum,
               consecutivo: "Principal",
               docReferencia: fc.numero || nroDoc,
@@ -606,6 +613,7 @@ export default function ReporteFinanciero() {
               tipoDocumento: "Nota crédito+",
               fechaCreacion: nc.created_at || new Date().toISOString(),
               fechaSeleccionada: nc.fecha || nc.created_at || new Date().toISOString(),
+              concepto: nc.concepto || nc.motivo || nc.descripcion || "Nota Crédito / Devolución",
               valor: totalNum,
               consecutivo: "Principal",
               docReferencia: nc.factura_asociada || `FAC-${nc.facturaId || ""}`,
@@ -646,6 +654,7 @@ export default function ReporteFinanciero() {
               tipoDocumento: "Nota débito-",
               fechaCreacion: nd.created_at || new Date().toISOString(),
               fechaSeleccionada: nd.fecha || nd.created_at || new Date().toISOString(),
+              concepto: nd.concepto || nd.motivo || nd.descripcion || "Nota Débito / Ajuste",
               valor: totalNum,
               consecutivo: "Principal",
               docReferencia: nd.factura_asociada || `FAC-${nd.facturaId || ""}`,
@@ -840,6 +849,7 @@ export default function ReporteFinanciero() {
       if (visibleColumns.tipoDocumento) rowObj["Tipo de documento"] = r.tipoDocumento || "";
       if (visibleColumns.fechaCreacion) rowObj["Fecha creación"] = formatDateTime(r.fechaCreacion);
       if (visibleColumns.fechaSeleccionada) rowObj["Fecha seleccionada"] = formatDateOnly(r.fechaSeleccionada);
+      if (visibleColumns.concepto) rowObj["Concepto"] = r.concepto || "";
       if (visibleColumns.valor) rowObj["Valor"] = Number(r.valor || 0);
       if (visibleColumns.consecutivo) rowObj["Consecutivo"] = r.consecutivo || "Principal";
       if (visibleColumns.docReferencia) rowObj["Doc. Referencia"] = r.docReferencia || "";
@@ -1222,6 +1232,11 @@ export default function ReporteFinanciero() {
                       {visibleColumns.fechaSeleccionada && (
                         <td className="px-3.5 py-2 border-r border-slate-100 text-slate-600">
                           {formatDateOnly(r.fechaSeleccionada)}
+                        </td>
+                      )}
+                      {visibleColumns.concepto && (
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-slate-700 max-w-[220px] truncate font-medium" title={r.concepto}>
+                          {r.concepto || "—"}
                         </td>
                       )}
                       {visibleColumns.valor && (
