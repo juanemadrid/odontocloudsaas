@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   FiFileText, FiPlusCircle, FiMinusCircle, FiDollarSign, 
   FiRepeat, FiTruck, FiShoppingBag, FiLayers, FiCreditCard, FiArrowRight, FiChevronRight, FiPlus
