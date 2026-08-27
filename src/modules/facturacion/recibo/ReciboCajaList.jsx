@@ -36,7 +36,8 @@ export default function ReciboCajaList({ onNew }) {
     const toast = useToast();
     const inquilino = userProfile?.inquilino || "";
 
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
+    const [hasSearched, setHasSearched] = useState(false);
     const [recibos, setRecibos] = useState([]);
     const [expandedRowId, setExpandedRowId] = useState(null);
     const [companyInfo, setCompanyInfo] = useState(null);
@@ -208,12 +209,14 @@ export default function ReciboCajaList({ onNew }) {
                 
                 (pacsData || []).forEach(p => {
                     const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || p.documento || "Paciente";
+                    const ciudadVal = p.ciudadDomicilio || p.ciudad || p.municipio || p.lugarResidencia || p.ciudad_domicilio || companyInfo?.ciudad || "Sincelejo";
                     if (p.id) {
                         patientMap[p.id] = {
                             nombre: full,
                             documento: p.documento || p.nroDocumento || "",
                             telefono: p.telefono || p.celular || "",
-                            direccion: p.direccion || ""
+                            direccion: p.direccion || p.direccionDomicilio || p.direccion_domicilio || "",
+                            ciudad: ciudadVal
                         };
                     }
                 });
@@ -264,6 +267,7 @@ export default function ReciboCajaList({ onNew }) {
                         pacienteDocumento: d.pacienteDocumento || pacInfo.documento || "",
                         pacienteTelefono: d.pacienteTelefono || pacInfo.telefono || "",
                         pacienteDireccion: d.pacienteDireccion || pacInfo.direccion || "",
+                        pacienteCiudad: d.pacienteCiudad || pacInfo.ciudad || companyInfo?.ciudad || "Sincelejo",
                         tipoDoc: d.tipoDoc || "Recibo de caja",
                         profesionalNombre: d.profesionalNombre || d.doctorNombre || d.doctor || userProfile?.nombreCompleto || "Guillermo Rodriguez",
                         medioPago: d.medioPago || d.condicionPago || d.medio || "Efectivo",
@@ -296,6 +300,7 @@ export default function ReciboCajaList({ onNew }) {
                         pacienteDocumento: pacInfo.documento || "",
                         pacienteTelefono: pacInfo.telefono || "",
                         pacienteDireccion: pacInfo.direccion || "",
+                        pacienteCiudad: metadata.pacienteCiudad || pacInfo.ciudad || companyInfo?.ciudad || "Sincelejo",
                         tipoDoc: metadata.tipoDoc || "Recibo de caja",
                         profesionalNombre: metadata.doctor || pData.doctor || userProfile?.nombreCompleto || "Guillermo Rodriguez",
                         medioPago: medioRaw,
@@ -346,16 +351,13 @@ export default function ReciboCajaList({ onNew }) {
             // Display descending (latest first)
             withConsecutivos.reverse();
             setRecibos(withConsecutivos);
+            setHasSearched(true);
         } catch (e) {
             console.error("Error cargando recibos:", e);
         } finally {
             setLoading(false);
         }
-    }, [inquilino, fechaInicio, fechaFin, userProfile]);
-
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
+    }, [inquilino, fechaInicio, fechaFin, userProfile, companyInfo]);
 
     const filteredRecibos = useMemo(() => {
         const term = searchTerm.trim().toLowerCase();
@@ -535,10 +537,18 @@ export default function ReciboCajaList({ onNew }) {
                                         Cargando recibos de caja...
                                     </td>
                                 </tr>
+                            ) : !hasSearched ? (
+                                <tr>
+                                    <td colSpan="11" className="py-16 text-center text-slate-400 font-medium">
+                                        <FiCalendar size={32} className="mx-auto mb-3 text-slate-300" />
+                                        <p className="text-[13px] font-bold text-slate-700">Selecciona el rango de fechas y haz clic en "Buscar"</p>
+                                        <p className="text-[11px] text-slate-400 mt-1">Los recibos de caja se consultarán únicamente para el período especificado.</p>
+                                    </td>
+                                </tr>
                             ) : filteredRecibos.length === 0 ? (
                                 <tr>
                                     <td colSpan="11" className="py-12 text-center text-slate-400 font-medium italic">
-                                        No se encontraron registros de recibos de caja.
+                                        No se encontraron registros de recibos de caja en este rango de fechas.
                                     </td>
                                 </tr>
                             ) : (

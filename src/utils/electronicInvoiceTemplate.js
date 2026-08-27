@@ -747,8 +747,12 @@ export const generateReciboCajaHtml = ({
     patient?.ciudadDomicilio ||
     patient?.ciudad ||
     patient?.municipio ||
+    patient?.lugarResidencia ||
+    patient?.ciudad_domicilio ||
     recibo?.pacienteCiudad ||
-    "—";
+    recibo?.ciudad ||
+    tenant?.ciudad ||
+    "Sincelejo";
 
   const patientDocType =
     patient?.tipoDocumento ||
