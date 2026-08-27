@@ -131,20 +131,19 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
     setError("");
     try {
       // 1. Obtener consecutivo desde configuración
-      let nroConsecutivo = null;
+      // 1. Obtener consecutivo desde configuración
+      let nroConsecutivo = 1;
       let consDoc = null;
       try {
         const { getConfigItems } = await import("../../../services/configPersistenceService");
         const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
         consDoc = consList.find(c => c.activo !== false) || consList[0] || {};
         const fieldKey = tipo === "egreso" ? "contEgresos" : "contReciboCaja";
-        const currentCount = parseInt(String(consDoc[fieldKey] || 0), 10);
-        if (currentCount > 0) {
-          nroConsecutivo = currentCount;
-        }
+        const currentCount = parseInt(String(consDoc[fieldKey] || 0), 10) || 0;
+        nroConsecutivo = currentCount + 1;
       } catch (e) {}
 
-      const egresoLabel = nroConsecutivo ? `[EGR-${String(nroConsecutivo).padStart(4, "0")}] ` : "";
+      const egresoLabel = tipo === "egreso" ? `[EGR-${String(nroConsecutivo).padStart(4, "0")}] ` : "";
       
       let refText = "";
       if (selectedPatient?.nombre) {
@@ -173,13 +172,13 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
       if (insertErr) throw insertErr;
 
       // Incrementar consecutivo en configuración
-      if (consDoc && nroConsecutivo) {
+      if (consDoc) {
         try {
           const fieldKey = tipo === "egreso" ? "contEgresos" : "contReciboCaja";
           const { saveConfigItem } = await import("../../../services/configPersistenceService");
           await saveConfigItem(inquilino, "consecutivos", "consecutivos", {
             ...consDoc,
-            [fieldKey]: nroConsecutivo + 1
+            [fieldKey]: nroConsecutivo
           });
         } catch (e) {}
       }

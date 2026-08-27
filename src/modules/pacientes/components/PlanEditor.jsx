@@ -910,12 +910,30 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 convertedAt: new Date()
             };
 
+            let planConsecutivo = null;
+            try {
+                const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import("../../../services/consecutivosService");
+                planConsecutivo = await consumeNextConsecutivo(inquilino || patient?.inquilino || patient?.tenant_id, CONSECUTIVO_TYPES.PLAN_TRATAMIENTO);
+            } catch (consErr) {
+                console.warn("Error incrementing plan consecutivo:", consErr);
+            }
+
             if (currentPlanId) {
                 // Plan ya guardado: actualizar tipo a 'plan'
-                await updatePlan(currentPlanId, planPayload);
+                await updatePlan(currentPlanId, {
+                    ...planPayload,
+                    title: title,
+                    nombre: title,
+                    nroConsecutivo: planConsecutivo
+                });
             } else {
                 // Plan nuevo (sin ID aún): crear directamente como plan de tratamiento
-                const saved = await createPlan(planPayload);
+                const saved = await createPlan({
+                    ...planPayload,
+                    title: title,
+                    nombre: title,
+                    nroConsecutivo: planConsecutivo
+                });
                 setCurrentPlanId(saved.id);
             }
 

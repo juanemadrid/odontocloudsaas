@@ -113,12 +113,22 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
             const currentUserName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración";
             const referenceStr = data.referencia ? String(data.referencia).trim() : "";
             const observationsStr = data.observaciones ? String(data.observaciones).trim() : "";
+            const currentInq = userProfile?.inquilino || patient?.inquilino || patient?.tenant_id || "";
+
+            let nroConsecutivo = null;
+            try {
+                const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import("../../../services/consecutivosService");
+                nroConsecutivo = await consumeNextConsecutivo(currentInq, CONSECUTIVO_TYPES.RECIBO_CAJA);
+            } catch (consErr) {
+                console.warn("No se pudo obtener el consecutivo de recibo de caja:", consErr);
+            }
 
             const notesPayload = JSON.stringify({
                 concepto: "SALDO A FAVOR",
                 referencia: referenceStr,
                 observaciones: observationsStr,
                 notas: observationsStr || (referenceStr ? `Ref: ${referenceStr}` : "SALDO A FAVOR"),
+                nroConsecutivo: nroConsecutivo ? String(nroConsecutivo) : "",
                 registradoPor: currentUserName,
                 usuarioNombre: currentUserName,
                 doctor: data.doctor || "",
@@ -126,7 +136,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
             });
 
             const creditData = {
-                tenant_id: userProfile?.inquilino || "",
+                tenant_id: currentInq,
                 fecha: new Date(data.fecha).toISOString(),
                 paciente_id: patient?.id || "",
                 monto: Number(data.valor) || 0,

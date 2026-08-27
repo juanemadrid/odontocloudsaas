@@ -44,10 +44,9 @@ const formatDate = (iso) => {
 };
 
 const getReceiptNumber = (pago, index) => {
-    if (pago.nroConsecutivo) return `#${pago.nroConsecutivo}`;
-    if (pago.consecutivo) return `#${pago.consecutivo}`;
+    if (pago.nroConsecutivo && !isNaN(Number(pago.nroConsecutivo))) return `#${pago.nroConsecutivo}`;
+    if (pago.consecutivo && !isNaN(Number(pago.consecutivo))) return `#${pago.consecutivo}`;
     if (pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo) return `#${pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo}`;
-    if (pago.referencia && pago.referencia !== 'SALDO A FAVOR' && pago.referencia !== 'ABONO GENERAL') return `#${pago.referencia}`;
     if (pago.id) return `#RC-${pago.id.slice(0, 6).toUpperCase()}`;
     return `#RC-${String(index + 1).padStart(3, '0')}`;
 };

@@ -384,37 +384,32 @@ export default function PagoTab({ patient }) {
                 }
             }
 
-            // 2.5. Fetch and assign consecutive number (contReciboCaja)
+            // 2.5. Fetch and assign consecutive number based on payment type
             let nroConsecutivo = "";
-            let consDoc = null;
-            let consNextCount = 1;
+            const isUsoSaldo = method === "Saldo a favor";
+            const isUsoNC = method === "Nota de Crédito" || method === "Nota crédito" || method === "Nota de credito";
+            
             try {
-                const consData = await getConfigItems(
-                    userProfile?.inquilino,
-                    "consecutivos",
-                    "consecutivos"
-                );
-                consDoc = consData.find(item => item.activo !== false) || consData[0] || null;
-                if (consDoc) {
-                    const currentCount = parseInt(
-                        String(consDoc.contReciboCaja ?? consDoc.cont_recibo_caja ?? 1),
-                        10
-                    ) || 1;
-                    consNextCount = currentCount + 1;
-                    nroConsecutivo = String(currentCount).padStart(2, "0");
-                } else {
-                    nroConsecutivo = "01";
-                    consNextCount = 2;
+                const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import("../../../services/consecutivosService");
+                const targetConsType = isUsoSaldo 
+                    ? CONSECUTIVO_TYPES.USO_SALDO_FAVOR 
+                    : isUsoNC 
+                        ? CONSECUTIVO_TYPES.USO_NOTAS_CREDITO 
+                        : CONSECUTIVO_TYPES.RECIBO_CAJA;
+
+                const nextNum = await consumeNextConsecutivo(userProfile?.inquilino || patient?.inquilino || patient?.tenant_id, targetConsType);
+                if (nextNum) {
+                    nroConsecutivo = String(nextNum);
                 }
             } catch (consErr) {
                 console.warn("No se pudo obtener el consecutivo:", consErr);
-                nroConsecutivo = "";
             }
 
             // Build schema-compliant payload for pagos table
             const patientName = patient.nombreCompleto || `${patient.nombres || patient.nombre || ""} ${patient.apellidos || patient.apellido || ""}`.trim() || "Paciente";
             const metadataNotas = {
-                concepto: concept || "ABONO A TRATAMIENTO",
+                concepto: concept || (isUsoSaldo ? "USO DE SALDO A FAVOR" : "ABONO A TRATAMIENTO"),
+                tipoDoc: isUsoSaldo ? "Uso de saldo a favor" : (isUsoNC ? "Uso de nota crédito" : "Recibo de caja"),
                 profesional: profesional || "",
                 profesionalId: profesionalId || null,
                 planId: selectedPlan?.id || null,
@@ -470,23 +465,6 @@ export default function PagoTab({ patient }) {
                     patient.saldo_favor = newSaldo;
                     patient.saldoFavor = newSaldo;
                 }
-            }
-
-            // 3.2. Increment consecutive counter
-            if (consDoc) {
-                const isUsoSaldo = method === "Saldo a favor";
-                const currentUsoSaldo = parseInt(String(consDoc.contUsoSaldoFavor || 0), 10) || 0;
-                await saveConfigItem(
-                    userProfile.inquilino,
-                    "consecutivos",
-                    "consecutivos",
-                    {
-                        ...consDoc,
-                        contReciboCaja: consNextCount,
-                        cont_recibo_caja: consNextCount,
-                        ...(isUsoSaldo ? { contUsoSaldoFavor: currentUsoSaldo + 1 } : {})
-                    }
-                );
             }
             
             // 4. Synchronize with active Caja session (for cash / bank methods)

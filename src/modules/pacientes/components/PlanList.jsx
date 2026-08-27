@@ -214,13 +214,27 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     const handleConvertToPlan = async (e, plan) => {
         if (e) e.stopPropagation();
         try {
+            const currentInquilino = userProfile?.inquilino || patient?.inquilino || patient?.tenant_id || plan.tenant_id;
+            let planConsecutivo = null;
+            try {
+                const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import('../../../services/consecutivosService');
+                planConsecutivo = await consumeNextConsecutivo(currentInquilino, CONSECUTIVO_TYPES.PLAN_TRATAMIENTO);
+            } catch (cErr) {
+                console.warn("Could not increment plan consecutivo:", cErr);
+            }
+
+            const currentTitle = plan.title || plan.nombre || "Plan de Tratamiento";
+
             await updatePlan(plan.id, {
                 ...plan,
+                title: currentTitle,
+                nombre: currentTitle,
+                nroConsecutivo: planConsecutivo,
                 type: 'plan',
                 status: 'accepted',
                 convertedAt: new Date()
             });
-            toast.success(`Presupuesto "${plan.title || plan.nombre}" convertido a Plan de Tratamiento`);
+            toast.success(`Presupuesto "${currentTitle}" convertido a Plan de Tratamiento`);
             loadData();
         } catch (err) {
             console.error("Error converting plan:", err);

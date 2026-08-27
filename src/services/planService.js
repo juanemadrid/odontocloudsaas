@@ -38,7 +38,7 @@ export const createPlan = async (planData) => {
         const payload = {
             tenant_id: tenantId,
             paciente_id: planData.patientId || planData.paciente_id,
-            nombre: planData.title || planData.nombre || (type === "plan" ? `Plan de Tratamiento${nroConsecutivo ? ` #${nroConsecutivo}` : ''}` : `Presupuesto${nroConsecutivo ? ` #${nroConsecutivo}` : ''}`),
+            nombre: planData.title || planData.nombre || (type === "plan" ? "Plan de Tratamiento" : "Presupuesto"),
             total: Number(planData.total || planData.costoTotal || 0),
             estado: planData.status || (type === "plan" ? "approved" : "draft"),
             detalles: detallesObj

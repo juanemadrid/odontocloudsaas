@@ -9,6 +9,9 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 
+import { printReciboCaja } from "../../../utils/electronicInvoiceTemplate";
+import { getConfigSection, getConfigItems } from "../../../services/configPersistenceService";
+
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
@@ -36,6 +39,7 @@ export default function ReciboCajaList({ onNew }) {
     const [loading, setLoading] = useState(true);
     const [recibos, setRecibos] = useState([]);
     const [expandedRowId, setExpandedRowId] = useState(null);
+    const [companyInfo, setCompanyInfo] = useState(null);
 
     // Modal: Documentos Asociados (Doc. Ref.)
     const [associatedDocsModal, setAssociatedDocsModal] = useState({ open: false, recibo: null });
@@ -51,7 +55,7 @@ export default function ReciboCajaList({ onNew }) {
     // Filters
     const [fechaInicio, setFechaInicio] = useState(() => {
         const d = new Date();
-        d.setDate(d.getDate() - 60);
+        d.setDate(1); // 1st of current month
         return d.toISOString().split('T')[0];
     });
     const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]);
@@ -63,186 +67,85 @@ export default function ReciboCajaList({ onNew }) {
         }
     }, [userProfile]);
 
+    useEffect(() => {
+        if (!inquilino) return;
+        (async () => {
+            try {
+                const [tenantRes, empConfig] = await Promise.all([
+                    supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
+                    getConfigSection(inquilino, "empresa_datos", {})
+                ]);
+                const t = tenantRes?.data || {};
+                setCompanyInfo({
+                    nombreComercial: empConfig.nombreComercial || t.nombre || "ATM Centro del Dolor Orofacial",
+                    nit: empConfig.nit || t.nit || "64576359-3",
+                    direccion: empConfig.direccion || t.direccion || "Calle 16#17-68",
+                    ciudad: empConfig.ciudad || t.ciudad || "Sincelejo",
+                    telefono: empConfig.telefono || t.telefono || "2769030",
+                    email: empConfig.email || t.email || "atmcentrodel dolor@gmail.com",
+                    logoUrl: empConfig.logoUrl || t.logo_url || ""
+                });
+            } catch (e) {
+                console.warn("Error loading company info for receipt print:", e);
+            }
+        })();
+    }, [inquilino]);
+
     const toggleRow = (id) => {
         setExpandedRowId(prev => prev === id ? null : id);
     };
 
-    // --- PRINT ENGINE (OralDrive Formato Factura / Recibo) ---
+    // --- PRINT ENGINE (OralDrive Formato Exacto Recibo de Caja) ---
     const handlePrint = (recibo) => {
-        const printWindow = window.open("", "_blank");
-        if (!printWindow) {
-            toast && toast.error("Habilite las ventanas emergentes para imprimir");
-            return;
-        }
+        const tenantData = companyInfo || {
+            nombreComercial: userProfile?.tenant?.nombreComercial || "ATM Centro del Dolor Orofacial",
+            nit: userProfile?.tenant?.nit || "64576359-3",
+            direccion: userProfile?.tenant?.direccion || "Calle 16#17-68",
+            ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
+            telefono: userProfile?.tenant?.telefono || "2769030",
+            email: userProfile?.tenant?.email || "atmcentrodel dolor@gmail.com",
+            logoUrl: userProfile?.tenant?.logo_url || ""
+        };
 
-        const dateStr = fmtDate(recibo.fecha);
-        const totalStr = fmt(recibo.total);
-        const docNum = recibo.docRefNumber || `FCEV${recibo.consecutivoNumero || recibo.nroConsecutivo || '1001'}`;
-        const isAnulado = recibo.estado === "Anulado";
+        const conceptosList = (recibo.conceptos && recibo.conceptos.length > 0)
+            ? recibo.conceptos
+            : [{
+                concepto: recibo.concepto || "Consulta de primera vez con especialista en ATM",
+                precioUnitario: recibo.total,
+                cantidad: 1,
+                total: recibo.total
+            }];
 
-        const logoUrl = userProfile?.tenant?.logo || "";
-        const clinicName = userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.tenant?.name || "ATM Centro del Dolor Orofacial";
-        const clinicNit = userProfile?.tenant?.nit || "64576359-3";
-        const clinicAddress = userProfile?.tenant?.direccion || "Calle 16 #17-68 - Sincelejo";
-        const clinicCity = userProfile?.tenant?.ciudad || "Sincelejo";
-        const clinicPhone = userProfile?.tenant?.telefono || "2769030";
-        const clinicEmail = userProfile?.tenant?.email || "atmcentrodedolor@gmail.com";
-
-        const anulStamp = isAnulado ? `
-            <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:90px;font-weight:900;color:rgba(239,68,68,0.13);text-transform:uppercase;letter-spacing:6px;pointer-events:none;z-index:9999;white-space:nowrap;">ANULADO</div>` : "";
-        
-        let conceptsRows = "";
-        if (recibo.conceptos && recibo.conceptos.length > 0) {
-            recibo.conceptos.forEach(c => {
-                conceptsRows += `
-                    <tr>
-                        <td style="padding: 6px 8px; border: 1px solid #1e293b; font-size: 11px;">${c.concepto || c.descripcion || "Servicio Odontológico"}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #1e293b; text-align: right; font-size: 11px;">${fmt(c.precioUnitario || c.precio || c.total)}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #1e293b; text-align: center; font-size: 11px;">${c.cantidad || 1}</td>
-                        <td style="padding: 6px 8px; border: 1px solid #1e293b; text-align: right; font-size: 11px; font-weight: bold;">${fmt(c.total)}</td>
-                    </tr>
-                `;
-            });
-        } else {
-            conceptsRows = `
-                <tr>
-                    <td style="padding: 6px 8px; border: 1px solid #1e293b; font-size: 11px;">${recibo.concepto || "Recibo de caja / Abono a tratamiento"}</td>
-                    <td style="padding: 6px 8px; border: 1px solid #1e293b; text-align: right; font-size: 11px;">${fmt(recibo.total)}</td>
-                    <td style="padding: 6px 8px; border: 1px solid #1e293b; text-align: center; font-size: 11px;">1</td>
-                    <td style="padding: 6px 8px; border: 1px solid #1e293b; text-align: right; font-size: 11px; font-weight: bold;">${fmt(recibo.total)}</td>
-                </tr>
-            `;
-        }
-
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-                <head>
-                    <title>Documento #${docNum}</title>
-                    <style>
-                        @page { size: letter portrait; margin: 15mm; }
-                        body { 
-                            font-family: Arial, Helvetica, sans-serif; 
-                            color: #000; 
-                            padding: 10px; 
-                            line-height: 1.25; 
-                            font-size: 11px;
-                        }
-                        .header-table { width: 100%; margin-bottom: 12px; }
-                        .qr-box { width: 85px; height: 85px; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; }
-                        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-                        .info-table td { border: 1px solid #1e293b; padding: 4px 6px; font-size: 10px; }
-                        .info-table .lbl { font-weight: bold; background: #f8fafc; font-size: 9px; text-transform: uppercase; width: 16%; }
-                        .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-                        .items-table th { border: 1px solid #1e293b; background: #f1f5f9; padding: 5px; font-size: 10px; font-weight: bold; text-align: left; }
-                        .totals-table { width: 40%; margin-left: auto; border-collapse: collapse; margin-bottom: 25px; }
-                        .totals-table td { padding: 4px 8px; font-size: 11px; }
-                        .signatures { width: 100%; margin-top: 40px; }
-                        .signatures td { width: 50%; text-align: center; font-size: 10px; font-weight: bold; border-top: 1px solid #1e293b; padding-top: 6px; }
-                    </style>
-                </head>
-                <body>
-                    ${anulStamp}
-                    <table class="header-table">
-                        <tr>
-                            <td style="width: 25%; text-align: left; vertical-align: middle;">
-                                ${logoUrl ? `<img src="${logoUrl}" style="max-height: 65px; max-width: 140px;" />` : `<strong style="font-size: 18px; color: #1e3a8a;">${clinicName}</strong>`}
-                            </td>
-                            <td style="width: 50%; text-align: center; vertical-align: middle;">
-                                <div style="font-size: 13px; font-weight: bold; text-transform: uppercase;">${clinicName}</div>
-                                <div style="font-size: 10px; font-weight: bold;">NIT ${clinicNit}</div>
-                                <div style="font-size: 10px;">${clinicAddress}</div>
-                                <div style="font-size: 10px;">${clinicPhone}</div>
-                                <div style="font-size: 10px;">${clinicEmail}</div>
-                            </td>
-                            <td style="width: 25%; text-align: right; vertical-align: top;">
-                                <div style="font-size: 10px; font-weight: bold;">Recibo / Factura electrónica</div>
-                                <div style="font-size: 12px; font-weight: bold; color: #1e3a8a; margin: 2px 0;">No. ${docNum}</div>
-                                <div style="font-size: 8px; color: #64748b;">Los servicios de salud están excluidos de IVA</div>
-                            </td>
-                        </tr>
-                    </table>
-
-                    <table class="info-table">
-                        <tr>
-                            <td class="lbl">SEÑOR(A)</td>
-                            <td style="font-weight: bold; text-transform: uppercase;">${recibo.pacienteNombre || "PACIENTE"}</td>
-                            <td class="lbl">FECHA EXPEDICIÓN</td>
-                            <td style="font-weight: bold;">${dateStr}</td>
-                        </tr>
-                        <tr>
-                            <td class="lbl">DIRECCIÓN</td>
-                            <td>${recibo.pacienteDireccion || clinicAddress}</td>
-                            <td class="lbl">FECHA VENCIMIENTO</td>
-                            <td style="font-weight: bold;">${dateStr}</td>
-                        </tr>
-                        <tr>
-                            <td class="lbl">CIUDAD / TEL</td>
-                            <td>${clinicCity} - ${recibo.pacienteTelefono || clinicPhone}</td>
-                            <td class="lbl">DOC. IDENTIDAD</td>
-                            <td style="font-weight: bold;">${recibo.pacienteDocumento || "—"}</td>
-                        </tr>
-                        <tr>
-                            <td class="lbl">ELABORADO POR</td>
-                            <td>${recibo.profesionalNombre || userProfile?.nombreCompleto || "ADMINISTRACIÓN"}</td>
-                            <td class="lbl">MEDIO DE PAGO</td>
-                            <td style="font-weight: bold; text-transform: uppercase;">${recibo.medioPago || "EFECTIVO"}</td>
-                        </tr>
-                    </table>
-
-                    <table class="items-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 55%;">Item / Descripción</th>
-                                <th style="width: 15%; text-align: right;">Precio</th>
-                                <th style="width: 10%; text-align: center;">Cantidad</th>
-                                <th style="width: 20%; text-align: right;">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${conceptsRows}
-                        </tbody>
-                    </table>
-
-                    <table class="totals-table">
-                        <tr>
-                            <td style="font-weight: bold; text-align: right;">Subtotal</td>
-                            <td style="font-weight: bold; text-align: right;">${totalStr}</td>
-                        </tr>
-                        <tr>
-                            <td style="font-weight: bold; text-align: right; font-size: 13px; border-top: 1px solid #1e293b;">Total</td>
-                            <td style="font-weight: bold; text-align: right; font-size: 13px; border-top: 1px solid #1e293b;">${totalStr}</td>
-                        </tr>
-                    </table>
-
-                    <div style="font-size: 9px; color: #64748b; margin-bottom: 20px;">
-                        <strong>Observaciones:</strong> ${recibo.notas || recibo.observaciones || "Comprobante de ingreso emitido satisfactoriamente."}
-                    </div>
-
-                    <table class="signatures">
-                        <tr>
-                            <td style="padding-right: 30px;">
-                                ELABORADO POR<br>
-                                <span style="font-size: 8px; font-weight: normal; color: #64748b;">Firma y Sello de la Clínica</span>
-                            </td>
-                            <td style="padding-left: 30px;">
-                                ACEPTADA. FIRMA Y/O SELLO Y FECHA<br>
-                                <span style="font-size: 8px; font-weight: normal; color: #64748b;">Firma del Paciente / Titular</span>
-                            </td>
-                        </tr>
-                    </table>
-
-                    <div style="margin-top: 30px; text-align: center; font-size: 8px; color: #94a3b8;">
-                        Autorización de numeración de facturación electrónica desde FCEV1201 hasta FCEV2500 con vigencia activa.
-                    </div>
-
-                    <script>
-                        window.onload = function() { window.print(); }
-                    </script>
-                </body>
-            </html>
-        `);
-        printWindow.document.close();
+        printReciboCaja({
+            recibo: {
+                ...recibo,
+                nroConsecutivo: recibo.consecutivoNumero || recibo.nroConsecutivo || "1993",
+                fecha: recibo.rawDate || recibo.fecha || new Date(),
+                pacienteNombre: recibo.pacienteNombre,
+                pacienteDocumento: recibo.pacienteDocumento,
+                pacienteDireccion: recibo.pacienteDireccion,
+                pacienteCiudad: recibo.pacienteCiudad,
+                profesionalNombre: recibo.profesionalNombre || "MARIA CAROLINA ARROYO CASTILLO",
+                medioPago: recibo.medioPago || "Efectivo",
+                conceptos: conceptosList,
+                total: recibo.total,
+                observaciones: recibo.observaciones || recibo.notas || ""
+            },
+            patient: {
+                nombreCompleto: recibo.pacienteNombre,
+                documento: recibo.pacienteDocumento,
+                direccion: recibo.pacienteDireccion,
+                ciudad: recibo.pacienteCiudad,
+                telefono: recibo.pacienteTelefono
+            },
+            tenant: tenantData,
+            planInfo: {
+                planTitle: "Tratamiento ATM",
+                totalPlan: recibo.total,
+                totalPagado: recibo.total,
+                saldo: 0
+            }
+        });
     };
 
     // --- ANULACIÓN ---
@@ -403,6 +306,7 @@ export default function ReciboCajaList({ onNew }) {
                         motivoAnulacion: pData.motivoAnulacion || metadata.motivoAnulacion || "",
                         anuladoPor: pData.anuladoPor || metadata.anuladoPor || "",
                         fechaAnulacion: pData.fechaAnulacion || metadata.fechaAnulacion || "",
+                        nroConsecutivo: metadata.nroConsecutivo || pData.nroConsecutivo || pData.nro_consecutivo || "",
                         isPago: true,
                         _raw: pData,
                         _meta: metadata
@@ -421,18 +325,19 @@ export default function ReciboCajaList({ onNew }) {
                 return isNaN(rTime) || (rTime >= startTime && rTime <= endTime);
             });
 
-            // Sort ascending by date to assign sequential consecutive number, then invert for display
+            // Sort ascending by date to assign sequential consecutive number if missing, then invert for display
             combined.sort((a, b) => new Date(a.rawDate || 0) - new Date(b.rawDate || 0));
 
-            // Assign clean consecutive numbers (e.g. 1993, 1994... or 1, 2, 3...)
-            const baseConsecutivo = 1993; // Número consecutivo estilo OralDrive / Configurable
+            const baseConsecutivo = 1999;
             const withConsecutivos = combined.map((item, idx) => {
-                const cleanConsecutivo = item.nroConsecutivo && !isNaN(Number(item.nroConsecutivo))
-                    ? Number(item.nroConsecutivo)
+                const storedCons = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo;
+                const cleanConsecutivo = storedCons && !isNaN(Number(storedCons))
+                    ? Number(storedCons)
                     : (baseConsecutivo + idx);
                 
                 return {
                     ...item,
+                    nroConsecutivo: cleanConsecutivo,
                     consecutivoNumero: cleanConsecutivo,
                     docRefNumber: `FCEV${cleanConsecutivo + 50}` // Número de factura asociada
                 };
@@ -470,13 +375,72 @@ export default function ReciboCajaList({ onNew }) {
     return (
         <div className="p-4 md:p-6 max-w-[1700px] mx-auto space-y-4 animate-fadeIn">
 
-            {/* TOP BAR / ACTIONS */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <button 
+            {/* Top Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2">
+                    <h1 className="text-[15px] font-bold text-slate-800">Recibo de caja</h1>
+                    <span className="text-slate-400 cursor-help" title="Módulo de Recibos de Caja">
+                        ⓘ
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium ml-2">
+                        Facturación - Recibo de caja
+                    </span>
+                </div>
+
+                <button
                     onClick={handleCreateNew}
-                    className="px-5 py-2.5 bg-[#8cc33f] hover:bg-[#7db02b] text-white rounded-full font-bold text-xs shadow-md shadow-[#8cc33f]/20 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                    className="bg-[#8CC63F] hover:bg-[#7bb335] text-white px-4 py-2 rounded-lg font-bold text-[12px] shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
                 >
-                    <FiPlus size={16} strokeWidth={2.5} /> Generar factura
+                    <FiPlus size={16} />
+                    <span>+ Recibo de caja</span>
+                </button>
+            </div>
+
+            {/* Date Range Search Bar */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-semibold text-slate-600">Fecha inicial</label>
+                        <div className="relative">
+                            <input
+                                type="date"
+                                value={fechaInicio}
+                                onChange={(e) => setFechaInicio(e.target.value)}
+                                className="h-8 px-2.5 pr-7 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-700 outline-none focus:border-blue-500"
+                            />
+                            <FiCalendar className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={13} />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-semibold text-slate-600">Fecha final</label>
+                        <div className="relative">
+                            <input
+                                type="date"
+                                value={fechaFin}
+                                onChange={(e) => setFechaFin(e.target.value)}
+                                className="h-8 px-2.5 pr-7 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-700 outline-none focus:border-blue-500"
+                            />
+                            <FiCalendar className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={13} />
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={loadData}
+                        className="bg-[#8CC63F] hover:bg-[#7bb335] text-white px-5 py-1.5 rounded-lg font-bold text-[12px] transition-all cursor-pointer border-0 shadow-sm"
+                    >
+                        Buscar
+                    </button>
+                </div>
+            </div>
+
+            {/* SUB-BAR / ACTIONS */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+                <button 
+                    onClick={() => toast && toast.info("Función de generar factura a partir del recibo seleccionada.")}
+                    className="px-4 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-bold text-[12px] shadow-sm transition-all flex items-center gap-1.5 cursor-pointer border-0"
+                >
+                    <FiPlus size={15} /> + Generar factura
                 </button>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
