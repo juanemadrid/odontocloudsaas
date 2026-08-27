@@ -32,8 +32,41 @@ const ADMIN_MODULES = [
   { id: "esterilizacion", label: "Esterilización", desc: "Cargas de autoclaves", icon: FiShield, color: "bg-violet-50 text-violet-600" },
 ];
 
+import { useSearchParams } from "react-router-dom";
+
 export default function AdministracionRouter() {
-  const [selectedModule, setSelectedModule] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  const storedTab = sessionStorage.getItem("admin_tab");
+
+  const [selectedModule, setSelectedModuleState] = useState(urlTab || storedTab || null);
+
+  const setSelectedModule = (mod) => {
+    setSelectedModuleState(mod);
+    if (mod) {
+      sessionStorage.setItem("admin_tab", mod);
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", mod);
+        return next;
+      });
+    } else {
+      sessionStorage.removeItem("admin_tab");
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete("tab");
+        next.delete("sub");
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (urlTab && urlTab !== selectedModule) {
+      setSelectedModuleState(urlTab);
+      sessionStorage.setItem("admin_tab", urlTab);
+    }
+  }, [urlTab]);
 
   // Escuchar evento de reset desde el menú lateral principal
   useEffect(() => {

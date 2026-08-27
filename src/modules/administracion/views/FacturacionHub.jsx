@@ -45,8 +45,40 @@ const NEW_BUTTON_LABELS = {
   fc:      "Nueva Factura de Compra",
 };
 
+import { useSearchParams } from "react-router-dom";
+
 export default function FacturacionHub() {
-  const [activeSubView, setActiveSubView] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlSub = searchParams.get("sub");
+  const storedSub = sessionStorage.getItem("fact_sub");
+
+  const [activeSubView, setActiveSubViewState] = useState(urlSub || storedSub || null);
+
+  const setActiveSubView = (sub) => {
+    setActiveSubViewState(sub);
+    if (sub) {
+      sessionStorage.setItem("fact_sub", sub);
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set("sub", sub);
+        return next;
+      });
+    } else {
+      sessionStorage.removeItem("fact_sub");
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete("sub");
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (urlSub && urlSub !== activeSubView) {
+      setActiveSubViewState(urlSub);
+      sessionStorage.setItem("fact_sub", urlSub);
+    }
+  }, [urlSub]);
 
   // ─── RENDERING SUB-VIEWS ───
   if (activeSubView) {
