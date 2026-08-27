@@ -144,25 +144,13 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
                             </div>
                         ) : (
                             <>
-                                {config?.logo && config.logo !== "/assets/logo.png" ? (
-                                    <div className="relative p-1 rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200/60 shadow-sm group-hover:shadow-md transition-all group-hover:scale-105">
-                                        <img
-                                            src={config.logo}
-                                            alt={displayName}
-                                            className="h-10 md:h-12 w-auto object-contain max-w-[140px]"
-                                            onError={(e) => { e.target.style.display = 'none'; }}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div
-                        className="w-10 h-10 rounded-2xl text-white flex items-center justify-center font-black text-base shadow-md shrink-0 group-hover:scale-105 transition-transform"
-                        style={{ background: config?.primaryColor || '#1e3a8a' }}
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 2C9.2 2 7 4.2 7 7c0 1.5.6 3 1.3 4.3L7 21h1l1-4h6l1 4h1l-1.3-9.7C15.4 10 16 8.5 16 7c0-2.8-2.2-5-4-5z"/>
-                        </svg>
-                    </div>
-                                )}
+                                <div className="relative p-1 rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200/60 shadow-sm group-hover:shadow-md transition-all group-hover:scale-105 shrink-0">
+                                    <img
+                                        src={config?.logo || `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/atm_logo.png`}
+                                        alt={displayName}
+                                        className="h-10 md:h-12 w-auto object-contain max-w-[140px]"
+                                    />
+                                </div>
 
                                 <div className="flex flex-col justify-center text-left">
                                     <h1 className="text-xl md:text-2xl font-black tracking-tight leading-none font-sans flex items-center gap-1.5">

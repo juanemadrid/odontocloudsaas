@@ -1,14 +1,18 @@
 export const DEFAULT_CONFIG = {
     isMaster: false,
-    name: "Nombre de tu Clínica",
-    logo: "", // Leave empty for text-only by default
-    heroTitle: 'Cuidamos de tu sonrisa con excelencia',
+    name: "ATM CENTRO DEL DOLOR OROFACIAL",
+    logo: `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/atm_logo.png`,
+    heroTitle: 'Cuidamos la sonrisa de tu familia con excelencia',
     heroSubtitle: 'La mejor atención odontológica con tecnología avanzada y un equipo especializado.',
     heroVideoUrl: "/assets/hero-video.mp4",
-    seoTitle: "Tu Clínica Dental | Odontología de Vanguardia",
+    seoTitle: "ATM Centro del Dolor Orofacial | Odontología Especializada",
     seoDesc: "Ofrecemos servicios integrales de odontología: ortodoncia, implantes, estética y salud oral para toda la familia.",
     servicesSectionTitle: "Servicios Especializados para tu Bienestar",
     servicesSectionDesc: "Descubre cómo podemos ayudarte a recuperar tu confianza con tratamientos adaptados a tus necesidades.",
+    address: "CALLE 16#17-68",
+    city: "Sincelejo",
+    contactPhone: "605 284 6190",
+    phone: "605 284 6190",
 
     // Hero Buttons & Badge
     heroBadgeText: "Atención Especializada",

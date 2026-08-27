@@ -118,8 +118,6 @@ export default function ModernLanding({ previewConfig, isMaster = false, section
         return () => { isMounted = false; };
     }, [previewConfig, isMaster, clinicSlug]);
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center bg-white"><div className="animate-pulse flex space-x-2"><div className="h-3 w-3 bg-slate-200 rounded-full"></div><div className="h-3 w-3 bg-slate-200 rounded-full"></div></div></div>;
-
     if (clinicSlug && tenantInfo && isAccessBlocked(tenantInfo)) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6 relative overflow-hidden font-sans">

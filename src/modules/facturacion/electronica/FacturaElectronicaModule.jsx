@@ -9,6 +9,8 @@ import { useToast } from "../../../context/ToastContext";
 import { getDianStatusLabel } from "../../../services/DianService";
 import factusService from "../../../services/factusService";
 import FacturaElectronicaForm from "./FacturaElectronicaForm";
+import { printElectronicInvoice } from "../../../utils/electronicInvoiceTemplate";
+import { getConfigSection } from "../../../services/configPersistenceService";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -57,6 +59,7 @@ export default function FacturaElectronicaModule() {
 
   const [facturas, setFacturas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tenant, setTenant] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
@@ -64,6 +67,40 @@ export default function FacturaElectronicaModule() {
   const [hasta, setHasta] = useState(todayStr);
   const [downloadingId, setDownloadingId] = useState(null);
   const [resendingId, setResendingId] = useState(null);
+
+  useEffect(() => {
+    if (!inquilino) return;
+    (async () => {
+      try {
+        const [tenantResult, companyConfig, billingConfig] = await Promise.all([
+          supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
+          getConfigSection(inquilino, "empresa_datos", {}),
+          getConfigSection(inquilino, "facturacion_electronica", {})
+        ]);
+        const d = tenantResult?.data || {};
+        const branchBilling = billingConfig?.por_sucursal || {};
+        const dian = branchBilling.general || Object.values(branchBilling)[0] || billingConfig?.general || billingConfig || {};
+        setTenant({
+          nit: d.nit || companyConfig.nit || "",
+          razonSocial: companyConfig.razonSocial || d.nombre || "",
+          nombreComercial: companyConfig.nombreComercial || d.nombre || "",
+          direccion: companyConfig.direccion || d.direccion || "",
+          telefono: companyConfig.telefono || companyConfig.celular || d.telefono || "",
+          email: companyConfig.email || "",
+          logoUrl: companyConfig.logoUrl || d.logo_url || "",
+          ciudad: companyConfig.ciudad || d.ciudad || "",
+          dianResolucion: dian.dianResolucion || "",
+          dianPrefijo: dian.dianPrefijo || "",
+          dianRangoDesde: dian.dianRangoDesde || "",
+          dianRangoHasta: dian.dianRangoHasta || "",
+          dianFechaResolucion: dian.dianFechaResolucion || "",
+          dianVigenciaHasta: dian.dianVigenciaHasta || dian.dianVigencia || ""
+        });
+      } catch (e) {
+        console.error("Error loading tenant config in FacturaElectronicaModule:", e);
+      }
+    })();
+  }, [inquilino]);
 
   const loadFacturas = async () => {
     if (!inquilino) return;
@@ -231,48 +268,19 @@ export default function FacturaElectronicaModule() {
   };
 
   const handlePrint = (factura) => {
-    const tenant = userProfile?.tenant || {};
-    const printWindow = window.open("", "_blank", "width=800,height=900");
-    if (!printWindow) { toast.error("No se pudo abrir ventana de impresión."); return; }
-    const items = (factura.items || []).map((it) => `
-      <tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.descripcion || it.nombre || "Servicio"}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${it.cantidad || 1}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">$${Number(it.precioUnitario || 0).toLocaleString("es-CO")}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${it.descuento || 0}%</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">$${Number(it.total || it.precioUnitario || 0).toLocaleString("es-CO")}</td>
-      </tr>`).join("");
-    printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura Electrónica</title>
-      <style>body{font-family:Arial,sans-serif;padding:32px;color:#222}h1{font-size:20px;margin:0}.header{display:flex;justify-content:space-between;margin-bottom:24px;border-bottom:2px solid #2563eb;padding-bottom:16px}.section{margin-bottom:16px}.label{font-size:11px;font-weight:900;color:#888;text-transform:uppercase;letter-spacing:.08em}.value{font-size:13px;font-weight:600;color:#111}table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#f1f5f9;padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;text-align:left}td{font-size:12px}.totals{text-align:right;margin-top:16px}.cufe{word-break:break-all;font-size:10px;color:#555;background:#f8fafc;padding:8px;border-radius:6px;margin-top:12px}.dian-note{font-size:10px;color:#16a34a;margin-top:8px;font-weight:600}@media print{button{display:none}}</style>
-      </head><body>
-      <div class="header">
-        <div><h1>${tenant.nombreComercial || tenant.nombre || "Clínica Dental"}</h1>
-          <p class="label">NIT: <span class="value">${tenant.nit || "—"}</span></p>
-          <p class="label">Dirección: <span class="value">${tenant.direccion || "—"}</span></p>
-          <p class="label">Teléfono: <span class="value">${tenant.telefono || "—"}</span></p>
-        </div>
-        <div style="text-align:right">
-          <p class="label">Factura Electrónica</p>
-          <p style="font-size:22px;font-weight:900;color:#2563eb">${factura.factusInvoiceNumber || factura.id?.slice(-8)}</p>
-          <p class="label">Fecha: <span class="value">${fmtDate(factura.createdAt)}</span></p>
-        </div>
-      </div>
-      <div class="section"><p class="label">Paciente</p>
-        <p class="value">${factura.pacienteNombre || "—"}</p>
-        <p class="label">Documento: <span class="value">${factura.pacienteDocumento || "—"}</span></p>
-      </div>
-      <table><thead><tr><th>Descripción</th><th>Cant.</th><th>Precio Unit.</th><th>Dto.</th><th>Total</th></tr></thead>
-      <tbody>${items}</tbody></table>
-      <div class="totals">
-        <p><strong>Subtotal:</strong> $${Number(factura.subtotal || factura.total || 0).toLocaleString("es-CO")}</p>
-        ${factura.descuento ? `<p><strong>Descuento:</strong> $${Number(factura.descuento).toLocaleString("es-CO")}</p>` : ""}
-        <p style="font-size:18px;font-weight:900;color:#2563eb"><strong>TOTAL:</strong> $${Number(factura.total || 0).toLocaleString("es-CO")} COP</p>
-      </div>
-      ${factura.cufe ? `<div class="cufe"><strong>CUFE:</strong> ${factura.cufe}</div>` : ""}
-      ${factura.qrCode ? `<div class="cufe"><strong>QR:</strong> ${factura.qrCode}</div>` : ""}
-      <p class="dian-note">✓ Factura electrónica de venta — Verificar validez en https://catalogo-vpfe.dian.gov.co</p>
-      <script>window.onload=()=>window.print();</script></body></html>`);
-    printWindow.document.close();
+    printElectronicInvoice({
+      factura,
+      patient: {
+        nombreCompleto: factura.pacienteNombre,
+        documento: factura.pacienteDocumento,
+        direccion: factura.pacienteDireccion,
+        ciudad: factura.pacienteCiudad,
+        telefono: factura.pacienteTelefono,
+        tipoDocumento: factura.pacienteTipoDocumento || "CC"
+      },
+      tenant: tenant || userProfile?.tenant || {},
+      items: factura.items || []
+    });
   };
 
   if (showForm) {

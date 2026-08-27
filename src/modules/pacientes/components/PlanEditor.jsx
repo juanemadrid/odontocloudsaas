@@ -495,13 +495,22 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
                 const bill = result?.data?.bill || result?.bill || result?.data || {};
                 const finalNro = bill?.number || bill?.invoice_number || result?.data?.number || nroFactura;
+                const cufe = bill?.cufe || bill?.cude || result?.data?.cufe || null;
+                const qr = bill?.qr_code || bill?.qr || result?.data?.qr_code || (cufe ? `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cufe}` : null);
+                const pdfUrl = bill?.public_url || bill?.qr_image || bill?.pdf_url || null;
 
                 if (invData?.id) {
                     await supabase
                         .from('facturas')
                         .update({
                             estado: 'Emitido',
-                            numero: finalNro
+                            factusEstado: 'Emitido',
+                            numero: finalNro,
+                            factusNumero: finalNro,
+                            factusCufe: cufe,
+                            factusQr: qr,
+                            factusPdfUrl: pdfUrl,
+                            factusResponse: result?.data || result || null,
                         })
                         .eq('id', invData.id);
                 }

@@ -20,7 +20,8 @@ const EMPTY_DIAN_DATA = {
     dianRangoDesde: 1,
     dianRangoHasta: 1000,
     dianClaveTecnica: "",
-    dianFechaResolucion: ""
+    dianFechaResolucion: "",
+    dianVigenciaHasta: ""
 };
 
 export default function ConfigFacturacionElectronica() {
@@ -317,14 +318,25 @@ export default function ConfigFacturacionElectronica() {
                         />
                     </div>
 
-                    <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-600">Fecha de Resolución</label>
-                        <input
-                            type="date"
-                            value={dianData.dianFechaResolucion}
-                            onChange={e => setDianData(p => ({ ...p, dianFechaResolucion: e.target.value }))}
-                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500"
-                         max="9999-12-31" min="1900-01-01" />
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-slate-600">Fecha de Resolución</label>
+                            <input
+                                type="date"
+                                value={dianData.dianFechaResolucion}
+                                onChange={e => setDianData(p => ({ ...p, dianFechaResolucion: e.target.value }))}
+                                className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500"
+                             max="9999-12-31" min="1900-01-01" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-slate-600">Vigencia Hasta</label>
+                            <input
+                                type="date"
+                                value={dianData.dianVigenciaHasta}
+                                onChange={e => setDianData(p => ({ ...p, dianVigenciaHasta: e.target.value }))}
+                                className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500"
+                             max="9999-12-31" min="1900-01-01" />
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
