@@ -221,16 +221,6 @@ export default function PagosList({ onNew }) {
               <span className="text-slate-700 font-semibold">Pagos</span>
             </div>
           </div>
-
-          {onNew && (
-            <button
-              type="button"
-              onClick={onNew}
-              className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer"
-            >
-              <FiPlus size={15} /> Nuevo pago
-            </button>
-          )}
         </div>
       </div>
 
