@@ -99,18 +99,47 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
         }
     }, [initialData]);
 
+    const autoGenerateResolutionTexts = (current) => {
+        const updated = { ...current };
+        if (updated.feNumFormulario && !updated.customFeTexto) {
+            const feDate = updated.feFechaInicio ? updated.feFechaInicio.split("-").reverse().join("/") : "";
+            const feDateEnd = updated.feFechaFinal ? updated.feFechaFinal.split("-").reverse().join("/") : "";
+            updated.feTextoResolucion = `Autorización de numeración de facturación de número ${updated.feNumFormulario} de ${feDate || "—"} Modalidad Factura Electrónica desde ${updated.fePrefijoFactura || ""}${updated.feNumInicial || 1} hasta ${updated.fePrefijoFactura || ""}${updated.feNumFinal || 1000}${feDateEnd ? ` con vigencia hasta ${feDateEnd}` : ""}`;
+        }
+        if (updated.dsNumFormulario && !updated.customDsTexto) {
+            const dsDate = updated.dsFechaInicio ? updated.dsFechaInicio.split("-").reverse().join("/") : "";
+            const dsDateEnd = updated.dsFechaFinal ? updated.dsFechaFinal.split("-").reverse().join("/") : "";
+            updated.dsTextoResolucion = `Autorización de numeración para documento soporte de número ${updated.dsNumFormulario} de ${dsDate || "—"} desde ${updated.dsPrefijoDoc || ""}${updated.dsNumInicial || 1} hasta ${updated.dsPrefijoDoc || ""}${updated.dsNumFinal || 1000}${dsDateEnd ? ` con vigencia hasta ${dsDateEnd}` : ""}`;
+        }
+        return updated;
+    };
+
     const handleChange = (field, val) => {
-        setFormData(prev => ({ ...prev, [field]: val }));
+        setFormData(prev => {
+            const next = { ...prev, [field]: val };
+            if (field === "feTextoResolucion") next.customFeTexto = true;
+            if (field === "dsTextoResolucion") next.customDsTexto = true;
+            if (["feNumFormulario", "fePrefijoFactura", "feNumInicial", "feNumFinal", "feFechaInicio", "feFechaFinal", "dsNumFormulario", "dsPrefijoDoc", "dsNumInicial", "dsNumFinal", "dsFechaInicio", "dsFechaFinal"].includes(field)) {
+                return autoGenerateResolutionTexts(next);
+            }
+            return next;
+        });
     };
 
     const handleNumberChange = (field, e) => {
         const val = e.target.value;
-        if (val === "" || val === null || val === undefined) {
-            setFormData(prev => ({ ...prev, [field]: "" }));
-        } else {
-            const parsed = parseInt(val, 10);
-            setFormData(prev => ({ ...prev, [field]: isNaN(parsed) ? "" : parsed }));
-        }
+        setFormData(prev => {
+            let nextVal = "";
+            if (val !== "" && val !== null && val !== undefined) {
+                const parsed = parseInt(val, 10);
+                nextVal = isNaN(parsed) ? "" : parsed;
+            }
+            const next = { ...prev, [field]: nextVal };
+            if (["feNumInicial", "feNumFinal", "dsNumInicial", "dsNumFinal"].includes(field)) {
+                return autoGenerateResolutionTexts(next);
+            }
+            return next;
+        });
     };
 
     const handleSubmit = async (e) => {
@@ -144,6 +173,30 @@ export default function ConfigConsecutivosForm({ onClose, initialData = null }) 
                 ...cleanedData,
                 ...(initialData?.id ? { id: initialData.id } : {})
             });
+
+            // Sincronizar simultáneamente con la sección de facturación electrónica
+            if (cleanedData.facturacionElectronica || cleanedData.feNumFormulario) {
+                try {
+                    const { saveConfigSection, getConfigSection } = await import("../../services/configPersistenceService");
+                    const currentFeConfig = await getConfigSection(userProfile.inquilino, "facturacion_electronica", {}) || {};
+                    const updatedFe = {
+                        ...currentFeConfig,
+                        general: {
+                            dianResolucion: cleanedData.feNumFormulario || "",
+                            dianPrefijo: cleanedData.fePrefijoFactura || "",
+                            dianRangoDesde: cleanedData.feNumInicial || 1,
+                            dianRangoHasta: cleanedData.feNumFinal || 1000,
+                            dianClaveTecnica: cleanedData.feClaveTecnica || "",
+                            dianFechaResolucion: cleanedData.feFechaInicio || "",
+                            dianVigenciaHasta: cleanedData.feFechaFinal || "",
+                            dianTextoResolucion: cleanedData.feTextoResolucion || "",
+                        }
+                    };
+                    await saveConfigSection(userProfile.inquilino, "facturacion_electronica", updatedFe);
+                } catch (feErr) {
+                    console.warn("Aviso al sincronizar facturación electrónica:", feErr);
+                }
+            }
 
             toast.success(initialData?.id ? "Consecutivo actualizado correctamente" : "Consecutivo creado correctamente");
             onClose();

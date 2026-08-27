@@ -14,6 +14,15 @@ export const createPlan = async (planData) => {
 
         const type = planData.type || (planData.status === "approved" ? "plan" : "presupuesto");
 
+        let nroConsecutivo = planData.nroConsecutivo || null;
+        try {
+            const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import("./consecutivosService");
+            const consField = type === "plan" ? CONSECUTIVO_TYPES.PLAN_TRATAMIENTO : CONSECUTIVO_TYPES.PRESUPUESTOS;
+            nroConsecutivo = await consumeNextConsecutivo(tenantId, consField);
+        } catch (e) {
+            console.warn("No se pudo incrementar el consecutivo del plan:", e.message);
+        }
+
         const detallesObj = {
             items: planData.items || [],
             type: type,
@@ -22,13 +31,14 @@ export const createPlan = async (planData) => {
             vigencia: planData.vigencia || 30,
             observaciones: planData.observaciones || "",
             cobertura: planData.cobertura || {},
-            baseListId: planData.baseListId || ""
+            baseListId: planData.baseListId || "",
+            nroConsecutivo: nroConsecutivo || null
         };
 
         const payload = {
             tenant_id: tenantId,
             paciente_id: planData.patientId || planData.paciente_id,
-            nombre: planData.title || planData.nombre || (type === "plan" ? "Plan de Tratamiento" : "Presupuesto"),
+            nombre: planData.title || planData.nombre || (type === "plan" ? `Plan de Tratamiento${nroConsecutivo ? ` #${nroConsecutivo}` : ''}` : `Presupuesto${nroConsecutivo ? ` #${nroConsecutivo}` : ''}`),
             total: Number(planData.total || planData.costoTotal || 0),
             estado: planData.status || (type === "plan" ? "approved" : "draft"),
             detalles: detallesObj

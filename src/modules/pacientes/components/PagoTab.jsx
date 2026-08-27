@@ -474,6 +474,8 @@ export default function PagoTab({ patient }) {
 
             // 3.2. Increment consecutive counter
             if (consDoc) {
+                const isUsoSaldo = method === "Saldo a favor";
+                const currentUsoSaldo = parseInt(String(consDoc.contUsoSaldoFavor || 0), 10) || 0;
                 await saveConfigItem(
                     userProfile.inquilino,
                     "consecutivos",
@@ -481,7 +483,8 @@ export default function PagoTab({ patient }) {
                     {
                         ...consDoc,
                         contReciboCaja: consNextCount,
-                        cont_recibo_caja: consNextCount
+                        cont_recibo_caja: consNextCount,
+                        ...(isUsoSaldo ? { contUsoSaldoFavor: currentUsoSaldo + 1 } : {})
                     }
                 );
             }
