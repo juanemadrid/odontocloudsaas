@@ -32,7 +32,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
     // Form fields - Card 2: Datos tercero
     const [terceroId, setTerceroId] = useState("");
-    const [condicionPago, setCondicionPago] = useState("");
+    const [medioPago, setMedioPago] = useState("Efectivo");
+    const [condicionPago, setCondicionPago] = useState("Contado");
     const [pagoFacturasCompra, setPagoFacturasCompra] = useState(false);
 
     // Form fields - Card 3: Items / Conceptos
@@ -311,8 +312,29 @@ export default function PagosForm({ onCancel, onSuccess }) {
                         .from("facturas_compra")
                         .select("*")
                         .eq("tenant_id", inquilino);
-                    if (fcDb) setFacturasCompraPendientes(fcDb);
+                    let allFc = fcDb || [];
+                    if (allFc.length === 0) {
+                        allFc = cfg.facturas_compra || cfg.facturasCompra || [];
+                    }
+                    setFacturasCompraPendientes(allFc);
                 } catch (e) {}
+
+                // Auto-seleccionar Banco o Caja según sesión activa
+                if (userCaja) {
+                    const activeName = (
+                        userCaja.usuario_nombre ||
+                        userCaja.responsable ||
+                        userProfile?.full_name ||
+                        userProfile?.nombre_completo ||
+                        [userProfile?.nombre, userProfile?.apellido].filter(Boolean).join(" ") ||
+                        userCaja.nombre ||
+                        "CAJA PRINCIPAL"
+                    ).toUpperCase();
+                    setBancoCaja(activeName);
+                } else if (bancosList.length > 0) {
+                    const firstBank = typeof bancosList[0] === 'string' ? bancosList[0] : (bancosList[0].nombre || bancosList[0].nombreBanco || "Bancolombia");
+                    setBancoCaja(firstBank);
+                }
 
             } catch (err) {
                 console.error("Error loading PagosForm data:", err);
@@ -487,16 +509,25 @@ export default function PagosForm({ onCancel, onSuccess }) {
         }
     };
 
-    // Facturas de compra disponibles para el tercero
+    // Facturas de compra disponibles exclusivamente para el tercero seleccionado
     const availableFacturasCompra = useMemo(() => {
-        const tName = (selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase();
-        const tDoc = (selectedTerceroObj?.documento || "").toLowerCase();
+        if (!selectedTerceroObj && !terceroSearchQuery.trim()) return [];
+        const tName = (selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase().trim();
+        const tDoc = (selectedTerceroObj?.documento || "").toLowerCase().trim();
+        const tId = String(selectedTerceroObj?.id || "");
+        
         if (!facturasCompraPendientes || facturasCompraPendientes.length === 0) return [];
+        
         return facturasCompraPendientes.filter(fc => {
-            if (!tName && !tDoc) return true;
-            const fcProv = (fc.proveedor || fc.tercero || "").toLowerCase();
-            const fcDoc = (fc.documentoTercero || fc.nit || "").toLowerCase();
-            return (tName && fcProv.includes(tName)) || (tDoc && fcDoc.includes(tDoc)) || true;
+            const fcProvId = String(fc.tercero_id || fc.terceroId || fc.proveedor_id || fc.proveedorId || "");
+            const fcProv = (fc.proveedor || fc.tercero || fc.proveedorNombre || fc.terceroNombre || fc.nombre || "").toLowerCase().trim();
+            const fcDoc = (fc.documentoTercero || fc.documento || fc.nit || fc.nroDocumento || "").toLowerCase().trim();
+            
+            const matchId = tId && fcProvId && (tId === fcProvId);
+            const matchName = tName && fcProv && (fcProv.includes(tName) || tName.includes(fcProv));
+            const matchDoc = tDoc && fcDoc && (fcDoc === tDoc || fcDoc.includes(tDoc) || tDoc.includes(fcDoc));
+            
+            return matchId || matchName || matchDoc;
         });
     }, [facturasCompraPendientes, selectedTerceroObj, terceroSearchQuery]);
 
@@ -621,7 +652,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 profesionalId: selectedProf?.id || profesionalId,
                 profesional: selectedProf?.nombre || profesionalId || "",
                 bancoCaja,
-                medioPago: bancoCaja,
+                medioPago: medioPago || "Efectivo",
                 terceroId: selectedTercero?.id || terceroId,
                 tercero: selectedTercero?.nombre || terceroId || terceroSearchQuery,
                 proveedor: selectedTercero?.nombre || terceroId || terceroSearchQuery,
@@ -939,6 +970,30 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                 >
                                     <FiPlus size={16} />
                                 </button>
+                            </div>
+                        </div>
+
+                        {/* Medio de pago */}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                            <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
+                                Medio de pago <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="md:col-span-9">
+                                <select
+                                    value={medioPago}
+                                    onChange={(e) => setMedioPago(e.target.value)}
+                                    className="w-full max-w-md h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                    required
+                                >
+                                    {mediosPagoList.map((m, idx) => {
+                                        const mName = typeof m === 'string' ? m : (m.nombre || m.name || m.label || "Efectivo");
+                                        return (
+                                            <option key={idx} value={mName}>
+                                                {mName}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
                             </div>
                         </div>
 
@@ -1523,11 +1578,17 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                         className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     >
                                         <option value="">No seleccionar factura</option>
-                                        {facturasCompraPendientes.map((fc) => (
-                                            <option key={fc.id} value={fc.id}>
-                                                {fc.numero || `FC-${fc.id}`} - {fc.proveedor || fc.tercero || "Proveedor"} ({fmt(fc.saldo_pendiente || fc.total || fc.monto)})
+                                        {availableFacturasCompra.length > 0 ? (
+                                            availableFacturasCompra.map((fc) => (
+                                                <option key={fc.id} value={fc.id}>
+                                                    {fc.numero || `FC-${fc.id}`} - {fc.proveedor || fc.tercero || "Proveedor"} ({fmt(fc.saldo_pendiente || fc.total || fc.monto)})
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>
+                                                {selectedTerceroObj ? "Este tercero no tiene facturas de compra pendientes" : "Seleccione primero un tercero o paciente"}
                                             </option>
-                                        ))}
+                                        )}
                                     </select>
                                 </div>
                             </div>
