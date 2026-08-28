@@ -7,11 +7,11 @@ export const ReceiptPrintService = {
     generatePDF: async (pago, patient, clinic, userProfile) => {
         if (!pago || !patient || !clinic) {
             console.error("Missing data for PDF generation:", { pago, patient, clinic });
-            window.alert("❌ Datos insuficientes para generar el recibo");
+            toast.error("Datos insuficientes para generar el recibo");
             return;
         }
 
-        window.alert("Generando recibo de caja...");
+        const toastId = toast.loading("Generando recibo de caja...");
 
         try {
             // Fetch plan details dynamically if planId is present or query patient's active plan
@@ -318,11 +318,13 @@ export const ReceiptPrintService = {
             window.open(pdfBlob, '_blank');
 
             document.body.removeChild(printElement);
-            window.alert("✅ PDF del recibo generado con éxito");
+            toast.dismiss(toastId);
+            toast.success("Recibo de caja generado correctamente");
 
         } catch (error) {
             console.error("Error generating receipt PDF:", error);
-            window.alert("❌ Error al generar el recibo de caja en PDF");
+            toast.dismiss(toastId);
+            toast.error("Error al generar el recibo de caja en PDF");
         }
     }
 };

@@ -110,24 +110,36 @@ export default function HistoricoPagosTab({ patientId }) {
 
     const handlePrint = async (pago) => {
         try {
-            // SELECT específico — solo columnas necesarias para imprimir
-            const { data: patientData } = await supabase
-                .from("pacientes")
-                .select("id, nombres, apellidos, nombre, apellido, nroDocumento, tipoDocumento, celular, email, saldo_favor")
-                .eq("id", patientId)
-                .single();
+            // Cargar paciente con select(*) para soportar cualquier esquema de columnas de Supabase
+            let targetPatient = null;
+            try {
+                const { data: pDb } = await supabase
+                    .from("pacientes")
+                    .select("*")
+                    .eq("id", patientId)
+                    .maybeSingle();
+                targetPatient = pDb;
+            } catch (e) {}
 
-            if (!patientData) {
+            if (!targetPatient) {
+                try {
+                    const { data: allP } = await supabase.from("pacientes").select("*");
+                    targetPatient = (allP || []).find(p => p.id === patientId || p.documento === patientId || p.nroDocumento === patientId);
+                } catch (e) {}
+            }
+
+            if (!targetPatient) {
                 toast?.error?.("No se pudo cargar la información del paciente");
                 return;
             }
 
             const clinic = userProfile?.tenant || {
                 nombre: userProfile?.tenantNombre || userProfile?.clinica || "Clínica Dental",
-                inquilino: userProfile?.inquilino || userProfile?.tenantId
+                inquilino: userProfile?.inquilino || userProfile?.tenantId,
+                ciudad: userProfile?.tenant?.ciudad || userProfile?.ciudad || "Sincelejo"
             };
 
-            await ReceiptPrintService.generatePDF(pago, patientData, clinic, userProfile);
+            await ReceiptPrintService.generatePDF(pago, targetPatient, clinic, userProfile);
         } catch (e) {
             console.error("Error launching print:", e);
             toast?.error?.("Error al preparar el comprobante de impresión");

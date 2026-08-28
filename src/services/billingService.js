@@ -144,25 +144,25 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             try {
                 const { data, error: ndErr } = await supabase
                     .from("notas_debito")
-                    .select("id, factura_id, monto, estado, referencia, notas")
+                    .select("*")
                     .in("factura_id", facturaIds);
                 if (!ndErr && data) notasDebito = data;
             } catch (e) {}
         }
 
-        // Leer saldo_favor del paciente (si la columna existe)
+        // Leer saldo_favor del paciente de forma segura
         let patientSaldoFavor = 0;
         try {
-            const { data: pacData, error: pacErr } = await supabase
+            const { data: pacData } = await supabase
                 .from("pacientes")
-                .select("saldo_favor")
+                .select("*")
                 .eq("id", patientId)
                 .maybeSingle();
-            if (!pacErr && pacData) {
-                patientSaldoFavor = Number(pacData.saldo_favor || 0);
+            if (pacData) {
+                patientSaldoFavor = Number(pacData.saldo_favor || pacData.saldoFavor || pacData.saldo || 0);
             }
         } catch (e) {
-            // columna puede no existir, ignorar
+            // ignorar
         }
 
         const isNotAnulado = (p) => {
