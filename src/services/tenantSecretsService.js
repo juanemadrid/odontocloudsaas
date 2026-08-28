@@ -26,6 +26,11 @@ export const getSisproConfig = async (tenantId) => {
   return data.config || {};
 };
 
+export const getSisproPassword = async (tenantId) => {
+  const data = await invokeTenantSecrets("get_sispro_password", { tenantId });
+  return String(data.password || "");
+};
+
 export const configureSispro = async (tenantId, config) => {
   const data = await invokeTenantSecrets("configure_sispro", { tenantId, config });
   return data.configured === true;
@@ -33,5 +38,6 @@ export const configureSispro = async (tenantId, config) => {
 
 export default {
   getSisproConfig,
+  getSisproPassword,
   configureSispro,
 };

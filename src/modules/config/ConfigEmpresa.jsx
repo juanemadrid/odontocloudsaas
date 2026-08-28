@@ -7,10 +7,25 @@ import React, { useState, useEffect, useRef } from "react";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { configureSispro, getSisproConfig } from "../../services/tenantSecretsService";
+import {
+    configureSispro,
+    getSisproConfig,
+    getSisproPassword
+} from "../../services/tenantSecretsService";
 import { getConfigSection, saveConfigSection } from "../../services/configPersistenceService";
 import { uploadOptimizedPublicFile } from "../../services/storageUploadService";
-import { FiSave, FiUpload, FiImage, FiMapPin, FiPhone, FiMail, FiBriefcase, FiFileText } from "react-icons/fi";
+import {
+    FiSave,
+    FiUpload,
+    FiImage,
+    FiMapPin,
+    FiPhone,
+    FiMail,
+    FiBriefcase,
+    FiFileText,
+    FiEye,
+    FiEyeOff
+} from "react-icons/fi";
 
 export default function ConfigEmpresa() {
     const { userProfile } = useAuth();
@@ -19,6 +34,8 @@ export default function ConfigEmpresa() {
     const [saving, setSaving] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [sisproHasPassword, setSisproHasPassword] = useState(false);
+    const [showSisproPassword, setShowSisproPassword] = useState(false);
+    const [loadingSisproPassword, setLoadingSisproPassword] = useState(false);
     const fileInputRef = useRef(null);
 
     // Estado del formulario
@@ -121,7 +138,6 @@ export default function ConfigEmpresa() {
             });
 
             const tenantPayload = {
-                id: userProfile.inquilino,
                 nombre: formData.nombreComercial || formData.razonSocial || "Clínica",
                 nit: formData.nit || "",
                 telefono: formData.telefono || formData.celular || "",
@@ -130,8 +146,16 @@ export default function ConfigEmpresa() {
                 logo_url: formData.logoUrl || ""
             };
 
-            const { error: tErr } = await supabase.from("tenants").upsert(tenantPayload);
+            const { data: updatedTenant, error: tErr } = await supabase
+                .from("tenants")
+                .update(tenantPayload)
+                .eq("id", userProfile.inquilino)
+                .select("id")
+                .maybeSingle();
             if (tErr) throw tErr;
+            if (!updatedTenant) {
+                throw new Error("No fue posible actualizar la clínica con los permisos actuales.");
+            }
 
             await saveConfigSection(
                 userProfile.inquilino,
@@ -150,12 +174,37 @@ export default function ConfigEmpresa() {
             window.dispatchEvent(new CustomEvent("tenant-updated"));
             setSisproHasPassword(Boolean(sisproPassword || sisproHasPassword));
             setFormData(prev => ({ ...prev, sisproPassword: "" }));
+            setShowSisproPassword(false);
             toast.success("Información guardada correctamente");
         } catch (error) {
             console.error("Error guardando empresa:", error);
             toast.error("Error al guardar cambios: " + (error.message || ""));
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleToggleSisproPassword = async () => {
+        if (showSisproPassword) {
+            setShowSisproPassword(false);
+            return;
+        }
+
+        if (formData.sisproPassword || !sisproHasPassword) {
+            setShowSisproPassword(true);
+            return;
+        }
+
+        setLoadingSisproPassword(true);
+        try {
+            const password = await getSisproPassword(userProfile.inquilino);
+            setFormData(prev => ({ ...prev, sisproPassword: password }));
+            setShowSisproPassword(true);
+        } catch (error) {
+            console.error("Error consultando contraseña SISPRO:", error);
+            toast.error(error.message || "No fue posible consultar la contraseña SISPRO.");
+        } finally {
+            setLoadingSisproPassword(false);
         }
     };
 
@@ -538,13 +587,32 @@ export default function ConfigEmpresa() {
                                 <div className="grid grid-cols-2 gap-2">
                                     <div className="space-y-1">
                                         <label className="text-[11px] font-bold text-slate-600">Contraseña SISPRO ⓘ</label>
-                                        <input
-                                            type="password"
-                                            value={formData.sisproPassword}
-                                            onChange={e => setFormData({ ...formData, sisproPassword: e.target.value })}
-                                            placeholder="**********"
-                                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type={showSisproPassword ? "text" : "password"}
+                                                value={formData.sisproPassword}
+                                                onChange={e => setFormData({ ...formData, sisproPassword: e.target.value })}
+                                                placeholder={sisproHasPassword ? "Contraseña guardada" : "Ingrese la contraseña"}
+                                                autoComplete="new-password"
+                                                className="w-full h-9 pl-3 pr-10 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleToggleSisproPassword}
+                                                disabled={loadingSisproPassword}
+                                                aria-label={showSisproPassword ? "Ocultar contraseña SISPRO" : "Mostrar contraseña SISPRO"}
+                                                title={showSisproPassword ? "Ocultar contraseña" : "Mostrar contraseña guardada"}
+                                                className="absolute right-0 top-0 h-9 w-9 border-0 bg-transparent text-slate-500 hover:text-blue-600 flex items-center justify-center cursor-pointer disabled:cursor-wait disabled:opacity-50"
+                                            >
+                                                {loadingSisproPassword ? (
+                                                    <span className="w-4 h-4 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+                                                ) : showSisproPassword ? (
+                                                    <FiEyeOff size={16} />
+                                                ) : (
+                                                    <FiEye size={16} />
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[11px] font-bold text-slate-600">Código de Prestador ⓘ</label>

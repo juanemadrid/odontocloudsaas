@@ -94,6 +94,13 @@ Deno.serve(async (request) => {
       });
     }
 
+    if (action === "get_sispro_password") {
+      return json({
+        success: true,
+        password: String(current.sisproPassword || ""),
+      });
+    }
+
     if (action === "configure_sispro") {
       const input = body?.config || {};
       const password = String(input.sisproPassword || "");
