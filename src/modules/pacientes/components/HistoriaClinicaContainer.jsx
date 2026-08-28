@@ -147,10 +147,11 @@ export default function HistoriaClinicaContainer({ patient }) {
             tableDocs.forEach(d => {
                 if (d && d.id) {
                     const meta = d.metadata || {};
-                    docMap.set(String(d.id), {
+                    const effectiveId = d.legacy_id || d.id;
+                    docMap.set(String(effectiveId), {
                         ...meta,
                         ...d,
-                        id: d.legacy_id || d.id,
+                        id: effectiveId,
                         database_id: d.id,
                         motivoConsulta: meta.motivoConsulta || d.motivoConsulta || "",
                         enfermedadActual: meta.enfermedadActual || d.enfermedadActual || "",
