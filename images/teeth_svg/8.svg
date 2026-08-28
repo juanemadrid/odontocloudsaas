@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Incisivo Central Superior - Diente 8 / posicion 1 -->
+<svg viewBox="0 0 44 90" xmlns="http://www.w3.org/2000/svg" width="44" height="90">
+  <defs>
+    <linearGradient id="enamel8" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e8f4fd"/>
+      <stop offset="30%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#f5faff"/>
+      <stop offset="100%" stop-color="#ddeeff"/>
+    </linearGradient>
+    <linearGradient id="root8" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5e6d3"/>
+      <stop offset="50%" stop-color="#f0d9c0"/>
+      <stop offset="100%" stop-color="#e8cba8"/>
+    </linearGradient>
+    <linearGradient id="shine8" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow8">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#99bbdd" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <!-- Raíz -->
+  <path d="M14 48 Q12 60 11 72 Q10.5 82 14 86 Q18 90 22 90 Q26 90 30 86 Q33.5 82 33 72 Q32 60 30 48 Z" fill="url(#root8)" stroke="#d4b896" stroke-width="0.5"/>
+  <!-- Cuerpo (corona) del diente -->
+  <path d="M6 6 Q5 2 8 1 Q14 0 22 0 Q30 0 36 1 Q39 2 38 6 L36 50 Q30 52 22 52 Q14 52 8 50 Z" fill="url(#enamel8)" stroke="#c8dff0" stroke-width="0.8" filter="url(#shadow8)"/>
+  <!-- Borde incisal (filo) -->
+  <path d="M8 6 Q10 4 22 4 Q34 4 36 6" fill="none" stroke="#aaccee" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- Brillo principal -->
+  <path d="M12 3 Q14 2 17 2 L16 22 Q14 22 12 21 Z" fill="url(#shine8)" opacity="0.6"/>
+  <!-- Surco anatómico vertical -->
+  <line x1="22" y1="5" x2="22" y2="48" stroke="#d8ecf8" stroke-width="0.6" opacity="0.5"/>
+  <!-- Contorno corona -->
+  <path d="M6 6 Q5 2 8 1 Q14 0 22 0 Q30 0 36 1 Q39 2 38 6 L36 50 Q30 52 22 52 Q14 52 8 50 Z" fill="none" stroke="#b0d0e8" stroke-width="0.8"/>
+</svg>

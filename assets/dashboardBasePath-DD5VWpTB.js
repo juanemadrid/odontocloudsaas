@@ -1,0 +1,1 @@
+function e(o=typeof window<"u"?window.location.pathname:""){const t=String(o||"").split("/").filter(Boolean),a=t.findIndex(n=>n==="dashboard"||n==="superadmin"||n.startsWith("dashboard_"));return a>=0?`/${t.slice(a,a+1).join("/")}`:"/dashboard"}function d(o="",t){const a=e(t),n=String(o||"").replace(/^\/+|\/+$/g,"");return n?`${a}/${n}`:a}export{d as b};
