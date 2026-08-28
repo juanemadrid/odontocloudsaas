@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }) => {
       // Consultar perfil e información completa del tenant en Supabase
       let { data: profile, error } = await supabase
         .from("profiles")
-        .select("id, role, full_name, tenant_id, telefono, registro_medico, tarjeta_profesional, firma, firma_url, foto_perfil, activo, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
+        .select("id, role, full_name, tenant_id, telefono, registro_medico, activo, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
         .eq("id", authUser.id)
         .maybeSingle();
 
@@ -84,20 +84,37 @@ export const AuthProvider = ({ children }) => {
         let userDetail = {};
 
         try {
-          const { data: wData } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", profile.tenant_id)
-            .maybeSingle();
+          // El RPC devuelve solo el usuario actual y las dos secciones pequeñas
+          // necesarias para iniciar. Evita descargar firmas de todos los usuarios.
+          let bootstrap = null;
+          const { data: bootstrapData, error: bootstrapError } = await supabase
+            .rpc("get_my_tenant_context");
 
-          extraLogo = wData?.config?.empresa_datos?.logoUrl || "";
-          empresaNombre = wData?.config?.empresa_datos?.nombre || 
-                          wData?.config?.empresa_datos?.razonSocial || 
-                          wData?.config?.empresa_datos?.nombreComercial || "";
+          if (!bootstrapError && bootstrapData) {
+            bootstrap = bootstrapData;
+          } else {
+            // Compatibilidad durante despliegues escalonados.
+            const { data: wData } = await supabase
+              .from("website_config")
+              .select("empresa_datos:config->empresa_datos,user_details:config->user_details,perfiles:config->perfiles")
+              .eq("tenant_id", profile.tenant_id)
+              .maybeSingle();
+            bootstrap = {
+              empresa_datos: wData?.empresa_datos || {},
+              user_detail: wData?.user_details?.[authUser.id] || {},
+              perfiles: wData?.perfiles || [],
+            };
+          }
 
-          userDetail = wData?.config?.user_details?.[authUser.id] || {};
+          const empresaDatos = bootstrap?.empresa_datos || {};
+          extraLogo = empresaDatos.logoUrl || "";
+          empresaNombre = empresaDatos.nombre ||
+                          empresaDatos.razonSocial ||
+                          empresaDatos.nombreComercial || "";
 
-          const perfiles = wData?.config?.perfiles || [];
+          userDetail = bootstrap?.user_detail || {};
+
+          const perfiles = bootstrap?.perfiles || [];
           const userRoleName = (profile.role || "").trim().toLowerCase();
           const matchedPerfil = perfiles.find(p => {
             const pName = (p.nombre || p.id || "").trim().toLowerCase();
@@ -119,10 +136,10 @@ export const AuthProvider = ({ children }) => {
           // Leer planes maestros directamente (sin RPC que puede no existir)
           const { data: masterCfg } = await supabase
             .from("website_config")
-            .select("config")
+            .select("plans:config->plans")
             .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
             .maybeSingle();
-          masterPlans = masterCfg?.config?.plans || [];
+          masterPlans = masterCfg?.plans || [];
         } catch (e) {}
 
         const tenantData = profile.tenant || {};
@@ -288,6 +305,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let isMounted = true;
     let sessionChannel = null;
+    let verificationInFlight = null;
+    let lastServerVerificationAt = 0;
+    const SERVER_VERIFICATION_MIN_INTERVAL_MS = 30 * 1000;
+    const SERVER_HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
 
     // Timeout de seguridad: si en 8 segundos no terminó de cargar, desbloquear
     const safetyTimeout = setTimeout(() => {
@@ -322,20 +343,37 @@ export const AuthProvider = ({ children }) => {
         .subscribe();
     };
 
-    const verifySessionWithServer = async () => {
-      try {
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (!currentUser) return true;
-        const serverSessionId = currentUser.user_metadata?.active_device_session_id;
-        const currentLocalId = localStorage.getItem("odc_device_session_id");
-        if (serverSessionId && currentLocalId && serverSessionId !== currentLocalId) {
-          console.warn("AuthContext - Sesión reemplazada por otro dispositivo (Verificación Servidor).");
-          setSessionExpiredNotice(true);
-          logout(false);
-          return false;
+    const verifySessionWithServer = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastServerVerificationAt < SERVER_VERIFICATION_MIN_INTERVAL_MS) {
+        return true;
+      }
+      if (verificationInFlight) return verificationInFlight;
+
+      lastServerVerificationAt = now;
+      verificationInFlight = (async () => {
+        try {
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
+          if (!currentUser) return true;
+          const serverSessionId = currentUser.user_metadata?.active_device_session_id;
+          const currentLocalId = localStorage.getItem("odc_device_session_id");
+          if (serverSessionId && currentLocalId && serverSessionId !== currentLocalId) {
+            console.warn("AuthContext - Sesión reemplazada por otro dispositivo (Verificación Servidor).");
+            setSessionExpiredNotice(true);
+            logout(false);
+            return false;
+          }
+        } catch (err) {
+          // Una falla de red temporal no debe cerrar una sesión válida.
         }
-      } catch (err) {}
-      return true;
+        return true;
+      })();
+
+      try {
+        return await verificationInFlight;
+      } finally {
+        verificationInFlight = null;
+      }
     };
 
     // Inicializar sesión Supabase
@@ -347,7 +385,7 @@ export const AuthProvider = ({ children }) => {
         const prof = await fetchUserProfile(session.user);
         if (isMounted) setUserProfile(prof);
         // Validar contra servidor
-        verifySessionWithServer();
+        verifySessionWithServer(true);
       } else {
         setUser(null);
         setUserProfile(null);
@@ -393,16 +431,18 @@ export const AuthProvider = ({ children }) => {
       }, 0);
     });
 
-    // Verificación periódica activa cada 3.5 segundos contra el servidor
+    // Realtime es la vía principal. Este heartbeat es solo respaldo cuando una
+    // pestaña permanece abierta mucho tiempo o la conexión Realtime se interrumpe.
     const heartbeatInterval = setInterval(() => {
       if (isMounted && localStorage.getItem("odc_device_session_id")) {
         verifySessionWithServer();
       }
-    }, 3500);
+    }, SERVER_HEARTBEAT_INTERVAL_MS);
 
-    // Verificación inmediata al reactivar la pestaña o desbloquear celular
+    // focus y visibilitychange suelen dispararse juntos; el deduplicador evita
+    // dos llamadas consecutivas al reactivar la pestaña o desbloquear el equipo.
     const handleVisibilityOrFocus = () => {
-      if (isMounted) {
+      if (isMounted && document.visibilityState === "visible") {
         verifySessionWithServer();
       }
     };

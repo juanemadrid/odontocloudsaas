@@ -12,6 +12,18 @@ const normalize = (s) =>
         .replace(/\s+/g, " ")
         .trim();
 
+// Columnas suficientes para listados, búsqueda y selección de citas. Se
+// excluyen los JSON clínicos pesados; la ficha completa se obtiene por id solo
+// cuando el usuario abre o edita al paciente.
+const PATIENT_SUMMARY_COLUMNS = [
+    "id", "tenant_id", "tipo_documento", "documento", "nombres", "apellidos",
+    "nro_historia", "fecha_ingreso", "fecha_nacimiento", "genero",
+    "telefono", "email", "direccion", "ciudad", "ciudad_domicilio", "barrio",
+    "ocupacion", "eps", "tipo_afiliacion", "plan_id", "plan_nombre",
+    "profesional_id", "profesional_nombre", "alertas", "activo",
+    "registro_completo", "foto_url", "saldo_favor", "created_at", "updated_at"
+].join(",");
+
 // --- CRUD CON SUPABASE POSTGRESQL ---
 
 export const getPatientsCount = async (tenantId) => {
@@ -39,7 +51,7 @@ export const getPatientsPage = async (tenantId, pageIndex = 0, pageSize = 20) =>
 
         const { data, error, count } = await supabase
             .from("pacientes")
-            .select("*", { count: "exact" })
+            .select(PATIENT_SUMMARY_COLUMNS, { count: "exact" })
             .eq("tenant_id", tenantId)
             .order("created_at", { ascending: false })
             .range(start, end);
@@ -76,7 +88,6 @@ export const getPatientsPage = async (tenantId, pageIndex = 0, pageSize = 20) =>
 };
 
 export const searchPatients = async (tenantId, searchTerm, maxResults = 30) => {
-    console.log("🔍 searchPatients llamado con tenantId:", tenantId, "| term:", searchTerm);
     if (!tenantId) {
         console.warn("⚠️ searchPatients: tenantId es null/undefined — el usuario no tiene inquilino asignado");
         return [];
@@ -87,12 +98,11 @@ export const searchPatients = async (tenantId, searchTerm, maxResults = 30) => {
     try {
         const { data, error } = await supabase
             .from("pacientes")
-            .select("*")
+            .select(PATIENT_SUMMARY_COLUMNS)
             .eq("tenant_id", tenantId)
             .or(`nombres.ilike.%${term}%,apellidos.ilike.%${term}%,documento.ilike.%${term}%,telefono.ilike.%${term}%,email.ilike.%${term}%`)
             .limit(maxResults);
 
-        console.log("📦 Resultado búsqueda pacientes:", { tenantId, term, count: data?.length, error: error?.message });
         if (error) throw error;
 
         return (data || []).map(p => ({

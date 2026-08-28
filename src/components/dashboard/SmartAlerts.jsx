@@ -23,13 +23,16 @@ export default function SmartAlerts() {
                 const sixMonthsAgo = new Date();
                 sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-                // 1. CRM Check: Dormant Patients (Fetch and filter in memory)
-                const { data: snapDormant } = await supabase.from("pacientes").select("*").eq("tenant_id", userProfile.inquilino).limit(20);
-                const dormantDocs = (snapDormant || []).filter(data => {
-                    return data.updated_at && new Date(data.updated_at) < sixMonthsAgo;
-                }).slice(0, 3);
+                // Filtrar en PostgreSQL y traer solo identificadores. No se
+                // descargan historias, periodontogramas ni documentos clínicos.
+                const { data: dormantDocs } = await supabase
+                    .from("pacientes")
+                    .select("id")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .lt("updated_at", sixMonthsAgo.toISOString())
+                    .limit(3);
 
-                if (dormantDocs.length > 0) {
+                if ((dormantDocs || []).length > 0) {
                     foundAlerts.push({
                         id: 'crm-dormant',
                         type: 'fidelización',
@@ -41,12 +44,14 @@ export default function SmartAlerts() {
                 }
 
                 // 2. Inventory Check: Predict low stock (Fetch and filter in memory)
-                const { data: snapInv } = await supabase.from("inventario").select("*").eq("tenant_id", userProfile.inquilino).limit(20);
-                const lowStockDocs = (snapInv || []).filter(data => {
-                    return data.cantidad !== undefined && data.cantidad < 5;
-                }).slice(0, 2);
+                const { data: lowStockDocs } = await supabase
+                    .from("inventario")
+                    .select("id,nombre,cantidad")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .lt("cantidad", 5)
+                    .limit(2);
 
-                lowStockDocs.forEach(item => {
+                (lowStockDocs || []).forEach(item => {
                     foundAlerts.push({
                         id: `inv-low-${item.id}`,
                         type: 'inventario',
@@ -58,7 +63,11 @@ export default function SmartAlerts() {
                 });
 
                 // 3. Efficiency Check (Real Data from treatment_plans)
-                const { data: snapPlans } = await supabase.from("treatment_plans").select("*").eq("tenant_id", userProfile.inquilino).limit(50);
+                const { data: snapPlans } = await supabase
+                    .from("treatment_plans")
+                    .select("items:detalles->items")
+                    .eq("tenant_id", userProfile.inquilino)
+                    .limit(50);
                 const treatmentCounts = {};
                 
                 (snapPlans || []).forEach(data => {

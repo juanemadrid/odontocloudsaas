@@ -59,14 +59,13 @@ export default function ConfigEmpresa() {
         try {
             const [tRes, cRes, sisproConfig] = await Promise.all([
                 supabase.from("tenants").select("*").eq("id", userProfile.inquilino).maybeSingle(),
-                supabase.from("website_config").select("config").eq("tenant_id", userProfile.inquilino).maybeSingle(),
+                getConfigSection(userProfile.inquilino, "empresa_datos", {}),
                 getSisproConfig(userProfile.inquilino).catch(() => null)
             ]);
 
             if (tRes.error) throw tRes.error;
-            if (cRes.error) throw cRes.error;
             const data = tRes.data || {};
-            const extraConfig = cRes.data?.config?.empresa_datos || {};
+            const extraConfig = cRes || {};
             const privateSispro = sisproConfig || {};
 
             setFormData(prev => ({

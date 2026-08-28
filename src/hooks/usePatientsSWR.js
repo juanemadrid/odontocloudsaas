@@ -5,7 +5,7 @@ import { getPatientsPage } from '../services/patientService';
 // We use a simple fetcher that calls our service
 const fetcher = async ([key, inquilino]) => {
     if (!inquilino) return [];
-    const result = await getPatientsPage(inquilino, null, 20); // Fetch first page
+    const result = await getPatientsPage(inquilino, 0, 20); // Fetch first page
     return result.patients;
 };
 

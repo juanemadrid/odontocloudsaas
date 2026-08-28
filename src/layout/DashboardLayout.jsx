@@ -11,7 +11,7 @@ import supabase from "../lib/supabaseClient";
 
 import { usePermissions } from "../hooks/usePermissions";
 import CommandPalette from "../components/CommandPalette";
-import { getConfigCached, invalidateConfigCache } from "../hooks/useConfig";
+import { getConfigSectionCached, invalidateConfigCache } from "../hooks/useConfig";
 
 import UserProfileModal from "../components/UserProfileModal";
 import SedeSelector from "../components/SedeSelector";
@@ -91,17 +91,21 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
 
         const fetchClinicConfig = async (force = false) => {
             try {
-                if (force) invalidateConfigCache(inquilino);
+                if (force) invalidateConfigCache(inquilino, "empresa_datos");
 
-                const [tRes, config] = await Promise.all([
-                    supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
-                    getConfigCached(inquilino),
+                const [tRes, companyConfig] = await Promise.all([
+                    supabase
+                        .from("tenants")
+                        .select("id, nombre, direccion, telefono, logo_url, nit, plan, activo, parametros")
+                        .eq("id", inquilino)
+                        .maybeSingle(),
+                    getConfigSectionCached(inquilino, "empresa_datos", {}, force),
                 ]);
 
                 if (cancelled) return;
 
                 const tData = tRes.data || {};
-                const cData = config?.empresa_datos || {};
+                const cData = companyConfig || {};
 
                 setClinicConfig({
                     ...cData,

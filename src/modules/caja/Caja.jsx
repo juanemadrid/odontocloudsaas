@@ -12,6 +12,7 @@ import {
 } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import { getConfigSection } from "../../services/configPersistenceService";
 
 import AbrirCajaModal from "./components/AbrirCajaModal";
 import CajaDetalleModal from "./components/CajaDetalleModal";
@@ -110,13 +111,7 @@ export default function Caja() {
         if (mData) movsList = mData;
       } catch (e) {}
 
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", inquilino)
-        .maybeSingle();
-
-      const cfgCajas = cfgRow?.config?.cajas || [];
+      const cfgCajas = await getConfigSection(inquilino, "cajas", []);
 
       // Combinar cajas de DB y website_config con cálculo dinámico de saldos
       const mergedMap = new Map();

@@ -110,23 +110,19 @@ export default function HistoricoPagosTab({ patientId }) {
 
     const handlePrint = async (pago) => {
         try {
-            // Cargar paciente con select(*) para soportar cualquier esquema de columnas de Supabase
-            let targetPatient = null;
-            try {
-                const { data: pDb } = await supabase
-                    .from("pacientes")
-                    .select("*")
-                    .eq("id", patientId)
-                    .maybeSingle();
-                targetPatient = pDb;
-            } catch (e) {}
+            const { data: pDb } = await supabase
+                .from("pacientes")
+                .select("id,nombres,apellidos,documento,tipo_documento,telefono,email,direccion,ciudad,ciudad_domicilio,saldo_favor")
+                .eq("id", patientId)
+                .maybeSingle();
 
-            if (!targetPatient) {
-                try {
-                    const { data: allP } = await supabase.from("pacientes").select("*");
-                    targetPatient = (allP || []).find(p => p.id === patientId || p.documento === patientId || p.nroDocumento === patientId);
-                } catch (e) {}
-            }
+            const targetPatient = pDb ? {
+                ...pDb,
+                nombreCompleto: `${pDb.nombres || ""} ${pDb.apellidos || ""}`.trim(),
+                nroDocumento: pDb.documento || "",
+                tipoDocumento: pDb.tipo_documento || "CC",
+                celular: pDb.telefono || "",
+            } : null;
 
             if (!targetPatient) {
                 toast?.error?.("No se pudo cargar la información del paciente");

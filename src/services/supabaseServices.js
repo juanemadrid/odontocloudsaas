@@ -81,14 +81,8 @@ export const recibosCajaService = {
   // Obtener siguiente consecutivo sincronizado desde la configuración de la clínica
   async getNextConsecutivo(tenantId, tipoField = "contReciboCaja") {
     try {
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-
-      const config = cfgRow?.config || {};
-      const list = Array.isArray(config.consecutivos) ? config.consecutivos : [];
+      const section = await getConfigSection(tenantId, "consecutivos", []);
+      const list = Array.isArray(section) ? section : [];
       const activeCons = list[0] || {};
 
       let val = Number(activeCons[tipoField] ?? 0);
@@ -120,14 +114,8 @@ export const recibosCajaService = {
   // Actualizar consecutivo en website_config para sincronización inmediata
   async updateConsecutivo(tenantId, nuevoValor, tipoField = "contReciboCaja") {
     try {
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-
-      const currentConfig = cfgRow?.config || {};
-      const list = Array.isArray(currentConfig.consecutivos) ? currentConfig.consecutivos : [];
+      const section = await getConfigSection(tenantId, "consecutivos", []);
+      const list = Array.isArray(section) ? section : [];
 
       let updatedList;
       if (list.length > 0) {
@@ -136,16 +124,7 @@ export const recibosCajaService = {
         updatedList = [{ id: "consecutivo-principal", nombre: "Consecutivo Principal", [tipoField]: nuevoValor }];
       }
 
-      await supabase
-        .from("website_config")
-        .upsert({
-          tenant_id: tenantId,
-          config: {
-            ...currentConfig,
-            consecutivos: updatedList,
-            updatedAt: new Date().toISOString()
-          }
-        }, { onConflict: "tenant_id" });
+      await saveConfigSection(tenantId, "consecutivos", updatedList);
     } catch (err) {
       console.warn("Advertencia al actualizar consecutivo en website_config:", err.message);
     }
@@ -685,15 +664,19 @@ export const getDoctorsList = async (userProfile, patient = null) => {
   }
 
   try {
-    const [profesionalesRes, profilesRes, configRes] = await Promise.all([
+    const [profesionalesRes, profilesRes, directoryRes] = await Promise.all([
       supabase.from('profesionales').select('*').eq('tenant_id', inquilino),
-      supabase.from('profiles').select('*').eq('tenant_id', inquilino),
-      supabase.from('website_config').select('config').eq('tenant_id', inquilino).maybeSingle()
+      supabase
+        .from('profiles')
+        .select('id,full_name,email,role,especialidad,registro_medico,telefono,activo')
+        .eq('tenant_id', inquilino),
+      supabase.rpc('get_my_tenant_user_directory')
     ]);
 
-    const userDetails = configRes.data?.config?.user_details || {};
-    const configUsuarios = configRes.data?.config?.usuarios || configRes.data?.config?.users || [];
-    const configDoctores = configRes.data?.config?.doctores || configRes.data?.config?.profesionales || [];
+    const directory = directoryRes.data || {};
+    const userDetails = directory.user_details || {};
+    const configUsuarios = directory.usuarios || directory.users || [];
+    const configDoctores = directory.doctores || directory.profesionales || [];
 
     // A. Tabla profesionales
     if (profesionalesRes.data && Array.isArray(profesionalesRes.data)) {
@@ -809,13 +792,7 @@ export const getActiveCaja = async (tenantId, userId = null) => {
   // 2. Fallback a website_config
   if (!activeCaja) {
     try {
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-
-      const cfgCajas = cfgRow?.config?.cajas || [];
+      const cfgCajas = await getConfigSection(tenantId, "cajas", []);
       const openCajas = cfgCajas.filter(c => (c.estado || "").toLowerCase() === "abierta");
 
       if (openCajas.length > 0) {

@@ -81,69 +81,39 @@ export async function getDoctorSignatureAndData(doctorNameOrId, tenantId, curren
 
   const effectiveTenantId = tenantId || currentUserProfile?.inquilino || currentUserProfile?.tenantId;
 
-  // 2. Buscar en website_config.config.user_details y website_config.config.profesionales
+  // 2. Resolver solo el profesional solicitado en la configuración del tenant.
+  // La RPC evita descargar el JSON completo (logos, firmas y catálogos de todos los usuarios).
   if (effectiveTenantId) {
     try {
-      const { data: cfgRow } = await supabase
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", effectiveTenantId)
-        .maybeSingle();
+      const { data: detail, error } = await supabase.rpc("get_my_tenant_doctor_record", {
+        p_identifier: doctorNameOrId || currentUserProfile?.id || currentUserProfile?.uid || ""
+      });
+      if (error) throw error;
 
-      if (cfgRow?.config) {
-        const userDetails = cfgRow.config.user_details || {};
-        const configUsers = cfgRow.config.usuarios || cfgRow.config.users || [];
-        const configProfs = cfgRow.config.profesionales || cfgRow.config.doctores || [];
-
-        // A. Buscar en user_details
-        for (const [uid, detail] of Object.entries(userDetails)) {
-          const detailName = `${detail.nombre || ''} ${detail.apellido || ''}`.trim().toLowerCase();
-          const detailFull = String(detail.nombreCompleto || detail.displayName || '').toLowerCase();
-          const matches = uid.toLowerCase() === targetIdentifier || 
-            (detailName && (targetIdentifier.includes(detailName) || detailName.includes(targetIdentifier))) ||
-            (detailFull && (targetIdentifier.includes(detailFull) || detailFull.includes(targetIdentifier)));
-
-          if (matches) {
-            const isDoc = isDoctorRole(detail);
-            result.isDoctor = isDoc;
-            result.id = uid;
-            result.nombre = detail.nombreCompleto || detail.displayName || `${detail.nombre || ''} ${detail.apellido || ''}`.trim();
-            result.nombreCompleto = result.nombre;
-            result.registroMedico = detail.registroMedico || detail.tarjetaProfesional || detail.registro_medico || result.registroMedico;
-            result.tarjetaProfesional = result.registroMedico;
-            result.especialidad = detail.especialidad || (Array.isArray(detail.especialidades) ? detail.especialidades.join(", ") : result.especialidad);
-            if (isDoc) {
-              result.firma = detail.firmaElectronica || detail.firma || detail.firma_url || result.firma;
-            }
-            if (result.firma) return result;
-          }
+      if (detail) {
+        const isDoc = isDoctorRole(detail);
+        result.isDoctor = isDoc;
+        result.id = detail.id || detail.uid || result.id;
+        result.nombre = detail.nombreCompleto || detail.nombre_completo || detail.full_name || detail.displayName || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || result.nombre;
+        result.nombreCompleto = result.nombre;
+        result.registroMedico = detail.registroMedico || detail.tarjetaProfesional || detail.registro_medico || result.registroMedico;
+        result.tarjetaProfesional = result.registroMedico;
+        result.especialidad = detail.especialidad || (Array.isArray(detail.especialidades) ? detail.especialidades.join(", ") : result.especialidad);
+        if (isDoc) {
+          result.firma = detail.firmaElectronica || detail.firma || detail.firma_url || result.firma;
         }
-
-        // B. Buscar en profesionales de config
-        for (const prof of configProfs) {
-          const pName = String(prof.nombre || prof.nombreCompleto || prof.name || '').toLowerCase();
-          const pId = String(prof.id || prof.uid || '').toLowerCase();
-          if (pId === targetIdentifier || (pName && (targetIdentifier.includes(pName) || pName.includes(targetIdentifier)))) {
-            result.isDoctor = true;
-            result.id = prof.id || prof.uid;
-            result.nombre = prof.nombre || prof.nombreCompleto || result.nombre;
-            result.nombreCompleto = result.nombre;
-            result.registroMedico = prof.registroMedico || prof.tarjetaProfesional || prof.registro_medico || result.registroMedico;
-            result.tarjetaProfesional = result.registroMedico;
-            result.especialidad = prof.especialidad || result.especialidad;
-            result.firma = prof.firma || prof.firmaElectronica || prof.firma_url || result.firma;
-            if (result.firma) return result;
-          }
-        }
+        if (result.firma) return result;
       }
     } catch (e) {
-      console.warn("Aviso al consultar website_config para firma del doctor:", e);
+      console.warn("Aviso al consultar la firma dirigida del doctor:", e);
     }
   }
 
   // 3. Buscar en tabla profiles
   try {
-    let query = supabase.from("profiles").select("*");
+    let query = supabase
+      .from("profiles")
+      .select("id,tenant_id,full_name,email,role,especialidad,registro_medico,activo");
     if (effectiveTenantId) query = query.eq("tenant_id", effectiveTenantId);
     const { data: profiles } = await query;
 
@@ -171,7 +141,9 @@ export async function getDoctorSignatureAndData(doctorNameOrId, tenantId, curren
 
   // 4. Buscar en tabla profesionales
   try {
-    let query = supabase.from("profesionales").select("*");
+    let query = supabase
+      .from("profesionales")
+      .select("id,tenant_id,nombre_completo,especialidad,registro_medico,activo");
     if (effectiveTenantId) query = query.eq("tenant_id", effectiveTenantId);
     const { data: profs } = await query;
 

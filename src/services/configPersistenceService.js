@@ -1,6 +1,10 @@
 // src/services/configPersistenceService.js
 import supabase from "../lib/supabaseClient";
-import { getConfigCached, setConfigCache } from "../hooks/useConfig";
+import {
+    getConfigSectionCached,
+    setConfigSectionCache,
+    setConfigSectionsCache,
+} from "./configCacheService";
 
 /**
  * Persistencia unificada de configuración por clínica.
@@ -79,8 +83,7 @@ const isPersistedTable = (tableName) => Boolean(TABLE_PAYLOAD_BUILDERS[tableName
 
 export const getConfigSection = async (tenantId, configKey, fallbackValue = null) => {
     if (!tenantId) return fallbackValue;
-    const config = await getConfigCached(tenantId);
-    return config?.[configKey] ?? fallbackValue;
+    return getConfigSectionCached(tenantId, configKey, fallbackValue);
 };
 
 export const saveConfigSection = async (tenantId, configKey, value) => {
@@ -96,12 +99,10 @@ export const saveConfigSection = async (tenantId, configKey, value) => {
     });
 
     if (error) throw error;
-    const updatedConfig = data || {
-        ...(await getConfigCached(tenantId)),
-        [configKey]: value,
-        updatedAt: new Date().toISOString(),
-    };
-    setConfigCache(tenantId, updatedConfig);
+    const updatedConfig = data && typeof data === "object"
+        ? data
+        : { [configKey]: value, updatedAt: new Date().toISOString() };
+    setConfigSectionCache(tenantId, configKey, updatedConfig?.[configKey] ?? value);
     return updatedConfig;
 };
 
@@ -117,12 +118,10 @@ export const saveConfigPatch = async (tenantId, patch) => {
     });
     if (error) throw error;
 
-    const updatedConfig = data || {
-        ...(await getConfigCached(tenantId)),
-        ...patch,
-        updatedAt: new Date().toISOString(),
-    };
-    setConfigCache(tenantId, updatedConfig);
+    const updatedConfig = data && typeof data === "object"
+        ? data
+        : { ...patch, updatedAt: new Date().toISOString() };
+    setConfigSectionsCache(tenantId, { ...patch, ...updatedConfig });
     return updatedConfig;
 };
 
@@ -155,9 +154,9 @@ export const getConfigItems = async (tenantId, configKey, tableName) => {
             }
         }
 
-        const currentConfig = await getConfigCached(tenantId);
-        const configData = Array.isArray(currentConfig?.[configKey])
-            ? currentConfig[configKey]
+        const currentSection = await getConfigSection(tenantId, configKey, []);
+        const configData = Array.isArray(currentSection)
+            ? currentSection
             : [];
 
         // Unión completa: los registros que existen solo en JSON no desaparecen
@@ -206,9 +205,9 @@ export const saveConfigItem = async (tenantId, configKey, tableName, itemData) =
         if (error) throw error;
     }
 
-    const currentConfig = await getConfigCached(tenantId);
-    const currentList = Array.isArray(currentConfig?.[configKey])
-        ? currentConfig[configKey]
+    const currentSection = await getConfigSection(tenantId, configKey, []);
+    const currentList = Array.isArray(currentSection)
+        ? currentSection
         : [];
     const exists = currentList.some(item => item.id === id);
     const updatedList = exists
@@ -233,9 +232,9 @@ export const deleteConfigItem = async (tenantId, configKey, tableName, id) => {
         if (error) throw error;
     }
 
-    const currentConfig = await getConfigCached(tenantId);
-    const currentList = Array.isArray(currentConfig?.[configKey])
-        ? currentConfig[configKey]
+    const currentSection = await getConfigSection(tenantId, configKey, []);
+    const currentList = Array.isArray(currentSection)
+        ? currentSection
         : [];
     await saveConfigSection(
         tenantId,

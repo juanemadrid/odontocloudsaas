@@ -5,6 +5,8 @@ import { createOrUpdatePatient } from "../../../services/patientService";
 import { useAudit } from "../../../hooks/useAudit";
 import supabase from "../../../lib/supabaseClient";
 import { getConfigItems } from "../../../services/configPersistenceService";
+import { getConfigSectionsCached } from "../../../services/configCacheService";
+import { getMyTenantUserDirectory } from "../../../services/tenantDirectoryService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const DEFAULT_SPECIALTIES = [
@@ -225,7 +227,10 @@ export function useAgenda() {
             try {
                 const fetchProfiles = async () => {
                     try {
-                        const { data } = await supabase.from("profiles").select("*").eq("tenant_id", inquilino);
+                        const { data } = await supabase
+                            .from("profiles")
+                            .select("id,full_name,email,role,especialidad,activo,apellido,sucursal_id")
+                            .eq("tenant_id", inquilino);
                         return data || [];
                     } catch (e) { return []; }
                 };
@@ -251,26 +256,26 @@ export function useAgenda() {
                     } catch (e) { return []; }
                 };
 
-                const fetchWebsiteConfig = async () => {
+                const fetchUserDirectory = async () => {
                     try {
-                        const { data } = await supabase.from("website_config").select("config").eq("tenant_id", inquilino).maybeSingle();
-                        return data?.config || {};
+                        return await getMyTenantUserDirectory();
                     } catch (e) { return {}; }
                 };
 
-                const [profData, sucursalesData, conData, recFisicosData, entData, pacData, cfgConfig, configUsersData] = await Promise.all([
+                const [profData, sucursalesData, conData, recFisicosData, entData, pacData, userDirectory, agendaConfig] = await Promise.all([
                     fetchProfiles(),
                     getConfigItems(inquilino, "sucursales", "sucursales"),
                     fetchConsultorios(),
                     getConfigItems(inquilino, "recursos_fisicos", "consultorios"),
                     fetchEntidades(),
                     fetchPacientes(),
-                    fetchWebsiteConfig(),
-                    getConfigItems(inquilino, "usuarios", "usuarios")
+                    fetchUserDirectory(),
+                    getConfigSectionsCached(inquilino, ["agenda_doctor_settings", "especialidades"])
                 ]);
 
                 // Fusionar usuarios de profiles y configUsersData
-                const userDetailsMap = cfgConfig?.user_details || {};
+                const configUsersData = Array.isArray(userDirectory?.usuarios) ? userDirectory.usuarios : [];
+                const userDetailsMap = userDirectory?.user_details || {};
                 const allUsersMap = new Map();
 
                 (profData || []).forEach(u => {
@@ -289,7 +294,7 @@ export function useAgenda() {
                 const allUsersList = Array.from(allUsersMap.values());
 
                 // Filtrar doctores / profesionales
-                const doctorSettingsMap = cfgConfig?.agenda_doctor_settings || {};
+                const doctorSettingsMap = agendaConfig?.agenda_doctor_settings || {};
 
                 const docsList = allUsersList
                     .filter(u => {
@@ -369,7 +374,9 @@ export function useAgenda() {
                 setChairs(Array.from(chairsMap.values()));
 
                 // Specialties — from website_config or defaults
-                const rawCfgSpecs = cfgConfig?.especialidades || [];
+                const rawCfgSpecs = Array.isArray(agendaConfig?.especialidades)
+                    ? agendaConfig.especialidades
+                    : [];
                 const cfgSpecs = rawCfgSpecs
                     .map(e => typeof e === 'string' ? { id: e, nombre: e } : { id: e.id || e.nombre, nombre: e.nombre || e.id })
                     .filter(e => e.id && e.nombre);

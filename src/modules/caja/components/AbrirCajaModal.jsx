@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import supabase from "../../../lib/supabaseClient";
+import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { FiUser, FiX, FiCheck, FiLayout, FiBriefcase } from "react-icons/fi";
 
 const fmtPure = (n) => new Intl.NumberFormat("es-CO").format(n);
@@ -49,12 +50,7 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
       } catch (e) {}
 
       if (openCajas.length === 0) {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inq)
-          .maybeSingle();
-        const cfgCajas = cfgRow?.config?.cajas || [];
+        const cfgCajas = await getConfigSection(inq, "cajas", []);
         openCajas = cfgCajas.filter(c => (c.estado || "").toLowerCase() === "abierta" && (c.usuario_id || c.usuarioId) === uId);
       }
 
@@ -107,20 +103,9 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
 
       // Sincronizar en website_config
       try {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
-
-        const currentConfig = cfgRow?.config || {};
-        const currentList = Array.isArray(currentConfig.cajas) ? currentConfig.cajas : [];
+        const currentList = await getConfigSection(inq, "cajas", []);
         const updatedList = [cajaObj, ...currentList.filter(c => c.id !== cajaId)];
-
-        await supabase.from("website_config").upsert(
-          { tenant_id: inquilino, config: { ...currentConfig, cajas: updatedList } },
-          { onConflict: "tenant_id" }
-        );
+        await saveConfigSection(inq, "cajas", updatedList);
       } catch (e) {}
 
       onSuccess?.();

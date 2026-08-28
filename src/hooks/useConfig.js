@@ -3,45 +3,17 @@
  * Deduplica solicitudes simultaneas y evita descargar el mismo JSON en cada modulo.
  */
 import { useState, useEffect, useCallback } from "react";
-import supabase from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
-
-const configCache = {};
-const configRequests = {};
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-const isFresh = (entry) =>
-    entry && (Date.now() - entry.timestamp) < CACHE_TTL_MS;
-
-const loadConfig = async (tenantId, force = false) => {
-    if (!tenantId) return {};
-
-    const cached = configCache[tenantId];
-    if (!force && isFresh(cached)) return cached.data;
-    if (!force && configRequests[tenantId]) return configRequests[tenantId];
-
-    const request = (async () => {
-        const { data, error } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", tenantId)
-            .maybeSingle();
-
-        if (error) throw error;
-        const config = data?.config || {};
-        configCache[tenantId] = { data: config, timestamp: Date.now() };
-        return config;
-    })();
-
-    configRequests[tenantId] = request;
-    try {
-        return await request;
-    } finally {
-        if (configRequests[tenantId] === request) {
-            delete configRequests[tenantId];
-        }
-    }
-};
+import {
+    getConfigCached,
+    getConfigSectionCached,
+    getConfigSectionsCached,
+    invalidateConfigCache,
+    loadConfig,
+    setConfigCache,
+    setConfigSectionCache,
+    setConfigSectionsCache,
+} from "../services/configCacheService";
 
 export function useConfig() {
     const { userProfile } = useAuth();
@@ -61,7 +33,7 @@ export function useConfig() {
             setConfig(await loadConfig(tenantId, force));
         } catch (error) {
             console.warn("[useConfig] Error fetching config:", error);
-            setConfig(configCache[tenantId]?.data || {});
+            setConfig(await getConfigCached(tenantId));
         } finally {
             setLoading(false);
         }
@@ -79,25 +51,14 @@ export function useConfig() {
     return { config, loading, refreshConfig };
 }
 
-export async function getConfigCached(tenantId) {
-    if (!tenantId) return {};
-
-    try {
-        return await loadConfig(tenantId);
-    } catch (error) {
-        console.warn("[getConfigCached] Error:", error);
-        return configCache[tenantId]?.data || {};
-    }
-}
-
-export function setConfigCache(tenantId, config) {
-    if (!tenantId) return;
-    configCache[tenantId] = {
-        data: config || {},
-        timestamp: Date.now(),
-    };
-}
-
-export function invalidateConfigCache(tenantId) {
-    if (tenantId) delete configCache[tenantId];
-}
+// Reexportar mantiene compatibles los imports existentes mientras la cache
+// queda disponible tambien para AuthContext sin una dependencia circular.
+export {
+    getConfigCached,
+    getConfigSectionCached,
+    getConfigSectionsCached,
+    invalidateConfigCache,
+    setConfigCache,
+    setConfigSectionCache,
+    setConfigSectionsCache,
+};

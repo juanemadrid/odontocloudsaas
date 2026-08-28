@@ -6,6 +6,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { useAudit } from "../../../hooks/useAudit";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { getMyTenantUserDirectory } from "../../../services/tenantDirectoryService";
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { patientSchema } from "../schemas/patientSchema";
@@ -1226,60 +1227,40 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                 })).sort((a, b) => (a.nombreCompleto || "").localeCompare(b.nombreCompleto || ""));
                 setPacientesRemision(pacientes);
 
-                // Load all system users/professionals from Supabase (usuarios, profiles, profesionales) and website_config
+                // Load the operational directory without signatures/photos/passwords.
                 const usersMap = new Map();
-
-                // 1. Table 'usuarios'
-                try {
-                    const { data: uData } = await supabase
-                        .from("usuarios")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    (uData || []).forEach(u => {
-                        const name = (u.displayname || u.nombre || u.nombres || u.nombre_completo || u.full_name || u.email || "").trim();
-                        if (name) usersMap.set(u.id || name.toLowerCase(), { id: u.id, displayName: name, ...u });
-                    });
-                } catch (err) {
-                    console.warn("Could not load from usuarios table:", err);
-                }
-
-                // 2. Table 'profiles'
-                try {
-                    const { data: pData } = await supabase
+                const [profilesResult, doctorsResult, directory] = await Promise.all([
+                    supabase
                         .from("profiles")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    (pData || []).forEach(p => {
-                        const name = (p.full_name || p.displayname || p.nombre || p.nombre_completo || p.email || "").trim();
-                        if (name) usersMap.set(p.id || name.toLowerCase(), { id: p.id, displayName: name, ...p });
-                    });
-                } catch (err) {
-                    console.warn("Could not load from profiles table:", err);
-                }
+                        .select("id,full_name,email,role,especialidad,registro_medico,telefono,activo")
+                        .eq("tenant_id", inquilino),
+                    supabase
+                        .from("profesionales")
+                        .select("id,nombre_completo,especialidad,telefono,email,registro_medico,activo")
+                        .eq("tenant_id", inquilino),
+                    getMyTenantUserDirectory().catch(() => ({})),
+                ]);
 
-                // 3. Table 'profesionales'
-                try {
-                    const { profesionalesService } = await import("../../../services/supabaseServices");
-                    const doctors = await profesionalesService.getByTenant(inquilino);
-                    (doctors || []).forEach(d => {
-                        const name = (d.nombre_completo || d.nombre || d.displayName || d.displayname || "").trim();
-                        if (name) usersMap.set(d.id || name.toLowerCase(), { id: d.id, displayName: name, ...d });
-                    });
-                } catch (err) {
-                    console.warn("Could not load from profesionales table:", err);
-                }
+                const details = directory?.user_details || {};
+                [
+                    ...(directory?.usuarios || []),
+                    ...(directory?.doctores || []),
+                    ...(directory?.profesionales || []),
+                ].forEach((u) => {
+                    const detail = details[u.id || u.uid] || {};
+                    const merged = { ...u, ...detail };
+                    const name = (merged.displayname || merged.nombre || merged.nombres || merged.nombre_completo || merged.full_name || merged.email || "").trim();
+                    if (name) usersMap.set(merged.id || merged.uid || name.toLowerCase(), { ...merged, id: merged.id || merged.uid, displayName: name });
+                });
 
-                // 4. website_config fallback
-                try {
-                    const { getConfigItems } = await import("../../../services/configPersistenceService");
-                    const cfgUsers = await getConfigItems(inquilino, "usuarios", "usuarios");
-                    (cfgUsers || []).forEach(u => {
-                        const name = (u.nombre || u.displayname || u.nombres || u.nombre_completo || "").trim();
-                        if (name) usersMap.set(u.id || name.toLowerCase(), { id: u.id, displayName: name, ...u });
-                    });
-                } catch (err) {
-                    console.warn("Could not load from website_config usuarios:", err);
-                }
+                (profilesResult.data || []).forEach((p) => {
+                    const name = (p.full_name || p.email || "").trim();
+                    if (name) usersMap.set(p.id || name.toLowerCase(), { ...p, id: p.id, displayName: name });
+                });
+                (doctorsResult.data || []).forEach((d) => {
+                    const name = (d.nombre_completo || d.email || "").trim();
+                    if (name) usersMap.set(d.id || name.toLowerCase(), { ...d, id: d.id, displayName: name });
+                });
 
                 const sortedUsers = Array.from(usersMap.values()).sort((a, b) => 
                     (a.displayName || "").localeCompare(b.displayName || "")

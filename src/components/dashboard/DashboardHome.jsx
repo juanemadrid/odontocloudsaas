@@ -215,12 +215,12 @@ export default function DashboardHome({ userName, companyName }) {
             try {
                 const { data: cfgRow } = await supabase
                     .from("website_config")
-                    .select("config")
+                    .select("system_announcements:config->system_announcements")
                     .eq("tenant_id", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
                     .maybeSingle();
 
-                if (cfgRow?.config?.system_announcements && Array.isArray(cfgRow.config.system_announcements)) {
-                    configList = cfgRow.config.system_announcements.filter(a => a.activo !== false);
+                if (Array.isArray(cfgRow?.system_announcements)) {
+                    configList = cfgRow.system_announcements.filter(a => a.activo !== false);
                 }
             } catch (e) {}
 

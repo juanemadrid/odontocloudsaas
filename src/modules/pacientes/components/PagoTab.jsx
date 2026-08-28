@@ -17,7 +17,7 @@ import {
 } from "react-icons/fi";
 import { formatCurrency } from '../../../utils/formatters';
 import { getPlansByPatient } from '../../../services/planService';
-import { getConfigItems, saveConfigItem } from '../../../services/configPersistenceService';
+import { getConfigItems, saveConfigItem, getConfigSection, saveConfigSection } from '../../../services/configPersistenceService';
 import { getDoctorsList, getActiveCaja } from '../../../services/supabaseServices';
 
 // Módulo de Realizar Pago y Saldo a Favor del Paciente - OdontoCloud
@@ -117,17 +117,11 @@ export default function PagoTab({ patient }) {
 
             // Load dynamic active payment methods from website_config
             if (userProfile?.inquilino) {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", userProfile.inquilino)
-                    .maybeSingle();
-
-                const rawMetodos = cfgRow?.config?.metodos_pago || [
+                const rawMetodos = await getConfigSection(userProfile.inquilino, "metodos_pago", [
                     { id: "1", nombre: "Efectivo", activo: true },
                     { id: "2", nombre: "Tarjeta", activo: true },
                     { id: "3", nombre: "Transferencia", activo: true }
-                ];
+                ]);
 
                 const metodosList = rawMetodos
                     .filter(m => m.activo !== false)
@@ -496,13 +490,9 @@ export default function PagoTab({ patient }) {
 
                 // Sincronizar website_config si la caja está en la configuración
                 try {
-                    const { data: cfgRow } = await supabase
-                        .from("website_config")
-                        .select("config")
-                        .eq("tenant_id", userProfile?.inquilino)
-                        .maybeSingle();
-                    if (cfgRow?.config?.cajas) {
-                        const updatedCajas = cfgRow.config.cajas.map(c => {
+                    const configCajas = await getConfigSection(userProfile?.inquilino, "cajas", []);
+                    if (Array.isArray(configCajas) && configCajas.length > 0) {
+                        const updatedCajas = configCajas.map(c => {
                             if (c.id === activeCaja.id) {
                                 const newSaldo = (Number(c.saldo_actual || c.saldoActual || 0)) + paymentAmount;
                                 const newIngresos = (Number(c.total_ingresos || c.totalIngresos || 0)) + paymentAmount;
@@ -516,12 +506,7 @@ export default function PagoTab({ patient }) {
                             }
                             return c;
                         });
-                        await supabase
-                            .from("website_config")
-                            .upsert({
-                                tenant_id: userProfile?.inquilino,
-                                config: { ...cfgRow.config, cajas: updatedCajas }
-                            }, { onConflict: "tenant_id" });
+                        await saveConfigSection(userProfile?.inquilino, "cajas", updatedCajas);
                     }
                 } catch (e) {}
             }

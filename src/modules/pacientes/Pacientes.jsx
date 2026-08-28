@@ -147,9 +147,17 @@ export default function Pacientes() {
     setOpen(true);
   };
 
-  const handleOpenEdit = (p) => {
-    setEditData(p);
-    setOpen(true);
+  const handleOpenEdit = async (p) => {
+    setLoading(true);
+    try {
+      // Los resultados de búsqueda son deliberadamente livianos. Cargar la
+      // ficha completa evita sobrescribir historia clínica al editar.
+      const fullPatient = p?.id ? await getPatientById(p.id) : null;
+      setEditData(fullPatient || p);
+      setOpen(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (formData, fotoFile) => {

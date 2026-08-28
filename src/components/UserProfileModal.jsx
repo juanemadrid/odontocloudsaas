@@ -44,18 +44,15 @@ export default function UserProfileModal({ isOpen, onClose }) {
             // Consulta de respaldo
             if (userId && inquilino) {
                 try {
-                    const { data: cfgRow } = await supabase
-                        .from("website_config")
-                        .select("config")
-                        .eq("tenant_id", inquilino)
-                        .maybeSingle();
-                    const detail = cfgRow?.config?.user_details?.[userId] || {};
-                    if (detail.firma || detail.firmaElectronica) loadedFirma = detail.firma || detail.firmaElectronica;
-                    if (detail.registroMedico || detail.tarjetaProfesional) loadedReg = detail.registroMedico || detail.tarjetaProfesional;
-                    if (detail.nombre) loadedNom = detail.nombre;
-                    if (detail.apellido) loadedApe = detail.apellido;
-                    if (detail.telefonoMovil || detail.telefono) loadedTel = detail.telefonoMovil || detail.telefono;
-                    if (detail.fotoPerfil) loadedFoto = detail.fotoPerfil;
+                    const { data: detail } = await supabase.rpc("get_my_tenant_doctor_record", {
+                        p_identifier: userId
+                    });
+                    if (detail?.firma || detail?.firmaElectronica) loadedFirma = detail.firma || detail.firmaElectronica;
+                    if (detail?.registroMedico || detail?.tarjetaProfesional) loadedReg = detail.registroMedico || detail.tarjetaProfesional;
+                    if (detail?.nombre) loadedNom = detail.nombre;
+                    if (detail?.apellido) loadedApe = detail.apellido;
+                    if (detail?.telefonoMovil || detail?.telefono) loadedTel = detail.telefonoMovil || detail.telefono;
+                    if (detail?.fotoPerfil) loadedFoto = detail.fotoPerfil;
                 } catch (e) {}
             }
 
@@ -212,32 +209,16 @@ export default function UserProfileModal({ isOpen, onClose }) {
                         full_name: fullName,
                         telefono: telefono.trim(),
                         registro_medico: registroMedico.trim(),
-                        tarjeta_profesional: registroMedico.trim(),
-                        foto_perfil: fotoPerfil,
-                        firma: currentSignature,
-                        firma_url: currentSignature
+                        apellido: apellido.trim()
                     }).eq("id", userId);
                 } catch (e) {}
 
                 if (inquilino) {
                     try {
-                        const { data: cfgRow } = await supabase
-                            .from("website_config")
-                            .select("config")
-                            .eq("tenant_id", inquilino)
-                            .maybeSingle();
-
-                        const currentConfig = cfgRow?.config || {};
-                        const currentDetails = currentConfig.user_details || {};
-                        currentDetails[userId] = {
-                            ...(currentDetails[userId] || {}),
-                            ...updatePayload
-                        };
-
-                        await supabase.from("website_config").upsert(
-                            { tenant_id: inquilino, config: { ...currentConfig, user_details: currentDetails } },
-                            { onConflict: "tenant_id" }
-                        );
+                        const { error: detailError } = await supabase.rpc("update_my_user_detail", {
+                            p_patch: updatePayload
+                        });
+                        if (detailError) throw detailError;
                     } catch (e) {}
                 }
             }

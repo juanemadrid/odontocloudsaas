@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { formatCurrency } from '../../../utils/formatters';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
+import { getConfigSection } from '../../../services/configPersistenceService';
 
 export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
     const { userProfile } = useAuth();
@@ -76,17 +77,11 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                     console.warn("No se pudieron cargar profesionales:", e.message);
                 }
 
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", userProfile.inquilino)
-                    .maybeSingle();
-
-                const rawMetodos = cfgRow?.config?.metodos_pago || [
+                const rawMetodos = await getConfigSection(userProfile.inquilino, "metodos_pago", [
                     { id: "1", nombre: "Efectivo", activo: true },
                     { id: "2", nombre: "Tarjeta", activo: true },
                     { id: "3", nombre: "Transferencia", activo: true }
-                ];
+                ]);
 
                 const metodosList = rawMetodos
                     .filter(m => m.activo !== false)

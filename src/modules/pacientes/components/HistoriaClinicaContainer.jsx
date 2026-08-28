@@ -150,6 +150,8 @@ export default function HistoriaClinicaContainer({ patient }) {
                     docMap.set(String(d.id), {
                         ...meta,
                         ...d,
+                        id: d.legacy_id || d.id,
+                        database_id: d.id,
                         motivoConsulta: meta.motivoConsulta || d.motivoConsulta || "",
                         enfermedadActual: meta.enfermedadActual || d.enfermedadActual || "",
                         antecedentes: meta.antecedentes || d.antecedentes || [],
@@ -228,7 +230,7 @@ export default function HistoriaClinicaContainer({ patient }) {
             
             // 1. Table update
             try {
-                await supabase
+                let updateQuery = supabase
                     .from("documentos_clinicos")
                     .update({
                         firmado: true,
@@ -239,8 +241,11 @@ export default function HistoriaClinicaContainer({ patient }) {
                             firmado: true
                         },
                         updated_at: new Date().toISOString()
-                    })
-                    .eq("id", docObj.id);
+                    });
+                updateQuery = docObj.database_id
+                    ? updateQuery.eq("id", docObj.database_id)
+                    : updateQuery.eq("legacy_id", docObj.id);
+                await updateQuery;
             } catch (e) {
                 // Table notice
             }
@@ -315,10 +320,14 @@ export default function HistoriaClinicaContainer({ patient }) {
         try {
             // 1. Table delete
             try {
-                await supabase
+                let deleteQuery = supabase
                     .from("documentos_clinicos")
-                    .delete()
-                    .eq("id", docId);
+                    .delete();
+                const selectedDoc = documents.find(doc => doc.id === docId);
+                deleteQuery = selectedDoc?.database_id
+                    ? deleteQuery.eq("id", selectedDoc.database_id)
+                    : deleteQuery.eq("legacy_id", docId);
+                await deleteQuery;
             } catch (e) {
                 // Table notice
             }

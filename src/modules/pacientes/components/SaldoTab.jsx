@@ -12,6 +12,7 @@ import { useToast } from '../../../context/ToastContext';
 import { ReceiptPrintService } from '../../../services/ReceiptPrintService';
 import supabase from '../../../lib/supabaseClient';
 import { useAudit } from '../../../hooks/useAudit';
+import { getConfigSection, saveConfigSection } from '../../../services/configPersistenceService';
 
 const parseNotes = (notesRaw) => {
     if (!notesRaw) return null;
@@ -131,14 +132,8 @@ export default function SaldoTab({ patient }) {
 
             // 2. Actualizar website_config
             try {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inq)
-                    .maybeSingle();
-
-                if (cfgRow?.config) {
-                    const currentPagos = cfgRow.config.pagos || [];
+                const currentPagos = await getConfigSection(inq, "pagos", []);
+                if (Array.isArray(currentPagos)) {
                     const updatedPagos = currentPagos.map(p => {
                         if (p.id === selectedPagoToVoid.id) {
                             return {
@@ -150,10 +145,7 @@ export default function SaldoTab({ patient }) {
                         }
                         return p;
                     });
-                    await supabase.from("website_config").upsert(
-                        { tenant_id: inq, config: { ...cfgRow.config, pagos: updatedPagos } },
-                        { onConflict: "tenant_id" }
-                    );
+                    await saveConfigSection(inq, "pagos", updatedPagos);
                 }
             } catch (e) {
                 console.warn("Error actualizando website_config pagos:", e);

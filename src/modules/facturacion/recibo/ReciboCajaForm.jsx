@@ -8,7 +8,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { getActiveCaja, getDoctorsList } from "../../../services/supabaseServices";
-import { getConfigItems, saveConfigItem } from "../../../services/configPersistenceService";
+import { getConfigItems, saveConfigItem, getConfigSection } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const fmt = (n) =>
@@ -122,7 +122,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             try {
                 const { data: pacData } = await supabase
                     .from("pacientes")
-                    .select("*")
+                    .select("id,nombres,apellidos,documento,tipo_documento,telefono")
                     .eq("tenant_id", inquilino);
                 if (pacData && pacData.length > 0) pacsList = pacData;
             } catch (e) {}
@@ -138,12 +138,10 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             }
 
             if (pacsList.length === 0) {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-                pacsList = cfgRow?.config?.pacientes || cfgRow?.config?.terceros || [];
+                const configPatients = await getConfigSection(inquilino, "pacientes", []);
+                pacsList = Array.isArray(configPatients) && configPatients.length > 0
+                    ? configPatients
+                    : await getConfigSection(inquilino, "terceros", []);
             }
 
             setPacientes(pacsList.map(d => ({ 
@@ -160,19 +158,13 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             }
 
             // 4. Dynamic payment methods from website_config
-            const { data: cfgRow } = await supabase
-                .from("website_config")
-                .select("config")
-                .eq("tenant_id", inquilino)
-                .maybeSingle();
-
-            const rawMetodos = cfgRow?.config?.metodos_pago || [
+            const rawMetodos = await getConfigSection(inquilino, "metodos_pago", [
                 { id: "1", nombre: "Efectivo", activo: true },
                 { id: "2", nombre: "Tarjeta", activo: true },
                 { id: "3", nombre: "Transferencia", activo: true },
                 { id: "4", nombre: "Nequi", activo: true },
                 { id: "5", nombre: "Bici-B", activo: true }
-            ];
+            ]);
 
             const activeMetodos = rawMetodos.filter(m => m.activo !== false).map(m => m.nombre || m);
             if (activeMetodos.length > 0) {

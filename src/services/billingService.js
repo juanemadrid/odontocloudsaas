@@ -1,6 +1,6 @@
 // src/services/billingService.js
 import supabase from "../lib/supabaseClient";
-import { getConfigCached } from "../hooks/useConfig";
+import { getConfigSectionCached } from "./configCacheService";
 
 const s = (n) => Number(n || 0);
 
@@ -45,8 +45,7 @@ export const getPatientFinancials = async (patientId, tenantId) => {
         // Fallback 2: website_config — usando caché compartida
         if (pagos.length === 0 && tenantId) {
             try {
-                const cfg = await getConfigCached(tenantId);
-                const cfgPagos = cfg?.pagos || [];
+                const cfgPagos = await getConfigSectionCached(tenantId, "pagos", []);
                 pagos = cfgPagos.filter(p => 
                     p.paciente_id === patientId || 
                     p.pacienteId === patientId || 
@@ -144,7 +143,7 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             try {
                 const { data, error: ndErr } = await supabase
                     .from("notas_debito")
-                    .select("*")
+                    .select("id,factura_id,monto,motivo,fecha,numero")
                     .in("factura_id", facturaIds);
                 if (!ndErr && data) notasDebito = data;
             } catch (e) {}
@@ -155,11 +154,11 @@ export const getPatientFinancials = async (patientId, tenantId) => {
         try {
             const { data: pacData } = await supabase
                 .from("pacientes")
-                .select("*")
+                .select("saldo_favor")
                 .eq("id", patientId)
                 .maybeSingle();
             if (pacData) {
-                patientSaldoFavor = Number(pacData.saldo_favor || pacData.saldoFavor || pacData.saldo || 0);
+                patientSaldoFavor = Number(pacData.saldo_favor || 0);
             }
         } catch (e) {
             // ignorar

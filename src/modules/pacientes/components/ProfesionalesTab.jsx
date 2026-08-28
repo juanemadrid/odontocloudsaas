@@ -4,6 +4,7 @@ import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
+import { getMyTenantUserDirectory } from '../../../services/tenantDirectoryService';
 
 export default function ProfesionalesTab({ patient, onUpdate }) {
     const toast = useToast();
@@ -49,7 +50,7 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
                 try {
                     const { data: profilesData } = await supabase
                         .from("profiles")
-                        .select("*")
+                        .select("id,full_name,email,role,especialidad,registro_medico,activo")
                         .eq("tenant_id", inq);
                         
                     if (profilesData && Array.isArray(profilesData)) {
@@ -79,7 +80,7 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
                 try {
                     const { data: profData } = await supabase
                         .from("profesionales")
-                        .select("*")
+                        .select("id,nombre_completo,especialidad,registro_medico,activo")
                         .eq("tenant_id", inq);
                         
                     if (profData && Array.isArray(profData)) {
@@ -105,16 +106,12 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
 
                 // 3. Cargar desde website_config (usuarios y user_details)
                 try {
-                    const { data: cfgRow } = await supabase
-                        .from("website_config")
-                        .select("config")
-                        .eq("tenant_id", inq)
-                        .maybeSingle();
+                    const directory = await getMyTenantUserDirectory();
 
-                    if (cfgRow?.config) {
-                        const usuarios = cfgRow.config.usuarios || cfgRow.config.users || [];
-                        const profsConfig = cfgRow.config.profesionales || [];
-                        const userDetails = cfgRow.config.user_details || {};
+                    if (directory) {
+                        const usuarios = directory.usuarios || [];
+                        const profsConfig = directory.profesionales || [];
+                        const userDetails = directory.user_details || {};
 
                         [...usuarios, ...profsConfig].forEach(u => {
                             const detail = userDetails[u.id || u.uid] || {};

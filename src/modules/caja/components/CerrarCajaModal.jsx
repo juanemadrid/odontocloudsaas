@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
+import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDown } from "react-icons/fi";
 
 const fmt = (n) =>
@@ -122,20 +123,9 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
 
       // Sincronizar en website_config
       try {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
-
-        const currentConfig = cfgRow?.config || {};
-        const currentList = Array.isArray(currentConfig.cajas) ? currentConfig.cajas : [];
+        const currentList = await getConfigSection(inquilino, "cajas", []);
         const updatedList = currentList.map(item => item.id === caja.id ? updatedCajaObj : item);
-
-        await supabase.from("website_config").upsert(
-          { tenant_id: inquilino, config: { ...currentConfig, cajas: updatedList } },
-          { onConflict: "tenant_id" }
-        );
+        await saveConfigSection(inquilino, "cajas", updatedList);
       } catch (e) {}
 
       onSuccess?.();

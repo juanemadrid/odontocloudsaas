@@ -1229,15 +1229,18 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             // 1. Intentar guardar en la tabla documentos_clinicos si está disponible
             try {
                 if (isEditing) {
-                    const { error: updateErr } = await supabase
+                    let updateQuery = supabase
                         .from("documentos_clinicos")
-                        .update(dbPayload)
-                        .eq("id", targetDocId);
+                        .update(dbPayload);
+                    updateQuery = initialData?.database_id
+                        ? updateQuery.eq("id", initialData.database_id)
+                        : updateQuery.eq("legacy_id", targetDocId);
+                    const { error: updateErr } = await updateQuery;
                     if (!updateErr) saveSuccess = true;
                 } else {
                     const { error: insertErr } = await supabase
                         .from("documentos_clinicos")
-                        .insert([{ ...dbPayload, id: targetDocId, created_at: new Date().toISOString() }]);
+                        .insert([{ ...dbPayload, legacy_id: targetDocId, created_at: new Date().toISOString() }]);
                     if (!insertErr) saveSuccess = true;
                 }
             } catch (tblErr) {
@@ -1268,14 +1271,29 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     updated_at: new Date().toISOString()
                 };
 
+                // Si la tabla dedicada confirmó la escritura, el historial conserva
+                // solo un índice liviano. El documento completo permanece en
+                // documentos_clinicos y el bloque legacy sigue siendo el fallback.
+                const historyDocRecord = saveSuccess ? {
+                    id: targetDocId,
+                    tipoDocumento: docTipo,
+                    tipo: docTipo,
+                    titulo: docTitulo,
+                    estado: finalDocEstado,
+                    finalizado: isConsultaDoc ? isFinalize : true,
+                    firmado: finalDocFirmado,
+                    created_at: isEditing ? (initialData?.created_at || new Date().toISOString()) : new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                } : docRecord;
+
                 let updatedDocs;
                 if (isEditing) {
-                    updatedDocs = currentDocs.map(d => (d.id === targetDocId ? { ...d, ...docRecord } : d));
+                    updatedDocs = currentDocs.map(d => (d.id === targetDocId ? historyDocRecord : d));
                     if (!updatedDocs.some(d => d.id === targetDocId)) {
-                        updatedDocs.unshift(docRecord);
+                        updatedDocs.unshift(historyDocRecord);
                     }
                 } else {
-                    updatedDocs = [docRecord, ...currentDocs];
+                    updatedDocs = [historyDocRecord, ...currentDocs];
                 }
 
                 const updatedHM = {

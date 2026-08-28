@@ -6,7 +6,8 @@ import {
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getActiveCaja, getDoctorsList } from "../../../services/supabaseServices";
-import { getConfigItems } from "../../../services/configPersistenceService";
+import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
+import { getConfigSectionsCached } from "../../../services/configCacheService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { toast } from "sonner";
 
@@ -136,13 +137,10 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 const currentUserId = user?.id || userProfile?.uid || userProfile?.id;
 
                 // 1. Cargar configuración de la clínica
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-
-                const cfg = cfgRow?.config || {};
+                const cfg = await getConfigSectionsCached(inquilino, [
+                    "terceros", "proveedores", "bancos", "cuentas_bancarias",
+                    "condiciones_pago", "metodos_pago", "facturas_compra", "facturasCompra"
+                ]);
 
                 // 2. Cargar Terceros y Pacientes unificados
                 let tercerosList = [];
@@ -180,7 +178,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 try {
                     const { data: pDb } = await supabase
                         .from("pacientes")
-                        .select("*");
+                        .select("id,tenant_id,tipo_documento,documento,nombres,apellidos,telefono")
+                        .eq("tenant_id", inquilino);
                     
                     const tenantMatches = (pDb || []).filter(p => 
                         !p.tenant_id || 
@@ -471,17 +470,11 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
             // Sincronizar en website_config
             try {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-                const currCfg = cfgRow?.config || {};
-                const currTerceros = currCfg.terceros || [];
-                currCfg.terceros = [...currTerceros, nuevoTerceroObj];
-                await supabase
-                    .from("website_config")
-                    .upsert({ tenant_id: inquilino, config: currCfg });
+                const currTerceros = await getConfigSection(inquilino, "terceros", []);
+                await saveConfigSection(inquilino, "terceros", [
+                    ...(Array.isArray(currTerceros) ? currTerceros : []),
+                    nuevoTerceroObj
+                ]);
             } catch (e) {}
 
             const formattedNew = {
@@ -689,19 +682,11 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
             // 2. Sincronizar en website_config
             try {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-
-                const currCfg = cfgRow?.config || {};
-                const currPagos = currCfg.pagos_proveedor || [];
-                currCfg.pagos_proveedor = [pagoRecord, ...currPagos];
-
-                await supabase
-                    .from("website_config")
-                    .upsert({ tenant_id: inquilino, config: currCfg });
+                const currPagos = await getConfigSection(inquilino, "pagos_proveedor", []);
+                await saveConfigSection(inquilino, "pagos_proveedor", [
+                    pagoRecord,
+                    ...(Array.isArray(currPagos) ? currPagos : [])
+                ]);
             } catch (e) {
                 console.error("Error saving in website_config:", e);
             }
