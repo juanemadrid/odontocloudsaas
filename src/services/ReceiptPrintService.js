@@ -113,12 +113,12 @@ export const ReceiptPrintService = {
             const clinicPhone = dbClinicPhone || clinic.telefono || "—";
             const clinicEmail = dbClinicEmail || clinic.email || "";
 
-            const patientName = patient.nombreCompleto || `${patient.nombres || ''} ${patient.apellidos || ''}`.trim() || "Paciente";
-            const patientDoc = patient.nroDocumento || "—";
-            const patientDocType = patient.tipoDocumento || "CC";
-            const patientAddress = patient.lugarResidencia || patient.direccion || "—";
-            const patientCity = patient.ciudadDomicilio || patient.ciudad || "—";
-            const patientPhone = patient.celular || patient.telefono || "—";
+            const patientName = patient.nombreCompleto || `${patient.nombres || patient.nombre || ''} ${patient.apellidos || patient.apellido || ''}`.trim() || patient.displayName || pago.pacienteNombre || pago.patientNombre || "Paciente";
+            const patientDoc = patient.documento || patient.nroDocumento || patient.numero_documento || patient.nro_documento || patient.identificacion || patient.cedula || patient.docNumber || pago.pacienteDocumento || pago.documento || pago.patientDoc || "—";
+            const patientDocType = patient.tipoDocumento || patient.tipo_documento || patient.tipoDoc || pago.tipoDocumento || "CC";
+            const patientAddress = patient.direccion || patient.direccionDomicilio || patient.lugarResidencia || patient.address || "—";
+            const patientCity = patient.ciudadDomicilio || patient.ciudad || patient.municipio || clinic.ciudad || "Sincelejo";
+            const patientPhone = patient.celular || patient.telefono || patient.phone || patient.movil || "—";
             // Clean consecutive number (avoid "No. No. REC-...")
             let rawConsecutive = String(pago.nroConsecutivo || "").trim();
             if (rawConsecutive.startsWith("No.")) {
@@ -189,7 +189,7 @@ export const ReceiptPrintService = {
                                 ${isEgreso ? "Detalles del Egreso" : "Detalles del Recibo"}
                             </span>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 8px;">
-                                <p style="margin: 0; font-size: 11px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 9px; text-transform: uppercase; margin-right: 5px;">Medio de Pago:</strong> <span style="text-transform: uppercase;">${pago.medio}</span></p>
+                                <p style="margin: 0; font-size: 11px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 9px; text-transform: uppercase; margin-right: 5px;">Medio de Pago:</strong> <span style="text-transform: uppercase;">${pago.medio || pago.metodo || pago.metodo_pago || pago.medioPago || "Efectivo"}</span></p>
                                 <p style="margin: 0; font-size: 11px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 9px; text-transform: uppercase; margin-right: 5px;">Elaborado por:</strong> <span style="text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Guillermo Rodríguez")}</span></p>
                             </div>
                         </div>
