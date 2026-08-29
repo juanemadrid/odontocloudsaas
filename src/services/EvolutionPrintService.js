@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import supabase from "../lib/supabaseClient";
 import { getDoctorSignatureAndData } from "./doctorSignatureService";
@@ -314,7 +315,7 @@ export const EvolutionPrintService = {
             `;
 
             // 4. Assemble HTML
-            printElement.innerHTML = headerHTML + patientTableHTML + sectionTitleHTML + evolutionsHTML + footerHTML;
+            printElement.innerHTML = DOMPurify.sanitize(headerHTML + patientTableHTML + sectionTitleHTML + evolutionsHTML + footerHTML);
             document.body.appendChild(printElement);
 
             // Wait for images

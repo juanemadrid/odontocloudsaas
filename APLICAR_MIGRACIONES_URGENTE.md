@@ -19,7 +19,7 @@
 
 1. **Abre el SQL Editor de Supabase**:
    ```
-   https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new
+   Supabase Studio del VPS (SQL Editor)
    ```
 
 2. **Copia TODO el contenido** del archivo:

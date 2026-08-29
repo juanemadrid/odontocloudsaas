@@ -108,7 +108,7 @@ const Login = () => {
 
       setForgotMsg({
         type: "success",
-        text: `¡Enlace enviado! Revisa la bandeja de entrada (y spam) de ${targetEmail}.`
+        text: "Si existe una cuenta registrada con ese correo, recibirás un enlace para restablecer tu contraseña. Revisa también la carpeta de spam."
       });
     } catch (err) {
       console.error("Error enviando recuperación:", err);
@@ -117,8 +117,6 @@ const Login = () => {
 
       if (msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("exceeded")) {
         spanishErr = "Has realizado demasiados intentos en muy poco tiempo. Por favor, espera 1 o 2 minutos antes de solicitar un nuevo enlace.";
-      } else if (msg.includes("user not found") || msg.includes("not found")) {
-        spanishErr = "No existe ninguna cuenta registrada con este correo electrónico.";
       } else if (msg.includes("invalid email")) {
         spanishErr = "El correo electrónico ingresado no es válido.";
       }

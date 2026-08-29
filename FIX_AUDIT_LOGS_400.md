@@ -5,7 +5,7 @@
 Cuando creas una cita exitosamente, aparece este error en la consola:
 
 ```
-POST https://jhdflchyhkwpedtbkusp.supabase.co/rest/v1/audit_logs?columns=... 400 (Bad Request)
+POST https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io/rest/v1/audit_logs?columns=... 400 (Bad Request)
 ```
 
 **¿Por qué pasa esto?**

@@ -29,7 +29,7 @@
 ## 🚀 SOLUCIÓN EN 4 PASOS
 
 ### PASO 1: Abrir Supabase
-Ve a: https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new
+Ve a: Supabase Studio del VPS (SQL Editor)
 
 ### PASO 2: Copiar este SQL COMPLETO
 

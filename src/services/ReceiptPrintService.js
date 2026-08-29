@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import supabase from "../lib/supabaseClient";
 
@@ -280,7 +281,7 @@ export const ReceiptPrintService = {
                 </div>
             `;
 
-            printElement.innerHTML = html;
+            printElement.innerHTML = DOMPurify.sanitize(html);
             document.body.appendChild(printElement);
 
             // Wait for all images to load before rendering canvas

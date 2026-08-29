@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import supabase from "../lib/supabaseClient";
 
@@ -340,7 +341,7 @@ export const BudgetPrintService = {
             `;
 
             // 4. Assemble and Append
-            printElement.innerHTML = headerHTML + patientInfoHTML + coverageHTML + itemsTableHTML + summaryHTML + footerHTML;
+            printElement.innerHTML = DOMPurify.sanitize(headerHTML + patientInfoHTML + coverageHTML + itemsTableHTML + summaryHTML + footerHTML);
             document.body.appendChild(printElement);
 
             // Wait for all images to load before rendering canvas

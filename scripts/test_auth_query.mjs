@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://jhdflchyhkwpedtbkusp.supabase.co';
+const supabaseUrl = 'https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io';
 const serviceKey = process.env.SUPABASE_SERVICE_KEY || '';
 
 const USER_ID = 'ece68fb9-7dd9-4196-82c8-199b145cd5e2'; // johnemadrid@gmail.com

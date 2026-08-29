@@ -2,7 +2,7 @@
 // Actualiza el user_metadata de los usuarios para incluir tenant_id
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://jhdflchyhkwpedtbkusp.supabase.co';
+const supabaseUrl = 'https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io';
 const serviceKey = process.env.SUPABASE_SERVICE_KEY || '';
 const supabase = createClient(supabaseUrl, serviceKey);
 
@@ -58,4 +58,4 @@ for (const user of usuarios) {
 
 console.log('\n✅ Proceso completado.');
 console.log('\nAhora ve al Supabase Dashboard y ejecuta el SQL de corrección de RLS:');
-console.log('https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new');
+console.log('Abre Supabase Studio del VPS y entra al SQL Editor.');

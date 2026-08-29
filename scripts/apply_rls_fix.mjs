@@ -7,7 +7,7 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const supabaseUrl = 'https://jhdflchyhkwpedtbkusp.supabase.co';
+const supabaseUrl = 'https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io';
 const serviceKey = process.env.SUPABASE_SERVICE_KEY || '';
 
 // Leer el archivo SQL
@@ -48,7 +48,7 @@ if (!response.ok) {
         console.error('❌ Error en Management API:', errText);
         console.log('\n📋 INSTRUCCIONES MANUALES:');
         console.log('Debes ejecutar el SQL manualmente en Supabase Dashboard:');
-        console.log('1. Ve a: https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new');
+        console.log('1. Abre Supabase Studio del VPS y entra al SQL Editor.');
         console.log('2. Pega el contenido del archivo:');
         console.log('   supabase/migrations/20250727_fix_rls_policies.sql');
         console.log('3. Haz clic en "Run"');

@@ -2,7 +2,6 @@
 import 'dotenv/config';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const PROJECT_REF  = process.env.VITE_SUPABASE_URL?.split('//')[1]?.split('.')[0] || 'jhdflchyhkwpedtbkusp';
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY;
 
 const headers = {
@@ -64,16 +63,7 @@ async function tryExecSQL(sql) {
   });
   if (r2.ok) return { ok: true, via: 'rpc/exec' };
 
-  // Intento 3: Management API v1 database/query
-  const r3 = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_KEY}` },
-    body: JSON.stringify({ query: sql }),
-  });
-  const t3 = await r3.text();
-  if (r3.ok) return { ok: true, via: 'management/database/query', body: t3 };
-
-  return { ok: false, status3: r3.status, body3: t3 };
+  return { ok: false, status1: r1.status, status2: r2.status };
 }
 
 async function insertAvisos() {
@@ -131,7 +121,7 @@ async function main() {
     // Mostrar SQL para ejecución manual
     console.log('ℹ️  La creación automática no está disponible.');
     console.log('\n📋 EJECUTA ESTE SQL EN EL SQL EDITOR DE SUPABASE:\n');
-    console.log('🔗 URL: https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new\n');
+    console.log('🔗 Abre Supabase Studio del VPS y entra al SQL Editor.\n');
     console.log('-'.repeat(60));
     console.log(`CREATE TABLE IF NOT EXISTS public.anuncios_sistema (
   id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),

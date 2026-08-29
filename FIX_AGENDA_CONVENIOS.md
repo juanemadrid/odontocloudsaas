@@ -49,7 +49,7 @@
 
 **Síntoma actual**:
 ```
-POST https://jhdflchyhkwpedtbkusp.supabase.co/rest/v1/audit_logs?columns=... 400 (Bad Request)
+POST https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io/rest/v1/audit_logs?columns=... 400 (Bad Request)
 ```
 
 **Comportamiento**:
@@ -92,7 +92,7 @@ Esta migración crea:
 **Cómo aplicar la migración**:
 
 1. **Opción A - SQL Editor de Supabase** (RECOMENDADO):
-   - Abre: https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new
+   - Abre: Supabase Studio del VPS (SQL Editor)
    - Copia todo el contenido de `supabase/migrations/20250803_create_convenios.sql`
    - Pega en el editor
    - Haz clic en "RUN"

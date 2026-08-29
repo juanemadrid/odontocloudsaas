@@ -1,8 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-const supabase = createClient(
-  'https://jhdflchyhkwpedtbkusp.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpoZGZsY2h5aGt3cGVkdGJrdXNwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NzE0NzM5OSwiZXhwIjoyMDYyNzIzMzk5fQ.Fo_FCLZ_Ej5lcg7rp5R_mT-Vxmf3YiqyuSGX-E_jIAE'
-);
+import { createSupabaseAdminClient } from './lib/supabaseAdminFromEnv.mjs';
+const supabase = createSupabaseAdminClient();
 
 // Intentar insertar un registro para ver si la tabla existe
 const { error: checkError } = await supabase

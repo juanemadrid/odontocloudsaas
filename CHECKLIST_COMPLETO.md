@@ -103,7 +103,7 @@
 
 ### EJECUTAR FIX 9 (ÚLTIMO FIX)
 
-1. **Abre**: https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new
+1. **Abre**: Supabase Studio del VPS (SQL Editor)
 
 2. **Copia y pega**:
    ```sql

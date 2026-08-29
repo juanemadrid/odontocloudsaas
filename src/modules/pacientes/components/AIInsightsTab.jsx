@@ -9,18 +9,7 @@ import {
     getGeminiApiKey,
     saveGeminiApiKey
 } from '../../../services/geminiKeyService';
-
-// Simple markdown renderer
-function MdBlock({ text }) {
-    if (!text) return null;
-    const html = text
-        .replace(/^## (.+)$/gm, '<h2 style="font-size:13px;font-weight:900;color:#1e293b;text-transform:uppercase;letter-spacing:0.05em;margin:16px 0 6px">$1</h2>')
-        .replace(/^### (.+)$/gm, '<h3 style="font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.08em;margin:12px 0 4px">$1</h3>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/^- (.+)$/gm, '<li style="margin-left:16px;margin-bottom:4px;font-size:12px;color:#334155;list-style:disc">$1</li>')
-        .replace(/\n/g, ' ');
-    return <div style={{ lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: html }} />;
-}
+import SafeMarkdown from '../../../components/common/SafeMarkdown';
 
 export default function AIInsightsTab({ patient }) {
     const [apiKey, setApiKey] = useState('');
@@ -509,7 +498,7 @@ export default function AIInsightsTab({ patient }) {
                                 </button>
                             </div>
                             <div className="text-xs font-bold text-slate-700 leading-relaxed">
-                                <MdBlock text={planResult} />
+                                <SafeMarkdown text={planResult} />
                             </div>
                         </div>
                     )}

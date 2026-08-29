@@ -5,7 +5,7 @@
 ### Problema 1: Error 404 - Tabla "usuarios" no existe
 ```
 Failed to load resource: the server responded with a status of 404
-jhdflchyhkwpedtbkusp.supabase.co/rest/v1/usuarios?select=*&tenant_id=eq...
+supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io/rest/v1/usuarios?select=*&tenant_id=eq...
 ```
 
 **Causa**: El código hace referencia a `.from("usuarios")` pero esa tabla NO existe en Supabase. Solo existe la tabla `profiles`.

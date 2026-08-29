@@ -11,19 +11,7 @@ import { dispatchAutomationEvent, AUTOMATION_EVENTS } from "../../../services/Au
 import { FiCpu, FiRefreshCw, FiAlertTriangle, FiUsers, FiTrendingUp, FiPackage, FiSettings, FiExternalLink, FiCheck } from "react-icons/fi";
 import { toast } from "sonner";
 import { getGeminiApiKey, saveGeminiApiKey } from "../../../services/geminiKeyService";
-
-// ─── Renderer de Markdown simple ─────────────────────────────────────────────
-function MarkdownBlock({ text }) {
-    if (!text) return null;
-    const html = text
-        .replace(/^## (.+)$/gm, '<h2 class="text-sm font-black text-slate-800 uppercase tracking-tight mt-5 mb-2 flex items-center gap-2">$1</h2>')
-        .replace(/^### (.+)$/gm, '<h3 class="text-xs font-black text-slate-600 uppercase tracking-widest mt-4 mb-1.5">$1</h3>')
-        .replace(/^\*\*(.+?)\*\*/gm, '<strong>$1</strong>')
-        .replace(/^- (.+)$/gm, '<li class="ml-4 text-sm text-slate-700 mb-1 leading-relaxed list-disc">$1</li>')
-        .replace(/\n\n/g, '<br/>')
-        .replace(/\n/g, ' ');
-    return <div className="prose prose-sm max-w-none text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />;
-}
+import SafeMarkdown from "../../../components/common/SafeMarkdown";
 
 // ─── Tarjeta de resultado ─────────────────────────────────────────────────────
 function AICard({ title, icon: Icon, color, children, onRefresh, loading }) {
@@ -267,7 +255,7 @@ export default function ReporteIA() {
                 <AICard title="Diagnóstico Gerencial IA" icon={FiTrendingUp} color="text-indigo-600"
                     onRefresh={handleAnalyzeKPIs} loading={loadingKpi}>
                     {kpiAnalysis ? (
-                        <MarkdownBlock text={kpiAnalysis} />
+                        <SafeMarkdown text={kpiAnalysis} className="text-sm" />
                     ) : (
                         <div className="flex flex-col items-center gap-4 py-6">
                             <p className="text-sm text-slate-500 text-center max-w-sm">
@@ -365,7 +353,7 @@ export default function ReporteIA() {
                     <AICard title="Productividad por Doctor" icon={FiTrendingUp} color="text-purple-600"
                         onRefresh={handleAnalyzeDoctors} loading={loadingDr}>
                         {doctorAnalysis ? (
-                            <MarkdownBlock text={doctorAnalysis} />
+                            <SafeMarkdown text={doctorAnalysis} className="text-sm" />
                         ) : (
                             <div className="flex flex-col items-center gap-4 py-4">
                                 <p className="text-xs text-slate-500 text-center">

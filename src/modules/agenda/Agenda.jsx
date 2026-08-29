@@ -6,6 +6,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import DOMPurify from "dompurify";
 import AgendaWeeklyView from "./components/AgendaWeeklyView"; // New Weekly View
 import AgendaDetailView from "./components/AgendaDetailView"; // New Detail View
 import AgendaDailyTable from "./components/AgendaDailyTable";
@@ -369,7 +370,7 @@ export default function Agenda() {
             `;
 
             // Assemble everything
-            printElement.innerHTML = headerHTML + tableContainer.innerHTML + footerHTML;
+            printElement.innerHTML = DOMPurify.sanitize(headerHTML + tableContainer.innerHTML + footerHTML);
             document.body.appendChild(printElement);
 
             // Wait for all images to load before rendering canvas

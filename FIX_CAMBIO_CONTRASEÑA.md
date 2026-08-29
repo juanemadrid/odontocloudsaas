@@ -46,7 +46,7 @@ Similar a profiles, las políticas RLS pueden estar bloqueando los updates legí
 ### Ejecutar SQL para arreglar las 3 tablas
 
 1. **Abre Supabase SQL Editor**:
-   https://supabase.com/dashboard/project/jhdflchyhkwpedtbkusp/sql/new
+   Supabase Studio del VPS (SQL Editor)
 
 2. **Copia y pega este SQL completo**:
 
