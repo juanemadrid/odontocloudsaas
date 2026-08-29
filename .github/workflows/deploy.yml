@@ -51,8 +51,8 @@ jobs:
 
       - name: Build project
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://jhdflchyhkwpedtbkusp.supabase.co' }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_G87lxtV9IRKBUA71AFGzmA_8c5qz8wB' }}
+          VITE_SUPABASE_URL: https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io
+          VITE_SUPABASE_ANON_KEY: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc4Nzk2MjA4MCwiZXhwIjo0OTQzNjM1NjgwLCJyb2xlIjoiYW5vbiJ9.vEHozLhjQwX6aUboqrmLcN-hvsqF4sPRVZ8dcDJYGNE
         run: npm run build
 
       - name: Prepare SPA fallback & NoJekyll
