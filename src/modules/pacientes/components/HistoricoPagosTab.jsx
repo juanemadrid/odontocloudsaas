@@ -44,11 +44,13 @@ const formatDate = (iso) => {
 };
 
 const getReceiptNumber = (pago, index) => {
-    if (pago.nroConsecutivo && !isNaN(Number(pago.nroConsecutivo))) return `#${pago.nroConsecutivo}`;
-    if (pago.consecutivo && !isNaN(Number(pago.consecutivo))) return `#${pago.consecutivo}`;
-    if (pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo) return `#${pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo}`;
-    if (pago.id) return `#RC-${pago.id.slice(0, 6).toUpperCase()}`;
-    return `#RC-${String(index + 1).padStart(3, '0')}`;
+    if (pago.nroConsecutivo && !isNaN(Number(pago.nroConsecutivo))) return `${pago.nroConsecutivo}`;
+    if (pago.consecutivo && !isNaN(Number(pago.consecutivo))) return `${pago.consecutivo}`;
+    if (pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo) {
+        return String(pago.nroRecibo || pago.numero_recibo || pago.numeroRecibo).replace(/^#/, '');
+    }
+    if (pago.id) return `RC-${pago.id.slice(0, 6).toUpperCase()}`;
+    return `RC-${String(index + 1).padStart(3, '0')}`;
 };
 
 const getUserLabel = (pago, profile) => {
@@ -204,7 +206,7 @@ export default function HistoricoPagosTab({ patientId }) {
         const text = filtered.map(p =>
             [
                 formatDate(p.fechaISO),
-                p.nroConsecutivo ? `#${p.nroConsecutivo}` : '—',
+                p.nroConsecutivo ? `${p.nroConsecutivo}` : '—',
                 p.concepto || 'ABONO GENERAL',
                 p.medio || 'Efectivo',
                 p.registradoPor || 'Sistema',

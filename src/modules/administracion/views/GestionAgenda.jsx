@@ -17,6 +17,7 @@ export default function GestionAgenda() {
   // Main data states
   const [professionals, setProfessionals] = useState([]);
   const [resources, setResources] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loadingProfs, setLoadingProfs] = useState(true);
   const [loadingRes, setLoadingRes] = useState(true);
 
@@ -45,6 +46,7 @@ export default function GestionAgenda() {
   const [resForm, setResForm] = useState({
     nombre: "",
     descripcion: "",
+    sucursalId: "",
     active: true
   });
 
@@ -257,9 +259,11 @@ export default function GestionAgenda() {
     setLoadingRes(true);
     Promise.all([
       supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true }),
-      getConfigItems(inquilino, "recursos_fisicos", "consultorios")
+      getConfigItems(inquilino, "recursos_fisicos", "consultorios"),
+      getConfigItems(inquilino, "sucursales", "sucursales")
     ])
-      .then(([dbRes, cfgRes]) => {
+      .then(([dbRes, cfgRes, sucursalesData]) => {
+        setBranches(sucursalesData || []);
         const resMap = new Map();
         (dbRes.data || []).forEach(r => {
           if (r.activo !== false) resMap.set(r.id, r);
@@ -272,6 +276,8 @@ export default function GestionAgenda() {
               id: r.id,
               nombre: r.nombre || r.name || existing.nombre || "Recurso",
               ubicacion: r.ubicacion || r.descripcion || existing.ubicacion || "",
+              sucursal_id: r.sucursal_id || r.sucursalId || existing.sucursal_id || null,
+              sucursalId: r.sucursal_id || r.sucursalId || existing.sucursal_id || null,
               activo: true
             });
           }
@@ -369,14 +375,16 @@ export default function GestionAgenda() {
       setSelectedRes(res);
       setResForm({
         nombre: res.nombre || "",
-        descripcion: res.ubicacion || "", // Supabase uses 'ubicacion'
-        active: res.activo !== false // Supabase uses 'activo'
+        descripcion: res.ubicacion || res.descripcion || "",
+        sucursalId: res.sucursal_id || res.sucursalId || "",
+        active: res.activo !== false
       });
     } else {
       setSelectedRes(null);
       setResForm({
         nombre: "",
         descripcion: "",
+        sucursalId: branches?.[0]?.id || "",
         active: true
       });
     }
@@ -394,24 +402,47 @@ export default function GestionAgenda() {
 
     setSaving(true);
     try {
+      const resPayload = {
+        nombre: resForm.nombre.trim(),
+        ubicacion: resForm.descripcion.trim(),
+        sucursal_id: resForm.sucursalId || null,
+        sucursalId: resForm.sucursalId || null,
+        activo: resForm.active
+      };
+
       if (selectedRes) {
         const { error } = await supabase.from("consultorios").update({
-          nombre: resForm.nombre.trim(),
-          ubicacion: resForm.descripcion.trim(),
-          activo: resForm.active,
+          nombre: resPayload.nombre,
+          ubicacion: resPayload.ubicacion,
+          sucursal_id: resPayload.sucursal_id,
+          activo: resPayload.activo,
           updated_at: new Date().toISOString()
         }).eq("tenant_id", inquilino).eq("id", selectedRes.id);
         if (error) throw error;
+
+        await saveConfigItem(inquilino, "recursos_fisicos", "consultorios", {
+          ...selectedRes,
+          ...resPayload,
+          id: selectedRes.id
+        });
       } else {
+        const newId = crypto.randomUUID();
         const { error } = await supabase.from("consultorios").insert([{
+          id: newId,
           tenant_id: inquilino,
-          nombre: resForm.nombre.trim(),
-          ubicacion: resForm.descripcion.trim(),
-          activo: resForm.active,
+          nombre: resPayload.nombre,
+          ubicacion: resPayload.ubicacion,
+          sucursal_id: resPayload.sucursal_id,
+          activo: resPayload.activo,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }]);
         if (error) throw error;
+
+        await saveConfigItem(inquilino, "recursos_fisicos", "consultorios", {
+          id: newId,
+          ...resPayload
+        });
       }
       setResModalOpen(false);
       setSelectedRes(null);
@@ -2337,6 +2368,7 @@ export default function GestionAgenda() {
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-100">
                   <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Recurso / Consultorio</th>
+                  <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Sede / Sucursal</th>
                   <th className="px-6 py-4 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción</th>
                   <th className="px-6 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
                   <th className="px-6 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Acciones</th>
@@ -2345,7 +2377,7 @@ export default function GestionAgenda() {
               <tbody className="divide-y divide-slate-100">
                 {loadingRes ? (
                   <tr>
-                    <td colSpan="4" className="px-6 py-16 text-center">
+                    <td colSpan="5" className="px-6 py-16 text-center">
                       <div className="flex flex-col items-center">
                         <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3" />
                         <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Sincronizando recursos...</span>
@@ -2354,53 +2386,61 @@ export default function GestionAgenda() {
                   </tr>
                 ) : filteredResources.length === 0 ? (
                   <tr>
-                    <td colSpan="4" className="px-6 py-16 text-center">
+                    <td colSpan="5" className="px-6 py-16 text-center">
                       <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">No hay consultorios ni recursos registrados</p>
                     </td>
                   </tr>
                 ) : (
-                  filteredResources.map((res) => (
-                    <tr
-                      key={res.id}
-                      onClick={() => setSelectedResForSchedule(res)}
-                      className="hover:bg-slate-50/60 cursor-pointer transition-colors duration-150 group"
-                    >
-                      <td className="px-6 py-4 text-[12px] font-bold text-slate-700 uppercase group-hover:text-blue-600 transition-colors">
-                        {res.nombre}
-                      </td>
-                      <td className="px-6 py-4 text-[12px] font-medium text-slate-500 uppercase max-w-xs truncate">
-                        {res.ubicacion || res.descripcion || "Sin descripción"}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        {res.activo !== false ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase tracking-wider">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            Activo
+                  filteredResources.map((res) => {
+                    const branch = branches.find(b => String(b.id) === String(res.sucursal_id || res.sucursalId));
+                    return (
+                      <tr
+                        key={res.id}
+                        onClick={() => setSelectedResForSchedule(res)}
+                        className="hover:bg-slate-50/60 cursor-pointer transition-colors duration-150 group"
+                      >
+                        <td className="px-6 py-4 text-[12px] font-bold text-slate-700 uppercase group-hover:text-blue-600 transition-colors">
+                          {res.nombre}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-100">
+                            {branch?.nombre || "Todas las sedes"}
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                            Inactivo
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => setSelectedResForSchedule(res)}
-                          className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
-                          title="Configurar Horarios de Atención del Consultorio"
-                        >
-                          <FiCalendar size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleOpenResModal(res)}
-                          className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-700 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
-                          title="Editar Datos del Consultorio (Nombre/Ubicación)"
-                        >
-                          <FiEdit2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="px-6 py-4 text-[12px] font-medium text-slate-500 uppercase max-w-xs truncate">
+                          {res.ubicacion || res.descripcion || "Sin descripción"}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          {res.activo !== false ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              Activo
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                              Inactivo
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setSelectedResForSchedule(res)}
+                            className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
+                            title="Configurar Horarios de Atención del Consultorio"
+                          >
+                            <FiCalendar size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleOpenResModal(res)}
+                            className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-700 hover:text-white flex items-center justify-center transition-all shadow-sm active:scale-90"
+                            title="Editar Datos del Consultorio (Nombre/Ubicación)"
+                          >
+                            <FiEdit2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -2444,6 +2484,21 @@ export default function GestionAgenda() {
                     placeholder="Ej: Consultorio 1"
                     className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
                   />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Sede / Sucursal
+                  </label>
+                  <select
+                    value={resForm.sucursalId}
+                    onChange={(e) => setResForm({ ...resForm, sucursalId: e.target.value })}
+                    className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all uppercase"
+                  >
+                    <option value="">Todas las sedes (Global)</option>
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>{b.nombre}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">

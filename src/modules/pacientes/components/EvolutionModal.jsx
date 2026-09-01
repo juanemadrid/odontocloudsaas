@@ -412,7 +412,24 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     .eq("paciente_id", patient.id);
 
                 if (!error && pastData) {
-                    setPastEvolutions(pastData);
+                    const parsed = pastData.map(evo => {
+                        let parsedTratamiento = {};
+                        if (evo.tratamiento) {
+                            if (typeof evo.tratamiento === 'object') {
+                                parsedTratamiento = evo.tratamiento;
+                            } else if (typeof evo.tratamiento === 'string' && evo.tratamiento.startsWith('{')) {
+                                try {
+                                    parsedTratamiento = JSON.parse(evo.tratamiento);
+                                } catch (e) {}
+                            }
+                        }
+                        return {
+                            ...evo,
+                            ...parsedTratamiento,
+                            plantillaItems: parsedTratamiento.plantillaItems || evo.plantillaItems || {}
+                        };
+                    });
+                    setPastEvolutions(parsed);
                 }
             } catch (e) {
                 console.error("Error loading past evolutions:", e);
@@ -423,6 +440,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
     const realizedItemIds = React.useMemo(() => {
         const completedSet = new Set();
+        const completedNames = new Set();
+
         pastEvolutions.forEach(evo => {
             // Ignore the current evolution if we are in edit mode
             if (initialData?.id && evo.id === initialData.id) return;
@@ -432,12 +451,21 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     // Compatibilidad retroactiva: registros nuevos usan `realizado`,
                     // registros antiguos usaban solo `checked` para indicar que fue completado.
                     if (item?.realizado === true || (item?.realizado === undefined && item?.checked === true)) {
-                        completedSet.add(itemId);
+                        if (itemId) completedSet.add(String(itemId));
+                        const name = (item?.desc || item?.procedimiento || item?.nombre || '').trim().toLowerCase();
+                        if (name) completedNames.add(name);
                     }
                 });
             }
         });
-        return completedSet;
+        return {
+            has: (id, name) => {
+                if (id && completedSet.has(String(id))) return true;
+                const cleanName = (name || '').trim().toLowerCase();
+                if (cleanName && completedNames.has(cleanName)) return true;
+                return false;
+            }
+        };
     }, [pastEvolutions, initialData?.id]);
 
     // Build paid map for selected plan items
@@ -552,6 +580,36 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         created_at: new Date().toISOString()
                     }]);
                 if (insertError) throw insertError;
+            }
+
+            // Si se evolucionaron procedimientos de un plan, actualizar el estado en treatment_plans
+            if (watchPlanId && recordType !== 'nota') {
+                try {
+                    const selectedPlan = planes.find(p => p.id === watchPlanId);
+                    if (selectedPlan && selectedPlan.items) {
+                        const updatedItems = selectedPlan.items.map((it, idx) => {
+                            const itId = it.id || `item_${idx}`;
+                            const detail = plantillaDetails[itId];
+                            if (detail && (detail.realizado || detail.checked)) {
+                                return { ...it, status: 'completed', realizado: true, fechaRealizado: new Date().toISOString() };
+                            }
+                            return it;
+                        });
+                        const d = selectedPlan.detalles || {};
+                        await supabase
+                            .from("treatment_plans")
+                            .update({
+                                detalles: {
+                                    ...d,
+                                    items: updatedItems
+                                },
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq("id", watchPlanId);
+                    }
+                } catch (planUpdateErr) {
+                    console.warn("Could not update plan items in treatment_plans:", planUpdateErr);
+                }
             }
 
             const successMsg = isEditing 
@@ -735,10 +793,6 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                     <tr key={s.id} className="group hover:bg-slate-50/50 transition-colors flex flex-col md:table-row py-2 md:py-0">
                                                         <td className="px-4 py-3 align-middle">
                                                             <div className="flex items-center gap-2">
-                                                                <div
-                                                                    className={`w-3 h-3 rounded-full flex-shrink-0 ring-2 ring-offset-1 cursor-help ${dotStyle}`}
-                                                                    title={tooltip}
-                                                                />
                                                                 <div className="text-[11px] font-bold text-slate-700 leading-tight">
                                                                     {idx + 1}. {s.desc || s.procedimiento || s.nombre || 'Servicio sin nombre'}
                                                                 </div>
@@ -1291,38 +1345,23 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     <tr className="border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-widest pb-2">
                                         <th className="py-2 w-24 text-center">Seleccionar</th>
                                         <th className="py-2 w-3/4">Procedimiento</th>
-                                        <th className="py-2 text-center w-28">Estado Pago</th>
+                                        <th className="py-2 text-center w-28">Realizado</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {servicios.map((s, idx) => {
-                                        const svcStatus = getServiceStatus(s);
-                                        const cost = (Number(s.amount || 0) * Number(s.qty || 1)) - Number(s.descuento || 0);
-                                        const paid = planPaidMap[s.id] || 0;
-                                        const dotStyle = svcStatus === 'paid' ? 'bg-emerald-500 ring-emerald-200'
-                                            : svcStatus === 'partial' ? 'bg-amber-400 ring-amber-200'
-                                            : svcStatus === 'unpaid' ? 'bg-rose-500 ring-rose-200 animate-pulse'
-                                            : 'bg-slate-200 ring-slate-100';
-                                        const tooltip = svcStatus === 'paid' ? `Pagado: $${cost.toLocaleString('es-CO')}`
-                                            : svcStatus === 'partial' ? `Abono: $${paid.toLocaleString('es-CO')} / $${cost.toLocaleString('es-CO')}`
-                                            : svcStatus === 'unpaid' ? `Deuda: $${cost.toLocaleString('es-CO')}`
-                                            : 'Sin valor';
-
-                                        const isPastRealized = realizedItemIds.has(s.id);
-                                        const isChecked = isPastRealized || (plantillaDetails[s.id]?.checked || false);
+                                        const isPastRealized = realizedItemIds.has(s.id, s.desc || s.procedimiento || s.nombre) || s.status === 'completed' || s.realizado === true || s.completed === true;
 
                                         return (
-                                            <tr key={s.id} className={`hover:bg-slate-50/50 transition-colors ${isPastRealized ? 'opacity-60 bg-slate-50/40' : ''}`}>
+                                            <tr key={s.id} className={`hover:bg-slate-50/50 transition-colors ${isPastRealized ? 'opacity-70 bg-slate-50/40' : ''}`}>
                                                 <td className="py-3 text-center align-middle">
                                                     {isPastRealized ? (
-                                                        <div className="flex justify-center text-emerald-500" title="Procedimiento ya completado en una sesión anterior">
-                                                            <FiCheck size={16} strokeWidth={3} />
-                                                        </div>
+                                                        <span className="text-slate-300 select-none text-xs">—</span>
                                                     ) : (
                                                         <input 
                                                             type="checkbox"
                                                             className="w-4 h-4 rounded text-[#8dc63f] border-slate-300 focus:ring-[#8dc63f] cursor-pointer"
-                                                            checked={isChecked}
+                                                            checked={plantillaDetails[s.id]?.checked || false}
                                                             onChange={(e) => setPlantillaDetails(prev => ({
                                                                 ...prev,
                                                                 [s.id]: { 
@@ -1338,21 +1377,22 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                 </td>
                                                 <td className="py-3 align-middle text-[11px] font-bold text-slate-700">
                                                     <div className="flex items-center gap-2">
-                                                        <span>{idx + 1}. {s.desc || s.procedimiento || s.nombre || 'Servicio sin nombre'}</span>
+                                                        <span className={isPastRealized ? "text-slate-500 line-through" : ""}>
+                                                            {idx + 1}. {s.desc || s.procedimiento || s.nombre || 'Servicio sin nombre'}
+                                                        </span>
                                                         {isPastRealized && (
-                                                            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-[7px] font-black tracking-widest uppercase">
-                                                                Ya Realizado
+                                                            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-[7.5px] font-black tracking-widest uppercase">
+                                                                Realizado
                                                             </span>
                                                         )}
                                                     </div>
                                                 </td>
                                                 <td className="py-3 text-center align-middle">
-                                                    <div className="flex justify-center">
-                                                        <div
-                                                            className={`w-3 h-3 rounded-full flex-shrink-0 ring-2 ring-offset-1 cursor-help ${dotStyle}`}
-                                                            title={tooltip}
-                                                        />
-                                                    </div>
+                                                    {isPastRealized ? (
+                                                        <div className="flex justify-center text-emerald-600" title="Procedimiento realizado en evolución previa">
+                                                            <FiCheck size={18} strokeWidth={3} />
+                                                        </div>
+                                                    ) : null}
                                                 </td>
                                             </tr>
                                         );
@@ -1373,7 +1413,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                             setPlantillaDetails(prev => {
                                                 const next = { ...prev };
                                                 Object.keys(next).forEach(k => {
-                                                    if (!realizedItemIds.has(k)) {
+                                                    if (!realizedItemIds.has(k, next[k]?.desc || next[k]?.procedimiento || next[k]?.nombre)) {
                                                         // Solo marcar realizado en los seleccionados por el doctor
                                                         if (next[k]?.checked) {
                                                             next[k].realizado = val;

@@ -1,16 +1,19 @@
 // src/modules/config/ConfigRecursosFisicos.jsx
 import React, { useState, useEffect } from "react";
-import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiSave, FiX, FiBox } from "react-icons/fi";
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiSave, FiX, FiBox, FiMapPin } from "react-icons/fi";
 import { useAuth } from "../../context/AuthContext";
+import { useSede } from "../../context/SedeContext";
 import { useToast } from "../../context/ToastContext";
 import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services/configPersistenceService";
 
 export default function ConfigRecursosFisicos() {
     const { userProfile } = useAuth();
+    const { sedesList } = useSede();
     const toast = useToast();
     const inquilino = userProfile?.inquilino;
 
     const [items, setItems] = useState([]);
+    const [branches, setBranches] = useState([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -19,14 +22,29 @@ export default function ConfigRecursosFisicos() {
 
     const [formData, setFormData] = useState({
         nombre: "",
-        descripcion: ""
+        descripcion: "",
+        sucursalId: ""
     });
 
     useEffect(() => {
         if (inquilino) {
             loadItems();
+            loadBranches();
         }
     }, [inquilino]);
+
+    const loadBranches = async () => {
+        try {
+            if (sedesList && sedesList.length > 0) {
+                setBranches(sedesList);
+                return;
+            }
+            const data = await getConfigItems(inquilino, "sucursales", "sucursales");
+            setBranches(data || []);
+        } catch (err) {
+            console.error("Error loading branches in ConfigRecursosFisicos:", err);
+        }
+    };
 
     const loadItems = async () => {
         setLoading(true);
@@ -46,11 +64,16 @@ export default function ConfigRecursosFisicos() {
             setCurrentItem(item);
             setFormData({
                 nombre: item.nombre || "",
-                descripcion: item.ubicacion || item.descripcion || ""
+                descripcion: item.ubicacion || item.descripcion || "",
+                sucursalId: item.sucursal_id || item.sucursalId || ""
             });
         } else {
             setCurrentItem(null);
-            setFormData({ nombre: "", descripcion: "" });
+            setFormData({ 
+                nombre: "", 
+                descripcion: "", 
+                sucursalId: branches?.[0]?.id || "" 
+            });
         }
         setModalOpen(true);
     };
@@ -58,7 +81,7 @@ export default function ConfigRecursosFisicos() {
     const handleCloseModal = () => {
         setModalOpen(false);
         setCurrentItem(null);
-        setFormData({ nombre: "", descripcion: "" });
+        setFormData({ nombre: "", descripcion: "", sucursalId: "" });
     };
 
     const handleSave = async (e) => {
@@ -74,6 +97,8 @@ export default function ConfigRecursosFisicos() {
                 ...(currentItem || {}),
                 nombre: formData.nombre.trim(),
                 ubicacion: formData.descripcion.trim(),
+                sucursal_id: formData.sucursalId || null,
+                sucursalId: formData.sucursalId || null,
                 activo: true
             });
 
@@ -105,10 +130,17 @@ export default function ConfigRecursosFisicos() {
         }
     };
 
+    const getBranchName = (sucursalId) => {
+        if (!sucursalId) return "Todas las Sedes";
+        const b = (branches || []).find(branch => String(branch.id) === String(sucursalId));
+        return b?.nombre || "Sede Asignada";
+    };
+
     const filteredItems = items.filter(item =>
         (item.nombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (item.ubicacion && item.ubicacion.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm.toLowerCase()))
+        (item.descripcion && item.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        getBranchName(item.sucursal_id || item.sucursalId).toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
@@ -120,7 +152,7 @@ export default function ConfigRecursosFisicos() {
                     </div>
                     <div>
                         <h1 className="text-base font-black text-slate-800 uppercase tracking-tight">Recursos Físicos y Consultorios</h1>
-                        <p className="text-xs font-medium text-slate-500">Sillones odontológicos y espacios de atención</p>
+                        <p className="text-xs font-medium text-slate-500">Sillones odontológicos y espacios de atención por sede</p>
                     </div>
                 </div>
 
@@ -151,6 +183,7 @@ export default function ConfigRecursosFisicos() {
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider">
                             <th className="py-3 px-4">Nombre del Recurso</th>
+                            <th className="py-3 px-4">Sede / Sucursal</th>
                             <th className="py-3 px-4">Descripción</th>
                             <th className="py-3 px-4 text-right">Acciones</th>
                         </tr>
@@ -158,49 +191,59 @@ export default function ConfigRecursosFisicos() {
                     <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                         {loading && items.length === 0 ? (
                             <tr>
-                                <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
+                                <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
                                     <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
                                     Cargando recursos físicos...
                                 </td>
                             </tr>
                         ) : filteredItems.length === 0 ? (
                             <tr>
-                                <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
+                                <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
                                     No hay recursos físicos registrados
                                 </td>
                             </tr>
                         ) : (
-                            filteredItems.map((item) => (
-                                <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                    <td className="py-3 px-4">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                                                💺
+                            filteredItems.map((item) => {
+                                const branchId = item.sucursal_id || item.sucursalId;
+                                const branchName = getBranchName(branchId);
+                                return (
+                                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="py-3 px-4">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                                                    💺
+                                                </div>
+                                                <span className="font-bold text-slate-800 uppercase">{item.nombre}</span>
                                             </div>
-                                            <span className="font-bold text-slate-800 uppercase">{item.nombre}</span>
-                                        </div>
-                                    </td>
-                                    <td className="py-3 px-4 text-slate-500 font-medium">{item.ubicacion || item.descripcion || "-"}</td>
-                                    <td className="py-3 px-4 text-right">
-                                        <div className="flex items-center justify-end gap-1.5">
-                                            <button
-                                                onClick={() => handleOpenModal(item)}
-                                                className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
-                                                title="Editar"
-                                            >
-                                                <FiEdit2 size={14} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(item)}
-                                                className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
-                                                title="Eliminar"
-                                            >
-                                                <FiTrash2 size={14} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))
+                                        </td>
+                                        <td className="py-3 px-4">
+                                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-100">
+                                                <FiMapPin size={11} className="text-blue-500" />
+                                                <span>{branchName}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-3 px-4 text-slate-500 font-medium">{item.ubicacion || item.descripcion || "-"}</td>
+                                        <td className="py-3 px-4 text-right">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                <button
+                                                    onClick={() => handleOpenModal(item)}
+                                                    className="w-8 h-8 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
+                                                    title="Editar"
+                                                >
+                                                    <FiEdit2 size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(item)}
+                                                    className="w-8 h-8 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors shadow-xs cursor-pointer border-0"
+                                                    title="Eliminar"
+                                                >
+                                                    <FiTrash2 size={14} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })
                         )}
                     </tbody>
                 </table>
@@ -233,6 +276,20 @@ export default function ConfigRecursosFisicos() {
                                     placeholder="Ej. Sillón 1, Consultorio Principal"
                                     autoFocus
                                 />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[11px] font-bold text-slate-600">Sede / Sucursal *</label>
+                                <select
+                                    className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-blue-500 transition-colors uppercase"
+                                    value={formData.sucursalId}
+                                    onChange={e => setFormData({ ...formData, sucursalId: e.target.value })}
+                                >
+                                    <option value="">TODAS LAS SEDES (GLOBAL)</option>
+                                    {branches.map(b => (
+                                        <option key={b.id} value={b.id}>{b.nombre}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div className="space-y-1">
@@ -270,3 +327,4 @@ export default function ConfigRecursosFisicos() {
         </div>
     );
 }
+

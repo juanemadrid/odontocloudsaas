@@ -53,13 +53,40 @@ export const EvolutionPrintService = {
             const clinicPhone = dbClinicPhone || clinic?.telefono || clinic?.phone || userProfile?.tenant?.telefono || "---";
             const clinicEmail = dbClinicEmail || clinic?.email || userProfile?.tenant?.email || "---";
 
-            // 2. Resolve Patient Details & Age
+            // 2. Normalize and parse evolutions
+            const normalizedEvolutions = (evolutionsList || []).map((evo) => {
+                let parsedTratamiento = {};
+                if (evo.tratamiento) {
+                    if (typeof evo.tratamiento === 'object') {
+                        parsedTratamiento = evo.tratamiento;
+                    } else if (typeof evo.tratamiento === 'string' && evo.tratamiento.startsWith('{')) {
+                        try {
+                            parsedTratamiento = JSON.parse(evo.tratamiento);
+                        } catch (e) {}
+                    }
+                }
+                return {
+                    ...evo,
+                    ...parsedTratamiento,
+                    profesional: parsedTratamiento.profesional || evo.profesional || evo.profesional_nombre || '',
+                    profesionalId: parsedTratamiento.profesionalId || evo.profesional_id || evo.profesionalId || '',
+                    description: evo.description || evo.comentario || parsedTratamiento.description || parsedTratamiento.comentario || '',
+                    plantillaItems: evo.plantillaItems || parsedTratamiento.plantillaItems || {},
+                    dxPrincipal: evo.dxPrincipal || parsedTratamiento.dxPrincipal || null,
+                    doctorSignature: evo.doctorSignature || parsedTratamiento.doctorSignature || null,
+                };
+            });
+
+            // Resolve main doctor from evolutions or patient
+            const defaultDocName = normalizedEvolutions.find(e => e.profesional)?.profesional || patient?.doctorTratante || patient?.profesional || (userProfile?.esDoctor ? userProfile?.nombreCompleto : '') || '---';
+
+            // 3. Resolve Patient Details & Age
             const patientName = patient?.nombreCompleto || `${patient?.nombre || ''} ${patient?.apellido || ''}`.trim() || 'Paciente Sin Nombre';
             const fechaNac = patient?.fechaNacimiento ? new Date(patient.fechaNacimiento) : null;
             const edad = patient?.edad || (fechaNac && !isNaN(fechaNac.getTime()) ? Math.floor((new Date() - fechaNac) / (365.25 * 24 * 60 * 60 * 1000)) : '---');
             const printDate = new Date().toLocaleDateString("es-CO", { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-            // 3. Create Container
+            // 4. Create Container
             const printElement = document.createElement("div");
             printElement.style.position = "absolute";
             printElement.style.left = "-9999px";
@@ -109,7 +136,7 @@ export const EvolutionPrintService = {
                 </div>
             `;
 
-            // Patient Summary Table (Matching OralDrive structure with OdontoCloud styling)
+            // Patient Summary Table
             const patientTableHTML = `
                 <div style="margin-bottom: 25px;">
                     <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 10px; background: white;">
@@ -150,7 +177,7 @@ export const EvolutionPrintService = {
                                 <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Estado civil</td>
                                 <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.estadoCivil || '---'}</td>
                                 <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Doctor/Profesional</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #2563eb;">${userProfile?.nombreCompleto || userProfile?.nombre || patient?.doctorTratante || '---'}</td>
+                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #2563eb;">${defaultDocName}</td>
                             </tr>
                             <tr>
                                 <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Nombre responsable</td>
@@ -172,26 +199,26 @@ export const EvolutionPrintService = {
             // Section Title
             const sectionTitleHTML = `
                 <div style="text-align: center; font-size: 11px; font-weight: 900; color: #2563eb; text-transform: uppercase; letter-spacing: 2px; border-top: 2px solid #e2e8f0; border-bottom: 2px solid #e2e8f0; padding: 8px 0; margin: 25px 0 20px;">
-                    Evoluciones Clínicas Registradas (${evolutionsList.length})
+                    Evoluciones Clínicas Registradas (${normalizedEvolutions.length})
                 </div>
             `;
 
             // Evolutions List Render
             let evolutionsHTML = "";
 
-            if (evolutionsList.length === 0) {
+            if (normalizedEvolutions.length === 0) {
                 evolutionsHTML = `
                     <div style="padding: 30px; text-align: center; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; color: #94a3b8; font-weight: 700; font-size: 11px; text-transform: uppercase;">
                         No existen evoluciones clínicas registradas para este paciente.
                     </div>
                 `;
             } else {
-                evolutionsHTML = evolutionsList.map((evo) => {
+                evolutionsHTML = normalizedEvolutions.map((evo) => {
                     const rawDate = evo.date ? (evo.date.seconds ? new Date(evo.date.seconds * 1000) : new Date(evo.date)) : new Date();
                     const dateStr = rawDate.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
                     const timeStr = rawDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-                    const profName = evo.profesional || userProfile?.nombreCompleto || 'Doctor';
+                    const profName = evo.profesional || defaultDocName || 'Doctor Tratante';
                     const isRemission = evo.type === 'remission';
                     const obsText = evo.description || evo.comentario || 'Sin observaciones registradas.';
 
@@ -275,7 +302,7 @@ export const EvolutionPrintService = {
             }
 
             // Signature & Footer: Resolver doctor y firma del especialista
-            const primaryDoctorIdent = evolutionsList[0]?.profesional || evolutionsList[0]?.doctor || evolutionsList[0]?.especialista || patient?.doctorAsignado || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+            const primaryDoctorIdent = normalizedEvolutions[0]?.profesional || normalizedEvolutions[0]?.profesionalId || defaultDocName || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
             const doctorData = await getDoctorSignatureAndData(primaryDoctorIdent, tenantId, userProfile);
 
             const docSignatureImg = (doctorData.isDoctor && doctorData.firma)
@@ -314,7 +341,7 @@ export const EvolutionPrintService = {
                 </div>
             `;
 
-            // 4. Assemble HTML
+            // 5. Assemble HTML
             printElement.innerHTML = DOMPurify.sanitize(headerHTML + patientTableHTML + sectionTitleHTML + evolutionsHTML + footerHTML);
             document.body.appendChild(printElement);
 
@@ -328,7 +355,7 @@ export const EvolutionPrintService = {
                 });
             }));
 
-            // 5. Render Canvas & PDF with Multi-page Pagination support
+            // 6. Render Canvas & PDF with Multi-page Pagination support
             const canvas = await html2canvas(printElement, {
                 scale: 2.5,
                 useCORS: true,

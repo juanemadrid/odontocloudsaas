@@ -72,7 +72,7 @@ const isCancelledStatus = (st) => {
  * Verifica disponibilidad de un profesional y consultorio en un rango de tiempo
  * Lanza error si hay conflicto de horarios
  */
-const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId, start, end, excludeId = null }) => {
+const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId, sucursalId = null, start, end, excludeId = null }) => {
     if (!tenantId || !start || !end) {
         throw new Error("Datos insuficientes para verificar disponibilidad");
     }
@@ -85,7 +85,7 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
     // Construir query base
     let query = supabase
         .from("citas")
-        .select("id, fecha_inicio, fecha_fin, profesional_id, consultorio_id, estado")
+        .select("id, fecha_inicio, fecha_fin, profesional_id, consultorio_id, sucursal_id, estado")
         .eq("tenant_id", tenantId);
 
     // Si hay un ID a excluir (para updates), excluirlo de la búsqueda
@@ -112,11 +112,14 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
         
         if (!hasTimeOverlap) return false;
 
-        // Verificar si hay conflicto con el mismo profesional o consultorio
+        // Conflicto de profesional: el mismo profesional no puede estar en 2 citas a la vez en ninguna sede
         const sameProfessional = professionalId && String(apt.profesional_id) === String(professionalId);
-        const sameRoom = roomId && String(apt.consultorio_id) === String(roomId);
 
-        return sameProfessional || sameRoom;
+        // Conflicto de consultorio: el consultorio solo entra en conflicto si es en la MISMA sede física
+        const isSameBranch = !sucursalId || !apt.sucursal_id || String(apt.sucursal_id) === String(sucursalId);
+        const sameRoomInSameBranch = roomId && String(apt.consultorio_id) === String(roomId) && isSameBranch;
+
+        return sameProfessional || sameRoomInSameBranch;
     });
 
     if (conflicts.length > 0) {
@@ -129,7 +132,7 @@ const assertAppointmentAvailability = async ({ tenantId, professionalId, roomId,
         if (professionalId && String(conflict.profesional_id) === String(professionalId)) {
             errorMsg += ` para este profesional (${conflictStart.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })} - ${conflictEnd.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})`;
         } else if (roomId && String(conflict.consultorio_id) === String(roomId)) {
-            errorMsg += ` para este consultorio (${conflictStart.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })} - ${conflictEnd.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})`;
+            errorMsg += ` para este consultorio en esta sede (${conflictStart.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })} - ${conflictEnd.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })})`;
         }
 
         throw new Error(errorMsg);
@@ -547,6 +550,7 @@ export function useAgenda() {
             tenantId: inquilino,
             professionalId: data.doctorId,
             roomId: data.consultorioId,
+            sucursalId: data.sucursalId,
             start: data.start,
             end: data.end || new Date(data.start.getTime() + (data.duracion || 30) * 60000)
         });
@@ -562,7 +566,6 @@ export function useAgenda() {
         // Si es un paciente nuevo desde la agenda, creamos el registro base en la colección de pacientes
         if (data.isNewPatient && !pacienteId) {
             try {
-                // Preparamos los datos mínimos para el paciente
                 const newPatientData = {
                     nombres: data.nombres,
                     apellidos: data.apellidos,
@@ -583,14 +586,13 @@ export function useAgenda() {
                     lugarResidencia: "",
                     ocupacion: "",
                     activo: true,
-                    registroCompleto: false // Marcamos que le falta información
+                    registroCompleto: false
                 };
                 
                 const created = await createOrUpdatePatient(inquilino, newPatientData, true);
                 pacienteId = created.id;
             } catch (err) {
                 console.error("Error creating patient from agenda:", err);
-                // Si falla la creación del paciente (ej: ya existe), lanzamos el error
                 throw err;
             }
         }
@@ -694,6 +696,7 @@ export function useAgenda() {
         if (scheduleChanged) {
             const professionalId = finalPatch.doctorId ?? currentData.profesional_id;
             const roomId = finalPatch.consultorioId ?? currentData.consultorio_id;
+            const sucursalId = finalPatch.sucursalId ?? currentData.sucursal_id;
             validatedStart = finalPatch.start ? new Date(finalPatch.start) : new Date(currentData.fecha_inicio);
             if (finalPatch.fecha || finalPatch.horaInicio) {
                 const localDate = finalPatch.fecha || `${validatedStart.getFullYear()}-${String(validatedStart.getMonth() + 1).padStart(2, "0")}-${String(validatedStart.getDate()).padStart(2, "0")}`;
@@ -711,6 +714,7 @@ export function useAgenda() {
                     tenantId: inquilino,
                     professionalId,
                     roomId,
+                    sucursalId,
                     start: validatedStart,
                     end: validatedEnd,
                     excludeId: id
@@ -805,6 +809,7 @@ export function useAgenda() {
         });
         await fetchSupabaseCitas();
     };
+
     return {
         selectedDate, setSelectedDate,
         viewMode, setViewMode,

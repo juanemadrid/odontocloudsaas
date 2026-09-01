@@ -54,12 +54,30 @@ export default function EvolucionesTab({ patient }) {
                 .from("evoluciones")
                 .select("*")
                 .eq("paciente_id", patient.id)
-                .order("created_at", { ascending: false });
-            const evos = (evosData || []).map(d => ({
-                id: d.id,
-                ...d,
-                date: d.created_at ? new Date(d.created_at) : new Date()
-            }));
+            const evos = (evosData || []).map(d => {
+                let parsedTratamiento = {};
+                if (d.tratamiento) {
+                    if (typeof d.tratamiento === 'object') {
+                        parsedTratamiento = d.tratamiento;
+                    } else if (typeof d.tratamiento === 'string' && d.tratamiento.startsWith('{')) {
+                        try {
+                            parsedTratamiento = JSON.parse(d.tratamiento);
+                        } catch (e) {}
+                    }
+                }
+
+                return {
+                    ...d,
+                    ...parsedTratamiento,
+                    id: d.id,
+                    description: d.comentario || parsedTratamiento.description || parsedTratamiento.comentario || d.description || '',
+                    date: d.fecha || d.created_at || new Date(),
+                    profesional: parsedTratamiento.profesional || d.profesional || '',
+                    profesionalId: parsedTratamiento.profesionalId || d.profesional_id || '',
+                    plantillaItems: parsedTratamiento.plantillaItems || d.plantillaItems || {},
+                    doctorSignature: parsedTratamiento.doctorSignature || d.doctorSignature || null,
+                };
+            });
 
             await EvolutionPrintService.generatePDF(evos, patient, {}, userProfile);
         } catch (error) {

@@ -137,7 +137,7 @@ export default function AppointmentModal({
             status: "confirmed",
             valoracion: false,
             control: false,
-            enviarCorreo: true
+            enviarCorreo: false
         }
     });
 
@@ -223,7 +223,7 @@ export default function AppointmentModal({
                     status: initialData?.status || "confirmed",
                     valoracion: Boolean(initialData?.valoracion),
                     control: Boolean(initialData?.control) && !initialData?.valoracion,
-                    enviarCorreo: initialData?.enviarCorreo ?? true
+                    enviarCorreo: initialData?.enviarCorreo ?? false
                 });
                 setTerm(initialData?.paciente || initialData?.pacienteNombre || "");
                 setSelectedPatientPhone(initialData?.celular || "");
@@ -320,22 +320,87 @@ export default function AppointmentModal({
     const watchedConsultorioId = watch("consultorioId");
     const watchedDate = watch("fecha");
     const watchedDuracion = watch("duracion");
+    const watchedSucursalId = watch("sucursalId");
+    const watchedEspecialidadId = watch("especialidadId");
 
-    // Dynamic filtering of physical spaces (consultorios/chairs) based on the selected doctor's assignments in Gestión de Agenda
+    // Filtrado dinámico de doctores por sede y especialidad
+    const filteredDoctors = useMemo(() => {
+        return (doctors || []).filter(d => {
+            if (watchedSucursalId && Array.isArray(d.sucursales) && d.sucursales.length > 0) {
+                const matchBranch = d.sucursales.some(suc => 
+                    String(suc).toLowerCase() === String(watchedSucursalId).toLowerCase() || 
+                    branches.find(b => String(b.id) === String(watchedSucursalId))?.nombre?.toLowerCase() === String(suc).toLowerCase() ||
+                    branches.find(b => String(b.nombre || "").toLowerCase() === String(suc).toLowerCase())?.id === watchedSucursalId
+                );
+                if (!matchBranch) return false;
+            }
+
+            if (!watchedEspecialidadId) return true;
+
+            const docEspStr = (d.especialidad || "").toLowerCase();
+            const docEspArr = Array.isArray(d.especialidades) ? d.especialidades.map(e => String(e).toLowerCase()) : [];
+            const specObj = (specialties || []).find(s => (s.id && String(s.id) === String(watchedEspecialidadId)) || (s.nombre && String(s.nombre).toLowerCase() === String(watchedEspecialidadId).toLowerCase()));
+            const targetSpecName = (specObj?.nombre || watchedEspecialidadId || "").toLowerCase();
+            const targetSpecId = (specObj?.id || watchedEspecialidadId || "").toLowerCase();
+
+            if (docEspArr.length > 0) {
+                const matchesAny = docEspArr.some(e => 
+                    e.includes(targetSpecName) || 
+                    targetSpecName.includes(e) || 
+                    e.includes(targetSpecId) || 
+                    targetSpecId.includes(e)
+                );
+                if (matchesAny) return true;
+            }
+            if (docEspStr) {
+                return docEspStr.includes(targetSpecName) || targetSpecName.includes(docEspStr) || docEspStr.includes(targetSpecId);
+            }
+            return true;
+        });
+    }, [doctors, watchedSucursalId, branches, watchedEspecialidadId, specialties]);
+
+    // Filtrado dinámico de espacios físicos (consultorios/sillones) por sede y asignación médica
     const availableChairs = useMemo(() => {
-        if (!watchedDoctorId) return [];
-        const doc = (doctors || []).find(d => String(d.id) === String(watchedDoctorId));
-        if (!doc) return [];
+        let list = chairs || [];
 
-        const assignedIds = doc.espaciosFisicos || doc.selectedResources || doc.consultorios || doc.recursos;
-        if (Array.isArray(assignedIds)) {
-            if (assignedIds.length === 0) return [];
-            return (chairs || []).filter(c => assignedIds.some(id => String(id) === String(c.id)));
+        // 1. Filtrar por la sede seleccionada
+        if (watchedSucursalId) {
+            const chairsInSede = list.filter(c => c.sucursalId && String(c.sucursalId) === String(watchedSucursalId));
+            if (chairsInSede.length > 0) {
+                list = chairsInSede;
+            } else {
+                list = list.filter(c => !c.sucursalId || String(c.sucursalId) === String(watchedSucursalId));
+            }
         }
-        return [];
-    }, [watchedDoctorId, doctors, chairs]);
 
-    // Keep consultorioId synchronized when doctor or available chairs change
+        // 2. Si el doctor tiene asignados espacios físicos específicos en Gestión de Agenda
+        if (watchedDoctorId) {
+            const doc = (doctors || []).find(d => String(d.id) === String(watchedDoctorId));
+            if (doc) {
+                const assignedIds = doc.espaciosFisicos || doc.selectedResources || doc.consultorios || doc.recursos;
+                if (Array.isArray(assignedIds) && assignedIds.length > 0) {
+                    const filteredByDoc = list.filter(c => assignedIds.some(id => String(id) === String(c.id)));
+                    if (filteredByDoc.length > 0) {
+                        list = filteredByDoc;
+                    }
+                }
+            }
+        }
+
+        return list;
+    }, [watchedDoctorId, watchedSucursalId, doctors, chairs]);
+
+    // Sincronizar doctorId cuando cambia la sucursal
+    useEffect(() => {
+        if (watchedSucursalId && filteredDoctors.length > 0) {
+            const isCurrentDocValid = filteredDoctors.some(d => String(d.id) === String(watchedDoctorId));
+            if (!isCurrentDocValid && !initialData?.id) {
+                setValue("doctorId", filteredDoctors[0].id, { shouldValidate: true });
+            }
+        }
+    }, [watchedSucursalId, filteredDoctors, watchedDoctorId, initialData?.id, setValue]);
+
+    // Sincronizar consultorioId cuando cambia el doctor, la sucursal o los espacios disponibles
     useEffect(() => {
         if (!watchedDoctorId) {
             if (watchedConsultorioId) {
@@ -353,13 +418,9 @@ export default function AppointmentModal({
 
         const isCurrentValid = availableChairs.some(c => String(c.id) === String(watchedConsultorioId));
         if (!isCurrentValid) {
-            if (availableChairs.length === 1) {
-                setValue("consultorioId", availableChairs[0].id, { shouldValidate: true });
-            } else {
-                setValue("consultorioId", "", { shouldValidate: true });
-            }
+            setValue("consultorioId", availableChairs[0].id, { shouldValidate: true });
         }
-    }, [watchedDoctorId, availableChairs, watchedConsultorioId, setValue]);
+    }, [watchedDoctorId, watchedSucursalId, availableChairs, watchedConsultorioId, setValue]);
 
     useEffect(() => {
         if (!isOpen || !inquilino || !watchedDoctorId || !watchedConsultorioId) {
@@ -375,7 +436,7 @@ export default function AppointmentModal({
         const rangeEnd = new Date(rangeStart);
         rangeEnd.setDate(rangeEnd.getDate() + 7);
         setLoadingSchedules(true);
-        loadSchedules({ tenantId: inquilino, professionalId: watchedDoctorId, roomId: watchedConsultorioId, rangeStart, rangeEnd, excludeId: initialData?.id || null })
+        loadSchedules({ tenantId: inquilino, professionalId: watchedDoctorId, roomId: watchedConsultorioId, sucursalId: watchedSucursalId, rangeStart, rangeEnd, excludeId: initialData?.id || null })
             .then((result) => { if (isMounted) setSchedulesData(result); })
             .catch((error) => {
                 console.error("Error loading appointment availability:", error);
@@ -386,7 +447,7 @@ export default function AppointmentModal({
             })
             .finally(() => { if (isMounted) setLoadingSchedules(false); });
         return () => { isMounted = false; };
-    }, [isOpen, inquilino, watchedDoctorId, watchedConsultorioId, watchedDate, initialData?.id, toast]);
+    }, [isOpen, inquilino, watchedDoctorId, watchedConsultorioId, watchedSucursalId, watchedDate, initialData?.id, toast]);
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
     const handleClose = () => {
@@ -468,6 +529,7 @@ export default function AppointmentModal({
                     tenantId: inquilino,
                     professionalId: data.doctorId,
                     roomId: data.consultorioId,
+                    sucursalId: data.sucursalId,
                     start,
                     end,
                     excludeId: data.id || initialData?.id || null
@@ -799,47 +861,10 @@ export default function AppointmentModal({
                                         className={`w-full bg-white border ${errors.doctorId ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-200'} rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none disabled:bg-slate-100 disabled:cursor-not-allowed`}
                                     >
                                         <option value="">ELIJA DOCTOR...</option>
-                                        {/* ✅ FILTRADO POR ESPECIALIDAD Y SUCURSAL */}
-                                        {doctors
-                                            .filter(d => {
-                                                const selectedSuc = watch("sucursalId");
-                                                if (selectedSuc && Array.isArray(d.sucursales) && d.sucursales.length > 0) {
-                                                    const matchBranch = d.sucursales.some(suc => 
-                                                        String(suc).toLowerCase() === String(selectedSuc).toLowerCase() || 
-                                                        branches.find(b => String(b.id) === String(selectedSuc))?.nombre?.toLowerCase() === String(suc).toLowerCase() ||
-                                                        branches.find(b => String(b.nombre || "").toLowerCase() === String(suc).toLowerCase())?.id === selectedSuc
-                                                    );
-                                                    if (!matchBranch) return false;
-                                                }
-
-                                                const esp = watch("especialidadId");
-                                                if (!esp) return true;
-
-                                                const docEspStr = (d.especialidad || "").toLowerCase();
-                                                const docEspArr = Array.isArray(d.especialidades) ? d.especialidades.map(e => String(e).toLowerCase()) : [];
-                                                const specObj = specialties.find(s => (s.id && String(s.id) === String(esp)) || (s.nombre && String(s.nombre).toLowerCase() === String(esp).toLowerCase()));
-                                                const targetSpecName = (specObj?.nombre || esp || "").toLowerCase();
-                                                const targetSpecId = (specObj?.id || esp || "").toLowerCase();
-
-                                                if (docEspArr.length > 0) {
-                                                    const matchesAny = docEspArr.some(e => 
-                                                        e.includes(targetSpecName) || 
-                                                        targetSpecName.includes(e) || 
-                                                        e.includes(targetSpecId) || 
-                                                        targetSpecId.includes(e)
-                                                    );
-                                                    if (matchesAny) return true;
-                                                }
-                                                if (docEspStr) {
-                                                    return docEspStr.includes(targetSpecName) || targetSpecName.includes(docEspStr) || docEspStr.includes(targetSpecId);
-                                                }
-                                                return true;
-                                            })
-                                            .map(d => {
-                                                const fullName = `${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto || d.full_name || 'Doctor';
-                                                return <option key={d.id} value={d.id}>{fullName}</option>;
-                                            })
-                                        }
+                                        {filteredDoctors.map(d => {
+                                            const fullName = `${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto || d.full_name || 'Doctor';
+                                            return <option key={d.id} value={d.id}>{fullName}</option>;
+                                        })}
                                     </select>
                                     {errors.doctorId && (
                                         <p className="text-[10px] font-bold text-red-500 ml-1 mt-0.5 animate-in fade-in slide-in-from-top-1">
