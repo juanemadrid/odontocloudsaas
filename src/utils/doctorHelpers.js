@@ -57,6 +57,109 @@ export const isDoctorUser = (u, detail = null) => {
     return false;
 };
 
+/**
+ * Normaliza cadenas de texto para comparaciones seguras (sin acentos, minúsculas, sin espacios extras).
+ */
+const normalizeText = (str) => {
+    return (str || "")
+        .toString()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+};
+
+/**
+ * Obtiene la lista unificada de doctores/profesionales asignados a un paciente.
+ */
+export const getPatientAssignedDoctors = (patient) => {
+    if (!patient) return [];
+    let assigned = [];
+    const pHist = patient.historial_medico || patient.historialMedico;
+    
+    if (Array.isArray(patient.profesionales) && patient.profesionales.length > 0) {
+        assigned = patient.profesionales;
+    } else if (Array.isArray(pHist?.profesionales) && pHist.profesionales.length > 0) {
+        assigned = pHist.profesionales;
+    } else if (patient.profesional_nombre || patient.profesionalNombre) {
+        assigned = [{
+            id: patient.profesional_id || patient.profesionalId || "default-doc",
+            nombre: patient.profesional_nombre || patient.profesionalNombre,
+            nombreCompleto: patient.profesional_nombre || patient.profesionalNombre
+        }];
+    }
+
+    const mapDoctors = new Map();
+    assigned.forEach(d => {
+        if (!d) return;
+        const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim() || d.displayName || '';
+        const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
+        if (name.trim() && docId) {
+            mapDoctors.set(docId, {
+                id: docId,
+                nombre: name,
+                nombreCompleto: name,
+                email: d.email || d.correo || '',
+                identificacion: d.identificacion || d.registro_medico || d.registroMedico || '',
+                raw: d
+            });
+        }
+    });
+
+    return Array.from(mapDoctors.values());
+};
+
+/**
+ * Determina si el usuario autenticado (si es doctor) está asignado como profesional a este paciente.
+ * - Si el usuario NO es doctor (ej: Administrador, Superadmin, Recepción), retorna true permitiendo gestión administrativa.
+ * - Si el usuario ES doctor, retorna true ÚNICAMENTE si está formalmente vinculado en los profesionales del paciente.
+ */
+export const isDoctorAssignedToPatient = (userProfile, patient) => {
+    if (!userProfile || !patient) return false;
+
+    // Si el usuario NO es doctor, no aplica la restricción clínica de asignación directa
+    if (!isDoctorUser(userProfile)) {
+        return true;
+    }
+
+    const assigned = getPatientAssignedDoctors(patient);
+    if (!assigned || assigned.length === 0) {
+        return false;
+    }
+
+    const myId = String(userProfile.uid || userProfile.id || '').toLowerCase().trim();
+    const myEmail = normalizeText(userProfile.email || '');
+    const myName = normalizeText(
+        userProfile.nombreCompleto || 
+        userProfile.nombre || 
+        `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() || 
+        userProfile.displayName || 
+        ''
+    );
+
+    return assigned.some(d => {
+        const docId = String(d.id || d.uid || '').toLowerCase().trim();
+        const docEmail = normalizeText(d.email || d.correo || '');
+        const docName = normalizeText(d.nombreCompleto || d.nombre || '');
+
+        // 1. Coincidencia por ID de usuario
+        if (myId && docId && myId === docId) return true;
+
+        // 2. Coincidencia por correo electrónico
+        if (myEmail && docEmail && myEmail === docEmail) return true;
+
+        // 3. Coincidencia por nombre completo
+        if (myName && docName) {
+            if (myName === docName) return true;
+            if (myName.length > 5 && (myName.includes(docName) || docName.includes(myName))) return true;
+        }
+
+        return false;
+    });
+};
+
 export default {
-    isDoctorUser
+    isDoctorUser,
+    getPatientAssignedDoctors,
+    isDoctorAssignedToPatient
 };

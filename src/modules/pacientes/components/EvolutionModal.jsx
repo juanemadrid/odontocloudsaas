@@ -5,6 +5,7 @@ import { getDoctorsList } from '../../../services/supabaseServices';
 import { getPlansByPatient } from '../../../services/planService';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
+import { isDoctorUser, isDoctorAssignedToPatient } from '../../../utils/doctorHelpers';
 import { useForm } from 'react-hook-form';
 import CIE10Search from './CIE10Search';
 import ClinicalAIAssistant from './ClinicalAIAssistant';
@@ -43,9 +44,14 @@ const inferRIPSFields = (servicesList) => {
 
 export default function EvolutionModal({ isOpen, onClose, onSave, patient, initialData = null }) {
     const { userProfile } = useAuth();
-    const esDoctor = userProfile?.esDoctor ||
-        userProfile?.rol === 'doctor' ||
-        userProfile?.rol === 'odontologo';
+    const esDoctor = isDoctorUser(userProfile);
+    const isAssigned = isDoctorAssignedToPatient(userProfile, patient);
+    const currentDoctorId = String(userProfile?.uid || userProfile?.id || '');
+    const currentDoctorName = userProfile?.nombreCompleto ||
+        userProfile?.nombre ||
+        `${userProfile?.nombre || ''} ${userProfile?.apellido || ''}`.trim() ||
+        userProfile?.displayName ||
+        "Doctor";
     const toast = useToast();
     
     const [saving, setSaving] = useState(false);
@@ -195,12 +201,6 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             return;
         }
 
-        // Si el usuario es doctor, pre-rellenar su ID directamente en el reset
-        const esDoctor = userProfile?.esDoctor ||
-            userProfile?.rol === 'doctor' ||
-            userProfile?.rol === 'odontologo';
-        const autoDoctor = esDoctor && userProfile?.uid ? userProfile.uid : undefined;
-
         const { localDate: currentLocalDate, localTime: currentLocalTime } = getLocalISOStrings();
 
         setTempHora(currentLocalTime);
@@ -225,7 +225,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 fecha: localISOTime.slice(0, 10),
                 horaInicio: localISOTime.slice(11, 16),
                 horaFin: localISOTime.slice(11, 16),
-                doctorId: initialData.doctorId || initialData.profesionalId || '',
+                doctorId: esDoctor ? currentDoctorId : (initialData.doctorId || initialData.profesionalId || ''),
                 comentario: initialData.comentario || initialData.description || '',
                 estadoEvolucion: initialData.estadoEvolucion || (initialData.isFinalized ? 'finalizado' : 'en_proceso'),
                 medicamentos: initialData.medicamentos || [],
@@ -238,13 +238,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 fecha: currentLocalDate,
                 horaInicio: currentLocalTime,
                 horaFin: currentLocalTime,
-                doctorId: autoDoctor || '',
+                doctorId: esDoctor ? currentDoctorId : '',
                 estadoEvolucion: 'en_proceso',
                 medicamentos: [],
                 esterilizaciones: []
             });
         }
-    }, [isOpen, initialData, reset, userProfile]);
+    }, [isOpen, initialData, reset, userProfile, esDoctor, currentDoctorId]);
 
     // Fetch dependencies
     useEffect(() => {
@@ -252,39 +252,46 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
         const fetchData = async () => {
             try {
-                // ─── Cargar ÚNICAMENTE doctores asignados a este paciente ───
-                let loadedDoctors = await getDoctorsList(userProfile, patient);
-
-                // Si se está editando una evolución/nota existente y su doctor no está en la lista actual, incluirlo
-                if (initialData?.doctorId || initialData?.profesionalId) {
-                    const prevDocId = String(initialData.doctorId || initialData.profesionalId);
-                    const prevDocName = initialData.profesional || initialData.doctorName || initialData.profesionalNombre || "Doctor";
-                    if (!loadedDoctors.some(d => String(d.id) === prevDocId)) {
-                        loadedDoctors = [
-                            ...loadedDoctors,
-                            { id: prevDocId, nombre: prevDocName, nombreCompleto: prevDocName, email: '' }
-                        ];
+                if (esDoctor) {
+                    if (isAssigned) {
+                        setDoctors([{
+                            id: currentDoctorId,
+                            nombre: currentDoctorName,
+                            nombreCompleto: currentDoctorName,
+                            email: userProfile?.email || ''
+                        }]);
+                        setValue('doctorId', currentDoctorId);
+                    } else {
+                        setDoctors([]);
+                        setValue('doctorId', '');
                     }
-                }
+                } else {
+                    // Cargar doctores asignados a este paciente (contexto administrativo)
+                    let loadedDoctors = await getDoctorsList(userProfile, patient);
 
-                // Fallback de seguridad si el paciente aún no tiene profesionales asignados
-                if (loadedDoctors.length === 0 && userProfile) {
-                    const myId = String(userProfile.uid || userProfile.id || 'current_user');
-                    const myName = userProfile.nombreCompleto ||
-                        userProfile.nombre ||
-                        `${userProfile.nombre || ''} ${userProfile.apellido || ''}`.trim() ||
-                        userProfile.displayName ||
-                        "Doctor Asignado";
-                    loadedDoctors = [{ id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '' }];
-                }
+                    // Si se está editando una evolución/nota existente y su doctor no está en la lista actual, incluirlo
+                    if (initialData?.doctorId || initialData?.profesionalId) {
+                        const prevDocId = String(initialData.doctorId || initialData.profesionalId);
+                        const prevDocName = initialData.profesional || initialData.doctorName || initialData.profesionalNombre || "Doctor";
+                        if (!loadedDoctors.some(d => String(d.id) === prevDocId)) {
+                            loadedDoctors = [
+                                ...loadedDoctors,
+                                { id: prevDocId, nombre: prevDocName, nombreCompleto: prevDocName, email: '' }
+                            ];
+                        }
+                    }
 
-                setDoctors(loadedDoctors);
+                    // Fallback a todos los doctores si el paciente no tiene asignados aún
+                    if (loadedDoctors.length === 0) {
+                        loadedDoctors = await getDoctorsList(userProfile, null);
+                    }
 
-                // Auto-seleccionar el primer doctor o el usuario actual si no hay nada seleccionado aún
-                if (loadedDoctors.length > 0 && !watch("doctorId")) {
-                    const currentUid = String(userProfile?.uid || userProfile?.id || '');
-                    const matchedMyEntry = loadedDoctors.find(d => String(d.id) === currentUid);
-                    setValue('doctorId', matchedMyEntry ? matchedMyEntry.id : loadedDoctors[0].id);
+                    setDoctors(loadedDoctors);
+
+                    // Auto-seleccionar el primer doctor si no hay nada seleccionado aún
+                    if (loadedDoctors.length > 0 && !watch("doctorId")) {
+                        setValue('doctorId', loadedDoctors[0].id);
+                    }
                 }
 
                 // Cargar medicamentos registrados de la clínica (con fallback silencioso)
@@ -503,7 +510,16 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
     const onSubmit = async (data) => {
         console.log("EvolutionModal: onSubmit triggered", data);
-        if (!data.doctorId) return toast.error("Debe seleccionar un doctor");
+        
+        if (esDoctor) {
+            if (!isAssigned) {
+                return toast.error("No estás asignado como profesional tratante a este paciente. No puedes registrar evoluciones a nombre de otro profesional.");
+            }
+            data.doctorId = currentDoctorId;
+        } else {
+            if (!data.doctorId) return toast.error("Debe seleccionar un doctor");
+        }
+
         if (!data.comentario) return toast.error("El comentario es obligatorio");
         if (!data.fecha) return toast.error("La fecha es obligatoria");
 
@@ -512,11 +528,15 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             if (!patient?.id) throw new Error("Paciente no identificado");
             const isEditing = !!initialData;
             
-            // Reconstruct full doctor details to store flat data
-            const docObj = doctors.find(d => String(d.id) === String(data.doctorId));
-            const docName = docObj
-                ? (docObj.nombreCompleto || docObj.nombre || `${docObj.nombres || ''} ${docObj.apellidos || ''}`.trim())
-                : (userProfile?.nombreCompleto || userProfile?.nombre || "Doctor");
+            const effectiveDocId = esDoctor ? currentDoctorId : data.doctorId;
+            let docName = currentDoctorName;
+
+            if (!esDoctor) {
+                const docObj = doctors.find(d => String(d.id) === String(data.doctorId));
+                docName = docObj
+                    ? (docObj.nombreCompleto || docObj.nombre || `${docObj.nombres || ''} ${docObj.apellidos || ''}`.trim())
+                    : (userProfile?.nombreCompleto || userProfile?.nombre || "Doctor");
+            }
 
             const selectedPlan = planes.find(p => p.id === data.planId);
             const treatmentName = selectedPlan?.title || selectedPlan?.nombre || '';
@@ -537,18 +557,32 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 item => item?.realizado === true
             );
 
+            const creatorName = userProfile?.nombreCompleto ||
+                userProfile?.nombre ||
+                `${userProfile?.nombre || ''} ${userProfile?.apellido || ''}`.trim() ||
+                userProfile?.displayName ||
+                "";
+
+            const isTranscribed = !esDoctor || (userProfile?.uid && effectiveDocId && String(userProfile.uid) !== String(effectiveDocId));
+
             const evolutionData = {
                 type: recordType,
                 paciente_id: patient.id,
                 patientId: patient.id,
                 patientName: patient.nombreCompleto || patient.nombre || 'Paciente',
                 profesional: docName,
-                profesionalId: data.doctorId || docObj?.id || userProfile?.uid || "",
+                profesionalId: effectiveDocId,
+                doctorId: effectiveDocId,
                 treatment: recordType === 'nota' ? 'Nota aclaratoria' : treatmentName,
                 description: data.comentario, 
                 comentario: data.comentario,
                 isFinalized: hasRealizedItems,
+                transcribe: isTranscribed ? creatorName : null,
+                transcribedBy: isTranscribed ? creatorName : null,
+                transcribedById: isTranscribed ? (userProfile?.uid || userProfile?.id || '') : null,
                 ...data,
+                doctorId: effectiveDocId,
+                profesionalId: effectiveDocId,
                 plantillaItems: recordType === 'nota' ? {} : plantillaDetails,
                 date: finalDate.toISOString(), 
                 tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
@@ -561,7 +595,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             const dbPayload = {
                 paciente_id: patient.id,
                 tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
-                profesional_id: data.doctorId || docObj?.id || userProfile?.uid || null,
+                profesional_id: effectiveDocId || null,
                 fecha: finalDate.toISOString(),
                 tratamiento: JSON.stringify(evolutionData)
             };
@@ -697,6 +731,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     </button>
                 </div>
 
+                {esDoctor && !isAssigned && (
+                    <div className="mx-6 mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                        <FiLock size={16} className="shrink-0 text-rose-600" />
+                        <span>No estás asignado como profesional tratante a este paciente. Por normas legales y clínicas, no puedes registrar evoluciones a nombre de otro doctor.</span>
+                    </div>
+                )}
+
                 <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col min-h-0">
                     
                     {/* Body Form Content (Scrollable) */}
@@ -708,20 +749,29 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                    Seleccione doctor <span className="text-rose-500">*</span>
+                                    Doctor / Profesional <span className="text-rose-500">*</span>
                                 </label>
-                                <select 
-                                    {...register("doctorId")} 
-                                    value={watch("doctorId") || ""}
-                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                >
-                                    <option value="">Seleccione...</option>
-                                    {doctors.map(d => (
-                                        <option key={d.id} value={d.id}>
-                                            {d.nombreCompleto || d.nombre || d.displayName || d.email || d.id}
-                                        </option>
-                                    ))}
-                                </select>
+                                {esDoctor ? (
+                                    <div className="w-full h-11 px-3.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between text-sm font-bold text-slate-700">
+                                        <span className="truncate">{currentDoctorName}</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-blue-200/60 shrink-0">
+                                            <FiLock size={10} /> En sesión
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <select 
+                                        {...register("doctorId")} 
+                                        value={watch("doctorId") || ""}
+                                        className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
+                                    >
+                                        <option value="">Seleccione...</option>
+                                        {doctors.map(d => (
+                                            <option key={d.id} value={d.id}>
+                                                {d.nombreCompleto || d.nombre || d.displayName || d.email || d.id}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
 
                             <div>
@@ -1311,8 +1361,12 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         </button>
                         <button 
                             type="submit"
-                            disabled={saving} 
-                            className="flex-1 sm:flex-none px-8 sm:px-10 py-3 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md shadow-lime-500/20"
+                            disabled={saving || (esDoctor && !isAssigned)} 
+                            className={`flex-1 sm:flex-none px-8 sm:px-10 py-3 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md ${
+                                esDoctor && !isAssigned 
+                                    ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
+                                    : "bg-[#8dc63f] hover:bg-[#7cb035] text-white shadow-lime-500/20"
+                            }`}
                         >
                             {saving ? "Guardando..." : "Guardar"}
                         </button>

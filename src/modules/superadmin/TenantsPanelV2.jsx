@@ -60,6 +60,8 @@ export default function TenantsPanelV2() {
     const [showChangePwd, setShowChangePwd] = useState(null); // tenant object
     const [pwdForm, setPwdForm] = useState({ newPassword: "", confirm: "", show: false });
     const [changingPwd, setChangingPwd] = useState(false);
+    const [updatingPlan, setUpdatingPlan] = useState(false);
+    const [grantingId, setGrantingId] = useState(null);
 
     useEffect(() => {
         loadData();
@@ -231,13 +233,40 @@ export default function TenantsPanelV2() {
 
     const handleUpdatePlan = async (e) => {
         e.preventDefault();
-        try { await updateTenantPlan(selectedTenant.id, newPlanId, newDuration); setShowPlan(false); loadData(); }
-        catch { alert("Error al actualizar plan."); }
+        if (!selectedTenant) return;
+        setUpdatingPlan(true);
+        try {
+            const res = await updateTenantPlan(selectedTenant.id, newPlanId, newDuration);
+            setShowPlan(false);
+            await loadData();
+            const planName = getPlanName(newPlanId);
+            const durLabel = newDuration === "yearly" ? "Anual" : "Mensual";
+            alert(`✅ Plan actualizado exitosamente a "${planName} (${durLabel})".\n\nSuscripción reactivada hasta: ${fmt(res?.newEndDate)}`);
+        } catch (err) {
+            console.error("Error al actualizar plan:", err);
+            alert("❌ Error al actualizar plan: " + (err.message || "Error desconocido"));
+        } finally {
+            setUpdatingPlan(false);
+        }
     };
 
-    const handleGrantFree = async (id) => {
-        if (!window.confirm("¿Regalar 1 mes gratis?")) return;
-        try { await grantFreeMonth(id); loadData(); } catch { alert("Error"); }
+    const handleGrantFree = async (tenant) => {
+        const confirmed = window.confirm(
+            `🎁 ¿Deseas regalar 1 mes de servicio gratis a:\n"${tenant.name}"?\n\nLa suscripción se extenderá por 30 días y la clínica quedará activa inmediatamente.`
+        );
+        if (!confirmed) return;
+
+        setGrantingId(tenant.id);
+        try {
+            const res = await grantFreeMonth(tenant.id);
+            await loadData();
+            alert(`🎁 ¡1 mes gratis otorgado exitosamente a "${tenant.name}"!\n\nNueva fecha de vencimiento: ${fmt(res?.newEndDate)}`);
+        } catch (err) {
+            console.error("Error al otorgar mes gratis:", err);
+            alert("❌ Error al otorgar mes gratis: " + (err.message || "Error desconocido"));
+        } finally {
+            setGrantingId(null);
+        }
     };
 
     const handleDelete = async (id, name) => {
@@ -365,7 +394,23 @@ export default function TenantsPanelV2() {
                                                 </span>
                                                 <p className="text-[10px] text-slate-400 mt-1 ml-0.5">{t.planDuration === "yearly" ? "Anual" : "Mensual"}</p>
                                             </td>
-                                            <td className="px-5 py-4 text-xs text-slate-500 whitespace-nowrap">{fmt(t.subscriptionEndDate)}</td>
+                                            <td className="px-5 py-4 text-xs whitespace-nowrap">
+                                                {(() => {
+                                                    const isExp = t.subscriptionEndDate && new Date(t.subscriptionEndDate) < new Date();
+                                                    return (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className={isExp ? "text-rose-600 font-bold" : "text-slate-500 font-medium"}>
+                                                                {fmt(t.subscriptionEndDate)}
+                                                            </span>
+                                                            {isExp && (
+                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">
+                                                                    Vencido
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
                                             <td className="px-5 py-4">
                                                 <button onClick={()=>handleStatusToggle(t.id, t.status)}
                                                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all group relative ${isActive
@@ -411,19 +456,23 @@ export default function TenantsPanelV2() {
                                                         </span>
                                                     </button>
                                                     <button onClick={()=>{setSelectedTenant(t);setNewPlanId(t.planId);setNewDuration(t.planDuration||"monthly");setShowPlan(true);}}
-                                                        title="Cambiar plan de suscripción"
+                                                        title="Cambiar plan de suscripción y ciclo"
                                                         className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-all group relative">
                                                         <FiSliders size={13}/>
                                                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                                                             Cambiar plan
                                                         </span>
                                                     </button>
-                                                    <button onClick={()=>handleGrantFree(t.id)}
+                                                    <button onClick={()=>handleGrantFree(t)} disabled={grantingId === t.id}
                                                         title="Regalar 1 mes de servicio gratis"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition-all group relative">
-                                                        <FiGift size={13}/>
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition-all disabled:opacity-50 group relative">
+                                                        {grantingId === t.id ? (
+                                                            <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"/>
+                                                        ) : (
+                                                            <FiGift size={13}/>
+                                                        )}
                                                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            Regalar 1 mes
+                                                            {grantingId === t.id ? "Aplicando..." : "Regalar 1 mes"}
                                                         </span>
                                                     </button>
                                                     <button onClick={()=>handleDelete(t.id, t.name)} disabled={processing}
@@ -656,31 +705,56 @@ export default function TenantsPanelV2() {
 
             {/* ── Plan modal ── */}
             {showPlan && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
                         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-                            <h3 className="text-base font-bold text-slate-800">Cambiar plan — {selectedTenant?.name}</h3>
+                            <div>
+                                <h3 className="text-base font-bold text-slate-800">Cambiar plan / ciclo</h3>
+                                <p className="text-xs font-semibold text-indigo-600 truncate max-w-[220px]">{selectedTenant?.name}</p>
+                            </div>
                             <button onClick={()=>setShowPlan(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"><FiX size={16}/></button>
                         </div>
                         <form onSubmit={handleUpdatePlan} className="p-6 space-y-4">
-                            <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plan</label>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plan</label>
                                 <select required className={inp} value={newPlanId} onChange={e=>setNewPlanId(e.target.value)}>
                                     {plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                                 </select>
                             </div>
-                            <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Ciclo</label>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Ciclo de Cobro</label>
                                 <div className="flex rounded-lg border border-slate-200 overflow-hidden">
                                     {["monthly","yearly"].map(d=>(
                                         <button key={d} type="button" onClick={()=>setNewDuration(d)}
-                                            className={`flex-1 py-2 text-xs font-semibold transition-all ${newDuration===d?"bg-blue-600 text-white":"bg-white text-slate-500 hover:bg-slate-50"}`}>
-                                            {d==="monthly"?"Mensual":"Anual"}
+                                            className={`flex-1 py-2 text-xs font-semibold transition-all ${newDuration===d?"bg-blue-600 text-white shadow-sm":"bg-white text-slate-500 hover:bg-slate-50"}`}>
+                                            {d==="monthly"?"Mensual (30 días)":"Anual (365 días)"}
                                         </button>
                                     ))}
                                 </div>
                             </div>
+
+                            <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-blue-800">
+                                <p className="font-semibold flex items-center gap-1.5 mb-0.5">
+                                    <FiCheck className="text-blue-600 shrink-0" size={13} />
+                                    Reactivación automática
+                                </p>
+                                <p className="text-[11px] text-blue-600/90 leading-tight">
+                                    Al confirmar en ciclo <strong>{newDuration === "yearly" ? "Anual (365 días)" : "Mensual (30 días)"}</strong>, la clínica quedará <strong>Activa</strong> y se renovará la fecha de vencimiento.
+                                </p>
+                            </div>
+
                             <div className="flex gap-3 pt-2">
-                                <button type="button" onClick={()=>setShowPlan(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Cancelar</button>
-                                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all">Confirmar</button>
+                                <button type="button" onClick={()=>setShowPlan(false)} disabled={updatingPlan} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-50">Cancelar</button>
+                                <button type="submit" disabled={updatingPlan} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm shadow-indigo-200">
+                                    {updatingPlan ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                                            <span>Guardando...</span>
+                                        </>
+                                    ) : (
+                                        "Confirmar cambio"
+                                    )}
+                                </button>
                             </div>
                         </form>
                     </div>

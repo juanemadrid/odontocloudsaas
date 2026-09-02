@@ -71,6 +71,7 @@ export const EvolutionPrintService = {
                     profesional: parsedTratamiento.profesional || evo.profesional || evo.profesional_nombre || '',
                     profesionalId: parsedTratamiento.profesionalId || evo.profesional_id || evo.profesionalId || '',
                     description: evo.description || evo.comentario || parsedTratamiento.description || parsedTratamiento.comentario || '',
+                    transcribe: parsedTratamiento.transcribe || parsedTratamiento.transcribedBy || evo.transcribe || evo.transcribed_by || '',
                     plantillaItems: evo.plantillaItems || parsedTratamiento.plantillaItems || {},
                     dxPrincipal: evo.dxPrincipal || parsedTratamiento.dxPrincipal || null,
                     doctorSignature: evo.doctorSignature || parsedTratamiento.doctorSignature || null,
@@ -292,6 +293,12 @@ export const EvolutionPrintService = {
 
                             ${procTagsHTML ? `<div style="margin-top: 6px; margin-bottom: 6px;">${procTagsHTML}</div>` : ''}
                             ${dxHTML}
+
+                            ${(evo.transcribe || evo.transcribedBy) ? `
+                                <div style="font-size: 9px; font-weight: 800; color: #64748b; margin-top: 6px; margin-bottom: 4px; text-transform: uppercase;">
+                                    Transcribe: <span style="color: #0f172a; font-weight: 900;">${evo.transcribe || evo.transcribedBy}</span>
+                                </div>
+                            ` : ''}
 
                             <div style="font-size: 10.5px; color: #334155; line-height: 1.6; font-weight: 500; margin-top: 6px; white-space: pre-wrap; word-break: break-word;">
                                 ${obsText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}

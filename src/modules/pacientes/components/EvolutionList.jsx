@@ -354,6 +354,12 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
 
     <div class="evo-desc">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
 
+    ${(evo.transcribe || evo.transcribedBy) ? `
+      <div style="font-size: 8.5px; font-weight: bold; color: #475569; margin-top: 4px; margin-bottom: 6px; text-transform: uppercase;">
+        Transcribe: <span style="color: #0f172a; font-weight: 800;">${evo.transcribe || evo.transcribedBy}</span>
+      </div>
+    ` : ''}
+
     ${procedimientos.length > 0 ? procedimientos.map((p, idx) => `
       <div class="evo-proc">${evo.treatment ? `${evo.treatment} - ` : 'odontología - '}${idx + 1}. ${p}</div>
     `).join('') : (evo.treatment ? `<div class="evo-proc">${evo.treatment}</div>` : '')}
@@ -504,6 +510,13 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
             {text && (
                 <p className="text-[11px] text-slate-600 font-medium leading-relaxed mb-2 line-clamp-3">
                     {text}
+                </p>
+            )}
+
+            {/* Transcribe: Nombre del transcriptor administrativo */}
+            {(evo.transcribe || evo.transcribedBy) && (
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">
+                    Transcribe: <span className="text-slate-700 font-black">{evo.transcribe || evo.transcribedBy}</span>
                 </p>
             )}
 
@@ -1076,6 +1089,7 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                         description: evo.comentario || parsedTratamiento.description || evo.description || '',
                         date: evo.created_at || evo.fecha,
                         profesional: evo.profesional || parsedTratamiento.profesional || 'Odontólogo',
+                        transcribe: parsedTratamiento.transcribe || parsedTratamiento.transcribedBy || evo.transcribe || evo.transcribed_by || '',
                         doctorSignature: parsedTratamiento.doctorSignature || evo.doctorSignature,
                         patientSignature: parsedTratamiento.patientSignature || evo.patientSignature,
                         patientFingerprint: parsedTratamiento.patientFingerprint || evo.patientFingerprint,

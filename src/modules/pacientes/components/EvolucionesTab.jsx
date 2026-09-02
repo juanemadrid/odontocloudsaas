@@ -5,11 +5,15 @@ import RemissionModal from "./RemissionModal";
 import { FiPlus, FiPrinter, FiSearch, FiHome } from "react-icons/fi";
 import { EvolutionPrintService } from "../../../services/EvolutionPrintService";
 import { useAuth } from "../../../context/AuthContext";
+import { isDoctorUser, isDoctorAssignedToPatient } from "../../../utils/doctorHelpers";
 import supabase from "../../../lib/supabaseClient";
 import { toast } from "sonner";
 
 export default function EvolucionesTab({ patient }) {
     const { userProfile } = useAuth();
+    const isDoctor = isDoctorUser(userProfile);
+    const isAssigned = isDoctorAssignedToPatient(userProfile, patient);
+
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState(null); // 'evolution' | 'remission'
     const [editingEvo, setEditingEvo] = useState(null);
@@ -25,18 +29,44 @@ export default function EvolucionesTab({ patient }) {
     };
 
     const handleOpenEvolution = () => {
+        if (isDoctor && !isAssigned) {
+            toast.error("No estás asignado como profesional tratante de este paciente. Solo los profesionales vinculados pueden registrar evoluciones.");
+            return;
+        }
         setEditingEvo(null);
         setModalType("evolution");
         setModalOpen(true);
     };
 
     const handleOpenRemission = () => {
+        if (isDoctor && !isAssigned) {
+            toast.error("No estás asignado como profesional tratante de este paciente. Solo los profesionales vinculados pueden registrar remisiones.");
+            return;
+        }
         setEditingEvo(null);
         setModalType("remission");
         setModalOpen(true);
     };
 
     const handleEdit = (evo) => {
+        if (isDoctor) {
+            if (!isAssigned) {
+                toast.error("No estás asignado como profesional a este paciente.");
+                return;
+            }
+            const currentUid = String(userProfile?.uid || userProfile?.id || '').toLowerCase();
+            const evoDocId = String(evo.doctorId || evo.profesionalId || evo.profesional_id || '').toLowerCase();
+            const currentName = (userProfile?.nombreCompleto || userProfile?.nombre || '').toLowerCase().trim();
+            const evoDocName = (evo.profesional || evo.doctorName || '').toLowerCase().trim();
+            
+            const isOwn = (currentUid && evoDocId && currentUid === evoDocId) || 
+                          (currentName && evoDocName && (currentName === evoDocName || currentName.includes(evoDocName) || evoDocName.includes(currentName)));
+            
+            if (!isOwn) {
+                toast.error("No puedes modificar una evolución registrada por otro profesional.");
+                return;
+            }
+        }
         setEditingEvo(evo);
         setModalType(evo.type === 'remission' ? 'remission' : 'evolution');
         setModalOpen(true);
@@ -133,18 +163,35 @@ export default function EvolucionesTab({ patient }) {
                      <div className="flex items-center gap-2 w-full sm:w-auto">
                          <button 
                              onClick={handleOpenEvolution}
-                             className="flex-1 sm:flex-none px-5 sm:px-8 py-2.5 sm:py-3 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-md shadow-lime-500/20 transition-all active:scale-95 text-center"
+                             title={isDoctor && !isAssigned ? "No asignado como profesional a este paciente" : "Nueva evolución"}
+                             className={`flex-1 sm:flex-none px-5 sm:px-8 py-2.5 sm:py-3 rounded-full font-black text-[11px] uppercase tracking-widest shadow-md transition-all active:scale-95 text-center ${
+                                 isDoctor && !isAssigned 
+                                     ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
+                                     : "bg-[#8dc63f] hover:bg-[#7cb035] text-white shadow-lime-500/20"
+                             }`}
                          >
                               Evolución
                          </button>
                          <button 
                              onClick={handleOpenRemission}
-                             className="flex-1 sm:flex-none px-5 sm:px-8 py-2.5 sm:py-3 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-md shadow-lime-500/20 transition-all active:scale-95 text-center"
+                             title={isDoctor && !isAssigned ? "No asignado como profesional a este paciente" : "Nueva remisión"}
+                             className={`flex-1 sm:flex-none px-5 sm:px-8 py-2.5 sm:py-3 rounded-full font-black text-[11px] uppercase tracking-widest shadow-md transition-all active:scale-95 text-center ${
+                                 isDoctor && !isAssigned 
+                                     ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
+                                     : "bg-[#8dc63f] hover:bg-[#7cb035] text-white shadow-lime-500/20"
+                             }`}
                          >
                               Remitir
                          </button>
                      </div>
                 </div>
+
+                {isDoctor && !isAssigned && (
+                    <div className="bg-amber-50 border border-amber-200/80 text-amber-800 px-4 py-2.5 rounded-2xl text-[11px] font-bold flex items-center gap-2 shadow-sm">
+                        <span className="text-amber-500 text-sm">⚠️</span>
+                        <span>Modo de solo consulta: No estás vinculado como profesional tratante a este paciente. Solo los doctores asignados en la pestaña "Profesionales" pueden registrar evoluciones a su propio nombre.</span>
+                    </div>
+                )}
             </div>
 
             {/* Timeline Area */}

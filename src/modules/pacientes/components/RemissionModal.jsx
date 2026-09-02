@@ -1,13 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { FiX } from 'react-icons/fi';
+import { FiX, FiLock } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { useForm } from 'react-hook-form';
 import { getDoctorsList } from '../../../services/supabaseServices';
+import { isDoctorUser, isDoctorAssignedToPatient } from '../../../utils/doctorHelpers';
 
 export default function RemissionModal({ isOpen, onClose, onSave, patient, initialData = null }) {
     const { userProfile } = useAuth();
+    const esDoctor = isDoctorUser(userProfile);
+    const isAssigned = isDoctorAssignedToPatient(userProfile, patient);
+    const currentDoctorId = String(userProfile?.uid || userProfile?.id || '');
+    const currentDoctorName = userProfile?.nombreCompleto ||
+        userProfile?.nombre ||
+        `${userProfile?.nombre || ''} ${userProfile?.apellido || ''}`.trim() ||
+        userProfile?.displayName ||
+        "Doctor Remitente";
+
     const toast = useToast();
     
     const [saving, setSaving] = useState(false);
@@ -25,7 +35,7 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
 
     const { localDate, localTime } = getLocalISOStrings();
 
-    const { register, handleSubmit, watch, reset, formState: { errors } } = useForm({
+    const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
         defaultValues: {
             doctorId: '',
             doctorQuienRecibeId: '',
@@ -56,40 +66,85 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
             const localISOTime = (new Date(safeDate.getTime() - tzoffset)).toISOString();
             reset({
                 ...initialData,
+                doctorId: esDoctor ? currentDoctorId : (initialData.doctorId || initialData.profesionalId || ''),
                 fecha: localISOTime.slice(0, 10),
                 horaInicio: localISOTime.slice(11, 16)
             });
+        } else {
+            reset({
+                doctorId: esDoctor ? currentDoctorId : '',
+                doctorQuienRecibeId: '',
+                fecha: localDate,
+                horaInicio: localTime,
+                comentario: '',
+            });
         }
-    }, [isOpen, initialData, reset]);
+    }, [isOpen, initialData, reset, esDoctor, currentDoctorId]);
 
     useEffect(() => {
         if (!isOpen) return;
 
         const fetchDoctors = async () => {
             try {
-                // Patient assigned doctors (remitente)
-                const assignedDocs = await getDoctorsList(userProfile, patient);
-                setPatientDoctors(assignedDocs);
+                if (esDoctor) {
+                    if (isAssigned) {
+                        setPatientDoctors([{
+                            id: currentDoctorId,
+                            nombre: currentDoctorName,
+                            nombreCompleto: currentDoctorName,
+                            email: userProfile?.email || ''
+                        }]);
+                        setValue('doctorId', currentDoctorId);
+                    } else {
+                        setPatientDoctors([]);
+                        setValue('doctorId', '');
+                    }
+                } else {
+                    // Patient assigned doctors (remitente) para administradores
+                    const assignedDocs = await getDoctorsList(userProfile, patient);
+                    setPatientDoctors(assignedDocs);
+                    if (assignedDocs.length > 0 && !watch("doctorId")) {
+                        setValue('doctorId', assignedDocs[0].id);
+                    }
+                }
 
                 // All system doctors (receptor)
                 const allDocs = await getDoctorsList(userProfile, null);
-                setAllDoctors(allDocs.length > 0 ? allDocs : assignedDocs);
+                // Excluir al doctor actual de la lista de receptores si está en sesión
+                const filteredReceptors = esDoctor 
+                    ? allDocs.filter(d => String(d.id) !== currentDoctorId) 
+                    : allDocs;
+                setAllDoctors(filteredReceptors);
             } catch (err) {
                 console.error("Error fetching dependencies", err);
             }
         };
 
         fetchDoctors();
-    }, [isOpen, userProfile, patient?.profesionales, patient?.id]);
+    }, [isOpen, userProfile, patient?.profesionales, patient?.id, esDoctor, isAssigned, currentDoctorId, currentDoctorName]);
 
     const onSubmit = async (data) => {
+        if (esDoctor) {
+            if (!isAssigned) {
+                return toast.error("No estás asignado como profesional tratante a este paciente. No puedes registrar remisiones.");
+            }
+            data.doctorId = currentDoctorId;
+        } else {
+            if (!data.doctorId) return toast.error("Debe seleccionar el doctor remitente");
+        }
+
         setSaving(true);
         try {
             if (!patient?.id) throw new Error("Paciente no identificado");
             const isEditing = !!initialData;
             
-            const docObj = patientDoctors.find(d => String(d.id) === String(data.doctorId)) || allDoctors.find(d => String(d.id) === String(data.doctorId));
-            const docName = docObj ? (docObj.nombreCompleto || docObj.nombre || `${docObj.nombres || ''} ${docObj.apellidos || ''}`.trim()) : (userProfile?.nombreCompleto || userProfile?.nombre || "Doctor Remitente");
+            const effectiveDocId = esDoctor ? currentDoctorId : data.doctorId;
+            let docName = currentDoctorName;
+
+            if (!esDoctor) {
+                const docObj = patientDoctors.find(d => String(d.id) === String(data.doctorId)) || allDoctors.find(d => String(d.id) === String(data.doctorId));
+                docName = docObj ? (docObj.nombreCompleto || docObj.nombre || `${docObj.nombres || ''} ${docObj.apellidos || ''}`.trim()) : (userProfile?.nombreCompleto || userProfile?.nombre || "Doctor Remitente");
+            }
 
             const recvObj = allDoctors.find(d => String(d.id) === String(data.doctorQuienRecibeId));
             const recvName = recvObj ? (recvObj.nombreCompleto || recvObj.nombre || `${recvObj.nombres || ''} ${recvObj.apellidos || ''}`.trim()) : "Doctor Receptor";
@@ -105,19 +160,33 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
                 finalDate.setHours(12, 0);
             }
 
+            const creatorName = userProfile?.nombreCompleto ||
+                userProfile?.nombre ||
+                `${userProfile?.nombre || ''} ${userProfile?.apellido || ''}`.trim() ||
+                userProfile?.displayName ||
+                "";
+
+            const isTranscribed = !esDoctor || (userProfile?.uid && effectiveDocId && String(userProfile.uid) !== String(effectiveDocId));
+
             const remissionData = {
                 type: 'remission',
                 paciente_id: patient.id,
                 patientId: patient.id,
                 patientName: patient.nombreCompleto || patient.nombre || "Paciente",
                 profesional: docName,
-                profesionalId: data.doctorId || docObj?.id || "",
+                profesionalId: effectiveDocId,
+                doctorId: effectiveDocId,
                 doctorQuienRecibeId: data.doctorQuienRecibeId,
                 doctorQuienRecibeName: recvName,
                 treatment: `Remisión a ${recvName}`,
                 description: data.comentario, 
                 comentario: data.comentario,
+                transcribe: isTranscribed ? creatorName : null,
+                transcribedBy: isTranscribed ? creatorName : null,
+                transcribedById: isTranscribed ? (userProfile?.uid || userProfile?.id || '') : null,
                 ...data,
+                doctorId: effectiveDocId,
+                profesionalId: effectiveDocId,
                 date: finalDate.toISOString(), 
                 tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
                 inquilino: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
@@ -128,7 +197,7 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
             const dbPayload = {
                 paciente_id: patient.id,
                 tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
-                profesional_id: data.doctorId || docObj?.id || userProfile?.uid || null,
+                profesional_id: effectiveDocId || null,
                 fecha: finalDate.toISOString(),
                 tratamiento: JSON.stringify(remissionData)
             };
@@ -173,6 +242,13 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
                     </button>
                 </div>
                 
+                {esDoctor && !isAssigned && (
+                    <div className="mx-6 mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                        <FiLock size={16} className="shrink-0 text-rose-600" />
+                        <span>No estás asignado como profesional a este paciente. Solo los profesionales vinculados pueden emitir remisiones.</span>
+                    </div>
+                )}
+
                 {/* Body Form */}
                 <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col md:flex-row gap-8">
                     
@@ -180,20 +256,31 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
                     <div className="flex-1 space-y-5">
                         <div>
                             <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                Seleccione doctor <span className="text-rose-500">*</span>
+                                Doctor Remitente <span className="text-rose-500">*</span>
                             </label>
-                            <select 
-                                {...register("doctorId", { required: true })} 
-                                className={`w-full h-11 px-3 rounded-lg border text-sm font-bold bg-white outline-none transition-all ${errors.doctorId ? 'border-rose-500 ring-4 ring-rose-500/10' : 'border-slate-200 focus:border-blue-400 text-slate-700'}`}
-                            >
-                                <option value="">Seleccione...</option>
-                                {patientDoctors.map(d => (
-                                    <option key={d.id} value={d.id}>
-                                        {`${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto}
-                                    </option>
-                                ))}
-                            </select>
-                            {errors.doctorId && <p className="text-[10px] font-black text-rose-500 uppercase mt-1">Requerido</p>}
+                            {esDoctor ? (
+                                <div className="w-full h-11 px-3.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between text-sm font-bold text-slate-700">
+                                    <span className="truncate">{currentDoctorName}</span>
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-black bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-blue-200/60 shrink-0">
+                                        <FiLock size={10} /> En sesión
+                                    </span>
+                                </div>
+                            ) : (
+                                <>
+                                    <select 
+                                        {...register("doctorId", { required: true })} 
+                                        className={`w-full h-11 px-3 rounded-lg border text-sm font-bold bg-white outline-none transition-all ${errors.doctorId ? 'border-rose-500 ring-4 ring-rose-500/10' : 'border-slate-200 focus:border-blue-400 text-slate-700'}`}
+                                    >
+                                        <option value="">Seleccione...</option>
+                                        {patientDoctors.map(d => (
+                                            <option key={d.id} value={d.id}>
+                                                {`${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {errors.doctorId && <p className="text-[10px] font-black text-rose-500 uppercase mt-1">Requerido</p>}
+                                </>
+                            )}
                         </div>
 
                         <div>
@@ -262,8 +349,12 @@ export default function RemissionModal({ isOpen, onClose, onSave, patient, initi
                     <button 
                         type="button"
                         onClick={handleSubmit(onSubmit)} 
-                        disabled={saving} 
-                        className="px-10 py-3 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-[12px] font-black text-[13px] uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md shadow-lime-500/20"
+                        disabled={saving || (esDoctor && !isAssigned)} 
+                        className={`px-10 py-3 rounded-[12px] font-black text-[13px] uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md ${
+                            esDoctor && !isAssigned 
+                                ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
+                                : "bg-[#8dc63f] hover:bg-[#7cb035] text-white shadow-lime-500/20"
+                        }`}
                     >
                         {saving ? "Guardando..." : "Guardar"}
                     </button>

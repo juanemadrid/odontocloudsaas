@@ -42,7 +42,10 @@ export const getTenants = async () => {
         (dbTenants || []).forEach(t => {
             if (t.id === GLOBAL_CONFIG_TENANT_ID) return;
             const createdDate = t.created_at ? new Date(t.created_at) : new Date();
-            const endDate = new Date(createdDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+            const paramEndDate = t.parametros?.subscription_end_date || t.subscription_end_date;
+            const paramDuration = t.parametros?.plan_duration || "monthly";
+            const defaultDays = paramDuration === "yearly" ? 365 : 30;
+            const endDate = paramEndDate ? new Date(paramEndDate) : new Date(createdDate.getTime() + defaultDays * 24 * 60 * 60 * 1000);
             const idKey = String(t.id);
             const prof = profileMap.get(idKey);
             const initialEmail = prof?.adminEmail || (t.email && t.email.toLowerCase() !== "madridsystem@outlook.es" ? t.email : "");
@@ -59,7 +62,7 @@ export const getTenants = async () => {
                 adminName: prof?.adminName || "",
                 adminEmail: initialEmail,
                 planId: t.plan || "free",
-                planDuration: "monthly",
+                planDuration: paramDuration,
                 status: t.activo !== false ? "active" : "suspended",
                 subscriptionStatus: t.activo !== false ? "active" : "suspended",
                 hasFactusCreds: false,
@@ -76,10 +79,12 @@ export const getTenants = async () => {
             const idKey = String(t.id);
             const existing = tenantsMap.get(idKey) || {};
             const prof = profileMap.get(idKey);
-            const createdDate = t.created_at || t.createdAt ? new Date(t.created_at || t.createdAt) : new Date();
-            const daysToAdd = t.planDuration === "yearly" ? 365 : 30;
-            const endDate = t.subscriptionEndDate 
-                ? new Date(t.subscriptionEndDate) 
+            const createdDate = t.created_at || t.createdAt ? new Date(t.created_at || t.createdAt) : (existing.createdAt ? new Date(existing.createdAt) : new Date());
+            const resolvedPlanDuration = t.planDuration || existing.planDuration || "monthly";
+            const daysToAdd = resolvedPlanDuration === "yearly" ? 365 : 30;
+            const rawEndDate = t.subscriptionEndDate || existing.subscriptionEndDate;
+            const endDate = rawEndDate 
+                ? new Date(rawEndDate) 
                 : new Date(createdDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
 
             const candidateEmail = prof?.adminEmail || t.adminEmail || t.contactEmail || t.email || existing.adminEmail || "";
@@ -99,9 +104,9 @@ export const getTenants = async () => {
                 adminName: resolvedAdminName,
                 adminEmail: resolvedAdminEmail,
                 planId: t.plan || t.planId || existing.planId || "free",
-                planDuration: t.planDuration || existing.planDuration || "monthly",
-                status: t.activo !== false ? "active" : "suspended",
-                subscriptionStatus: t.activo !== false ? "active" : "suspended",
+                planDuration: resolvedPlanDuration,
+                status: (t.activo !== false && existing.status !== "suspended") ? "active" : "suspended",
+                subscriptionStatus: (t.activo !== false && existing.status !== "suspended") ? "active" : "suspended",
                 hasFactusCreds: Boolean(t.hasFactusCreds ?? existing.hasFactusCreds),
                 factusNumberingRangeId: t.factusNumberingRangeId || existing.factusNumberingRangeId || "",
                 factusTestMode: t.factusTestMode ?? existing.factusTestMode ?? true,
@@ -134,29 +139,68 @@ export const updateTenantDetails = async (tenantId, updates) => {
             .maybeSingle();
 
         const currentTenants = existingRow?.config?.registered_tenants || [];
+        let foundInConfig = false;
         const updatedTenants = currentTenants.map(t => {
-            if (t.id === tenantId) {
+            if (String(t.id) === String(tenantId)) {
+                foundInConfig = true;
                 const updatedPlanId = updates.planId || updates.plan || t.planId || t.plan;
-                let cuotaFacturas = t.facturacionCuota;
-                if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico")) cuotaFacturas = 100;
-                else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 2000;
-                else cuotaFacturas = 500;
+                let cuotaFacturas = updates.facturacionCuota !== undefined ? updates.facturacionCuota : t.facturacionCuota;
+                if (updates.facturacionCuota === undefined && (updates.planId || updates.plan)) {
+                    if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico") || updatedPlanId.includes("consultorio")) cuotaFacturas = 100;
+                    else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 2000;
+                    else cuotaFacturas = 500;
+                }
 
                 return {
                     ...t,
                     nombre: updates.name || updates.nombre || t.nombre,
+                    name: updates.name || updates.nombre || t.name,
                     nit: updates.nit !== undefined ? updates.nit : t.nit,
                     telefono: updates.telefono !== undefined ? updates.telefono : t.telefono,
                     direccion: updates.address || updates.direccion || t.direccion,
+                    address: updates.address || updates.direccion || t.address,
                     contactEmail: updates.contactEmail || updates.email || t.contactEmail,
                     adminEmail: updates.adminEmail !== undefined ? updates.adminEmail : (t.adminEmail || t.contactEmail),
                     plan: updatedPlanId,
                     planId: updatedPlanId,
+                    planDuration: updates.planDuration || t.planDuration || "monthly",
+                    subscriptionEndDate: updates.subscriptionEndDate || t.subscriptionEndDate,
+                    activo: updates.activo !== undefined ? updates.activo : (t.activo !== false),
+                    status: updates.status || (updates.activo === false ? "suspended" : (t.status || "active")),
                     facturacionCuota: cuotaFacturas
                 };
             }
             return t;
         });
+
+        if (!foundInConfig) {
+            let { data: dbT } = await supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle();
+            const updatedPlanId = updates.planId || updates.plan || dbT?.plan || "free";
+            let cuotaFacturas = 500;
+            if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico") || updatedPlanId.includes("consultorio")) cuotaFacturas = 100;
+            else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 2000;
+
+            updatedTenants.push({
+                id: String(tenantId),
+                name: updates.name || updates.nombre || dbT?.nombre || "Clínica",
+                nombre: updates.name || updates.nombre || dbT?.nombre || "Clínica",
+                nit: updates.nit !== undefined ? updates.nit : (dbT?.nit || ""),
+                telefono: updates.telefono !== undefined ? updates.telefono : (dbT?.telefono || ""),
+                direccion: updates.address || updates.direccion || (dbT?.direccion || ""),
+                address: updates.address || updates.direccion || (dbT?.direccion || ""),
+                contactEmail: updates.contactEmail || updates.email || (dbT?.email || ""),
+                adminEmail: updates.adminEmail || updates.contactEmail || (dbT?.email || ""),
+                plan: updatedPlanId,
+                planId: updatedPlanId,
+                planDuration: updates.planDuration || "monthly",
+                subscriptionEndDate: updates.subscriptionEndDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                activo: updates.activo !== undefined ? updates.activo : true,
+                status: updates.status || (updates.activo === false ? "suspended" : "active"),
+                facturacionCuota: updates.facturacionCuota !== undefined ? updates.facturacionCuota : cuotaFacturas,
+                facturacionUsadas: 0,
+                createdAt: dbT?.created_at || new Date().toISOString()
+            });
+        }
 
         const updatedConfig = {
             ...(existingRow?.config || {}),
@@ -173,13 +217,20 @@ export const updateTenantDetails = async (tenantId, updates) => {
             });
 
         // Sincronizar en la tabla nativa 'tenants' de PostgreSQL
-        await supabase
-            .from("tenants")
-            .update({
-                nombre: updates.name || updates.nombre,
-                nit: updates.nit
-            })
-            .eq("id", tenantId);
+        const dbUpdates = {};
+        if (updates.name || updates.nombre) dbUpdates.nombre = updates.name || updates.nombre;
+        if (updates.nit !== undefined) dbUpdates.nit = updates.nit;
+        if (updates.telefono !== undefined) dbUpdates.telefono = updates.telefono;
+        if (updates.address || updates.direccion) dbUpdates.direccion = updates.address || updates.direccion;
+        if (updates.planId || updates.plan) dbUpdates.plan = updates.planId || updates.plan;
+        if (updates.activo !== undefined) dbUpdates.activo = updates.activo;
+
+        if (Object.keys(dbUpdates).length > 0) {
+            await supabase
+                .from("tenants")
+                .update(dbUpdates)
+                .eq("id", tenantId);
+        }
 
         return true;
     } catch (error) {
@@ -712,12 +763,252 @@ export const uploadFile = async (file, folder = "general") => {
     return uploaded.publicUrl;
 };
 
-export const updateTenantPlan = async (tenantId, planId) => {
-    return updateTenantDetails(tenantId, { planId });
+export const updateTenantPlan = async (tenantId, planId, planDuration = "monthly") => {
+    try {
+        if (!tenantId) throw new Error("ID de clínica no especificado");
+
+        const { data: existingRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+            .maybeSingle();
+
+        const currentTenants = existingRow?.config?.registered_tenants || [];
+        const existingTenant = currentTenants.find(t => String(t.id) === String(tenantId));
+
+        let { data: dbTenant } = await supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle();
+
+        const currentEndIso = existingTenant?.subscriptionEndDate || dbTenant?.parametros?.subscription_end_date;
+        const now = new Date();
+        const isExpired = !currentEndIso || new Date(currentEndIso) <= now;
+
+        const daysToAdd = planDuration === "yearly" ? 365 : 30;
+        let newEndDate;
+        if (isExpired) {
+            // Si la suscripción ya estaba vencida, reactivar desde hoy por el ciclo seleccionado
+            newEndDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+        } else {
+            const currentEndDate = new Date(currentEndIso);
+            if (planDuration === "yearly" && existingTenant?.planDuration !== "yearly") {
+                // Al pasar de mensual a anual, dar 1 año completo desde hoy
+                newEndDate = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+            } else {
+                newEndDate = new Date(Math.max(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000, currentEndDate.getTime()));
+            }
+        }
+
+        const pLower = (planId || "").toLowerCase();
+        let cuotaFacturas = 500;
+        if (pLower.includes("basic") || pLower.includes("basico") || pLower.includes("consultorio")) {
+            cuotaFacturas = 100;
+        } else if (pLower.includes("enterprise") || pLower.includes("ips") || pLower.includes("349")) {
+            cuotaFacturas = 2000;
+        }
+
+        // 1. Actualizar o agregar en website_config (registered_tenants)
+        let found = false;
+        const updatedTenants = currentTenants.map(t => {
+            if (String(t.id) === String(tenantId)) {
+                found = true;
+                return {
+                    ...t,
+                    plan: planId,
+                    planId: planId,
+                    planDuration: planDuration,
+                    subscriptionEndDate: newEndDate.toISOString(),
+                    activo: true,
+                    status: "active",
+                    subscriptionStatus: "active",
+                    facturacionCuota: cuotaFacturas
+                };
+            }
+            return t;
+        });
+
+        if (!found) {
+            updatedTenants.push({
+                id: String(tenantId),
+                name: dbTenant?.nombre || "Clínica",
+                nombre: dbTenant?.nombre || "Clínica",
+                nit: dbTenant?.nit || "",
+                telefono: dbTenant?.telefono || "",
+                direccion: dbTenant?.direccion || "",
+                ciudad: dbTenant?.ciudad || "",
+                contactEmail: dbTenant?.email || "",
+                adminEmail: dbTenant?.email || "",
+                plan: planId,
+                planId: planId,
+                planDuration: planDuration,
+                subscriptionEndDate: newEndDate.toISOString(),
+                activo: true,
+                status: "active",
+                subscriptionStatus: "active",
+                facturacionCuota: cuotaFacturas,
+                facturacionUsadas: 0,
+                createdAt: dbTenant?.created_at || now.toISOString()
+            });
+        }
+
+        await supabase
+            .from("website_config")
+            .upsert({
+                tenant_id: GLOBAL_CONFIG_TENANT_ID,
+                config: {
+                    ...(existingRow?.config || {}),
+                    registered_tenants: updatedTenants,
+                    updatedAt: now.toISOString()
+                },
+                updated_at: now.toISOString()
+            });
+
+        // 2. Sincronizar en tabla 'tenants' de PostgreSQL
+        const currentParams = (dbTenant?.parametros && typeof dbTenant.parametros === "object") ? dbTenant.parametros : {};
+        const updatedParams = {
+            ...currentParams,
+            plan: planId,
+            plan_duration: planDuration,
+            subscription_end_date: newEndDate.toISOString()
+        };
+
+        await supabase
+            .from("tenants")
+            .update({
+                plan: planId,
+                activo: true,
+                parametros: updatedParams
+            })
+            .eq("id", tenantId);
+
+        // 3. Reactivar perfiles asociados para que los doctores y admins puedan iniciar sesión
+        try {
+            await supabase
+                .from("profiles")
+                .update({ activo: true })
+                .eq("tenant_id", tenantId);
+        } catch (pErr) {
+            console.warn("Advertencia al activar profiles:", pErr?.message);
+        }
+
+        return {
+            success: true,
+            newEndDate: newEndDate.toISOString(),
+            planId,
+            planDuration
+        };
+    } catch (error) {
+        console.error("Error al actualizar plan de clínica:", error);
+        throw error;
+    }
 };
 
-export const grantFreeMonth = async () => {
-    return true;
+export const grantFreeMonth = async (tenantId) => {
+    try {
+        if (!tenantId) throw new Error("ID de clínica no especificado");
+
+        const { data: existingRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+            .maybeSingle();
+
+        const currentTenants = existingRow?.config?.registered_tenants || [];
+        const existingTenant = currentTenants.find(t => String(t.id) === String(tenantId));
+
+        let { data: dbTenant } = await supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle();
+
+        const currentEndIso = existingTenant?.subscriptionEndDate || dbTenant?.parametros?.subscription_end_date;
+        const now = new Date();
+        const isExpired = !currentEndIso || new Date(currentEndIso) <= now;
+
+        // Si ya está vencido, le regalamos 30 días a partir de HOY.
+        // Si todavía está vigente, le sumamos 30 días a su fecha de vencimiento actual.
+        const baseDate = isExpired ? now : new Date(currentEndIso);
+        const newEndDate = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+        let found = false;
+        const updatedTenants = currentTenants.map(t => {
+            if (String(t.id) === String(tenantId)) {
+                found = true;
+                return {
+                    ...t,
+                    subscriptionEndDate: newEndDate.toISOString(),
+                    activo: true,
+                    status: "active",
+                    subscriptionStatus: "active"
+                };
+            }
+            return t;
+        });
+
+        if (!found) {
+            updatedTenants.push({
+                id: String(tenantId),
+                name: dbTenant?.nombre || "Clínica",
+                nombre: dbTenant?.nombre || "Clínica",
+                nit: dbTenant?.nit || "",
+                telefono: dbTenant?.telefono || "",
+                direccion: dbTenant?.direccion || "",
+                ciudad: dbTenant?.ciudad || "",
+                contactEmail: dbTenant?.email || "",
+                adminEmail: dbTenant?.email || "",
+                plan: dbTenant?.plan || "free",
+                planId: dbTenant?.plan || "free",
+                planDuration: "monthly",
+                subscriptionEndDate: newEndDate.toISOString(),
+                activo: true,
+                status: "active",
+                subscriptionStatus: "active",
+                facturacionCuota: 100,
+                facturacionUsadas: 0,
+                createdAt: dbTenant?.created_at || now.toISOString()
+            });
+        }
+
+        await supabase
+            .from("website_config")
+            .upsert({
+                tenant_id: GLOBAL_CONFIG_TENANT_ID,
+                config: {
+                    ...(existingRow?.config || {}),
+                    registered_tenants: updatedTenants,
+                    updatedAt: now.toISOString()
+                },
+                updated_at: now.toISOString()
+            });
+
+        // Sincronizar en PostgreSQL tenants
+        const currentParams = (dbTenant?.parametros && typeof dbTenant.parametros === "object") ? dbTenant.parametros : {};
+        const updatedParams = {
+            ...currentParams,
+            subscription_end_date: newEndDate.toISOString()
+        };
+
+        await supabase
+            .from("tenants")
+            .update({
+                activo: true,
+                parametros: updatedParams
+            })
+            .eq("id", tenantId);
+
+        // Reactivar perfiles asociados
+        try {
+            await supabase
+                .from("profiles")
+                .update({ activo: true })
+                .eq("tenant_id", tenantId);
+        } catch (pErr) {
+            console.warn("Advertencia al activar profiles:", pErr?.message);
+        }
+
+        return {
+            success: true,
+            newEndDate: newEndDate.toISOString()
+        };
+    } catch (error) {
+        console.error("Error al otorgar mes gratis:", error);
+        throw error;
+    }
 };
 
 const invokeRegisterClinic = async (action, payload = {}) => {

@@ -197,6 +197,8 @@ export default function EmpresaUsuarios() {
                 );
                 const updatedFullName = `${userNombre} ${userApellido}`.trim() || u.full_name;
 
+                const savedPassword = detail.password || detail.rawPassword || u.password || "";
+
                 profilesMap.set(u.id, {
                     ...detail,
                     id: u.id,
@@ -220,7 +222,7 @@ export default function EmpresaUsuarios() {
                     direccion: detail.direccion || "",
                     genero: detail.genero || "Masculino",
                     fechaNacimiento: normalizeDate(detail.fechaNacimiento || u.fecha_nacimiento || u.fechaNacimiento || ""),
-                    password: "",
+                    password: savedPassword,
                     esDoctor,
                     activo: u.activo !== false
                 });
@@ -236,6 +238,7 @@ export default function EmpresaUsuarios() {
                     u.nombreCompleto || existing.nombreCompleto || u.full_name || existing.nombre
                 );
                 const nombreCompleto = `${uNom} ${uApe}`.trim() || u.email;
+                const configPassword = u.password || existing.password || "";
                 profilesMap.set(u.id, {
                     ...existing,
                     ...u,
@@ -260,7 +263,7 @@ export default function EmpresaUsuarios() {
                     direccion: u.direccion || existing.direccion || "",
                     genero: u.genero || existing.genero || "Masculino",
                     fechaNacimiento: normalizeDate(u.fechaNacimiento || existing.fechaNacimiento || ""),
-                    password: "",
+                    password: configPassword,
                     esDoctor: u.esDoctor ?? existing.esDoctor ?? true,
                     activo: u.activo !== false
                 });
@@ -506,6 +509,9 @@ export default function EmpresaUsuarios() {
                 "user_details",
                 {}
             );
+            const existingUser = users.find(u => u.id === editId);
+            const savedPassword = formData.password?.trim() || existingUser?.password || "";
+
             const userDetail = {
                 nombre: formData.nombre.trim(),
                 apellido: formData.apellido.trim(),
@@ -535,6 +541,7 @@ export default function EmpresaUsuarios() {
             await saveConfigItem(userProfile.inquilino, "usuarios", null, {
                 id: targetId,
                 ...userDetail,
+                password: savedPassword,
                 nombreCompleto: fullName,
                 email: targetEmail,
                 rol: roleName,
