@@ -166,6 +166,10 @@ export default function App() {
         } />
 
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
+        {/* OralDrive compatibility routes */}
+        <Route path="/ConfigParameters" element={<Navigate to="/dashboard/config/parametros" replace />} />
+        <Route path="/configparameters" element={<Navigate to="/dashboard/config/parametros" replace />} />
+        <Route path="/parametros" element={<Navigate to="/dashboard/config/parametros" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </Suspense>

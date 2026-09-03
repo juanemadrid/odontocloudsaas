@@ -483,9 +483,9 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                         {/* Configuración rápida */}
                         <button
                             type="button"
-                            onClick={() => navigate(`${basePath}/Configuracion`)}
+                            onClick={() => navigate(`${basePath}/config/parametros`)}
                             className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
-                            title="Configuración"
+                            title="Parámetros por Empresa"
                         >
                             <FiSettings size={16} />
                         </button>

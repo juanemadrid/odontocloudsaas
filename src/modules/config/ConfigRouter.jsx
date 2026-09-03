@@ -60,8 +60,17 @@ export default function ConfigRouter() {
     const location = useLocation();
 
     // ⬇️ Fallback: si no viene en params, buscarlo en la URL manualmente
-    // Default to "datos-basicos" directly
-    const slug = params.slug || location.pathname.split("/config/")[1]?.split("/")[0] || "datos-basicos";
+    const pathLower = location.pathname.toLowerCase();
+    let slug = params.slug;
+    if (!slug) {
+        if (pathLower.includes("param") || pathLower.includes("configparameters")) {
+            slug = "parametros";
+        } else if (pathLower.includes("/config/")) {
+            slug = pathLower.split("/config/")[1]?.split("/")[0];
+        } else {
+            slug = "parametros";
+        }
+    }
 
     const renderModule = () => {
         switch (slug) {
