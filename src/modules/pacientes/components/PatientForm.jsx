@@ -507,11 +507,36 @@ export default function PatientForm({
     });
 
     const nroDocumentoValue = watch("nroDocumento");
+
+    // Parámetro por empresa: # Historia = # Doc. Identidad
+    const [historiaIgualIdentidad, setHistoriaIgualIdentidad] = useState(() => {
+        return Boolean(userProfile?.tenant?.parametros?.general?.historiaIgualIdentidad);
+    });
+
     useEffect(() => {
-        if (nroDocumentoValue) {
+        const loadTenantParams = async () => {
+            if (!inquilino) return;
+            try {
+                const { data } = await supabase
+                    .from("tenants")
+                    .select("parametros")
+                    .eq("id", inquilino)
+                    .maybeSingle();
+                if (data?.parametros?.general?.historiaIgualIdentidad !== undefined) {
+                    setHistoriaIgualIdentidad(Boolean(data.parametros.general.historiaIgualIdentidad));
+                }
+            } catch (err) {
+                console.warn("Error consultando parametro historiaIgualIdentidad:", err);
+            }
+        };
+        loadTenantParams();
+    }, [inquilino]);
+
+    useEffect(() => {
+        if (historiaIgualIdentidad && nroDocumentoValue) {
             setValue("nroHistoria", nroDocumentoValue);
         }
-    }, [nroDocumentoValue, setValue]);
+    }, [nroDocumentoValue, historiaIgualIdentidad, setValue]);
 
     useEffect(() => {
         if (!nroDocumentoValue || !nroDocumentoValue.trim()) {
@@ -1113,8 +1138,16 @@ export default function PatientForm({
                                     />
                                 </FormRow>
 
-                                <FormRow label="Número de Historia">
-                                    <input {...register("nroHistoria")} className="form-input text-sm w-full" placeholder="Nro. historia paciente" />
+                                <FormRow 
+                                    label="Número de Historia"
+                                    helpText={historiaIgualIdentidad ? "Generado automáticamente igual al documento" : undefined}
+                                >
+                                    <input 
+                                        {...register("nroHistoria")} 
+                                        readOnly={historiaIgualIdentidad}
+                                        className={`form-input text-sm w-full ${historiaIgualIdentidad ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} 
+                                        placeholder={historiaIgualIdentidad ? "Igual al documento de identidad" : "Nro. historia paciente"} 
+                                    />
                                 </FormRow>
 
                                 {isVisible("fechaIngreso") && (

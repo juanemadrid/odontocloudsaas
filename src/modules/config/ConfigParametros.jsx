@@ -224,6 +224,7 @@ export default function ConfigParametros() {
                 .eq("id", userProfile.inquilino);
 
             if (error) throw error;
+            window.dispatchEvent(new CustomEvent("tenant-parametros-updated", { detail: mergedParams }));
             if (toast?.success) toast.success("Parámetros por empresa guardados correctamente");
         } catch (error) {
             console.error("Error al guardar parámetros:", error);

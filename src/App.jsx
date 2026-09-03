@@ -170,6 +170,10 @@ export default function App() {
         <Route path="/ConfigParameters" element={<Navigate to="/dashboard/config/parametros" replace />} />
         <Route path="/configparameters" element={<Navigate to="/dashboard/config/parametros" replace />} />
         <Route path="/parametros" element={<Navigate to="/dashboard/config/parametros" replace />} />
+        <Route path="/RatesAndCopays" element={<Navigate to="/dashboard/config/tarifas-copago" replace />} />
+        <Route path="/ratesandcopays" element={<Navigate to="/dashboard/config/tarifas-copago" replace />} />
+        <Route path="/NewRate" element={<Navigate to="/dashboard/config/tarifas-copago" replace />} />
+        <Route path="/newrate" element={<Navigate to="/dashboard/config/tarifas-copago" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </Suspense>

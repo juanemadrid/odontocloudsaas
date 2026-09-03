@@ -38,6 +38,58 @@ const MENU_ITEMS = [
 export default function ConfigLayout({ children }) {
     const location = useLocation();
     const hasWebsiteAccess = true;
+    const [manejaCopagos, setManejaCopagos] = React.useState(false);
+
+    const activeMenuItems = React.useMemo(() => {
+        if (!manejaCopagos) return MENU_ITEMS;
+        const items = [...MENU_ITEMS];
+        const impIndex = items.findIndex(i => i.slug === "impuestos");
+        if (impIndex !== -1) {
+            items.splice(impIndex + 1, 0, {
+                label: "Tarifas Copago",
+                subSlug: "tarifas-copago",
+                icon: FiDollarSign
+            });
+        }
+        return items;
+    }, [manejaCopagos]);
+
+    React.useEffect(() => {
+        let isMounted = true;
+        const loadParams = async () => {
+            try {
+                const { default: supabase } = await import("../../lib/supabaseClient");
+                const { data: { session } } = await supabase.auth.getSession();
+                const tenantId = session?.user?.user_metadata?.tenant_id;
+                if (!tenantId) return;
+
+                const { data } = await supabase
+                    .from("tenants")
+                    .select("parametros")
+                    .eq("id", tenantId)
+                    .maybeSingle();
+
+                if (isMounted && data?.parametros?.general) {
+                    setManejaCopagos(Boolean(data.parametros.general.manejaCopagos));
+                }
+            } catch (err) {
+                console.warn("Error cargando parametros en ConfigLayout:", err);
+            }
+        };
+
+        loadParams();
+
+        const handleParamUpdate = (e) => {
+            if (e.detail?.general?.manejaCopagos !== undefined) {
+                setManejaCopagos(Boolean(e.detail.general.manejaCopagos));
+            }
+        };
+        window.addEventListener("tenant-parametros-updated", handleParamUpdate);
+        return () => {
+            isMounted = false;
+            window.removeEventListener("tenant-parametros-updated", handleParamUpdate);
+        };
+    }, []);
 
     return (
         <div className="flex h-full gap-6 p-2 md:p-6 overflow-hidden bg-slate-50/50">
@@ -53,14 +105,15 @@ export default function ConfigLayout({ children }) {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar">
-                    {MENU_ITEMS.map((item) => {
+                    {activeMenuItems.map((item) => {
                         if (item.requiresWebsite && !hasWebsiteAccess) return null;
 
-                        const isActive = location.pathname.includes(`/config/${item.slug}`);
+                        const itemSlug = item.slug || item.subSlug;
+                        const isActive = location.pathname.includes(`/config/${itemSlug}`);
                         return (
                             <NavLink
-                                key={item.slug}
-                                to={buildDashboardPath(`config/${item.slug}`)}
+                                key={itemSlug}
+                                to={buildDashboardPath(`config/${itemSlug}`)}
                                 className={`
                                     flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all duration-150 group
                                     ${isActive

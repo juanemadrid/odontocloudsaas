@@ -30,6 +30,7 @@ import ConfigCargas from "./ConfigCargas";
 import ConfigImpuestos from "./ConfigImpuestos";
 import ConfigCatalogoCuentas from "./ConfigCatalogoCuentas";
 import ConfigFacturacionElectronica from "./ConfigFacturacionElectronica";
+import ConfigTarifasCopago from "./ConfigTarifasCopago";
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -65,6 +66,8 @@ export default function ConfigRouter() {
     if (!slug) {
         if (pathLower.includes("param") || pathLower.includes("configparameters")) {
             slug = "parametros";
+        } else if (pathLower.includes("ratesandcopays") || pathLower.includes("copago") || pathLower.includes("newrate")) {
+            slug = "tarifas-copago";
         } else if (pathLower.includes("/config/")) {
             slug = pathLower.split("/config/")[1]?.split("/")[0];
         } else {
@@ -123,6 +126,11 @@ export default function ConfigRouter() {
                 return <ConfigCargas />;
             case "impuestos":
                 return <ConfigImpuestos />;
+            case "tarifas-copago":
+            case "tarifas-copagos":
+            case "ratesandcopays":
+            case "newrate":
+                return <ConfigTarifasCopago />;
             case "catalogo-cuentas":
                 return <ConfigCatalogoCuentas />;
             case "facturacion-electronica":
