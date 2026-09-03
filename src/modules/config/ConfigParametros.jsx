@@ -8,7 +8,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { getSpecialties } from "../../services/resourceService";
 
-// Sleek OralDrive-style Toggle Switch
+// Sleek OralDrive-style Toggle Switch (Larger and wider with clear checkmark)
 const OralDriveSwitch = ({ checked, onChange, id }) => (
     <button
         type="button"
@@ -16,16 +16,16 @@ const OralDriveSwitch = ({ checked, onChange, id }) => (
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`w-12 h-6.5 rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 p-0.5 border-0 outline-none focus:ring-2 focus:ring-blue-300 ${
-            checked ? "bg-blue-600" : "bg-slate-200"
+        className={`w-16 h-8 rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 p-0.5 border-0 outline-none focus:ring-2 focus:ring-blue-300 ${
+            checked ? "bg-blue-600 shadow-sm shadow-blue-300" : "bg-slate-200 hover:bg-slate-300"
         }`}
     >
         <div
-            className={`w-5.5 h-5.5 rounded-full bg-white transition-transform duration-200 shadow-sm flex items-center justify-center ${
-                checked ? "translate-x-5.5" : "translate-x-0"
+            className={`w-7 h-7 rounded-full bg-white transition-transform duration-200 shadow-md flex items-center justify-center ${
+                checked ? "translate-x-8" : "translate-x-0"
             }`}
         >
-            {checked && <FiCheck size={11} className="text-blue-600 stroke-[3]" />}
+            {checked && <FiCheck size={15} className="text-blue-600 stroke-[3]" />}
         </div>
     </button>
 );
@@ -419,7 +419,7 @@ export default function ConfigParametros() {
     }
 
     return (
-        <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
+        <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6">
             {/* Header Toolbar matching OralDrive header */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row justify-between md:items-center gap-4">
                 <div className="flex items-center gap-3">
@@ -502,18 +502,18 @@ export default function ConfigParametros() {
                             return (
                                 <div 
                                     key={param.key} 
-                                    className="px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-50/50 transition-colors"
+                                    className="px-6 py-4 flex flex-col md:flex-row md:items-center gap-3 md:gap-5 hover:bg-slate-50/70 transition-colors"
                                 >
-                                    {/* Left Label + Tooltip */}
-                                    <div className="flex items-center pr-4 max-w-xl">
+                                    {/* Left Label + Tooltip: Aligned right on desktop to sit right next to control */}
+                                    <div className="w-full md:w-[46%] flex items-center justify-start md:justify-end text-left md:text-right gap-1.5 shrink-0">
                                         <span className="text-xs font-semibold text-slate-700 leading-snug">
                                             {param.label}
                                         </span>
                                         <TooltipInfo text={param.tooltip} />
                                     </div>
 
-                                    {/* Right Control */}
-                                    <div className="shrink-0 flex items-center justify-start md:justify-end">
+                                    {/* Right Control: Aligned left right beside the label */}
+                                    <div className="w-full md:w-[54%] flex items-center justify-start">
                                         {param.type === "switch" && (
                                             <OralDriveSwitch
                                                 id={param.key}
@@ -525,7 +525,7 @@ export default function ConfigParametros() {
                                         {param.type === "number" && (
                                             <input
                                                 type="number"
-                                                className="w-full md:w-64 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-left md:text-right"
+                                                className="w-full max-w-[280px] h-10 px-3.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
                                                 value={val ?? ""}
                                                 placeholder={param.placeholder}
                                                 onChange={(e) => handleChange("general", param.key, e.target.value === "" ? "" : Number(e.target.value))}
@@ -535,7 +535,7 @@ export default function ConfigParametros() {
                                         {param.type === "text" && (
                                             <input
                                                 type="text"
-                                                className="w-full md:w-80 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                                                className="w-full max-w-sm h-10 px-3.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
                                                 value={val || ""}
                                                 placeholder={param.placeholder}
                                                 onChange={(e) => handleChange("general", param.key, e.target.value)}
@@ -544,7 +544,7 @@ export default function ConfigParametros() {
 
                                         {param.type === "select" && (
                                             <select
-                                                className="w-full md:w-64 h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer"
+                                                className="w-full max-w-[280px] h-10 px-3.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer"
                                                 value={val || "Ortodoncia"}
                                                 onChange={(e) => handleChange("general", param.key, e.target.value)}
                                             >
