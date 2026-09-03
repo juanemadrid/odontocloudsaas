@@ -8,7 +8,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { getSpecialties } from "../../services/resourceService";
 
-// Sleek OralDrive-style Toggle Switch (Larger and wider with clear checkmark)
+// Sleek OralDrive-style Toggle Switch (Slender height, elegant proportion with checkmark)
 const OralDriveSwitch = ({ checked, onChange, id }) => (
     <button
         type="button"
@@ -16,16 +16,16 @@ const OralDriveSwitch = ({ checked, onChange, id }) => (
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`w-16 h-8 rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 p-0.5 border-0 outline-none focus:ring-2 focus:ring-blue-300 ${
-            checked ? "bg-blue-600 shadow-sm shadow-blue-300" : "bg-slate-200 hover:bg-slate-300"
+        className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 p-0.5 border-0 outline-none focus:ring-2 focus:ring-blue-300 ${
+            checked ? "bg-blue-600 shadow-xs" : "bg-slate-200 hover:bg-slate-300"
         }`}
     >
         <div
-            className={`w-7 h-7 rounded-full bg-white transition-transform duration-200 shadow-md flex items-center justify-center ${
-                checked ? "translate-x-8" : "translate-x-0"
+            className={`w-5 h-5 rounded-full bg-white transition-transform duration-200 shadow-sm flex items-center justify-center ${
+                checked ? "translate-x-6" : "translate-x-0"
             }`}
         >
-            {checked && <FiCheck size={15} className="text-blue-600 stroke-[3]" />}
+            {checked && <FiCheck size={11} className="text-blue-600 stroke-[3]" />}
         </div>
     </button>
 );
@@ -446,14 +446,14 @@ export default function ConfigParametros() {
                 </button>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-px">
+            {/* Navigation Tabs - Compact, no horizontal scrollbar */}
+            <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
                 {[
                     { id: "general", label: "General", icon: FiSliders },
-                    { id: "facturacion", label: "Facturación & Formatos", icon: FiFileText },
-                    { id: "agenda", label: "Agenda & Notificaciones", icon: FiActivity },
-                    { id: "historiaClinica", label: "Historia Clínica & Firma", icon: FiUser },
-                    { id: "inventario", label: "Inventarios", icon: FiBox },
+                    { id: "facturacion", label: "Facturación", icon: FiFileText },
+                    { id: "agenda", label: "Agenda", icon: FiActivity },
+                    { id: "historiaClinica", label: "Historia Clínica", icon: FiUser },
+                    { id: "inventario", label: "Inventario", icon: FiBox },
                 ].map(tab => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;
@@ -462,13 +462,13 @@ export default function ConfigParametros() {
                             key={tab.id}
                             type="button"
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold whitespace-nowrap border-b-2 transition-all cursor-pointer ${
+                            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold transition-all cursor-pointer border-b-2 ${
                                 isActive 
                                     ? "border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-lg" 
                                     : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
                             }`}
                         >
-                            <Icon size={14} />
+                            <Icon size={13} />
                             <span>{tab.label}</span>
                         </button>
                     );
