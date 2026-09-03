@@ -30,6 +30,14 @@ const OralDriveSwitch = ({ checked, onChange, id }) => (
     </button>
 );
 
+// Separador de miles con puntos para Colombia (ej: 5.000)
+const formatNumberWithDots = (val) => {
+    if (val === null || val === undefined || val === "") return "";
+    const cleanStr = String(val).replace(/\D/g, "");
+    if (!cleanStr) return "";
+    return cleanStr.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
 export default function ConfigTarifasCopago() {
     const { userProfile } = useAuth();
     const toast = useToast();
@@ -274,16 +282,18 @@ export default function ConfigTarifasCopago() {
                                             $
                                         </span>
                                         <input
-                                            type="number"
-                                            min="0"
-                                            step="100"
+                                            type="text"
+                                            inputMode="numeric"
                                             className="w-full h-10 pl-7 pr-12 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-left"
                                             placeholder="0"
-                                            value={formData.valorFijo === "" ? "" : formData.valorFijo}
-                                            onChange={(e) => setFormData(prev => ({ 
-                                                ...prev, 
-                                                valorFijo: e.target.value === "" ? "" : Number(e.target.value) 
-                                            }))}
+                                            value={formatNumberWithDots(formData.valorFijo)}
+                                            onChange={(e) => {
+                                                const digits = e.target.value.replace(/\D/g, "");
+                                                setFormData(prev => ({ 
+                                                    ...prev, 
+                                                    valorFijo: digits === "" ? "" : Number(digits) 
+                                                }));
+                                            }}
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">
                                             COP
@@ -392,7 +402,7 @@ export default function ConfigTarifasCopago() {
                                             </td>
                                             <td className="py-3.5 px-6 text-right font-bold text-slate-800">
                                                 {t.esValorFijo 
-                                                    ? `$ ${(Number(t.valorFijo) || 0).toLocaleString("es-CO")}` 
+                                                    ? `$ ${formatNumberWithDots(t.valorFijo) || "0"}` 
                                                     : (t.porcentaje ? "—" : "$ 0")}
                                             </td>
                                             <td className="py-3.5 px-6 text-center">
