@@ -95,12 +95,17 @@ export const patientSchema = z.object({
     nombreEps: z.string().optional().or(z.literal("")),
     tipoVinculacion: z.string().optional().or(z.literal("")),
     polizaSalud: z.string().optional().or(z.literal("")),
+    sgsss: z.string().optional().or(z.literal("")),
+    tipoPaciente: z.string().optional().or(z.literal("")),
+    convenio: z.string().optional().or(z.literal("")),
 
     // 5. Otros
+    rh: z.string().optional().or(z.literal("")),
     profesionalId: z.string().optional().or(z.literal("")),
     profesionalNombre: z.string().optional().or(z.literal("")),
     notas: z.string().optional().or(z.literal("")),
     fotoUrl: z.string().optional().or(z.literal("")),
     alertas: z.string().optional().or(z.literal("")),
     edad: z.string().optional().or(z.literal("")),
+    resumenMigracion: z.any().optional(),
 });

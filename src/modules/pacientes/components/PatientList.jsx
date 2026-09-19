@@ -7,6 +7,10 @@ export default function PatientList({
     pacientes,
     loading,
     isSearching = false,
+    page = 0,
+    pageSize = 5,
+    totalCount = 0,
+    onPageChange,
     onSelect,
     onEdit,
     searchTerm,
@@ -88,10 +92,11 @@ export default function PatientList({
                         <>
                             <button
                                 onClick={onImportClick}
-                                className="bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                                title="Importar Pacientes ATM o archivo Excel/CSV"
                             >
-                                <FiUpload size={14} />
-                                <span>Importar Excel</span>
+                                <FiUpload size={14} className="text-blue-600" />
+                                <span>Importar Pacientes (Excel / ATM)</span>
                             </button>
 
                             <button
@@ -120,13 +125,19 @@ export default function PatientList({
                     />
                 </div>
 
-                {hasSearchTerm && (
+                {hasSearchTerm ? (
                     <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
                         <span className="text-[11px] font-medium text-slate-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
                             Resultados: {displayList.length}
                         </span>
                     </div>
-                )}
+                ) : totalCount > 0 ? (
+                    <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                        <span className="text-[11px] font-medium text-slate-600 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                            Total: <strong className="text-slate-800 font-bold">{totalCount}</strong> pacientes
+                        </span>
+                    </div>
+                ) : null}
             </div>
 
             {/* Table Area */}
@@ -141,29 +152,27 @@ export default function PatientList({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-[12px] text-slate-700">
-                        {!hasSearchTerm ? (
-                            <tr>
-                                <td colSpan={4} className="py-14 text-center">
-                                    <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mx-auto mb-3">
-                                        <FiSearch size={22} />
-                                    </div>
-                                    <h4 className="text-[14px] font-bold text-slate-800">Búsqueda de Pacientes</h4>
-                                    <p className="text-[11px] text-slate-500 max-w-md mx-auto mt-1">
-                                        Ingresa un nombre, apellido, documento de identidad, celular o correo en la barra superior para buscar un paciente.
-                                    </p>
-                                </td>
-                            </tr>
-                        ) : loading ? (
+                        {loading ? (
                             <tr>
                                 <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
                                     <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
-                                    Buscando paciente en el sistema...
+                                    {hasSearchTerm ? "Buscando paciente en el sistema..." : "Cargando directorio de pacientes..."}
                                 </td>
                             </tr>
                         ) : displayList.length === 0 ? (
                             <tr>
-                                <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
-                                    No se encontraron pacientes que coincidan con la búsqueda
+                                <td colSpan={4} className="py-14 text-center">
+                                    <div className="w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                                        <FiSearch size={22} />
+                                    </div>
+                                    <h4 className="text-[14px] font-bold text-slate-800">
+                                        {hasSearchTerm ? "No se encontraron pacientes" : "No hay pacientes registrados"}
+                                    </h4>
+                                    <p className="text-[11px] text-slate-500 max-w-md mx-auto mt-1">
+                                        {hasSearchTerm
+                                            ? "Intenta buscar por otro nombre, documento, teléfono o correo."
+                                            : "Aún no hay pacientes en esta clínica. Puedes registrar uno nuevo o importarlos desde Excel."}
+                                    </p>
                                 </td>
                             </tr>
                         ) : (
@@ -245,6 +254,39 @@ export default function PatientList({
                         )}
                     </tbody>
                 </table>
+
+                {/* Controles de Paginación */}
+                {!hasSearchTerm && totalCount > 0 && (
+                    <div className="px-4 py-3 bg-slate-50/80 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-[12px] text-slate-600">
+                        <div>
+                            Mostrando <span className="font-bold text-slate-800">{Math.min(page * pageSize + 1, totalCount)}</span> a{" "}
+                            <span className="font-bold text-slate-800">{Math.min((page + 1) * pageSize, totalCount)}</span> de{" "}
+                            <span className="font-bold text-slate-800">{totalCount}</span> pacientes
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => onPageChange && onPageChange(page - 1)}
+                                disabled={page === 0 || loading}
+                                className="px-3 py-1 bg-white border border-slate-200 rounded-md font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-2xs text-[11px]"
+                            >
+                                Anterior
+                            </button>
+
+                            <span className="px-2.5 py-1 font-bold text-slate-700 bg-white border border-slate-200 rounded-md text-[11px] shadow-2xs">
+                                Página {page + 1} de {Math.max(1, Math.ceil(totalCount / pageSize))}
+                            </span>
+
+                            <button
+                                onClick={() => onPageChange && onPageChange(page + 1)}
+                                disabled={(page + 1) * pageSize >= totalCount || loading}
+                                className="px-3 py-1 bg-white border border-slate-200 rounded-md font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-2xs text-[11px]"
+                            >
+                                Siguiente
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* MODAL ELIMINAR */}

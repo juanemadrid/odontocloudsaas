@@ -110,6 +110,7 @@ Deno.serve(async (request) => {
         "factusUsername",
         "factusPassword",
         "factusNumberingRangeId",
+        "factusNumberingRangeIdDocSoporte",
       ];
       for (const field of stringFields) {
         if (input?.[field] !== undefined && String(input[field]).trim()) {
@@ -188,6 +189,7 @@ Deno.serve(async (request) => {
         configured: hasCredentials(config),
         factusTestMode: config.factusTestMode !== false,
         factusNumberingRangeId: config.factusNumberingRangeId || null,
+        factusNumberingRangeIdDocSoporte: config.factusNumberingRangeIdDocSoporte || null,
         facturacionCuota: Number(config.facturacionCuota || 0),
         facturacionUsadas: Number(config.facturacionUsadas || 0),
         facturacionPlan: config.facturacionPlan || "personalizado",
@@ -258,6 +260,51 @@ Deno.serve(async (request) => {
       return json({ success: true, result: data });
     }
 
+    if (action === "send_support_document") {
+      const payload = body?.payload;
+      const serialized = JSON.stringify(payload || {});
+      if (!payload || serialized.length > 500000) {
+        throw new HttpError(400, "El documento soporte es invalido o demasiado grande.");
+      }
+
+      const quota = Number(config.facturacionCuota || 0);
+      const used = Number(config.facturacionUsadas || 0);
+      if (quota > 0 && used >= quota) {
+        throw new HttpError(402, "La clinica alcanzo su cuota de folios DIAN.");
+      }
+
+      const response = await factusRequest(config, "/v2/support-documents/validate", {
+        method: "POST",
+        body: serialized,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new HttpError(response.status, factusError(data, response.status));
+
+      await admin.from("tenant_secrets").update({
+        factus_config: { ...config, facturacionUsadas: used + 1 },
+        updated_at: new Date().toISOString(),
+      }).eq("tenant_id", tenantId);
+
+      return json({ success: true, result: data });
+    }
+
+    if (action === "send_adjustment_note") {
+      const payload = body?.payload;
+      const serialized = JSON.stringify(payload || {});
+      if (!payload || serialized.length > 500000) {
+        throw new HttpError(400, "La nota de ajuste es invalida o demasiado grande.");
+      }
+
+      const response = await factusRequest(config, "/v2/adjustment-notes/validate", {
+        method: "POST",
+        body: serialized,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new HttpError(response.status, factusError(data, response.status));
+
+      return json({ success: true, result: data });
+    }
+
     if (action === "download_pdf") {
       const billNumber = String(body?.billNumber || "");
       if (!/^[A-Za-z0-9_-]{1,80}$/.test(billNumber)) {
@@ -266,6 +313,29 @@ Deno.serve(async (request) => {
       const response = await factusRequest(
         config,
         "/v2/bills/" + encodeURIComponent(billNumber) + "/download-pdf",
+        {},
+        "application/pdf",
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new HttpError(response.status, factusError(data, response.status));
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let binary = "";
+      for (let index = 0; index < bytes.length; index += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+      }
+      return json({ success: true, base64: btoa(binary), mimeType: "application/pdf" });
+    }
+
+    if (action === "download_support_document_pdf") {
+      const number = String(body?.number || "");
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(number)) {
+        throw new HttpError(400, "El numero de documento soporte no es valido.");
+      }
+      const response = await factusRequest(
+        config,
+        "/v2/support-documents/" + encodeURIComponent(number) + "/download-pdf",
         {},
         "application/pdf",
       );

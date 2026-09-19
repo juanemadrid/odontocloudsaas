@@ -1,6 +1,14 @@
 // src/services/patientService.js
 import supabase from "../lib/supabaseClient";
 import { resolvePrivateFileUrl, uploadPrivateFile } from "./privateStorageService";
+import {
+    cachePatientsOffline,
+    getOfflinePatientsPage,
+    searchOfflinePatients,
+    getOfflinePatientById,
+    saveOfflinePatientRecord,
+    addToSyncQueue
+} from "./offlineStorageService";
 
 // Utils
 const normalize = (s) =>
@@ -21,7 +29,8 @@ const PATIENT_SUMMARY_COLUMNS = [
     "telefono", "email", "direccion", "ciudad", "ciudad_domicilio", "barrio",
     "ocupacion", "eps", "tipo_afiliacion", "plan_id", "plan_nombre",
     "profesional_id", "profesional_nombre", "alertas", "activo",
-    "registro_completo", "foto_url", "saldo_favor", "created_at", "updated_at"
+    "registro_completo", "foto_url", "saldo_favor", "created_at", "updated_at",
+    "historial_medico"
 ].join(",");
 
 // --- CRUD CON SUPABASE POSTGRESQL ---
@@ -53,7 +62,7 @@ export const getPatientsPage = async (tenantId, pageIndex = 0, pageSize = 20) =>
             .from("pacientes")
             .select(PATIENT_SUMMARY_COLUMNS, { count: "exact" })
             .eq("tenant_id", tenantId)
-            .order("created_at", { ascending: false })
+            .order("updated_at", { ascending: false, nullsFirst: false })
             .range(start, end);
 
         if (error) throw error;
@@ -76,14 +85,17 @@ export const getPatientsPage = async (tenantId, pageIndex = 0, pageSize = 20) =>
             fotoUrl: ""
         }));
 
+        // Guardar automáticamente copia en caché local para disponibilidad offline
+        cachePatientsOffline(patients);
+
         return {
             patients,
             hasMore: count ? start + patients.length < count : false,
             totalCount: count || 0
         };
     } catch (e) {
-        console.error("Error en getPatientsPage de Supabase:", e);
-        return { patients: [], hasMore: false };
+        console.warn("Fallo de conexión en getPatientsPage, recurriendo a modo offline:", e);
+        return await getOfflinePatientsPage(tenantId, pageIndex, pageSize);
     }
 };
 
@@ -105,7 +117,7 @@ export const searchPatients = async (tenantId, searchTerm, maxResults = 30) => {
 
         if (error) throw error;
 
-        return (data || []).map(p => ({
+        const results = (data || []).map(p => ({
             ...p,
             tipoDocumento: p.tipo_documento || p.tipoDocumento || "CC",
             tipo_documento: p.tipo_documento || p.tipoDocumento || "CC",
@@ -120,9 +132,12 @@ export const searchPatients = async (tenantId, searchTerm, maxResults = 30) => {
             genero: p.genero || p.sexo || "No especificado",
             fotoUrl: ""  // Se carga lazy si se necesita
         }));
+
+        cachePatientsOffline(results);
+        return results;
     } catch (err) {
-        console.error("Error en searchPatients de Supabase:", err);
-        return [];
+        console.warn("Fallo de conexión en searchPatients, buscando en modo offline:", err);
+        return await searchOfflinePatients(tenantId, searchTerm);
     }
 };
 
@@ -162,6 +177,8 @@ export const getPatientById = async (id) => {
             fecha_nacimiento: data.fecha_nacimiento || data.fechaNacimiento || "",
             sexo: data.genero || data.sexo || "No especificado",
             genero: data.genero || data.sexo || "No especificado",
+            rh: data.historial_medico?.rh || data.rh || "",
+            grupo_sanguineo: data.historial_medico?.rh || data.rh || "",
             estadoCivil: data.estado_civil || data.estadoCivil || "",
             estado_civil: data.estado_civil || data.estadoCivil || "",
             esExtranjero: data.es_extranjero || data.esExtranjero || false,
@@ -200,8 +217,11 @@ export const getPatientById = async (id) => {
             tipoVinculacion: data.tipo_afiliacion || data.tipoVinculacion || "",
             tipo_afiliacion: data.tipo_afiliacion || data.tipoVinculacion || "",
             polizaSalud: data.poliza_salud || data.polizaSalud || "",
+            sgsss: data.historial_medico?.sgsss || data.sgsss || "",
+            tipoPaciente: data.historial_medico?.tipo_paciente || data.tipo_paciente || "",
             planId: data.plan_id || data.planId || "",
             planNombre: data.plan_nombre || data.planNombre || "",
+            convenio: data.historial_medico?.convenio || data.convenio || data.plan_nombre || "",
             // Marketing
             convenioBeneficio: data.convenio_beneficio || data.convenioBeneficio || "",
             convenioPago: data.convenio_pago || data.convenioPago || "",
@@ -234,6 +254,7 @@ export const getPatientById = async (id) => {
             // Alertas y notas
             alertas: data.alertas || "",
             notas: data.notas || "",
+            resumenMigracion: data.historial_medico?.resumen_migracion || {},
             // Foto
             fotoUrl: await resolvePrivateFileUrl(data.foto_url || data.fotoUrl || "")
         };
@@ -329,6 +350,11 @@ export const createOrUpdatePatient = async (tenantId, patientData, isNew = false
         // Metadata
         historial_medico: {
             ...(patientData.historialMedico || patientData.historial_medico || {}),
+            rh: patientData.rh || (patientData.historialMedico?.rh) || "",
+            convenio: patientData.convenio || (patientData.historialMedico?.convenio) || "",
+            sgsss: patientData.sgsss || (patientData.historialMedico?.sgsss) || "",
+            tipo_paciente: patientData.tipoPaciente || (patientData.historialMedico?.tipo_paciente) || "",
+            resumen_migracion: patientData.resumenMigracion || (patientData.historialMedico?.resumen_migracion) || {},
             ...(Array.isArray(patientData.profesionales) ? { profesionales: patientData.profesionales } : {}),
             ...(Array.isArray(patientData.rxImagenes) ? { rxImagenes: patientData.rxImagenes } : {}),
             ...(Array.isArray(patientData.beneficiarios) ? { beneficiarios: patientData.beneficiarios } : {})
@@ -341,37 +367,70 @@ export const createOrUpdatePatient = async (tenantId, patientData, isNew = false
     console.log("📦 Payload para Supabase:", payload);
 
     let resultData;
-    if (patientData.id && !isNew) {
-        // Actualización por ID
-        console.log("🔄 Actualizando paciente existente ID:", patientData.id);
-        const { data, error } = await supabase
-            .from("pacientes")
-            .update(payload)
-            .eq("id", patientData.id)
-            .select()
-            .single();
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
 
-        if (error) {
-            console.error("❌ Error actualizando en Supabase:", error);
-            throw error;
+    if (!isOffline) {
+        try {
+            if (patientData.id && !isNew) {
+                // Actualización por ID
+                console.log("🔄 Actualizando paciente existente ID:", patientData.id);
+                const { data, error } = await supabase
+                    .from("pacientes")
+                    .update(payload)
+                    .eq("id", patientData.id)
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                resultData = data;
+                console.log("✅ Paciente actualizado en Supabase:", resultData);
+            } else {
+                // Inserción de nuevo paciente
+                console.log("➕ Insertando nuevo paciente");
+                const { data, error } = await supabase
+                    .from("pacientes")
+                    .insert([payload])
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                resultData = data;
+                console.log("✅ Nuevo paciente creado en Supabase:", resultData);
+            }
+
+            // Cachear en IndexedDB
+            saveOfflinePatientRecord(resultData);
+        } catch (netErr) {
+            console.warn("⚠️ Fallo al conectar con Supabase. Guardando paciente en Modo Local Seguro:", netErr);
+            const recordId = patientData.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `pac_${Date.now()}`);
+            resultData = {
+                ...payload,
+                id: recordId,
+                _offline: true
+            };
+            await saveOfflinePatientRecord(resultData);
+            await addToSyncQueue({
+                tenant_id: tenantId,
+                entity: "pacientes",
+                action: "upsert",
+                payload: resultData
+            });
         }
-        resultData = data;
-        console.log("✅ Paciente actualizado en Supabase:", resultData);
     } else {
-        // Inserción de nuevo paciente
-        console.log("➕ Insertando nuevo paciente");
-        const { data, error } = await supabase
-            .from("pacientes")
-            .insert([payload])
-            .select()
-            .single();
-
-        if (error) {
-            console.error("❌ Error insertando en Supabase:", error);
-            throw error;
-        }
-        resultData = data;
-        console.log("✅ Nuevo paciente creado en Supabase:", resultData);
+        console.warn("📵 Modo Offline detectado. Guardando paciente en almacenamiento local seguro.");
+        const recordId = patientData.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `pac_${Date.now()}`);
+        resultData = {
+            ...payload,
+            id: recordId,
+            _offline: true
+        };
+        await saveOfflinePatientRecord(resultData);
+        await addToSyncQueue({
+            tenant_id: tenantId,
+            entity: "pacientes",
+            action: "upsert",
+            payload: resultData
+        });
     }
 
     return {

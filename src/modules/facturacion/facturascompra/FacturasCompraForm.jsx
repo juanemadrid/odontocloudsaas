@@ -8,8 +8,8 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getConfigItems } from "../../../services/configPersistenceService";
 import { getDoctorsList } from "../../../services/supabaseServices";
-import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { toast } from "sonner";
+import { validateTerceroForDian } from "../../../utils/dian/dianHelpers";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -133,6 +133,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                         .eq("tenant_id", inquilino);
                     if (tDb && tDb.length > 0) {
                         tercerosList = tDb.map(t => ({
+                            ...t,
                             id: t.id,
                             nombre: t.nombre || t.razon_social || t.nombre_completo || "Tercero",
                             documento: t.numero_documento || t.documento || t.nit || t.nroDocumento || "",
@@ -146,6 +147,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 if (tercerosList.length === 0) {
                     const rawT = cfg.terceros || cfg.proveedores || [];
                     tercerosList = rawT.map(t => ({
+                        ...t,
                         id: t.id || t.documento || t.nombre,
                         nombre: t.nombre || t.razonSocial || "Tercero",
                         documento: t.documento || t.nit || t.nroDocumento || "",
@@ -545,6 +547,16 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             return;
         }
 
+        // Validación estricta DIAN para Documento Soporte
+        if (docSoporteDian) {
+            const selectedTerceroForValidation = selectedTerceroObj || terceros.find(t => t.id === terceroId || t.nombre === terceroId);
+            const diag = validateTerceroForDian(selectedTerceroForValidation);
+            if (!diag.isValid) {
+                toast.error(`Requisito DIAN faltante en tercero: ${diag.errors[0]}`);
+                return;
+            }
+        }
+
         setSaving(true);
         try {
             const selectedTercero = selectedTerceroObj || terceros.find(t => t.id === terceroId || t.nombre === terceroId) || {
@@ -938,6 +950,45 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Indicador de cumplimiento DIAN cuando es Documento Soporte */}
+                        {docSoporteDian && (selectedTerceroObj || terceroId) && (() => {
+                            const targetTercero = selectedTerceroObj || terceros.find(t => t.id === terceroId || t.nombre === terceroId);
+                            if (!targetTercero) return null;
+                            const diag = validateTerceroForDian(targetTercero);
+                            return (
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 animate-fadeIn">
+                                    <div className="md:col-start-4 md:col-span-9">
+                                        {diag.isValid ? (
+                                            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start gap-2.5">
+                                                <FiCheckCircle className="text-emerald-600 shrink-0 mt-0.5" size={16} />
+                                                <div>
+                                                    <div className="font-bold">Tercero apto para Documento Soporte Electrónico DIAN</div>
+                                                    <div className="text-[11px] text-emerald-700 mt-0.5">
+                                                        NIT: {targetTercero.documento || targetTercero.nroDocumento} • Código Postal: {targetTercero.codigoPostal || "—"} • Ciudad: {targetTercero.ciudad || "—"} • Correo: {targetTercero.email || "—"}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1.5">
+                                                <div className="flex items-center gap-2 font-bold text-amber-800">
+                                                    <FiAlertCircle className="text-amber-600 shrink-0" size={16} />
+                                                    <span>Requisitos DIAN pendientes para Documento Soporte:</span>
+                                                </div>
+                                                <ul className="list-disc pl-6 text-[11px] space-y-0.5 text-amber-800 font-medium">
+                                                    {diag.errors.map((err, i) => (
+                                                        <li key={i}>{err}</li>
+                                                    ))}
+                                                </ul>
+                                                <div className="text-[10px] text-amber-700 font-medium pt-1 border-t border-amber-200/60">
+                                                    💡 Debe actualizar los datos del tercero en <em>Administración &gt; Terceros</em> para poder emitir el documento ante la DIAN.
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                         {/* Condición de pago */}
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">

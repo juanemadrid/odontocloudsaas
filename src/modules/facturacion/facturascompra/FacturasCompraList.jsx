@@ -3,11 +3,14 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { 
     FiPlus, FiSearch, FiCalendar, FiPrinter, FiEye, FiTrash2, 
     FiMoreVertical, FiHome, FiInfo, FiCheckSquare, FiSquare, 
-    FiX, FiDollarSign, FiCheck, FiFileText
+    FiX, FiDollarSign, FiCheck, FiFileText, FiXCircle, FiAlertTriangle,
+    FiSend, FiDownload, FiCheckCircle
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
+import { MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE } from "../../../utils/dian/dianHelpers";
+import factusService from "../../../services/factusService";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -52,6 +55,12 @@ export default function FacturasCompraList({ onNew }) {
 
   // Modal Ver Detalle Factura
   const [viewingFactura, setViewingFactura] = useState(null);
+
+  // Modal Anular Factura / Documento Soporte
+  const [anularModal, setAnularModal] = useState({ open: false, factura: null });
+  const [motivoAnulacionId, setMotivoAnulacionId] = useState("2");
+  const [observacionesAnulacion, setObservacionesAnulacion] = useState("");
+  const [anulando, setAnulando] = useState(false);
 
   // Paginación
   const [currentPage, setCurrentPage] = useState(1);
@@ -306,6 +315,209 @@ export default function FacturasCompraList({ onNew }) {
     }
   };
 
+  // Confirmar Anulación de Documento y Generar Nota de Ajuste / Crédito (Estándar DIAN)
+  const handleConfirmAnular = async () => {
+    const f = anularModal.factura;
+    if (!f) return;
+    setAnulando(true);
+    try {
+      const motivoObj = MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE.find(m => m.id === motivoAnulacionId) || MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE[1];
+      const fechaHoy = new Date().toISOString().split("T")[0];
+      const ahoraISO = new Date().toISOString();
+      const userName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Usuario";
+
+      // 1. Crear Nota de Ajuste / Nota Crédito
+      const notaAjusteId = `nc_ds_${Date.now()}`;
+      const docAfectado = f.nroFactura || f.documentoNumero || f.id;
+      const consecutivoNota = `NA-${(f.nroFactura || f.id || "").replace(/[^0-9]/g, "").slice(-4) || Date.now().toString().slice(-4)}`;
+      const totalDoc = f.totalNeto !== undefined ? f.totalNeto : (f.total || 0);
+
+      const nuevaNota = {
+        id: notaAjusteId,
+        tenant_id: inquilino,
+        tipo: f.docSoporteDian ? "Nota de Ajuste Documento Soporte" : "Nota Crédito",
+        nroConsecutivo: consecutivoNota,
+        pacienteNombre: f.proveedor || f.tercero || "Proveedor / Tercero",
+        pacienteDoc: f.proveedorDoc || f.terceroDoc || f.documento || "",
+        fecha: fechaHoy,
+        fechaISO: ahoraISO,
+        total: totalDoc,
+        saldoFavor: 0,
+        motivoId: motivoObj.id,
+        motivo: motivoObj.label,
+        motivoAnulacion: `${motivoObj.label}${observacionesAnulacion ? `. ${observacionesAnulacion}` : ""}`,
+        notas: `Generada por anulación de ${f.docSoporteDian ? "Documento Soporte" : "Factura de Compra"} #${docAfectado}. Motivo: ${motivoObj.label}. ${observacionesAnulacion}`,
+        documentoReferencia: docAfectado,
+        facturaCompraId: f.id,
+        creadoPor: userName,
+        estado: "Generada",
+        created_at: ahoraISO
+      };
+
+      // Guardar en Supabase tabla notas_credito
+      try {
+        await supabase.from("notas_credito").insert([nuevaNota]);
+      } catch (e) {}
+
+      // Si el documento ya estaba validado en Factus, transmitir la Nota de Ajuste electrónica
+      if (f.factus_validated) {
+        try {
+          await factusService.sendSupportDocumentAdjustmentNote({
+            referenceCode: `NA-${Date.now().toString(36).toUpperCase()}`,
+            supportDocumentNumber: f.factus_number || f.nroFactura,
+            reasonCode: motivoObj.id === "error_valor" ? "3" : "2",
+            observacion: nuevaNota.motivoAnulacion
+          });
+          nuevaNota.factus_ajuste_status = "Transmitida a DIAN";
+        } catch (factusErr) {
+          console.warn("Nota de ajuste Factus aviso:", factusErr.message);
+        }
+      }
+
+      // Sincronizar en website_config (notas_credito y facturas_compra)
+      try {
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        const currentCfg = cfgRow?.config || {};
+        const currentNotas = currentCfg.notas_credito || [];
+        currentCfg.notas_credito = [nuevaNota, ...currentNotas];
+
+        const currentFacturas = currentCfg.facturas_compra || [];
+        const nextFacturas = currentFacturas.map(item => item.id === f.id ? {
+          ...item,
+          estado: "Anulada",
+          motivoAnulacion: motivoObj.label,
+          observacionesAnulacion,
+          notaAjusteId,
+          notaAjusteConsecutivo: consecutivoNota,
+          fechaAnulacion: ahoraISO,
+          anuladoPor: userName
+        } : item);
+        currentCfg.facturas_compra = nextFacturas;
+
+        await supabase.from("website_config").upsert({
+          tenant_id: inquilino,
+          config: currentCfg
+        });
+      } catch (e) {}
+
+      // Actualizar en tabla facturas_compra de Supabase
+      try {
+        await supabase.from("facturas_compra").update({
+          estado: "Anulada",
+          motivoAnulacion: motivoObj.label,
+          observacionesAnulacion,
+          notaAjusteId,
+          notaAjusteConsecutivo: consecutivoNota,
+          fechaAnulacion: ahoraISO,
+          anuladoPor: userName
+        }).eq("id", f.id);
+      } catch (e) {}
+
+      // Actualizar en el estado local de React
+      setFacturas(prev => prev.map(item => item.id === f.id ? {
+        ...item,
+        estado: "Anulada",
+        motivoAnulacion: motivoObj.label,
+        observacionesAnulacion,
+        notaAjusteId,
+        notaAjusteConsecutivo: consecutivoNota,
+        fechaAnulacion: ahoraISO,
+        anuladoPor: userName
+      } : item));
+
+      toast.success(
+        f.docSoporteDian
+          ? `Documento Soporte anulado correctamente. Se generó la Nota de Ajuste ${consecutivoNota} en Notas Crédito ✅`
+          : "Factura de compra anulada correctamente ✅"
+      );
+      setAnularModal({ open: false, factura: null });
+    } catch (err) {
+      console.error("Error anulando documento:", err);
+      toast.error("Error al anular el documento");
+    } finally {
+      setAnulando(false);
+    }
+  };
+
+  // Transmitir Documento Soporte a Factus / DIAN
+  const handleTransmitDian = async (factura) => {
+    try {
+      toast.loading("Transmitiendo Documento Soporte a Factus / DIAN...", { id: "tx-dian" });
+      let terceroObj = factura.terceroObj;
+      if (!terceroObj && factura.terceroId) {
+        const { data: tRow } = await supabase
+          .from("terceros")
+          .select("*")
+          .eq("id", factura.terceroId)
+          .maybeSingle();
+        terceroObj = tRow;
+      }
+      if (!terceroObj) {
+        terceroObj = {
+          identificacion: factura.documentoTercero || "123456789",
+          numero_documento: factura.documentoTercero || "123456789",
+          nombre_completo: factura.tercero || factura.proveedor || "Proveedor",
+          tipo_documento: "NIT",
+          direccion: factura.direccion || "Dirección consultorio",
+          ciudad: "Bogotá",
+          email: factura.pagadorEmail || "proveedor@clinica.com",
+        };
+      }
+
+      const res = await factusService.sendSupportDocument({
+        ...factura,
+        tercero: terceroObj,
+      });
+
+      const billData = res?.data?.bill || res?.bill || res?.data || res;
+      const cuds = billData?.cuds || res?.cuds || "CUDS-DIAN-OK";
+      const number = billData?.number || res?.number || factura.nroFactura;
+
+      const updatedFactura = {
+        ...factura,
+        factus_validated: true,
+        cuds,
+        factus_number: number,
+        dian_status: "Validado por DIAN",
+        transmitted_at: new Date().toISOString()
+      };
+
+      await supabase
+        .from("facturas_compra")
+        .update({
+          factus_validated: true,
+          cuds,
+          factus_number: number,
+          dian_status: "Validado por DIAN"
+        })
+        .eq("id", factura.id);
+
+      setFacturas(prev => prev.map(item => item.id === factura.id ? updatedFactura : item));
+      toast.success("Documento Soporte validado y transmitido con éxito a la DIAN ✅", { id: "tx-dian" });
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || "Error al transmitir a Factus/DIAN", { id: "tx-dian" });
+    }
+  };
+
+  // Descargar PDF oficial DIAN de Documento Soporte
+  const handleDownloadDianPdf = async (factura) => {
+    try {
+      toast.loading("Descargando PDF oficial...", { id: "dl-dian" });
+      const num = factura.factus_number || factura.nroFactura;
+      await factusService.downloadSupportDocumentPDF(num);
+      toast.success("PDF descargado con éxito", { id: "dl-dian" });
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || "No fue posible descargar el PDF de Factus", { id: "dl-dian" });
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-fadeIn font-sans text-slate-700">
       
@@ -467,7 +679,29 @@ export default function FacturasCompraList({ onNew }) {
 
                       {/* Doc. */}
                       <td className="py-3 px-4 font-bold text-slate-800">
-                        {f.nroFactura || f.documentoNumero || f.id?.slice(0, 10) || "—"}
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span>{f.nroFactura || f.documentoNumero || f.id?.slice(0, 10) || "—"}</span>
+                            {f.estado === "Anulada" && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200 uppercase">
+                                Anulada
+                              </span>
+                            )}
+                          </div>
+                          {f.docSoporteDian && (
+                            <div className="flex items-center gap-1">
+                              {f.factus_validated ? (
+                                <span title={`CUDS: ${f.cuds || "Registrado en DIAN"}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <FiCheck size={10} /> DIAN Transmitido
+                                </span>
+                              ) : f.estado !== "Anulada" ? (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                  DIAN Pendiente
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       {/* Tipo doc. */}
@@ -513,15 +747,48 @@ export default function FacturasCompraList({ onNew }) {
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => setViewingFactura(f)}
-                            className="w-7 h-7 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center transition-colors"
+                            className="w-7 h-7 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center transition-colors cursor-pointer"
                             title="Ver detalle"
                           >
                             <FiEye size={14} />
                           </button>
+                          {/* Transmitir a Factus / DIAN si está pendiente */}
+                          {f.docSoporteDian && !f.factus_validated && f.estado !== "Anulada" && (
+                            <button
+                              onClick={() => handleTransmitDian(f)}
+                              className="w-7 h-7 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors cursor-pointer"
+                              title="Transmitir a Factus / DIAN"
+                            >
+                              <FiSend size={13} />
+                            </button>
+                          )}
+                          {/* Descargar PDF oficial DIAN si ya está validado */}
+                          {f.docSoporteDian && f.factus_validated && (
+                            <button
+                              onClick={() => handleDownloadDianPdf(f)}
+                              className="w-7 h-7 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 flex items-center justify-center transition-colors cursor-pointer"
+                              title="Descargar PDF Oficial DIAN"
+                            >
+                              <FiDownload size={13} />
+                            </button>
+                          )}
+                          {f.estado !== "Anulada" && (
+                            <button
+                              onClick={() => {
+                                setAnularModal({ open: true, factura: f });
+                                setMotivoAnulacionId("2");
+                                setObservacionesAnulacion("");
+                              }}
+                              className="w-7 h-7 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                              title={f.docSoporteDian ? "Anular Documento Soporte y Generar Nota de Ajuste DIAN" : "Anular Factura"}
+                            >
+                              <FiXCircle size={14} />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDeleteFactura(f.id)}
-                            className="w-7 h-7 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors"
-                            title="Eliminar"
+                            className="w-7 h-7 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                            title="Eliminar registro"
                           >
                             <FiTrash2 size={14} />
                           </button>
@@ -798,6 +1065,96 @@ export default function FacturasCompraList({ onNew }) {
               </div>
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: ANULAR FACTURA / DOCUMENTO SOPORTE (DIAN)          */}
+      {/* ========================================================= */}
+      {anularModal.open && anularModal.factura && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-scaleIn">
+            
+            <div className="px-6 py-4 bg-rose-50/80 border-b border-rose-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FiAlertTriangle className="text-rose-600" size={18} />
+                <h3 className="text-sm font-bold text-rose-900">
+                  {anularModal.factura.docSoporteDian ? "Anular Documento Soporte DIAN" : "Anular Factura de Compra"}
+                </h3>
+              </div>
+              <button
+                onClick={() => setAnularModal({ open: false, factura: null })}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer transition-colors"
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-slate-600">
+                <div><strong>Documento:</strong> {anularModal.factura.nroFactura || anularModal.factura.documentoNumero || anularModal.factura.id}</div>
+                <div><strong>Tercero / Proveedor:</strong> {anularModal.factura.proveedor || anularModal.factura.tercero || "—"}</div>
+                <div><strong>Valor Total:</strong> {fmt(anularModal.factura.totalNeto !== undefined ? anularModal.factura.totalNeto : (anularModal.factura.total || 0))}</div>
+              </div>
+
+              {anularModal.factura.docSoporteDian && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
+                  <strong>Aviso DIAN:</strong> Al anular este Documento Soporte, el sistema generará automáticamente una <strong>Nota de Ajuste (Nota Crédito)</strong> ante la DIAN que quedará registrada en <em>Administración &gt; Facturación &gt; Nota Crédito</em>.
+                </div>
+              )}
+
+              {/* Selector Motivo DIAN */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700 block">
+                  Motivo de Anulación / Ajuste DIAN <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={motivoAnulacionId}
+                  onChange={(e) => setMotivoAnulacionId(e.target.value)}
+                  className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-rose-500 transition-all"
+                >
+                  {MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Observaciones adicionales */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700 block">
+                  Observaciones adicionales / Justificación
+                </label>
+                <textarea
+                  rows={3}
+                  value={observacionesAnulacion}
+                  onChange={(e) => setObservacionesAnulacion(e.target.value)}
+                  placeholder="Detalla el motivo de la anulación o ajuste..."
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 outline-none focus:border-rose-500 transition-all"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAnularModal({ open: false, factura: null })}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-semibold transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={anulando}
+                  onClick={handleConfirmAnular}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                >
+                  {anulando ? "Procesando..." : "Confirmar Anulación y Generar Nota"}
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

@@ -1,10 +1,14 @@
 import {
   downloadFactusPdf,
+  downloadFactusSupportDocumentPdf,
   getFactusRanges,
   getFactusStatus,
   sendFactusBill,
+  sendFactusSupportDocument,
+  sendFactusAdjustmentNote,
   testFactusCredentials,
 } from "./factusProxyService";
+import { calculateNIT_DV } from "../utils/dian/dianHelpers";
 
 /**
  * factusService.js
@@ -399,6 +403,128 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   return { ...proxyResponse.result, _referenceCode: referenceCode };
 };
 
+/**
+ * Transmits a Documento Soporte to Factus V2 / DIAN.
+ * Endpoint: POST /v2/support-documents/validate
+ */
+export const sendSupportDocument = async (supportDocData) => {
+  const numberingRangeId = supportDocData.numberingRangeId || supportDocData.rangoId || undefined;
+  const tercero = supportDocData.tercero || {};
+  const docNum = String(tercero.numero_documento || tercero.identificacion || "").trim();
+  const rawTipo = String(tercero.tipo_documento || "NIT").toUpperCase();
+  const tipoDoc = getDocTypeCode(rawTipo);
+  const fullName = String(
+    tercero.nombre_completo ||
+    tercero.razon_social ||
+    `${tercero.nombre || ""} ${tercero.apellido || ""}`.trim() ||
+    "Proveedor"
+  ).trim();
+  const email = (tercero.email || "proveedor@clinica.com").trim().toLowerCase();
+  const phone = String(tercero.telefono || tercero.celular || "3000000000").replace(/\D/g, "").slice(0, 10);
+  const address = (tercero.direccion || "Dirección principal").trim();
+  const municipalityCode = tercero.codigo_municipio || getMunicipalityCode(tercero.ciudad) || "11001";
+  const dv = tercero.dv || calculateNIT_DV(docNum) || "0";
+
+  const rawItems = supportDocData.items || supportDocData.detalles || [];
+  const factusItems = rawItems.map((item, idx) => {
+    const qty = parseFloat(item.cantidad || item.quantity || 1) || 1;
+    const price = parseFloat(item.precioUnitario || item.precio || item.valor || 0) || 0;
+    const discountRate = parseFloat(item.descuento || 0) || 0;
+
+    return {
+      code_reference: item.code || `COMPRA-${String(idx + 1).padStart(4, "0")}`,
+      name: String(item.descripcion || item.nombre || item.concepto || "Compra o Servicio Recibido").slice(0, 100),
+      quantity: Number(qty.toFixed(2)),
+      discount_rate: Number(discountRate.toFixed(2)),
+      price: Number(price.toFixed(2)),
+      unit_measure_code: "94", // unidad
+      standard_code: "0001",
+    };
+  });
+
+  if (factusItems.length === 0) {
+    factusItems.push({
+      code_reference: "COMPRA-0001",
+      name: "Compra de bienes o servicios a no obligados a facturar",
+      quantity: 1,
+      discount_rate: 0,
+      price: parseFloat(supportDocData.total || 0),
+      unit_measure_code: "94",
+      standard_code: "0001",
+    });
+  }
+
+  const paymentForm = String(supportDocData.condicionPago || (supportDocData.tipo_pago === "credito" ? "2" : "1"));
+  const paymentMethodCode = String(supportDocData.medioPago || "10"); // 10 = Efectivo
+  const totalAmount = parseFloat(supportDocData.total || 0).toFixed(2);
+  const referenceCode = supportDocData.referenceCode || `DS-${Date.now().toString(36).toUpperCase()}`;
+
+  const payload = {
+    ...(numberingRangeId ? { numbering_range_id: Number(numberingRangeId) } : {}),
+    reference_code: referenceCode,
+    observation: (supportDocData.observaciones || "Documento soporte en adquisiciones efectuadas a no obligados a facturar").slice(0, 500),
+    payment_details: [
+      {
+        payment_form: paymentForm,
+        payment_method_code: paymentMethodCode,
+        amount: totalAmount,
+        ...(paymentForm === "2" && supportDocData.fechaVencimiento ? { due_date: supportDocData.fechaVencimiento } : {}),
+      },
+    ],
+    provider: {
+      identification_document_code: tipoDoc,
+      identification: docNum,
+      ...(tipoDoc === "31" ? { dv: String(dv) } : {}),
+      names: fullName,
+      address: address,
+      country_code: "CO",
+      municipality_code: municipalityCode,
+      email: email,
+      phone: phone,
+    },
+    items: factusItems,
+  };
+
+  const proxyResponse = await sendFactusSupportDocument(payload);
+  return { ...proxyResponse.result, _referenceCode: referenceCode };
+};
+
+/**
+ * Transmits a Nota de Ajuste a Documento Soporte.
+ * Endpoint: POST /v2/adjustment-notes/validate
+ */
+export const sendSupportDocumentAdjustmentNote = async (noteData) => {
+  const payload = {
+    reference_code: noteData.referenceCode || `NA-${Date.now().toString(36).toUpperCase()}`,
+    support_document_number: noteData.supportDocumentNumber,
+    reason_code: String(noteData.reasonCode || "2"),
+    observation: (noteData.observacion || "Anulación de documento soporte").slice(0, 500),
+  };
+  const proxyResponse = await sendFactusAdjustmentNote(payload);
+  return proxyResponse.result;
+};
+
+/**
+ * Downloads the legal PDF for a Documento Soporte
+ */
+export const downloadSupportDocumentPDF = async (documentNumber) => {
+  const response = await downloadFactusSupportDocumentPdf(documentNumber);
+  const binaryString = atob(response.base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = `DocSoporte-${documentNumber}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+};
+
 // ─────────────────────────────────────────────
 // Default export
 // ─────────────────────────────────────────────
@@ -408,6 +534,9 @@ const factusService = {
   testConnection,
   sendInvoice,
   downloadInvoicePDF,
+  sendSupportDocument,
+  sendSupportDocumentAdjustmentNote,
+  downloadSupportDocumentPDF,
   getNumberingRanges,
   getMunicipalityCode,
   getDocTypeCode,

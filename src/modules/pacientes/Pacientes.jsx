@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import supabase from "../../lib/supabaseClient";
@@ -14,6 +14,7 @@ import {
   createOrUpdatePatient,
   deletePatient,
   searchPatients,
+  getPatientsPage,
   getPatientById
 } from "../../services/patientService";
 import { useAudit } from "../../hooks/useAudit";
@@ -26,25 +27,43 @@ export default function Pacientes() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
 
-  // listado & búsqueda (0 lecturas al cargar la página)
+  // listado & búsqueda paginada
   const [loading, setLoading] = useState(false);
   const [pacientes, setPacientes] = useState([]);
   const [term, setTerm] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [showImporter, setShowImporter] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize] = useState(5);
+  const [totalCount, setTotalCount] = useState(0);
 
   // modal control
   const [open, setOpen] = useState(false);
   const [editData, setEditData] = useState(null);
   const [selectedPatient, setSelectedPatient] = useState(null);
 
-  /* ======= Búsqueda Debounced ======= */
+  const loadPage = useCallback(async (pageToLoad = 0) => {
+    const tenantId = userProfile?.inquilino;
+    if (!tenantId) return;
+    setLoading(true);
+    setIsSearching(false);
+    try {
+      const res = await getPatientsPage(tenantId, pageToLoad, pageSize);
+      setPacientes(res.patients || []);
+      setTotalCount(res.totalCount || 0);
+      setPage(pageToLoad);
+    } catch (e) {
+      console.error("Error al cargar página de pacientes:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [userProfile?.inquilino, pageSize]);
+
+  /* ======= Búsqueda Debounced / Carga de Página ======= */
   useEffect(() => {
     const rawTerm = term.trim();
     if (!rawTerm) {
-      setIsSearching(false);
-      setPacientes([]);
-      setLoading(false);
+      loadPage(0);
       return;
     }
 
@@ -53,29 +72,31 @@ export default function Pacientes() {
 
     const timer = setTimeout(async () => {
       try {
-        const results = await searchPatients(userProfile?.inquilino, rawTerm, 30);
+        const results = await searchPatients(userProfile?.inquilino, rawTerm, 50);
         setPacientes(results);
       } catch (err) {
         console.error("Error al realizar búsqueda de pacientes:", err);
       } finally {
         setLoading(false);
       }
-    }, 350);
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [term, userProfile?.inquilino]);
+  }, [term, userProfile?.inquilino, loadPage]);
 
   const reloadData = async () => {
     if (term.trim()) {
       setLoading(true);
       try {
-        const results = await searchPatients(userProfile?.inquilino, term.trim(), 30);
+        const results = await searchPatients(userProfile?.inquilino, term.trim(), 50);
         setPacientes(results);
       } catch (e) {
         console.error("Error al recargar búsqueda de pacientes:", e);
       } finally {
         setLoading(false);
       }
+    } else {
+      await loadPage(page);
     }
   };
 
@@ -89,7 +110,7 @@ export default function Pacientes() {
       if (targetId) {
         const found = pacientes.find(
           (p) =>
-            p.id.toLowerCase() === targetId.toLowerCase() ||
+            p.id?.toLowerCase() === targetId.toLowerCase() ||
             p.nroDocumento?.toLowerCase() === targetId.toLowerCase()
         );
 
@@ -150,8 +171,6 @@ export default function Pacientes() {
   const handleOpenEdit = async (p) => {
     setLoading(true);
     try {
-      // Los resultados de búsqueda son deliberadamente livianos. Cargar la
-      // ficha completa evita sobrescribir historia clínica al editar.
       const fullPatient = p?.id ? await getPatientById(p.id) : null;
       setEditData(fullPatient || p);
       setOpen(true);
@@ -221,6 +240,10 @@ export default function Pacientes() {
           pacientes={pacientes}
           loading={loading}
           isSearching={isSearching}
+          page={page}
+          pageSize={pageSize}
+          totalCount={totalCount}
+          onPageChange={(newPage) => loadPage(newPage)}
           onSelect={(patient) => {
             setSelectedPatient(patient);
             setSearchParams({ id: patient.id, tab: "datos" });
@@ -263,7 +286,6 @@ export default function Pacientes() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 md:p-6 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
           <div className="w-full h-full md:max-w-[95vw] md:max-h-[94vh] overflow-hidden rounded-2xl shadow-2xl">
             <PatientForm
-
               initialData={editData}
               onSubmit={handleSubmit}
               onCancel={() => setOpen(false)}
@@ -282,4 +304,3 @@ export default function Pacientes() {
     </div>
   );
 }
-

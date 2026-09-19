@@ -363,6 +363,19 @@ const FormDatosPersonales = ({ patient, photoState }) => {
                                 {SEXOS.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </FormRow>
+                        <FormRow label="RH / Grupo sanguíneo">
+                            <select {...register("rh")} className="form-input text-sm w-full md:w-64">
+                                <option value="">Seleccione...</option>
+                                <option value="O+">O+</option>
+                                <option value="O-">O-</option>
+                                <option value="A+">A+</option>
+                                <option value="A-">A-</option>
+                                <option value="B+">B+</option>
+                                <option value="B-">B-</option>
+                                <option value="AB+">AB+</option>
+                                <option value="AB-">AB-</option>
+                            </select>
+                        </FormRow>
                         <FormRow label="Estado civil" required={isRequired("estadoCivil", true)} error={errors.estadoCivil}>
                             <select {...register("estadoCivil")} className="form-input text-sm w-full md:w-64">
                                 <option value="">Seleccione...</option>
@@ -863,6 +876,12 @@ const FormAseguramiento = ({ conveniosList = [] }) => {
                     <div className="relative z-10">
                         <FormRow label="Póliza de salud">
                             <input {...register("polizaSalud")} className="form-input text-xs w-full md:w-80 rounded-xl border-slate-200 h-9" placeholder="Póliza de salud del paciente" />
+                        </FormRow>
+                        <FormRow label="SGSSS">
+                            <input {...register("sgsss")} className="form-input text-xs w-full md:w-80 rounded-xl border-slate-200 h-9" placeholder="Sistema General de Seguridad Social en Salud" />
+                        </FormRow>
+                        <FormRow label="Tipo de paciente">
+                            <input {...register("tipoPaciente")} className="form-input text-xs w-full md:w-80 rounded-xl border-slate-200 h-9" placeholder="Particular, Convenio, EPS" />
                         </FormRow>
                     </div>
                 </div>
@@ -1949,6 +1968,12 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                     <>
                                         <span className="text-slate-300">|</span>
                                         <span>HISTORIA: <span className="text-slate-700 font-extrabold">#{patient.nroHistoria}</span></span>
+                                    </>
+                                )}
+                                {(patient.rh || methods.watch("rh")) && (
+                                    <>
+                                        <span className="text-slate-300">|</span>
+                                        <span className="text-rose-600 font-extrabold">RH: {patient.rh || methods.watch("rh")}</span>
                                     </>
                                 )}
                             </div>

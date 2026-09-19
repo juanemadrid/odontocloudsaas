@@ -6,8 +6,14 @@ import { useToast } from "../../../context/ToastContext";
 import { 
   FiUsers, FiPlus, FiSearch, FiEdit3, FiTrash2, 
   FiCheck, FiX, FiSave, FiAlertCircle, FiShield, 
-  FiToggleLeft, FiToggleRight, FiEye, FiEyeOff 
+  FiToggleLeft, FiToggleRight, FiEye, FiEyeOff, FiCheckCircle
 } from "react-icons/fi";
+import {
+  calculateNIT_DV,
+  isValidNIT_DV,
+  formatNITWithDV,
+  validateTerceroForDian
+} from "../../../utils/dian/dianHelpers";
 
 const TIPO_DOCUMENTS = [
   { id: "CC", label: "Cédula de Ciudadanía" },
@@ -273,6 +279,30 @@ export default function Terceros() {
       return toast?.error("El código de entidad administradora es requerido para EPS");
     }
 
+    // Validaciones DIAN para NIT
+    let finalDoc = formData.nroDocumento.trim();
+    if (formData.tipoDocumento === "NIT") {
+      if (!finalDoc.includes("-")) {
+        const computed = calculateNIT_DV(finalDoc);
+        if (computed !== null) {
+          finalDoc = `${finalDoc.replace(/[^0-9]/g, "")}-${computed}`;
+        }
+      } else {
+        const parts = finalDoc.split("-");
+        const computed = calculateNIT_DV(parts[0]);
+        if (computed !== null && String(computed) !== String(parts[1]).trim()) {
+          return toast?.error(`El Dígito de Verificación (-${parts[1]}) no es válido para el NIT ${parts[0]}. Según la DIAN debe ser -${computed}.`);
+        }
+      }
+    }
+
+    // Validación Código Postal (exactamente 6 dígitos para DIAN si se especifica)
+    if (formData.codigoPostal.trim()) {
+      if (!/^\d{6}$/.test(formData.codigoPostal.trim())) {
+        return toast?.error("El código postal debe contener exactamente 6 dígitos numéricos (estándar DIAN).");
+      }
+    }
+
     setSaving(true);
     try {
       const { inquilino: _, ...cleanFormData } = formData;
@@ -282,7 +312,7 @@ export default function Terceros() {
         id: terceroId,
         nombre: formData.nombre.trim(),
         apellidos: formData.apellidos.trim(),
-        nroDocumento: formData.nroDocumento.trim(),
+        nroDocumento: finalDoc,
         razonSocial: formData.razonSocial.trim(),
         telefono: formData.telefono.trim(),
         direccion: formData.direccion.trim(),
@@ -456,6 +486,18 @@ export default function Terceros() {
                             )}
                             <span className="bg-indigo-50 text-indigo-600 border border-indigo-100 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">{tercero.tipoPersona}</span>
                             <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full text-[9px] font-bold">{tercero.identificadorProcedencia}</span>
+                            {(() => {
+                              const diag = validateTerceroForDian(tercero);
+                              return diag.isValid ? (
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase" title="Tercero con todos los requisitos DIAN para Documento Soporte">
+                                  ✓ Apto DIAN
+                                </span>
+                              ) : (
+                                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-bold cursor-help" title={`Datos faltantes para Documento Soporte DIAN:\n• ${diag.errors.join("\n• ")}`}>
+                                  ! Incompleto DIAN
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -570,17 +612,66 @@ export default function Terceros() {
 
               {/* Número de Documento */}
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Número de documento *
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                    Número de documento *
+                  </label>
+                  {formData.tipoDocumento === "NIT" && (
+                    <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                      Formato DIAN: NIT-DV
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   required
                   value={formData.nroDocumento}
                   onChange={(e) => setFormData({ ...formData, nroDocumento: e.target.value })}
-                  placeholder="Reg. de documento del tercero"
+                  placeholder={formData.tipoDocumento === "NIT" ? "Ej: 900123456 o 900123456-8" : "Reg. de documento del tercero"}
                   className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-slate-50/30 outline-none focus:border-blue-400 focus:bg-white transition-all caret-slate-950"
                 />
+                {(() => {
+                  if (formData.tipoDocumento !== "NIT") return null;
+                  const rawDoc = (formData.nroDocumento || "").trim();
+                  const rawNitOnly = rawDoc.split("-")[0].replace(/[^0-9]/g, "");
+                  const enteredDV = rawDoc.includes("-") ? rawDoc.split("-")[1]?.trim() : null;
+                  const computedDV = rawNitOnly ? calculateNIT_DV(rawNitOnly) : null;
+
+                  if (!rawNitOnly || computedDV === null) return null;
+
+                  return (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                      {enteredDV === null ? (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, nroDocumento: `${rawNitOnly}-${computedDV}` })}
+                          className="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          title="Hacer clic para aplicar el Dígito de Verificación oficial DIAN"
+                        >
+                          <FiCheckCircle size={13} className="text-emerald-600" />
+                          <span>DV calculado: <strong>{computedDV}</strong></span>
+                          <span className="underline ml-1">Aplicar formato {rawNitOnly}-{computedDV}</span>
+                        </button>
+                      ) : String(enteredDV) === String(computedDV) ? (
+                        <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg font-bold flex items-center gap-1.5">
+                          <FiCheckCircle size={13} className="text-emerald-600" />
+                          NIT y DV válidos según Módulo 11 DIAN ({rawNitOnly}-{enteredDV})
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, nroDocumento: `${rawNitOnly}-${computedDV}` })}
+                          className="text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          title="Corregir DV con el valor oficial"
+                        >
+                          <FiAlertCircle size={13} className="text-rose-600" />
+                          <span>DV inválido (-{enteredDV}). Debería ser <strong>-{computedDV}</strong>.</span>
+                          <span className="underline ml-1">Corregir a {rawNitOnly}-{computedDV}</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Razón Social */}
@@ -672,16 +763,21 @@ export default function Terceros() {
 
               {/* Código Postal */}
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Código postal
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                    Código postal (6 dígitos DIAN)
+                  </label>
+                  <span className="text-[9px] font-bold text-slate-400">Doc. Soporte</span>
+                </div>
                 <input
                   type="text"
+                  maxLength={6}
                   value={formData.codigoPostal}
-                  onChange={(e) => setFormData({ ...formData, codigoPostal: e.target.value })}
-                  placeholder="Código postal"
+                  onChange={(e) => setFormData({ ...formData, codigoPostal: e.target.value.replace(/[^0-9]/g, "").slice(0, 6) })}
+                  placeholder="Ej: 110111 (6 dígitos)"
                   className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-slate-50/30 outline-none focus:border-blue-400 focus:bg-white transition-all caret-slate-950"
                 />
+                <p className="text-[10px] text-slate-400 mt-1">Debe contener exactamente 6 dígitos numéricos para la DIAN.</p>
               </div>
 
               {/* Correo Electrónico */}

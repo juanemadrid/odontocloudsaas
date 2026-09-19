@@ -16,6 +16,7 @@ import { getConfigSectionCached, invalidateConfigCache } from "../hooks/useConfi
 import UserProfileModal from "../components/UserProfileModal";
 import SedeSelector from "../components/SedeSelector";
 import OdontoHelpAssistantModal from "../components/OdontoHelpAssistantModal";
+import ConnectionStatusBadge from "../components/ui/ConnectionStatusBadge";
 
 export default function DashboardLayout({ children, title, subtitle, basePath = "/dashboard_admin" }) {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -456,6 +457,9 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
 
                     {/* Right: Quick actions & User identity */}
                     <div className="flex items-center gap-3 sm:gap-4 text-xs font-semibold text-slate-600">
+                        {/* Indicador de Conexión Híbrida / Offline */}
+                        <ConnectionStatusBadge />
+
                         {/* Ayuda / Asistente IA */}
                         <button
                             type="button"

@@ -1180,6 +1180,20 @@ export default function PatientForm({
                                     </FormRow>
                                 )}
 
+                                <FormRow label="RH / Grupo sanguíneo">
+                                    <select {...register("rh")} className="form-input text-sm w-full">
+                                        <option value="">Seleccione...</option>
+                                        <option value="O+">O+</option>
+                                        <option value="O-">O-</option>
+                                        <option value="A+">A+</option>
+                                        <option value="A-">A-</option>
+                                        <option value="B+">B+</option>
+                                        <option value="B-">B-</option>
+                                        <option value="AB+">AB+</option>
+                                        <option value="AB-">AB-</option>
+                                    </select>
+                                </FormRow>
+
                                 {isVisible("estadoCivil") && (
                                     <FormRow label="Estado civil" required={isRequired("estadoCivil", true)} error={errors.estadoCivil}>
                                         <select {...register("estadoCivil")} className="form-input text-sm w-full">
@@ -1501,6 +1515,14 @@ export default function PatientForm({
                                                 <input {...register("polizaSalud")} className="form-input text-sm w-full" placeholder="Número de contrato o póliza" />
                                             </FormRow>
                                         )}
+
+                                        <FormRow label="SGSSS">
+                                            <input {...register("sgsss")} className="form-input text-sm w-full" placeholder="Sistema General de Seguridad Social en Salud" />
+                                        </FormRow>
+
+                                        <FormRow label="Tipo de paciente">
+                                            <input {...register("tipoPaciente")} className="form-input text-sm w-full" placeholder="Particular, Convenio, EPS" />
+                                        </FormRow>
                                     </div></div>
                             )}
 

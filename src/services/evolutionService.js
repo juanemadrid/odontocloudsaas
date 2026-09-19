@@ -1,5 +1,6 @@
 // src/services/evolutionService.js
 import supabase from "../lib/supabaseClient";
+import { addToSyncQueue } from "./offlineStorageService";
 
 export const addEvolution = async (evolutionData) => {
     try {
@@ -37,8 +38,32 @@ export const addEvolution = async (evolutionData) => {
             date: new Date(data.fecha)
         };
     } catch (error) {
-        console.error("Error adding evolution in Supabase:", error);
-        throw error;
+        console.warn("⚠️ Fallo al guardar evolución médica en Supabase. Guardando en almacenamiento local seguro:", error);
+        const evoId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `evo_${Date.now()}`;
+        const offlineRecord = {
+            id: evoId,
+            tenant_id: evolutionData.tenant_id || "default",
+            paciente_id: evolutionData.patientId || evolutionData.paciente_id,
+            profesional_id: evolutionData.doctorId || evolutionData.profesional_id || null,
+            diagnostico: evolutionData.diagnostico || evolutionData.diagnosis || "",
+            tratamiento: evolutionData.tratamiento || evolutionData.procedure || "",
+            notas: evolutionData.notas || evolutionData.notes || "",
+            procedimiento_cups: evolutionData.procedimiento_cups || evolutionData.cups || "",
+            fecha: evolutionData.date ? new Date(evolutionData.date).toISOString() : new Date().toISOString(),
+            _offline: true
+        };
+
+        await addToSyncQueue({
+            tenant_id: offlineRecord.tenant_id,
+            entity: "evoluciones",
+            action: "upsert",
+            payload: offlineRecord
+        });
+
+        return {
+            ...offlineRecord,
+            date: new Date(offlineRecord.fecha)
+        };
     }
 };
 
