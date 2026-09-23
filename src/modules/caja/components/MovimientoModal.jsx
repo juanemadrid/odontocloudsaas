@@ -451,6 +451,65 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
             </div>
           )}
 
+          {confirmEgresoDescubierto && (
+            <div style={{
+              background: "#fffbeb",
+              border: "1.5px solid #fde68a",
+              borderRadius: 12,
+              padding: "14px 16px",
+              marginBottom: 16,
+            }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 18 }}>⚠️</span>
+                <div style={{ fontSize: 12, color: "#92400e" }}>
+                  <div style={{ fontWeight: 800, marginBottom: 4, fontSize: 13 }}>
+                    Dinero insuficiente en caja
+                  </div>
+                  <div>
+                    El dinero disponible en la caja ({fmt(caja.saldoActual ?? caja.saldo_actual ?? 0)}) no es suficiente para realizar este pago de {fmt(montoNum)}. El saldo en caja quedará en negativo ({fmt(nuevoSaldo)}).
+                  </div>
+                  <div style={{ marginTop: 6, fontWeight: 700 }}>
+                    ¿Desea confirmar y registrar el pago de todos modos?
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setConfirmEgresoDescubierto(false)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    border: "1px solid #cbd5e1",
+                    background: "#fff",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    color: "#475569"
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "#dc2626",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#fff"
+                  }}
+                >
+                  Sí, confirmar y realizar pago
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button type="button" onClick={onClose} style={BTN_CANCEL}>Cancelar</button>

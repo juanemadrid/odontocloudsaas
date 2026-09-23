@@ -331,6 +331,12 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         if (conceptos.length === 0) return setError("Debes agregar al menos un concepto.");
         if (conceptos.some(c => !c.concepto || c.precioUnitario <= 0)) return setError("Revisa los conceptos y precios.");
         // Caja se asegura/abre automáticamente al registrar el recibo
+        let currentActiveCaja = null;
+        try {
+            currentActiveCaja = await ensureActiveCaja(inquilino, userProfile);
+        } catch (cajaErr) {
+            console.warn("No se pudo asegurar caja activa:", cajaErr);
+        }
 
         setSaving(true);
         setError("");

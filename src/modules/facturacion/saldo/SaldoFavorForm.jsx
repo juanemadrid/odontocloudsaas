@@ -261,6 +261,12 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
         const valNum = Number(String(valor).replace(/\D/g, ""));
         if (!valor || isNaN(valNum) || valNum <= 0) return setError("Ingresa un valor válido mayor que 0.");
         // Caja se asegura/abre automáticamente al registrar el saldo a favor
+        let currentActiveCaja = null;
+        try {
+            currentActiveCaja = await ensureActiveCaja(inquilino, userProfile);
+        } catch (cajaErr) {
+            console.warn("No se pudo asegurar caja activa:", cajaErr);
+        }
 
         setSaving(true);
         setError("");

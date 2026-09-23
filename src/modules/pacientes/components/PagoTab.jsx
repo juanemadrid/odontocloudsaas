@@ -18,6 +18,7 @@ import {
 import { formatCurrency } from '../../../utils/formatters';
 import { getPlansByPatient } from '../../../services/planService';
 import { getDoctorsList, getActiveCaja, ensureActiveCaja } from '../../../services/supabaseServices';
+import { getConfigSection, saveConfigSection } from '../../../services/configPersistenceService';
 
 // Módulo de Realizar Pago y Saldo a Favor del Paciente - OdontoCloud
 export default function PagoTab({ patient }) {

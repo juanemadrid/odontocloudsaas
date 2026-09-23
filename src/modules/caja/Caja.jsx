@@ -304,7 +304,8 @@ export default function Caja() {
                       c.usuario_id === userProfile?.id ||
                       (c.usuarioNombre || c.usuario_nombre || "").toLowerCase() === userName.toLowerCase()
                     )
-                  ) || allCajas.find(c => (c.estado || "").toLowerCase() === "abierta");
+                  ) ;
+                  // Si el usuario actual no tiene caja abierta, no mostrar la de otro usuario
 
                   if (miCajaActiva) {
                     return (
