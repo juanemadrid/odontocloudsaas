@@ -528,26 +528,150 @@ export default function Esterilizacion() {
         return;
       }
 
-      import("xlsx").then((XLSX) => {
-        const dataToExport = filteredCycles.map((c) => ({
-          "N° de lote": c.nroLote || c.consecutivo || "1",
-          "Fecha de esterilización": c.fechaEsterilizacion || "",
-          "Fecha de creación": (c.createdAt || c.created_at || "").split("T")[0] || c.fechaEsterilizacion,
-          "N° de carga": c.nroCarga || c.consecutivo || "1",
-          "N° de paquetes": c.nroPaquetes || 1,
-          "Contenido de la carga": (c.cargaItems || []).map(i => `${i.concepto} (x${i.cantidad})`).join(", "),
-          "Hora de inicio del ciclo": c.horaInicio || "",
-          "Hora de fin del ciclo": c.horaFin || "",
-          "Temperatura en grados": `${c.temperatura || 121} °C`,
-          "Presión en libras": `${c.presion || 15} PSI`,
-          "Responsable": (c.responsable || "").toUpperCase(),
-          "Activo": "Sí"
-        }));
+      import("xlsx-js-style").then((XLSX) => {
+        const headers = [
+          "N° de lote",
+          "Fecha de esterilización",
+          "Fecha de creación",
+          "N° de carga",
+          "N° de paquetes",
+          "Contenido de la carga",
+          "Hora de inicio del ciclo",
+          "Hora de fin del ciclo",
+          "Temperatura en grados centigrados",
+          "Presión en libras",
+          "Responsable",
+          "Activo",
+          "Control químico",
+          "Control Biológico",
+          "Acciones"
+        ];
 
-        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const formatExcelDate = (val) => {
+          if (!val) return "";
+          if (val.includes("T")) val = val.split("T")[0];
+          if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+            const [y, m, d] = val.split("-");
+            return `${d}/${m}/${y}`;
+          }
+          return val;
+        };
+
+        const rows = filteredCycles.map((cycle) => {
+          let contenidoStr = "";
+          if (Array.isArray(cycle.cargaItems) && cycle.cargaItems.length > 0) {
+            contenidoStr = cycle.cargaItems.map(i => `${i.cantidad || 1} ${i.concepto || ""}`.trim()).join(", ");
+          } else if (typeof cycle.cargaItems === "string") {
+            contenidoStr = cycle.cargaItems;
+          }
+
+          const fechaEsteril = formatExcelDate(cycle.fechaEsterilizacion);
+          const fechaCreacion = formatExcelDate(cycle.createdAt || cycle.created_at || cycle.fechaEsterilizacion);
+
+          const tempNum = parseFloat(cycle.temperatura) || 134;
+          const presNum = parseFloat(cycle.presion) || 30;
+
+          return [
+            cycle.nroLote || cycle.consecutivo || "1",
+            fechaEsteril,
+            fechaCreacion,
+            Number(cycle.nroCarga || cycle.consecutivo || 1),
+            Number(cycle.nroPaquetes || 1),
+            contenidoStr,
+            cycle.horaInicio || "",
+            cycle.horaFin || "",
+            tempNum,
+            presNum,
+            cycle.responsable || "",
+            "Sí",
+            cycle.quimicoImg || cycle.quimico_img || "",
+            cycle.biologicoImg || cycle.biologico_img || "",
+            ""
+          ];
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+        const borderStyle = {
+          top: { style: "thin", color: { rgb: "D3D3D3" } },
+          bottom: { style: "thin", color: { rgb: "D3D3D3" } },
+          left: { style: "thin", color: { rgb: "D3D3D3" } },
+          right: { style: "thin", color: { rgb: "D3D3D3" } }
+        };
+
+        // Encabezados en negrilla con bordes finos
+        headers.forEach((_, colIdx) => {
+          const cellRef = XLSX.utils.encode_cell({ r: 0, c: colIdx });
+          if (ws[cellRef]) {
+            ws[cellRef].s = {
+              font: { bold: true, name: "Calibri", sz: 11, color: { rgb: "000000" } },
+              alignment: {
+                vertical: "top",
+                horizontal: colIdx === 3 || colIdx === 4 || colIdx === 8 || colIdx === 9 ? "right" : "left",
+                wrapText: true
+              },
+              border: borderStyle
+            };
+          }
+        });
+
+        // Filas de datos con enlaces clicables a imágenes de control
+        rows.forEach((row, rowIdx) => {
+          const r = rowIdx + 1;
+          row.forEach((val, colIdx) => {
+            const cellRef = XLSX.utils.encode_cell({ r, c: colIdx });
+            if (!ws[cellRef]) {
+              ws[cellRef] = { t: "s", v: "" };
+            }
+
+            const isNumberCol = colIdx === 3 || colIdx === 4 || colIdx === 8 || colIdx === 9;
+            const isQuimicoCol = colIdx === 12;
+            const isBiologicoCol = colIdx === 13;
+            const isLink = (isQuimicoCol || isBiologicoCol) && typeof val === "string" && val.startsWith("http");
+
+            ws[cellRef].s = {
+              font: {
+                name: "Calibri",
+                sz: 11,
+                color: isLink ? { rgb: "0563C1" } : { rgb: "000000" },
+                underline: Boolean(isLink)
+              },
+              alignment: {
+                vertical: "top",
+                horizontal: isNumberCol ? "right" : "left",
+                wrapText: colIdx === 5
+              },
+              border: borderStyle
+            };
+
+            if (isLink) {
+              ws[cellRef].l = { Target: val, Tooltip: "Ver comprobante de esterilización" };
+            }
+          });
+        });
+
+        // Anchos de columna optimizados estilo OralDrive
+        ws["!cols"] = [
+          { wch: 14 }, // N° de lote
+          { wch: 22 }, // Fecha de esterilización
+          { wch: 20 }, // Fecha de creación
+          { wch: 14 }, // N° de carga
+          { wch: 16 }, // N° de paquetes
+          { wch: 55 }, // Contenido de la carga
+          { wch: 24 }, // Hora de inicio del ciclo
+          { wch: 24 }, // Hora de fin del ciclo
+          { wch: 32 }, // Temperatura en grados centigrados
+          { wch: 18 }, // Presión en libras
+          { wch: 22 }, // Responsable
+          { wch: 10 }, // Activo
+          { wch: 45 }, // Control químico
+          { wch: 45 }, // Control Biológico
+          { wch: 12 }  // Acciones
+        ];
+
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Esterilización");
-        XLSX.writeFile(wb, `Reporte_Esterilizacion_${appliedRange.start}_${appliedRange.end}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet");
+        XLSX.writeFile(wb, "Ciclos de esterilización.xlsx");
         toast.success("Archivo Excel exportado con éxito");
       });
     } catch (err) {
