@@ -61,10 +61,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         }
     ]);
 
-    // Form fields - Card 4: Anticipos
-    const [anticiposSeleccionados, setAnticiposSeleccionados] = useState([]);
-    const [selectedAnticipoDoc, setSelectedAnticipoDoc] = useState("");
-    const [anticiposDisponibles, setAnticiposDisponibles] = useState([]);
+    // Card 4 Anticipos eliminada por solicitud
 
     // Form fields - Card 5: Retenciones
     const [retencionesSeleccionadas, setRetencionesSeleccionadas] = useState([]);
@@ -255,16 +252,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 }
                 setMediosPagoList(mpList);
 
-                // 6. Cargar Egresos / Anticipos disponibles para asociar
-                try {
-                    const { data: pList } = await supabase
-                        .from("pagos_proveedor")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    if (pList && pList.length > 0) {
-                        setAnticiposDisponibles(pList);
-                    }
-                } catch (e) {}
 
                 // Calcular consecutivo sugerido
                 try {
@@ -333,63 +320,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         }));
     };
 
-    // Anticipos disponibles pertenecientes exclusivamente al Tercero seleccionado y SIN factura asociada previa
-    const anticiposFiltradosPorTercero = useMemo(() => {
-        if (!terceroId && !selectedTerceroObj && !terceroSearchQuery) return [];
-        const tId = String(selectedTerceroObj?.id || terceroId || "");
-        const tNom = String(selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase().trim();
-        const tDoc = String(selectedTerceroObj?.documento || "").toLowerCase().trim();
-
-        return anticiposDisponibles.filter(p => {
-            const pTerceroId = String(p.terceroId || p.proveedorId || "");
-            const pTerceroNom = String(p.tercero || p.proveedor || "").toLowerCase().trim();
-            const pDoc = String(p.documentoTercero || p.documento || "").toLowerCase().trim();
-
-            const matchTercero = 
-                (tId && pTerceroId === tId) ||
-                (tNom && pTerceroNom === tNom) ||
-                (tDoc && pDoc && pDoc === tDoc) ||
-                (pTerceroNom && tNom && (pTerceroNom.includes(tNom) || tNom.includes(pTerceroNom)));
-
-            // Solo pagos que NO tengan ya factura asociada
-            const tieneFactura = p.facturaCompraId || p.factura_compra_id || p.asociadoFactura || (p.facturasAsociadas && p.facturasAsociadas.length > 0);
-            
-            // Y que no esté ya añadido en anticiposSeleccionados
-            const yaSeleccionado = anticiposSeleccionados.some(a => String(a.idOriginal) === String(p.id));
-
-            return matchTercero && !tieneFactura && !yaSeleccionado;
-        });
-    }, [anticiposDisponibles, terceroId, selectedTerceroObj, terceroSearchQuery, anticiposSeleccionados]);
-
-    // Manejo de Anticipos
-    const handleAddAnticipo = () => {
-        if (!selectedAnticipoDoc) {
-            toast.error("Seleccione un documento de anticipo");
-            return;
-        }
-        const docObj = anticiposDisponibles.find(a => String(a.id) === String(selectedAnticipoDoc) || String(a.consecutivo || a.nroPago) === String(selectedAnticipoDoc));
-        if (!docObj) {
-            toast.error("Documento de anticipo no encontrado");
-            return;
-        }
-        const val = docObj.monto !== undefined ? docObj.monto : (docObj.total || 0);
-        
-        const newAnticipo = {
-            id: Date.now(),
-            idOriginal: docObj.id,
-            documento: docObj.nroPago || docObj.consecutivo || docObj.id || selectedAnticipoDoc,
-            valor: val,
-            fecha: docObj.fecha
-        };
-
-        setAnticiposSeleccionados(prev => [...prev, newAnticipo]);
-        setSelectedAnticipoDoc("");
-        toast.success("Anticipo asociado correctamente ✅");
-    };
-
-    const handleRemoveAnticipo = (id) => {
-        setAnticiposSeleccionados(prev => prev.filter(a => a.id !== id));
-    };
 
     // Manejo de Retenciones
     const handleAddRetencion = () => {
@@ -424,17 +354,13 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         return items.reduce((acc, item) => acc + (parseFloat(item.total) || 0), 0);
     }, [items]);
 
-    const totalAnticipos = useMemo(() => {
-        return anticiposSeleccionados.reduce((acc, a) => acc + (parseFloat(a.valor) || 0), 0);
-    }, [anticiposSeleccionados]);
-
     const totalRetenciones = useMemo(() => {
         return retencionesSeleccionadas.reduce((acc, r) => acc + (parseFloat(r.valor) || 0), 0);
     }, [retencionesSeleccionadas]);
 
     const totalNetoPagar = useMemo(() => {
-        return Math.max(0, totalConceptos - totalAnticipos - totalRetenciones);
-    }, [totalConceptos, totalAnticipos, totalRetenciones]);
+        return Math.max(0, totalConceptos - totalRetenciones);
+    }, [totalConceptos, totalRetenciones]);
 
     // Filtrar Terceros / Pacientes en tiempo real
     const filteredTerceros = useMemo(() => {
@@ -592,11 +518,11 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 condicionPago,
                 medioPago,
                 items: validItems,
-                anticipos: anticiposSeleccionados,
+                anticipos: [],
                 retenciones: retencionesSeleccionadas,
                 subtotal: totalConceptos,
                 totalConceptos,
-                totalAnticipos,
+                totalAnticipos: 0,
                 totalRetenciones,
                 total: totalConceptos,
                 totalNeto: totalNetoPagar,
@@ -634,21 +560,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 console.warn("website_config facturas_compra sync notice:", e);
             }
 
-            // 3. Vincular pagos de anticipos para marcarlos como asociados a esta factura
-            for (const ant of anticiposSeleccionados) {
-                if (ant.idOriginal) {
-                    try {
-                        await supabase
-                            .from("pagos_proveedor")
-                            .update({ 
-                                facturaCompraId: facturaRecord.id,
-                                facturaCompraDoc: facturaRecord.nroFactura,
-                                asociadoFactura: true
-                            })
-                            .eq("id", ant.idOriginal);
-                    } catch (e) {}
-                }
-            }
+
 
             toast.success("Factura de compra registrada exitosamente ✅");
             if (onSuccess) onSuccess(facturaRecord);
@@ -1148,82 +1060,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                     </div>
                 </div>
 
-                {/* ========================================================= */}
-                {/* CARD 4: ANTICIPOS                                         */}
-                {/* ========================================================= */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
-                    <h2 className="text-sm font-semibold text-slate-800">Anticipos</h2>
 
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center max-w-2xl">
-                        <label className="md:col-span-4 text-right text-xs font-medium text-slate-600">
-                            Documento asociado
-                        </label>
-                        <div className="md:col-span-8 flex items-center gap-2">
-                            <select
-                                value={selectedAnticipoDoc}
-                                onChange={(e) => setSelectedAnticipoDoc(e.target.value)}
-                                className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                            >
-                                <option value="">
-                                    {anticiposFiltradosPorTercero.length === 0 
-                                        ? (selectedTerceroObj || terceroSearchQuery ? "No hay pagos/anticipos sin factura para este tercero" : "Seleccione primero un tercero/paciente...") 
-                                        : "Seleccione pago / anticipo..."}
-                                </option>
-                                {anticiposFiltradosPorTercero.map(a => (
-                                    <option key={a.id} value={a.id}>
-                                        {a.nroPago || a.consecutivo || a.id} - {a.proveedor || a.tercero || "Egreso"} ({fmt(a.monto || a.total)}) {a.fecha ? `• Fecha: ${a.fecha}` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                            <button
-                                type="button"
-                                onClick={handleAddAnticipo}
-                                className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-xs shrink-0 cursor-pointer active:scale-95"
-                                title="Asociar anticipo"
-                            >
-                                <FiPlus size={16} />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Tabla de anticipos */}
-                    <div className="overflow-x-auto border border-slate-100 rounded-lg max-w-2xl mt-3">
-                        <table className="w-full text-left border-collapse text-xs">
-                            <thead>
-                                <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50/50">
-                                    <th className="py-2.5 px-4 w-[60%]">Documento asociado</th>
-                                    <th className="py-2.5 px-4 w-[30%]">Valor</th>
-                                    <th className="py-2.5 px-4 w-[10%] text-center">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {anticiposSeleccionados.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="3" className="py-6 text-center text-slate-400 italic">
-                                            No data
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    anticiposSeleccionados.map(a => (
-                                        <tr key={a.id} className="hover:bg-slate-50/50">
-                                            <td className="py-2 px-4 font-medium text-slate-800">{a.documento}</td>
-                                            <td className="py-2 px-4 font-bold text-slate-700">{fmt(a.valor)}</td>
-                                            <td className="py-2 px-4 text-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRemoveAnticipo(a.id)}
-                                                    className="text-slate-400 hover:text-rose-500 p-1"
-                                                >
-                                                    <FiTrash2 size={13} />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
 
                 {/* ========================================================= */}
                 {/* CARD 5: RETENCIONES                                       */}
@@ -1369,7 +1206,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                     required
                                     value={newTerceroData.nombre}
                                     onChange={(e) => setNewTerceroData({ ...newTerceroData, nombre: e.target.value })}
-                                    placeholder="Ej. Distribuidora Dental S.A.S."
                                     className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
                                 />
                             </div>
@@ -1394,7 +1230,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                         type="text"
                                         value={newTerceroData.nroDocumento}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, nroDocumento: e.target.value })}
-                                        placeholder="900.123.456-7"
                                         className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
                                     />
                                 </div>
@@ -1407,7 +1242,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                         type="text"
                                         value={newTerceroData.telefono}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, telefono: e.target.value })}
-                                        placeholder="300 123 4567"
                                         className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
                                     />
                                 </div>
@@ -1417,7 +1251,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                         type="text"
                                         value={newTerceroData.ciudad}
                                         onChange={(e) => setNewTerceroData({ ...newTerceroData, ciudad: e.target.value })}
-                                        placeholder="Sincelejo"
                                         className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
                                     />
                                 </div>
@@ -1429,7 +1262,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                     type="email"
                                     value={newTerceroData.email}
                                     onChange={(e) => setNewTerceroData({ ...newTerceroData, email: e.target.value })}
-                                    placeholder="contacto@proveedor.com"
                                     className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
                                 />
                             </div>
@@ -1440,7 +1272,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                     type="text"
                                     value={newTerceroData.direccion}
                                     onChange={(e) => setNewTerceroData({ ...newTerceroData, direccion: e.target.value })}
-                                    placeholder="Calle 25 # 18-30"
                                     className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
                                 />
                             </div>
