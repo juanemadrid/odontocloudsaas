@@ -76,6 +76,7 @@ export const EvolutionPrintService = {
                     dxPrincipal: evo.dxPrincipal || parsedTratamiento.dxPrincipal || null,
                     doctorSignature: evo.doctorSignature || parsedTratamiento.doctorSignature || null,
                     esterilizaciones: evo.esterilizaciones || parsedTratamiento.esterilizaciones || [],
+                    medicamentos: evo.medicamentos || parsedTratamiento.medicamentos || [],
                 };
             });
 
@@ -308,6 +309,12 @@ export const EvolutionPrintService = {
                             ${Array.isArray(evo.esterilizaciones) && evo.esterilizaciones.length > 0 ? `
                                 <div style="font-size: 9px; font-weight: 700; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 4px 8px; border-radius: 6px; margin-top: 8px;">
                                     <strong>CONTROL DE ESTERILIZACIÓN:</strong> ${evo.esterilizaciones.map(e => `${e.ciclo} · ${e.concepto} (Cant: ${e.cantidad})`).join('; ')}
+                                </div>
+                            ` : ''}
+
+                            ${Array.isArray(evo.medicamentos) && evo.medicamentos.length > 0 ? `
+                                <div style="font-size: 9px; font-weight: 700; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 6px; margin-top: 6px;">
+                                    <strong>MEDICAMENTOS APLICADOS:</strong> ${evo.medicamentos.map(m => `${m.medicamento} (Dosis: ${m.dosis} - Vía: ${m.via}${m.hora ? ` - Hora: ${m.hora}` : ''})`).join('; ')}
                                 </div>
                             ` : ''}
                         </div>

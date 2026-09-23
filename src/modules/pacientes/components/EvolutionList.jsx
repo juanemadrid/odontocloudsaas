@@ -534,6 +534,20 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 </div>
             )}
 
+            {/* Medicamentos aplicados si aplica (1:1 OralDrive) */}
+            {Array.isArray(evo.medicamentos) && evo.medicamentos.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                        💊 Medicamento:
+                    </span>
+                    {evo.medicamentos.map((m, i) => (
+                        <span key={i} className="text-[10px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                            {m.medicamento} {m.dosis ? `(${m.dosis})` : ''} {m.via ? `· Vía ${m.via}` : ''} {m.hora ? `(${m.hora})` : ''}
+                        </span>
+                    ))}
+                </div>
+            )}
+
             {/* FILA 4: Plan · Procedimientos + Registro Clínico Permanente (Candado) */}
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
                 {infoLine ? (

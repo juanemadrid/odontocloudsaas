@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiCheck, FiTrash2, FiPlus, FiActivity, FiLock } from 'react-icons/fi';
+import { FiX, FiCheck, FiTrash2, FiPlus, FiActivity, FiLock, FiClock } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { getDoctorsList } from '../../../services/supabaseServices';
 import { getPlansByPatient } from '../../../services/planService';
@@ -9,6 +9,33 @@ import { isDoctorUser, isDoctorAssignedToPatient } from '../../../utils/doctorHe
 import { useForm } from 'react-hook-form';
 import CIE10Search from './CIE10Search';
 import ClinicalAIAssistant from './ClinicalAIAssistant';
+
+// Lista oficial de anestésicos dentales existentes en Colombia (1:1 OralDrive)
+export const ANESTESICOS_COLOMBIA = [
+    "Clorhidrato de Procaina al 1%",
+    "Lidocaina al 2%",
+    "Odontocaina al 3%",
+    "Articaina al 4%",
+    "Lidocaina sin vasoconstrictor",
+    "Mepivacaína al 3%",
+    "Mepivacaína al 2% con Epinefrina",
+    "Bupivacaína al 0.5%",
+    "Benzocaína gel tópico al 20%"
+];
+
+// Vías correctas de administración odontológica (1:1 OralDrive)
+export const VIAS_ADMINISTRACION = [
+    "Infiltrativa",
+    "Troncular",
+    "Intraligamentosa",
+    "Intrapulpar",
+    "Tópica",
+    "Submucosa",
+    "Intraósea",
+    "Oral",
+    "Intramuscular",
+    "Intravenosa"
+];
 
 // Helper function to automatically infer Scope (Ámbito), Purpose (Finalidad), and Diagnostic Code (CIE-10) based on selected treatments/procedures.
 const inferRIPSFields = (servicesList) => {
@@ -120,30 +147,35 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
     // Temporary states for multi-item additions
     const [tempMedicamento, setTempMedicamento] = useState('');
+    const [isCustomMed, setIsCustomMed] = useState(false);
     const [tempVia, setTempVia] = useState('');
-    const [tempDosis, setTempDosis] = useState('1');
+    const [isCustomVia, setIsCustomVia] = useState(false);
+    const [tempDosis, setTempDosis] = useState('1 cartucho');
     const [tempHora, setTempHora] = useState('');
+    const [sterilizationError, setSterilizationError] = useState(null);
 
     const [tempCiclo, setTempCiclo] = useState('');
     const [tempConcepto, setTempConcepto] = useState('');
     const [tempCantidad, setTempCantidad] = useState(1);
 
     const handleAddMedicamento = () => {
-        if (!tempMedicamento.trim()) return toast.error("Debe ingresar el nombre del medicamento");
-        if (!tempVia) return toast.error("Debe seleccionar la vía de administración");
-        if (!tempDosis) return toast.error("Debe seleccionar la dosis");
+        if (!tempMedicamento.trim()) return toast.error("Debe seleccionar o ingresar el nombre del medicamento");
+        if (!tempVia.trim()) return toast.error("Debe seleccionar la vía de administración");
+        if (!tempDosis.trim()) return toast.error("Debe ingresar la dosis");
 
         const currentMeds = watch("medicamentos") || [];
         setValue("medicamentos", [...currentMeds, {
             medicamento: tempMedicamento.trim(),
-            via: tempVia,
-            dosis: tempDosis,
-            hora: tempHora || getCurrentTimeFormatted()
+            via: tempVia.trim(),
+            dosis: tempDosis.trim(),
+            hora: tempHora.trim() || getCurrentTimeFormatted()
         }]);
 
         setTempMedicamento('');
+        setIsCustomMed(false);
         setTempVia('');
-        setTempDosis('1');
+        setIsCustomVia(false);
+        setTempDosis('1 cartucho');
         setTempHora(getCurrentTimeFormatted());
     };
 
@@ -153,6 +185,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     };
 
     const handleAddEsterilizacion = () => {
+        setSterilizationError(null);
         if (!tempCiclo.trim()) return toast.error("Debe seleccionar el ciclo de esterilización");
         if (!tempConcepto.trim()) return toast.error("Debe seleccionar el concepto");
 
@@ -165,7 +198,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         const maxAvailable = itemInCarga ? parseInt(itemInCarga.cantidad, 10) : 0;
 
         if (maxAvailable > 0 && qty > maxAvailable) {
-            return toast.error(`La cantidad (${qty}) supera la cantidad disponible en el lote seleccionado (${maxAvailable})`);
+            setSterilizationError(`Cantidad de datos a insertar no disponible (${qty} ingresado, ${maxAvailable} disponible en lote)`);
+            return toast.error("Oops! Cantidad de datos a insertar no disponible");
         }
 
         const currentEsts = watch("esterilizaciones") || [];
@@ -177,6 +211,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
         setTempConcepto('');
         setTempCantidad(1);
+        setSterilizationError(null);
     };
 
     const handleRemoveEsterilizacion = (index) => {
@@ -215,13 +250,16 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
         const { localDate: currentLocalDate, localTime: currentLocalTime } = getLocalISOStrings();
 
-        setTempHora(currentLocalTime);
+        setTempHora(getCurrentTimeFormatted());
         setTempMedicamento('');
+        setIsCustomMed(false);
         setTempVia('');
-        setTempDosis('1');
+        setIsCustomVia(false);
+        setTempDosis('1 cartucho');
         setTempCiclo('');
         setTempConcepto('');
         setTempCantidad(1);
+        setSterilizationError(null);
 
         if (initialData) {
             if (initialData.type === 'nota') {
@@ -1124,18 +1162,43 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                 {watch("aplicaMedicamento") && (
                                     <div className="pl-0 md:pl-14 space-y-4 animate-fadeIn">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Medicamento correcto (1:1 OralDrive con Anestésicos de Colombia) */}
                                             <div>
                                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
                                                     Medicamento correcto <span className="text-rose-500">*</span>
                                                 </label>
-                                                <input 
-                                                    type="text"
-                                                    list="meds-sug"
-                                                    value={tempMedicamento}
-                                                    onChange={(e) => setTempMedicamento(e.target.value)}
-                                                    placeholder="Escriba o busque medicamento..."
-                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all placeholder:text-slate-300 caret-slate-950"
-                                                />
+                                                <select
+                                                    value={isCustomMed ? "__custom__" : (tempMedicamento || "")}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val === "__custom__") {
+                                                            setIsCustomMed(true);
+                                                            setTempMedicamento("");
+                                                        } else {
+                                                            setIsCustomMed(false);
+                                                            setTempMedicamento(val);
+                                                        }
+                                                    }}
+                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all cursor-pointer"
+                                                >
+                                                    <option value="">Seleccione...</option>
+                                                    {ANESTESICOS_COLOMBIA.map((med, idx) => (
+                                                        <option key={idx} value={med}>{med}</option>
+                                                    ))}
+                                                    <option value="__custom__">Otro medicamento (Personalizado)...</option>
+                                                </select>
+
+                                                {isCustomMed && (
+                                                    <input 
+                                                        type="text"
+                                                        list="meds-sug"
+                                                        value={tempMedicamento}
+                                                        onChange={(e) => setTempMedicamento(e.target.value)}
+                                                        placeholder="Escriba o busque medicamento..."
+                                                        autoFocus
+                                                        className="mt-2 w-full h-10 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all placeholder:text-slate-300 caret-slate-950 animate-fadeIn"
+                                                    />
+                                                )}
                                                 <datalist id="meds-sug">
                                                     {inventarioMeds.map((med, idx) => (
                                                         <option key={`inv_sug_${idx}`} value={med} />
@@ -1143,28 +1206,45 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                 </datalist>
                                             </div>
 
+                                            {/* Vía correcta (1:1 OralDrive con Vías Odontológicas) */}
                                             <div>
                                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
                                                     Vía correcta <span className="text-rose-500">*</span>
                                                 </label>
-                                                <input 
-                                                    type="text"
-                                                    list="via-sug"
-                                                    value={tempVia}
-                                                    onChange={(e) => setTempVia(e.target.value)}
-                                                    placeholder="Oral, Infiltración..."
-                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all placeholder:text-slate-300 caret-slate-950"
-                                                />
-                                                <datalist id="via-sug">
-                                                    <option value="Oral" />
-                                                    <option value="Tópica" />
-                                                    <option value="Infiltración Local" />
-                                                    <option value="Sublingual" />
-                                                    <option value="Intramuscular" />
-                                                    <option value="Intravenosa" />
-                                                </datalist>
+                                                <select
+                                                    value={isCustomVia ? "__custom__" : (tempVia || "")}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val === "__custom__") {
+                                                            setIsCustomVia(true);
+                                                            setTempVia("");
+                                                        } else {
+                                                            setIsCustomVia(false);
+                                                            setTempVia(val);
+                                                        }
+                                                    }}
+                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all cursor-pointer"
+                                                >
+                                                    <option value="">Seleccione...</option>
+                                                    {VIAS_ADMINISTRACION.map((v, idx) => (
+                                                        <option key={idx} value={v}>{v}</option>
+                                                    ))}
+                                                    <option value="__custom__">Otra vía (Personalizada)...</option>
+                                                </select>
+
+                                                {isCustomVia && (
+                                                    <input 
+                                                        type="text"
+                                                        value={tempVia}
+                                                        onChange={(e) => setTempVia(e.target.value)}
+                                                        placeholder="Escriba la vía de administración..."
+                                                        autoFocus
+                                                        className="mt-2 w-full h-10 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all placeholder:text-slate-300 caret-slate-950 animate-fadeIn"
+                                                    />
+                                                )}
                                             </div>
 
+                                            {/* Dosis */}
                                             <div>
                                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
                                                     Dosis <span className="text-rose-500">*</span>
@@ -1174,12 +1254,14 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                     list="dosis-sug"
                                                     value={tempDosis}
                                                     onChange={(e) => setTempDosis(e.target.value)}
-                                                    placeholder="1 cartucho, cada 8h..."
+                                                    placeholder="1 cartucho, 1.8 ml..."
                                                     className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all placeholder:text-slate-300 caret-slate-950"
                                                 />
                                                 <datalist id="dosis-sug">
-                                                    <option value="1 cartucho" />
-                                                    <option value="2 cartuchos" />
+                                                    <option value="1 cartucho (1.8 ml)" />
+                                                    <option value="2 cartuchos (3.6 ml)" />
+                                                    <option value="1/2 cartucho (0.9 ml)" />
+                                                    <option value="3 cartuchos (5.4 ml)" />
                                                     <option value="1 tableta" />
                                                     <option value="Cada 8 horas" />
                                                     <option value="Cada 12 horas" />
@@ -1188,61 +1270,73 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                 </datalist>
                                             </div>
 
+                                            {/* Hora de aplicación (1:1 OralDrive con botón de reloj) */}
                                             <div>
                                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
                                                     Hora de aplicación
                                                 </label>
-                                                <input 
-                                                    type="text"
-                                                    value={tempHora}
-                                                    onChange={(e) => setTempHora(e.target.value)}
-                                                    placeholder="hh:mm am/pm"
-                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                                />
+                                                <div className="relative">
+                                                    <input 
+                                                        type="text"
+                                                        value={tempHora || getCurrentTimeFormatted()}
+                                                        onChange={(e) => setTempHora(e.target.value)}
+                                                        placeholder="hh:mm am/pm"
+                                                        className="w-full h-11 pl-3 pr-10 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTempHora(getCurrentTimeFormatted())}
+                                                        title="Actualizar a hora actual"
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md"
+                                                    >
+                                                        <FiClock size={16} />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
 
                                         <button 
                                             type="button" 
                                             onClick={handleAddMedicamento}
-                                            className="h-10 px-6 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-[12px] font-black text-[11px] uppercase tracking-widest transition-all self-start shadow-md shadow-lime-500/10"
+                                            className="h-10 px-6 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-[12px] font-black text-[11px] uppercase tracking-widest transition-all self-start shadow-md shadow-lime-500/10 cursor-pointer active:scale-95"
                                         >
                                             Agregar medicamento
                                         </button>
 
-                                        {/* List Table for Medications */}
+                                        {/* List Table for Medications (1:1 OralDrive) */}
                                         <div className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
                                             <table className="w-full text-left table-fixed">
                                                 <thead className="bg-slate-50 border-b border-slate-100">
                                                     <tr>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[35%]">Medicamento</th>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[15%]">Vía</th>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[20%]">Dosis</th>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[20%]">Hora</th>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider text-center w-[10%]">Acción</th>
+                                                        <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[35%]">Medicamento</th>
+                                                        <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[18%]">Vía</th>
+                                                        <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[20%]">Dosis</th>
+                                                        <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[17%]">Hora aplicación</th>
+                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider text-center w-[10%]">Acciones</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
                                                     {(watch("medicamentos") || []).length === 0 ? (
                                                         <tr>
-                                                            <td colSpan="5" className="px-4 py-8 text-center text-slate-400 font-bold uppercase tracking-wider bg-slate-50/50">
-                                                                Ningún medicamento ha sido añadido
+                                                            <td colSpan="5" className="px-4 py-8 text-center text-slate-400 font-medium italic bg-slate-50/30">
+                                                                No hay datos añadidos
                                                             </td>
                                                         </tr>
                                                     ) : (
                                                         (watch("medicamentos") || []).map((m, idx) => (
                                                             <tr key={idx} className="hover:bg-slate-50/50">
-                                                                <td className="px-2 py-2.5 truncate text-[11px]" title={m.medicamento}>{m.medicamento}</td>
-                                                                <td className="px-2 py-2.5 text-[11px]">{m.via}</td>
-                                                                <td className="px-2 py-2.5 text-[11px]">{m.dosis}</td>
-                                                                <td className="px-2 py-2.5 text-[11px]">{m.hora}</td>
+                                                                <td className="px-3 py-2.5 truncate text-[11px]" title={m.medicamento}>{m.medicamento}</td>
+                                                                <td className="px-3 py-2.5 text-[11px]">{m.via}</td>
+                                                                <td className="px-3 py-2.5 text-[11px]">{m.dosis}</td>
+                                                                <td className="px-3 py-2.5 text-[11px]">{m.hora}</td>
                                                                 <td className="px-2 py-2.5 text-center">
                                                                     <button 
                                                                         type="button" 
                                                                         onClick={() => handleRemoveMedicamento(idx)}
-                                                                        className="text-rose-500 hover:text-rose-700 transition-colors p-1"
+                                                                        className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors p-1 mx-auto cursor-pointer border-0 bg-transparent"
+                                                                        title="Quitar"
                                                                     >
-                                                                        <FiTrash2 size={14} />
+                                                                        <FiTrash2 size={13} />
                                                                     </button>
                                                                 </td>
                                                             </tr>
@@ -1392,6 +1486,19 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                 </tbody>
                                             </table>
                                         </div>
+
+                                        {/* Banner de error estilo OralDrive ("Oops! Cantidad de datos a insertar no disponible") */}
+                                        {sterilizationError && (
+                                            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-center gap-3 animate-fadeIn shadow-sm">
+                                                <div className="w-8 h-8 rounded-full bg-rose-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                                                    !
+                                                </div>
+                                                <div>
+                                                    <div className="font-black text-xs tracking-wider uppercase text-rose-800">Oops!</div>
+                                                    <div className="text-xs font-semibold text-rose-600">{sterilizationError}</div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
