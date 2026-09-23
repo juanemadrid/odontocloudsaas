@@ -520,6 +520,20 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 </p>
             )}
 
+            {/* Control de esterilización si aplica */}
+            {Array.isArray(evo.esterilizaciones) && evo.esterilizaciones.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        🧪 Esterilización:
+                    </span>
+                    {evo.esterilizaciones.map((est, i) => (
+                        <span key={i} className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono">
+                            {est.ciclo} · {est.concepto} (x{est.cantidad})
+                        </span>
+                    ))}
+                </div>
+            )}
+
             {/* FILA 4: Plan · Procedimientos + Registro Clínico Permanente (Candado) */}
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
                 {infoLine ? (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { createPlan, getPlans, updatePlan, deletePlan } from "../../services/adminService";
+import { createPlan, getPlans, updatePlan, deletePlan, saveAllPlans, OFFICIAL_DEFAULT_PLANS } from "../../services/adminService";
 
 // Simple Icon Components
 const IconPlan = () => (
@@ -21,6 +21,7 @@ const IconTrash = () => (
 export default function PlanManagement({ hideTitle }) {
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [syncing, setSyncing] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [editingId, setEditingId] = useState(null); // ID if editing
 
@@ -183,6 +184,21 @@ export default function PlanManagement({ hideTitle }) {
         setShowModal(true);
     };
 
+    const handleSyncOfficialCatalog = async () => {
+        if (!window.confirm("¿Deseas sincronizar todos los planes con el Catálogo Oficial OdontoCloud 2026 (Consultorio 3 usuarios, Clínica 5 usuarios, Enterprise 11 usuarios)? Esto actualizará los valores y características de forma inmediata.")) return;
+        try {
+            setSyncing(true);
+            await saveAllPlans(OFFICIAL_DEFAULT_PLANS);
+            await loadPlans();
+            alert("✅ Catálogo oficial sincronizado exitosamente en Supabase.");
+        } catch (err) {
+            console.error(err);
+            alert("Error al sincronizar catálogo: " + err.message);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     return (
         /* Force background white to override any dark theme leakage */
         <div className="w-full space-y-6 bg-white min-h-full" style={{ backgroundColor: '#ffffff' }}>
@@ -194,12 +210,22 @@ export default function PlanManagement({ hideTitle }) {
                     {/* Explicitly dark slate text */}
                     <h3 className="font-black text-slate-800 text-xs uppercase tracking-[.2em]">Modelos de Negocio</h3>
                 </div>
-                <button
-                    onClick={openCreate}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2"
-                >
-                    + Definir Nuevo Plan
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleSyncOfficialCatalog}
+                        disabled={syncing}
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
+                        title="Actualizar catálogo con Consultorio (3 usuarios), Clínica (5 usuarios) y Enterprise (11 usuarios)"
+                    >
+                        {syncing ? "Sincronizando..." : "⚡ Sincronizar Catálogo Oficial"}
+                    </button>
+                    <button
+                        onClick={openCreate}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2"
+                    >
+                        + Definir Nuevo Plan
+                    </button>
+                </div>
             </div>
 
             {loading ? (
@@ -282,7 +308,7 @@ export default function PlanManagement({ hideTitle }) {
                                                 <>
                                                     <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 text-[10px]">⚡</div>
                                                     <span className="text-xs font-bold text-emerald-700">
-                                                        Facturación Electrónica ({plan.facturasIncluidas ? plan.facturasIncluidas.toLocaleString('es-CO') : 300} / mes)
+                                                        Facturación Electrónica ({plan.facturasIncluidas ? plan.facturasIncluidas.toLocaleString('es-CO') : 300} docs / año)
                                                     </span>
                                                 </>
                                             ) : (
@@ -502,7 +528,7 @@ export default function PlanManagement({ hideTitle }) {
                                     {newPlan.includeFacturacion && (
                                         <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-100 animate-fadeIn">
                                             <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-wider mb-1">
-                                                Facturas Electrónicas Incluidas al mes
+                                                Documentos Electrónicos DIAN incluidos al año (Facturas, NC, Doc. Soporte)
                                             </label>
                                             <input
                                                 type="text"

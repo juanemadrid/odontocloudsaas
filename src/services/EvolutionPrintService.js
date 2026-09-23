@@ -75,6 +75,7 @@ export const EvolutionPrintService = {
                     plantillaItems: evo.plantillaItems || parsedTratamiento.plantillaItems || {},
                     dxPrincipal: evo.dxPrincipal || parsedTratamiento.dxPrincipal || null,
                     doctorSignature: evo.doctorSignature || parsedTratamiento.doctorSignature || null,
+                    esterilizaciones: evo.esterilizaciones || parsedTratamiento.esterilizaciones || [],
                 };
             });
 
@@ -303,6 +304,12 @@ export const EvolutionPrintService = {
                             <div style="font-size: 10.5px; color: #334155; line-height: 1.6; font-weight: 500; margin-top: 6px; white-space: pre-wrap; word-break: break-word;">
                                 ${obsText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
                             </div>
+
+                            ${Array.isArray(evo.esterilizaciones) && evo.esterilizaciones.length > 0 ? `
+                                <div style="font-size: 9px; font-weight: 700; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 4px 8px; border-radius: 6px; margin-top: 8px;">
+                                    <strong>CONTROL DE ESTERILIZACIÓN:</strong> ${evo.esterilizaciones.map(e => `${e.ciclo} · ${e.concepto} (Cant: ${e.cantidad})`).join('; ')}
+                                </div>
+                            ` : ''}
                         </div>
                     `;
                 }).join('');

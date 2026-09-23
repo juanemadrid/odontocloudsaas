@@ -1,9 +1,75 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { FiCalendar, FiPlus, FiSearch, FiTrash2, FiEye, FiArrowLeft, FiSave, FiUploadCloud, FiClock, FiCheckCircle } from "react-icons/fi";
+import { FiCalendar, FiPlus, FiSearch, FiTrash2, FiEye, FiArrowLeft, FiSave, FiUploadCloud, FiClock, FiCheckCircle, FiEdit2, FiX, FiDownload, FiImage } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 import { resolvePrivateFileUrl, uploadPrivateFile } from "../../services/privateStorageService";
+
+// Helper para calcular el siguiente número de lote: DDMMYYYY-1, DDMMYYYY-2...
+export const computeNextLote = (dateStr, allCycles = [], currentId = null) => {
+  if (!dateStr) {
+    const d = new Date();
+    dateStr = d.toISOString().split("T")[0];
+  }
+  const parts = dateStr.split("-");
+  if (parts.length < 3) return "1";
+  const [yyyy, mm, dd] = parts;
+  const prefix = `${dd}${mm}${yyyy}`; // ej: 25112025
+
+  const otherCycles = allCycles.filter(c => !currentId || c.id !== currentId);
+  let maxNum = 0;
+
+  otherCycles.forEach(c => {
+    const lote = String(c.nroLote || "");
+    if (lote.startsWith(prefix + "-")) {
+      const match = lote.match(new RegExp(`^${prefix}-(\\d+)`));
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    } else if (c.fechaEsterilizacion === dateStr) {
+      maxNum += 1;
+    }
+  });
+
+  return `${prefix}-${maxNum + 1}`;
+};
+
+// Compresor de imagen en cliente como respaldo ultra-resiliente
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    if (!file) return resolve("");
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 1200;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(e.target.result);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve("");
+    reader.readAsDataURL(file);
+  });
+};
 
 export default function Esterilizacion() {
   const { userProfile } = useAuth();
@@ -13,6 +79,7 @@ export default function Esterilizacion() {
   const [view, setView] = useState("list");
   const [cycles, setCycles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editingCycle, setEditingCycle] = useState(null);
 
   // Date filters
   const [dateRange, setDateRange] = useState({
@@ -23,6 +90,7 @@ export default function Esterilizacion() {
 
   // Form states
   const [fechaEsterilizacion, setFechaEsterilizacion] = useState(new Date().toISOString().split("T")[0]);
+  const [nroLote, setNroLote] = useState("");
   const [conceptoCarga, setConceptoCarga] = useState("");
   const [cantidadCarga, setCantidadCarga] = useState(1);
   const [cargaItems, setCargaItems] = useState([]); // List of { concepto, cantidad }
@@ -51,6 +119,9 @@ export default function Esterilizacion() {
   // Detail Modal state
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [activeCycleDetail, setActiveCycleDetail] = useState(null);
+
+  // Lightbox Modal state for full image viewing
+  const [previewImageModal, setPreviewImageModal] = useState({ isOpen: false, url: "", title: "" });
 
   // Load clinic users/staff for dropdown
   useEffect(() => {
@@ -116,13 +187,30 @@ export default function Esterilizacion() {
         list = cfgRow?.config?.ciclos_esterilizacion || [];
       }
 
-      const formatted = await Promise.all(list.map(async (docData, idx) => ({
-        id: docData.id || `cycle_${idx}`,
-        consecutivo: idx + 1,
-        ...docData,
-        quimicoImg: await resolvePrivateFileUrl(docData.quimicoImg || ""),
-        biologicoImg: await resolvePrivateFileUrl(docData.biologicoImg || docData.biologcioImg || "")
-      })));
+      const formatted = await Promise.all(list.map(async (docData, idx) => {
+        const rawQ = docData.quimicoImg || "";
+        const rawB = docData.biologicoImg || docData.biologcioImg || "";
+        let qUrl = rawQ;
+        let bUrl = rawB;
+        if (rawQ && !rawQ.startsWith("data:") && !rawQ.startsWith("http")) {
+          qUrl = (await resolvePrivateFileUrl(rawQ)) || rawQ;
+        }
+        if (rawB && !rawB.startsWith("data:") && !rawB.startsWith("http")) {
+          bUrl = (await resolvePrivateFileUrl(rawB)) || rawB;
+        }
+
+        const dateParts = (docData.fechaEsterilizacion || "").split("-");
+        const dateLoteFallback = dateParts.length === 3 ? `${dateParts[2]}${dateParts[1]}${dateParts[0]}-${idx + 1}` : `LOTE-${idx + 1}`;
+
+        return {
+          id: docData.id || `cycle_${idx}`,
+          consecutivo: idx + 1,
+          ...docData,
+          nroLote: docData.nroLote || docData.lote || dateLoteFallback,
+          quimicoImg: qUrl,
+          biologicoImg: bUrl
+        };
+      }));
       formatted.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
       setCycles(formatted);
     } catch (e) {
@@ -136,6 +224,65 @@ export default function Esterilizacion() {
   useEffect(() => {
     loadCycles();
   }, [inquilino]);
+
+  // Al crear nuevo ciclo, auto-generar número de lote basado en la fecha
+  const handleStartNew = () => {
+    setEditingCycle(null);
+    const today = new Date().toISOString().split("T")[0];
+    setFechaEsterilizacion(today);
+    setNroLote(computeNextLote(today, cycles));
+    setCargaItems([]);
+    setConceptoCarga("");
+    setCantidadCarga(1);
+    setNroPaquetes(1);
+    setHoraInicio("08:00 AM");
+    setHoraFin("09:00 AM");
+    setTemperatura(121);
+    setPresion(15);
+    setQuimicoImg("");
+    setBiologicoImg("");
+    setQuimicoPreview("");
+    setBiologicoPreview("");
+    setView("new");
+  };
+
+  // Al editar ciclo existente
+  const handleStartEdit = (cycle) => {
+    setEditingCycle(cycle);
+    setFechaEsterilizacion(cycle.fechaEsterilizacion || new Date().toISOString().split("T")[0]);
+    setNroLote(cycle.nroLote || computeNextLote(cycle.fechaEsterilizacion, cycles, cycle.id));
+    setCargaItems(Array.isArray(cycle.cargaItems) ? [...cycle.cargaItems] : []);
+    setNroPaquetes(cycle.nroPaquetes || 1);
+    setHoraInicio(cycle.horaInicio || "08:00 AM");
+    setHoraFin(cycle.horaFin || "09:00 AM");
+    setTemperatura(cycle.temperatura || 121);
+    setPresion(cycle.presion || 15);
+
+    const isUser = usersList.includes(cycle.responsable);
+    if (isUser) {
+      setResponsableTipo("usuario");
+      setResponsableUsuario(cycle.responsable);
+      setResponsableOtro("");
+    } else {
+      setResponsableTipo("otro");
+      setResponsableOtro(cycle.responsable || "");
+      setResponsableUsuario("");
+    }
+
+    setQuimicoImg(cycle.quimicoImg || "");
+    setQuimicoPreview(cycle.quimicoImg || "");
+    setBiologicoImg(cycle.biologicoImg || "");
+    setBiologicoPreview(cycle.biologicoImg || "");
+
+    setView("new");
+  };
+
+  const handleFechaChange = (newDate) => {
+    setFechaEsterilizacion(newDate);
+    if (!editingCycle) {
+      setNroLote(computeNextLote(newDate, cycles));
+    }
+  };
 
   const handleSearch = (e) => {
     if (e) e.preventDefault();
@@ -180,27 +327,44 @@ export default function Esterilizacion() {
     if (type === "biologico") setUploadingBiologico(true);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const uploaded = await uploadPrivateFile({
-        tenantId: inquilino,
-        relativePath: `esterilizacion/${Date.now()}.${fileExt}`,
-        file,
-        upsert: true,
-        optimizationProfile: "standard"
-      });
+      // 1. Obtener versión comprimida en base64 de inmediato (para vista previa y respaldo ultra-resiliente)
+      const compressedBase64 = await compressImage(file);
+      if (type === "quimico") setQuimicoPreview(compressedBase64);
+      if (type === "biologico") setBiologicoPreview(compressedBase64);
+
+      // 2. Intentar subir a Supabase Storage privado
+      let uploadedUrl = "";
+      try {
+        const fileExt = file.name.split('.').pop() || "jpg";
+        const uploaded = await uploadPrivateFile({
+          tenantId: inquilino,
+          relativePath: `esterilizacion/${Date.now()}.${fileExt}`,
+          file,
+          upsert: true,
+          optimizationProfile: "standard"
+        });
+        if (uploaded?.signedUrl) {
+          uploadedUrl = uploaded.signedUrl;
+        } else if (uploaded?.reference) {
+          uploadedUrl = uploaded.reference;
+        }
+      } catch (storageErr) {
+        console.warn("Storage upload fallback a base64 comprimido:", storageErr);
+      }
+
+      // Si storage subió bien, usamos la URL/referencia; si no, guardamos la imagen comprimida
+      const finalImageValue = uploadedUrl || compressedBase64;
 
       if (type === "quimico") {
-        setQuimicoImg(uploaded.reference);
-        setQuimicoPreview(uploaded.signedUrl);
+        setQuimicoImg(finalImageValue);
         toast.success("Control químico cargado");
       } else {
-        setBiologicoImg(uploaded.reference);
-        setBiologicoPreview(uploaded.signedUrl);
+        setBiologicoImg(finalImageValue);
         toast.success("Control biológico cargado");
       }
     } catch (error) {
-      console.error("Error uploading image:", error);
-      toast.error("Error al subir la imagen");
+      console.error("Error cargando imagen:", error);
+      toast.error("Error al cargar la imagen");
     } finally {
       if (type === "quimico") setUploadingQuimico(false);
       if (type === "biologico") setUploadingBiologico(false);
@@ -227,8 +391,12 @@ export default function Esterilizacion() {
     setSaving(true);
 
     try {
-      const newCycle = {
-        id: `cycle_${Date.now()}`,
+      const isEditing = !!editingCycle;
+      const targetLote = (nroLote || computeNextLote(fechaEsterilizacion, cycles, editingCycle?.id)).trim();
+
+      const cycleData = {
+        id: isEditing ? editingCycle.id : `cycle_${Date.now()}`,
+        nroLote: targetLote,
         fechaEsterilizacion,
         cargaItems,
         nroPaquetes: parseInt(nroPaquetes) || 1,
@@ -237,24 +405,31 @@ export default function Esterilizacion() {
         temperatura: parseFloat(temperatura) || 121,
         presion: parseFloat(presion) || 15,
         responsable: respName,
-        quimicoImg,
-        biologicoImg,
-        createdAt: new Date().toISOString()
+        quimicoImg: quimicoImg || (isEditing ? editingCycle.quimicoImg : "") || "",
+        biologicoImg: biologicoImg || (isEditing ? editingCycle.biologicoImg : "") || "",
+        createdAt: isEditing ? (editingCycle.createdAt || editingCycle.created_at || new Date().toISOString()) : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
-      // 1. Save to DB table
-      let savedInTable = false;
+      // 1. Guardar en tabla Supabase si existe
       try {
-        const { error: insErr } = await supabase
-          .from("ciclos_esterilizacion")
-          .insert({
-            ...newCycle,
-            tenant_id: inquilino
-          });
-        if (!insErr) savedInTable = true;
+        if (isEditing) {
+          await supabase
+            .from("ciclos_esterilizacion")
+            .update(cycleData)
+            .eq("tenant_id", inquilino)
+            .eq("id", editingCycle.id);
+        } else {
+          await supabase
+            .from("ciclos_esterilizacion")
+            .insert({
+              ...cycleData,
+              tenant_id: inquilino
+            });
+        }
       } catch (e) {}
 
-      // 2. Save in website_config fallback
+      // 2. Guardar en website_config (fallback o sincronizado)
       try {
         const { data: cfgRow } = await supabase
           .from("website_config")
@@ -264,7 +439,12 @@ export default function Esterilizacion() {
 
         const currentConfig = cfgRow?.config || {};
         const currentList = currentConfig.ciclos_esterilizacion || [];
-        const updatedList = [newCycle, ...currentList];
+        let updatedList = [];
+        if (isEditing) {
+          updatedList = currentList.map(c => c.id === editingCycle.id ? cycleData : c);
+        } else {
+          updatedList = [cycleData, ...currentList];
+        }
 
         await supabase
           .from("website_config")
@@ -278,8 +458,9 @@ export default function Esterilizacion() {
           }, { onConflict: "tenant_id" });
       } catch (e) {}
 
-      toast.success("Ciclo de esterilización guardado exitosamente");
+      toast.success(isEditing ? "Ciclo de esterilización actualizado exitosamente" : "Ciclo de esterilización guardado exitosamente");
       setView("list");
+      setEditingCycle(null);
       loadCycles();
 
       // Reset form
@@ -409,7 +590,7 @@ export default function Esterilizacion() {
 
           <button 
             type="button"
-            onClick={() => setView("new")}
+            onClick={handleStartNew}
             className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded-full transition-all cursor-pointer shadow-2xs shrink-0"
           >
             Agregar ciclo
@@ -546,28 +727,26 @@ export default function Esterilizacion() {
                       </td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center">
                         {c.quimicoImg ? (
-                          <a
-                            href={c.quimicoImg}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline"
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageModal({ isOpen: true, url: c.quimicoImg, title: `Control Químico - Lote ${c.nroLote || c.consecutivo}` })}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline cursor-pointer bg-transparent border-0"
                           >
                             Ver foto
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-slate-400 text-[10px] italic">Sin comprobante</span>
                         )}
                       </td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center">
                         {c.biologicoImg ? (
-                          <a
-                            href={c.biologicoImg}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline"
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageModal({ isOpen: true, url: c.biologicoImg, title: `Control Biológico - Lote ${c.nroLote || c.consecutivo}` })}
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-600 hover:text-sky-800 hover:underline cursor-pointer bg-transparent border-0"
                           >
                             Ver foto
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-slate-400 text-[10px] italic">Sin comprobante</span>
                         )}
@@ -575,6 +754,7 @@ export default function Esterilizacion() {
                       <td className="py-2 px-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
+                            type="button"
                             onClick={() => {
                               setActiveCycleDetail(c);
                               setShowDetailModal(true);
@@ -585,6 +765,15 @@ export default function Esterilizacion() {
                             <FiEye size={12} />
                           </button>
                           <button
+                            type="button"
+                            onClick={() => handleStartEdit(c)}
+                            className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center transition-colors cursor-pointer"
+                            title="Editar ciclo"
+                          >
+                            <FiEdit2 size={12} />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleDelete(c.id)}
                             className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
                             title="Eliminar"
@@ -690,11 +879,47 @@ export default function Esterilizacion() {
             </div>
           </div>
         )}
+
+        {/* Lightbox Image Preview Modal */}
+        {previewImageModal.isOpen && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <span className="text-xs font-bold text-slate-700">{previewImageModal.title}</span>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={previewImageModal.url}
+                    download="comprobante_esterilizacion.jpg"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1.5 rounded hover:bg-slate-200 text-slate-600 transition-colors"
+                    title="Descargar imagen"
+                  >
+                    <FiDownload size={14} />
+                  </a>
+                  <button
+                    onClick={() => setPreviewImageModal({ isOpen: false, url: "", title: "" })}
+                    className="p-1.5 rounded hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                  >
+                    <FiX size={15} />
+                  </button>
+                </div>
+              </div>
+              <div className="p-4 flex items-center justify-center bg-slate-900/5 overflow-auto max-h-[75vh]">
+                <img
+                  src={previewImageModal.url}
+                  alt={previewImageModal.title}
+                  className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-sm"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  // Create Cycle Form View (New)
+  // Create Cycle Form View (New / Edit)
   return (
     <div className="w-full max-w-6xl mx-auto animate-in fade-in duration-300 space-y-4 pb-12">
       
@@ -703,17 +928,20 @@ export default function Esterilizacion() {
         <div className="flex items-center gap-3">
           <button 
             type="button"
-            onClick={() => setView("list")}
+            onClick={() => {
+              setView("list");
+              setEditingCycle(null);
+            }}
             className="w-7 h-7 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer mr-1"
             title="Volver"
           >
             <FiArrowLeft size={14} />
           </button>
           <h2 className="text-sm font-bold text-slate-800 tracking-tight">
-            Nuevo ciclo
+            {editingCycle ? `Editar ciclo (${editingCycle.nroLote || editingCycle.consecutivo})` : "Nuevo ciclo"}
           </h2>
           <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-            <span>🏠 - Esterilización - Nuevo ciclo</span>
+            <span>🏠 - Esterilización - {editingCycle ? "Editar ciclo" : "Nuevo ciclo"}</span>
           </div>
         </div>
 
@@ -723,7 +951,7 @@ export default function Esterilizacion() {
           disabled={saving || cargaItems.length === 0}
           className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded-full transition-all cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
         >
-          {saving ? "Guardando..." : "Guardar"}
+          {saving ? "Guardando..." : (editingCycle ? "Actualizar" : "Guardar")}
         </button>
       </div>
 
@@ -746,9 +974,34 @@ export default function Esterilizacion() {
                 required
                 className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all"
                 value={fechaEsterilizacion}
-                onChange={e => setFechaEsterilizacion(e.target.value)}
+                onChange={e => handleFechaChange(e.target.value)}
                 max="9999-12-31" min="1900-01-01" 
               />
+            </div>
+          </div>
+
+          {/* N° de lote (DDMMYYYY-1, DDMMYYYY-2...) */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs text-slate-500 sm:w-44 sm:text-right shrink-0">
+              N° de lote*
+            </label>
+            <div className="flex items-center gap-2 w-full sm:w-64">
+              <input
+                type="text"
+                required
+                placeholder="Ej. 25112025-1"
+                className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 font-mono font-bold outline-none focus:border-sky-500 transition-all"
+                value={nroLote}
+                onChange={e => setNroLote(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setNroLote(computeNextLote(fechaEsterilizacion, cycles, editingCycle?.id))}
+                className="px-2.5 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[11px] font-semibold shrink-0 cursor-pointer"
+                title="Generar lote automático"
+              >
+                Auto
+              </button>
             </div>
           </div>
 
@@ -1020,7 +1273,7 @@ export default function Esterilizacion() {
           disabled={saving || cargaItems.length === 0}
           className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] active:scale-95 text-white font-bold text-xs rounded-full transition-all cursor-pointer shadow-2xs shrink-0 disabled:opacity-50"
         >
-          {saving ? "Guardando..." : "Guardar"}
+          {saving ? "Guardando..." : (editingCycle ? "Actualizar" : "Guardar")}
         </button>
       </div>
     </div>

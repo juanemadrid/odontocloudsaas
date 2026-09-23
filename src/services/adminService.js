@@ -354,6 +354,111 @@ export const deleteTenant = async (tenantId) => {
  */
 const SUPERADMIN_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 
+export const OFFICIAL_DEFAULT_PLANS = [
+    {
+        id: "consultorio",
+        name: "Consultorio",
+        description: "Ideal para dentistas independientes y consultorios particulares.",
+        maxUsers: 3,
+        monthlyPrice: 79900,
+        yearlyPrice: 799999,
+        includeFacturacion: false,
+        facturasIncluidas: 0,
+        recommended: false,
+        status: "active",
+        features: [
+            "Hasta 3 usuarios incluidos (Sin cobro por usuario extra)",
+            "Agenda inteligente con confirmación y recordatorios por WhatsApp",
+            "Historia clínica digital y Odontograma interactivo",
+            "Evolución clínica con Asistente de IA y dictado por Voz",
+            "Gestión de múltiples sillones y espacios físicos por doctor",
+            "Inventario con semaforización de bajo stock (Verde / Rojo)",
+            "Módulo de pagos, presupuestos y recibos de caja",
+            "Sin límite de pacientes ni historias clínicas",
+            "Consentimiento informado digital con firma",
+            "Soporte técnico directo por WhatsApp"
+        ]
+    },
+    {
+        id: "clinica",
+        name: "Clínica",
+        description: "Para clínicas en crecimiento que necesitan escalar, cumplir la normativa y automatizar su operación.",
+        maxUsers: 5,
+        monthlyPrice: 110000,
+        yearlyPrice: 1100000,
+        includeFacturacion: true,
+        facturasIncluidas: 300,
+        recommended: true,
+        status: "active",
+        features: [
+            "🌐 Sitio Web Corporativo GRATIS incluido (CMS)",
+            "Hasta 5 usuarios incluidos (Tarifa Plana Fija)",
+            "Todo lo incluido en el Plan Consultorio",
+            "Facturación Electrónica DIAN oficial (300 documentos/año)",
+            "Generación de RIPS JSON oficial (Resolución 2275 de 2023)",
+            "Múltiples sedes y sucursales incluidas GRATIS",
+            "Notas crédito y Documento Soporte electrónico DIAN",
+            "Inventario avanzado multi-bodega con kardex",
+            "Reportes financieros avanzados y control de cartera",
+            "Soporte prioritario directo por WhatsApp"
+        ]
+    },
+    {
+        id: "enterprise",
+        name: "Enterprise",
+        description: "Sin límites para redes de clínicas, IPS y cadenas odontológicas.",
+        maxUsers: 11,
+        monthlyPrice: 199000,
+        yearlyPrice: 1990000,
+        includeFacturacion: true,
+        facturasIncluidas: 1000,
+        recommended: false,
+        status: "active",
+        features: [
+            "🌐 Sitio Web Corporativo Personalizado con dominio propio",
+            "Hasta 11 usuarios activos incluidos",
+            "Todo lo incluido en el Plan Clínica",
+            "Facturación Electrónica DIAN ampliada (1.000 documentos/año)",
+            "Sedes y sucursales ilimitadas",
+            "Roles y permisos avanzados (Director, Auditor, Odontólogo)",
+            "Módulo de liquidación de comisiones y nómina médica",
+            "Reportes consolidados multi-sede y analítica avanzada",
+            "Account Manager personal y soporte 24/7 preferencial",
+            "Migración asistida de datos desde software anterior"
+        ]
+    }
+];
+
+export const saveAllPlans = async (plansList) => {
+    try {
+        const { data: existing } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", SUPERADMIN_TENANT_ID)
+            .maybeSingle();
+
+        const updatedConfig = {
+            ...(existing?.config || {}),
+            plans: plansList,
+            updatedAt: new Date().toISOString()
+        };
+
+        const { error } = await supabase
+            .from("website_config")
+            .upsert({
+                tenant_id: SUPERADMIN_TENANT_ID,
+                config: updatedConfig,
+                updated_at: new Date().toISOString()
+            });
+
+        if (error) throw error;
+        return true;
+    } catch (error) {
+        console.error("Error al guardar catálogo de planes en Supabase:", error);
+        throw error;
+    }
+};
+
 export const getPlans = async () => {
     try {
         const { data: publicConfigs, error } = await supabase
@@ -369,80 +474,10 @@ export const getPlans = async () => {
             return plans;
         }
 
-        const defaultPlans = [
-            {
-                id: "consultorio",
-                name: "Consultorio",
-                description: "Ideal para dentistas independientes o consultorios pequeños.",
-                maxUsers: 2,
-                monthlyPrice: 59900,
-                yearlyPrice: 599000,
-                includeFacturacion: false,
-                facturasIncluidas: 0,
-                recommended: false,
-                features: [
-                    "🌐 Sitio Web Corporativo GRATIS Incluido",
-                    "Agenda inteligente con recordatorios",
-                    "Historia clínica digital ilimitada",
-                    "Gestión de pacientes ilimitada",
-                    "Módulo de pagos y recibos de caja",
-                    "Saldo a favor del paciente",
-                    "Presupuestos y planes de tratamiento",
-                    "Reportes financieros básicos"
-                ]
-            },
-            {
-                id: "clinica",
-                name: "Clínica",
-                description: "Para clínicas en crecimiento que necesitan escalar sin pagar más.",
-                maxUsers: 12,
-                monthlyPrice: 99900,
-                yearlyPrice: 1190000,
-                includeFacturacion: true,
-                facturasIncluidas: 500,
-                recommended: true,
-                features: [
-                    "🌐 Sitio Web Corporativo GRATIS Incluido (CMS)",
-                    "Todo lo del plan Consultorio",
-                    "Múltiples sedes y sucursales incluidas",
-                    "Hasta 12 usuarios activos",
-                    "Historia clínica digital ilimitada",
-                    "Facturación electrónica DIAN (RIPS)",
-                    "Reportes financieros avanzados",
-                    "Soporte directo por WhatsApp"
-                ]
-            },
-            {
-                id: "enterprise",
-                name: "Enterprise",
-                description: "Sin límites para redes de clínicas o cadenas odontológicas.",
-                maxUsers: 999,
-                monthlyPrice: 165800,
-                yearlyPrice: 1990000,
-                includeFacturacion: true,
-                facturasIncluidas: 2000,
-                recommended: false,
-                features: [
-                    "🌐 Sitio Web Corporativo GRATIS Personalizado",
-                    "Todo lo del plan Clínica",
-                    "Sedes y sucursales ilimitadas",
-                    "Usuarios ILIMITADOS",
-                    "Roles y permisos avanzados",
-                    "Facturación electrónica DIAN (RIPS)",
-                    "Reportes y analíticas avanzadas",
-                    "API de integración disponible",
-                    "Account Manager personal",
-                    "Soporte prioritario 24/7",
-                    "Migración de datos incluida"
-                ]
-            }
-        ];
-
-        return defaultPlans;
+        return OFFICIAL_DEFAULT_PLANS;
     } catch (error) {
-
         console.error("Error al cargar planes desde Supabase:", error);
-        return [];
+        return OFFICIAL_DEFAULT_PLANS;
     }
 };
 

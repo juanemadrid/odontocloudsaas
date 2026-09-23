@@ -66,6 +66,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const [planPayments, setPlanPayments] = useState([]); // payments for the selected plan
     const [showProcedureSelector, setShowProcedureSelector] = useState(false);
     const [pastEvolutions, setPastEvolutions] = useState([]);
+    const [sterilizationCycles, setSterilizationCycles] = useState([]);
 
     const getLocalISOStrings = () => {
         const d = new Date();
@@ -152,17 +153,28 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     };
 
     const handleAddEsterilizacion = () => {
-        if (!tempCiclo.trim()) return toast.error("Debe ingresar el ciclo de esterilización");
-        if (!tempConcepto) return toast.error("Debe seleccionar el concepto");
+        if (!tempCiclo.trim()) return toast.error("Debe seleccionar el ciclo de esterilización");
+        if (!tempConcepto.trim()) return toast.error("Debe seleccionar el concepto");
+
+        const qty = parseInt(tempCantidad, 10);
+        if (isNaN(qty) || qty <= 0) return toast.error("La cantidad debe ser mayor a 0");
+
+        // Buscar el ciclo seleccionado y el ítem para validar cantidad guardada
+        const selectedCycle = sterilizationCycles.find(c => (c.nroLote || c.id) === tempCiclo);
+        const itemInCarga = selectedCycle?.cargaItems?.find(i => i.concepto === tempConcepto);
+        const maxAvailable = itemInCarga ? parseInt(itemInCarga.cantidad, 10) : 0;
+
+        if (maxAvailable > 0 && qty > maxAvailable) {
+            return toast.error(`La cantidad (${qty}) supera la cantidad disponible en el lote seleccionado (${maxAvailable})`);
+        }
 
         const currentEsts = watch("esterilizaciones") || [];
         setValue("esterilizaciones", [...currentEsts, {
             ciclo: tempCiclo.trim(),
             concepto: tempConcepto,
-            cantidad: parseInt(tempCantidad) || 1
+            cantidad: qty
         }]);
 
-        setTempCiclo('');
         setTempConcepto('');
         setTempCantidad(1);
     };
@@ -325,6 +337,45 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     } catch (e) {
                         console.error("Error loading plans via service:", e);
                     }
+                }
+
+                // Cargar ciclos de esterilización registrados en la clínica
+                try {
+                    const tenantId = userProfile?.inquilino || userProfile?.tenant_id || "juanemadrid/odontocloudsaas";
+                    let list = [];
+                    try {
+                        const { data: dbCiclos, error: cErr } = await supabase
+                            .from("ciclos_esterilizacion")
+                            .select("*")
+                            .eq("tenant_id", tenantId);
+                        if (!cErr && dbCiclos && dbCiclos.length > 0) {
+                            list = dbCiclos;
+                        }
+                    } catch (e) {}
+
+                    if (list.length === 0) {
+                        const { data: cfgRow } = await supabase
+                            .from("website_config")
+                            .select("config")
+                            .eq("tenant_id", tenantId)
+                            .maybeSingle();
+                        list = cfgRow?.config?.ciclos_esterilizacion || [];
+                    }
+
+                    const formattedCiclos = list.map((c, idx) => {
+                        const dateParts = (c.fechaEsterilizacion || "").split("-");
+                        const fallbackLote = dateParts.length === 3 ? `${dateParts[2]}${dateParts[1]}${dateParts[0]}-${idx + 1}` : `LOTE-${idx + 1}`;
+                        return {
+                            id: c.id || `cycle_${idx}`,
+                            ...c,
+                            nroLote: c.nroLote || c.lote || fallbackLote,
+                            cargaItems: Array.isArray(c.cargaItems) ? c.cargaItems : []
+                        };
+                    });
+                    formattedCiclos.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
+                    setSterilizationCycles(formattedCiclos);
+                } catch (cErr) {
+                    console.error("Error loading sterilization cycles in EvolutionModal:", cErr);
                 }
             } catch (err) {
                 console.error("Error fetching dependencies", err);
@@ -1213,102 +1264,126 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
                                 {watch("controlEsterilizacion") && (
                                     <div className="pl-0 md:pl-14 space-y-4 animate-fadeIn">
-                                        <p className="text-[9px] text-slate-400 font-bold -mt-2 leading-relaxed">
-                                            Registre el ciclo del autoclave o equipo de esterilización utilizado para certificar la bioseguridad del instrumental.
-                                        </p>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
-                                                    Ciclo de esterilización (ej. Autoclave)
+                                        <div className="space-y-3.5">
+                                            {/* Ciclo de esterilización */}
+                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                                <label className="text-[11px] font-bold text-slate-500 sm:w-44 sm:text-right shrink-0">
+                                                    Ciclo de esterilización
                                                 </label>
-                                                <input 
-                                                    type="text"
-                                                    list="ciclos-sug"
-                                                    value={tempCiclo}
-                                                    onChange={(e) => setTempCiclo(e.target.value)}
-                                                    placeholder="Buscar ciclo de esterilización..."
-                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                                />
+                                                <div className="flex-1 max-w-md">
+                                                    <select
+                                                        value={tempCiclo}
+                                                        onChange={(e) => {
+                                                            const newCiclo = e.target.value;
+                                                            setTempCiclo(newCiclo);
+                                                            const found = sterilizationCycles.find(c => (c.nroLote || c.id) === newCiclo);
+                                                            if (found?.cargaItems?.length > 0) {
+                                                                setTempConcepto(found.cargaItems[0].concepto);
+                                                            } else {
+                                                                setTempConcepto("");
+                                                            }
+                                                            setTempCantidad(1);
+                                                        }}
+                                                        className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-sky-500 transition-all cursor-pointer font-mono"
+                                                    >
+                                                        <option value="">Seleccione ciclo / lote...</option>
+                                                        {sterilizationCycles.map((c) => (
+                                                            <option key={c.id} value={c.nroLote || c.id}>
+                                                                {c.nroLote || c.consecutivo} {c.fechaEsterilizacion ? `(${c.fechaEsterilizacion})` : ''}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                             </div>
 
-                                            <div>
-                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
-                                                    Concepto / Resultado
+                                            {/* Concepto */}
+                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                                <label className="text-[11px] font-bold text-slate-500 sm:w-44 sm:text-right shrink-0">
+                                                    Concepto
                                                 </label>
-                                                <select 
-                                                    value={tempConcepto}
-                                                    onChange={(e) => setTempConcepto(e.target.value)}
-                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                                >
-                                                    <option value="">Seleccione...</option>
-                                                    <option value="Aprobado">Aprobado</option>
-                                                    <option value="Rechazado">Rechazado</option>
-                                                    <option value="En proceso">En proceso</option>
-                                                </select>
+                                                <div className="flex-1 max-w-md">
+                                                    {(() => {
+                                                        const currentCycle = sterilizationCycles.find(c => (c.nroLote || c.id) === tempCiclo);
+                                                        const items = currentCycle?.cargaItems || [];
+                                                        return (
+                                                            <select
+                                                                value={tempConcepto}
+                                                                onChange={(e) => setTempConcepto(e.target.value)}
+                                                                disabled={!tempCiclo}
+                                                                className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-sky-500 transition-all cursor-pointer disabled:bg-slate-50 disabled:text-slate-400"
+                                                            >
+                                                                <option value="">{tempCiclo ? "Seleccione concepto de la carga..." : "Primero seleccione un ciclo..."}</option>
+                                                                {items.map((itm, idx) => (
+                                                                    <option key={idx} value={itm.concepto}>
+                                                                        {itm.concepto} ({itm.cantidad})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        );
+                                                    })()}
+                                                </div>
                                             </div>
 
-                                            <div>
-                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
+                                            {/* Cantidad */}
+                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                                <label className="text-[11px] font-bold text-slate-500 sm:w-44 sm:text-right shrink-0">
                                                     Cantidad
                                                 </label>
-                                                <input 
-                                                    type="number"
-                                                    value={tempCantidad}
-                                                    onChange={(e) => setTempCantidad(parseInt(e.target.value) || 0)}
-                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                                />
+                                                <div className="flex-1 max-w-md">
+                                                    <input 
+                                                        type="number"
+                                                        min="1"
+                                                        value={tempCantidad}
+                                                        onChange={(e) => setTempCantidad(parseInt(e.target.value, 10) || 0)}
+                                                        className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-sky-500 transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Botón Agregar verde OralDrive */}
+                                            <div className="sm:ml-44 pt-1">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={handleAddEsterilizacion}
+                                                    className="h-8 px-6 bg-[#7cb342] hover:bg-[#689f38] text-white rounded-full font-bold text-xs uppercase tracking-wider transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                                >
+                                                    Agregar
+                                                </button>
                                             </div>
                                         </div>
 
-                                        <button 
-                                            type="button" 
-                                            onClick={handleAddEsterilizacion}
-                                            className="h-10 px-6 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-[12px] font-black text-[11px] uppercase tracking-widest transition-all self-start shadow-md shadow-lime-500/10"
-                                        >
-                                            Agregar
-                                        </button>
-
-                                        {/* List Table for Sterilization Cycles */}
-                                        <div className="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm">
+                                        {/* Tabla de Esterilizaciones Añadidas 1:1 OralDrive */}
+                                        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs mt-3">
                                             <table className="w-full text-left table-fixed">
-                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                <thead className="bg-slate-50/80 border-b border-slate-200">
                                                     <tr>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[50%]">Ciclo de esterilización</th>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[22%]">Concepto</th>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider w-[18%]">Cantidad</th>
-                                                        <th className="px-2 py-2 text-[9px] font-black text-slate-400 uppercase tracking-wider text-center w-[10%]">Acción</th>
+                                                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[35%]">Ciclo de esterilización</th>
+                                                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider w-[40%]">Concepto</th>
+                                                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-[15%]">Cantidad</th>
+                                                        <th className="px-3 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center w-[10%]">Acciones</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                                                <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                                                     {(watch("esterilizaciones") || []).length === 0 ? (
                                                         <tr>
-                                                            <td colSpan="4" className="px-4 py-8 text-center text-slate-400 font-bold uppercase tracking-wider bg-slate-50/50">
+                                                            <td colSpan="4" className="px-4 py-8 text-center text-slate-400 font-medium italic bg-slate-50/30">
                                                                 No hay datos añadidos
                                                             </td>
                                                         </tr>
                                                     ) : (
                                                         (watch("esterilizaciones") || []).map((e, idx) => (
-                                                            <tr key={idx} className="hover:bg-slate-50/50">
-                                                                <td className="px-2 py-2.5 truncate text-[11px]" title={e.ciclo}>{e.ciclo}</td>
-                                                                <td className="px-2 py-2.5">
-                                                                    <span className={`inline-block px-2 py-0.5 text-[9px] font-black uppercase tracking-widest rounded-full ${
-                                                                        e.concepto === 'Aprobado' 
-                                                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                                                                            : e.concepto === 'Rechazado'
-                                                                            ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                                                                            : 'bg-amber-50 text-amber-600 border border-amber-100'
-                                                                    }`}>
-                                                                        {e.concepto}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-2 py-2.5 text-[11px]">{e.cantidad}</td>
-                                                                <td className="px-2 py-2.5 text-center">
+                                                            <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                                                                <td className="px-3 py-2.5 truncate text-[11px] font-mono font-bold text-slate-800" title={e.ciclo}>{e.ciclo}</td>
+                                                                <td className="px-3 py-2.5 truncate text-[11px] text-slate-700" title={e.concepto}>{e.concepto}</td>
+                                                                <td className="px-3 py-2.5 text-center text-[11px] font-bold text-slate-800">{e.cantidad}</td>
+                                                                <td className="px-3 py-2.5 text-center">
                                                                     <button 
                                                                         type="button" 
                                                                         onClick={() => handleRemoveEsterilizacion(idx)}
-                                                                        className="text-rose-500 hover:text-rose-700 transition-colors p-1"
+                                                                        className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors p-1 mx-auto cursor-pointer border-0 bg-transparent"
+                                                                        title="Quitar"
                                                                     >
-                                                                        <FiTrash2 size={14} />
+                                                                        <FiTrash2 size={13} />
                                                                     </button>
                                                                 </td>
                                                             </tr>

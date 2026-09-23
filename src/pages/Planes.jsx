@@ -58,12 +58,12 @@ export default function Planes() {
     };
 
     const COMPARATIVA_DATA = [
-        { label: 'Precio anual (5 dentistas)', otrosSoftwares: '$2.205.000', odontoCloud: '$1.190.000', highlight: true },
+        { label: 'Precio anual (5 dentistas)', otrosSoftwares: '$2.205.000', odontoCloud: '$1.100.000', highlight: true },
         { label: 'Cobro por usuario adicional', otrosSoftwares: '+$120.150 / usuario', odontoCloud: '$0 (Tarifa Fija)', highlight: true },
-        { label: 'Mínimo de usuarios obligatorio', otrosSoftwares: '3 usuarios mínimo', odontoCloud: 'Sin mínimo' },
-        { label: 'Usuarios ilimitados incluidos', otrosSoftwares: 'No', odontoCloud: 'Sí (Tarifa fija)' },
-        { label: 'Sitio Web Corporativo (CMS)', otrosSoftwares: 'No', odontoCloud: 'Incluido gratis' },
-        { label: 'Facturación Electrónica DIAN + RIPS', otrosSoftwares: 'Solo en plan pro', odontoCloud: 'Incluido en plan Clínica' },
+        { label: 'Mínimo de usuarios obligatorio', otrosSoftwares: '3 usuarios mínimo', odontoCloud: 'Sin mínimo obligatorio' },
+        { label: 'Evolución clínica por Voz con IA', otrosSoftwares: 'Dictado básico', odontoCloud: 'IA Asistente Clínica' },
+        { label: 'Sitio Web Corporativo (CMS)', otrosSoftwares: 'No disponible', odontoCloud: 'Incluido gratis en Clínica' },
+        { label: 'Facturación Electrónica DIAN + RIPS', otrosSoftwares: 'Solo en plan pro', odontoCloud: 'Incluido (300 docs/año)' },
         { label: 'Cláusula de permanencia', otrosSoftwares: '1 año', odontoCloud: 'Sin permanencia' },
         { label: 'Soporte directo por WhatsApp', otrosSoftwares: 'Ticket / Email', odontoCloud: 'Directo en WhatsApp' },
     ];

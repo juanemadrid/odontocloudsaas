@@ -54,6 +54,10 @@ export const privateFileReference = (path) =>
 export const resolvePrivateFileUrl = async (value, fallbackPath = "") => {
   if (!value && !fallbackPath) return "";
 
+  if (typeof value === "string" && (value.startsWith("data:") || value.startsWith("blob:"))) {
+    return value;
+  }
+
   try {
     const path = fallbackPath ? normalizePath(fallbackPath) : pathFromValue(value);
     if (!path) return value || "";
@@ -68,7 +72,10 @@ export const resolvePrivateFileUrl = async (value, fallbackPath = "") => {
       .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
     if (error) {
       console.warn("No se pudo firmar el archivo privado:", error.message);
-      return "";
+      // Fallback: try public URL or return raw value
+      const { data: pubData } = supabase.storage.from(PRIVATE_BUCKET).getPublicUrl(path);
+      if (pubData?.publicUrl) return pubData.publicUrl;
+      return value || "";
     }
 
     const url = data?.signedUrl || "";
@@ -77,10 +84,11 @@ export const resolvePrivateFileUrl = async (value, fallbackPath = "") => {
         url,
         expiresAt: Date.now() + SIGNED_URL_CACHE_MS,
       });
+      return url;
     }
-    return url;
+    return value || "";
   } catch {
-    return "";
+    return value || "";
   }
 };
 

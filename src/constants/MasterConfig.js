@@ -221,63 +221,73 @@ export const MASTER_CONFIG = {
     // Pricing Plans Refinement (Synced with Software Defaults)
     plans: [
         {
-            name: "Básico",
-            price: 150000,
-            annualPrice: 1500000,
+            name: "Consultorio",
+            price: 79900,
+            annualPrice: 799999,
             userLimit: "3 Usuarios",
-            coreModule: "Módulo Core",
-            desc: "Potencia tu consultorio con las herramientas esenciales de gestión profesional.",
+            coreModule: "Módulo Clínico",
+            desc: "Ideal para dentistas independientes y consultorios particulares.",
             features: [
-                "Agenda Inteligente con recordatorios básicos",
-                "Historia Clínica Digital unificada y segura",
-                "Odontograma Digital Interactivo Basico",
-                "Gestión de Pacientes y Base de Datos segura",
-                "Módulo de Facturación y RIPS integrados",
-                "Control de Inventarios y Suministros",
-                "Soporte técnico vía WhatsApp"
+                "Hasta 3 usuarios incluidos (Sin cobro por usuario extra)",
+                "Agenda inteligente con confirmación y recordatorios por WhatsApp",
+                "Historia clínica digital y Odontograma interactivo",
+                "Evolución clínica con Asistente de IA y dictado por Voz",
+                "Gestión de múltiples sillones y espacios físicos por doctor",
+                "Inventario con semaforización de bajo stock (Verde / Rojo)",
+                "Módulo de pagos, presupuestos y recibos de caja",
+                "Sin límite de pacientes ni historias clínicas",
+                "Consentimiento informado digital con firma",
+                "Soporte técnico directo por WhatsApp"
             ],
             isPopular: false,
-            btnText: "Probar Básico"
+            recommended: false,
+            btnText: "Elegir Consultorio"
         },
         {
-            name: "Corporativo",
-            price: 180000,
-            annualPrice: 1800000,
-            userLimit: "6 Usuarios",
-            coreModule: "Módulo Core",
-            desc: "Control total y presencia web de élite para clínicas en crecimiento.",
+            name: "Clínica",
+            price: 110000,
+            annualPrice: 1100000,
+            userLimit: "5 Usuarios",
+            coreModule: "Módulo Avanzado + CMS",
+            desc: "Para clínicas en crecimiento que necesitan escalar, cumplir la normativa y automatizar su operación.",
             features: [
-                "Editor Web Avanzado para tu Clínica",
-                "Personalización total de Página Web",
-                "Módulo de Sitio Web Profesional",
-                "Recordatorios WhatsApp Ilimitados",
-                "Odontograma Digital Avanzado (Evoluciones)",
-                "Facturación Electrónica y Cartera Total",
-                "RIPS y Normativa vigente automatizada",
-                "Soporte Prioritario y Asesoría VIP"
+                "🌐 Sitio Web Corporativo GRATIS incluido (CMS)",
+                "Hasta 5 usuarios incluidos (Tarifa Plana Fija)",
+                "Todo lo incluido en el Plan Consultorio",
+                "Facturación Electrónica DIAN oficial (300 documentos/año)",
+                "Generación de RIPS JSON oficial (Resolución 2275 de 2023)",
+                "Múltiples sedes y sucursales incluidas GRATIS",
+                "Notas crédito y Documento Soporte electrónico DIAN",
+                "Inventario avanzado multi-bodega con kardex",
+                "Reportes financieros avanzados y control de cartera",
+                "Soporte prioritario directo por WhatsApp"
             ],
             recommended: true,
             isPopular: true,
-            btnText: "Elegir Corporativo"
+            btnText: "Elegir Clínica"
         },
         {
-            name: "Premium",
-            price: 250000,
-            annualPrice: 2500000,
-            userLimit: "Ilimitados",
-            coreModule: "Módulo Core + Premium",
-            desc: "La máxima potencia para clínicas de alto rendimiento y grandes equipos.",
+            name: "Enterprise",
+            price: 199000,
+            annualPrice: 1990000,
+            userLimit: "11 Usuarios",
+            coreModule: "Módulo IPS Multi-Sede",
+            desc: "Sin límites para redes de clínicas, IPS y cadenas odontológicas.",
             features: [
-                "Todo lo del Plan Corporativo",
-                "Nómina Electrónica Integrada",
-                "Teleodontología Avanzada",
-                "Inteligencia Artificial en Diagnóstico",
-                "CRM de Pacientes Avanzado",
-                "Soporte 24/7 con Ejecutivo Dedicado"
+                "🌐 Sitio Web Corporativo Personalizado con dominio propio",
+                "Hasta 11 usuarios activos incluidos",
+                "Todo lo incluido en el Plan Clínica",
+                "Facturación Electrónica DIAN ampliada (1.000 documentos/año)",
+                "Sedes y sucursales ilimitadas",
+                "Roles y permisos avanzados (Director, Auditor, Odontólogo)",
+                "Módulo de liquidación de comisiones y nómina médica",
+                "Reportes consolidados multi-sede y analítica avanzada",
+                "Account Manager personal y soporte 24/7 preferencial",
+                "Migración asistida de datos desde software anterior"
             ],
             recommended: false,
             isPopular: false,
-            btnText: "Elegir Premium"
+            btnText: "Elegir Enterprise"
         }
     ]
 };
