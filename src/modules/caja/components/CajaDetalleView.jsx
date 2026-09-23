@@ -626,7 +626,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         <div className="py-6 space-y-2.5 text-[13px] max-w-xl">
           <div className="flex justify-between py-1 border-b border-slate-50">
             <span className="text-slate-500 font-medium">Fecha de Apertura</span>
-            <span className="text-slate-700 font-semibold">{fmtDate(caja.fechaApertura)}</span>
+            <span className="text-slate-700 font-semibold">{fmtDate(caja.fechaApertura || caja.fecha_apertura || caja.created_at)}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-slate-50">
             <span className="text-slate-500 font-medium">Base</span>
@@ -634,19 +634,19 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           </div>
           <div className="flex justify-between py-1 border-b border-slate-50">
             <span className="text-slate-500 font-medium">Ajuste base</span>
-            <span className="text-slate-700 font-semibold">{fmt(caja.baseInicial || 0)}</span>
+            <span className="text-slate-700 font-semibold">{fmt(caja.baseInicial ?? caja.base_inicial ?? 0)}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-slate-50">
             <span className="text-slate-500 font-medium">Total Saldo Inicial</span>
-            <span className="text-slate-700 font-semibold">{fmt(caja.baseInicial || 0)}</span>
+            <span className="text-slate-700 font-semibold">{fmt(caja.baseInicial ?? caja.base_inicial ?? 0)}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-slate-50">
             <span className="text-slate-500 font-medium">Recaudos</span>
-            <span className="text-emerald-600 font-semibold">{fmt(totalIngresos)}</span>
+            <span className="text-slate-700 font-semibold">{fmt(totalIngresos)}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-slate-50">
             <span className="text-slate-500 font-medium">Gastos</span>
-            <span className="text-rose-600 font-semibold">{fmt(totalEgresos)}</span>
+            <span className="text-slate-700 font-semibold">{fmt(totalEgresos)}</span>
           </div>
           <div className="flex justify-between py-2 border-t border-slate-200 mt-3 pt-3">
             <span className="text-slate-800 font-bold">Total caja</span>
@@ -677,7 +677,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                     <tr key={item.metodo} className="hover:bg-slate-50">
                       <td className="py-2.5 px-3 font-medium text-slate-700">{item.metodo}</td>
                       <td className="py-2.5 px-3 text-center text-slate-600">{item.cantidad}</td>
-                      <td className={`py-2.5 px-3 text-right font-semibold ${item.valor < 0 ? "text-rose-600" : "text-slate-800"}`}>
+                      <td className="py-2.5 px-3 text-right font-semibold text-slate-800">
                         {fmt(item.valor)}
                       </td>
                     </tr>

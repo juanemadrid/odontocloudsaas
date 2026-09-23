@@ -781,9 +781,11 @@ export const getActiveCaja = async (tenantId, userId = null) => {
 
     if (dbCajas && dbCajas.length > 0) {
       if (userId) {
-        activeCaja = dbCajas.find(c => String(c.usuario_id || c.usuarioId) === String(userId));
-      }
-      if (!activeCaja) {
+        activeCaja = dbCajas.find(c => 
+          String(c.usuario_id || c.usuarioId) === String(userId) ||
+          (c.usuario_nombre && String(c.usuario_nombre).toLowerCase() === String(userId).toLowerCase())
+        );
+      } else {
         activeCaja = dbCajas[0];
       }
     }
@@ -797,9 +799,11 @@ export const getActiveCaja = async (tenantId, userId = null) => {
 
       if (openCajas.length > 0) {
         if (userId) {
-          activeCaja = openCajas.find(c => String(c.usuario_id || c.usuarioId) === String(userId));
-        }
-        if (!activeCaja) {
+          activeCaja = openCajas.find(c => 
+            String(c.usuario_id || c.usuarioId) === String(userId) ||
+            (c.usuario_nombre && String(c.usuario_nombre).toLowerCase() === String(userId).toLowerCase())
+          );
+        } else {
           activeCaja = openCajas[0];
         }
       }
