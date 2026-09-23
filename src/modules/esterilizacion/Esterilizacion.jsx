@@ -708,14 +708,44 @@ export default function Esterilizacion() {
                   </tr>
                 ) : (
                   filteredCycles.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
+                    <tr key={c.id} className="hover:bg-slate-50/60 transition-colors align-top">
                       <td className="py-2 px-3 border-r border-slate-100 font-bold text-slate-700 text-center">{c.nroLote || c.consecutivo}</td>
                       <td className="py-2 px-3 border-r border-slate-100 text-slate-800 font-medium">{c.fechaEsterilizacion}</td>
                       <td className="py-2 px-3 border-r border-slate-100 text-slate-500">{(c.createdAt || c.created_at || "").split("T")[0] || c.fechaEsterilizacion}</td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center font-bold text-slate-600">{c.nroCarga || c.consecutivo}</td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center font-bold text-slate-800">{c.nroPaquetes || 1}</td>
-                      <td className="py-2 px-3 border-r border-slate-100 text-slate-600 truncate max-w-xs" title={(c.cargaItems || []).map(i => `${i.concepto} (x${i.cantidad})`).join(", ")}>
-                        {(c.cargaItems || []).map(i => `${i.concepto} (x${i.cantidad})`).join(", ") || "—"}
+                      <td className="py-2 px-3 border-r border-slate-100 text-slate-700 whitespace-normal min-w-[200px]">
+                        {(() => {
+                          const raw = c.cargaItems;
+                          const items = Array.isArray(raw)
+                            ? raw
+                            : typeof raw === "string" && raw.trim()
+                            ? raw.split(",").map(s => {
+                                const m = s.trim().match(/^(.+?)\s*\(x?(\d+)\)$/i) || s.trim().match(/^(\d+)\s+(.+)$/);
+                                if (m) {
+                                  return isNaN(Number(m[1]))
+                                    ? { concepto: m[1].trim(), cantidad: m[2] }
+                                    : { concepto: m[2].trim(), cantidad: m[1] };
+                                }
+                                return { concepto: s.trim(), cantidad: 1 };
+                              })
+                            : [];
+
+                          if (!items || items.length === 0) {
+                            return <span className="text-slate-400 text-xs italic">—</span>;
+                          }
+
+                          return (
+                            <div className="flex flex-col gap-0.5 text-xs text-slate-700">
+                              {items.map((it, idx) => (
+                                <div key={idx} className="leading-snug flex items-baseline">
+                                  <span className="font-normal text-slate-800 mr-1.5 shrink-0">{it.cantidad}</span>
+                                  <span>{it.concepto}</span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-600 font-mono">{c.horaInicio}</td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-600 font-mono">{c.horaFin}</td>
