@@ -425,14 +425,43 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 });
             } catch (e) {}
 
+            const planCob = cobertura || initialData?.cobertura;
+            const isPlanEntidad = planCob?.tipo === 'entidad' && (planCob?.terceroId || planCob?.entidadId);
+            let terceroObj = planCob?.tercero || null;
+            if (isPlanEntidad && !terceroObj) {
+                const tId = planCob.terceroId || planCob.entidadId;
+                try {
+                    const { data: tRow } = await supabase.from('terceros').select('*').eq('id', tId).maybeSingle();
+                    if (tRow) terceroObj = tRow;
+                } catch (e) {}
+            }
+
+            const terceroNombre = planCob?.terceroNombre || planCob?.entidadNombre || terceroObj?.razonSocial || terceroObj?.nombre || 'Entidad Convenio';
+            const terceroDoc = planCob?.terceroDocumento || terceroObj?.nroDocumento || terceroObj?.nit || '';
+            const terceroTipoDoc = terceroObj?.tipoDocumento || (terceroDoc.includes('-') || terceroObj?.tipoPersona === 'Juridica' ? 'NIT' : 'NIT');
+            const patientFullName = patient?.nombreCompleto || [patient?.nombre || patient?.nombres, patient?.apellido || patient?.apellidos].filter(Boolean).join(' ') || 'Paciente';
+
             const dbPayload = {
-                tenant_id:   inquilino || null,
-                paciente_id: patientId || null,
-                numero:      nroFactura,
-                fecha_emision: new Date().toISOString(),
-                subtotal:    totalFactura,
-                total:       totalFactura,
-                estado:      'Pendiente'
+                tenant_id:        inquilino || null,
+                paciente_id:      patientId || null,
+                numero:           nroFactura,
+                fecha_emision:    new Date().toISOString(),
+                subtotal:         totalFactura,
+                total:            totalFactura,
+                estado:           'Pendiente',
+                // Si el presupuesto fue marcado por entidad/IPS, la factura se carga a nombre del Tercero
+                tercero_id:       isPlanEntidad ? (planCob.terceroId || planCob.entidadId) : null,
+                tercero_nombre:   isPlanEntidad ? terceroNombre : null,
+                tercero_documento: isPlanEntidad ? terceroDoc : null,
+                cliente_nombre:   isPlanEntidad ? terceroNombre : patientFullName,
+                cliente_documento: isPlanEntidad ? terceroDoc : (patient?.nroDocumento || patient?.documento || ''),
+                paciente_nombre:  patientFullName,
+                es_entidad:       Boolean(isPlanEntidad),
+                entidad_id:       isPlanEntidad ? (planCob.terceroId || planCob.entidadId) : null,
+                entidad_nombre:   isPlanEntidad ? terceroNombre : null,
+                observaciones:    isPlanEntidad 
+                    ? `Facturado a Entidad / IPS: ${terceroNombre} (NIT: ${terceroDoc}) - Paciente: ${patientFullName}` 
+                    : (obs || '')
             };
 
             const invoiceData = {
@@ -451,6 +480,12 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 estado:     'Pendiente',
                 factusEstado: 'Pendiente',
                 profesional: initialData?.profesionalId || initialData?.profesional || userProfile?.nombreCompleto || 'Profesional',
+                terceroId:   isPlanEntidad ? (planCob.terceroId || planCob.entidadId) : null,
+                terceroNombre: isPlanEntidad ? terceroNombre : null,
+                terceroDocumento: isPlanEntidad ? terceroDoc : null,
+                clienteNombre: isPlanEntidad ? terceroNombre : patientFullName,
+                pacienteNombre: patientFullName,
+                esEntidad:   Boolean(isPlanEntidad),
                 items:      invoiceItems,
             };
 
@@ -474,11 +509,25 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             // 3️⃣ Emit to DIAN via Factus
             try {
                 toast.info('Emitiendo factura ante la DIAN…');
-                // Build a patient-compatible object for factusService
-                const patientForFactus = {
+                // Si el presupuesto fue marcado por entidad, el comprador ante la DIAN es la IPS / Tercero
+                const customerForFactus = isPlanEntidad ? {
+                    documento:      terceroDoc || terceroObj?.nroDocumento || '222222222222',
+                    identificacion: terceroDoc || terceroObj?.nroDocumento || '222222222222',
+                    tipoDocumento:  terceroTipoDoc,
+                    tipoPersona:    terceroObj?.tipoPersona || 'Juridica',
+                    nombre:         terceroObj?.razonSocial || terceroNombre,
+                    apellido:       terceroObj?.tipoPersona === 'Natural' ? (terceroObj?.apellidos || '') : '',
+                    razonSocial:    terceroObj?.razonSocial || terceroNombre,
+                    email:          terceroObj?.email || patient?.email || 'facturacion@odontocloud.com',
+                    telefono:       terceroObj?.telefono || patient?.celular || '3000000000',
+                    direccion:      terceroObj?.direccion || patient?.direccion || 'Dirección no registrada',
+                    ciudad:         terceroObj?.ciudad || patient?.ciudad || 'Bogotá D.C.',
+                } : {
                     ...patient,
                     documento:      patient?.nroDocumento || patient?.documento || patient?.identificacion,
                     identificacion: patient?.nroDocumento || patient?.documento || patient?.identificacion,
+                    tipoDocumento:  patient?.tipoDocumento || 'CC',
+                    tipoPersona:    'Natural',
                     nombre:         patient?.nombres || patient?.nombre || (patient?.nombreCompleto || '').split(' ')[0] || 'Cliente',
                     apellido:       patient?.apellidos || patient?.apellido || (patient?.nombreCompleto || '').split(' ').slice(1).join(' ') || 'OdontoCloud',
                     email:          patient?.email || patient?.correo || 'sin.email@odontocloud.com',
@@ -489,7 +538,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
                 const result = await factusService.sendInvoice(
                     { ...invoiceData, id: invData?.id },
-                    patientForFactus,
+                    customerForFactus,
                     activeCreds || factusCredentials
                 );
 

@@ -104,14 +104,20 @@ export const generateElectronicInvoiceHtml = ({
   tenant = {},
   options = {},
 }) => {
-  const patientName =
+  const isBilledToTercero = Boolean(factura?.tercero_nombre || (factura?.es_entidad && factura?.cliente_nombre));
+  const patientOriginalName =
     patient?.nombreCompleto ||
     [patient?.nombres || patient?.nombre, patient?.apellidos || patient?.apellido]
       .filter(Boolean)
       .join(' ')
       .trim() ||
     factura?.pacienteNombre ||
-    'Consumidor Final';
+    factura?.paciente_nombre ||
+    'Paciente';
+
+  const patientName = isBilledToTercero
+    ? (factura?.tercero_nombre || factura?.cliente_nombre || 'Entidad Convenio')
+    : patientOriginalName;
 
   const patientAddress =
     patient?.lugarResidencia ||
@@ -132,13 +138,9 @@ export const generateElectronicInvoiceHtml = ({
     factura?.pacienteTipoDocumento ||
     'CC';
 
-  const patientDocNumber =
-    patient?.nroDocumento ||
-    patient?.documento ||
-    patient?.cedula ||
-    patient?.identificacion ||
-    factura?.pacienteDocumento ||
-    '—';
+  const patientDocNumber = isBilledToTercero
+    ? (factura?.tercero_documento || factura?.cliente_documento || patient?.nroDocumento || '—')
+    : (patient?.nroDocumento || patient?.documento || patient?.cedula || patient?.identificacion || factura?.pacienteDocumento || '—');
 
   const docTypeLabel = getDocumentTypeLabel(patientDocType);
   const docNumberFormatted = formatDocNumber(patientDocNumber);

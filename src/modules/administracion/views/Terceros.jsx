@@ -106,6 +106,7 @@ export default function Terceros() {
     modalidadPago: "Contado",
     contrato: "",
     isEps: false,
+    isIps: false,
     codigoEntidadAdministradora: "",
     activo: true
   });
@@ -165,6 +166,7 @@ export default function Terceros() {
       modalidadPago: "Contado",
       contrato: "",
       isEps: false,
+      isIps: false,
       codigoEntidadAdministradora: "",
       activo: true
     });
@@ -192,6 +194,7 @@ export default function Terceros() {
       modalidadPago: tercero.modalidadPago || "Contado",
       contrato: tercero.contrato || "",
       isEps: tercero.isEps || false,
+      isIps: Boolean(tercero.isIps || tercero.is_ips || tercero.esIps || tercero.es_ips),
       codigoEntidadAdministradora: tercero.codigoEntidadAdministradora || "",
       activo: tercero.activo !== undefined ? tercero.activo : true
     });
@@ -320,6 +323,8 @@ export default function Terceros() {
         email: formData.email.trim(),
         contrato: formData.contrato.trim(),
         codigoEntidadAdministradora: formData.isEps ? formData.codigoEntidadAdministradora.trim() : "",
+        isIps: Boolean(formData.isIps),
+        es_ips: Boolean(formData.isIps),
         tenant_id: inquilino,
         updated_at: new Date().toISOString()
       };
@@ -891,6 +896,27 @@ export default function Terceros() {
                   placeholder="Contrato con el tercero"
                   className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-slate-50/30 outline-none focus:border-blue-400 focus:bg-white transition-all caret-slate-950"
                 />
+              </div>
+
+              {/* Toggle IPS */}
+              <div className="md:col-span-2 flex items-center justify-between p-4 bg-slate-50 border border-slate-200/50 rounded-2xl">
+                <div>
+                  <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider block mb-1">
+                    ¿Es una Institución Prestadora de Servicios de Salud (IPS) / Entidad de convenio?
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-400">
+                    Si se marca como IPS, este tercero estará disponible como Entidad en los presupuestos del módulo de pacientes, y las facturas se generarán a su nombre.
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.isIps || false}
+                    onChange={(e) => setFormData({ ...formData, isIps: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
               </div>
 
               {/* Toggle EPS */}

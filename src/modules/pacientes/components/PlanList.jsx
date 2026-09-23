@@ -150,18 +150,90 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     };
 
     const loadInstitutionalCatalogs = async () => {
-        if (!userProfile?.inquilino) return;
+        const inq = userProfile?.inquilino || patient?.inquilino || patient?.tenant_id;
+        if (!inq) return;
         try {
-            const { data: entData } = await supabase
-                .from("entidades")
-                .select("*")
-                .eq("tenant_id", userProfile.inquilino);
+            // 1. Cargar terceros marcados como IPS desde el módulo de terceros
+            let ipsTerceros = [];
+            try {
+                const { data: tercData } = await supabase
+                    .from("terceros")
+                    .select("*")
+                    .eq("tenant_id", inq);
+                if (tercData && tercData.length > 0) {
+                    ipsTerceros = tercData.filter(t => 
+                        t.activo !== false && (
+                            t.isIps === true || 
+                            t.is_ips === true || 
+                            t.esIps === true || 
+                            t.es_ips === true ||
+                            t.isEps === true ||
+                            (t.tipo && String(t.tipo).toLowerCase().includes('ips'))
+                        )
+                    );
+                }
+            } catch (e) {}
+
+            // Fallback en website_config si aplica
+            if (ipsTerceros.length === 0) {
+                try {
+                    const { data: cfgRow } = await supabase
+                        .from("website_config")
+                        .select("config")
+                        .eq("tenant_id", inq)
+                        .maybeSingle();
+                    const cfgTercs = cfgRow?.config?.terceros || [];
+                    ipsTerceros = cfgTercs.filter(t => 
+                        t.activo !== false && (
+                            t.isIps === true || 
+                            t.is_ips === true || 
+                            t.esIps === true || 
+                            t.es_ips === true ||
+                            t.isEps === true ||
+                            (t.tipo && String(t.tipo).toLowerCase().includes('ips'))
+                        )
+                    );
+                } catch (e) {}
+            }
+
+            // También cargar tabla entidades si existen registros
+            let entList = [];
+            try {
+                const { data: entData } = await supabase
+                    .from("entidades")
+                    .select("*")
+                    .eq("tenant_id", inq);
+                if (entData) entList = entData;
+            } catch (e) {}
+
+            // Unificar lista de entidades priorizando los terceros marcados como IPS
+            const combinedMap = new Map();
+            ipsTerceros.forEach(t => {
+                const name = t.razonSocial || t.nombreCompleto || `${t.nombre || ''} ${t.apellidos || ''}`.trim() || t.nombre;
+                combinedMap.set(t.id, {
+                    ...t,
+                    id: t.id,
+                    nombre: name,
+                    name: name,
+                    razonSocial: t.razonSocial || name,
+                    nroDocumento: t.nroDocumento || t.numeroDocumento || t.nit || '',
+                    isIps: true
+                });
+            });
+
+            entList.forEach(e => {
+                if (!combinedMap.has(e.id)) {
+                    combinedMap.set(e.id, e);
+                }
+            });
+
+            setEntidades(Array.from(combinedMap.values()));
+
+            // Cargar listas de precios / tarifas
             const { data: listData } = await supabase
                 .from("listas_precios")
                 .select("*")
-                .eq("tenant_id", userProfile.inquilino);
-
-            setEntidades(entData || []);
+                .eq("tenant_id", inq);
             setTarifas(listData || []);
         } catch (e) {
             console.error("Error loading institutional catalogs:", e);
@@ -293,13 +365,20 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
 
     const handleCreateSubmit = (e) => {
         e.preventDefault();
-        const selectedEntidad = entidades.find(ent => ent.id === formData.entidadId);
-        const selectedTarifa = tarifas.find(tarifa => tarifa.id === formData.tarifaId);
+        const selectedEntidad = entidades.find(ent => String(ent.id) === String(formData.entidadId));
+        const selectedTarifa = tarifas.find(tarifa => String(tarifa.id) === String(formData.tarifaId));
+        const entidadName = selectedEntidad?.razonSocial || selectedEntidad?.nombreCompleto || `${selectedEntidad?.nombre || ''} ${selectedEntidad?.apellidos || ''}`.trim() || selectedEntidad?.nombre || selectedEntidad?.name || '';
+        const entidadDoc = selectedEntidad?.nroDocumento || selectedEntidad?.numeroDocumento || selectedEntidad?.nit || '';
+
         const cobertura = {
             tipo: formData.paymentMode,
             epsNombre: formData.paymentMode === 'entidad' ? formData.epsName : '',
             entidadId: formData.paymentMode === 'entidad' ? formData.entidadId : '',
-            entidadNombre: formData.paymentMode === 'entidad' ? (selectedEntidad?.nombre || selectedEntidad?.name || selectedEntidad?.razonSocial || '') : '',
+            entidadNombre: formData.paymentMode === 'entidad' ? entidadName : '',
+            terceroId: formData.paymentMode === 'entidad' ? formData.entidadId : '',
+            terceroNombre: formData.paymentMode === 'entidad' ? entidadName : '',
+            terceroDocumento: formData.paymentMode === 'entidad' ? entidadDoc : '',
+            tercero: selectedEntidad || null,
             tarifaId: formData.paymentMode === 'entidad' ? formData.tarifaId : '',
             tarifaNombre: formData.paymentMode === 'entidad' ? (selectedTarifa?.nombre || selectedTarifa?.name || '') : '',
             ordenNumero: formData.paymentMode === 'entidad' ? formData.ordenNumero : '',
@@ -658,8 +737,8 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
             {/* Modal para Nuevo Presupuesto / Plan */}
             {showModal && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fadeIn">
-                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden animate-fadeIn my-auto">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center shrink-0 bg-white">
                             <h3 className="text-[14px] font-black text-slate-800 uppercase tracking-tight">
                                 {modalType === 'presupuesto' ? 'Nuevo Presupuesto' : 'Nuevo Plan de Tratamiento'}
                             </h3>
@@ -667,7 +746,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                 <FiX size={20} />
                             </button>
                         </div>
-                        <div className="p-6 space-y-4">
+                        <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                             <div>
                                 <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-1">Nombre *</label>
                                 <input 
@@ -755,10 +834,16 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                                 value={formData.entidadId}
                                                 onChange={(e) => setFormData({ ...formData, entidadId: e.target.value })}
                                             >
-                                                <option value="">Seleccione...</option>
-                                                {entidades.map(ent => (
-                                                    <option key={ent.id} value={ent.id}>{ent.nombre || ent.name || ent.razonSocial || ent.id}</option>
-                                                ))}
+                                                <option value="">Seleccione entidad / IPS...</option>
+                                                {entidades.map(ent => {
+                                                    const doc = ent.nroDocumento || ent.numeroDocumento || ent.nit || ent.documento || "";
+                                                    const name = ent.razonSocial || ent.nombreCompleto || `${ent.nombre || ''} ${ent.apellidos || ''}`.trim() || ent.nombre || ent.name || ent.id;
+                                                    return (
+                                                        <option key={ent.id} value={ent.id}>
+                                                            {name} {doc ? `(${doc})` : ''}
+                                                        </option>
+                                                    );
+                                                })}
                                             </select>
                                         </div>
                                         <div>
@@ -814,16 +899,16 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                 ></textarea>
                             </div>
 
-                            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-50">
-                                <button type="button" onClick={() => setShowModal(false)} className="px-6 py-2 text-xs font-black uppercase text-slate-500 hover:text-slate-700">Cerrar</button>
-                                <button 
-                                    type="button" 
-                                    onClick={handleCreateSubmit}
-                                    className="px-6 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-md"
-                                >
-                                    Crear
-                                </button>
                             </div>
+                        <div className="flex items-center justify-end gap-3 px-6 py-3.5 border-t border-slate-100 shrink-0 bg-slate-50/70">
+                            <button type="button" onClick={() => setShowModal(false)} className="px-5 py-2 text-xs font-black uppercase text-slate-500 hover:text-slate-700">Cerrar</button>
+                            <button 
+                                type="button" 
+                                onClick={handleCreateSubmit}
+                                className="px-6 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+                            >
+                                Crear
+                            </button>
                         </div>
                     </div>
                 </div>

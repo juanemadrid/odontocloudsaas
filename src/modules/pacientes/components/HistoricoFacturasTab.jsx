@@ -85,6 +85,15 @@ function InvoiceDetailModal({ fact, patient, tenant, onClose }) {
                         {(fact.factusNumero || fact.numero) && (
                             <div className="col-span-2"><p className="text-slate-400 mb-0.5">N.º Oficial DIAN</p><p className="font-mono font-semibold text-indigo-600">{fact.factusNumero || fact.numero}</p></div>
                         )}
+                        {(fact.tercero_nombre || fact.cliente_nombre) && (
+                            <div className="col-span-2 bg-blue-50/70 border border-blue-100 rounded-lg p-2.5">
+                                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide mb-0.5">Facturado a Entidad / IPS (Tercero)</p>
+                                <p className="font-semibold text-slate-800 text-xs">{fact.tercero_nombre || fact.cliente_nombre}</p>
+                                {(fact.tercero_documento || fact.cliente_documento) && (
+                                    <p className="text-[11px] text-slate-500 font-mono">NIT/Doc: {fact.tercero_documento || fact.cliente_documento}</p>
+                                )}
+                            </div>
+                        )}
                     </div>
                     <div>
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Prestaciones</p>
@@ -333,7 +342,14 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
                                 return (
                                     <tr key={fact.id} className={`border-b border-slate-50 hover:bg-indigo-50/20 transition-colors group ${idx%2===0?'bg-white':'bg-slate-50/20'} ${openMenu===fact.id ? 'relative z-30' : ''}`}>
                                         <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">{fmtDate(dateVal)}</td>
-                                        <td className="px-2.5 py-2.5 whitespace-nowrap"><span className="font-semibold text-slate-700 text-xs">#{invoiceNro}</span></td>
+                                        <td className="px-2.5 py-2.5 whitespace-nowrap">
+                                            <span className="font-semibold text-slate-700 text-xs">#{invoiceNro}</span>
+                                            {(fact.tercero_nombre || (fact.es_entidad && fact.cliente_nombre)) && (
+                                                <span className="block text-[9px] font-black uppercase text-blue-600 tracking-wider truncate max-w-[120px]" title={`Facturado a IPS: ${fact.tercero_nombre || fact.cliente_nombre}`}>
+                                                    IPS: {fact.tercero_nombre || fact.cliente_nombre}
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="px-2.5 py-2.5 text-xs text-slate-500 whitespace-nowrap">
                                             <div className="truncate max-w-[110px]" title={branchName}>{branchName}</div>
                                         </td>
