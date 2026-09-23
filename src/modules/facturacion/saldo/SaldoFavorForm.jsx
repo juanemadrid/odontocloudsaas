@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { useAuth } from "../../../context/AuthContext";
-import { getDoctorsList } from "../../../services/supabaseServices";
+import { getDoctorsList, getActiveCaja, ensureActiveCaja } from "../../../services/supabaseServices";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const CIUDADES_COLOMBIA = [
@@ -260,7 +260,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
         if (!paciente) return setError("Debes seleccionar un tercero / paciente.");
         const valNum = Number(String(valor).replace(/\D/g, ""));
         if (!valor || isNaN(valNum) || valNum <= 0) return setError("Ingresa un valor válido mayor que 0.");
-        if (medioPago === "Efectivo" && !activeCaja) return setError("No tienes una caja abierta para registrar el efectivo.");
+        // Caja se asegura/abre automáticamente al registrar el saldo a favor
 
         setSaving(true);
         setError("");
@@ -311,7 +311,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
             } catch (e) {}
 
             // Sync with active Caja & Movimientos
-            if (activeCaja) {
+            if (currentActiveCaja) {
                 const movId = crypto.randomUUID ? crypto.randomUUID() : `mov_${Date.now()}`;
                 const movData = {
                     id: movId,
@@ -325,7 +325,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                     paciente_nombre: paciente.nombre,
                     pago_id: creditId,
                     usuario_id: userProfile?.uid || null,
-                    caja_id: activeCaja.id,
+                    caja_id: currentActiveCaja.id,
                     created_at: nowIso
                 };
 
@@ -337,11 +337,11 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                     await supabase
                         .from("cajas")
                         .update({
-                            saldo_actual: (activeCaja.saldo_actual || activeCaja.saldoActual || 0) + valNum,
-                            total_ingresos: (activeCaja.total_ingresos || activeCaja.totalIngresos || 0) + valNum,
+                            saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + valNum,
+                            total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + valNum,
                             updated_at: nowIso
                         })
-                        .eq("id", activeCaja.id);
+                        .eq("id", currentActiveCaja.id);
                 } catch (e) {}
 
                 try {
@@ -354,7 +354,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                     const currentConfig = cfgRow?.config || {};
                     const currentCajas = Array.isArray(currentConfig.cajas) ? currentConfig.cajas : [];
                     const updatedCajas = currentCajas.map(c => {
-                        if (c.id === activeCaja.id) {
+                        if (c.id === currentActiveCaja.id) {
                             return {
                                 ...c,
                                 saldoActual: (c.saldoActual || c.saldo_actual || 0) + valNum,

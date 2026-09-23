@@ -23,6 +23,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
     const inquilino = userProfile?.inquilino || "";
 
     const [saving, setSaving] = useState(false);
+    const [showInsuficienteModal, setShowInsuficienteModal] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // Form fields - Card 1: Información empresa
@@ -614,8 +615,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
         toast.success("Factura asociada al pago");
     };
 
-    // Guardar Pago
-    const handleSavePago = async () => {
+    // Guardar Pago con validación de saldo en caja
+    const handleSavePago = async (forceProceed = false) => {
         if (!fecha) {
             toast.error("La fecha es requerida");
             return;
@@ -636,6 +637,21 @@ export default function PagosForm({ onCancel, onSuccess }) {
         const validItems = items.filter(it => it.concepto || it.descripcion || it.total > 0);
         if (validItems.length === 0 && !pagoFacturasCompra) {
             toast.error("Debe agregar al menos un concepto de pago");
+            return;
+        }
+
+        // Validar si el pago se realiza desde la Caja del usuario
+        const isPayingFromCaja = Boolean(
+            miCajaAbierta && 
+            bancoCaja && 
+            (bancoCaja.toUpperCase() === userCajaLabel.toUpperCase() || bancoCaja.toUpperCase().includes("CAJA"))
+        );
+
+        const saldoCajaActual = Number(miCajaAbierta?.saldo_actual ?? miCajaAbierta?.saldoActual ?? 0);
+
+        // Si se paga desde caja y no alcanza el dinero, alertar para confirmación
+        if (isPayingFromCaja && totalGeneral > saldoCajaActual && !forceProceed) {
+            setShowInsuficienteModal(true);
             return;
         }
 
@@ -691,19 +707,69 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 console.error("Error saving in website_config:", e);
             }
 
-            // 3. Registrar Egreso en Caja si aplica
-            try {
-                await supabase.from("caja_movimientos").insert([{
+            // 3. Registrar Egreso en movimientos_caja y actualizar saldo de la caja (positivo o negativo)
+            if (isPayingFromCaja && miCajaAbierta?.id) {
+                const movData = {
                     tenant_id: inquilino,
+                    caja_id: miCajaAbierta.id,
+                    usuario_id: user?.id || userProfile?.uid || null,
                     tipo: "egreso",
                     concepto: `Pago a Proveedor: ${pagoRecord.tercero} - ${validItems[0]?.concepto || 'Gasto'}`,
                     monto: totalGeneral,
-                    medio_pago: bancoCaja,
-                    fecha: new Date(fecha).toISOString(),
-                    usuario_id: user?.id || userProfile?.uid,
+                    metodo_pago: medioPago || "Efectivo",
+                    referencia: `Pago Proveedor | ${bancoCaja}${pagoRecord.documentoTercero ? ' | DOC: ' + pagoRecord.documentoTercero : ''}`,
                     created_at: new Date().toISOString()
-                }]);
-            } catch (e) {}
+                };
+
+                try {
+                    await supabase.from("movimientos_caja").insert([movData]);
+                } catch (e) {
+                    console.warn("Error insertando en movimientos_caja:", e);
+                }
+
+                const prevSaldo = Number(miCajaAbierta.saldo_actual ?? miCajaAbierta.saldoActual ?? 0);
+                const prevEgresos = Number(miCajaAbierta.total_egresos ?? miCajaAbierta.totalEgresos ?? 0);
+                const newSaldo = prevSaldo - totalGeneral;
+                const newEgresos = prevEgresos + totalGeneral;
+
+                try {
+                    await supabase.from("cajas").update({
+                        saldo_actual: newSaldo,
+                        saldoActual: newSaldo,
+                        total_egresos: newEgresos,
+                        totalEgresos: newEgresos,
+                        updated_at: new Date().toISOString()
+                    }).eq("id", miCajaAbierta.id);
+                } catch (e) {}
+
+                try {
+                    const currentCfgCajas = await getConfigSection(inquilino, "cajas", []);
+                    if (Array.isArray(currentCfgCajas) && currentCfgCajas.length > 0) {
+                        const updated = currentCfgCajas.map(c => {
+                            if (c.id === miCajaAbierta.id) {
+                                return {
+                                    ...c,
+                                    saldo_actual: newSaldo,
+                                    saldoActual: newSaldo,
+                                    total_egresos: newEgresos,
+                                    totalEgresos: newEgresos,
+                                    updated_at: new Date().toISOString()
+                                };
+                            }
+                            return c;
+                        });
+                        await saveConfigSection(inquilino, "cajas", updated);
+                    }
+                } catch (e) {}
+
+                setMiCajaAbierta(prev => prev ? ({
+                    ...prev,
+                    saldo_actual: newSaldo,
+                    saldoActual: newSaldo,
+                    total_egresos: newEgresos,
+                    totalEgresos: newEgresos
+                }) : null);
+            }
 
             toast.success("Pago registrado con éxito");
             if (onSuccess) onSuccess();
@@ -831,14 +897,16 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                     required
                                 >
                                     <option value="">Seleccione...</option>
-                                    {/* Opción de Caja / Responsable de la sesión actual */}
-                                    <option value={userCajaLabel}>
-                                        {userCajaLabel}
-                                    </option>
-                                    {/* Bancos y Cuentas registradas */}
+                                    {/* Opción de Caja: SOLO se muestra si la caja está abierta */}
+                                    {miCajaAbierta && (
+                                        <option value={userCajaLabel}>
+                                            {userCajaLabel}
+                                        </option>
+                                    )}
+                                    {/* Bancos y Cuentas registradas en el sistema */}
                                     {bancosDisponibles.map((b, idx) => {
                                         const bName = typeof b === 'string' ? b : (b.nombre || b.nombreBanco || b.banco || "Banco");
-                                        if (bName.toUpperCase() === userCajaLabel.toUpperCase()) return null;
+                                        if (miCajaAbierta && bName.toUpperCase() === userCajaLabel.toUpperCase()) return null;
                                         return (
                                             <option key={idx} value={bName}>
                                                 {bName}
@@ -1684,6 +1752,67 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+        
+            {/* Modal de Alerta por Fondos Insuficientes en Caja */}
+            {showInsuficienteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-fadeIn">
+                    <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+                        <div className="flex items-center gap-3 text-amber-600">
+                            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                                <FiAlertCircle size={22} className="text-amber-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-800">Dinero insuficiente en caja</h3>
+                                <p className="text-xs text-slate-500">Confirmación de saldo en descubierto</p>
+                            </div>
+                        </div>
+
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                            El dinero disponible en la caja (<span className="font-bold text-slate-800">{userCajaLabel}</span>) no es suficiente para realizar este pago.
+                        </p>
+
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 text-xs">
+                            <div className="flex justify-between text-slate-600">
+                                <span>Saldo actual en caja:</span>
+                                <span className="font-semibold text-slate-800">{fmt(miCajaAbierta?.saldo_actual ?? miCajaAbierta?.saldoActual ?? 0)}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-600">
+                                <span>Monto del pago:</span>
+                                <span className="font-semibold text-slate-900">{fmt(totalGeneral)}</span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t border-slate-200 text-rose-600 font-bold">
+                                <span>Nuevo saldo proyectado:</span>
+                                <span>{fmt((Number(miCajaAbierta?.saldo_actual ?? miCajaAbierta?.saldoActual ?? 0)) - totalGeneral)}</span>
+                            </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 italic">
+                            ¿Desea confirmar y realizar el pago de todos modos? En el módulo de caja el saldo se actualizará y quedará en negativo.
+                        </p>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowInsuficienteModal(false)}
+                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowInsuficienteModal(false);
+                                    handleSavePago(true);
+                                }}
+                                className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm transition-all"
+                            >
+                                Sí, realizar pago
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

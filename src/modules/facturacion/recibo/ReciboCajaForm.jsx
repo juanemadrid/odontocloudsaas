@@ -7,7 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
-import { getActiveCaja, getDoctorsList } from "../../../services/supabaseServices";
+import { getActiveCaja, getDoctorsList, ensureActiveCaja } from "../../../services/supabaseServices";
 import { getConfigItems, saveConfigItem, getConfigSection } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 
@@ -330,7 +330,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         if (!paciente) return setError("Debes seleccionar un tercero / paciente.");
         if (conceptos.length === 0) return setError("Debes agregar al menos un concepto.");
         if (conceptos.some(c => !c.concepto || c.precioUnitario <= 0)) return setError("Revisa los conceptos y precios.");
-        if (medioPago === "Efectivo" && !activeCaja) return setError("No tienes una caja abierta para registrar el pago en efectivo.");
+        // Caja se asegura/abre automáticamente al registrar el recibo
 
         setSaving(true);
         setError("");
@@ -360,7 +360,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 descuentoTotal: totals.descuento,
                 total: totals.total,
                 observaciones,
-                cajaId: activeCaja ? activeCaja.id : null,
+                cajaId: currentActiveCaja ? currentActiveCaja.id : null,
                 creadoPor: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
                 created_at: new Date().toISOString()
             };
@@ -381,7 +381,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             };
             await saveConfigItem(inquilino, "consecutivos", "consecutivos", updatedConsDoc);
 
-            if (activeCaja) {
+            if (currentActiveCaja) {
                 const movData = {
                     tenant_id: inquilino,
                     tipo: "ingreso",
@@ -393,17 +393,17 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                     paciente_nombre: paciente.nombre,
                     recibo_id: newRecibo.id,
                     usuario_id: userProfile?.uid,
-                    caja_id: activeCaja.id,
+                    caja_id: currentActiveCaja.id,
                     created_at: new Date().toISOString()
                 };
                 await supabase.from("movimientos_caja").insert([movData]);
                 await supabase
                     .from("cajas")
                     .update({
-                        saldo_actual: (activeCaja.saldo_actual || activeCaja.saldoActual || 0) + totals.total,
-                        total_ingresos: (activeCaja.total_ingresos || activeCaja.totalIngresos || 0) + totals.total
+                        saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + totals.total,
+                        total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + totals.total
                     })
-                    .eq("id", activeCaja.id);
+                    .eq("id", currentActiveCaja.id);
             }
 
             setSuccess(true);

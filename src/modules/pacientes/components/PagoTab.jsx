@@ -17,8 +17,7 @@ import {
 } from "react-icons/fi";
 import { formatCurrency } from '../../../utils/formatters';
 import { getPlansByPatient } from '../../../services/planService';
-import { getConfigItems, saveConfigItem, getConfigSection, saveConfigSection } from '../../../services/configPersistenceService';
-import { getDoctorsList, getActiveCaja } from '../../../services/supabaseServices';
+import { getDoctorsList, getActiveCaja, ensureActiveCaja } from '../../../services/supabaseServices';
 
 // Módulo de Realizar Pago y Saldo a Favor del Paciente - OdontoCloud
 export default function PagoTab({ patient }) {
@@ -342,10 +341,13 @@ export default function PagoTab({ patient }) {
             const inq = userProfile?.inquilino || "";
             let activeCaja = await getActiveCaja(inq, uId);
 
-            // 2. If paid in cash, active cash session is strictly required
-            if (method === "Efectivo" && !activeCaja) {
-                setLoading(false);
-                return toast.error("No tienes una caja abierta para registrar el pago en efectivo.");
+            // Si se registra un recibo / pago y la caja no está abierta, se abre automáticamente
+            if (!activeCaja && method !== "Saldo a favor") {
+                try {
+                    activeCaja = await ensureActiveCaja(inq, userProfile);
+                } catch (e) {
+                    console.warn("No se pudo abrir automáticamente la caja:", e);
+                }
             }
 
             let itemPayments = [];
@@ -482,9 +484,17 @@ export default function PagoTab({ patient }) {
                 }
                 
                 try {
+                    const currentSaldo = Number(activeCaja.saldo_actual ?? activeCaja.saldoActual ?? 0);
+                    const currentIngresos = Number(activeCaja.total_ingresos ?? activeCaja.totalIngresos ?? 0);
                     await supabase
                         .from("cajas")
-                        .update({ updated_at: new Date().toISOString() })
+                        .update({ 
+                            saldo_actual: currentSaldo + paymentAmount,
+                            saldoActual: currentSaldo + paymentAmount,
+                            total_ingresos: currentIngresos + paymentAmount,
+                            totalIngresos: currentIngresos + paymentAmount,
+                            updated_at: new Date().toISOString() 
+                        })
                         .eq("id", activeCaja.id);
                 } catch (e) {}
 

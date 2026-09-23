@@ -809,6 +809,79 @@ export const getActiveCaja = async (tenantId, userId = null) => {
   return activeCaja;
 };
 
+// Abre automáticamente una caja si el usuario actual no tiene una caja abierta activa
+export const ensureActiveCaja = async (tenantId, userProfile) => {
+  if (!tenantId) return null;
+  const userId = userProfile?.uid || userProfile?.id || null;
+
+  // 1. Verificar si ya existe una caja abierta para este usuario
+  let activeCaja = await getActiveCaja(tenantId, userId);
+  if (activeCaja) {
+    return activeCaja;
+  }
+
+  // 2. Si no hay caja abierta, abrir automáticamente la caja para este usuario
+  const usuarioNombre = userProfile?.nombreCompleto || 
+    userProfile?.nombre || 
+    userProfile?.full_name || 
+    userProfile?.displayName || 
+    "Usuario";
+
+  const newCajaId = `caja_${Date.now()}`;
+  const now = new Date().toISOString();
+
+  const newCajaData = {
+    id: newCajaId,
+    tenant_id: tenantId,
+    nombre: `Caja - ${usuarioNombre}`,
+    usuario_id: userId,
+    usuarioId: userId,
+    usuario_nombre: usuarioNombre,
+    usuarioNombre: usuarioNombre,
+    base_inicial: 0,
+    baseInicial: 0,
+    saldo_inicial: 0,
+    saldoInicial: 0,
+    saldo_actual: 0,
+    saldoActual: 0,
+    total_ingresos: 0,
+    totalIngresos: 0,
+    total_egresos: 0,
+    totalEgresos: 0,
+    estado: "abierta",
+    fecha_apertura: now,
+    fechaApertura: now,
+    created_at: now
+  };
+
+  // Guardar en tabla Supabase cajas
+  try {
+    const { data, error } = await supabase
+      .from("cajas")
+      .insert([newCajaData])
+      .select()
+      .maybeSingle();
+
+    if (!error && data) {
+      activeCaja = data;
+    }
+  } catch (e) {
+    console.warn("No se pudo insertar caja en tabla cajas, usando website_config:", e);
+  }
+
+  // Sincronizar en website_config
+  try {
+    const cfgCajas = await getConfigSection(tenantId, "cajas", []);
+    const updated = [newCajaData, ...(Array.isArray(cfgCajas) ? cfgCajas : [])];
+    await saveConfigSection(tenantId, "cajas", updated);
+    if (!activeCaja) activeCaja = newCajaData;
+  } catch (e) {
+    console.warn("Error guardando caja en website_config:", e);
+  }
+
+  return activeCaja || newCajaData;
+};
+
 export const epsCatalogo = epsCatalogoService;
 export const barriosCatalogo = barriosCatalogoService;
 export const configuracionFormularios = configuracionFormulariosService;
@@ -825,5 +898,6 @@ export default {
   documentosClinicos: documentosClinicosService,
   getDoctorsList,
   getActiveCaja,
+  ensureActiveCaja,
   utils: supabaseUtils
 };

@@ -22,24 +22,28 @@ import MovimientoModal from "./components/MovimientoModal";
 import BancosView from "./components/BancosView";
 
 /* ─── Helpers ─── */
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
+const fmt = (n) => {
+  const num = Number(n || 0);
+  const isNeg = num < 0;
+  const abs = Math.abs(num);
+  const formatted = abs.toLocaleString("es-CO", {
+    minimumFractionDigits: abs % 1 !== 0 ? 2 : 0,
+    maximumFractionDigits: 2,
   });
+  return isNeg ? `-$${formatted}` : `$${formatted}`;
+};
 
 const fmtDate = (ts) => {
   if (!ts) return "—";
   try {
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
-    return d.toLocaleString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    if (isNaN(d.getTime())) return String(ts);
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
   } catch { return "—"; }
 };
 
@@ -49,6 +53,7 @@ const MENU_ITEMS = [
   { id: "abiertas", label: "Cajas abiertas" },
   { id: "cerradas", label: "Cajas cerradas" },
   { id: "mi-caja", label: "Mi caja" },
+  { id: "cierres-simulados", label: "Cierres simulados" },
   { id: "bancos", label: "Bancos" },
 ];
 
@@ -124,7 +129,7 @@ export default function Caja() {
           const totalIngresos = (Number(c.total_ingresos ?? c.totalIngresos ?? 0)) > 0 ? Number(c.total_ingresos ?? c.totalIngresos) : movIngresos;
           const totalEgresos = (Number(c.total_egresos ?? c.totalEgresos ?? 0)) > 0 ? Number(c.total_egresos ?? c.totalEgresos) : movEgresos;
           const baseInicial = Number(c.base_inicial ?? c.baseInicial ?? 0);
-          const saldoCalculado = (Number(c.saldo_actual ?? c.saldoActual ?? 0)) > 0 ? Number(c.saldo_actual ?? c.saldoActual) : (baseInicial + totalIngresos - totalEgresos);
+          const saldoCalculado = (c.saldo_actual !== undefined || c.saldoActual !== undefined) ? Number(c.saldo_actual ?? c.saldoActual ?? 0) : (baseInicial + totalIngresos - totalEgresos);
 
           mergedMap.set(c.id, {
             ...c,
@@ -199,6 +204,7 @@ export default function Caja() {
     abiertas: "Cajas Abiertas",
     cerradas: "Cajas Cerradas",
     "mi-caja": "Mi Caja",
+    "cierres-simulados": "Cierres Simulados",
     bancos: "Bancos",
   }[activeMenu] || "Cajas";
 

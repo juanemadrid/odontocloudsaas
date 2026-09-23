@@ -9,24 +9,28 @@ import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX } from "react-icons/fi";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
+const fmt = (n) => {
+  const num = Number(n || 0);
+  const isNeg = num < 0;
+  const abs = Math.abs(num);
+  const formatted = abs.toLocaleString("es-CO", {
+    minimumFractionDigits: abs % 1 !== 0 ? 2 : 0,
+    maximumFractionDigits: 2,
   });
+  return isNeg ? `-$${formatted}` : `$${formatted}`;
+};
 
 const fmtDate = (ts) => {
   if (!ts) return "—";
   try {
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
-    return d.toLocaleString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    if (isNaN(d.getTime())) return String(ts);
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, "0");
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
   } catch { return "—"; }
 };
 
@@ -644,9 +648,11 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
             <span className="text-slate-500 font-medium">Gastos</span>
             <span className="text-rose-600 font-semibold">{fmt(totalEgresos)}</span>
           </div>
-          <div className="flex justify-between py-2 border-t-2 border-slate-200 mt-3 pt-3">
+          <div className="flex justify-between py-2 border-t border-slate-200 mt-3 pt-3">
             <span className="text-slate-800 font-bold">Total caja</span>
-            <span className="text-slate-900 font-extrabold text-[15px]">{fmt(totalCaja)}</span>
+            <span className="text-slate-900 font-bold text-[14px]">
+              {totalCaja < 0 ? `-${Math.abs(totalCaja).toLocaleString("es-CO", { minimumFractionDigits: totalCaja % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 })}` : Number(totalCaja).toLocaleString("es-CO", { minimumFractionDigits: totalCaja % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 })}
+            </span>
           </div>
         </div>
 

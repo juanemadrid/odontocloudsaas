@@ -91,6 +91,7 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
   const [patientSearch, setPatientSearch] = useState("");
   const [showPatientDrop, setShowPatientDrop] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmEgresoDescubierto, setConfirmEgresoDescubierto] = useState(false);
   const [error, setError] = useState("");
   const patientRef = useRef(null);
 
@@ -127,8 +128,15 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
     if (!form.concepto) { setError("Selecciona un concepto."); return; }
     if (montoNum <= 0) { setError("El monto debe ser mayor a 0."); return; }
 
+    const currentCajaSaldo = Number(caja.saldoActual ?? caja.saldo_actual ?? 0);
+    if (tipo === "egreso" && montoNum > currentCajaSaldo && !confirmEgresoDescubierto) {
+      setConfirmEgresoDescubierto(true);
+      return;
+    }
+
     setSaving(true);
     setError("");
+    setConfirmEgresoDescubierto(false);
     try {
       // 1. Obtener consecutivo desde configuración
       // 1. Obtener consecutivo desde configuración
@@ -183,9 +191,23 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         } catch (e) {}
       }
 
-      // Actualizar updated_at en caja
+      // Actualizar saldo_actual, ingresos/egresos y updated_at en caja
       try {
+        const curSaldo = Number(caja.saldoActual ?? caja.saldo_actual ?? 0);
+        const curIng = Number(caja.totalIngresos ?? caja.total_ingresos ?? 0);
+        const curEg = Number(caja.totalEgresos ?? caja.total_egresos ?? 0);
+
+        const newSal = tipo === "ingreso" ? curSaldo + montoNum : curSaldo - montoNum;
+        const newIng = tipo === "ingreso" ? curIng + montoNum : curIng;
+        const newEg = tipo === "egreso" ? curEg + montoNum : curEg;
+
         await supabase.from("cajas").update({
+          saldo_actual: newSal,
+          saldoActual: newSal,
+          total_ingresos: newIng,
+          totalIngresos: newIng,
+          total_egresos: newEg,
+          totalEgresos: newEg,
           updated_at: new Date().toISOString()
         }).eq("id", caja.id);
       } catch (e) {}
