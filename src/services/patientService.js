@@ -463,6 +463,16 @@ export const deletePatient = async (id) => {
     if (error) throw error;
 };
 
+export const deletePatients = async (ids) => {
+    if (!ids || !ids.length) throw new Error("IDs de pacientes inválidos");
+    const { error } = await supabase
+        .from("pacientes")
+        .delete()
+        .in("id", ids);
+
+    if (error) throw error;
+};
+
 export const togglePatientActive = async (id, isActive) => {
     if (!id) return;
     const { error } = await supabase

@@ -18,3 +18,6 @@ scripts/*.mjs
 !scripts/test-config-integration.mjs
 !scripts/test-odontograma.mjs
 !scripts/test-production-readiness.mjs
+.supabase-auth-probe-local/
+.supabase-replay-local/
+supabase/backups/

@@ -13,6 +13,7 @@ import PatientForm from "./components/PatientForm";
 import {
   createOrUpdatePatient,
   deletePatient,
+  deletePatients,
   searchPatients,
   getPatientsPage,
   getPatientById
@@ -208,28 +209,51 @@ export default function Pacientes() {
     }
   };
 
-  const handleDelete = async (patient) => {
+  const handleDelete = async (patientOrPatients) => {
+    const list = Array.isArray(patientOrPatients) ? patientOrPatients : [patientOrPatients];
+    const validList = list.filter((p) => p && (p.id || typeof p === "string"));
+    if (validList.length === 0) return;
+
     try {
-      await deletePatient(patient.id);
+      const ids = validList.map((p) => (typeof p === "object" ? p.id : p));
+      if (ids.length === 1) {
+        await deletePatient(ids[0]);
+      } else {
+        await deletePatients(ids);
+      }
 
-      await logAction(
-        patient.id,
-        "DELETE_PATIENT",
-        {
-          nombre: patient.nombreCompleto || patient.paciente,
-          documento: patient.nroDocumento || patient.documento
+      for (const item of validList) {
+        const pId = typeof item === "object" ? item.id : item;
+        const pName = typeof item === "object" ? (item.nombreCompleto || item.paciente || "Sin nombre") : pId;
+        const pDoc = typeof item === "object" ? (item.nroDocumento || item.documento || "—") : "";
+        try {
+          await logAction(pId, "DELETE_PATIENT", {
+            nombre: pName,
+            documento: pDoc,
+            masivo: ids.length > 1
+          });
+        } catch (e) {
+          console.warn("Audit log error on patient delete:", e);
         }
-      );
+      }
 
-      toast.success("Paciente eliminado correctamente");
-      reloadData();
+      if (ids.length === 1) {
+        toast.success("Paciente eliminado correctamente");
+      } else {
+        toast.success(`${ids.length} pacientes eliminados correctamente`);
+      }
+
+      setOpen(false);
+      setSelectedPatient(null);
+      await reloadData();
     } catch (err) {
-      console.error("Error eliminando paciente:", err?.code, err?.message, err);
-      if (err?.code === "permission-denied") {
+      console.error("Error eliminando paciente(s):", err?.code, err?.message, err);
+      if (err?.code === "permission-denied" || err?.message?.includes("row-level security")) {
         toast.error("No tienes permisos para eliminar pacientes. Verifica las políticas RLS de Supabase.");
       } else {
-        toast.error(`Error al eliminar el paciente: ${err?.message || "Error desconocido"}`);
+        toast.error(`Error al eliminar paciente(s): ${err?.message || "Error desconocido"}`);
       }
+      throw err;
     }
   };
 

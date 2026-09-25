@@ -84,6 +84,8 @@ export default function PatientForm({
     const [fotoPreview, setFotoPreview] = useState(initialData?.fotoUrl || "");
     const [isCameraActive, setIsCameraActive] = useState(false);
     const [cameraStream, setCameraStream] = useState(null);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     // Datos para campo "Remitido por"
     const [usuariosRemision, setUsuariosRemision] = useState([]);
     const [pacientesRemision, setPacientesRemision] = useState([]);
@@ -1741,8 +1743,8 @@ export default function PatientForm({
                         {initialData?.id && onDelete && (
                             <button
                                 type="button"
-                                onClick={() => onDelete(initialData)}
-                                className="px-5 py-2.5 text-rose-500 font-bold text-xs uppercase tracking-widest rounded-lg hover:bg-rose-50 transition-all flex items-center gap-2"
+                                onClick={() => setShowDeleteModal(true)}
+                                className="px-5 py-2.5 text-rose-500 font-bold text-xs uppercase tracking-widest rounded-lg hover:bg-rose-50 transition-all flex items-center gap-2 cursor-pointer"
                             >
                                 <FiTrash2 size={16} /> Eliminar
                             </button>
@@ -1799,6 +1801,60 @@ export default function PatientForm({
                                     className="w-full py-3 bg-slate-100 text-slate-500 text-[11px] font-black uppercase tracking-widest rounded-full hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center"
                                 >
                                     Seguir Editando
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {showDeleteModal && (
+                    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                        <div className="bg-white rounded-[32px] max-w-md w-full p-8 border border-slate-100 shadow-2xl animate-scaleIn relative overflow-hidden flex flex-col items-center text-center">
+                            <div className="w-16 h-16 rounded-3xl bg-rose-500/10 text-rose-600 flex items-center justify-center mb-6 shadow-inner animate-pulse">
+                                <FiTrash2 size={32} strokeWidth={2.5} />
+                            </div>
+
+                            <h3 className="text-base font-black text-slate-800 uppercase tracking-tight mb-2">
+                                ¿Eliminar Paciente?
+                            </h3>
+
+                            <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wide leading-relaxed mb-6">
+                                ¿Estás seguro de que deseas eliminar permanentemente a este paciente? Esta acción no se puede deshacer y borrará su expediente clínico.
+                            </p>
+
+                            <div className="flex flex-col gap-3 w-full">
+                                <button
+                                    type="button"
+                                    disabled={isDeleting}
+                                    onClick={async () => {
+                                        setIsDeleting(true);
+                                        try {
+                                            await onDelete(initialData);
+                                            setShowDeleteModal(false);
+                                        } catch (e) {
+                                            console.error("Error al eliminar paciente:", e);
+                                        } finally {
+                                            setIsDeleting(false);
+                                        }
+                                    }}
+                                    className="w-full py-3 bg-rose-600 text-white text-[11px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-rose-600/20 hover:bg-rose-700 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                                >
+                                    {isDeleting ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            <span>Eliminando...</span>
+                                        </>
+                                    ) : (
+                                        <span>Confirmar Eliminación</span>
+                                    )}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    disabled={isDeleting}
+                                    onClick={() => setShowDeleteModal(false)}
+                                    className="w-full py-3 bg-slate-100 text-slate-500 text-[11px] font-black uppercase tracking-widest rounded-full hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
+                                >
+                                    Cancelar
                                 </button>
                             </div>
                         </div>

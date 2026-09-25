@@ -1,7 +1,21 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import Skeleton from "../../../components/ui/Skeleton";
-import { FiUsers, FiSearch, FiFilter, FiPlus, FiEdit2, FiTrash2, FiUserX, FiUserCheck, FiUpload } from "react-icons/fi";
+import {
+    FiUsers,
+    FiSearch,
+    FiFilter,
+    FiPlus,
+    FiEdit2,
+    FiTrash2,
+    FiUserX,
+    FiUserCheck,
+    FiUpload,
+    FiAlertTriangle,
+    FiCheckSquare,
+    FiSquare
+} from "react-icons/fi";
 import { usePermissions } from "../../../hooks/usePermissions";
+import { useToast } from "../../../context/ToastContext";
 
 export default function PatientList({
     pacientes,
@@ -20,17 +34,29 @@ export default function PatientList({
     onToggleStatus,
     onDelete
 }) {
+    const toast = useToast();
     const [showInactive, setShowInactive] = useState(false);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [patientToDelete, setPatientToDelete] = useState(null);
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [deleteModal, setDeleteModal] = useState({
+        isOpen: false,
+        patients: [],
+        isDeleting: false
+    });
     const [showToggleConfirm, setShowToggleConfirm] = useState(false);
     const [patientToToggle, setPatientToToggle] = useState(null);
+
+    const headerCheckboxRef = useRef(null);
 
     const { can } = usePermissions();
     const canCreate = can("Pacientes", "Paciente", "crear");
     const canEdit = can("Pacientes", "Paciente", "editar");
     const canToggle = can("Pacientes", "Paciente", "desactivar");
     const canDelete = can("Pacientes", "Paciente", "eliminar");
+
+    // Limpiar selección al cambiar de página, búsqueda o filtro activo/inactivo
+    useEffect(() => {
+        setSelectedIds([]);
+    }, [page, searchTerm, showInactive]);
 
     const displayList = useMemo(() => {
         let res = pacientes;
@@ -41,6 +67,70 @@ export default function PatientList({
         }
         return res;
     }, [pacientes, showInactive]);
+
+    const isAllSelected = displayList.length > 0 && displayList.every((p) => selectedIds.includes(p.id));
+    const isSomeSelected = selectedIds.length > 0 && !isAllSelected;
+
+    useEffect(() => {
+        if (headerCheckboxRef.current) {
+            headerCheckboxRef.current.indeterminate = isSomeSelected;
+        }
+    }, [isSomeSelected]);
+
+    const handleToggleSelect = (e, id) => {
+        e.stopPropagation();
+        setSelectedIds((prev) =>
+            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+        );
+    };
+
+    const handleSelectAll = (e) => {
+        e.stopPropagation();
+        if (isAllSelected) {
+            const visibleIds = new Set(displayList.map((p) => p.id));
+            setSelectedIds((prev) => prev.filter((id) => !visibleIds.has(id)));
+        } else {
+            const visibleIds = displayList.map((p) => p.id);
+            setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+        }
+    };
+
+    const handleOpenSingleDelete = (e, p) => {
+        e.stopPropagation();
+        setDeleteModal({
+            isOpen: true,
+            patients: [p],
+            isDeleting: false
+        });
+    };
+
+    const handleOpenBulkDelete = () => {
+        if (selectedIds.length === 0) {
+            toast?.info?.("Selecciona al menos un paciente para eliminar marcando su casilla.");
+            return;
+        }
+        const patientsToDelete = (pacientes || []).filter((p) => selectedIds.includes(p.id));
+        const list = patientsToDelete.length > 0 ? patientsToDelete : selectedIds.map((id) => ({ id, nombreCompleto: "Paciente seleccionado" }));
+        setDeleteModal({
+            isOpen: true,
+            patients: list,
+            isDeleting: false
+        });
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deleteModal.patients.length) return;
+        setDeleteModal((prev) => ({ ...prev, isDeleting: true }));
+        try {
+            await onDelete(deleteModal.patients);
+            const deletedIds = new Set(deleteModal.patients.map((p) => p.id));
+            setSelectedIds((prev) => prev.filter((id) => !deletedIds.has(id)));
+            setDeleteModal({ isOpen: false, patients: [], isDeleting: false });
+        } catch (err) {
+            console.error("Error al eliminar pacientes:", err);
+            setDeleteModal((prev) => ({ ...prev, isDeleting: false }));
+        }
+    };
 
     const handleToggleStatus = (e, p) => {
         e.stopPropagation();
@@ -76,7 +166,7 @@ export default function PatientList({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                <div className="flex items-center flex-wrap gap-2 w-full md:w-auto justify-end">
                     <button
                         onClick={() => setShowInactive(!showInactive)}
                         className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
@@ -87,6 +177,32 @@ export default function PatientList({
                     >
                         {showInactive ? "Ver Activos" : "Ver Inactivos"}
                     </button>
+
+                    {canDelete && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (selectedIds.length === 0) {
+                                    toast?.info?.("Selecciona al menos un paciente marcando su casilla para eliminar.");
+                                    return;
+                                }
+                                handleOpenBulkDelete();
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm border ${
+                                selectedIds.length > 0
+                                    ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-600 ring-2 ring-rose-200"
+                                    : "bg-rose-50/70 hover:bg-rose-100 text-rose-700 border-rose-200"
+                            }`}
+                            title={selectedIds.length > 0 ? `Eliminar ${selectedIds.length} paciente(s) seleccionado(s)` : "Eliminar pacientes (selecciona uno o varios marcando las casillas)"}
+                        >
+                            <FiTrash2 size={14} className={selectedIds.length > 0 ? "text-white" : "text-rose-600"} />
+                            <span>
+                                {selectedIds.length > 0
+                                    ? `Eliminar (${selectedIds.length})`
+                                    : "Eliminar Paciente(s)"}
+                            </span>
+                        </button>
+                    )}
 
                     {canCreate && (
                         <>
@@ -110,6 +226,41 @@ export default function PatientList({
                     )}
                 </div>
             </div>
+
+            {/* Selection Banner (cuando hay elementos seleccionados) */}
+            {selectedIds.length > 0 && (
+                <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-[12px] text-rose-900 shadow-xs animate-fadeIn">
+                    <div className="flex items-center gap-2.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                        <span className="font-bold">
+                            {selectedIds.length} {selectedIds.length === 1 ? "paciente seleccionado" : "pacientes seleccionados"}
+                        </span>
+                        <span className="text-slate-300 hidden sm:inline">•</span>
+                        <button
+                            type="button"
+                            onClick={() => setSelectedIds([])}
+                            className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline cursor-pointer bg-transparent border-0"
+                        >
+                            Deseleccionar todos
+                        </button>
+                    </div>
+
+                    {canDelete && (
+                        <button
+                            type="button"
+                            onClick={handleOpenBulkDelete}
+                            className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer border-0"
+                        >
+                            <FiTrash2 size={13} />
+                            <span>
+                                {selectedIds.length === 1
+                                    ? "Eliminar paciente seleccionado"
+                                    : `Eliminar ${selectedIds.length} pacientes masivamente`}
+                            </span>
+                        </button>
+                    )}
+                </div>
+            )}
 
             {/* Search Bar */}
             <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-3">
@@ -145,6 +296,18 @@ export default function PatientList({
                 <table className="w-full text-left border-collapse">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider">
+                            <th className="py-2.5 px-3 w-10 text-center">
+                                <input
+                                    ref={headerCheckboxRef}
+                                    type="checkbox"
+                                    checked={isAllSelected}
+                                    onChange={handleSelectAll}
+                                    disabled={loading || displayList.length === 0}
+                                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer accent-rose-600 transition disabled:opacity-30 align-middle"
+                                    title="Seleccionar / deseleccionar todos los visibles"
+                                    aria-label="Seleccionar todos"
+                                />
+                            </th>
                             <th className="py-2.5 px-4">Paciente</th>
                             <th className="py-2.5 px-4">Identificación</th>
                             <th className="py-2.5 px-4 hidden md:table-cell">Fecha Registro</th>
@@ -154,14 +317,14 @@ export default function PatientList({
                     <tbody className="divide-y divide-slate-100 text-[12px] text-slate-700">
                         {loading ? (
                             <tr>
-                                <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
+                                <td colSpan={5} className="py-12 text-center text-slate-400 font-medium">
                                     <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
                                     {hasSearchTerm ? "Buscando paciente en el sistema..." : "Cargando directorio de pacientes..."}
                                 </td>
                             </tr>
                         ) : displayList.length === 0 ? (
                             <tr>
-                                <td colSpan={4} className="py-14 text-center">
+                                <td colSpan={5} className="py-14 text-center">
                                     <div className="w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center mx-auto mb-3">
                                         <FiSearch size={22} />
                                     </div>
@@ -176,81 +339,91 @@ export default function PatientList({
                                 </td>
                             </tr>
                         ) : (
-                            displayList.map((p) => (
-                                <tr
-                                    key={p.id}
-                                    className="hover:bg-slate-50/80 transition-colors cursor-pointer"
-                                    onClick={(e) => {
-                                        if (e.target.closest('button')) return;
-                                        onSelect(p);
-                                    }}
-                                >
-                                    <td className="py-2.5 px-4">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="relative shrink-0">
-                                                {p.fotoUrl ? (
-                                                    <img className="h-8 w-8 rounded-lg object-cover border border-slate-200" src={p.fotoUrl} alt="" />
-                                                ) : (
-                                                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-xs ${getColorForName(p.nombreCompleto || "P")}`}>
-                                                        {(p.nombreCompleto || p.paciente || "P")[0]?.toUpperCase()}
-                                                    </div>
-                                                )}
-                                                <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white ${p.activo !== false ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                            displayList.map((p) => {
+                                const isSelected = selectedIds.includes(p.id);
+                                return (
+                                    <tr
+                                        key={p.id}
+                                        className={`transition-colors cursor-pointer ${
+                                            isSelected ? 'bg-rose-50/50 hover:bg-rose-50/80' : 'hover:bg-slate-50/80'
+                                        }`}
+                                        onClick={(e) => {
+                                            if (e.target.closest('button') || e.target.closest('input[type="checkbox"]')) return;
+                                            onSelect(p);
+                                        }}
+                                    >
+                                        <td className="py-2.5 px-3 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={(e) => handleToggleSelect(e, p.id)}
+                                                className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer accent-rose-600 transition align-middle"
+                                                aria-label={`Seleccionar paciente ${p.nombreCompleto || 'paciente'}`}
+                                            />
+                                        </td>
+                                        <td className="py-2.5 px-4">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="relative shrink-0">
+                                                    {p.fotoUrl ? (
+                                                        <img className="h-8 w-8 rounded-lg object-cover border border-slate-200" src={p.fotoUrl} alt="" />
+                                                    ) : (
+                                                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-white font-bold text-xs ${getColorForName(p.nombreCompleto || "P")}`}>
+                                                            {(p.nombreCompleto || p.paciente || "P")[0]?.toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                    <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white ${p.activo !== false ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                                </div>
+                                                <div>
+                                                    <span className="font-bold text-slate-800 uppercase block">{p.nombreCompleto || "Sin Nombre"}</span>
+                                                    <span className="text-[10px] text-slate-400 block">{p.email || p.celular || "Sin contacto"}</span>
+                                                </div>
                                             </div>
+                                        </td>
+                                        <td className="py-2.5 px-4">
                                             <div>
-                                                <span className="font-bold text-slate-800 uppercase block">{p.nombreCompleto || "Sin Nombre"}</span>
-                                                <span className="text-[10px] text-slate-400 block">{p.email || p.celular || "Sin contacto"}</span>
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase block">{p.tipoDocumento || "CC"}</span>
+                                                <span className="font-medium text-slate-700">{p.nroDocumento || "—"}</span>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td className="py-2.5 px-4">
-                                        <div>
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase block">{p.tipoDocumento || "CC"}</span>
-                                            <span className="font-medium text-slate-700">{p.nroDocumento || "—"}</span>
-                                        </div>
-                                    </td>
-                                    <td className="py-2.5 px-4 hidden md:table-cell text-slate-500 font-medium text-[11px]">
-                                        {formatRegistrationDate(p)}
-                                    </td>
-                                    <td className="py-2.5 px-4 text-right">
-                                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                            {canEdit && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); onEdit(p); }}
-                                                    className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                    title="Editar Paciente"
-                                                >
-                                                    <FiEdit2 size={13} />
-                                                </button>
-                                            )}
-                                            {canToggle && (
-                                                <button
-                                                    onClick={(e) => handleToggleStatus(e, p)}
-                                                    className={`w-7 h-7 rounded-lg text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0 ${
-                                                        p.activo !== false ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
-                                                    }`}
-                                                    title={p.activo !== false ? "Desactivar" : "Reactivar"}
-                                                >
-                                                    {p.activo !== false ? <FiUserX size={13} /> : <FiUserCheck size={13} />}
-                                                </button>
-                                            )}
-                                            {canDelete && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setPatientToDelete(p);
-                                                        setShowDeleteConfirm(true);
-                                                    }}
-                                                    className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                                    title="Eliminar Paciente"
-                                                >
-                                                    <FiTrash2 size={13} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))
+                                        </td>
+                                        <td className="py-2.5 px-4 hidden md:table-cell text-slate-500 font-medium text-[11px]">
+                                            {formatRegistrationDate(p)}
+                                        </td>
+                                        <td className="py-2.5 px-4 text-right">
+                                            <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                                {canEdit && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onEdit(p); }}
+                                                        className="w-7 h-7 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                        title="Editar Paciente"
+                                                    >
+                                                        <FiEdit2 size={13} />
+                                                    </button>
+                                                )}
+                                                {canToggle && (
+                                                    <button
+                                                        onClick={(e) => handleToggleStatus(e, p)}
+                                                        className={`w-7 h-7 rounded-lg text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0 ${
+                                                            p.activo !== false ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                                                        }`}
+                                                        title={p.activo !== false ? "Desactivar" : "Reactivar"}
+                                                    >
+                                                        {p.activo !== false ? <FiUserX size={13} /> : <FiUserCheck size={13} />}
+                                                    </button>
+                                                )}
+                                                {canDelete && (
+                                                    <button
+                                                        onClick={(e) => handleOpenSingleDelete(e, p)}
+                                                        className="w-7 h-7 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                                        title="Eliminar Paciente"
+                                                    >
+                                                        <FiTrash2 size={13} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })
                         )}
                     </tbody>
                 </table>
@@ -289,34 +462,92 @@ export default function PatientList({
                 )}
             </div>
 
-            {/* MODAL ELIMINAR */}
-            {showDeleteConfirm && patientToDelete && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-sm w-full p-5 space-y-4 text-center">
-                        <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center mx-auto">
-                            <FiTrash2 size={20} />
+            {/* MODAL CONFIRMACIÓN DE ELIMINACIÓN (INDIVIDUAL O MASIVO) */}
+            {deleteModal.isOpen && deleteModal.patients.length > 0 && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+                        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center mx-auto shadow-inner">
+                            <FiTrash2 size={24} />
                         </div>
-                        <div>
-                            <h3 className="text-[14px] font-bold text-slate-800">¿Eliminar paciente?</h3>
-                            <p className="text-[11px] text-slate-500 mt-1">
-                                Esta acción eliminará a <strong className="text-slate-800">{patientToDelete.nombreCompleto}</strong>. Esta acción no se puede deshacer.
-                            </p>
+
+                        <div className="text-center space-y-2">
+                            <h3 className="text-[16px] font-extrabold text-slate-800 tracking-tight">
+                                {deleteModal.patients.length === 1
+                                    ? "¿Eliminar paciente?"
+                                    : `¿Eliminar ${deleteModal.patients.length} pacientes?`}
+                            </h3>
+
+                            {deleteModal.patients.length === 1 ? (
+                                <div className="space-y-2">
+                                    <p className="text-[12px] text-slate-600">
+                                        ¿Estás seguro de que deseas eliminar permanentemente a este paciente?
+                                    </p>
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-left">
+                                        <span className="font-bold text-slate-800 block text-[13px]">
+                                            {deleteModal.patients[0]?.nombreCompleto || deleteModal.patients[0]?.paciente || "Sin Nombre"}
+                                        </span>
+                                        <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1">
+                                            <span>Doc: <strong className="text-slate-700">{deleteModal.patients[0]?.nroDocumento || deleteModal.patients[0]?.documento || "—"}</strong></span>
+                                            <span>•</span>
+                                            <span>{deleteModal.patients[0]?.celular || deleteModal.patients[0]?.telefono || deleteModal.patients[0]?.email || "Sin contacto"}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <p className="text-[12px] text-slate-600">
+                                        Estás a punto de eliminar <strong className="text-rose-600 font-bold">{deleteModal.patients.length} pacientes</strong> seleccionados.
+                                    </p>
+                                    <div className="max-h-36 overflow-y-auto custom-scrollbar bg-slate-50 border border-slate-200 rounded-xl p-3 text-left divide-y divide-slate-100">
+                                        {deleteModal.patients.map((p, idx) => (
+                                            <div key={p.id || idx} className="py-1.5 flex items-center justify-between text-[11px]">
+                                                <span className="font-semibold text-slate-800 truncate mr-2">
+                                                    {p.nombreCompleto || p.paciente || "Paciente sin nombre"}
+                                                </span>
+                                                <span className="text-slate-500 font-mono shrink-0">
+                                                    {p.nroDocumento || p.documento || "—"}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] text-left">
+                                <FiAlertTriangle className="shrink-0 text-amber-600 mt-0.5" size={15} />
+                                <span>
+                                    <strong>Atención:</strong> Esta acción no se puede deshacer. Se eliminarán los expedientes, citas, evoluciones e historial clínico asociado.
+                                </span>
+                            </div>
                         </div>
-                        <div className="flex gap-2 justify-end pt-2">
+
+                        <div className="flex items-center gap-2.5 pt-2">
                             <button
-                                onClick={() => setShowDeleteConfirm(false)}
-                                className="flex-1 py-1.5 bg-slate-100 text-slate-700 font-semibold text-[12px] rounded-lg border border-slate-200 hover:bg-slate-200 cursor-pointer"
+                                type="button"
+                                disabled={deleteModal.isDeleting}
+                                onClick={() => setDeleteModal({ isOpen: false, patients: [], isDeleting: false })}
+                                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[12px] rounded-xl border border-slate-200 cursor-pointer disabled:opacity-50 transition-colors"
                             >
                                 Cancelar
                             </button>
                             <button
-                                onClick={() => {
-                                    onDelete(patientToDelete);
-                                    setShowDeleteConfirm(false);
-                                }}
-                                className="flex-1 py-1.5 bg-rose-600 text-white font-bold text-[12px] rounded-lg hover:bg-rose-700 cursor-pointer border-0"
+                                type="button"
+                                disabled={deleteModal.isDeleting}
+                                onClick={handleConfirmDelete}
+                                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[12px] rounded-xl cursor-pointer border-0 shadow-sm disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                             >
-                                Confirmar
+                                {deleteModal.isDeleting ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Eliminando...</span>
+                                    </>
+                                ) : (
+                                    <span>
+                                        {deleteModal.patients.length === 1
+                                            ? "Sí, eliminar paciente"
+                                            : `Sí, eliminar (${deleteModal.patients.length})`}
+                                    </span>
+                                )}
                             </button>
                         </div>
                     </div>
