@@ -643,7 +643,16 @@ export const getDoctorsList = async (userProfile, patient = null) => {
         const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
         const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
         if (name.trim() && docId) {
-          mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', raw: d });
+          mapDoctors.set(docId, {
+            id: docId,
+            nombre: name,
+            nombreCompleto: name,
+            displayName: name,
+            email: d.email || '',
+            especialidades: d.especialidades || (d.especialidad ? [d.especialidad] : ["Odontología General"]),
+            identificacion: d.identificacion || d.registro_medico || d.documento || "",
+            raw: d
+          });
         }
       });
       return Array.from(mapDoctors.values()).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
@@ -685,7 +694,17 @@ export const getDoctorsList = async (userProfile, patient = null) => {
           const name = d.nombre_completo || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim();
           const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
           if (name.trim() && docId && !mapDoctors.has(docId)) {
-            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.correo || d.email || '', role: d.especialidad || 'Doctor', raw: d });
+            mapDoctors.set(docId, {
+              id: docId,
+              nombre: name,
+              nombreCompleto: name,
+              displayName: name,
+              email: d.correo || d.email || '',
+              role: d.especialidad || 'Doctor',
+              especialidades: d.especialidades || (d.especialidad ? [d.especialidad] : ["Odontología General"]),
+              identificacion: d.identificacion || d.registro_medico || d.documento || "",
+              raw: d
+            });
           }
         }
       });
@@ -700,7 +719,17 @@ export const getDoctorsList = async (userProfile, patient = null) => {
           const name = u.full_name || u.nombreCompleto || u.nombre || `${u.nombre || ''} ${u.apellido || ''}`.trim() || detail.nombreCompleto || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || u.email || '';
           const docId = String(u.id || (name ? name.toLowerCase() : ''));
           if (name.trim() && docId && !mapDoctors.has(docId)) {
-            mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', role: u.role || detail.rol || 'Doctor', raw: { ...detail, ...u } });
+            mapDoctors.set(docId, {
+              id: docId,
+              nombre: name,
+              nombreCompleto: name,
+              displayName: name,
+              email: u.email || '',
+              role: u.role || detail.rol || 'Doctor',
+              especialidades: detail.especialidades || u.especialidades || (u.especialidad ? [u.especialidad] : (detail.especialidad ? [detail.especialidad] : ["Odontología General"])),
+              identificacion: u.registro_medico || detail.registroMedico || u.documento || detail.documento || "",
+              raw: { ...detail, ...u }
+            });
           }
         }
       });
@@ -712,7 +741,17 @@ export const getDoctorsList = async (userProfile, patient = null) => {
         const name = detail.nombreCompleto || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || detail.nombre || detail.email || '';
         const docId = String(uid || (name ? name.toLowerCase() : ''));
         if (name.trim() && docId && !mapDoctors.has(docId)) {
-          mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: detail.email || '', role: detail.rol || 'Doctor', raw: detail });
+          mapDoctors.set(docId, {
+            id: docId,
+            nombre: name,
+            nombreCompleto: name,
+            displayName: name,
+            email: detail.email || '',
+            role: detail.rol || 'Doctor',
+            especialidades: detail.especialidades || (detail.especialidad ? [detail.especialidad] : ["Odontología General"]),
+            identificacion: detail.registroMedico || detail.documento || "",
+            raw: detail
+          });
         }
       }
     });
@@ -725,7 +764,17 @@ export const getDoctorsList = async (userProfile, patient = null) => {
         const name = u.nombreCompleto || u.nombre || `${u.nombre || ''} ${u.apellido || ''}`.trim() || detail.nombreCompleto || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || u.email || '';
         const docId = String(u.id || u.uid || (name ? name.toLowerCase() : ''));
         if (name.trim() && docId && !mapDoctors.has(docId)) {
-          mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: u.email || '', role: u.rol || detail.rol || 'Doctor', raw: { ...detail, ...u } });
+          mapDoctors.set(docId, {
+            id: docId,
+            nombre: name,
+            nombreCompleto: name,
+            displayName: name,
+            email: u.email || '',
+            role: u.rol || detail.rol || 'Doctor',
+            especialidades: detail.especialidades || u.especialidades || (u.especialidad ? [u.especialidad] : ["Odontología General"]),
+            identificacion: u.documento || detail.documento || detail.registroMedico || "",
+            raw: { ...detail, ...u }
+          });
         }
       }
     });
@@ -735,7 +784,17 @@ export const getDoctorsList = async (userProfile, patient = null) => {
       const name = d.nombreCompleto || d.nombre || `${d.nombres || ''} ${d.apellidos || ''}`.trim() || d.displayName || d.email || "";
       const docId = String(d.id || d.uid || (name ? name.toLowerCase() : ''));
       if (name.trim() && docId && !mapDoctors.has(docId)) {
-        mapDoctors.set(docId, { id: docId, nombre: name, nombreCompleto: name, email: d.email || '', role: d.rol || 'Doctor', raw: d });
+        mapDoctors.set(docId, {
+          id: docId,
+          nombre: name,
+          nombreCompleto: name,
+          displayName: name,
+          email: d.email || '',
+          role: d.rol || 'Doctor',
+          especialidades: d.especialidades || (d.especialidad ? [d.especialidad] : ["Odontología General"]),
+          identificacion: d.identificacion || d.registro_medico || d.documento || "",
+          raw: d
+        });
       }
     });
 
@@ -754,14 +813,33 @@ export const getDoctorsList = async (userProfile, patient = null) => {
         "Doctor Principal";
 
       if (myName.trim() && !mapDoctors.has(myId)) {
-        mapDoctors.set(myId, { id: myId, nombre: myName, nombreCompleto: myName, email: userProfile.email || '', role: userProfile.rol || 'Doctor' });
+        mapDoctors.set(myId, {
+          id: myId,
+          nombre: myName,
+          nombreCompleto: myName,
+          displayName: myName,
+          email: userProfile.email || '',
+          role: userProfile.rol || 'Doctor',
+          especialidades: userProfile.especialidades || (userProfile.especialidad ? [userProfile.especialidad] : ["Odontología General"]),
+          identificacion: userProfile.registroMedico || userProfile.documento || "",
+          raw: userProfile
+        });
       }
     }
   }
 
   // G. Fallback si no hay ningún doctor
   if (mapDoctors.size === 0) {
-    mapDoctors.set('doc_default', { id: 'doc_default', nombre: 'Dr. Odontólogo Principal', nombreCompleto: 'Dr. Odontólogo Principal', email: '', role: 'Doctor' });
+    mapDoctors.set('doc_default', {
+      id: 'doc_default',
+      nombre: 'Dr. Odontólogo Principal',
+      nombreCompleto: 'Dr. Odontólogo Principal',
+      displayName: 'Dr. Odontólogo Principal',
+      email: '',
+      role: 'Doctor',
+      especialidades: ["Odontología General"],
+      identificacion: ""
+    });
   }
 
   return Array.from(mapDoctors.values()).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));

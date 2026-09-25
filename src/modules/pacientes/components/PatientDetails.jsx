@@ -7,6 +7,7 @@ import { useToast } from "../../../context/ToastContext";
 import { useAudit } from "../../../hooks/useAudit";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { getMyTenantUserDirectory } from "../../../services/tenantDirectoryService";
+import { getDoctorsList } from "../../../services/supabaseServices";
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { patientSchema } from "../schemas/patientSchema";
@@ -1246,44 +1247,12 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                 })).sort((a, b) => (a.nombreCompleto || "").localeCompare(b.nombreCompleto || ""));
                 setPacientesRemision(pacientes);
 
-                // Load the operational directory without signatures/photos/passwords.
-                const usersMap = new Map();
-                const [profilesResult, doctorsResult, directory] = await Promise.all([
-                    supabase
-                        .from("profiles")
-                        .select("id,full_name,email,role,especialidad,registro_medico,telefono,activo")
-                        .eq("tenant_id", inquilino),
-                    supabase
-                        .from("profesionales")
-                        .select("id,nombre_completo,especialidad,telefono,email,registro_medico,activo")
-                        .eq("tenant_id", inquilino),
-                    getMyTenantUserDirectory().catch(() => ({})),
-                ]);
-
-                const details = directory?.user_details || {};
-                [
-                    ...(directory?.usuarios || []),
-                    ...(directory?.doctores || []),
-                    ...(directory?.profesionales || []),
-                ].forEach((u) => {
-                    const detail = details[u.id || u.uid] || {};
-                    const merged = { ...u, ...detail };
-                    const name = (merged.displayname || merged.nombre || merged.nombres || merged.nombre_completo || merged.full_name || merged.email || "").trim();
-                    if (name) usersMap.set(merged.id || merged.uid || name.toLowerCase(), { ...merged, id: merged.id || merged.uid, displayName: name });
-                });
-
-                (profilesResult.data || []).forEach((p) => {
-                    const name = (p.full_name || p.email || "").trim();
-                    if (name) usersMap.set(p.id || name.toLowerCase(), { ...p, id: p.id, displayName: name });
-                });
-                (doctorsResult.data || []).forEach((d) => {
-                    const name = (d.nombre_completo || d.email || "").trim();
-                    if (name) usersMap.set(d.id || name.toLowerCase(), { ...d, id: d.id, displayName: name });
-                });
-
-                const sortedUsers = Array.from(usersMap.values()).sort((a, b) => 
-                    (a.displayName || "").localeCompare(b.displayName || "")
-                );
+                // Load ONLY users with doctor profile using getDoctorsList
+                const docs = await getDoctorsList(userProfile || { inquilino }, null);
+                const sortedUsers = (docs || []).map(d => ({
+                    ...d,
+                    displayName: d.displayName || d.nombreCompleto || d.nombre || d.email || "Doctor"
+                })).sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
                 setProfesionales(sortedUsers);
             } catch (e) {
                 console.error("Error loading remision catalogs from Supabase:", e);

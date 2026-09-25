@@ -5,6 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
 import { getMyTenantUserDirectory } from '../../../services/tenantDirectoryService';
+import { getDoctorsList } from '../../../services/supabaseServices';
 
 export default function ProfesionalesTab({ patient, onUpdate }) {
     const toast = useToast();
@@ -41,136 +42,9 @@ export default function ProfesionalesTab({ patient, onUpdate }) {
     React.useEffect(() => {
         const loadCatalog = async () => {
             const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
-            if (!inq) return;
-            
             try {
-                const mapDoctors = new Map();
-
-                // 1. Cargar desde tabla profiles
-                try {
-                    const { data: profilesData } = await supabase
-                        .from("profiles")
-                        .select("id,full_name,email,role,especialidad,registro_medico,activo")
-                        .eq("tenant_id", inq);
-                        
-                    if (profilesData && Array.isArray(profilesData)) {
-                        profilesData.forEach(u => {
-                            if (u.activo !== false) {
-                                const isDoc = isDoctorUser(u);
-                                if (isDoc) {
-                                    const name = u.full_name || u.nombreCompleto || u.nombre || u.email || "";
-                                    if (name.trim()) {
-                                        mapDoctors.set(u.id || name.toLowerCase(), {
-                                            id: u.id || name.toLowerCase(),
-                                            nombreCompleto: name,
-                                            especialidades: u.especialidades || (u.especialidad ? [u.especialidad] : ["Odontología General"]),
-                                            identificacion: u.registro_medico || u.documento || "",
-                                            raw: u
-                                        });
-                                    }
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn("Tabla profiles error:", e);
-                }
-
-                // 2. Cargar desde tabla profesionales
-                try {
-                    const { data: profData } = await supabase
-                        .from("profesionales")
-                        .select("id,nombre_completo,especialidad,registro_medico,activo")
-                        .eq("tenant_id", inq);
-                        
-                    if (profData && Array.isArray(profData)) {
-                        profData.forEach(d => {
-                            if (d.activo !== false) {
-                                const name = d.nombre_completo || d.nombre || "";
-                                const docId = d.id || name.toLowerCase();
-                                if (name.trim() && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, {
-                                        id: docId,
-                                        nombreCompleto: name,
-                                        especialidades: d.especialidades || (d.especialidad ? [d.especialidad] : []),
-                                        identificacion: d.identificacion || d.registro_medico || "",
-                                        raw: d
-                                    });
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn("Tabla profesionales error:", e);
-                }
-
-                // 3. Cargar desde website_config (usuarios y user_details)
-                try {
-                    const directory = await getMyTenantUserDirectory();
-
-                    if (directory) {
-                        const usuarios = directory.usuarios || [];
-                        const profsConfig = directory.profesionales || [];
-                        const userDetails = directory.user_details || {};
-
-                        [...usuarios, ...profsConfig].forEach(u => {
-                            const detail = userDetails[u.id || u.uid] || {};
-                            const roleStr = (u.rol || u.role || "").toLowerCase();
-                            const isDoc = u.esDoctor === true || detail.esDoctor === true || 
-                                          roleStr.includes("doctor") || roleStr.includes("odontolog");
-                            
-                            if (isDoc) {
-                                const name = u.nombreCompleto || u.nombre || u.displayName || u.email || "";
-                                const docId = u.id || u.uid || name.toLowerCase();
-                                if (name.trim() && !mapDoctors.has(docId)) {
-                                    mapDoctors.set(docId, {
-                                        id: docId,
-                                        nombreCompleto: name,
-                                        especialidades: detail.especialidades || u.especialidades || (u.especialidad ? [u.especialidad] : ["Odontología General"]),
-                                        identificacion: u.documento || u.identificacion || "",
-                                        raw: u
-                                    });
-                                }
-                            }
-                        });
-
-                        // También verificar si hay user_details con esDoctor: true directamente
-                        Object.entries(userDetails).forEach(([uid, detail]) => {
-                            if (detail.esDoctor === true && !mapDoctors.has(uid)) {
-                                const docName = detail.nombreCompleto || detail.nombre || userProfile?.nombreCompleto || "Doctor(a) Registrado";
-                                mapDoctors.set(uid, {
-                                    id: uid,
-                                    nombreCompleto: docName,
-                                    especialidades: detail.especialidades || ["Odontología General"],
-                                    identificacion: detail.registroMedico || "",
-                                    raw: detail
-                                });
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn("website_config usuarios error:", e);
-                }
-
-                // 4. Agregar siempre al usuario actual (userProfile) si no está en la lista
-                if (userProfile) {
-                    const myName = userProfile.nombreCompleto || userProfile.nombre || userProfile.displayName;
-                    const myId = userProfile.uid || userProfile.id || `user-${myName}`;
-                    if (myName && !mapDoctors.has(myId)) {
-                        mapDoctors.set(myId, {
-                            id: myId,
-                            nombreCompleto: myName,
-                            especialidades: userProfile.especialidades || (userProfile.especialidad ? [userProfile.especialidad] : ["Doctor / Odontólogo Principal"]),
-                            identificacion: userProfile.registroMedico || "",
-                            raw: userProfile
-                        });
-                    }
-                }
-
-                const list = Array.from(mapDoctors.values()).sort((a, b) => 
-                    (a.nombreCompleto || "").localeCompare(b.nombreCompleto || "")
-                );
-                setCatalogProfesionales(list);
+                const docs = await getDoctorsList(userProfile, null);
+                setCatalogProfesionales(docs || []);
 
                 // Cargar especialidades para el mapeo visual
                 try {
