@@ -1,0 +1,1 @@
+import{n as e}from"./Pacientes-DYPLhaT-.js";export{e as getPatientFinancials};
