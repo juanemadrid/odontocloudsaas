@@ -415,10 +415,11 @@ export default function GestionAgenda() {
           nombre: resPayload.nombre,
           ubicacion: resPayload.ubicacion,
           sucursal_id: resPayload.sucursal_id,
-          activo: resPayload.activo,
-          updated_at: new Date().toISOString()
+          activo: resPayload.activo
         }).eq("tenant_id", inquilino).eq("id", selectedRes.id);
-        if (error) throw error;
+        if (error) {
+          console.warn("Nota sobre consultorios table:", error.message);
+        }
 
         await saveConfigItem(inquilino, "recursos_fisicos", "consultorios", {
           ...selectedRes,
@@ -434,10 +435,11 @@ export default function GestionAgenda() {
           ubicacion: resPayload.ubicacion,
           sucursal_id: resPayload.sucursal_id,
           activo: resPayload.activo,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          created_at: new Date().toISOString()
         }]);
-        if (error) throw error;
+        if (error) {
+          console.warn("Nota sobre consultorios table:", error.message);
+        }
 
         await saveConfigItem(inquilino, "recursos_fisicos", "consultorios", {
           id: newId,
@@ -447,8 +449,17 @@ export default function GestionAgenda() {
       setResModalOpen(false);
       setSelectedRes(null);
       const { data, error: reloadError } = await supabase.from("consultorios").select("*").eq("tenant_id", inquilino).order("nombre", { ascending: true });
-      if (reloadError) throw reloadError;
-      setResources(data || []);
+      if (reloadError) {
+        console.warn("Error recargando consultorios:", reloadError);
+      }
+      const cfgRec = await getConfigItems(inquilino, "recursos_fisicos", "consultorios");
+      const mergedMap = new Map();
+      (data || []).forEach(r => mergedMap.set(r.id, r));
+      (cfgRec || []).forEach(r => {
+        const existing = mergedMap.get(r.id) || {};
+        mergedMap.set(r.id, { ...existing, ...r });
+      });
+      setResources(Array.from(mergedMap.values()));
     } catch (err) {
       console.error("Error saving resource:", err);
       alert("Error al guardar el consultorio: " + err.message);
