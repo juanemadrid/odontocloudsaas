@@ -40,6 +40,9 @@ export const sendFactusBill = (payload) =>
 export const downloadFactusPdf = (billNumber) =>
   invokeFactusProxy("download_pdf", { billNumber });
 
+export const downloadFactusAttachedDocumentXml = (billNumber) =>
+  invokeFactusProxy("download_attached_document", { billNumber });
+
 export const sendFactusSupportDocument = (payload) =>
   invokeFactusProxy("send_support_document", { payload });
 

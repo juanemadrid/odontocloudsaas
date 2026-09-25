@@ -113,3 +113,11 @@ export const getDianStatusLabel = (status) => {
       return { label: "No emitida", color: "bg-slate-100 text-slate-500" };
   }
 };
+
+/**
+ * Downloads the legal AttachedDocument XML for an electronic bill from Factus.
+ */
+export const descargarAttachedDocumentXml = async (billNumber) => {
+  return await factusService.downloadAttachedDocumentXml(billNumber);
+};
+

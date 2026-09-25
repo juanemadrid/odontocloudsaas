@@ -239,6 +239,24 @@ Deno.serve(async (request) => {
         throw new HttpError(400, "La factura es invalida o demasiado grande.");
       }
 
+      if (payload?.operation_type === "SS-CUFE") {
+        const { data: flagRow, error: flagError } = await admin
+          .from("tenant_feature_flags")
+          .select("enabled")
+          .eq("tenant_id", tenantId)
+          .eq("feature_key", "ENABLE_FEV_RIPS_0948")
+          .maybeSingle();
+
+        if (flagError) {
+          console.error("Error verificando feature flag FEV-RIPS:", flagError.message);
+          throw new HttpError(500, "Error verificando autorizacion regulatoria.");
+        }
+
+        if (flagRow?.enabled !== true) {
+          throw new HttpError(403, "FEV-RIPS 0948 no esta habilitado para esta institucion.");
+        }
+      }
+
       const quota = Number(config.facturacionCuota || 0);
       const used = Number(config.facturacionUsadas || 0);
       if (quota > 0 && used >= quota) {
@@ -326,6 +344,32 @@ Deno.serve(async (request) => {
         binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
       }
       return json({ success: true, base64: btoa(binary), mimeType: "application/pdf" });
+    }
+
+    if (action === "download_attached_document") {
+      const billNumber = String(body?.billNumber || "");
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(billNumber)) {
+        throw new HttpError(400, "El numero de factura no es valido.");
+      }
+      const response = await factusRequest(
+        config,
+        "/v2/bills/" + encodeURIComponent(billNumber) + "/download-attached-document-xml",
+        {},
+        "application/json",
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new HttpError(response.status, factusError(data, response.status));
+
+      const rawBase64 = data?.data?.xml_base_64_encoded || data?.xml_base_64_encoded || data?.data?.file || "";
+      if (!rawBase64) {
+        throw new HttpError(502, "Factus no retorno el XML del AttachedDocument.");
+      }
+
+      return json({
+        success: true,
+        bill_number: billNumber,
+        xml_base_64_encoded: rawBase64,
+      });
     }
 
     if (action === "download_support_document_pdf") {

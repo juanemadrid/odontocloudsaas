@@ -1,5 +1,6 @@
 import {
   downloadFactusPdf,
+  downloadFactusAttachedDocumentXml,
   downloadFactusSupportDocumentPdf,
   getFactusRanges,
   getFactusStatus,
@@ -8,6 +9,10 @@ import {
   sendFactusAdjustmentNote,
   testFactusCredentials,
 } from "./factusProxyService";
+import {
+  buildFactusHealthInvoicePayload,
+  isFacturaSectorSalud,
+} from "./factusHealthPayloadBuilder";
 import { calculateNIT_DV } from "../utils/dian/dianHelpers";
 
 /**
@@ -399,8 +404,33 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     items: factusItems,
   };
 
-  const proxyResponse = await sendFactusBill(payload);
+  let finalPayload = payload;
+  const fevRipsFlag = Boolean(resolvedCreds?.fevRipsFlagEnabled ?? invoiceData?.fevRipsFlagEnabled);
+  if (isFacturaSectorSalud({ factura: invoiceData, fevRipsFlagEnabled: fevRipsFlag })) {
+    finalPayload = buildFactusHealthInvoicePayload(
+      payload,
+      invoiceData.healthData || invoiceData.health,
+      {
+        billing_period: invoiceData.billing_period || invoiceData.periodoFacturacion,
+        beneficiary: invoiceData.beneficiary || invoiceData.pacienteBeneficiario,
+      }
+    );
+  }
+
+  const proxyResponse = await sendFactusBill(finalPayload);
   return { ...proxyResponse.result, _referenceCode: referenceCode };
+};
+
+/**
+ * Downloads the legal AttachedDocument XML for an electronic bill.
+ * Endpoint: GET /v2/bills/:number/download-attached-document-xml
+ *
+ * @param {string} billNumber - Factus bill number (e.g. SETP990020758)
+ * @returns {Promise<string>} Base64-encoded AttachedDocument XML
+ */
+export const downloadAttachedDocumentXml = async (billNumber) => {
+  const data = await downloadFactusAttachedDocumentXml(billNumber);
+  return data?.xml_base_64_encoded || "";
 };
 
 /**
@@ -534,6 +564,7 @@ const factusService = {
   testConnection,
   sendInvoice,
   downloadInvoicePDF,
+  downloadAttachedDocumentXml,
   sendSupportDocument,
   sendSupportDocumentAdjustmentNote,
   downloadSupportDocumentPDF,
