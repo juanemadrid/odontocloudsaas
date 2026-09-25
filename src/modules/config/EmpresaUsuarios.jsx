@@ -18,6 +18,11 @@ import {
     saveConfigItem,
     saveConfigSection,
 } from "../../services/configPersistenceService";
+import {
+    configureDoctorSispro,
+    getDoctorSisproStatus
+} from "../../services/tenantSecretsService";
+import { isFevRips0948Enabled } from "../rips/v003/ripsFeatureFlagService";
 import Input from "../../components/ui/Input";
 
 const normalizeDate = (val) => {
@@ -154,9 +159,18 @@ export default function EmpresaUsuarios() {
         encabezadoPersonalizado: "", // New conditional field
         formaPago: "Realizadas y pagadas", // "Forma de pago"
 
+        // Configuración RIPS del Doctor (OralDrive)
+        generaRips: false,
+        ripsTipoPrestador: "unico", // "unico" | "sucursal"
+        ripsCodigoUnico: "",
+        newSisproPassword: "",
+        ripsSucursales: {},
+
         password: ""
     };
     const [formData, setFormData] = useState(initialForm);
+    const [sisproConfigured, setSisproConfigured] = useState(false);
+    const [fevRipsEnabled, setFevRipsEnabled] = useState(false);
 
     // 1. Load Data
     const loadData = async () => {
@@ -169,15 +183,18 @@ export default function EmpresaUsuarios() {
                 userDetailsMap,
                 configUsersData,
                 configuredProfiles,
-                configuredSpecialties
+                configuredSpecialties,
+                fevRipsActive
             ] = await Promise.all([
                 supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
                 getConfigItems(userProfile.inquilino, "sucursales", "sucursales"),
                 getConfigSection(userProfile.inquilino, "user_details", {}),
                 getConfigItems(userProfile.inquilino, "usuarios", null),
                 getConfigItems(userProfile.inquilino, "perfiles", null),
-                getConfigItems(userProfile.inquilino, "especialidades", "especialidades")
+                getConfigItems(userProfile.inquilino, "especialidades", "especialidades"),
+                isFevRips0948Enabled(userProfile.inquilino).catch(() => false)
             ]);
+            setFevRipsEnabled(Boolean(fevRipsActive));
             if (uRes.error) throw uRes.error;
             const profilesMap = new Map();
 
@@ -224,6 +241,10 @@ export default function EmpresaUsuarios() {
                     fechaNacimiento: normalizeDate(detail.fechaNacimiento || u.fecha_nacimiento || u.fechaNacimiento || ""),
                     password: savedPassword,
                     esDoctor,
+                    generaRips: detail.generaRips ?? u.generaRips ?? false,
+                    ripsTipoPrestador: detail.ripsTipoPrestador || u.ripsTipoPrestador || "unico",
+                    ripsCodigoUnico: detail.ripsCodigoUnico || u.ripsCodigoUnico || "",
+                    ripsSucursales: detail.ripsSucursales || u.ripsSucursales || {},
                     activo: u.activo !== false
                 });
             });
@@ -265,6 +286,10 @@ export default function EmpresaUsuarios() {
                     fechaNacimiento: normalizeDate(u.fechaNacimiento || existing.fechaNacimiento || ""),
                     password: configPassword,
                     esDoctor: u.esDoctor ?? existing.esDoctor ?? true,
+                    generaRips: u.generaRips ?? existing.generaRips ?? false,
+                    ripsTipoPrestador: u.ripsTipoPrestador || existing.ripsTipoPrestador || "unico",
+                    ripsCodigoUnico: u.ripsCodigoUnico || existing.ripsCodigoUnico || "",
+                    ripsSucursales: u.ripsSucursales || existing.ripsSucursales || {},
                     activo: u.activo !== false
                 });
             });
@@ -367,12 +392,26 @@ export default function EmpresaUsuarios() {
                 encabezadoPersonalizado: user.encabezadoPersonalizado || "",
                 formaPago: user.formaPago || "Realizadas y pagadas",
 
+                // Configuración RIPS del Doctor (OralDrive)
+                generaRips: user.generaRips || false,
+                ripsTipoPrestador: user.ripsTipoPrestador || "unico",
+                ripsCodigoUnico: user.ripsCodigoUnico || "",
+                newSisproPassword: "",
+                ripsSucursales: user.ripsSucursales || {},
+
                 profileId: user.profileId || user.rol || "",
                 sucursales: user.sucursales || [],
                 especialidades: user.especialidades || [],
                 password: user.password || ""
             });
+            setSisproConfigured(false);
+            if (fevRipsEnabled && user.id && userProfile?.inquilino) {
+                getDoctorSisproStatus(userProfile.inquilino, user.id)
+                    .then(res => setSisproConfigured(Boolean(res?.configured)))
+                    .catch(() => setSisproConfigured(false));
+            }
         } else {
+            setSisproConfigured(false);
             // Validar límite máximo de usuarios del plan de la clínica
             const tenantPlanObj = resolveTenantPlan(userProfile?.tenant);
             const maxUsersLimit = tenantPlanObj.maxUsers;
@@ -531,12 +570,26 @@ export default function EmpresaUsuarios() {
                 clinicalDocsWithLogo: formData.clinicalDocsWithLogo !== false,
                 clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
                 encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
-                formaPago: formData.formaPago || "Realizadas y pagadas"
+                formaPago: formData.formaPago || "Realizadas y pagadas",
+                // Configuración RIPS del Doctor (OralDrive) - Credenciales en backend seguro
+                generaRips: formData.generaRips || false,
+                ripsTipoPrestador: formData.ripsTipoPrestador || "unico",
+                ripsCodigoUnico: formData.ripsCodigoUnico || "",
+                ripsSucursales: formData.ripsSucursales || {}
             };
             await saveConfigSection(userProfile.inquilino, "user_details", {
                 ...(currentUserDetails || {}),
                 [targetId]: userDetail
             });
+
+            // Guardar credencial SISPRO en backend seguro (tenant_secrets) si se especificó una nueva
+            if (formData.newSisproPassword && formData.newSisproPassword.trim()) {
+                await configureDoctorSispro(
+                    userProfile.inquilino,
+                    targetId,
+                    formData.newSisproPassword.trim()
+                );
+            }
 
             await saveConfigItem(userProfile.inquilino, "usuarios", null, {
                 id: targetId,
@@ -1001,6 +1054,168 @@ export default function EmpresaUsuarios() {
                                                                 className="w-full h-24 p-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 text-[12px] shadow-sm focus:border-blue-500 focus:bg-white outline-none transition-all caret-black custom-scrollbar resize-none"
                                                             />
                                                         </div>
+                                                    )}
+
+                                                    {/* Sección FEV-RIPS v003 - Gated detrás de ENABLE_FEV_RIPS_0948 */}
+                                                    {fevRipsEnabled && (
+                                                        <>
+                                                            {/* ¿Genera RIPS? (1:1 OralDrive) */}
+                                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
+                                                                <span className="text-[12px] font-medium text-slate-700">¿Genera RIPS?</span>
+                                                                <button 
+                                                                    type="button" 
+                                                                    onClick={() => setFormData({ ...formData, generaRips: !formData.generaRips })} 
+                                                                    className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.generaRips ? "bg-blue-600" : "bg-slate-300"}`}
+                                                                >
+                                                                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.generaRips ? "left-6" : "left-1"}`} />
+                                                                </button>
+                                                            </div>
+
+                                                            {/* Configuración RIPS cuando está activado */}
+                                                            {formData.generaRips && (
+                                                                <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-100 space-y-3 animate-in fade-in transition-all">
+                                                                    {/* Selector de Código Prestador: Único vs Por Sucursal */}
+                                                                    <div className="space-y-1.5">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <label className="text-[11px] font-bold text-slate-700">Código prestador de servicio</label>
+                                                                            <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Seleccione si el profesional maneja un código de habilitación único o uno configurado por sucursal" />
+                                                                        </div>
+                                                                        <div className="flex items-center gap-4 text-xs text-slate-700">
+                                                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                                <input 
+                                                                                    type="radio" 
+                                                                                    name="ripsTipoPrestador"
+                                                                                    value="unico"
+                                                                                    checked={formData.ripsTipoPrestador !== 'sucursal'}
+                                                                                    onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'unico' })}
+                                                                                    className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                                />
+                                                                                <span className="font-semibold">Único</span>
+                                                                            </label>
+                                                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                                <input 
+                                                                                    type="radio" 
+                                                                                    name="ripsTipoPrestador"
+                                                                                    value="sucursal"
+                                                                                    checked={formData.ripsTipoPrestador === 'sucursal'}
+                                                                                    onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'sucursal' })}
+                                                                                    className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                                />
+                                                                                <span className="font-semibold">Configurar por sucursal</span>
+                                                                            </label>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Caso 1: Código Único (Imagen 2) */}
+                                                                    {formData.ripsTipoPrestador !== 'sucursal' ? (
+                                                                        <div className="space-y-2">
+                                                                            <div className="space-y-1">
+                                                                                <label className="text-[11px] font-medium text-slate-600">Código único</label>
+                                                                                <input 
+                                                                                    type="text" 
+                                                                                    value={formData.ripsCodigoUnico || ''} 
+                                                                                    onChange={e => handleFieldChange("ripsCodigoUnico", e.target.value)} 
+                                                                                    placeholder="Código de servicio" 
+                                                                                    className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 text-xs text-slate-800 outline-none focus:border-blue-500 shadow-2xs transition-all"
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        /* Caso 2: Configurar por sucursal (Imagen 1) */
+                                                                        <div className="space-y-2">
+                                                                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                                                                <table className="w-full text-left text-xs">
+                                                                                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
+                                                                                        <tr>
+                                                                                            <th className="px-3 py-2">Sucursal</th>
+                                                                                            <th className="px-3 py-2">Código</th>
+                                                                                            <th className="px-3 py-2">Extra_III:CodigoPrestador</th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody className="divide-y divide-slate-100">
+                                                                                        {(sucursales.length > 0 ? sucursales : [{ id: 'sede_principal', nombre: userProfile?.tenant?.nombre || 'ATM CENTRO DEL DOLOR OROFACIAL' }]).map(suc => {
+                                                                                            const sucData = formData.ripsSucursales?.[suc.id] || {};
+                                                                                            return (
+                                                                                                <tr key={suc.id} className="hover:bg-slate-50/50">
+                                                                                                    <td className="px-3 py-2 font-bold text-slate-700 whitespace-nowrap text-[11px]">
+                                                                                                        {suc.nombre || 'Sede Principal'}
+                                                                                                    </td>
+                                                                                                    <td className="px-3 py-1.5">
+                                                                                                        <input 
+                                                                                                            type="text" 
+                                                                                                            placeholder="Código de servicio"
+                                                                                                            value={sucData.codigo || ''}
+                                                                                                            onChange={e => {
+                                                                                                                const val = e.target.value;
+                                                                                                                setFormData(prev => ({
+                                                                                                                    ...prev,
+                                                                                                                    ripsSucursales: {
+                                                                                                                        ...(prev.ripsSucursales || {}),
+                                                                                                                        [suc.id]: {
+                                                                                                                            ...(prev.ripsSucursales?.[suc.id] || {}),
+                                                                                                                            codigo: val
+                                                                                                                        }
+                                                                                                                    }
+                                                                                                                }));
+                                                                                                            }}
+                                                                                                            className="w-full h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
+                                                                                                        />
+                                                                                                    </td>
+                                                                                                    <td className="px-3 py-1.5">
+                                                                                                        <input 
+                                                                                                            type="text" 
+                                                                                                            placeholder="Código de servicio"
+                                                                                                            value={sucData.extraCodigoPrestador || ''}
+                                                                                                            onChange={e => {
+                                                                                                                const val = e.target.value;
+                                                                                                                setFormData(prev => ({
+                                                                                                                    ...prev,
+                                                                                                                    ripsSucursales: {
+                                                                                                                        ...(prev.ripsSucursales || {}),
+                                                                                                                        [suc.id]: {
+                                                                                                                            ...(prev.ripsSucursales?.[suc.id] || {}),
+                                                                                                                            extraCodigoPrestador: val
+                                                                                                                        }
+                                                                                                                    }
+                                                                                                                }));
+                                                                                                            }}
+                                                                                                            className="w-full h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
+                                                                                                        />
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            );
+                                                                                        })}
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Contraseña SISPRO del Doctor */}
+                                                                    <div className="space-y-1">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <label className="text-[11px] font-bold text-slate-700">Contraseña SISPRO</label>
+                                                                                <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Contraseña asignada al usuario o prestador en el portal SISPRO del Ministerio de Salud" />
+                                                                            </div>
+                                                                            {sisproConfigured && (
+                                                                                <span className="text-[10px] text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                                                                    ✓ Configurada
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <input 
+                                                                            type="password" 
+                                                                            value={formData.newSisproPassword || ''} 
+                                                                            onChange={e => handleFieldChange("newSisproPassword", e.target.value)} 
+                                                                            placeholder={sisproConfigured ? "Dejar en blanco para mantener la actual" : "Contraseña Usuario SISPRO"} 
+                                                                            autoComplete="new-password"
+                                                                            className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 text-xs text-slate-800 outline-none focus:border-blue-500 shadow-2xs transition-all"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </div>
                                             )}

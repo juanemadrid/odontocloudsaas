@@ -26,9 +26,13 @@ export const getSisproConfig = async (tenantId) => {
   return data.config || {};
 };
 
-export const getSisproPassword = async (tenantId) => {
-  const data = await invokeTenantSecrets("get_sispro_password", { tenantId });
-  return String(data.password || "");
+/**
+ * @deprecated Por directriz de seguridad Fase 1 (Resolución 948), las contraseñas
+ * nunca se devuelven al frontend. Utilice getSisproConfig para verificar si está configurada.
+ */
+export const getSisproPassword = async () => {
+  console.warn("Seguridad: la consulta de contraseña SISPRO está deshabilitada en el cliente.");
+  return "";
 };
 
 export const configureSispro = async (tenantId, config) => {
@@ -36,8 +40,33 @@ export const configureSispro = async (tenantId, config) => {
   return data.configured === true;
 };
 
+export const getDoctorSisproStatus = async (tenantId, doctorId) => {
+  if (!tenantId || !doctorId) return { configured: false };
+  const data = await invokeTenantSecrets("get_doctor_sispro_status", { tenantId, doctorId });
+  return { configured: Boolean(data?.configured) };
+};
+
+export const configureDoctorSispro = async (tenantId, doctorId, sisproPassword) => {
+  if (!tenantId || !doctorId) throw new Error("tenantId y doctorId son requeridos.");
+  const data = await invokeTenantSecrets("configure_doctor_sispro", {
+    tenantId,
+    doctorId,
+    sisproPassword: sisproPassword || "",
+  });
+  return data.configured === true;
+};
+
+export const deleteDoctorSispro = async (tenantId, doctorId) => {
+  if (!tenantId || !doctorId) throw new Error("tenantId y doctorId son requeridos.");
+  const data = await invokeTenantSecrets("delete_doctor_sispro", { tenantId, doctorId });
+  return data.success === true;
+};
+
 export default {
   getSisproConfig,
   getSisproPassword,
   configureSispro,
+  getDoctorSisproStatus,
+  configureDoctorSispro,
+  deleteDoctorSispro,
 };
