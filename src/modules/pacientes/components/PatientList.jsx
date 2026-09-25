@@ -178,31 +178,6 @@ export default function PatientList({
                         {showInactive ? "Ver Activos" : "Ver Inactivos"}
                     </button>
 
-                    {canDelete && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                if (selectedIds.length === 0) {
-                                    toast?.info?.("Selecciona al menos un paciente marcando su casilla para eliminar.");
-                                    return;
-                                }
-                                handleOpenBulkDelete();
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm border ${
-                                selectedIds.length > 0
-                                    ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-600 ring-2 ring-rose-200"
-                                    : "bg-rose-50/70 hover:bg-rose-100 text-rose-700 border-rose-200"
-                            }`}
-                            title={selectedIds.length > 0 ? `Eliminar ${selectedIds.length} paciente(s) seleccionado(s)` : "Eliminar pacientes (selecciona uno o varios marcando las casillas)"}
-                        >
-                            <FiTrash2 size={14} className={selectedIds.length > 0 ? "text-white" : "text-rose-600"} />
-                            <span>
-                                {selectedIds.length > 0
-                                    ? `Eliminar (${selectedIds.length})`
-                                    : "Eliminar Paciente(s)"}
-                            </span>
-                        </button>
-                    )}
 
                     {canCreate && (
                         <>
