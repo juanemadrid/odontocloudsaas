@@ -107,6 +107,14 @@ export default function RipsGenerator() {
     const [selectedDianDocIds, setSelectedDianDocIds] = useState(new Set());
     const [exportingPackage, setExportingPackage] = useState(false);
 
+    // Listas de Previsualización y Validación
+    const [dianDocs, setDianDocs] = useState([]);
+    const [usuarios, setUsuarios] = useState([]);
+    const [consultas, setConsultas] = useState([]);
+    const [procedimientos, setProcedimientos] = useState([]);
+    const [otrosServicios, setOtrosServicios] = useState([]);
+    const [searched, setSearched] = useState(false);
+
     // Paginación por sección (10 por página)
     const [pageDian, setPageDian] = useState(1);
     const [pageUsuarios, setPageUsuarios] = useState(1);
@@ -114,6 +122,26 @@ export default function RipsGenerator() {
     const [pageProcedimientos, setPageProcedimientos] = useState(1);
     const [pageOtros, setPageOtros] = useState(1);
     const PAGE_SIZE = 10;
+
+    // Datos del tenant
+    const [tenantConfig, setTenantConfig] = useState({
+        nit: "",
+        codigoPrestador: "",
+        razonSocial: "",
+        esIps: false
+    });
+    const [configWarning, setConfigWarning] = useState("");
+
+    // Estado Preflight RIPS v003
+    const [preflightStatus, setPreflightStatus] = useState(null); // null | 'VALIDATING' | 'READY' | 'HAS_ERRORS'
+    const [preflightSummary, setPreflightSummary] = useState({ total: 0, valid: 0, error: 0, totalErrors: 0 });
+    const [preflightValidationMap, setPreflightValidationMap] = useState(new Map());
+
+    // Estado MUV e Idempotencia (P0-A2B2)
+    const [transmittingMuv, setTransmittingMuv] = useState(false);
+    const [muvValidationsMap, setMuvValidationsMap] = useState(new Map());
+    const [copiedCuv, setCopiedCuv] = useState(null);
+    const [detailModalData, setDetailModalData] = useState(null);
 
     const filteredTerceros = useMemo(() => {
         if (!searchTerceroQuery.trim()) return epsList;
@@ -255,34 +283,6 @@ export default function RipsGenerator() {
         setSelectedInvoices([]);
         setCheckedSelected(new Set());
     };
-
-    // Datos del tenant
-    const [tenantConfig, setTenantConfig] = useState({
-        nit: "",
-        codigoPrestador: "",
-        razonSocial: "",
-        esIps: false
-    });
-    const [configWarning, setConfigWarning] = useState("");
-
-    // Listas de Previsualización y Validación
-    const [dianDocs, setDianDocs] = useState([]);
-    const [usuarios, setUsuarios] = useState([]);
-    const [consultas, setConsultas] = useState([]);
-    const [procedimientos, setProcedimientos] = useState([]);
-    const [otrosServicios, setOtrosServicios] = useState([]);
-    const [searched, setSearched] = useState(false);
-
-    // Estado Preflight RIPS v003
-    const [preflightStatus, setPreflightStatus] = useState(null); // null | 'VALIDATING' | 'READY' | 'HAS_ERRORS'
-    const [preflightSummary, setPreflightSummary] = useState({ total: 0, valid: 0, error: 0, totalErrors: 0 });
-    const [preflightValidationMap, setPreflightValidationMap] = useState(new Map());
-
-    // Estado MUV e Idempotencia (P0-A2B2)
-    const [transmittingMuv, setTransmittingMuv] = useState(false);
-    const [muvValidationsMap, setMuvValidationsMap] = useState(new Map());
-    const [copiedCuv, setCopiedCuv] = useState(null);
-    const [detailModalData, setDetailModalData] = useState(null);
 
     const fmt = (n) =>
       Number(n || 0).toLocaleString("es-CO", {
