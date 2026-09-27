@@ -21,6 +21,70 @@ const VALID_DENTAL_CUPS = new Set(CUPS_DENTAL_CODES.map(c => c.code.toUpperCase(
 // Set de códigos oficiales CIE-10 odontológicos
 const VALID_CIE10_CODES = new Set(cie10List.map(c => c.code.toUpperCase()));
 
+// Tipos de documento permitidos para la persona / profesional que atiende u ordena el servicio (DT1 v003)
+export const TIPOS_DOC_PROFESIONAL_PERMITIDOS = ["CC", "CE", "CD", "PA", "SC", "PE", "DE", "PT"];
+
+/**
+ * Valida formato estricto YYYY-MM-DD HH:mm, coherencia real de calendario
+ * (días por mes, años bisiestos) y no fecha futura en zona horaria America/Bogota (UTC-5).
+ *
+ * PERIOD_BOUNDARY_VALIDATION = DEFERRED_TO_ORCHESTRATION_LAYER
+ *
+ * @param {string} dtStr
+ * @param {object} [options]
+ * @param {boolean} [options.allowFuture=false]
+ * @returns {{ valid: boolean, error?: string }}
+ */
+export function isValidCalendarDateTime(dtStr, { allowFuture = false } = {}) {
+  if (typeof dtStr !== "string" || dtStr.trim() === "") {
+    return { valid: false, error: "fecha/hora debe ser un string no vacío." };
+  }
+  const clean = dtStr.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(clean);
+  if (!match) {
+    return { valid: false, error: `Formato inválido '${clean}'. Debe ser estrictamente YYYY-MM-DD HH:mm.` };
+  }
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  const hour = parseInt(match[4], 10);
+  const minute = parseInt(match[5], 10);
+
+  if (month < 1 || month > 12) {
+    return { valid: false, error: `Mes '${match[2]}' fuera de rango (01-12).` };
+  }
+  if (hour < 0 || hour > 23) {
+    return { valid: false, error: `Hora '${match[4]}' fuera de rango (00-23).` };
+  }
+  if (minute < 0 || minute > 59) {
+    return { valid: false, error: `Minutos '${match[5]}' fuera de rango (00-59).` };
+  }
+
+  const isLeap = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  const daysInMonth = [0, 31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (day < 1 || day > daysInMonth[month]) {
+    return {
+      valid: false,
+      error: `Día '${match[3]}' inválido para el mes ${month} del año ${year} (máximo ${daysInMonth[month]} días${month === 2 && !isLeap ? ", el año no es bisiesto" : ""}).`
+    };
+  }
+
+  if (!allowFuture) {
+    // Offset explícito de Colombia America/Bogota (-05:00)
+    const isoString = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:00-05:00`;
+    const dtMillis = Date.parse(isoString);
+    if (isNaN(dtMillis)) {
+      return { valid: false, error: `Fecha no interpretable: '${clean}'.` };
+    }
+    const nowMillis = Date.now();
+    if (dtMillis > nowMillis + 60000) {
+      return { valid: false, error: `fecha '${clean}' no puede ser futura respecto a la fecha actual (zona horaria America/Bogota UTC-5).` };
+    }
+  }
+
+  return { valid: true };
+}
+
 /**
  * Valida un JSON de RIPS v003 completo según Documento Técnico 1 v003.
  * 
@@ -98,9 +162,9 @@ export async function validateRipsV003(ripsJson) {
       errors.push(`${uPrefix}: fechaNacimiento debe tener formato YYYY-MM-DD.`);
     }
 
-    // codSexo
-    if (!["H", "M"].includes(String(u.codSexo || ""))) {
-      errors.push(`${uPrefix}: codSexo debe ser 'H' o 'M'.`);
+    // codSexo (Documento Técnico 1 v003: M = Masculino, F = Femenino, I = Indeterminado)
+    if (!["M", "F", "I"].includes(String(u.codSexo || ""))) {
+      errors.push(`${uPrefix}: codSexo debe ser 'M' (Masculino), 'F' (Femenino) o 'I' (Indeterminado).`);
     }
 
     // Países y Municipios
@@ -120,8 +184,10 @@ export async function validateRipsV003(ripsJson) {
       errors.push(`${uPrefix}: incapacidad '${incVal}' es inválido. Debe ser '01' (SI) o '02' (NO) según la tabla oficial LstSiNo de SISPRO.`);
     }
 
-    if (!/^\d{3}$/.test(String(u.codPaisOrigen || ""))) {
-      errors.push(`${uPrefix}: codPaisOrigen debe tener 3 dígitos.`);
+    if (u.codPaisOrigen !== null && u.codPaisOrigen !== undefined) {
+      if (!/^\d{3}$/.test(String(u.codPaisOrigen).trim())) {
+        errors.push(`${uPrefix}: codPaisOrigen debe tener 3 dígitos.`);
+      }
     }
     if (typeof u.consecutivo !== "number" || u.consecutivo < 1) {
       errors.push(`${uPrefix}: consecutivo de usuario debe ser un número entero mayor o igual a 1.`);
@@ -168,6 +234,27 @@ export async function validateRipsV003(ripsJson) {
           errors.push(`${cPrefix}: codServicio debe ser un número entero válido (REPS, ej: 334).`);
         }
 
+        if (!c.causaMotivoAtencion || String(c.causaMotivoAtencion).trim() === "") {
+          errors.push(`${cPrefix}: causaMotivoAtencion es obligatoria en consultas.`);
+        }
+        if (!c.conceptoRecaudo || String(c.conceptoRecaudo).trim() === "") {
+          errors.push(`${cPrefix}: conceptoRecaudo es obligatorio en consultas.`);
+        }
+
+        // Identificación del profesional que realizó la consulta (MinSalud DT1 v003)
+        const cTipoDocProf = String(c.tipoDocumentoIdentificacion || "").trim().toUpperCase();
+        if (!cTipoDocProf) {
+          errors.push(`${cPrefix}: tipoDocumentoIdentificacion del profesional es obligatorio.`);
+        } else if (!TIPOS_DOC_PROFESIONAL_PERMITIDOS.includes(cTipoDocProf)) {
+          errors.push(
+            `${cPrefix}: tipoDocumentoIdentificacion '${cTipoDocProf}' del profesional es inválido según DT1 v003 (permitidos: ${TIPOS_DOC_PROFESIONAL_PERMITIDOS.join(", ")}).`
+          );
+        }
+        const cNumDocProf = String(c.numDocumentoIdentificacion || "").trim();
+        if (!cNumDocProf || cNumDocProf.length > 20) {
+          errors.push(`${cPrefix}: numDocumentoIdentificacion del profesional es obligatorio y de máximo 20 caracteres.`);
+        }
+
         // VALIDACIÓN DIAGNÓSTICO CIE-10
         const dxPrin = String(c.codDiagnosticoPrincipal || "").trim().toUpperCase();
         if (!dxPrin || !CIE10_REGEX.test(dxPrin)) {
@@ -211,6 +298,16 @@ export async function validateRipsV003(ripsJson) {
         const p = serv.procedimientos[pIdx];
         const pPrefix = `${uPrefix} Procedimiento [${pIdx + 1}]`;
 
+        // Regla: causaMotivoAtencion NO pertenece al contrato oficial de procedimientos
+        if (Object.hasOwn(p, "causaMotivoAtencion") && p.causaMotivoAtencion !== undefined) {
+          errors.push(`${pPrefix}: causaMotivoAtencion no pertenece al contrato oficial del nodo procedimientos.`);
+        }
+
+        // Regla: nombre oficial es codComplicacion, NO codDiagnosticoComplicacion
+        if (Object.hasOwn(p, "codDiagnosticoComplicacion") && p.codDiagnosticoComplicacion !== undefined) {
+          errors.push(`${pPrefix}: El campo 'codDiagnosticoComplicacion' es inválido en v003; el nombre oficial es 'codComplicacion'.`);
+        }
+
         if (!p.codPrestador || String(p.codPrestador).trim().length < 10) {
           errors.push(`${pPrefix}: codPrestador REPS es obligatorio y no puede estar vacío.`);
         }
@@ -244,6 +341,23 @@ export async function validateRipsV003(ripsJson) {
         if (!["01", "02", "03", "04", "05"].includes(String(p.finalidadTecnologiaSalud || ""))) {
           errors.push(`${pPrefix}: finalidadTecnologiaSalud para procedimiento debe ser '01'..'05'.`);
         }
+        if (!p.conceptoRecaudo || String(p.conceptoRecaudo).trim() === "") {
+          errors.push(`${pPrefix}: conceptoRecaudo es obligatorio en procedimientos.`);
+        }
+
+        // Identificación del profesional que ordenó o realizó el procedimiento (MinSalud DT1 v003)
+        const pTipoDocProf = String(p.tipoDocumentoIdentificacion || "").trim().toUpperCase();
+        if (!pTipoDocProf) {
+          errors.push(`${pPrefix}: tipoDocumentoIdentificacion del profesional es obligatorio.`);
+        } else if (!TIPOS_DOC_PROFESIONAL_PERMITIDOS.includes(pTipoDocProf)) {
+          errors.push(
+            `${pPrefix}: tipoDocumentoIdentificacion '${pTipoDocProf}' del profesional es inválido según DT1 v003 (permitidos: ${TIPOS_DOC_PROFESIONAL_PERMITIDOS.join(", ")}).`
+          );
+        }
+        const pNumDocProf = String(p.numDocumentoIdentificacion || "").trim();
+        if (!pNumDocProf || pNumDocProf.length > 20) {
+          errors.push(`${pPrefix}: numDocumentoIdentificacion del profesional es obligatorio y de máximo 20 caracteres.`);
+        }
 
         // VALIDACIÓN DIAGNÓSTICO CIE-10
         const pDxPrin = String(p.codDiagnosticoPrincipal || "").trim().toUpperCase();
@@ -273,14 +387,180 @@ export async function validateRipsV003(ripsJson) {
             errors.push(`${pPrefix}: nomCodDiagnosticoPrincipalCIE11 es requerido cuando se informa codDiagnosticoPrincipalCIE11.`);
           }
         }
-        if (p.codDiagnosticoRelacionado !== null && typeof p.codDiagnosticoRelacionado !== "string") {
-          errors.push(`${pPrefix}: codDiagnosticoRelacionado debe ser string o null.`);
+        if (p.codDiagnosticoRelacionado !== null && p.codDiagnosticoRelacionado !== undefined) {
+          if (typeof p.codDiagnosticoRelacionado !== "string" || !CIE10_REGEX.test(p.codDiagnosticoRelacionado.trim().toUpperCase())) {
+            errors.push(`${pPrefix}: codDiagnosticoRelacionado '${p.codDiagnosticoRelacionado}' no es un código CIE-10 válido o null.`);
+          }
         }
-        if (p.codDiagnosticoComplicacion !== null && typeof p.codDiagnosticoComplicacion !== "string") {
-          errors.push(`${pPrefix}: codDiagnosticoComplicacion debe ser string o null.`);
+        if (p.codComplicacion !== null && p.codComplicacion !== undefined) {
+          if (typeof p.codComplicacion !== "string" || !CIE10_REGEX.test(p.codComplicacion.trim().toUpperCase())) {
+            errors.push(`${pPrefix}: codComplicacion '${p.codComplicacion}' no es un código CIE-10 válido o null.`);
+          }
         }
         if (p.codigoVIDA !== null && typeof p.codigoVIDA !== "string") {
           errors.push(`${pPrefix}: codigoVIDA debe ser string o null.`);
+        }
+      }
+    }
+
+    // OTROS SERVICIOS (Numeral 4.3.7 DT1 v003)
+    if (Array.isArray(serv.otrosServicios)) {
+      for (let oIdx = 0; oIdx < serv.otrosServicios.length; oIdx++) {
+        const os = serv.otrosServicios[oIdx];
+        const osPrefix = `${uPrefix} OtrosServicios [${oIdx + 1}]`;
+
+        // S01 codPrestador (C 0, 12)
+        if (os.codPrestador !== null && os.codPrestador !== undefined) {
+          if (typeof os.codPrestador !== "string" || os.codPrestador.trim().length === 0) {
+            errors.push(`${osPrefix}: codPrestador no puede ser una cadena vacía; debe ser REPS de 10-12 dígitos o null.`);
+          } else {
+            const strCod = os.codPrestador.trim();
+            if (strCod.length < 10 || strCod.length > 12) {
+              errors.push(`${osPrefix}: codPrestador debe tener 10 o 12 dígitos REPS, o null si no aplica.`);
+            }
+          }
+        }
+
+        // S02 numAutorizacion (C 0-30)
+        if (os.numAutorizacion !== null && os.numAutorizacion !== undefined) {
+          const strAut = String(os.numAutorizacion).trim();
+          if (strAut.length < 1 || strAut.length > 30) {
+            errors.push(`${osPrefix}: numAutorizacion no puede exceder 30 caracteres.`);
+          }
+        }
+
+        // S03 idMIPRES (C 0, 1-19)
+        if (os.idMIPRES !== null && os.idMIPRES !== undefined) {
+          const strMipres = String(os.idMIPRES).trim();
+          if (strMipres.length < 1 || strMipres.length > 19) {
+            errors.push(`${osPrefix}: idMIPRES debe tener entre 1 y 19 caracteres o ser null.`);
+          }
+        }
+
+        // S04 fechaSuministroTecnologia (C 16) - Validación estricta de calendario y no fecha futura
+        const dateCheck = isValidCalendarDateTime(os.fechaSuministroTecnologia);
+        if (!dateCheck.valid) {
+          errors.push(`${osPrefix}: fechaSuministroTecnologia '${os.fechaSuministroTecnologia}': ${dateCheck.error}`);
+        }
+
+        // S05 tipoOS (C 2)
+        const tipoOS = String(os.tipoOS || "").trim().padStart(2, "0");
+        if (!["01", "02", "03", "04", "05"].includes(tipoOS)) {
+          errors.push(`${osPrefix}: tipoOS '${os.tipoOS}' es inválido según DT1 v003 (permitidos: 01, 02, 03, 04, 05). Código '06' deshabilitado.`);
+        }
+
+        // S06 codTecnologiaSalud (C 1-20)
+        if (!os.codTecnologiaSalud || typeof os.codTecnologiaSalud !== "string" || os.codTecnologiaSalud.trim().length < 1 || os.codTecnologiaSalud.trim().length > 20) {
+          errors.push(`${osPrefix}: codTecnologiaSalud es obligatorio y debe tener entre 1 y 20 caracteres.`);
+        } else {
+          const cleanCodTec = os.codTecnologiaSalud.trim();
+          // Fortalecimiento F-03: Para tipoOS 02, 03 y 05, la tecnología corresponde a código CUPS
+          if (["02", "03", "05"].includes(tipoOS)) {
+            if (!CUPS_REGEX.test(cleanCodTec)) {
+              errors.push(`${osPrefix}: codTecnologiaSalud '${cleanCodTec}' para tipoOS '${tipoOS}' debe cumplir con la estructura oficial CUPS de 6 caracteres alfanuméricos.`);
+            }
+          }
+        }
+
+        // S07 nomTecnologiaSalud (C 0, 1-200)
+        if (tipoOS === "01") {
+          if (!os.nomTecnologiaSalud || String(os.nomTecnologiaSalud).trim() === "") {
+            errors.push(`${osPrefix}: nomTecnologiaSalud es obligatorio cuando tipoOS es '01' (Dispositivos médicos e insumos).`);
+          } else if (String(os.nomTecnologiaSalud).trim().length > 200) {
+            errors.push(`${osPrefix}: nomTecnologiaSalud no puede exceder 200 caracteres.`);
+          }
+        } else {
+          if (os.nomTecnologiaSalud !== null && os.nomTecnologiaSalud !== undefined) {
+            if (String(os.nomTecnologiaSalud).trim().length > 200) {
+              errors.push(`${osPrefix}: nomTecnologiaSalud no puede exceder 200 caracteres.`);
+            }
+          }
+        }
+
+        // S08 cantidadOS (N 5, 1..99999)
+        if (typeof os.cantidadOS !== "number" || !Number.isInteger(os.cantidadOS) || !Number.isFinite(os.cantidadOS)) {
+          errors.push(`${osPrefix}: cantidadOS debe ser un número entero sin decimales.`);
+        } else {
+          if (os.cantidadOS < 1 || os.cantidadOS > 99999) {
+            errors.push(`${osPrefix}: cantidadOS debe ser un entero entre 1 y 99999.`);
+          }
+          if (tipoOS === "05" && os.cantidadOS !== 1) {
+            errors.push(`${osPrefix}: cantidadOS para tipoOS '05' (Honorarios) debe ser estrictamente 1.`);
+          }
+        }
+
+        // S09 y S10 Identidad del Profesional
+        if (["01", "04", "05"].includes(tipoOS)) {
+          const osTipoDocProf = String(os.tipoDocumentoIdentificacion || "").trim().toUpperCase();
+          if (!osTipoDocProf) {
+            errors.push(`${osPrefix}: tipoDocumentoIdentificacion del profesional es obligatorio para tipoOS '${tipoOS}'.`);
+          } else if (!TIPOS_DOC_PROFESIONAL_PERMITIDOS.includes(osTipoDocProf)) {
+            errors.push(`${osPrefix}: tipoDocumentoIdentificacion '${osTipoDocProf}' del profesional es inválido según DT1 v003.`);
+          }
+          const osNumDocProf = String(os.numDocumentoIdentificacion || "").trim();
+          if (!osNumDocProf || osNumDocProf.length < 4 || osNumDocProf.length > 20) {
+            errors.push(`${osPrefix}: numDocumentoIdentificacion del profesional debe tener entre 4 y 20 caracteres.`);
+          }
+          if (osTipoDocProf === String(u.tipoDocumentoIdentificacion).trim().toUpperCase() &&
+              osNumDocProf === String(u.numDocumentoIdentificacion).trim()) {
+            errors.push(`${osPrefix}: Prohibido copiar la identificación del paciente en el profesional.`);
+          }
+        } else if (["02", "03"].includes(tipoOS)) {
+          if (os.tipoDocumentoIdentificacion !== null && os.tipoDocumentoIdentificacion !== undefined) {
+            errors.push(`${osPrefix}: tipoDocumentoIdentificacion debe ser null para tipoOS '${tipoOS}' (traslados/estancias).`);
+          }
+          if (os.numDocumentoIdentificacion !== null && os.numDocumentoIdentificacion !== undefined) {
+            errors.push(`${osPrefix}: numDocumentoIdentificacion debe ser null para tipoOS '${tipoOS}' (traslados/estancias).`);
+          }
+        }
+
+        // S11 vrUnitOS (N 1-15)
+        if (typeof os.vrUnitOS !== "number" || !Number.isFinite(os.vrUnitOS) || os.vrUnitOS < 0) {
+          errors.push(`${osPrefix}: vrUnitOS debe ser de tipo number, finito y mayor o igual a 0.`);
+        }
+
+        // S18 vrDispensacion (N 0-15) - Debe ser explícito (0 si no aplica)
+        if (os.vrDispensacion === undefined || os.vrDispensacion === null || typeof os.vrDispensacion !== "number" || !Number.isFinite(os.vrDispensacion) || os.vrDispensacion < 0) {
+          errors.push(`${osPrefix}: vrDispensacion es obligatorio en JSON, debe ser de tipo number finito mayor o igual a 0 (0 si no aplica).`);
+        }
+
+        // S12 vrServicio (N 1-15)
+        if (typeof os.vrServicio !== "number" || !Number.isFinite(os.vrServicio) || os.vrServicio < 0) {
+          errors.push(`${osPrefix}: vrServicio debe ser de tipo number, finito y mayor o igual a 0.`);
+        }
+
+        // S13 conceptoRecaudo (C 2)
+        const osConcRec = String(os.conceptoRecaudo || "").trim().padStart(2, "0");
+        if (!osConcRec) {
+          errors.push(`${osPrefix}: conceptoRecaudo es obligatorio.`);
+        } else if (osConcRec === "04") {
+          errors.push(`${osPrefix}: conceptoRecaudo '04' (Anticipo) corresponde a FEV y está prohibido en RIPS soporte según DT1 v003 / RVC092.`);
+        } else if (!["01", "02", "03", "05"].includes(osConcRec)) {
+          errors.push(`${osPrefix}: conceptoRecaudo '${osConcRec}' es inválido en RIPS soporte (válidos: 01, 02, 03, 05).`);
+        }
+
+        // S14 valorPagoModerador (N 1-15)
+        if (typeof os.valorPagoModerador !== "number" || !Number.isFinite(os.valorPagoModerador) || os.valorPagoModerador < 0) {
+          errors.push(`${osPrefix}: valorPagoModerador debe ser de tipo number, finito y mayor o igual a 0.`);
+        } else if (osConcRec === "05" && os.valorPagoModerador !== 0) {
+          errors.push(`${osPrefix}: valorPagoModerador debe ser 0 cuando conceptoRecaudo es '05' (No aplica).`);
+        }
+
+        // S15 numFEVPagoModerador
+        if (osConcRec === "05" && os.numFEVPagoModerador !== null && os.numFEVPagoModerador !== undefined) {
+          errors.push(`${osPrefix}: numFEVPagoModerador debe ser null cuando conceptoRecaudo es '05'.`);
+        }
+
+        // S17 codigoVIDA (C 0, 1-256)
+        if (os.codigoVIDA !== null && os.codigoVIDA !== undefined) {
+          if (typeof os.codigoVIDA !== "string" || os.codigoVIDA.length > 256) {
+            errors.push(`${osPrefix}: codigoVIDA debe ser string de máximo 256 caracteres o null.`);
+          }
+        }
+
+        // S16 consecutivo (N 1-7)
+        if (typeof os.consecutivo !== "number" || os.consecutivo !== oIdx + 1) {
+          errors.push(`${osPrefix}: consecutivo de otrosServicios debe ser un entero correlativo iniciando en 1 (esperado: ${oIdx + 1}, recibido: ${os.consecutivo}).`);
         }
       }
     }

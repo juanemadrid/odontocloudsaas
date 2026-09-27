@@ -1,7 +1,7 @@
 import { isFevRips0948Enabled } from "./ripsFeatureFlagService.js";
 import { validateCatalogValue, getCupsClassification } from "./ripsV003Catalogs.js";
 import { isServiceHabilitadoEnSede } from "./ripsV003RepsService.js";
-import { validateRipsV003 } from "./ripsV003Validator.js";
+import { validateRipsV003, isValidCalendarDateTime, CUPS_REGEX } from "./ripsV003Validator.js";
 
 /**
  * NUEVO GENERADOR RIPS V003 (Documento Técnico 1 Versión 003 – 15 de julio de 2026)
@@ -13,6 +13,9 @@ function cleanOptionalString(val) {
   const str = String(val).trim();
   return str === "" ? null : str;
 }
+
+// Tipos de documento permitidos para la persona / profesional que atiende u ordena el servicio (DT1 v003)
+export const TIPOS_DOC_PROFESIONAL_PERMITIDOS = ["CC", "CE", "CD", "PA", "SC", "PE", "DE", "PT"];
 
 /**
  * Normaliza y valida estrictamente el valor de incapacidad según la tabla oficial LstSiNo (01=SI, 02=NO).
@@ -107,11 +110,20 @@ export async function generateRipsV003({
     const pac = atencion.paciente;
     if (!pac) throw new Error("Cada atención debe incluir el objeto 'paciente'.");
 
-    const pacIdKey = `${pac.tipoDocumentoIdentificacion || "CC"}_${pac.numDocumentoIdentificacion}`;
+    if (!pac.tipoDocumentoIdentificacion || String(pac.tipoDocumentoIdentificacion).trim() === "") {
+      throw new Error("tipoDocumentoIdentificacion del paciente es obligatorio.");
+    }
+    if (!pac.numDocumentoIdentificacion || String(pac.numDocumentoIdentificacion).trim() === "") {
+      throw new Error("numDocumentoIdentificacion del paciente es obligatorio.");
+    }
+
+    const pacIdKey = `${String(pac.tipoDocumentoIdentificacion).trim().toUpperCase()}_${String(pac.numDocumentoIdentificacion).trim()}`;
 
     if (!usuariosMap.has(pacIdKey)) {
-      // Validar tipo de usuario contra RIPSTipoUsuarioVersion2 (01-14)
-      const tipoUsuario = String(pac.tipoUsuario || "12").padStart(2, "0");
+      if (!pac.tipoUsuario || String(pac.tipoUsuario).trim() === "") {
+        throw new Error("tipoUsuario del paciente es obligatorio.");
+      }
+      const tipoUsuario = String(pac.tipoUsuario).trim().padStart(2, "0");
       const tipoUsuarioVal = await validateCatalogValue("RIPSTipoUsuarioVersion2", tipoUsuario);
       if (!tipoUsuarioVal.valid) {
         throw new Error(
@@ -126,17 +138,30 @@ export async function generateRipsV003({
         throw new Error(`incapacidad '${incCode}' es inválido contra catálogo LstSiNo oficial.`);
       }
 
+      if (!pac.fechaNacimiento || String(pac.fechaNacimiento).trim() === "") {
+        throw new Error("fechaNacimiento del paciente es obligatoria.");
+      }
+      if (!pac.codPaisResidencia || String(pac.codPaisResidencia).trim() === "") {
+        throw new Error("codPaisResidencia del paciente es obligatorio.");
+      }
+      if (!pac.codMunicipioResidencia || String(pac.codMunicipioResidencia).trim() === "") {
+        throw new Error("codMunicipioResidencia del paciente es obligatorio.");
+      }
+      if (!pac.codZonaTerritorialResidencia || String(pac.codZonaTerritorialResidencia).trim() === "") {
+        throw new Error("codZonaTerritorialResidencia del paciente es obligatorio.");
+      }
+
       usuariosMap.set(pacIdKey, {
-        tipoDocumentoIdentificacion: String(pac.tipoDocumentoIdentificacion || "CC").trim().toUpperCase(),
-        numDocumentoIdentificacion: String(pac.numDocumentoIdentificacion || "").trim(),
+        tipoDocumentoIdentificacion: String(pac.tipoDocumentoIdentificacion).trim().toUpperCase(),
+        numDocumentoIdentificacion: String(pac.numDocumentoIdentificacion).trim(),
         tipoUsuario,
-        fechaNacimiento: String(pac.fechaNacimiento || "2000-01-01").trim(),
-        codSexo: String(pac.codSexo || "M").trim().toUpperCase(),
-        codPaisResidencia: String(pac.codPaisResidencia || "170").trim(),
-        codMunicipioResidencia: String(pac.codMunicipioResidencia || "70001").trim(),
-        codZonaTerritorialResidencia: String(pac.codZonaTerritorialResidencia || "01").trim(),
+        fechaNacimiento: String(pac.fechaNacimiento).trim(),
+        codSexo: pac.codSexo !== undefined && pac.codSexo !== null ? String(pac.codSexo).trim().toUpperCase() : "",
+        codPaisResidencia: String(pac.codPaisResidencia).trim(),
+        codMunicipioResidencia: String(pac.codMunicipioResidencia).trim(),
+        codZonaTerritorialResidencia: String(pac.codZonaTerritorialResidencia).trim().padStart(2, "0"),
         incapacidad: incCode, // "01" (SI) o "02" (NO)
-        codPaisOrigen: String(pac.codPaisOrigen || "170").trim(),
+        codPaisOrigen: pac.codPaisOrigen !== undefined && pac.codPaisOrigen !== null && String(pac.codPaisOrigen).trim() !== "" ? String(pac.codPaisOrigen).trim() : null,
         consecutivo: userCounter++,
         registroSIRAS: cleanOptionalString(pac.registroSIRAS),
         servicios: {
@@ -152,6 +177,235 @@ export async function generateRipsV003({
     }
 
     const usuarioObj = usuariosMap.get(pacIdKey);
+
+    // F-07: Defensa anticipada e independiente ante tipoAtencion desconocido
+    if (!["consulta", "procedimiento", "otrosServicios"].includes(atencion.tipoAtencion)) {
+      throw new Error(`tipoAtencion desconocido o no soportado: '${atencion.tipoAtencion}'. Permitidos: 'consulta', 'procedimiento', 'otrosServicios'.`);
+    }
+
+    if (atencion.tipoAtencion === "otrosServicios") {
+      // 1. tipoOS (01..05)
+      if (!atencion.tipoOS || String(atencion.tipoOS).trim() === "") {
+        throw new Error("tipoOS de otrosServicios es obligatorio.");
+      }
+      const tipoOS = String(atencion.tipoOS).trim().padStart(2, "0");
+      if (!["01", "02", "03", "04", "05"].includes(tipoOS)) {
+        throw new Error(`tipoOS '${tipoOS}' no es válido según DT1 v003 (permitidos: 01, 02, 03, 04, 05). Código '06' deshabilitado.`);
+      }
+
+      // 2. codTecnologiaSalud (1-20)
+      if (!atencion.codTecnologiaSalud || String(atencion.codTecnologiaSalud).trim() === "") {
+        throw new Error("codTecnologiaSalud es obligatorio en otrosServicios.");
+      }
+      const codTecnologiaSalud = String(atencion.codTecnologiaSalud).trim();
+      if (codTecnologiaSalud.length < 1 || codTecnologiaSalud.length > 20) {
+        throw new Error("codTecnologiaSalud debe tener entre 1 y 20 caracteres.");
+      }
+      // F-03: Fortalecimiento para tipoOS 02, 03 y 05 (estructura CUPS)
+      if (["02", "03", "05"].includes(tipoOS)) {
+        if (!CUPS_REGEX.test(codTecnologiaSalud)) {
+          throw new Error(`codTecnologiaSalud '${codTecnologiaSalud}' para tipoOS '${tipoOS}' debe cumplir estándar CUPS de 6 caracteres.`);
+        }
+      }
+
+      // 3. fechaSuministroTecnologia (YYYY-MM-DD HH:mm con validación de calendario y no fecha futura)
+      if (!atencion.fechaSuministroTecnologia || String(atencion.fechaSuministroTecnologia).trim() === "") {
+        throw new Error("fechaSuministroTecnologia es obligatoria en otrosServicios.");
+      }
+      const fechaSuministroTecnologia = String(atencion.fechaSuministroTecnologia).trim();
+      const dateCheck = isValidCalendarDateTime(fechaSuministroTecnologia);
+      if (!dateCheck.valid) {
+        throw new Error(`fechaSuministroTecnologia '${fechaSuministroTecnologia}': ${dateCheck.error}`);
+      }
+
+      // 4. nomTecnologiaSalud (0, 1-200)
+      let nomTecnologiaSalud = null;
+      if (tipoOS === "01") {
+        if (!atencion.nomTecnologiaSalud || String(atencion.nomTecnologiaSalud).trim() === "") {
+          throw new Error("nomTecnologiaSalud es obligatorio para tipoOS '01' (Dispositivos médicos e insumos).");
+        }
+        nomTecnologiaSalud = String(atencion.nomTecnologiaSalud).trim();
+        if (nomTecnologiaSalud.length > 200) {
+          throw new Error("nomTecnologiaSalud excede los 200 caracteres permitidos.");
+        }
+      } else {
+        if (atencion.nomTecnologiaSalud !== undefined && atencion.nomTecnologiaSalud !== null && String(atencion.nomTecnologiaSalud).trim() !== "") {
+          const strNom = String(atencion.nomTecnologiaSalud).trim();
+          if (strNom.length > 200) {
+            throw new Error("nomTecnologiaSalud no puede exceder 200 caracteres.");
+          }
+          nomTecnologiaSalud = strNom;
+        }
+      }
+
+      // 5. cantidadOS (N 5, 1..99999, integer estricto sin coerción)
+      if (atencion.cantidadOS === undefined || atencion.cantidadOS === null) {
+        throw new Error("cantidadOS es obligatoria en otrosServicios.");
+      }
+      if (typeof atencion.cantidadOS !== "number" || !Number.isInteger(atencion.cantidadOS) || !Number.isFinite(atencion.cantidadOS)) {
+        throw new Error("cantidadOS debe ser un número entero sin decimales.");
+      }
+      const cantidadOS = atencion.cantidadOS;
+      if (cantidadOS < 1 || cantidadOS > 99999) {
+        throw new Error("cantidadOS debe ser un entero entre 1 y 99999.");
+      }
+      if (tipoOS === "05" && cantidadOS !== 1) {
+        throw new Error("cantidadOS para tipoOS '05' (Honorarios) debe ser estrictamente 1.");
+      }
+
+      // 6. Profesional S09 / S10
+      let tipoDocProfOS = null;
+      let numDocProfOS = null;
+      if (["01", "04", "05"].includes(tipoOS)) {
+        if (!atencion.profesional || typeof atencion.profesional !== "object") {
+          throw new Error(`profesional es obligatorio para tipoOS '${tipoOS}'.`);
+        }
+        tipoDocProfOS = String(atencion.profesional.tipoDocumentoIdentificacion || "").trim().toUpperCase();
+        if (!tipoDocProfOS) {
+          throw new Error(`tipoDocumentoIdentificacion del profesional es obligatorio para tipoOS '${tipoOS}'.`);
+        }
+        if (!TIPOS_DOC_PROFESIONAL_PERMITIDOS.includes(tipoDocProfOS)) {
+          throw new Error(`tipoDocumentoIdentificacion '${tipoDocProfOS}' del profesional no es válido según DT1 v003.`);
+        }
+        numDocProfOS = String(atencion.profesional.numDocumentoIdentificacion || "").trim();
+        if (!numDocProfOS || numDocProfOS.length < 4 || numDocProfOS.length > 20) {
+          throw new Error("numDocumentoIdentificacion del profesional debe tener entre 4 y 20 caracteres.");
+        }
+        if (tipoDocProfOS === usuarioObj.tipoDocumentoIdentificacion && numDocProfOS === usuarioObj.numDocumentoIdentificacion) {
+          throw new Error("Prohibido copiar la identificación del paciente en el profesional de otrosServicios.");
+        }
+      } else {
+        tipoDocProfOS = null;
+        numDocProfOS = null;
+      }
+
+      // 7. vrUnitOS (S11) - F-05: Coerción cero
+      if (atencion.vrUnitOS === undefined || atencion.vrUnitOS === null) {
+        throw new Error("vrUnitOS es obligatorio en otrosServicios.");
+      }
+      if (typeof atencion.vrUnitOS !== "number" || !Number.isFinite(atencion.vrUnitOS) || atencion.vrUnitOS < 0) {
+        throw new Error("vrUnitOS debe ser un número finito mayor o igual a 0.");
+      }
+      const vrUnitOS = atencion.vrUnitOS;
+      if (atencion.modalidadPago === "01" && vrUnitOS <= 0) {
+        throw new Error("vrUnitOS debe ser mayor a 0 en modalidad Pago por Evento.");
+      }
+      if (atencion.modalidadPago && atencion.modalidadPago !== "01" && vrUnitOS !== 0) {
+        throw new Error("vrUnitOS debe ser estrictamente 0 en modalidades distintas de Pago por Evento.");
+      }
+
+      // 8. vrDispensacion (S18) - F-06: Obligatorio explícito en el input
+      if (atencion.vrDispensacion === undefined || atencion.vrDispensacion === null) {
+        throw new Error("vrDispensacion es obligatorio en otrosServicios. Debe ser 0 si no aplica.");
+      }
+      if (typeof atencion.vrDispensacion !== "number" || !Number.isFinite(atencion.vrDispensacion) || atencion.vrDispensacion < 0) {
+        throw new Error("vrDispensacion debe ser un número finito mayor o igual a 0.");
+      }
+      const vrDispensacion = atencion.vrDispensacion;
+
+      // 9. vrServicio (S12) - F-05: Coerción cero
+      if (atencion.vrServicio === undefined || atencion.vrServicio === null) {
+        throw new Error("vrServicio es obligatorio en otrosServicios.");
+      }
+      if (typeof atencion.vrServicio !== "number" || !Number.isFinite(atencion.vrServicio) || atencion.vrServicio < 0) {
+        throw new Error("vrServicio debe ser un número finito mayor o igual a 0.");
+      }
+      const vrServicio = atencion.vrServicio;
+      if (atencion.modalidadPago === "01" && vrServicio <= 0) {
+        throw new Error("vrServicio debe ser mayor a 0 en modalidad Pago por Evento.");
+      }
+      if (atencion.modalidadPago && atencion.modalidadPago !== "01" && vrServicio !== 0) {
+        throw new Error("vrServicio debe ser 0 en modalidades distintas de Pago por Evento cuando aplica acuerdo global.");
+      }
+
+      // 10. conceptoRecaudo (S13)
+      if (!atencion.conceptoRecaudo || String(atencion.conceptoRecaudo).trim() === "") {
+        throw new Error("conceptoRecaudo es obligatorio en otrosServicios.");
+      }
+      const conceptoRecaudo = String(atencion.conceptoRecaudo).trim().padStart(2, "0");
+      if (conceptoRecaudo === "04") {
+        throw new Error("conceptoRecaudo '04' (Anticipo) corresponde a FEV y está prohibido en RIPS soporte según DT1 v003 / RVC092.");
+      }
+      if (!["01", "02", "03", "05"].includes(conceptoRecaudo)) {
+        throw new Error(`conceptoRecaudo '${conceptoRecaudo}' es inválido en RIPS soporte (válidos: 01, 02, 03, 05).`);
+      }
+
+      // 11. valorPagoModerador (S14) - F-05: Coerción cero
+      let valorPagoModerador = 0;
+      if (conceptoRecaudo === "05") {
+        valorPagoModerador = 0;
+      } else {
+        if (atencion.valorPagoModerador === undefined || atencion.valorPagoModerador === null) {
+          valorPagoModerador = 0;
+        } else {
+          if (typeof atencion.valorPagoModerador !== "number" || !Number.isFinite(atencion.valorPagoModerador) || atencion.valorPagoModerador < 0) {
+            throw new Error("valorPagoModerador debe ser un número finito mayor o igual a 0.");
+          }
+          valorPagoModerador = atencion.valorPagoModerador;
+        }
+      }
+
+      // 12. numAutorizacion (S02)
+      const numAutorizacion = cleanOptionalString(atencion.numAutorizacion);
+      if (numAutorizacion && numAutorizacion.length > 30) {
+        throw new Error("numAutorizacion no puede exceder 30 caracteres.");
+      }
+
+      // 13. idMIPRES (S03)
+      const idMIPRES = cleanOptionalString(atencion.idMIPRES);
+      if (idMIPRES && idMIPRES.length > 19) {
+        throw new Error("idMIPRES no puede exceder 19 caracteres.");
+      }
+
+      // 14. numFEVPagoModerador (S15)
+      const numFEVPagoModerador = conceptoRecaudo === "05" ? null : cleanOptionalString(atencion.numFEVPagoModerador);
+
+      // 15. codigoVIDA (S17)
+      const codigoVIDA = cleanOptionalString(atencion.codigoVIDA);
+      if (codigoVIDA && codigoVIDA.length > 256) {
+        throw new Error("codigoVIDA no puede exceder 256 caracteres.");
+      }
+
+      // 16. codPrestador (S01) - F-01: Preservar null normativo para proveedores no-REPS
+      let codPrestadorOS = null;
+      if (atencion.codPrestador === null) {
+        codPrestadorOS = null; // No-REPS explícito
+      } else if (atencion.codPrestador !== undefined) {
+        const strPrestador = String(atencion.codPrestador).trim();
+        if (strPrestador.length < 10 || strPrestador.length > 12) {
+          throw new Error("codPrestador debe tener entre 10 y 12 dígitos REPS, o null si no aplica.");
+        }
+        codPrestadorOS = strPrestador;
+      } else {
+        codPrestadorOS = codPrestadorGeneral;
+      }
+
+      // 17. consecutivo (S16)
+      const consecutivoOS = usuarioObj.servicios.otrosServicios.length + 1;
+
+      usuarioObj.servicios.otrosServicios.push({
+        codPrestador: codPrestadorOS,
+        numAutorizacion,
+        idMIPRES,
+        fechaSuministroTecnologia,
+        tipoOS,
+        codTecnologiaSalud,
+        nomTecnologiaSalud,
+        cantidadOS,
+        tipoDocumentoIdentificacion: tipoDocProfOS,
+        numDocumentoIdentificacion: numDocProfOS,
+        vrUnitOS,
+        vrDispensacion,
+        vrServicio,
+        conceptoRecaudo,
+        valorPagoModerador,
+        numFEVPagoModerador,
+        codigoVIDA,
+        consecutivo: consecutivoOS,
+      });
+
+      continue;
+    }
 
     // 3. VALIDACIÓN CUPS EXPLÍCITO Y OFICIAL (Cero inferencia por texto, catálogo como fuente de verdad)
     if (!atencion.cupsCode || typeof atencion.cupsCode !== "string" || atencion.cupsCode.trim().length !== 6) {
@@ -201,18 +455,56 @@ export async function generateRipsV003({
       throw new Error("El diagnóstico principal (CIE-10) es obligatorio.");
     }
 
-    // 6. VALIDACIÓN PRESTADOR / PROFESIONAL
+    // 6. VALIDACIÓN PRESTADOR (REPS Sede)
     const codPrestadorAtencion = cleanOptionalString(atencion.codPrestador) || codPrestadorGeneral;
     if (!codPrestadorAtencion || codPrestadorAtencion.length < 10) {
       throw new Error("Falta la identificación del prestador/profesional que atendió la consulta o procedimiento.");
     }
 
-    const fechaInicioAtencion = atencion.fechaInicioAtencion || new Date().toISOString().slice(0, 16).replace("T", " ");
+    // 7. VALIDACIÓN PROFESIONAL QUE ATENDIÓ / ORDENÓ EL SERVICIO (DT1 v003)
+    if (!atencion.profesional || typeof atencion.profesional !== "object") {
+      throw new Error("Cada atención debe incluir el objeto 'profesional'.");
+    }
+    const tipoDocProf = String(atencion.profesional.tipoDocumentoIdentificacion || "").trim().toUpperCase();
+    if (!tipoDocProf) {
+      throw new Error("tipoDocumentoIdentificacion del profesional es obligatorio.");
+    }
+    if (!TIPOS_DOC_PROFESIONAL_PERMITIDOS.includes(tipoDocProf)) {
+      throw new Error(
+        `INVALID_PROFESSIONAL_DOCUMENT_TYPE: tipoDocumentoIdentificacion '${tipoDocProf}' del profesional no es válido según DT1 v003 (permitidos: ${TIPOS_DOC_PROFESIONAL_PERMITIDOS.join(", ")}).`
+      );
+    }
+    const numDocProf = String(atencion.profesional.numDocumentoIdentificacion || "").trim();
+    if (!numDocProf) {
+      throw new Error("numDocumentoIdentificacion del profesional es obligatorio.");
+    }
+
+    if (!atencion.fechaInicioAtencion || String(atencion.fechaInicioAtencion).trim() === "") {
+      throw new Error("fechaInicioAtencion de la atención es obligatoria.");
+    }
+    const fechaInicioAtencion = String(atencion.fechaInicioAtencion).trim();
 
     // Tratamiento de CIE-11: Sin mapper artificial.
     // Si viene informado desde catálogo, se registra; si no, permanece null según Documento Técnico 1 v003.
     const codCie11 = cleanOptionalString(atencion.codDiagnosticoPrincipalCIE11);
     const nomCie11 = cleanOptionalString(atencion.nomCodDiagnosticoPrincipalCIE11);
+
+    if (atencion.vrServicio === undefined || atencion.vrServicio === null || atencion.vrServicio === "") {
+      throw new Error("vrServicio de la atención es obligatorio.");
+    }
+    const vrServicio = Number(atencion.vrServicio);
+    if (isNaN(vrServicio) || vrServicio < 0) {
+      throw new Error("vrServicio debe ser un número mayor o igual a 0.");
+    }
+
+    if (!atencion.conceptoRecaudo || String(atencion.conceptoRecaudo).trim() === "") {
+      throw new Error("conceptoRecaudo de la atención es obligatorio.");
+    }
+    const conceptoRecaudo = String(atencion.conceptoRecaudo).trim().padStart(2, "0");
+
+    const valorPagoModerador = atencion.valorPagoModerador !== undefined && atencion.valorPagoModerador !== null && atencion.valorPagoModerador !== ""
+      ? Number(atencion.valorPagoModerador)
+      : 0;
 
     if (atencion.tipoAtencion === "consulta") {
       // REGLA: Bloquear CUPS de procedimiento en consultas según catálogo oficial
@@ -222,17 +514,33 @@ export async function generateRipsV003({
         );
       }
 
+      if (!atencion.modalidad || String(atencion.modalidad).trim() === "") {
+        throw new Error("modalidad de la consulta es obligatoria.");
+      }
+      if (!atencion.grupoServicios || String(atencion.grupoServicios).trim() === "") {
+        throw new Error("grupoServicios de la consulta es obligatorio.");
+      }
+      if (!atencion.finalidad || String(atencion.finalidad).trim() === "") {
+        throw new Error("finalidad de la consulta es obligatoria.");
+      }
+      if (!atencion.causaMotivoAtencion || String(atencion.causaMotivoAtencion).trim() === "") {
+        throw new Error("causaMotivoAtencion de la consulta es obligatoria.");
+      }
+      if (!atencion.tipoDiagnosticoPrincipal || String(atencion.tipoDiagnosticoPrincipal).trim() === "") {
+        throw new Error("tipoDiagnosticoPrincipal de la consulta es obligatorio.");
+      }
+
       const consecutivoConsulta = usuarioObj.servicios.consultas.length + 1;
       usuarioObj.servicios.consultas.push({
         codPrestador: codPrestadorAtencion,
         fechaInicioAtencion,
         numAutorizacion: cleanOptionalString(atencion.numAutorizacion),
         codConsulta: explicitCups,
-        modalidadGrupoServicioTecSal: String(atencion.modalidad || "01").padStart(2, "0"),
-        grupoServicios: String(atencion.grupoServicios || "01").padStart(2, "0"),
+        modalidadGrupoServicioTecSal: String(atencion.modalidad).trim().padStart(2, "0"),
+        grupoServicios: String(atencion.grupoServicios).trim().padStart(2, "0"),
         codServicio: codServicioNum,
-        finalidadTecnologiaSalud: String(atencion.finalidad || "10").padStart(2, "0"),
-        causaMotivoAtencion: String(atencion.causaMotivoAtencion || "38").padStart(2, "0"),
+        finalidadTecnologiaSalud: String(atencion.finalidad).trim().padStart(2, "0"),
+        causaMotivoAtencion: String(atencion.causaMotivoAtencion).trim().padStart(2, "0"),
         codDiagnosticoPrincipal: codDxPrincipal,
         codDiagnosticoPrincipalCIE11: codCie11,
         nomCodDiagnosticoPrincipalCIE11: nomCie11,
@@ -245,23 +553,36 @@ export async function generateRipsV003({
         codDiagnosticoRelacionado3: cleanOptionalString(atencion.codDiagnosticoRelacionado3),
         codDiagnosticoRelacionado3CIE11: cleanOptionalString(atencion.codDiagnosticoRelacionado3CIE11),
         nomCodDiagnosticoRelacionado3CIE11: cleanOptionalString(atencion.nomCodDiagnosticoRelacionado3CIE11),
-        tipoDiagnosticoPrincipal: String(atencion.tipoDiagnosticoPrincipal || "01").padStart(2, "0"),
-        tipoDocumentoIdentificacion: usuarioObj.tipoDocumentoIdentificacion,
-        numDocumentoIdentificacion: usuarioObj.numDocumentoIdentificacion,
-        vrServicio: Number(atencion.vrServicio || 0),
-        conceptoRecaudo: String(atencion.conceptoRecaudo || "05").padStart(2, "0"),
-        valorPagoModerador: Number(atencion.valorPagoModerador || 0),
+        tipoDiagnosticoPrincipal: String(atencion.tipoDiagnosticoPrincipal).trim().padStart(2, "0"),
+        tipoDocumentoIdentificacion: tipoDocProf,
+        numDocumentoIdentificacion: numDocProf,
+        vrServicio,
+        conceptoRecaudo,
+        valorPagoModerador,
         numFEVPagoModerador: cleanOptionalString(atencion.numFEVPagoModerador),
         codigoVIDA: cleanOptionalString(atencion.codigoVIDA),
         consecutivo: consecutivoConsulta,
       });
-    } else {
+    } else if (atencion.tipoAtencion === "procedimiento") {
       // Procedimiento
       // REGLA: Bloquear CUPS de consulta en procedimientos según catálogo oficial
       if (!cupsInfo.correspondeBloqueProcedimientos) {
         throw new Error(
           `El código CUPS '${explicitCups}' (${descripcionOficialCups}) está clasificado oficialmente como '${cupsInfo.tipoRips}' y no puede reportarse en el bloque de procedimientos.`
         );
+      }
+
+      if (!atencion.viaIngresoServicioSalud || String(atencion.viaIngresoServicioSalud).trim() === "") {
+        throw new Error("viaIngresoServicioSalud del procedimiento es obligatoria.");
+      }
+      if (!atencion.modalidad || String(atencion.modalidad).trim() === "") {
+        throw new Error("modalidad del procedimiento es obligatoria.");
+      }
+      if (!atencion.grupoServicios || String(atencion.grupoServicios).trim() === "") {
+        throw new Error("grupoServicios del procedimiento es obligatorio.");
+      }
+      if (!atencion.finalidad || String(atencion.finalidad).trim() === "") {
+        throw new Error("finalidad del procedimiento es obligatoria.");
       }
 
       const consecutivoProc = usuarioObj.servicios.procedimientos.length + 1;
@@ -271,30 +592,31 @@ export async function generateRipsV003({
         idMIPRES: atencion.idMIPRES !== undefined && atencion.idMIPRES !== null ? Number(atencion.idMIPRES) : null,
         numAutorizacion: cleanOptionalString(atencion.numAutorizacion),
         codProcedimiento: explicitCups,
-        viaIngresoServicioSalud: String(atencion.viaIngresoServicioSalud || "01").padStart(2, "0"),
-        modalidadGrupoServicioTecSal: String(atencion.modalidad || "01").padStart(2, "0"),
-        grupoServicios: String(atencion.grupoServicios || "01").padStart(2, "0"),
+        viaIngresoServicioSalud: String(atencion.viaIngresoServicioSalud).trim().padStart(2, "0"),
+        modalidadGrupoServicioTecSal: String(atencion.modalidad).trim().padStart(2, "0"),
+        grupoServicios: String(atencion.grupoServicios).trim().padStart(2, "0"),
         codServicio: codServicioNum,
-        finalidadTecnologiaSalud: String(atencion.finalidad || "02").padStart(2, "0"),
-        causaMotivoAtencion: String(atencion.causaMotivoAtencion || "38").padStart(2, "0"),
+        finalidadTecnologiaSalud: String(atencion.finalidad).trim().padStart(2, "0"),
         codDiagnosticoPrincipal: codDxPrincipal,
         codDiagnosticoPrincipalCIE11: codCie11,
         nomCodDiagnosticoPrincipalCIE11: nomCie11,
         codDiagnosticoRelacionado: cleanOptionalString(atencion.codDiagnosticoRelacionado),
         codDiagnosticoRelacionadoCIE11: cleanOptionalString(atencion.codDiagnosticoRelacionadoCIE11),
         nomCodDiagnosticoRelacionadoCIE11: cleanOptionalString(atencion.nomCodDiagnosticoRelacionadoCIE11),
-        codDiagnosticoComplicacion: cleanOptionalString(atencion.codDiagnosticoComplicacion),
-        codDiagnosticoComplicacionCIE11: cleanOptionalString(atencion.codDiagnosticoComplicacionCIE11),
-        nomCodDiagnosticoComplicacionCIE11: cleanOptionalString(atencion.nomCodDiagnosticoComplicacionCIE11),
-        tipoDocumentoIdentificacion: usuarioObj.tipoDocumentoIdentificacion,
-        numDocumentoIdentificacion: usuarioObj.numDocumentoIdentificacion,
-        vrServicio: Number(atencion.vrServicio || 0),
-        conceptoRecaudo: String(atencion.conceptoRecaudo || "05").padStart(2, "0"),
-        valorPagoModerador: Number(atencion.valorPagoModerador || 0),
+        codComplicacion: cleanOptionalString(atencion.codComplicacion || atencion.codDiagnosticoComplicacion),
+        codComplicacionCIE11: cleanOptionalString(atencion.codComplicacionCIE11 || atencion.codDiagnosticoComplicacionCIE11),
+        nomCodComplicacionCIE11: cleanOptionalString(atencion.nomCodComplicacionCIE11 || atencion.nomCodDiagnosticoComplicacionCIE11),
+        tipoDocumentoIdentificacion: tipoDocProf,
+        numDocumentoIdentificacion: numDocProf,
+        vrServicio,
+        conceptoRecaudo,
+        valorPagoModerador,
         numFEVPagoModerador: cleanOptionalString(atencion.numFEVPagoModerador),
         codigoVIDA: cleanOptionalString(atencion.codigoVIDA),
         consecutivo: consecutivoProc,
       });
+    } else {
+      throw new Error(`tipoAtencion desconocido o no soportado: '${atencion.tipoAtencion}'. Permitidos: 'consulta', 'procedimiento', 'otrosServicios'.`);
     }
   }
 

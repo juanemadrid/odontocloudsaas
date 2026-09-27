@@ -244,6 +244,35 @@ export default function ReciboCajaList({ onNew }) {
                 if (data && data.length > 0) dataPagosRaw = data;
             } catch (e) {}
 
+            // 4. Mapeo de Facturas Electrónicas vinculadas a recibos (P1-FEV1)
+            let invoiceMap = {};
+            try {
+                const { data: factsData } = await supabase
+                    .from("facturas")
+                    .select("id, numero, detalles")
+                    .eq("tenant_id", inquilino);
+                (factsData || []).forEach((f) => {
+                    let det = f.detalles;
+                    if (typeof det === "string") {
+                        try { det = JSON.parse(det); } catch {}
+                    }
+                    const linked = Array.isArray(det?.recibos_asociados)
+                        ? det.recibos_asociados
+                        : det?.recibo_asociado
+                        ? [det.recibo_asociado]
+                        : [];
+                    linked.forEach((lr) => {
+                        const lrId = lr.id || lr.recibo_id;
+                        if (lrId) {
+                            invoiceMap[lrId] = f.numero || `FE-${f.id.slice(0, 6)}`;
+                        }
+                    });
+                    if (f.id) {
+                        invoiceMap[f.id] = f.numero || `FE-${f.id.slice(0, 6)}`;
+                    }
+                });
+            } catch (e) {}
+
             const isConsumoSaldo = (item, metadata = {}) => {
                 const cond = (item.condicionPago || item.condicion || item.metodo_pago || item.metodo || item.medio || metadata.metodo || metadata.medio || "").toLowerCase();
                 const conc = (item.concepto || item.referencia || item.notas || metadata.concepto || metadata.referencia || "").toLowerCase();
@@ -274,6 +303,7 @@ export default function ReciboCajaList({ onNew }) {
                         referencia: d.referencia || d.comprobante || "",
                         venceEn: 0,
                         isPago: false,
+                        fevNumero: invoiceMap[d.id] || d.factura_id || null,
                         rawDate: d.fecha || d.created_at
                     };
                 });
@@ -313,6 +343,7 @@ export default function ReciboCajaList({ onNew }) {
                         fechaAnulacion: pData.fechaAnulacion || metadata.fechaAnulacion || "",
                         nroConsecutivo: metadata.nroConsecutivo || pData.nroConsecutivo || pData.nro_consecutivo || "",
                         isPago: true,
+                        fevNumero: invoiceMap[pData.id] || (pData.factura_id ? invoiceMap[pData.factura_id] || pData.factura_id : null),
                         _raw: pData,
                         _meta: metadata
                     };
@@ -637,6 +668,16 @@ export default function ReciboCajaList({ onNew }) {
                                                                     <span className={`font-bold ${isAnulado ? 'text-rose-600' : 'text-emerald-600'}`}>
                                                                         {isAnulado ? "Anulado" : "Activo"}
                                                                     </span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="font-bold text-slate-500">Factura Electrónica: </span>
+                                                                    {r.fevNumero ? (
+                                                                        <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                                                            FEV: {r.fevNumero}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-slate-400 italic">Sin FEV vinculada</span>
+                                                                    )}
                                                                 </div>
                                                             </div>
 

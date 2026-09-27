@@ -99,10 +99,11 @@ export const OFFICIAL_SEED_CATALOGS = {
     fuente_oficial: "SISPRO - Tabla de Referencia Tipos de Documento",
   })),
 
-  // Sexo
+  // Sexo (Documento Técnico 1 v003 / Res. 0948 de 2026 - Tabla de Referencia Sexo)
   sexo: [
-    { codigo: "H", descripcion: "Hombre" },
-    { codigo: "M", descripcion: "Mujer" },
+    { codigo: "M", descripcion: "Masculino" },
+    { codigo: "F", descripcion: "Femenino" },
+    { codigo: "I", descripcion: "Indeterminado" },
   ].map(it => ({
     ...it,
     catalogo: "sexo",
@@ -266,6 +267,107 @@ import {
 const catalogMemoryCache = new Map();
 
 /**
+ * Caché en memoria para la versión ACTIVE de CUPSRips y registros individuales resueltos.
+ * - activeVersionCache: almacena { version, fetchedAt } con TTL de 5 minutos (300.000 ms).
+ * - cupsCodeCache: mapa con clave `${activeVersion}:${cleanCode}`.
+ */
+const ACTIVE_VERSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+let activeVersionCache = {
+  version: null,
+  fetchedAt: 0,
+};
+const cupsCodeCache = new Map();
+
+/**
+ * Obtiene el cliente de Supabase (inyección global o importación diferida).
+ * @private
+ */
+async function getSupabaseClient() {
+  if (globalThis.__supabase) {
+    return globalThis.__supabase;
+  }
+  const mod = await import("../../../lib/supabaseClient.js");
+  return mod.default || mod.supabase;
+}
+
+/**
+ * Limpia la memoria caché de CUPSRips (útil para pruebas o invalidación manual).
+ */
+export function _clearCupsRipsCache() {
+  activeVersionCache = { version: null, fetchedAt: 0 };
+  cupsCodeCache.clear();
+}
+
+/**
+ * Establece artificialmente la versión activa en caché (uso exclusivo en tests de aislamiento).
+ * @param {string|null} version 
+ * @param {number} [fetchedAt] 
+ */
+export function _setActiveVersionCacheForTesting(version, fetchedAt = Date.now()) {
+  activeVersionCache = { version, fetchedAt };
+}
+
+/**
+ * Retorna una copia del mapa de códigos CUPS cacheados (uso exclusivo en tests).
+ */
+export function _getCupsCodeCache() {
+  return new Map(cupsCodeCache);
+}
+
+/**
+ * Resuelve la versión ACTIVE del catálogo CUPSRips llamando a la RPC oficial
+ * get_active_rips_catalog_version('CUPSRips').
+ * 
+ * Implementa caché en memoria con TTL de 5 minutos.
+ * Si la RPC retorna null o falla la conexión, invalida la caché inmediatamente y retorna null.
+ * Si se detecta un cambio de versión activa respecto a la caché, invalida cupsCodeCache.
+ * 
+ * @returns {Promise<string|null>} Versión ACTIVE o null si no está disponible
+ */
+export async function getActiveCupsRipsVersion() {
+  const now = Date.now();
+  if (
+    activeVersionCache.version &&
+    now - activeVersionCache.fetchedAt < ACTIVE_VERSION_CACHE_TTL_MS
+  ) {
+    return activeVersionCache.version;
+  }
+
+  try {
+    const client = await getSupabaseClient();
+    const { data, error } = await client.rpc("get_active_rips_catalog_version", {
+      p_catalogo: "CUPSRips",
+    });
+
+    if (error || !data) {
+      activeVersionCache = { version: null, fetchedAt: 0 };
+      return null;
+    }
+
+    const newVersion = String(data).trim();
+    if (!newVersion) {
+      activeVersionCache = { version: null, fetchedAt: 0 };
+      return null;
+    }
+
+    // Si la versión activa cambió respecto a la guardada anteriormente, limpiar caché de códigos
+    if (activeVersionCache.version && activeVersionCache.version !== newVersion) {
+      cupsCodeCache.clear();
+    }
+
+    activeVersionCache = {
+      version: newVersion,
+      fetchedAt: now,
+    };
+
+    return newVersion;
+  } catch (err) {
+    activeVersionCache = { version: null, fetchedAt: 0 };
+    return null;
+  }
+}
+
+/**
  * Consulta un catálogo oficial versionado desde la base de datos (con fallback a la semilla oficial).
  * 
  * @param {string} catalogName 
@@ -279,7 +381,7 @@ export async function getOfficialCatalog(catalogName, version = "v003_2026") {
   }
 
   try {
-    const client = globalThis.__supabase || (await import("../../../lib/supabaseClient.js")).default;
+    const client = await getSupabaseClient();
     const { data, error } = await client
       .from("rips_catalogos")
       .select("codigo, descripcion, catalogo, version, vigencia_desde, vigencia_hasta, activo, fuente_oficial, metadata")
@@ -342,54 +444,232 @@ export async function validateCatalogValue(catalogName, code, version = "v003_20
 }
 
 /**
- * Consulta un código CUPS oficial y devuelve todos sus atributos de reporte RIPS.
- * Cumple con los requerimientos normativos:
- * - código
- * - descripción oficial
- * - estado/vigencia (activo)
- * - tipo o clasificación para RIPS ('consulta' | 'procedimiento')
- * - si corresponde al bloque consultas
- * - si corresponde al bloque procedimientos
- * - fuente oficial
- * - versión/vigencia del catálogo
+ * Consulta un código CUPS oficial de forma puntual contra el snapshot ACTIVE en Supabase.
  * 
- * @param {string} cupsCode
- * @param {string} [version='v003_2026']
+ * Principios normativos y de seguridad:
+ * - NO descarga las 13.640 filas en memoria.
+ * - Resuelve la versión ACTIVE mediante RPC get_active_rips_catalog_version('CUPSRips').
+ * - Si no hay versión ACTIVE disponible, retorna CUPSRIPS_SOURCE_UNAVAILABLE (CERO fallback a semillas).
+ * - Consulta exactamente 1 fila en 'rips_catalogos' por (catalogo, version, codigo, activo).
+ * - Cachea el resultado por clave `${activeVersion}:${cleanCode}`.
+ * - Valida pares canónicos estrictos de metadata oficial SISPRO:
+ *     AC <-> consulta (correspondeBloqueConsultas: true)
+ *     AP <-> procedimiento (correspondeBloqueProcedimientos: true)
+ *     AT <-> otrosServicios (correspondeBloqueOtrosServicios: true)
+ * - Rechaza inconsistencias con CUPSRIPS_METADATA_INVALID.
+ * 
+ * @param {string} cupsCode Código CUPS a consultar
  * @returns {Promise<{
  *   codigo: string,
  *   descripcionOficial: string|null,
  *   tipoRips: string|null,
+ *   archivoRips: 'AC'|'AP'|'AT'|null,
  *   correspondeBloqueConsultas: boolean,
  *   correspondeBloqueProcedimientos: boolean,
+ *   correspondeBloqueOtrosServicios: boolean,
  *   activo: boolean,
  *   vigenciaDesde: string|null,
  *   vigenciaHasta: string|null,
  *   fuenteOficial: string|null,
- *   versionCatalogo: string,
+ *   versionCatalogo: string|null,
  *   exists: boolean,
  *   active: boolean,
- *   error: string|null
+ *   error: string|null,
+ *   errorCode: string|null
  * }>}
  */
-/**
- * Consulta un código CUPS oficial y devuelve todos sus atributos de reporte RIPS
- * desde el catálogo independiente CUPSRips (Resolución 2706 de 2025).
- * 
- * Atributos oficiales:
- * - código
- * - descripción oficial inmutable
- * - estado/vigencia (activo)
- * - tipo o clasificación para RIPS ('consulta' | 'procedimiento')
- * - si corresponde al bloque consultas (Archivo AC)
- * - si corresponde al bloque procedimientos (Archivo AP)
- * - fuente oficial con trazabilidad de capítulo
- * - versión del esquema RIPS vs versión de resolución CUPS separadas
- * 
- * @param {string} cupsCode
- * @returns {Promise<object>}
- */
 export async function getCupsClassification(cupsCode) {
-  return await getCupsRipsRecord(cupsCode);
+  const cleanCode = String(cupsCode ?? "").trim().toUpperCase();
+  if (!cleanCode) {
+    return {
+      codigo: "",
+      descripcionOficial: null,
+      tipoRips: null,
+      archivoRips: null,
+      correspondeBloqueConsultas: false,
+      correspondeBloqueProcedimientos: false,
+      correspondeBloqueOtrosServicios: false,
+      activo: false,
+      vigenciaDesde: null,
+      vigenciaHasta: null,
+      fuenteOficial: null,
+      versionCatalogo: null,
+      exists: false,
+      active: false,
+      errorCode: "CUPS_CODE_REQUIRED",
+      error: "Código CUPS requerido.",
+    };
+  }
+
+  // 1. Resolver versión ACTIVE oficial
+  const activeVersion = await getActiveCupsRipsVersion();
+  if (!activeVersion) {
+    return {
+      codigo: cleanCode,
+      descripcionOficial: null,
+      tipoRips: null,
+      archivoRips: null,
+      correspondeBloqueConsultas: false,
+      correspondeBloqueProcedimientos: false,
+      correspondeBloqueOtrosServicios: false,
+      activo: false,
+      vigenciaDesde: null,
+      vigenciaHasta: null,
+      fuenteOficial: null,
+      versionCatalogo: null,
+      exists: false,
+      active: false,
+      errorCode: "CUPSRIPS_SOURCE_UNAVAILABLE",
+      error: "Catálogo CUPSRips no disponible: no existe snapshot ACTIVE configurado o la base de datos es inaccesible.",
+    };
+  }
+
+  // 2. Comprobar caché local por versión y código
+  const cacheKey = `${activeVersion}:${cleanCode}`;
+  if (cupsCodeCache.has(cacheKey)) {
+    return cupsCodeCache.get(cacheKey);
+  }
+
+  // 3. Consulta puntual a Supabase (máximo 1 fila)
+  let row = null;
+  try {
+    const client = await getSupabaseClient();
+    const { data, error } = await client
+      .from("rips_catalogos")
+      .select("codigo, descripcion, catalogo, version, activo, vigencia_desde, vigencia_hasta, fuente_oficial, metadata")
+      .eq("catalogo", "CUPSRips")
+      .eq("version", activeVersion)
+      .eq("codigo", cleanCode)
+      .eq("activo", true)
+      .maybeSingle();
+
+    if (error) {
+      return {
+        codigo: cleanCode,
+        descripcionOficial: null,
+        tipoRips: null,
+        archivoRips: null,
+        correspondeBloqueConsultas: false,
+        correspondeBloqueProcedimientos: false,
+        correspondeBloqueOtrosServicios: false,
+        activo: false,
+        vigenciaDesde: null,
+        vigenciaHasta: null,
+        fuenteOficial: null,
+        versionCatalogo: activeVersion,
+        exists: false,
+        active: false,
+        errorCode: "CUPSRIPS_SOURCE_UNAVAILABLE",
+        error: "Error al consultar el catálogo oficial CUPSRips en la base de datos.",
+      };
+    }
+    row = data;
+  } catch (err) {
+    return {
+      codigo: cleanCode,
+      descripcionOficial: null,
+      tipoRips: null,
+      archivoRips: null,
+      correspondeBloqueConsultas: false,
+      correspondeBloqueProcedimientos: false,
+      correspondeBloqueOtrosServicios: false,
+      activo: false,
+      vigenciaDesde: null,
+      vigenciaHasta: null,
+      fuenteOficial: null,
+      versionCatalogo: activeVersion,
+      exists: false,
+      active: false,
+      errorCode: "CUPSRIPS_SOURCE_UNAVAILABLE",
+      error: "Error de conexión al consultar el catálogo oficial CUPSRips.",
+    };
+  }
+
+  // 4. Registro no encontrado en el snapshot ACTIVE
+  if (!row) {
+    const notFoundResult = {
+      codigo: cleanCode,
+      descripcionOficial: null,
+      tipoRips: null,
+      archivoRips: null,
+      correspondeBloqueConsultas: false,
+      correspondeBloqueProcedimientos: false,
+      correspondeBloqueOtrosServicios: false,
+      activo: false,
+      vigenciaDesde: null,
+      vigenciaHasta: null,
+      fuenteOficial: null,
+      versionCatalogo: activeVersion,
+      exists: false,
+      active: false,
+      errorCode: "CUPS_CODE_NOT_FOUND",
+      error: `El código CUPS '${cleanCode}' no existe en el catálogo oficial CUPSRips vigente (${activeVersion}).`,
+    };
+    return notFoundResult;
+  }
+
+  // 5. Validación estricta de pares canónicos de metadata oficial SISPRO
+  const usoCodigoCup = row.metadata?.usoCodigoCup;
+  const tipoRips = row.metadata?.tipoRips;
+
+  let archivoRips = null;
+  let correspondeBloqueConsultas = false;
+  let correspondeBloqueProcedimientos = false;
+  let correspondeBloqueOtrosServicios = false;
+
+  if (usoCodigoCup === "AC" && tipoRips === "consulta") {
+    archivoRips = "AC";
+    correspondeBloqueConsultas = true;
+  } else if (usoCodigoCup === "AP" && tipoRips === "procedimiento") {
+    archivoRips = "AP";
+    correspondeBloqueProcedimientos = true;
+  } else if (usoCodigoCup === "AT" && tipoRips === "otrosServicios") {
+    archivoRips = "AT";
+    correspondeBloqueOtrosServicios = true;
+  } else {
+    // Inconsistencia o metadatos oficiales faltantes / desconocidos
+    return {
+      codigo: cleanCode,
+      descripcionOficial: row.descripcion || null,
+      tipoRips: null,
+      archivoRips: null,
+      correspondeBloqueConsultas: false,
+      correspondeBloqueProcedimientos: false,
+      correspondeBloqueOtrosServicios: false,
+      activo: Boolean(row.activo),
+      vigenciaDesde: row.vigencia_desde ?? null,
+      vigenciaHasta: row.vigencia_hasta ?? null,
+      fuenteOficial: row.fuente_oficial ?? null,
+      versionCatalogo: activeVersion,
+      exists: true,
+      active: Boolean(row.activo),
+      errorCode: "CUPSRIPS_METADATA_INVALID",
+      error: `Metadatos inválidos o inconsistentes para el código CUPS '${cleanCode}' en el catálogo oficial (${activeVersion}): usoCodigoCup='${usoCodigoCup}', tipoRips='${tipoRips}'.`,
+    };
+  }
+
+  // 6. Construcción del resultado oficial
+  const result = {
+    codigo: cleanCode,
+    descripcionOficial: row.descripcion || row.metadata?.nombreOficial || null,
+    tipoRips,
+    archivoRips,
+    correspondeBloqueConsultas,
+    correspondeBloqueProcedimientos,
+    correspondeBloqueOtrosServicios,
+    activo: Boolean(row.activo),
+    vigenciaDesde: row.vigencia_desde ?? null,
+    vigenciaHasta: row.vigencia_hasta ?? null,
+    fuenteOficial: row.fuente_oficial ?? null,
+    versionCatalogo: activeVersion,
+    exists: true,
+    active: Boolean(row.activo),
+    error: null,
+    errorCode: null,
+  };
+
+  cupsCodeCache.set(cacheKey, result);
+  return result;
 }
 
 export {
@@ -403,6 +683,10 @@ export default {
   getOfficialCatalog,
   validateCatalogValue,
   getCupsClassification,
+  getActiveCupsRipsVersion,
   getCupsRipsRecord,
   CUPS_RIPS_2026_METADATA,
+  CUPS_RIPS_2026_ENTRIES,
+  _clearCupsRipsCache,
 };
+

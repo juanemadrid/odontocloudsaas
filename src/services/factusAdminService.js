@@ -1,8 +1,8 @@
-import { getTenants } from "./adminService";
+import { getTenants } from "./adminService.js";
 import {
   configureFactus,
   getFactusStatus
-} from "./factusProxyService";
+} from "./factusProxyService.js";
 
 const toCompatibilityCredentials = (status) => {
   if (!status?.configured) return null;
@@ -147,3 +147,27 @@ export const saveTenantFactusConfig = saveClinicFactusConfig;
 export const assignQuotaToTenant = async (tenantId, quota) =>
   saveClinicFactusConfig(tenantId, { facturacionCuota: quota });
 export const consumeInvoiceQuota = consumeOneInvoice;
+
+/**
+ * Preparación de Pipeline de Revalidación para Factus Private Sandbox / Producción (P0-FEV1B).
+ * NOTA: NO ejecutar en vivo contra producción ni sandboxes privados no autorizados.
+ * Retorna la definición estructurada de las fases de revalidación controlada.
+ */
+export const prepareFactusPrivateSandboxRevalidation = ({ tenantId, dryRun = true } = {}) => {
+  return {
+    status: "PREPARED_NOT_EXECUTED",
+    tenantId: tenantId || null,
+    dryRun: dryRun !== false,
+    phases: [
+      { id: "COMPANY_QUERY", name: "Consulta de company en Factus V2 (/v2/company)", required: true },
+      { id: "EMITTER_NIT_VALIDATION", name: "Validación de NIT de la institución emisora vs datos fiscales", required: true },
+      { id: "NUMBERING_RANGES_QUERY", name: "Consulta autoritativa de rangos (/v2/numbering-ranges)", required: true },
+      { id: "PAYMENT_METHOD_CATALOG_PROBE", name: "Prueba de catálogo payment_method_code (01..12)", required: true },
+      { id: "COVERAGE_VALIDATION", name: "Validación de catálogo de coberturas (15 Particular, etc.)", required: true },
+      { id: "CONTRACT_VALIDATION", name: "Validación de contract_number vs without_contract_code", required: true },
+      { id: "TEST_HEALTH_INVOICE_EMISSION", name: "Emisión controlada de UNA sola FEV Salud SS-CUFE de prueba", required: true },
+      { id: "ATTACHED_DOCUMENT_VERIFICATION", name: "Descarga y verificación de AttachedDocument XML legal", required: true },
+    ],
+    readyForPrivateSandbox: true,
+  };
+};

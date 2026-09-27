@@ -707,6 +707,61 @@ export default function NotaCreditoList({ onNew }) {
                                 </div>
                             </div>
 
+                            {/* Sección Oficial MUV: VALIDACIÓN MINISTERIO DE SALUD (Fase P1-FEV4) */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 text-xs">
+                                <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                                    <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                                        VALIDACIÓN MINISTERIO DE SALUD
+                                    </span>
+                                    <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase ${
+                                        viewModal.nota.detalles?.muvStatus === "ACCEPTED" || viewModal.nota.detalles?.cuv
+                                            ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                            : viewModal.nota.detalles?.muvStatus === "VALIDATING"
+                                            ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                            : viewModal.nota.detalles?.muvStatus === "REJECTED"
+                                            ? "bg-rose-100 text-rose-800 border border-rose-200"
+                                            : viewModal.nota.dian_status === "ACCEPTED" && viewModal.nota.cude
+                                            ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                            : "bg-slate-100 text-slate-700"
+                                    }`}>
+                                        {viewModal.nota.detalles?.muvStatus === "ACCEPTED" || viewModal.nota.detalles?.cuv
+                                            ? "ACEPTADA MUV"
+                                            : viewModal.nota.detalles?.muvStatus === "VALIDATING"
+                                            ? "VALIDANDO"
+                                            : viewModal.nota.detalles?.muvStatus === "REJECTED"
+                                            ? "RECHAZADA MUV"
+                                            : viewModal.nota.dian_status === "ACCEPTED" && viewModal.nota.cude
+                                            ? "LISTA PARA MUV"
+                                            : "ERROR TÉCNICO"}
+                                    </span>
+                                </div>
+                                {viewModal.nota.tipo_nota_credito === "PARCIAL" ? (
+                                    <div>
+                                        <span className="text-slate-500 font-medium block">CUV Nota Crédito:</span>
+                                        <p className="font-mono text-xs font-bold text-slate-800 break-all select-all mt-0.5">
+                                            {viewModal.nota.detalles?.cuv || "Pendiente de radicación MUV"}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <span className="text-slate-500 font-medium block">Resultado Anulación MUV:</span>
+                                        <p className="font-semibold text-xs text-slate-800 mt-0.5">
+                                            {viewModal.nota.detalles?.muvStatus === "ACCEPTED"
+                                                ? "Anulación total aceptada y confirmada ante MinSalud"
+                                                : "Pendiente de radicación MUV"}
+                                        </p>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                                            (CUV histórico de factura original preservado sin alteraciones)
+                                        </span>
+                                    </div>
+                                )}
+                                {viewModal.nota.detalles?.fechaRadicacionMuv && (
+                                    <div className="pt-1 text-[10px] text-slate-400">
+                                        Fecha radicación MUV: {new Date(viewModal.nota.detalles.fechaRadicacionMuv).toLocaleString("es-CO")}
+                                    </div>
+                                )}
+                            </div>
+
                             {viewModal.nota.notas && (
                                 <div className="text-xs">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Observaciones</span>

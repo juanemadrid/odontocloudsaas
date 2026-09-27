@@ -522,6 +522,19 @@ export default function ReporteFinanciero() {
             const cleanObs = cleanObservaciones(rawObs);
             const refClean = cleanDocReferencia(f.resolucion || f.cufe, String(nroDoc));
 
+            let linkedReceiptText = "";
+            try {
+              let fDet = typeof f.detalles === "string" ? JSON.parse(f.detalles) : (f.detalles || {});
+              if (Array.isArray(fDet.recibos_asociados) && fDet.recibos_asociados.length > 0) {
+                linkedReceiptText = fDet.recibos_asociados.map(r => r.numero || `REC-${String(r.id || '').slice(0,6)}`).join(", ");
+              } else if (fDet.recibo_asociado?.numero) {
+                linkedReceiptText = fDet.recibo_asociado.numero;
+              }
+            } catch {}
+
+            const cufeText = (f.factusCufe || f.cufe) ? `CUFE: ${String(f.factusCufe || f.cufe).slice(0, 10)}...` : "";
+            const docAsocFinal = [linkedReceiptText ? `Recibo: ${linkedReceiptText}` : null, cufeText || null].filter(Boolean).join(" | ") || "—";
+
             allRows.push({
               id: `fac_${f.id}`,
               rawId: f.id,
@@ -533,7 +546,7 @@ export default function ReporteFinanciero() {
               valor: totalNum,
               consecutivo: "Principal",
               docReferencia: refClean,
-              documentosAsociados: (f.factusCufe || f.cufe) ? `CUFE: ${String(f.factusCufe || f.cufe).slice(0, 10)}...` : "—",
+              documentosAsociados: docAsocFinal,
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
@@ -804,10 +817,18 @@ export default function ReporteFinanciero() {
     });
   }, [allTransactions, appliedFilters, tableSearchTerm, columnFilters, profesionales, oficinasList]);
 
-  // Totales calculados
+  // Totales calculados (Fase P1-FEV1: Prevención de doble contabilización)
+  // La fuente de verdad del ingreso financiero (dinero recaudado) son los Recibos de Caja y Movimientos de Caja.
+  // Factura de Venta representa la facturación fiscal emitida; no debe sumarse como recaudo si ya fue recaudado o está pendiente.
   const totalIngresos = useMemo(() => {
     return filteredData
-      .filter(r => (r.tipoDocumento.includes("+") || r.tipoDocumento.includes("Recibo") || r.tipoDocumento.includes("Venta")) && r.estado !== "Anulado")
+      .filter(r => (r.tipoDocumento.includes("Recibo") || r.tipoDocumento.includes("Ingreso de caja")) && r.estado !== "Anulado")
+      .reduce((sum, r) => sum + Number(r.valor || 0), 0);
+  }, [filteredData]);
+
+  const totalFacturado = useMemo(() => {
+    return filteredData
+      .filter(r => r.tipoDocumento.includes("Factura de venta") && r.estado !== "Anulado")
       .reduce((sum, r) => sum + Number(r.valor || 0), 0);
   }, [filteredData]);
 
@@ -1358,7 +1379,8 @@ export default function ReporteFinanciero() {
             Total de transacciones: <strong>{filteredData.length}</strong> de <strong>{allTransactions.length}</strong>
           </span>
           <div className="flex items-center gap-6 text-xs font-semibold">
-            <span>Ingresos (+): <strong className="text-emerald-600">$ {totalIngresos.toLocaleString('es-CO')}</strong></span>
+            <span>Recaudos / Ingresos (+): <strong className="text-emerald-600">$ {totalIngresos.toLocaleString('es-CO')}</strong></span>
+            <span>Total Facturado (FEV): <strong className="text-sky-600">$ {totalFacturado.toLocaleString('es-CO')}</strong></span>
             <span>Egresos (-): <strong className="text-rose-600">$ {totalEgresos.toLocaleString('es-CO')}</strong></span>
             <span>Balance Neto: <strong className={totalIngresos - totalEgresos >= 0 ? "text-sky-700" : "text-rose-700"}>$ {(totalIngresos - totalEgresos).toLocaleString('es-CO')}</strong></span>
           </div>

@@ -74,6 +74,14 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
     const [medicalTabValues, setMedicalTabValues] = useState({});
 
     // ── Consulta Odontológica form states ────────────────────────────────────
+    const [consultaCups, setConsultaCups] = useState(
+        initialData?.cups || 
+        initialData?.codigo_cups || 
+        initialData?.codigoCups || 
+        initialData?.metadata?.cups || 
+        initialData?.metadata?.codigo_cups || 
+        '890201'
+    );
     const [consultaTab, setConsultaTab] = useState('motivo');
     // 1. Motivo de Consulta
     const [motivoConsulta, setMotivoConsulta] = useState('');
@@ -527,6 +535,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             setAsocConsultaId(null);
             setAssociatedConsulta(null);
             // Reset Consulta Odontológica states
+            setConsultaCups('890201');
             setConsultaTab('motivo');
             setMotivoConsulta('');
             setEnfermedadActual('');
@@ -576,6 +585,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 if (isConsulta) {
                     setConsultaTab('motivo');
                     const meta = initialData.metadata || {};
+                    setConsultaCups(initialData.cups || initialData.codigo_cups || initialData.codigoCups || meta.cups || meta.codigo_cups || meta.codigoCups || '890201');
                     setMotivoConsulta(initialData.motivoConsulta || meta.motivoConsulta || '');
                     setEnfermedadActual(initialData.enfermedadActual || meta.enfermedadActual || '');
                     setAntecedentes(initialData.antecedentes || meta.antecedentes || []);
@@ -1178,6 +1188,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     estado: finalDocEstado,
                     finalizado: isFinalize,
                     firmado: finalDocFirmado,
+                    cups: consultaCups || '890201',
+                    codigo_cups: consultaCups || '890201',
+                    codigoCups: consultaCups || '890201',
                     motivoConsulta,
                     enfermedadActual,
                     antecedentes: finalAntecedentes,
@@ -1523,7 +1536,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     
                     {/* General information blocks */}
                     {docType !== 'Receta' && (
-                        <div className={`grid ${docType === 'Alerta' || docType === 'Consulta' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4 pb-4 border-b border-slate-100`}>
+                        <div className={`grid ${docType === 'Alerta' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4 pb-4 border-b border-slate-100`}>
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">
                                     Profesional Responsable *
@@ -1543,6 +1556,27 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                     })}
                                 </select>
                             </div>
+
+                            {docType === 'Consulta' && (
+                                <div className="space-y-1">
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">
+                                        Procedimiento / Código CUPS de Consulta *
+                                    </label>
+                                    <select
+                                        value={consultaCups}
+                                        onChange={(e) => setConsultaCups(e.target.value)}
+                                        disabled={isViewOnly}
+                                        className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                                    >
+                                        <option value="890201">890201 - Consulta 1.ª vez por odontología general</option>
+                                        <option value="890202">890202 - Consulta 1.ª vez por odontología especializada</option>
+                                        <option value="890301">890301 - Consulta de control / seguimiento odontología general</option>
+                                        <option value="890302">890302 - Consulta de control / seguimiento odontología especializada</option>
+                                        <option value="890701">890701 - Consulta de urgencias por odontología general</option>
+                                        <option value="890702">890702 - Consulta de urgencias por odontología especializada</option>
+                                    </select>
+                                </div>
+                            )}
                             
                             {docType === 'Orden' ? (
                                 <div className="space-y-1">

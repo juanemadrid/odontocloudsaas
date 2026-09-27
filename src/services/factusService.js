@@ -8,12 +8,17 @@ import {
   sendFactusSupportDocument,
   sendFactusAdjustmentNote,
   testFactusCredentials,
-} from "./factusProxyService";
+  sendFactusCreditNote,
+  checkFactusCreditNote,
+  deleteUnvalidatedFactusCreditNote,
+  downloadFactusCreditNoteXml,
+  downloadFactusCreditNotePdf,
+} from "./factusProxyService.js";
 import {
   buildFactusHealthInvoicePayload,
   isFacturaSectorSalud,
-} from "./factusHealthPayloadBuilder";
-import { calculateNIT_DV } from "../utils/dian/dianHelpers";
+} from "./factusHealthPayloadBuilder.js";
+import { calculateNIT_DV } from "../utils/dian/dianHelpers.js";
 
 /**
  * factusService.js
@@ -405,8 +410,21 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   };
 
   let finalPayload = payload;
-  const fevRipsFlag = Boolean(resolvedCreds?.fevRipsFlagEnabled ?? invoiceData?.fevRipsFlagEnabled);
-  if (isFacturaSectorSalud({ factura: invoiceData, fevRipsFlagEnabled: fevRipsFlag })) {
+  let fevRipsFlag = resolvedCreds?.fevRipsFlagEnabled ?? invoiceData?.fevRipsFlagEnabled;
+  if (fevRipsFlag === undefined && (invoiceData?.esSectorSalud === true || invoiceData?.tipoOperacion === "SS-CUFE")) {
+    const tenantId = invoiceData?.tenant_id || invoiceData?.inquilino || resolvedCreds?.inquilino;
+    if (tenantId) {
+      try {
+        const { isFevRips0948Enabled } = await import("../modules/rips/v003/ripsFeatureFlagService");
+        fevRipsFlag = await isFevRips0948Enabled(tenantId);
+      } catch (err) {
+        console.warn("Could not check FEV-RIPS feature flag:", err.message);
+        fevRipsFlag = false;
+      }
+    }
+  }
+
+  if (isFacturaSectorSalud({ factura: invoiceData, fevRipsFlagEnabled: Boolean(fevRipsFlag) })) {
     finalPayload = buildFactusHealthInvoicePayload(
       payload,
       invoiceData.healthData || invoiceData.health,
@@ -556,6 +574,73 @@ export const downloadSupportDocumentPDF = async (documentNumber) => {
 };
 
 // ─────────────────────────────────────────────
+// 7. Credit Note methods and helpers
+// ─────────────────────────────────────────────
+export {
+  sendFactusCreditNote,
+  checkFactusCreditNote,
+  deleteUnvalidatedFactusCreditNote,
+  downloadFactusCreditNoteXml,
+  downloadFactusCreditNotePdf,
+};
+
+/**
+ * Filtra los rangos de numeración autorizados para Nota Crédito (document = 22 / 'Nota Crédito').
+ */
+export const filterActiveCreditNoteRanges = (ranges) => {
+  if (!ranges) return [];
+  let list = ranges;
+  if (ranges && typeof ranges === "object" && !Array.isArray(ranges)) {
+    if (Array.isArray(ranges.result?.data?.data)) list = ranges.result.data.data;
+    else if (Array.isArray(ranges.result?.data)) list = ranges.result.data;
+    else if (Array.isArray(ranges.data?.data)) list = ranges.data.data;
+    else if (Array.isArray(ranges.data)) list = ranges.data;
+    else if (Array.isArray(ranges.ranges)) list = ranges.ranges;
+  }
+  if (!Array.isArray(list)) return [];
+  return list.filter((r) => {
+    const doc = String(r.document || "").toLowerCase().trim();
+    const docId = String(r.document_id || r.document_type || "").trim();
+    const isCreditNote =
+      doc.includes("nota crédito") ||
+      doc.includes("nota credito") ||
+      doc === "22" ||
+      docId === "22";
+    const isActive = r.is_active === true || r.is_active === 1 || r.is_active === "1";
+    const notExpired = r.is_expired !== true && r.is_expired !== 1;
+    const notDeleted = !r.deleted_at;
+    return isCreditNote && isActive && notExpired && notDeleted;
+  });
+};
+
+/**
+ * Descarga el PDF oficial de una Nota Crédito y retorna el Blob.
+ */
+export const downloadCreditNotePDF = async (creditNoteNumber) => {
+  const data = await downloadFactusCreditNotePdf(creditNoteNumber);
+  const binary = atob(data.base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: data.mimeType || "application/pdf" });
+};
+
+/**
+ * Descarga el XML AttachedDocument oficial de una Nota Crédito y retorna Blob + fileName.
+ */
+export const downloadCreditNoteXML = async (creditNoteNumber) => {
+  const data = await downloadFactusCreditNoteXml(creditNoteNumber);
+  const binary = atob(data.xml_base_64_encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  const blob = new Blob([bytes], { type: "application/xml;charset=utf-8" });
+  return { blob, fileName: data.file_name || `NotaCredito-${creditNoteNumber}.xml` };
+};
+
+// ─────────────────────────────────────────────
 // Default export
 // ─────────────────────────────────────────────
 const factusService = {
@@ -571,6 +656,14 @@ const factusService = {
   getNumberingRanges,
   getMunicipalityCode,
   getDocTypeCode,
+  sendFactusCreditNote,
+  checkFactusCreditNote,
+  deleteUnvalidatedFactusCreditNote,
+  downloadFactusCreditNoteXml,
+  downloadFactusCreditNotePdf,
+  filterActiveCreditNoteRanges,
+  downloadCreditNotePDF,
+  downloadCreditNoteXML,
 };
 
 export default factusService;

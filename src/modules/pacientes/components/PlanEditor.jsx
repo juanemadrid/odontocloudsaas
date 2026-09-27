@@ -7,6 +7,8 @@ import { useFormContext } from 'react-hook-form';
 import { useAuth } from '../../../context/AuthContext';
 import ProcedureAdditionModal from './ProcedureAdditionModal';
 import ToothSelectorModal from './ToothSelectorModal';
+import EvolutionModal from './EvolutionModal';
+import DocClinicoModal from './DocClinicoModal';
 import { BudgetPrintService } from '../../../services/BudgetPrintService';
 import factusService from '../../../services/factusService';
 import { getConfigItems } from '../../../services/configPersistenceService';
@@ -62,6 +64,17 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     const [showOdontoModal, setShowOdontoModal] = useState(false);
     const [odontoLoading, setOdontoLoading] = useState(false);
     const [odontoItems, setOdontoItems] = useState([]);
+
+    // ── Realizar & Asociar Consulta Workflow (OralDrive) ──
+    const [selectedForRealizar, setSelectedForRealizar] = useState(new Set());
+    const [showEvolutionModal, setShowEvolutionModal] = useState(false);
+    const [evolutionInitialData, setEvolutionInitialData] = useState(null);
+    const [showAsocConsultaModal, setShowAsocConsultaModal] = useState(false);
+    const [targetConsultaItem, setTargetConsultaItem] = useState(null);
+    const [consultasList, setConsultasList] = useState([]);
+    const [loadingConsultas, setLoadingConsultas] = useState(false);
+    const [showNewConsultaModal, setShowNewConsultaModal] = useState(false);
+    const [newConsultaInitialData, setNewConsultaInitialData] = useState(null);
 
     // Refs for auto-saving
     const autoSaveTimeoutRef = useRef(null);
@@ -314,13 +327,21 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     }, [payments]);
 
     const getItemRealizedDate = (itemId) => {
+        const formatDateTime = (val) => {
+            try {
+                const d = val?.toDate ? val.toDate() : new Date(val);
+                if (isNaN(d.getTime())) return null;
+                const datePart = d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const timePart = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: false });
+                return `${datePart}\n${timePart}`;
+            } catch { return null; }
+        };
+
         // 1. Check direct fechaRealizado on item itself
         const itemDirectly = items.find(i => i.id === itemId);
         if (itemDirectly?.realizado && itemDirectly?.fechaRealizado) {
-            try {
-                const d = new Date(itemDirectly.fechaRealizado);
-                return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-            } catch { /* fall through */ }
+            const formatted = formatDateTime(itemDirectly.fechaRealizado);
+            if (formatted) return formatted;
         }
         // 2. Check clinical evolutions
         const evo = evolutions.find(e =>
@@ -328,11 +349,11 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             (e.plantillaItems?.[itemId]?.realizado === true ||
              (e.plantillaItems?.[itemId]?.realizado === undefined && e.plantillaItems?.[itemId]?.checked === true))
         );
-        if (!evo) return null;
-        try {
-            const d = evo.date?.toDate ? evo.date.toDate() : new Date(evo.date);
-            return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        } catch { return null; }
+        if (evo) {
+            const formatted = formatDateTime(evo.date || evo.fecha || evo.created_at);
+            if (formatted) return formatted;
+        }
+        return null;
     };
 
     const [selectedForInvoice, setSelectedForInvoice] = useState(new Set());
@@ -346,6 +367,179 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         });
     };
 
+    // ── Realizar & Asociar Consulta Handlers (OralDrive Style) ──
+    const toggleRealizarSelection = (itemId) => {
+        if (isItemRealized(itemId)) return;
+        setSelectedForRealizar(prev => {
+            const next = new Set(prev);
+            if (next.has(itemId)) next.delete(itemId);
+            else next.add(itemId);
+            return next;
+        });
+    };
+
+    const isItemConsulta = (item) => {
+        if (!item) return false;
+        if (item.es_consulta === true || item.is_consulta === true) return true;
+        const cups = String(item.codigo_cups || item.code || item.codigo || '').trim();
+        if (cups.startsWith('890')) return true;
+        const desc = (item.desc || item.nombre || '').toLowerCase();
+        if (desc.startsWith('consulta') || desc.includes('consulta valoracion') || desc.includes('consulta odontol')) return true;
+        return false;
+    };
+
+    const openAsocConsultaModal = async (item) => {
+        setTargetConsultaItem(item);
+        setShowAsocConsultaModal(true);
+        setLoadingConsultas(true);
+        try {
+            let list = [];
+            const { data: dbList, error } = await supabase
+                .from("documentos_clinicos")
+                .select("*")
+                .eq("paciente_id", patientId)
+                .or("tipo.eq.Consulta,tipoDocumento.eq.Consulta")
+                .order("created_at", { ascending: false });
+            if (!error && dbList) {
+                list = dbList;
+            }
+            const hmDocs = (patient?.historial_medico?.documentosClinicos || []).filter(d => 
+                d.tipo === "Consulta" || d.tipoDocumento === "Consulta"
+            );
+            const merged = [...list];
+            hmDocs.forEach(h => {
+                if (!merged.some(m => m.id === h.id)) {
+                    merged.push(h);
+                }
+            });
+            setConsultasList(merged);
+        } catch (err) {
+            console.error("Error cargando consultas médicas:", err);
+            toast.error("Error al cargar las consultas médicas del paciente");
+        } finally {
+            setLoadingConsultas(false);
+        }
+    };
+
+    const handleAssociateConsulta = async (selectedConsulta) => {
+        if (!targetConsultaItem) return;
+        try {
+            const nowIso = new Date().toISOString();
+            const updatedItems = items.map(it => {
+                if (it.id === targetConsultaItem.id) {
+                    return {
+                        ...it,
+                        realizado: true,
+                        fechaRealizado: nowIso,
+                        asocConsultaId: selectedConsulta.id,
+                        asocConsultaTitulo: selectedConsulta.titulo || 'Consulta Odontológica',
+                        asocConsultaFecha: selectedConsulta.fechaIso || selectedConsulta.created_at || selectedConsulta.date || nowIso
+                    };
+                }
+                return it;
+            });
+            setItems(updatedItems);
+            if (currentPlanId) {
+                await updatePlan(currentPlanId, { items: updatedItems });
+            }
+            // Link in documentos_clinicos if possible
+            try {
+                const docId = selectedConsulta.database_id || selectedConsulta.id;
+                if (docId) {
+                    await supabase
+                        .from("documentos_clinicos")
+                        .update({
+                            metadata: {
+                                ...(selectedConsulta.metadata || {}),
+                                planId: currentPlanId,
+                                planItemId: targetConsultaItem.id,
+                                asociadoPlanFecha: nowIso
+                            }
+                        })
+                        .eq("id", docId);
+                }
+            } catch (e) {}
+
+            setSelectedForRealizar(prev => {
+                const next = new Set(prev);
+                next.delete(targetConsultaItem.id);
+                return next;
+            });
+            setShowAsocConsultaModal(false);
+            setTargetConsultaItem(null);
+            toast.success("✅ Consulta médica asociada y procedimiento marcado como realizado.");
+            if (onSaved) onSaved();
+        } catch (err) {
+            console.error("Error al asociar consulta:", err);
+            toast.error("Error al asociar la consulta médica.");
+        }
+    };
+
+    const handleRealizarAction = () => {
+        if (selectedForRealizar.size === 0) {
+            toast.warning("Selecciona al menos un procedimiento en la casilla (✓) para realizar.");
+            return;
+        }
+
+        const selectedItems = items.filter(it => selectedForRealizar.has(it.id));
+        const unrealizedSelected = selectedItems.filter(it => !isItemRealized(it.id));
+        if (unrealizedSelected.length === 0) {
+            toast.info("Los procedimientos seleccionados ya fueron realizados.");
+            return;
+        }
+
+        // Check if any selected item is a consultation
+        const consultaItem = unrealizedSelected.find(it => isItemConsulta(it));
+        if (consultaItem) {
+            // Flow B: Associate Consultation with Doc. Clínicos
+            openAsocConsultaModal(consultaItem);
+        } else {
+            // Flow A: Open Clinical Evolution
+            const plantillaItems = {};
+            unrealizedSelected.forEach(it => {
+                plantillaItems[it.id] = {
+                    checked: true,
+                    realizado: true,
+                    desc: it.desc,
+                    dientes: it.dientes || '',
+                    observation: ''
+                };
+            });
+            setEvolutionInitialData({
+                planId: currentPlanId,
+                serviciosIds: unrealizedSelected.map(it => it.id),
+                plantillaItems
+            });
+            setShowEvolutionModal(true);
+        }
+    };
+
+    const handleEvolutionSaved = async (savedEvo) => {
+        if (savedEvo) {
+            setEvolutions(prev => [savedEvo, ...prev]);
+        }
+        const nowIso = new Date().toISOString();
+        const updatedItems = items.map(it => {
+            if (selectedForRealizar.has(it.id)) {
+                return {
+                    ...it,
+                    realizado: true,
+                    fechaRealizado: it.fechaRealizado || nowIso
+                };
+            }
+            return it;
+        });
+        setItems(updatedItems);
+        if (currentPlanId) {
+            await updatePlan(currentPlanId, { items: updatedItems });
+        }
+        setSelectedForRealizar(new Set());
+        setShowEvolutionModal(false);
+        setEvolutionInitialData(null);
+        toast.success("✅ Evolución registrada y procedimientos marcados como realizados.");
+        if (onSaved) onSaved();
+    };
+
     const handleGenerateSelectedInvoice = async () => {
         if (selectedForInvoice.size === 0) return;
         if (!currentPlanId) {
@@ -354,6 +548,13 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         }
 
         const selectedItems = items.filter(it => selectedForInvoice.has(it.id));
+
+        // Bloqueo clínico: solo atenciones REALIZADAS pueden facturarse
+        const noRealizados = selectedItems.filter(it => it.realizado !== true && !it.fechaRealizado);
+        if (noRealizados.length > 0) {
+            toast.error(`❌ ${noRealizados.length} procedimiento(s) no han sido realizados aún. Solo atenciones clínicas realizadas pueden facturarse.`);
+            return;
+        }
 
         // Bloqueo: no se puede facturar un ítem que ya tiene factura emitida
         const yaFacturados = selectedItems.filter(it => it.facturado === true);
@@ -378,6 +579,32 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             return;
         }
 
+        // ── Resolver Configuración Autoritativa de Facturación y REPS ──
+        let providerCode = '';
+        let billingCfg = {};
+        try {
+            const { getConfigSection } = await import('../../../services/configPersistenceService');
+            const [billingSection, companyCfg, tenantRow, sisproSecrets] = await Promise.all([
+                getConfigSection(inquilino, "facturacion_electronica", {}),
+                getConfigSection(inquilino, "empresa_datos", {}),
+                supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
+                supabase.from("tenant_secrets").select("sispro_config").eq("tenant_id", inquilino).maybeSingle()
+            ]);
+            billingCfg = billingSection?.general || billingSection?.por_sucursal?.general || billingSection || {};
+            const dTenant = tenantRow?.data || {};
+            const dSispro = sisproSecrets?.data?.sispro_config || {};
+            providerCode = String(
+                billingCfg?.provider_code ||
+                dTenant.codigoPrestador ||
+                dSispro.codigoPrestador ||
+                companyCfg?.codigoPrestador ||
+                companyCfg?.reps ||
+                ''
+            ).trim();
+        } catch (e) {
+            console.warn('Error cargando configuración en PlanEditor:', e);
+        }
+
         // ── Verificar cuota disponible ──
         const { canTenantEmit } = await import('../../../services/factusAdminService');
         const tieneDisponibles = await canTenantEmit(inquilino);
@@ -395,17 +622,32 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         setEmittingInvoice(true);
         try {
             // Build the invoice document
-            const invoiceItems = selectedItems.map(it => {
+            const invoiceItems = selectedItems.map((it, idx) => {
                 const totalCost = (Number(it.amount || 0) * Number(it.qty || 1)) - Number(it.descuento || 0);
+                const cupsCode = it.codigo_cups || it.cups || it.code || 'SERV-0001';
+                const lineId = it.invoiceLineId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `line-${idx + 1}-${Date.now()}`);
+                const sourceId = it.clinicalSourceId || it.id;
+                const sourceType = it.clinicalSourceType || 'PLAN_ITEM';
+                const fechaAtencion = it.fechaRealizado || it.fecha || new Date().toISOString().slice(0, 10);
                 return {
-                    itemId:      it.id,
-                    nombre:      it.desc || 'Servicio Dental',
-                    descripcion: it.desc || 'Servicio Dental',
-                    precio:      Number(it.amount || 0),
-                    precioUnitario: Number(it.amount || 0),
-                    cantidad:    Number(it.qty || 1),
-                    descuento:   Number(it.descuento || 0),
-                    totalLinea:  totalCost
+                    itemId:             it.id,
+                    invoiceLineId:      lineId,
+                    clinicalSourceId:   sourceId,
+                    clinicalSourceType: sourceType,
+                    code:               cupsCode,
+                    code_reference:     cupsCode,
+                    cups:               cupsCode,
+                    nombre:             it.desc || 'Servicio Dental',
+                    descripcion:        it.desc || 'Servicio Dental',
+                    precio:             Number(it.amount || 0),
+                    precioUnitario:     Number(it.amount || 0),
+                    cantidad:           Number(it.qty || 1),
+                    descuento:          Number(it.descuento || 0),
+                    totalLinea:         totalCost,
+                    valor:              totalCost,
+                    fechaRealizado:     fechaAtencion,
+                    fechaAtencion:      fechaAtencion,
+                    realizado:          true
                 };
             });
 
@@ -441,6 +683,79 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             const terceroTipoDoc = terceroObj?.tipoDocumento || (terceroDoc.includes('-') || terceroObj?.tipoPersona === 'Juridica' ? 'NIT' : 'NIT');
             const patientFullName = patient?.nombreCompleto || [patient?.nombre || patient?.nombres, patient?.apellido || patient?.apellidos].filter(Boolean).join(' ') || 'Paciente';
 
+            // ── Construir componentes oficiales FEV Salud (SS-CUFE) ──
+            const {
+                buildBillingPeriodFromAttentions,
+                buildBeneficiaryFromPatient,
+                resolveHealthDataFromConfig,
+                resolveHealthCatalogProfile,
+                preflightHealthInvoice,
+            } = await import('../../../services/factusHealthPayloadBuilder');
+
+            // 1. Resolver perfil de catálogo de salud autoritativo (NO inferido silenciosamente)
+            let catalogProfile = null;
+            try {
+                catalogProfile = resolveHealthCatalogProfile({
+                    tenantConfig: billingCfg,
+                    factusConfig: activeCreds || factusCredentials,
+                });
+            } catch (errProf) {
+                toast.error(`❌ ${errProf.code || 'FACTUS_HEALTH_CATALOG_PROFILE_REQUIRED'}: ${errProf.message}`);
+                setEmittingInvoice(false);
+                return;
+            }
+
+            // 2. Resolver numbering_range_id autoritativo
+            const numberingRangeId = billingCfg?.numbering_range_id || (activeCreds || factusCredentials)?.factusNumberingRangeId;
+
+            let billingPeriod = null;
+            try {
+                billingPeriod = buildBillingPeriodFromAttentions(selectedItems, new Date());
+            } catch (errDate) {
+                toast.error(`❌ Error en fechas de atención: ${errDate.message}`);
+                setEmittingInvoice(false);
+                return;
+            }
+
+            const beneficiary = buildBeneficiaryFromPatient(patient);
+
+            const modalidadPago = planCob?.modalidadPago || billingCfg?.health_payment_method_code || '04';
+            const coberturaCode = planCob?.coberturaCode || billingCfg?.coverage_code || (isPlanEntidad ? null : '15');
+            const contractNumber = isPlanEntidad ? (planCob?.numeroContrato || planCob?.contrato || billingCfg?.contract_number || null) : null;
+            const withoutContractCode = isPlanEntidad ? null : (billingCfg?.without_contract_code || '05');
+
+            // 3. Preflight formal estricto antes de llamar a Factus
+            let preflightResult = null;
+            try {
+                preflightResult = preflightHealthInvoice({
+                    catalogProfile,
+                    numberingRangeId,
+                    providerCode,
+                    paymentMethodCode: modalidadPago,
+                    coverageCode: coberturaCode,
+                    contractNumber,
+                    withoutContractCode,
+                    items: selectedItems,
+                    beneficiary,
+                    billingPeriod,
+                });
+            } catch (errPreflight) {
+                toast.error(`❌ ${errPreflight.code || 'PREFLIGHT_ERROR'}: ${errPreflight.message}`);
+                setEmittingInvoice(false);
+                return;
+            }
+
+            const healthData = resolveHealthDataFromConfig({
+                providerCode: preflightResult.providerCode,
+                planCob,
+                isEntidad: isPlanEntidad,
+                modalidadPago: preflightResult.paymentMethodCode,
+                coberturaCode: preflightResult.coverageCode,
+                contractNumber: preflightResult.contractNumber,
+                withoutContractCode: preflightResult.withoutContractCode,
+                catalogProfile,
+            });
+
             const dbPayload = {
                 tenant_id:        inquilino || null,
                 paciente_id:      patientId || null,
@@ -472,6 +787,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 planId:     currentPlanId,
                 nroFactura: nroFactura,
                 numero:     nroFactura,
+                numbering_range_id: preflightResult.numberingRangeId,
+                numberingRangeId: preflightResult.numberingRangeId,
                 fechaISO:   new Date().toISOString(),
                 total:      totalFactura,
                 subtotal:   totalFactura,
@@ -487,12 +804,31 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 pacienteNombre: patientFullName,
                 esEntidad:   Boolean(isPlanEntidad),
                 items:      invoiceItems,
+                // Flujo oficial FEV Salud SS-CUFE
+                esSectorSalud: true,
+                tipoOperacion: "SS-CUFE",
+                fevRipsFlagEnabled: true,
+                healthData,
+                billing_period: preflightResult.billingPeriod,
+                beneficiary: preflightResult.beneficiary,
             };
 
-            // 1️⃣ Save to Supabase first
+            // 1️⃣ Save to Supabase first with complete JSONB detalles
             const { data: invData, error: invError } = await supabase
                 .from('facturas')
-                .insert([dbPayload])
+                .insert([{
+                    ...dbPayload,
+                    detalles: {
+                        ...invoiceData,
+                        planId: currentPlanId,
+                        pacienteNombre: patientFullName,
+                        pacienteDocumento: patient?.nroDocumento || patient?.documento || '',
+                        estado_pago: 'PENDIENTE',
+                        saldo_pendiente: totalFactura,
+                        monto_pagado: 0,
+                        recibos_asociados: []
+                    }
+                }])
                 .select()
                 .single();
             if (invError) throw invError;
@@ -549,17 +885,26 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 const pdfUrl = bill?.public_url || bill?.qr_image || bill?.pdf_url || null;
 
                 if (invData?.id) {
+                    let currentDet = invData.detalles || {};
+                    if (typeof currentDet === 'string') {
+                        try { currentDet = JSON.parse(currentDet); } catch { currentDet = {}; }
+                    }
+                    const updatedDet = {
+                        ...currentDet,
+                        factusEstado: 'Emitido',
+                        factusNumero: finalNro,
+                        factusCufe: cufe,
+                        factusQr: qr,
+                        factusPdfUrl: pdfUrl,
+                        factusResponse: result?.data || result || null,
+                        dianStatus: 'ACEPTADA',
+                    };
                     await supabase
                         .from('facturas')
                         .update({
                             estado: 'Emitido',
-                            factusEstado: 'Emitido',
                             numero: finalNro,
-                            factusNumero: finalNro,
-                            factusCufe: cufe,
-                            factusQr: qr,
-                            factusPdfUrl: pdfUrl,
-                            factusResponse: result?.data || result || null,
+                            detalles: updatedDet,
                         })
                         .eq('id', invData.id);
                 }
@@ -612,12 +957,15 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             const newItems = planItems.map(it => ({
                 id: Math.random().toString(36).substr(2, 9),
                 code: it.codigo || it.code || "",
+                codigo: it.codigo || it.code || "",
+                codigo_cups: it.codigo || it.code || it.codigo_cups || "",
                 desc: it.nombre || it.desc || "",
                 amount: Number(it.valor_unit || it.precio || it.amount || 0),
                 qty: Number(it.cantidad || it.qty || 1),
                 descuento: Number(it.descuento || 0),
                 dientes: it.dientes || "",
                 line_obs: it.observaciones || it.line_obs || "",
+                es_consulta: Boolean(it.es_consulta),
                 permite_descuento: it.permite_descuento !== undefined ? it.permite_descuento : true,
                 max_desc: it.max_desc !== undefined ? Number(it.max_desc) : 100
             }));
@@ -1296,216 +1644,332 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     </div>
                     <div className="bg-white rounded-3xl shadow-[0_10px_30px_rgba(0,0,0,0.02)] border border-slate-100 overflow-hidden">
                         
-                        {/* Header Table Stylized */}
-                        <div className="bg-slate-50/50 px-6 py-4 flex items-center justify-between border-b border-slate-100">
-                             <div className="flex items-center gap-2">
-                                  <div className="w-7 h-7 bg-white border border-slate-200 rounded-lg flex items-center justify-center text-slate-400">
-                                      <FiFileText size={14} />
+                        {/* Header Table Stylized - Barra superior estilo OralDrive */}
+                        <div className="bg-slate-50/70 px-6 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100">
+                             <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 bg-sky-50 border border-sky-100 rounded-xl flex items-center justify-center text-sky-600 shadow-xs">
+                                      <FiFileText size={15} />
                                   </div>
-                                  <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">Detalle de Procedimientos & Costos</h5>
+                                  <div>
+                                      <h5 className="text-[11px] font-black text-slate-700 uppercase tracking-widest leading-tight">
+                                          {title || "Detalle de Procedimientos & Costos"}
+                                      </h5>
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                                          {items.length} {items.length === 1 ? 'procedimiento' : 'procedimientos'}{selectedForRealizar.size > 0 ? ` · ${selectedForRealizar.size} seleccionado(s) para realizar` : ''}
+                                      </p>
+                                  </div>
+                             </div>
+
+                             {/* Botones de acción estilo OralDrive */}
+                             <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                      type="button"
+                                      onClick={handleRealizarAction}
+                                      className={`px-4 py-2 rounded-full font-black text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer ${
+                                          selectedForRealizar.size > 0
+                                              ? 'bg-[#00a8e8] hover:bg-[#0092c9] text-white shadow-sky-500/25 ring-2 ring-sky-300 ring-offset-1 animate-pulse'
+                                              : 'bg-[#00a8e8] hover:bg-[#0092c9] text-white'
+                                      }`}
+                                      title={selectedForRealizar.size > 0 ? `Realizar ${selectedForRealizar.size} procedimiento(s) seleccionado(s)` : 'Seleccione uno o más procedimientos (✓) para realizar'}
+                                  >
+                                      <FiCheck size={14} strokeWidth={3} /> Realizar
+                                  </button>
+
+                                  <button
+                                      type="button"
+                                      onClick={() => setShowProcedureModal(true)}
+                                      className="px-4 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                                      title="Agregar nuevos procedimientos al plan"
+                                  >
+                                      <FiPlus size={14} strokeWidth={3} /> Agregar items
+                                  </button>
+
+                                  <button
+                                      type="button"
+                                      onClick={handleOpenOdontoModal}
+                                      className="px-4 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-full font-black text-[11px] uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                                      title="Ver hallazgos del odontograma actual"
+                                  >
+                                      <FiEye size={14} strokeWidth={2.5} /> Odonto. Actual
+                                  </button>
                              </div>
                         </div>
 
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="bg-white border-b border-slate-50">
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest w-8 text-center">#</th>
-                                    <th className="px-2 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest w-8 text-center"></th>
-                                    <th className="px-2 py-3 w-8 text-center relative group/th cursor-help">
-                                        <div className="w-5 h-5 mx-auto rounded border-2 border-slate-200 bg-white flex items-center justify-center">
-                                            <FiFileText size={10} className="text-slate-300" />
-                                        </div>
-                                        {/* Tooltip estilo OralDrive */}
-                                        <div className="hidden group-hover/th:block absolute top-full left-0 mt-1 z-50 w-56 bg-slate-800 text-white text-[10px] font-bold rounded-xl p-3 shadow-xl leading-relaxed">
-                                            <span className="text-yellow-300">Seleccionar para facturar:</span> Puede seleccionar ítems que hayan sido realizados o aún no hayan sido facturados en su totalidad.
-                                        </div>
-                                    </th>
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest">Procedimiento</th>
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest text-center w-20">Dientes</th>
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest text-center w-24">Realizado</th>
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest text-center w-14">Cant.</th>
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest text-right w-28">Valor Unit.</th>
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest text-right w-24">Desc.</th>
-                                    <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest text-right w-28">Sub</th>
-                                    <th className="px-3 py-3 w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {items.map((item, index) => {
-                                    const itemStatus = getItemStatus(item);
-                                    const totalCost = (Number(item.amount || 0) * Number(item.qty || 1)) - Number(item.descuento || 0);
-                                    const paidAmt = paidMap[item.id] || 0;
-                                    const debtAmt = Math.max(0, totalCost - paidAmt);
-                                    const realizedDate = getItemRealizedDate(item.id);
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="bg-white border-b border-slate-100">
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest w-8 text-center">#</th>
+                                        {/* Status dot (?) */}
+                                        <th className="px-2 py-3 text-[9px] font-black text-slate-300 uppercase tracking-widest w-7 text-center cursor-help" title="Estado del procedimiento">?</th>
+                                        {/* Columna Realizar (✓) estilo OralDrive */}
+                                        <th className="px-2 py-3 text-[12px] font-black text-sky-500 uppercase tracking-widest w-8 text-center" title="Seleccionar para realizar">
+                                            ✓
+                                        </th>
+                                        {/* Columna Facturar (📄$) */}
+                                        <th className="px-2 py-3 w-8 text-center relative group/th cursor-help">
+                                            <div className="w-5 h-5 mx-auto rounded border-2 border-slate-200 bg-white flex items-center justify-center">
+                                                <FiFileText size={10} className="text-slate-300" />
+                                            </div>
+                                            {/* Tooltip estilo OralDrive */}
+                                            <div className="hidden group-hover/th:block absolute top-full left-0 mt-1 z-50 w-56 bg-slate-800 text-white text-[10px] font-bold rounded-xl p-3 shadow-xl leading-relaxed">
+                                                <span className="text-yellow-300">Seleccionar para facturar:</span> Puede seleccionar ítems que hayan sido realizados o aún no hayan sido facturados en su totalidad.
+                                            </div>
+                                        </th>
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">Acciones clínicas</th>
+                                        <th className="px-2 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center w-12">Ct.</th>
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center w-20">Dientes</th>
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center w-24">Realizado</th>
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center w-28">Observa...</th>
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right w-24">Valor unitario</th>
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right w-20">Descuento</th>
+                                        <th className="px-3 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right w-24">Total</th>
+                                        <th className="px-3 py-3 w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {items.map((item, index) => {
+                                        const itemStatus = getItemStatus(item);
+                                        const totalCost = (Number(item.amount || 0) * Number(item.qty || 1)) - Number(item.descuento || 0);
+                                        const paidAmt = paidMap[item.id] || 0;
+                                        const debtAmt = Math.max(0, totalCost - paidAmt);
+                                        const realizedDate = getItemRealizedDate(item.id);
+                                        const isRealized = isItemRealized(item.id);
+                                        const isConsulta = isItemConsulta(item);
 
-                                    const statusConfig = {
-                                        none:    { color: 'bg-slate-200',    ring: 'ring-slate-300',    label: 'Sin realizar',            tooltip: 'Este procedimiento aún no ha sido realizado.' },
-                                        debt:    { color: 'bg-rose-500',     ring: 'ring-rose-300',     label: 'Realizado · Sin pagar',   tooltip: `Realizado${realizedDate ? ' el ' + realizedDate : ''} · Deuda total: $${totalCost.toLocaleString('es-CO')}` },
-                                        partial: { color: 'bg-amber-400',    ring: 'ring-amber-300',    label: 'Realizado · Abono parcial', tooltip: `Realizado${realizedDate ? ' el ' + realizedDate : ''} · Abonado: $${paidAmt.toLocaleString('es-CO')} / $${totalCost.toLocaleString('es-CO')} · Saldo: $${debtAmt.toLocaleString('es-CO')}` },
-                                        paid:    { color: 'bg-emerald-500',  ring: 'ring-emerald-300',  label: 'Realizado · Pagado',       tooltip: `Realizado${realizedDate ? ' el ' + realizedDate : ''} · Pagado en su totalidad` },
-                                    };
-                                    const sc = statusConfig[itemStatus];
+                                        const statusConfig = {
+                                            none:    { color: 'bg-slate-300',    ring: 'ring-slate-200',    label: 'Sin realizar',            tooltip: 'Sin realizar y sin pagar' },
+                                            debt:    { color: 'bg-rose-500',     ring: 'ring-rose-300',     label: 'Realizado · Con deuda',   tooltip: `Realizado · Con deuda: $${debtAmt.toLocaleString('es-CO')}` },
+                                            partial: { color: 'bg-amber-400',    ring: 'ring-amber-300',    label: 'Abono parcial',           tooltip: `Abonado: $${paidAmt.toLocaleString('es-CO')} · Saldo: $${debtAmt.toLocaleString('es-CO')}` },
+                                            paid:    { color: 'bg-emerald-500',  ring: 'ring-emerald-300',  label: 'Totalmente pagado',       tooltip: `Totalmente pagado ($${totalCost.toLocaleString('es-CO')})` },
+                                        };
+                                        const sc = statusConfig[itemStatus] || statusConfig.none;
 
-                                    return (
-                                    <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors border-b border-slate-50">
-                                        {/* # */}
-                                        <td className="px-3 py-2.5 text-[10px] font-black text-slate-300 text-center">{index + 1}</td>
-                                        {/* Status dot */}
-                                        <td className="px-2 py-2.5 text-center">
-                                            <div
-                                                className={`w-3.5 h-3.5 rounded-full mx-auto ${sc.color} ${itemStatus === 'debt' ? 'animate-pulse' : ''} ring-2 ${sc.ring} ring-offset-1 cursor-help`}
-                                                title={sc.tooltip}
-                                            />
-                                        </td>
-                                        {/* Checkbox seleccionar para facturar */}
-                                        <td className="px-2 py-2.5 text-center">
-                                            {(() => {
-                                                const realized = isItemRealized(item.id);
-                                                // Bloqueado si ya tiene factura emitida (independiente de pagos)
-                                                const yaFacturado = item.facturado === true;
+                                        return (
+                                        <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors border-b border-slate-50">
+                                            {/* # */}
+                                            <td className="px-3 py-2.5 text-[10px] font-black text-slate-300 text-center">{index + 1}</td>
+                                            
+                                            {/* Status dot (semáforo) */}
+                                            <td className="px-2 py-2.5 text-center">
+                                                <div
+                                                    className={`w-3.5 h-3.5 rounded-full mx-auto ${sc.color} ${itemStatus === 'debt' ? 'animate-pulse' : ''} ring-2 ${sc.ring} ring-offset-1 cursor-help`}
+                                                    title={sc.tooltip}
+                                                />
+                                            </td>
 
-                                                if (!realized) {
-                                                    // No realizado: espacio vacío
-                                                    return <span className="w-6 h-6 block mx-auto" />;
-                                                }
-                                                if (yaFacturado) {
-                                                    // Ya tiene factura: grayed-out bloqueado (igual a OralDrive)
-                                                    return (
-                                                        <span
-                                                            title="Ya tiene factura electrónica emitida"
-                                                            className="w-6 h-6 rounded border-2 border-slate-200 bg-slate-100 flex items-center justify-center mx-auto text-slate-300 cursor-not-allowed"
-                                                        >
-                                                            <FiCheck size={11} strokeWidth={3} />
-                                                        </span>
-                                                    );
-                                                }
-                                                // Realizado y sin factura: se puede seleccionar
-                                                return (
+                                            {/* Columna Realizar (✓) estilo OralDrive */}
+                                            <td className="px-2 py-2.5 text-center">
+                                                {isRealized ? (
+                                                    <div
+                                                        title={`Procedimiento ya realizado${realizedDate ? ':\n' + realizedDate : ''}`}
+                                                        className="w-5 h-5 rounded border border-slate-300 bg-slate-200 text-slate-600 flex items-center justify-center mx-auto shadow-inner cursor-default"
+                                                    >
+                                                        <FiCheck size={11} strokeWidth={3} />
+                                                    </div>
+                                                ) : (
                                                     <button
-                                                        onClick={() => toggleInvoiceSelection(item.id)}
-                                                        title={`Seleccionar para facturar — Valor: $${totalCost.toLocaleString('es-CO')}`}
-                                                        className={`w-6 h-6 rounded border-2 flex items-center justify-center mx-auto transition-all ${
-                                                            selectedForInvoice.has(item.id)
-                                                                ? 'bg-indigo-500 border-indigo-500 text-white'
-                                                                : 'bg-white border-slate-300 text-transparent hover:border-indigo-400 hover:text-indigo-400'
+                                                        type="button"
+                                                        onClick={() => toggleRealizarSelection(item.id)}
+                                                        title={selectedForRealizar.has(item.id) ? "Deseleccionar de realizar" : (isConsulta ? "Seleccionar consulta para asociar y marcar realizada" : "Seleccionar procedimiento para realizar")}
+                                                        className={`w-5 h-5 rounded border-2 flex items-center justify-center mx-auto transition-all cursor-pointer ${
+                                                            selectedForRealizar.has(item.id)
+                                                                ? 'bg-[#00a8e8] border-[#00a8e8] text-white shadow-xs'
+                                                                : 'bg-white border-slate-300 hover:border-sky-400 text-transparent'
                                                         }`}
                                                     >
                                                         <FiCheck size={11} strokeWidth={3} />
                                                     </button>
-                                                );
-                                            })()}
-                                        </td>
-                                        {/* Descripción del procedimiento */}
-                                        <td className="px-3 py-2.5 align-middle">
-                                            <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-tight">
-                                                {item.desc}
-                                            </div>
-                                        </td>
-                                        {/* Dientes */}
-                                        <td className="px-3 py-2.5 align-middle text-center">
-                                            <div className="flex items-center justify-center gap-1">
+                                                )}
+                                            </td>
+
+                                            {/* Checkbox seleccionar para facturar */}
+                                            <td className="px-2 py-2.5 text-center">
+                                                {(() => {
+                                                    // Bloqueado si ya tiene factura emitida (independiente de pagos)
+                                                    const yaFacturado = item.facturado === true;
+
+                                                    if (!isRealized) {
+                                                        // No realizado: espacio vacío
+                                                        return <span className="w-5 h-5 block mx-auto" />;
+                                                    }
+                                                    if (yaFacturado) {
+                                                        // Ya tiene factura: grayed-out bloqueado (igual a OralDrive)
+                                                        return (
+                                                            <span
+                                                                title="Ya tiene factura electrónica emitida"
+                                                                className="w-5 h-5 rounded border-2 border-slate-200 bg-slate-100 flex items-center justify-center mx-auto text-slate-300 cursor-not-allowed"
+                                                            >
+                                                                <FiCheck size={10} strokeWidth={3} />
+                                                            </span>
+                                                        );
+                                                    }
+                                                    // Realizado y sin factura: se puede seleccionar
+                                                    return (
+                                                        <button
+                                                            onClick={() => toggleInvoiceSelection(item.id)}
+                                                            title={`Seleccionar para facturar — Valor: $${totalCost.toLocaleString('es-CO')}`}
+                                                            className={`w-5 h-5 rounded border-2 flex items-center justify-center mx-auto transition-all cursor-pointer ${
+                                                                selectedForInvoice.has(item.id)
+                                                                    ? 'bg-indigo-500 border-indigo-500 text-white'
+                                                                    : 'bg-white border-slate-300 text-transparent hover:border-indigo-400 hover:text-indigo-400'
+                                                            }`}
+                                                        >
+                                                            <FiCheck size={10} strokeWidth={3} />
+                                                        </button>
+                                                    );
+                                                })()}
+                                            </td>
+
+                                            {/* Acciones clínicas (Descripción + badges) */}
+                                            <td className="px-3 py-2.5 align-middle">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight leading-tight">
+                                                        {item.desc || item.nombre}
+                                                    </span>
+                                                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                                        {isConsulta && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-sky-50 text-sky-700 border border-sky-200">
+                                                                Consulta {item.codigo_cups ? `· ${item.codigo_cups}` : (item.code ? `· ${item.code}` : '')}
+                                                            </span>
+                                                        )}
+                                                        {item.asocConsultaId && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200" title={`Asociada a Doc. Clínico el ${item.asocConsultaFecha || ''}`}>
+                                                                ✓ Doc. Clínico Vinculado
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            {/* Ct. (Cantidad) */}
+                                            <td className="px-2 py-2.5 align-middle text-center">
+                                                <input
+                                                    type="number"
+                                                    disabled={paidMap[item.id] > 0 || isRealized}
+                                                    className="w-11 h-8 text-center bg-slate-50 border border-slate-100 rounded outline-none focus:bg-white font-black text-slate-700 text-xs transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                                                    value={item.qty}
+                                                    onChange={(e) => updateItem(item.id, 'qty', Number(e.target.value))}
+                                                    min="1"
+                                                />
+                                            </td>
+
+                                            {/* Dientes */}
+                                            <td className="px-3 py-2.5 align-middle text-center">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <input
+                                                        type="text"
+                                                        disabled={paidMap[item.id] > 0 || isRealized}
+                                                        className="w-14 h-8 text-center bg-slate-50 border border-slate-100 rounded outline-none focus:bg-white font-black text-slate-500 text-[10px] transition-all uppercase disabled:opacity-75 disabled:cursor-not-allowed"
+                                                        value={item.dientes || ""}
+                                                        onChange={(e) => updateItem(item.id, 'dientes', e.target.value)}
+                                                    />
+                                                    {paidMap[item.id] === 0 && !isRealized && (
+                                                        <button
+                                                            onClick={() => openToothSelector(item)}
+                                                            className="text-indigo-400 hover:text-indigo-600 transition-colors"
+                                                            title="Seleccionar piezas dentales"
+                                                        >
+                                                            <FiPlusCircle size={13} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+
+                                            {/* Realizado (Fecha y hora estilo OralDrive) */}
+                                            <td className="px-3 py-2.5 align-middle text-center">
+                                                {realizedDate ? (
+                                                    <span className="text-[9px] font-bold text-slate-700 leading-tight block whitespace-pre-line text-center">
+                                                        {realizedDate}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] text-slate-200 font-bold">—</span>
+                                                )}
+                                            </td>
+
+                                            {/* Observaciones por fila */}
+                                            <td className="px-3 py-2.5 align-middle text-center">
                                                 <input
                                                     type="text"
-                                                    disabled={paidMap[item.id] > 0}
-                                                    className="w-14 h-8 text-center bg-slate-50 border border-slate-100 rounded outline-none focus:bg-white font-black text-slate-500 text-[10px] transition-all uppercase disabled:opacity-75 disabled:cursor-not-allowed"
-                                                    value={item.dientes || ""}
-                                                    onChange={(e) => updateItem(item.id, 'dientes', e.target.value)}
+                                                    disabled={isRealized}
+                                                    placeholder="-"
+                                                    className="w-24 h-8 text-center bg-slate-50 border border-slate-100 rounded outline-none focus:bg-white font-medium text-slate-600 text-[10px] transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                                                    value={item.line_obs || ""}
+                                                    onChange={(e) => updateItem(item.id, 'line_obs', e.target.value)}
                                                 />
-                                                {paidMap[item.id] === 0 && (
-                                                    <button
-                                                        onClick={() => openToothSelector(item)}
-                                                        className="text-indigo-400 hover:text-indigo-600 transition-colors"
-                                                    >
-                                                        <FiPlusCircle size={13} />
-                                                    </button>
+                                            </td>
+
+                                            {/* Valor unitario */}
+                                            <td className="px-3 py-2.5 align-middle text-right font-black font-mono text-slate-700 text-xs">
+                                                {paidMap[item.id] > 0 || isRealized ? (
+                                                    <span>$ {Number(item.amount || 0).toLocaleString('es-CO')}</span>
+                                                ) : (
+                                                    <div className="flex items-center justify-end gap-1 bg-slate-50 px-2 h-8 rounded border border-slate-100 w-24 ml-auto font-sans">
+                                                        <span className="text-slate-300 text-[10px] font-bold">$</span>
+                                                        <input
+                                                            type="text"
+                                                            className="w-full bg-transparent text-right outline-none font-black text-slate-700 text-[11px]"
+                                                            value={Number(item.amount || 0) === 0 ? "" : Number(item.amount || 0).toLocaleString('es-CO')}
+                                                            onChange={(e) => {
+                                                                const cleanVal = e.target.value.replace(/\D/g, '');
+                                                                updateItem(item.id, 'amount', cleanVal ? Number(cleanVal) : 0);
+                                                            }}
+                                                        />
+                                                    </div>
                                                 )}
-                                            </div>
-                                        </td>
-                                        {/* Fecha realizado */}
-                                        <td className="px-3 py-2.5 align-middle text-center">
-                                            {realizedDate ? (
-                                                <span className="text-[9px] font-bold text-emerald-600 leading-none">{realizedDate}</span>
-                                            ) : (
-                                                <span className="text-[9px] text-slate-200 font-bold">—</span>
-                                            )}
-                                        </td>
-                                        {/* Cantidad */}
-                                        <td className="px-3 py-2.5 align-middle text-center">
-                                            <input
-                                                type="number"
-                                                disabled={paidMap[item.id] > 0}
-                                                className="w-11 h-8 text-center bg-slate-50 border border-slate-100 rounded outline-none focus:bg-white font-black text-slate-700 text-xs transition-all disabled:opacity-75 disabled:cursor-not-allowed"
-                                                value={item.qty}
-                                                onChange={(e) => updateItem(item.id, 'qty', Number(e.target.value))}
-                                                min="1"
-                                            />
-                                        </td>
-                                        {/* Valor unitario */}
-                                        <td className="px-3 py-2.5 align-middle text-right font-black font-mono text-slate-700 text-xs">
-                                            {paidMap[item.id] > 0 ? (
-                                                <span>$ {Number(item.amount || 0).toLocaleString('es-CO')}</span>
-                                            ) : (
-                                                <div className="flex items-center justify-end gap-1 bg-slate-50 px-2 h-8 rounded border border-slate-100 w-24 ml-auto font-sans">
-                                                    <span className="text-slate-300 text-[10px] font-bold">$</span>
-                                                    <input
-                                                        type="text"
-                                                        className="w-full bg-transparent text-right outline-none font-black text-slate-700 text-[11px]"
-                                                        value={Number(item.amount || 0) === 0 ? "" : Number(item.amount || 0).toLocaleString('es-CO')}
-                                                        onChange={(e) => {
-                                                            const cleanVal = e.target.value.replace(/\D/g, '');
-                                                            updateItem(item.id, 'amount', cleanVal ? Number(cleanVal) : 0);
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                        </td>
-                                        {/* Descuento */}
-                                        <td className="px-3 py-2.5 align-middle text-right font-black font-mono text-rose-500 text-xs">
-                                            {(paidMap[item.id] > 0 || isItemRealized(item.id)) ? (
-                                                <span>$ {Number(item.descuento || 0).toLocaleString('es-CO')}</span>
-                                            ) : (
-                                                <div className="flex items-center justify-end gap-1 bg-rose-50 px-2 h-8 rounded border border-rose-100 w-20 ml-auto font-sans">
-                                                    <span className="text-rose-300 text-[10px] font-bold">$</span>
-                                                    <input
-                                                        type="text"
-                                                        className="w-full bg-transparent text-right outline-none font-black text-rose-500 text-[11px]"
-                                                        value={Number(item.descuento || 0) === 0 ? "0" : Number(item.descuento || 0).toLocaleString('es-CO')}
-                                                        onChange={(e) => {
-                                                            const cleanVal = e.target.value.replace(/\D/g, '');
-                                                            updateItem(item.id, 'descuento', cleanVal ? Number(cleanVal) : 0);
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                        </td>
-                                        {/* Subtotal fila */}
-                                        <td className="px-3 py-2.5 align-middle text-right font-black text-[12px] text-slate-700 font-mono">
-                                            <span className="text-[10px] font-bold text-slate-300 mr-0.5">$</span>
-                                            {((item.qty * item.amount) - (item.descuento || 0)).toLocaleString('es-CO')}
-                                        </td>
-                                        {/* Acciones (eliminar) */}
-                                        <td className="px-3 py-2.5 align-middle text-center">
-                                            {isItemRealized(item.id) ? (
-                                                <div
-                                                    title="No se puede eliminar: procedimiento ya realizado"
-                                                    className="w-7 h-7 rounded flex items-center justify-center text-slate-200 cursor-not-allowed opacity-60 group-hover:opacity-100 mx-auto"
-                                                >
-                                                    <FiTrash2 size={14} />
-                                                </div>
-                                            ) : paidMap[item.id] === 0 ? (
-                                                <button
-                                                    onClick={() => removeItem(item.id)}
-                                                    className="w-7 h-7 rounded flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover:opacity-100 mx-auto"
-                                                >
-                                                    <FiTrash2 size={14} />
-                                                </button>
-                                            ) : null}
-                                        </td>
-                                    </tr>
-                                    );
-                                })}
-                        </tbody>
-                    </table>
+                                            </td>
+
+                                            {/* Descuento */}
+                                            <td className="px-3 py-2.5 align-middle text-right font-black font-mono text-rose-500 text-xs">
+                                                {(paidMap[item.id] > 0 || isRealized) ? (
+                                                    <span>$ {Number(item.descuento || 0).toLocaleString('es-CO')}</span>
+                                                ) : (
+                                                    <div className="flex items-center justify-end gap-1 bg-rose-50 px-2 h-8 rounded border border-rose-100 w-20 ml-auto font-sans">
+                                                        <span className="text-rose-300 text-[10px] font-bold">$</span>
+                                                        <input
+                                                            type="text"
+                                                            className="w-full bg-transparent text-right outline-none font-black text-rose-500 text-[11px]"
+                                                            value={Number(item.descuento || 0) === 0 ? "0" : Number(item.descuento || 0).toLocaleString('es-CO')}
+                                                            onChange={(e) => {
+                                                                const cleanVal = e.target.value.replace(/\D/g, '');
+                                                                updateItem(item.id, 'descuento', cleanVal ? Number(cleanVal) : 0);
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </td>
+
+                                            {/* Subtotal / Total fila */}
+                                            <td className="px-3 py-2.5 align-middle text-right font-black text-[12px] text-slate-700 font-mono">
+                                                <span className="text-[10px] font-bold text-slate-300 mr-0.5">$</span>
+                                                {((item.qty * item.amount) - (item.descuento || 0)).toLocaleString('es-CO')}
+                                            </td>
+
+                                            {/* Acciones (eliminar) */}
+                                            <td className="px-3 py-2.5 align-middle text-center">
+                                                {isRealized ? (
+                                                    <div
+                                                        title="No se puede eliminar: procedimiento ya realizado"
+                                                        className="w-7 h-7 rounded flex items-center justify-center text-slate-200 cursor-not-allowed opacity-60 group-hover:opacity-100 mx-auto"
+                                                    >
+                                                        <FiTrash2 size={14} />
+                                                    </div>
+                                                ) : paidMap[item.id] === 0 ? (
+                                                    <button
+                                                        onClick={() => removeItem(item.id)}
+                                                        className="w-7 h-7 rounded flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover:opacity-100 mx-auto cursor-pointer"
+                                                        title="Eliminar procedimiento"
+                                                    >
+                                                        <FiTrash2 size={14} />
+                                                    </button>
+                                                ) : null}
+                                            </td>
+                                        </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
 
                     {/* Add Button */}
                     <div className="p-6 border-t border-slate-100 bg-slate-50/20 flex flex-col md:flex-row gap-4">
@@ -1825,6 +2289,237 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Modal de Evolución Clínica (para procedimientos no-consulta) */}
+            {showEvolutionModal && (
+                <EvolutionModal
+                    isOpen={showEvolutionModal}
+                    onClose={() => {
+                        setShowEvolutionModal(false);
+                        setEvolutionInitialData(null);
+                    }}
+                    onSave={handleEvolutionSaved}
+                    patient={patient}
+                    initialData={evolutionInitialData}
+                />
+            )}
+
+            {/* Modal: Asociar Consulta Médica con Doc. Clínicos (estilo OralDrive) */}
+            {showAsocConsultaModal && targetConsultaItem && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[85vh] animate-in zoom-in-95">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-sky-50 border border-sky-200 text-sky-600 flex items-center justify-center shadow-xs">
+                                    <FiCheck size={16} strokeWidth={3} />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+                                        Asociar Consulta Médica (Doc. Clínicos)
+                                    </h4>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                        Procedimiento del plan: <span className="text-sky-600">{targetConsultaItem.desc}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowAsocConsultaModal(false);
+                                    setTargetConsultaItem(null);
+                                }}
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-all cursor-pointer"
+                            >
+                                <FiX size={16} />
+                            </button>
+                        </div>
+
+                        {/* Banner explicativo y de CUPS */}
+                        <div className="px-6 py-3 bg-sky-50/60 border-b border-sky-100/80 flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sky-500 font-bold">ℹ️</span>
+                                <span className="text-slate-600 text-[11px] font-medium">
+                                    Para marcar como realizada esta consulta, selecciónela de las registradas en <strong>Doc. Clínicos</strong>.
+                                </span>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white text-sky-700 border border-sky-200 shadow-xs shrink-0">
+                                CUPS: {targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201'}
+                            </span>
+                        </div>
+
+                        {/* List of Consultations */}
+                        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                            {loadingConsultas ? (
+                                <div className="py-12 text-center text-slate-400 font-bold uppercase text-xs tracking-widest animate-pulse flex flex-col items-center gap-2">
+                                    <FiLoader size={20} className="animate-spin text-sky-500" />
+                                    <span>Cargando consultas de Doc. Clínicos...</span>
+                                </div>
+                            ) : consultasList.length === 0 ? (
+                                <div className="py-10 text-center space-y-3">
+                                    <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-500 border border-amber-200 flex items-center justify-center mx-auto text-xl">
+                                        📋
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-black text-slate-700 uppercase tracking-wide">
+                                            No se encontraron consultas registradas
+                                        </p>
+                                        <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                                            Este paciente aún no tiene consultas médicas registradas en Doc. Clínicos. Puede registrarla directamente con el botón de abajo.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setNewConsultaInitialData({
+                                                cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                                codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                                motivoConsulta: targetConsultaItem.desc || ''
+                                            });
+                                            setShowNewConsultaModal(true);
+                                        }}
+                                        className="px-5 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all active:scale-95 inline-flex items-center gap-2 cursor-pointer"
+                                    >
+                                        <FiPlus size={14} strokeWidth={3} /> Crear Consulta en Doc. Clínicos
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between pb-1">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                            Consultas disponibles en Doc. Clínicos ({consultasList.length})
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setNewConsultaInitialData({
+                                                    cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                                    codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                                    motivoConsulta: targetConsultaItem.desc || ''
+                                                });
+                                                setShowNewConsultaModal(true);
+                                            }}
+                                            className="text-[10px] font-black uppercase tracking-wider text-[#8CC63F] hover:underline flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <FiPlus size={12} strokeWidth={3} /> Nueva Consulta
+                                        </button>
+                                    </div>
+
+                                    <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                                        <table className="w-full text-left text-xs">
+                                            <thead>
+                                                <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                                    <th className="px-4 py-3">Fecha</th>
+                                                    <th className="px-4 py-3">Profesional</th>
+                                                    <th className="px-4 py-3">Código CUPS</th>
+                                                    <th className="px-4 py-3">Diagnóstico / Motivo</th>
+                                                    <th className="px-4 py-3 text-right">Acción</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {consultasList.map(c => {
+                                                    const targetCups = String(targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201').trim();
+                                                    const consultaCupsVal = String(c.cups || c.codigo_cups || c.codigoCups || c.metadata?.cups || c.metadata?.codigo_cups || '890201').trim();
+                                                    const cupsMatch = targetCups === consultaCupsVal;
+                                                    const dateStr = c.fechaIso || c.created_at || c.date;
+                                                    let displayDate = '-';
+                                                    try {
+                                                        const d = new Date(dateStr);
+                                                        if (!isNaN(d.getTime())) {
+                                                            displayDate = d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                                                        }
+                                                    } catch {}
+
+                                                    const doctorStr = c.profesional || c.doctor || c.metadata?.profesional || c.metadata?.profesionalNombre || c.transcribe || 'Odontólogo';
+                                                    const diagStr = c.diagnostico || c.motivoConsulta || c.metadata?.motivoConsulta || c.metadata?.diagnostico || c.titulo || 'Consulta Odontológica';
+
+                                                    return (
+                                                        <tr key={c.id} className={`hover:bg-slate-50/70 transition-colors ${cupsMatch ? 'bg-sky-50/30' : ''}`}>
+                                                            <td className="px-4 py-3 font-bold text-slate-700 whitespace-nowrap">
+                                                                {displayDate}
+                                                            </td>
+                                                            <td className="px-4 py-3 font-semibold text-slate-600 uppercase text-[11px]">
+                                                                {doctorStr}
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                                                    cupsMatch 
+                                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                                                                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                                                }`}>
+                                                                    {consultaCupsVal} {cupsMatch ? '✓ Coincide' : ''}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3 font-medium text-slate-600 max-w-xs truncate text-[11px]" title={diagStr}>
+                                                                {diagStr}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleAssociateConsulta(c)}
+                                                                    className="px-3 py-1.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer inline-flex items-center gap-1"
+                                                                    title="Asociar consulta y marcar procedimiento como realizado"
+                                                                >
+                                                                    <FiCheck size={12} strokeWidth={3} /> Asociar
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setNewConsultaInitialData({
+                                        cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                        codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                        motivoConsulta: targetConsultaItem.desc || ''
+                                    });
+                                    setShowNewConsultaModal(true);
+                                }}
+                                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <FiPlus size={13} strokeWidth={3} /> + Registrar Nueva Consulta en Doc. Clínicos
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowAsocConsultaModal(false);
+                                    setTargetConsultaItem(null);
+                                }}
+                                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal para Crear Nueva Consulta en Doc. Clínicos */}
+            {showNewConsultaModal && (
+                <DocClinicoModal
+                    isOpen={showNewConsultaModal}
+                    onClose={() => {
+                        setShowNewConsultaModal(false);
+                        setNewConsultaInitialData(null);
+                        // Refresh consultations when closing
+                        if (targetConsultaItem) {
+                            openAsocConsultaModal(targetConsultaItem);
+                        }
+                    }}
+                    patient={patient}
+                    docType="Consulta"
+                    initialData={newConsultaInitialData}
+                />
             )}
         </div>
     );

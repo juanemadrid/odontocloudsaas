@@ -171,7 +171,9 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
 
         const newItem = {
             id: Math.random().toString(36).substr(2, 9),
-            code: proc.codigo || "",
+            code: proc.codigo || proc.code || "",
+            codigo: proc.codigo || proc.code || "",
+            codigo_cups: proc.codigo || proc.code || proc.codigo_cups || "",
             desc: proc.nombre,
             amount: proc.precio || 0,
             qty: qty,
@@ -181,6 +183,7 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
             line_obs: "",
             categoria: proc.categoria,
             // Reglas de negocio
+            es_consulta: Boolean(proc.es_consulta),
             permite_descuento: proc.permite_descuento !== false,
             max_desc: proc.max_descuento_porcentaje || 100
         };

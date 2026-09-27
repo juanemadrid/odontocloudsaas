@@ -5,6 +5,7 @@
  */
 
 import factusService from "./factusService";
+import { normalizeFactusError } from "./factusRetryService";
 
 /**
  * Emit an electronic invoice through Factus → DIAN.
@@ -78,14 +79,21 @@ export const emitirFacturaDian = async (
       timestamp: new Date().toISOString(),
     };
   } catch (error) {
+    const normalized = normalizeFactusError(error);
+    const isTechnical = normalized.category === "TECHNICAL_ERROR";
     return {
       success: false,
-      dianStatus: "RECHAZADA",
+      dianStatus: isTechnical ? "INDETERMINADO" : "RECHAZADA",
       cufe: null,
       qrCode: null,
       factusInvoiceNumber: null,
       factusResponse: null,
-      message: error.message || "Error al emitir la factura electrónica.",
+      errorCategory: normalized.category,
+      errorCode: normalized.code,
+      errorFields: normalized.errorFields,
+      message: normalized.friendlyMessage || error.message || "Error al emitir la factura electrónica.",
+      rawMessage: normalized.rawMessage,
+      technicalError: isTechnical,
       timestamp: new Date().toISOString(),
     };
   }
@@ -100,6 +108,8 @@ export const getDianStatusLabel = (status) => {
       return { label: "DIAN Aceptada", color: "bg-green-100 text-green-700" };
     case "RECHAZADA":
       return { label: "DIAN Rechazada", color: "bg-red-100 text-red-700" };
+    case "INDETERMINADO":
+      return { label: "Indeterminado / Timeout", color: "bg-amber-100 text-amber-800" };
     case "PROCESANDO":
       return { label: "Enviando...", color: "bg-yellow-100 text-yellow-700" };
     case "NO_CONFIGURADA":
