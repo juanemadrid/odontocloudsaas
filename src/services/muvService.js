@@ -545,3 +545,84 @@ export async function getCreditNoteMuvValidation(tenantId, creditNoteId) {
   }
 }
 
+/**
+ * Transmite RIPS Oficial SIN FACTURA ante el MUV (/api/PaquetesFevRips/CargarRipsSinFactura).
+ * Aplica exclusivamente a Profesionales Independientes legalmente no obligados a facturar.
+ * NO requiere ni envía AttachedDocument XML.
+ * 
+ * @param {Object} params
+ * @param {Object} params.ripsJson - JSON normativo con numFactura === null
+ * @param {string} [params.doctorIdOverride] - ID opcional de profesional para credencial SISPRO
+ * @returns {Promise<Object>} Resultado saneado con estado MUV y CUV si es aceptado
+ */
+export async function transmitRipsWithoutFev({ ripsJson, doctorIdOverride }) {
+  if (!ripsJson) {
+    throw new Error("El archivo JSON de RIPS es obligatorio.");
+  }
+  if (ripsJson.numFactura !== null) {
+    throw new Error("Para RIPS sin Factura, el campo numFactura debe ser estrictamente null.");
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke("muv-proxy", {
+      body: {
+        operation: "RIPS_WITHOUT_FEV",
+        ripsJson,
+        doctorIdOverride,
+      },
+    });
+
+    if (error) {
+      let errorDetails = null;
+      try {
+        errorDetails = await error.context?.json();
+      } catch {}
+
+      const errorMessage = errorDetails?.message || error.message || "Error al conectar con MUV sin factura.";
+      return {
+        success: false,
+        estado: "ERROR",
+        isTechnicalError: true,
+        message: errorMessage,
+        errores: [formatMuvError(errorMessage)],
+      };
+    }
+
+    if (data?.success && data?.cuv) {
+      return {
+        success: true,
+        estado: "ACCEPTED",
+        cuv: data.cuv,
+        fechaRadicacion: data.fechaRadicacion,
+        advertencias: data.advertencias || [],
+        errores: [],
+      };
+    }
+
+    if (data?.estado === "REJECTED") {
+      return {
+        success: false,
+        estado: "REJECTED",
+        cuv: null,
+        errores: (data.errores || []).map(formatMuvError),
+        advertencias: data.advertencias || [],
+      };
+    }
+
+    return {
+      success: Boolean(data?.success),
+      estado: data?.estado || "PROCESSED",
+      cuv: data?.cuv || null,
+      message: data?.message || "Respuesta recibida del validador MUV.",
+    };
+  } catch (err) {
+    return {
+      success: false,
+      estado: "ERROR",
+      isTechnicalError: true,
+      message: err.message || "Error al emitir solicitud de validación MUV sin factura.",
+      errores: [formatMuvError(err.message)],
+    };
+  }
+}
+

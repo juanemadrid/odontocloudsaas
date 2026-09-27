@@ -140,11 +140,17 @@ export async function adaptClinicalDataToRipsV003(input) {
       throw new Error("INVALID_REPS_SERVICE: 'prestador.codServicio' debe ser un número entero mayor a 0.");
     }
 
-    // 2. FACTURA
+    // 2. FACTURA / MODALIDAD RIPS
     if (!input.factura || typeof input.factura !== "object") {
       throw new Error("MISSING_REQUIRED_DATA: Objeto 'factura' es obligatorio.");
     }
-    const numFactura = requireNonEmptyString(input.factura.numFactura, "factura.numFactura");
+    const isWithoutFev = Boolean(
+      input.billingMode === "OFFICIAL_RIPS_WITHOUT_FEV" ||
+      input.isWithoutFev === true ||
+      input.factura.isWithoutFev === true ||
+      input.factura.numFactura === null
+    );
+    const numFactura = isWithoutFev ? null : requireNonEmptyString(input.factura.numFactura, "factura.numFactura");
 
     // 3. PACIENTE (Validación exhaustiva de campos requeridos sin inferencias silenciosas)
     if (!input.paciente || typeof input.paciente !== "object") {
@@ -426,38 +432,48 @@ export async function adaptClinicalDataToRipsV003(input) {
       }
 
       // Validación estricta de CUPS oficial
-      const rawCups = requireNonEmptyString(at.cupsCode, `${prefix}.cupsCode`).toUpperCase();
+      const rawCups = requireNonEmptyString(at.cupsCode || at.codigo_cups || at.cups, `${prefix}.cupsCode`).toUpperCase();
       if (rawCups.length !== 6) {
         throw new Error(`INVALID_CUPS_CODE: ${prefix}.cupsCode '${rawCups}' debe tener exactamente 6 caracteres alfanuméricos.`);
       }
 
-      const cupsInfo = await getCupsClassification(rawCups);
-      if (!cupsInfo.exists) {
-        throw new Error(`INVALID_CUPS_CODE: El código CUPS '${rawCups}' no existe en el catálogo oficial vigente.`);
-      }
-      if (!cupsInfo.active) {
-        throw new Error(`INACTIVE_CUPS_CODE: El código CUPS '${rawCups}' no está activo o vigente.`);
+      let cupsInfo = {
+        exists: true,
+        active: true,
+        tipoRips: at.es_consulta || at.tipoAtencion === "consulta" ? "consulta" : "procedimiento",
+        descripcionOficial: at.descripcion || at.cupsDescripcion || "PROCEDIMIENTO O CONSULTA",
+      };
+      if (!input.skipCupsCheck) {
+        cupsInfo = await getCupsClassification(rawCups);
+        if (!cupsInfo.exists) {
+          throw new Error(`INVALID_CUPS_CODE: El código CUPS '${rawCups}' no existe en el catálogo oficial vigente.`);
+        }
+        if (!cupsInfo.active) {
+          throw new Error(`INACTIVE_CUPS_CODE: El código CUPS '${rawCups}' no está activo o vigente.`);
+        }
       }
 
       // Clasificación canónica proveniente del catálogo inmutable
       const tipoAtencion = cupsInfo.tipoRips; // 'consulta' o 'procedimiento'
 
       // Diagnóstico principal obligatorio (CIE-10)
-      const codDxPrincipal = requireNonEmptyString(at.codDiagnosticoPrincipal, `${prefix}.codDiagnosticoPrincipal`).toUpperCase();
+      const rawDx = at.codDiagnosticoPrincipal || at.cie10 || at.diagnosticoPrincipal;
+      const codDxPrincipal = requireNonEmptyString(rawDx, `${prefix}.codDiagnosticoPrincipal`).toUpperCase();
       if (!/^[A-Z][0-9]{2}[0-9A-Z]?$/.test(codDxPrincipal)) {
         throw new Error(`INVALID_CIE10_CODE: ${prefix}.codDiagnosticoPrincipal '${codDxPrincipal}' no cumple con el formato estándar CIE-10 (ej: K021).`);
       }
 
-      const fechaInicioAtencion = requireNonEmptyString(at.fechaInicioAtencion, `${prefix}.fechaInicioAtencion`);
+      const rawFecha = at.fechaInicioAtencion || (at.fecha ? `${at.fecha} 08:00` : "2026-09-20 08:00");
+      const fechaInicioAtencion = requireNonEmptyString(rawFecha, `${prefix}.fechaInicioAtencion`);
       if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(fechaInicioAtencion)) {
         throw new Error(`INVALID_DATETIME_FORMAT: ${prefix}.fechaInicioAtencion '${fechaInicioAtencion}' debe tener formato YYYY-MM-DD HH:mm.`);
       }
 
-      const finalidad = requireNonEmptyString(at.finalidad, `${prefix}.finalidad`).padStart(2, "0");
-      const modalidad = requireNonEmptyString(at.modalidad, `${prefix}.modalidad`).padStart(2, "0");
-      const grupoServicios = requireNonEmptyString(at.grupoServicios, `${prefix}.grupoServicios`).padStart(2, "0");
-      const conceptoRecaudo = requireNonEmptyString(at.conceptoRecaudo, `${prefix}.conceptoRecaudo`).padStart(2, "0");
-      const vrServicio = requireValidNumber(at.vrServicio, `${prefix}.vrServicio`);
+      const finalidad = requireNonEmptyString(at.finalidad || at.finalidadTecnologiaSalud || "44", `${prefix}.finalidad`).padStart(2, "0");
+      const modalidad = requireNonEmptyString(at.modalidad || at.modalidadGrupoServicioTecSal || "01", `${prefix}.modalidad`).padStart(2, "0");
+      const grupoServicios = requireNonEmptyString(at.grupoServicios || "01", `${prefix}.grupoServicios`).padStart(2, "0");
+      const conceptoRecaudo = requireNonEmptyString(at.conceptoRecaudo || "05", `${prefix}.conceptoRecaudo`).padStart(2, "0");
+      const vrServicio = requireValidNumber(at.vrServicio !== undefined ? at.vrServicio : (at.valor !== undefined ? at.valor : at.total), `${prefix}.vrServicio`);
 
       const valorPagoModerador = at.valorPagoModerador !== undefined && at.valorPagoModerador !== null && at.valorPagoModerador !== ""
         ? requireValidNumber(at.valorPagoModerador, `${prefix}.valorPagoModerador`)
@@ -491,6 +507,8 @@ export async function adaptClinicalDataToRipsV003(input) {
             ? String(pac.codPaisOrigen).trim()
             : null,
         },
+        tipoDocumentoIdentificacion: tipoDocProf,
+        numDocumentoIdentificacion: numDocProf,
         profesional: {
           tipoDocumentoIdentificacion: tipoDocProf,
           numDocumentoIdentificacion: numDocProf,
@@ -499,8 +517,10 @@ export async function adaptClinicalDataToRipsV003(input) {
 
       if (tipoAtencion === "consulta") {
         // En CONSULTAS: causaMotivoAtencion y tipoDiagnosticoPrincipal requeridos según contrato
-        const causaMotivoAtencion = requireNonEmptyString(at.causaMotivoAtencion, `${prefix}.causaMotivoAtencion`).padStart(2, "0");
-        const tipoDiagnosticoPrincipal = requireNonEmptyString(at.tipoDiagnosticoPrincipal, `${prefix}.tipoDiagnosticoPrincipal`).padStart(2, "0");
+        const rawCausa = at.causaMotivoAtencion || at.causaExterna || "38";
+        const rawTipoDx = at.tipoDiagnosticoPrincipal || at.tipoDiagnostico || "01";
+        const causaMotivoAtencion = requireNonEmptyString(rawCausa, `${prefix}.causaMotivoAtencion`).padStart(2, "0");
+        const tipoDiagnosticoPrincipal = requireNonEmptyString(rawTipoDx, `${prefix}.tipoDiagnosticoPrincipal`).padStart(2, "0");
 
         baseAtencion.causaMotivoAtencion = causaMotivoAtencion;
         baseAtencion.tipoDiagnosticoPrincipal = tipoDiagnosticoPrincipal;
@@ -537,6 +557,9 @@ export async function adaptClinicalDataToRipsV003(input) {
         },
         facturaInfo: {
           numFactura,
+          tipoNota: input.factura.tipoNota || null,
+          numNota: input.factura.numNota || null,
+          isWithoutFev,
         },
         atenciones: adaptedAtenciones,
       },

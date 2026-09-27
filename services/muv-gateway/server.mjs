@@ -124,12 +124,14 @@ export const MUV_OPERATIONS = {
   FEV_RIPS: 'FEV_RIPS',
   NC_PARTIAL: 'NC_PARTIAL',
   NC_TOTAL: 'NC_TOTAL',
+  RIPS_WITHOUT_FEV: 'RIPS_WITHOUT_FEV',
 };
 
 export const MUV_ENDPOINT_MAPPING = {
   FEV_RIPS: '/api/PaquetesFevRips/CargarFevRips',
   NC_PARTIAL: '/api/PaquetesFevRips/CargarNC',
   NC_TOTAL: '/api/PaquetesFevRips/CargarNCTotal',
+  RIPS_WITHOUT_FEV: '/api/PaquetesFevRips/CargarRipsSinFactura',
 };
 
 /**
@@ -311,6 +313,15 @@ export function createMuvGatewayHandler(options = {}) {
           });
         }
         muvPayload = { rips, xmlFevFile };
+      } else if (operation === MUV_OPERATIONS.RIPS_WITHOUT_FEV) {
+        if (!identidad || !password || !rips) {
+          return sendJson(400, {
+            error: 'MISSING_REQUIRED_FIELDS',
+            message: 'Campos requeridos para RIPS_WITHOUT_FEV: identidad, password, rips.',
+          });
+        }
+        // Para RIPS_WITHOUT_FEV NO se requiere ni se envía xmlFevFile
+        muvPayload = { rips };
       } else {
         // FEV_RIPS
         if (!identidad || !password || !rips || !xmlFevFile) {

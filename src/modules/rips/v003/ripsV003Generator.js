@@ -93,7 +93,14 @@ export async function generateRipsV003({
   if (!prestadorConfig?.codPrestador || String(prestadorConfig.codPrestador).trim().length < 10) {
     throw new Error("El Código REPS de Habilitación del prestador es obligatorio (10 o 12 dígitos) y no puede estar vacío.");
   }
-  if (!facturaInfo?.numFactura) {
+  const isWithoutFev = Boolean(
+    options.billingMode === "OFFICIAL_RIPS_WITHOUT_FEV" || 
+    options.context === "RIPS_WITHOUT_FEV" || 
+    facturaInfo?.isWithoutFev === true ||
+    facturaInfo?.numFactura === null
+  );
+
+  if (!isWithoutFev && !facturaInfo?.numFactura) {
     throw new Error("El número de factura (numFactura) es obligatorio.");
   }
   if (!Array.isArray(atenciones) || atenciones.length === 0) {
@@ -415,14 +422,24 @@ export async function generateRipsV003({
     }
     const explicitCups = atencion.cupsCode.trim().toUpperCase();
 
-    const cupsInfo = await getCupsClassification(explicitCups);
-    if (!cupsInfo.exists) {
-      throw new Error(`El código CUPS '${explicitCups}' no existe en el catálogo oficial vigente.`);
-    }
-    if (!cupsInfo.active) {
-      throw new Error(
-        `El código CUPS '${explicitCups}' (${cupsInfo.descripcionOficial}) está inactivo o no vigente en el catálogo oficial (${cupsInfo.versionCatalogo}).`
-      );
+    let cupsInfo = {
+      exists: true,
+      active: true,
+      descripcionOficial: atencion.cupsDescripcion || "PROCEDIMIENTO O CONSULTA",
+      correspondeBloqueConsultas: atencion.tipoAtencion === "consulta",
+      correspondeBloqueProcedimientos: atencion.tipoAtencion === "procedimiento",
+      tipoRips: atencion.tipoAtencion === "consulta" ? "consulta" : "procedimiento",
+    };
+    if (!options.skipCupsCheck) {
+      cupsInfo = await getCupsClassification(explicitCups);
+      if (!cupsInfo.exists) {
+        throw new Error(`El código CUPS '${explicitCups}' no existe en el catálogo oficial vigente.`);
+      }
+      if (!cupsInfo.active) {
+        throw new Error(
+          `El código CUPS '${explicitCups}' (${cupsInfo.descripcionOficial}) está inactivo o no vigente en el catálogo oficial (${cupsInfo.versionCatalogo}).`
+        );
+      }
     }
 
     // Regla de Fuente de Verdad: La descripción oficial inmutable proviene del catálogo
@@ -514,13 +531,15 @@ export async function generateRipsV003({
         );
       }
 
-      if (!atencion.modalidad || String(atencion.modalidad).trim() === "") {
+      const modalidadVal = atencion.modalidad || atencion.modalidadGrupoServicioTecSal;
+      if (!modalidadVal || String(modalidadVal).trim() === "") {
         throw new Error("modalidad de la consulta es obligatoria.");
       }
       if (!atencion.grupoServicios || String(atencion.grupoServicios).trim() === "") {
         throw new Error("grupoServicios de la consulta es obligatorio.");
       }
-      if (!atencion.finalidad || String(atencion.finalidad).trim() === "") {
+      const finalidadVal = atencion.finalidad || atencion.finalidadTecnologiaSalud;
+      if (!finalidadVal || String(finalidadVal).trim() === "") {
         throw new Error("finalidad de la consulta es obligatoria.");
       }
       if (!atencion.causaMotivoAtencion || String(atencion.causaMotivoAtencion).trim() === "") {
@@ -536,10 +555,10 @@ export async function generateRipsV003({
         fechaInicioAtencion,
         numAutorizacion: cleanOptionalString(atencion.numAutorizacion),
         codConsulta: explicitCups,
-        modalidadGrupoServicioTecSal: String(atencion.modalidad).trim().padStart(2, "0"),
+        modalidadGrupoServicioTecSal: String(modalidadVal).trim().padStart(2, "0"),
         grupoServicios: String(atencion.grupoServicios).trim().padStart(2, "0"),
         codServicio: codServicioNum,
-        finalidadTecnologiaSalud: String(atencion.finalidad).trim().padStart(2, "0"),
+        finalidadTecnologiaSalud: String(finalidadVal).trim().padStart(2, "0"),
         causaMotivoAtencion: String(atencion.causaMotivoAtencion).trim().padStart(2, "0"),
         codDiagnosticoPrincipal: codDxPrincipal,
         codDiagnosticoPrincipalCIE11: codCie11,
@@ -623,14 +642,17 @@ export async function generateRipsV003({
   // 7. Estructurar Objeto Raíz
   const ripsJson = {
     numDocumentoIdObligado: String(prestadorConfig.nit).trim().replace(/[^0-9]/g, ""),
-    numFactura: String(facturaInfo.numFactura).trim(),
-    tipoNota: cleanOptionalString(facturaInfo.tipoNota),
-    numNota: cleanOptionalString(facturaInfo.numNota),
+    numFactura: isWithoutFev ? null : String(facturaInfo.numFactura).trim(),
+    tipoNota: isWithoutFev ? null : cleanOptionalString(facturaInfo?.tipoNota),
+    numNota: isWithoutFev ? null : cleanOptionalString(facturaInfo?.numNota),
     usuarios: Array.from(usuariosMap.values()),
   };
 
   // 8. Validar contra Reglas y Catálogos Oficiales Documento Técnico 1 v003
-  const validation = await validateRipsV003(ripsJson);
+  const validation = await validateRipsV003(ripsJson, {
+    context: isWithoutFev ? "RIPS_WITHOUT_FEV" : "FEV",
+    skipCupsCheck: options.skipCupsCheck,
+  });
 
   // 9. Registro opcional de auditoría en rips_validaciones si el tenant está conectado
   if (options.persistValidation) {

@@ -1,12 +1,8 @@
-/**
- * Adaptador Canónico de Fuentes de Cobro/Facturación para RIPS
- * Normaliza registros provenientes de pagos, recibos_caja, facturas, facturas_electronicas y facturas_venta
- * antes de ingresar al pipeline del Generador RIPS y validador v003.
- *
- * Mantiene estricta separación entre:
- * - OFFICIAL_FEV: Facturas electrónicas con soporte fiscal ante la DIAN
- * - LOCAL_PREVIEW: Recibos de caja y pagos para previsualización clínica interna (NO aptos para MUV)
- */
+import {
+  validateRipsWithoutFevEligibility,
+  validatePayerForRipsWithoutFev,
+  RIPS_MODES,
+} from "../services/ripsProviderProfileService.js";
 
 /**
  * Parsea de forma segura el campo 'notas' que puede venir como objeto, string JSON o null.
@@ -52,13 +48,53 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
 
   const { data: notasData, error: metadataError } = safeParseNotas(record.notas);
 
-  // 1. Identificación del modo de documento (Oficial vs Previsualización Local)
+  // 1. Identificación del modo de documento (OFFICIAL_FEV vs OFFICIAL_RIPS_WITHOUT_FEV vs LOCAL_PREVIEW)
   const isOfficialInvoice = Boolean(
     sourceType === "facturas" ||
     sourceType === "facturas_electronicas" ||
     sourceType === "facturas_venta"
   );
-  const sourceMode = isOfficialInvoice ? "OFFICIAL_FEV" : "LOCAL_PREVIEW";
+
+  let sourceMode = RIPS_MODES.LOCAL_PREVIEW;
+  let isOfficialRips = false;
+  let numFactura = null;
+  let modeEligibilityError = null;
+
+  if (isOfficialInvoice) {
+    sourceMode = RIPS_MODES.OFFICIAL_FEV;
+    isOfficialRips = true;
+    numFactura = record.numeroFactura || record.nroConsecutivo || record.numero || record.consecutivo || null;
+  } else {
+    // Fuentes de cobro locales (pagos / recibos_caja)
+    const requestedMode = context.mode || context.requestedMode || null;
+    const providerContext = context.providerContext || null;
+    const providerProfile = context.providerProfile || providerContext || null;
+    const isWithoutFevRequested = requestedMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV ||
+      context.allowRipsWithoutFev ||
+      providerContext?.ripsMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV;
+
+    if (isWithoutFevRequested) {
+      const eligibility = validateRipsWithoutFevEligibility(providerProfile);
+      const payerCheck = validatePayerForRipsWithoutFev(
+        record.pagador || record.eps || notasData.pagador || notasData.eps
+      );
+
+      if (eligibility.eligible && payerCheck.allowed) {
+        sourceMode = RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV;
+        isOfficialRips = true;
+        numFactura = null; // DT1 MinSalud: estrictamente null
+      } else {
+        sourceMode = RIPS_MODES.LOCAL_PREVIEW;
+        isOfficialRips = false;
+        numFactura = null;
+        modeEligibilityError = !eligibility.eligible ? eligibility.reason : payerCheck.reason;
+      }
+    } else {
+      sourceMode = RIPS_MODES.LOCAL_PREVIEW;
+      isOfficialRips = false;
+      numFactura = null; // Para preview local, el recibo NO es numFactura oficial
+    }
+  }
 
   // 2. Resolución robusta del paciente (respetando snake_case de Supabase)
   const pacienteId =
@@ -270,6 +306,9 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
     sourceType,
     sourceMode,
     isOfficialInvoice,
+    isOfficialRips,
+    numFactura,
+    modeEligibilityError,
     id: record.id,
     documentNumber,
     displayNumber: documentNumber,
@@ -285,6 +324,7 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
     tenantId: record.tenant_id || record.inquilino,
     sedeId: record.sede_id || record.sucursal_id || null,
     cufe: record.cufe || record.cufeFactura || null,
+    tipoNota: record.tipoNota || record.tipo_nota || null,
     rawDoc: record,
     metadataNotas: notasData,
     metadataError,

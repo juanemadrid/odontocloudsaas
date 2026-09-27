@@ -13,6 +13,16 @@ import {
     adaptClinicalDataToRipsV003
 } from './v003/adapters/ripsV003ClinicalAdapter';
 import { normalizeRipsBillingSource } from './v003/adapters/ripsBillingSourceAdapter';
+import {
+    resolveProviderProfile,
+    resolveRipsProviderContext,
+    validateRipsWithoutFevEligibility,
+    RIPS_MODES,
+    BILLING_OBLIGATIONS,
+    PROVIDER_TYPES,
+    RIPS_RESPONSIBILITY,
+    PROVIDER_CODE_MODES
+} from './v003/services/ripsProviderProfileService';
 import { 
     FiActivity, FiCalendar, FiChevronRight, FiDownload, FiSearch, 
     FiFileText, FiAlertTriangle, FiCheckCircle, FiSettings, FiLayers,
@@ -20,6 +30,7 @@ import {
 } from 'react-icons/fi';
 import {
     transmitFevRips,
+    transmitRipsWithoutFev,
     formatMuvError,
     loadMuvValidationsMap,
     MUV_UI_STATES,
@@ -132,6 +143,19 @@ export default function RipsGenerator() {
         esIps: false
     });
     const [configWarning, setConfigWarning] = useState("");
+
+    // Contexto resuelto del prestador responsable RIPS (Fase RIPS-PROVIDER-CONTEXT)
+    const currentProviderContext = useMemo(() => {
+        const rawTenant = tenantConfig?.rawTenant || {};
+        const rawCfg = tenantConfig?.rawConfig || {};
+        const branchObj = selectedSucursal ? sucursales.find(s => s.id === selectedSucursal || s.nombre === selectedSucursal) : null;
+        return resolveRipsProviderContext({
+            tenant: rawTenant,
+            branch: branchObj || selectedSucursal || null,
+            configData: rawCfg,
+            sisproConfig: rawCfg.sispro_config || {},
+        });
+    }, [tenantConfig, selectedSucursal, sucursales]);
 
     // Estado Preflight RIPS v003
     const [preflightStatus, setPreflightStatus] = useState(null); // null | 'VALIDATING' | 'READY' | 'HAS_ERRORS'
@@ -320,12 +344,16 @@ export default function RipsGenerator() {
                 ).trim();
 
                 const rSocial = tenantData.razonSocial || tenantData.nombre || tenantData.name || extraEmpresa.razonSocial || extraEmpresa.nombreComercial || "ATM CENTRO DEL DOLOR OROFACIAL";
+                const prof = resolveProviderProfile(tenantData, cfg);
 
                 setTenantConfig({
                     nit: nitClean,
                     codigoPrestador: codPrestador,
                     razonSocial: rSocial,
-                    esIps: tenantData.esIps ?? extraEmpresa.esIps ?? true
+                    esIps: prof.providerType === PROVIDER_TYPES.IPS,
+                    providerProfile: prof,
+                    rawTenant: tenantData,
+                    rawConfig: cfg,
                 });
 
                 let warningMsg = "";
@@ -817,14 +845,18 @@ export default function RipsGenerator() {
                 planesByPatient.get(pId).push({ ...pl, _items: itemsArr });
             });
 
-            const nitObligado = tenantConfig.nit || "900000000";
-            const codPrestador = tenantConfig.codigoPrestador || "000000000001";
+            const nitObligado = currentProviderContext?.obligatedDocument || tenantConfig.nit || "900000000";
+            const codPrestador = currentProviderContext?.providerCode || tenantConfig.codigoPrestador || "000000000001";
 
             // 3. Procesar cada factura contra las fuentes clínicas reales
             for (const f of facturas) {
                 const candidatePacId = f.paciente_id || f.pacienteId || f.patientId || f.paciente?.id || null;
                 const patientPlanesForDoc = candidatePacId ? (planesByPatient.get(candidatePacId) || []) : [];
-                const normalizedDoc = normalizeRipsBillingSource(f, f._coleccion, { patientPlanes: patientPlanesForDoc });
+                const normalizedDoc = normalizeRipsBillingSource(f, f._coleccion, { 
+                    patientPlanes: patientPlanesForDoc,
+                    providerProfile: tenantConfig?.providerProfile,
+                    providerContext: currentProviderContext,
+                });
 
                 const pacId = normalizedDoc.pacienteId;
                 const pacNombre = normalizedDoc.pacienteNombre || (pacId && pacientesById.get(pacId)?.nombreCompleto) || "DESCONOCIDO";
@@ -1182,6 +1214,8 @@ export default function RipsGenerator() {
                 let v003ValidationResult = null;
                 let v003RipsJson = null;
 
+                const isWithoutFevMode = normalizedDoc.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV || normalizedDoc.sourceMode === RIPS_MODES.LOCAL_PREVIEW;
+
                 if (invoiceErrors.length === 0 && adaptedAtencionesForInvoice.length > 0) {
                     try {
                         const adaptRes = await adaptClinicalDataToRipsV003({
@@ -1193,7 +1227,8 @@ export default function RipsGenerator() {
                                 codServicio: 334,
                             },
                             factura: {
-                                numFactura: invoiceId,
+                                numFactura: isWithoutFevMode ? null : invoiceId,
+                                isWithoutFev: isWithoutFevMode,
                             },
                             paciente: {
                                 tipoDocumentoIdentificacion: usuarioWithValidation.tipoDocumentoIdentificacion,
@@ -1215,7 +1250,13 @@ export default function RipsGenerator() {
                         } else {
                             const genRes = await generateRipsV003({
                                 ...adaptRes.adaptedData,
-                                options: { skipFlagCheck: true, skipRepsCheck: true }
+                                options: { 
+                                    skipFlagCheck: true, 
+                                    skipRepsCheck: true,
+                                    billingMode: normalizedDoc.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV 
+                                        ? "OFFICIAL_RIPS_WITHOUT_FEV" 
+                                        : (normalizedDoc.sourceMode === RIPS_MODES.LOCAL_PREVIEW ? "OFFICIAL_RIPS_WITHOUT_FEV" : "OFFICIAL_FEV"),
+                                }
                             });
 
                             v003RipsJson = genRes.ripsJson;
@@ -1239,7 +1280,8 @@ export default function RipsGenerator() {
                         ripsJson: v003RipsJson,
                         validation: v003ValidationResult,
                         invoiceId,
-                        paciente: pacNombre
+                        paciente: pacNombre,
+                        sourceMode: normalizedDoc.sourceMode,
                     });
                 } else {
                     totalErrorFacturas++;
@@ -1248,7 +1290,8 @@ export default function RipsGenerator() {
                         valid: false,
                         errors: invoiceErrors,
                         invoiceId,
-                        paciente: pacNombre
+                        paciente: pacNombre,
+                        sourceMode: normalizedDoc.sourceMode,
                     });
                 }
 
@@ -1258,12 +1301,16 @@ export default function RipsGenerator() {
                     cufe: f.cufe || f.cufeFactura || "SIN_CUFE",
                     errors: invoiceErrors,
                     status: isValidInvoice 
-                        ? (normalizedDoc.sourceMode === "LOCAL_PREVIEW" ? "LOCAL_PREVIEW" : "LISTO") 
+                        ? (normalizedDoc.sourceMode === RIPS_MODES.LOCAL_PREVIEW 
+                            ? "LOCAL_PREVIEW" 
+                            : (normalizedDoc.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV ? "RIPS_SIN_FEV" : "LISTO")) 
                         : "CON_ERRORES",
                     tipoNota: f.tipoNota || null,
                     rawDoc: f,
                     sourceMode: normalizedDoc.sourceMode,
                     isOfficialInvoice: normalizedDoc.isOfficialInvoice,
+                    isOfficialRips: normalizedDoc.isOfficialRips,
+                    numFactura: normalizedDoc.numFactura,
                 });
             }
 
@@ -1298,13 +1345,25 @@ export default function RipsGenerator() {
             }
 
             if (totalErrorFacturas === 0 && totalValidFacturas > 0) {
-                setPreflightStatus("READY");
-                setLogs(prev => [...prev, `✅ Preflight 100% Exitoso: ${totalValidFacturas} facturas validadas con fuentes clínicas reales y 0 errores.`]);
-                toast.success(`Preflight listo: ${totalValidFacturas} facturas validadas correctamente.`);
+                const hasOnlyLocalPreview = dianList.every(d => d.sourceMode === RIPS_MODES.LOCAL_PREVIEW);
+                const hasOnlyRipsWithoutFev = dianList.every(d => d.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV);
+
+                if (hasOnlyLocalPreview) {
+                    setPreflightStatus("LOCAL_PREVIEW");
+                    setLogs(prev => [...prev, `ℹ️ Preflight Previsualización Local: ${totalValidFacturas} documento(s) validados localmente (Recibos no FEV).`]);
+                } else if (hasOnlyRipsWithoutFev) {
+                    setPreflightStatus("OFFICIAL_RIPS_WITHOUT_FEV");
+                    setLogs(prev => [...prev, `✅ Preflight RIPS sin Factura Exitoso: ${totalValidFacturas} documento(s) validados según DT1 vigente.`]);
+                    toast.success(`Preflight listo: ${totalValidFacturas} documentos validados para RIPS sin Factura.`);
+                } else {
+                    setPreflightStatus("READY");
+                    setLogs(prev => [...prev, `✅ Preflight 100% Exitoso: ${totalValidFacturas} facturas validadas con fuentes clínicas reales y 0 errores.`]);
+                    toast.success(`Preflight listo: ${totalValidFacturas} facturas validadas correctamente.`);
+                }
             } else {
                 setPreflightStatus("HAS_ERRORS");
-                setLogs(prev => [...prev, `⚠️ Preflight con observaciones: ${totalErrorFacturas} facturas tienen inconsistencias clínicas (${cumulativeErrorsCount} errores detectados).`]);
-                toast.warning(`Preflight completado: ${totalErrorFacturas} facturas con errores clínicos.`);
+                setLogs(prev => [...prev, `⚠️ Preflight con observaciones: ${totalErrorFacturas} documento(s) tienen inconsistencias (${cumulativeErrorsCount} errores detectados).`]);
+                toast.warning(`Preflight completado: ${totalErrorFacturas} documento(s) con errores.`);
             }
 
         } catch (error) {
@@ -1329,13 +1388,67 @@ export default function RipsGenerator() {
         setTimeout(() => setCopiedCuv(null), 3000);
     };
 
+    const handleSendRipsWithoutFevToMuv = async (docId) => {
+        if (transmittingMuv) return;
+        const targetDoc = dianDocs.find(d => d.id === docId);
+        if (!targetDoc || targetDoc.sourceMode !== RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV) {
+            toast.error("Este documento no está configurado bajo la modalidad oficial de RIPS sin Factura.");
+            return;
+        }
+
+        const preflightData = preflightValidationMap.get(docId);
+        if (!preflightData || !preflightData.valid || !preflightData.ripsJson) {
+            toast.error("Corrige los datos clínicos antes de enviar.");
+            return;
+        }
+
+        setTransmittingMuv(true);
+        const toastId = toast.loading(`Transmitiendo RIPS sin Factura ${docId} al MUV...`);
+
+        try {
+            const res = await transmitRipsWithoutFev({
+                ripsJson: preflightData.ripsJson,
+            });
+
+            toast.dismiss(toastId);
+            if (res.success && res.cuv) {
+                toast.success(`¡Validado formalmente por MinSalud! CUV: ${res.cuv}`);
+                setMuvValidationsMap(prev => {
+                    const next = new Map(prev);
+                    next.set(docId, {
+                        id: res.validationId || docId,
+                        estadoDb: "VALIDADO",
+                        uiState: MUV_UI_STATES.ACCEPTED,
+                        cuv: res.cuv,
+                        errores: [],
+                        advertencias: res.advertencias || [],
+                        fechaRadicacion: res.fechaRadicacion,
+                    });
+                    return next;
+                });
+            } else if (res.estado === "REJECTED") {
+                toast.error(`Rechazado por MUV: ${res.errores?.[0]?.friendlyDescription || res.message}`);
+            } else {
+                toast.error(`Aviso MUV: ${res.message || "Error en validación"}`);
+            }
+        } catch (err) {
+            toast.dismiss(toastId);
+            toast.error(`Fallo de transmisión: ${err.message}`);
+        } finally {
+            setTransmittingMuv(false);
+        }
+    };
+
     const handleSendSingleToMuv = async (invoiceId) => {
         if (transmittingMuv) return; // Protección anti doble-clic
 
         const targetDianDoc = dianDocs.find(d => d.id === invoiceId);
-        if (targetDianDoc?.sourceMode === 'LOCAL_PREVIEW' || !targetDianDoc?.isOfficialInvoice) {
-            toast.error("OFFICIAL_FEV_REQUIRED: No se puede enviar a MUV desde un recibo de previsualización local. Se requiere una Factura Electrónica en Salud (FEV) oficial emitida ante la DIAN.");
+        if (targetDianDoc?.sourceMode === RIPS_MODES.LOCAL_PREVIEW) {
+            toast.error("OFFICIAL_FEV_REQUIRED: No se puede enviar a MUV desde un recibo de previsualización local. Se requiere una Factura Electrónica en Salud (FEV) oficial emitida ante la DIAN, o configurar el perfil de Profesional Independiente no obligado a facturar.");
             return;
+        }
+        if (targetDianDoc?.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV) {
+            return handleSendRipsWithoutFevToMuv(invoiceId);
         }
 
         const preflightData = preflightValidationMap.get(invoiceId);
@@ -1859,36 +1972,44 @@ export default function RipsGenerator() {
 
                 const invoiceFolder = rootFolder.folder(invoiceId);
 
-                // 1. Incluir JSON normativo {FACTURA}.json
+                // 1. Incluir JSON normativo
                 if (ripsJson) {
-                    invoiceFolder.file(`${invoiceId}.json`, JSON.stringify(ripsJson, null, 2));
-                }
-
-                // 2. Obtener AttachedDocument XML real (sin inventar XML)
-                let xmlContent = doc.rawDoc?.attached_document_xml || doc.rawDoc?.xml_content || doc.rawDoc?.xml || null;
-
-                if (!xmlContent && doc.rawDoc?.factus_id) {
-                    try {
-                        const xmlRes = await downloadFactusAttachedDocumentXml(invoiceId);
-                        if (xmlRes?.xml || xmlRes?.attachedDocument) {
-                            xmlContent = xmlRes.xml || xmlRes.attachedDocument;
-                        }
-                    } catch (xmlErr) {
-                        console.warn(`No se pudo descargar AttachedDocument para ${invoiceId}:`, xmlErr);
-                    }
-                }
-
-                if (xmlContent) {
-                    // Cruce obligatorio JSON ↔ XML
-                    const isCoherent = xmlMatchesInvoice(xmlContent, invoiceId);
-                    if (!isCoherent) {
-                        console.error(`RIPS_EXPORT_INVOICE_MISMATCH: XML AttachedDocument no coincide con factura ${invoiceId}`);
-                        toast.error(`RIPS_EXPORT_INVOICE_MISMATCH: Factura ${invoiceId} tiene XML no coincidente. Se excluye XML.`);
+                    if (doc.sourceMode === RIPS_MODES.LOCAL_PREVIEW) {
+                        invoiceFolder.file(`${invoiceId}_preliminar.json`, JSON.stringify(ripsJson, null, 2));
+                    } else if (doc.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV) {
+                        invoiceFolder.file(`${invoiceId}_rips_sin_fev.json`, JSON.stringify(ripsJson, null, 2));
                     } else {
-                        invoiceFolder.file(`${invoiceId}.xml`, xmlContent);
+                        invoiceFolder.file(`${invoiceId}.json`, JSON.stringify(ripsJson, null, 2));
                     }
-                } else {
-                    missingXmlCount++;
+                }
+
+                // 2. Obtener AttachedDocument XML real (solo para OFFICIAL_FEV, sin inventar XML)
+                if (doc.sourceMode === RIPS_MODES.OFFICIAL_FEV) {
+                    let xmlContent = doc.rawDoc?.attached_document_xml || doc.rawDoc?.xml_content || doc.rawDoc?.xml || null;
+
+                    if (!xmlContent && doc.rawDoc?.factus_id) {
+                        try {
+                            const xmlRes = await downloadFactusAttachedDocumentXml(invoiceId);
+                            if (xmlRes?.xml || xmlRes?.attachedDocument) {
+                                xmlContent = xmlRes.xml || xmlRes.attachedDocument;
+                            }
+                        } catch (xmlErr) {
+                            console.warn(`No se pudo descargar AttachedDocument para ${invoiceId}:`, xmlErr);
+                        }
+                    }
+
+                    if (xmlContent) {
+                        // Cruce obligatorio JSON ↔ XML
+                        const isCoherent = xmlMatchesInvoice(xmlContent, invoiceId);
+                        if (!isCoherent) {
+                            console.error(`RIPS_EXPORT_INVOICE_MISMATCH: XML AttachedDocument no coincide con factura ${invoiceId}`);
+                            toast.error(`RIPS_EXPORT_INVOICE_MISMATCH: Factura ${invoiceId} tiene XML no coincidente. Se excluye XML.`);
+                        } else {
+                            invoiceFolder.file(`${invoiceId}.xml`, xmlContent);
+                        }
+                    } else {
+                        missingXmlCount++;
+                    }
                 }
 
                 exportedCount++;
@@ -2018,6 +2139,121 @@ export default function RipsGenerator() {
                         <span>EXPORTAR</span>
                     </button>
                 </div>
+            </div>
+
+            {/* Contexto Normativo del Prestador Responsable (Fase RIPS-PROVIDER-CONTEXT) */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
+                        <h3 className="text-xs font-bold text-slate-800 tracking-wide uppercase">
+                            Contexto Normativo del Prestador Responsable RIPS
+                        </h3>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => navigate(buildDashboardPath("config"))}
+                        className="text-[11px] font-semibold text-sky-600 hover:text-sky-800 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                        <FiSettings size={12} /> Configurar Prestador / Sede
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-3">
+                    {/* 1. Prestador Responsable */}
+                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Prestador Responsable
+                        </span>
+                        <span className="text-xs font-bold text-slate-800">
+                            {currentProviderContext.ripsResponsibility === RIPS_RESPONSIBILITY.INSTITUTION
+                                ? "IPS (Institucional)"
+                                : currentProviderContext.ripsResponsibility === RIPS_RESPONSIBILITY.PROFESSIONAL
+                                ? "Profesional Independiente"
+                                : currentProviderContext.providerType === PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE
+                                ? "Profesional Independiente"
+                                : "Sin confirmar"}
+                        </span>
+                    </div>
+
+                    {/* 2. Código Prestador */}
+                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Código Prestador
+                        </span>
+                        <span className="text-xs font-mono font-bold text-slate-800">
+                            {currentProviderContext.providerCode || (
+                                currentProviderContext.providerCodeMode === PROVIDER_CODE_MODES.BY_BRANCH
+                                    ? "Por sede (sin asignar)"
+                                    : "No configurado"
+                            )}
+                        </span>
+                    </div>
+
+                    {/* 3. Modalidad RIPS */}
+                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Modalidad RIPS
+                        </span>
+                        <div>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
+                                currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_FEV
+                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                    : currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV
+                                    ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                    : "bg-amber-100 text-amber-800 border border-amber-200"
+                            }`}>
+                                {currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_FEV
+                                    ? "FEV + RIPS"
+                                    : currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV
+                                    ? "RIPS sin FEV"
+                                    : "Previsualización local"}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* 4. Facturación Electrónica */}
+                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Facturación Electrónica
+                        </span>
+                        <span className="text-xs font-semibold text-slate-700">
+                            {currentProviderContext.billingObligation === BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED
+                                ? "Obligado"
+                                : currentProviderContext.billingObligation === BILLING_OBLIGATIONS.NOT_REQUIRED
+                                ? "No obligado"
+                                : "Sin confirmar"}
+                        </span>
+                    </div>
+
+                    {/* 5. SISPRO */}
+                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            SISPRO
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            {currentProviderContext.sisproConfigured ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
+                                    <FiCheckCircle className="text-emerald-500" size={13} /> Configurado
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+                                    <FiXCircle className="text-slate-400" size={13} /> No configurado
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Sub-alerta contextual si hay bloqueo de sede */}
+                {currentProviderContext.error === "RIPS_PROVIDER_CODE_MISSING_FOR_BRANCH" && (
+                    <div className="mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                        <FiAlertTriangle className="text-rose-600 shrink-0" size={14} />
+                        <span>
+                            <strong>RIPS_PROVIDER_CODE_MISSING_FOR_BRANCH:</strong> La sede actual no tiene configurado su código de habilitación de prestador (REPS). Configure la sede antes de transmitir paquetes oficiales.
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* Warning Banner if Tenant Config is incomplete */}
@@ -2361,32 +2597,57 @@ export default function RipsGenerator() {
                         <div className={`p-4 rounded-xl border shadow-2xs transition-all ${
                             preflightStatus === 'READY'
                                 ? 'bg-emerald-50/95 border-emerald-300 text-emerald-900'
+                                : preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV'
+                                ? 'bg-sky-50/95 border-sky-300 text-sky-900'
+                                : preflightStatus === 'LOCAL_PREVIEW'
+                                ? 'bg-amber-50/95 border-amber-300 text-amber-900'
                                 : 'bg-rose-50/95 border-rose-300 text-rose-900'
                         }`}>
                             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                                 <div className="flex items-start gap-3">
                                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                                        preflightStatus === 'READY' ? 'bg-emerald-200 text-emerald-800' : 'bg-rose-200 text-rose-800'
+                                        preflightStatus === 'READY' ? 'bg-emerald-200 text-emerald-800' :
+                                        preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV' ? 'bg-sky-200 text-sky-800' :
+                                        preflightStatus === 'LOCAL_PREVIEW' ? 'bg-amber-200 text-amber-800' :
+                                        'bg-rose-200 text-rose-800'
                                     }`}>
-                                        {preflightStatus === 'READY' ? <FiCheckCircle size={20} /> : <FiAlertTriangle size={20} />}
+                                        {preflightStatus === 'READY' || preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV' 
+                                            ? <FiCheckCircle size={20} /> 
+                                            : preflightStatus === 'LOCAL_PREVIEW' 
+                                            ? <FiInfo size={20} />
+                                            : <FiAlertTriangle size={20} />}
                                     </div>
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <span className={`px-2.5 py-0.5 rounded text-xs font-black tracking-wider uppercase ${
-                                                preflightStatus === 'READY' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+                                                preflightStatus === 'READY' ? 'bg-emerald-600 text-white' :
+                                                preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV' ? 'bg-sky-600 text-white' :
+                                                preflightStatus === 'LOCAL_PREVIEW' ? 'bg-amber-600 text-white' :
+                                                'bg-rose-600 text-white'
                                             }`}>
-                                                {preflightStatus === 'READY' ? 'LISTO' : 'ERRORES DE DATOS CLÍNICOS'}
+                                                {preflightStatus === 'READY' ? 'LISTO FEV-RIPS' :
+                                                 preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV' ? 'RIPS SIN FACTURA (OFICIAL)' :
+                                                 preflightStatus === 'LOCAL_PREVIEW' ? 'PREVISUALIZACIÓN LOCAL' :
+                                                 'ERRORES DE DATOS CLÍNICOS'}
                                             </span>
                                             <span className="text-xs font-bold text-slate-800">
                                                 {preflightStatus === 'READY' 
-                                                    ? 'Validación RIPS v003 100% Superada (Fuentes Clínicas Reales)' 
+                                                    ? 'Validación FEV-RIPS v003 100% Superada (Fuentes Clínicas Reales)' 
+                                                    : preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV'
+                                                    ? 'Validación RIPS sin Factura 100% Superada (DT1 v003 - Profesional Independiente)'
+                                                    : preflightStatus === 'LOCAL_PREVIEW'
+                                                    ? 'Previsualización Local de RIPS (Documento no FEV / Recibo Interno)'
                                                     : `Bloqueo Preflight: ${preflightSummary?.totalErrors || 0} inconsistencia(s) detectada(s)`}
                                             </span>
                                         </div>
                                         <p className="text-xs mt-1.5 text-slate-600 leading-relaxed">
                                             {preflightStatus === 'READY'
                                                 ? `Se validaron exitosamente ${preflightSummary?.valid || 0} factura(s). Todas las atenciones provienen de evoluciones o documentos clínicos reales completados, con CUPS oficial y diagnósticos CIE-10 normativos.`
-                                                : `Se detectaron inconsistencias clínicas en ${preflightSummary?.error || 0} de ${preflightSummary?.total || 0} factura(s). La generación de JSON normativo se detiene para evitar rechazos en el validador MUV/MinSalud.`}
+                                                : preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV'
+                                                ? `Se validaron ${preflightSummary?.valid || 0} documento(s) bajo la modalidad oficial de RIPS sin Factura (numFactura: null, sin contenedor XML). Apto para transmisión formal al MUV.`
+                                                : preflightStatus === 'LOCAL_PREVIEW'
+                                                ? `Los datos RIPS son válidos localmente, pero este documento todavía no tiene una modalidad oficial de transmisión definida. Para transmitir formalmente a MinSalud se requiere una Factura Electrónica en Salud (FEV) o un perfil confirmado de Profesional Independiente no obligado a facturar.`
+                                                : `Se detectaron inconsistencias clínicas en ${preflightSummary?.error || 0} de ${preflightSummary?.total || 0} documento(s). La generación de JSON normativo se detiene para evitar rechazos en el validador MUV/MinSalud.`}
                                         </p>
                                     </div>
                                 </div>
@@ -2424,6 +2685,57 @@ export default function RipsGenerator() {
                                                     </>
                                                 )}
                                             </button>
+                                        </>
+                                    ) : preflightStatus === 'OFFICIAL_RIPS_WITHOUT_FEV' ? (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDownloadOfficialRips(true)}
+                                                className="h-9 px-3.5 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-bold text-xs rounded-lg shadow-2xs flex items-center gap-2 cursor-pointer transition-all"
+                                                title="Descargar paquete RIPS sin Factura en formato JSON"
+                                            >
+                                                <FiDownload size={14} />
+                                                <span>Descargar RIPS Sin FEV ({preflightSummary?.valid})</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                id="btn-enviar-muv-global"
+                                                disabled={transmittingMuv}
+                                                onClick={handleSendBatchToMuv}
+                                                className="h-9 px-4 bg-sky-600 hover:bg-sky-700 active:scale-95 disabled:bg-sky-400 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg shadow-2xs flex items-center gap-2 cursor-pointer transition-all"
+                                                title="Transmitir RIPS sin Factura a MUV MinSalud"
+                                            >
+                                                {transmittingMuv ? (
+                                                    <>
+                                                        <FiRefreshCw size={14} className="animate-spin" />
+                                                        <span>Transmitiendo a MinSalud...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <FiSend size={14} />
+                                                        <span>Transmitir Sin FEV a MUV ({preflightSummary?.valid})</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </>
+                                    ) : preflightStatus === 'LOCAL_PREVIEW' ? (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDownloadOfficialRips(true)}
+                                                className="h-9 px-3.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-lg shadow-2xs flex items-center gap-2 cursor-pointer transition-all"
+                                                title="Descargar JSON de previsualización local (no oficial)"
+                                            >
+                                                <FiDownload size={14} />
+                                                <span>Descargar RIPS Preliminar ({preflightSummary?.valid})</span>
+                                            </button>
+                                            <span 
+                                                className="text-[11px] text-amber-800 font-semibold bg-amber-100/90 px-2.5 py-1.5 rounded-lg border border-amber-300"
+                                                title="OFFICIAL_FEV_REQUIRED: Los recibos de caja son solo de previsualización y no pueden enviarse a MUV salvo FEV oficial o RIPS sin Factura autorizado"
+                                            >
+                                                MUV Bloqueado (Previsualización Local)
+                                            </span>
                                         </>
                                     ) : (
                                         <div className="flex flex-col md:flex-row items-end md:items-center gap-2">
@@ -2504,7 +2816,7 @@ export default function RipsGenerator() {
                                                     />
                                                 </th>
                                                 <th className="py-2 px-3">Estado</th>
-                                                <th className="py-2 px-3">Número de la factura</th>
+                                                <th className="py-2 px-3">Número documento / Soporte</th>
                                                 <th className="py-2 px-3">Tipo de nota</th>
                                                 <th className="py-2 px-3">CUV</th>
                                                 <th className="py-2 px-3 text-center">Acciones</th>
@@ -2524,9 +2836,12 @@ export default function RipsGenerator() {
                                                     let badgeLabel = "SIN VALIDAR";
                                                     let badgeClass = "bg-slate-100 text-slate-700 border-slate-200";
 
-                                                    if (doc.sourceMode === 'LOCAL_PREVIEW' || !doc.isOfficialInvoice) {
+                                                    if (doc.sourceMode === RIPS_MODES.LOCAL_PREVIEW) {
                                                         badgeLabel = "PREVISUALIZACIÓN LOCAL";
                                                         badgeClass = "bg-amber-100 text-amber-800 border-amber-300 font-bold";
+                                                    } else if (doc.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV) {
+                                                        badgeLabel = "RIPS SIN FEV";
+                                                        badgeClass = "bg-sky-100 text-sky-800 border-sky-300 font-bold";
                                                     } else if (muvInfo?.cuv || muvInfo?.uiState === MUV_UI_STATES.ACCEPTED) {
                                                         badgeLabel = "VALIDADO";
                                                         badgeClass = "bg-emerald-100 text-emerald-800 border-emerald-300 font-bold";
@@ -2539,69 +2854,100 @@ export default function RipsGenerator() {
                                                     }
 
                                                     return (
-                                                        <tr key={idx} className={`hover:bg-slate-50/60 ${isChecked ? 'bg-sky-50/30' : ''}`}>
-                                                            <td className="py-2 px-3 text-center">
-                                                                <input 
-                                                                    type="checkbox" 
-                                                                    checked={isChecked}
-                                                                    onChange={() => toggleSelectDian(invoiceId)}
-                                                                    className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300 cursor-pointer" 
-                                                                />
-                                                            </td>
-                                                            <td className="py-2 px-3">
-                                                                <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wide border ${badgeClass}`}>
-                                                                    {badgeLabel}
-                                                                </span>
-                                                            </td>
-                                                            <td className="py-2 px-3 font-bold text-slate-800">{doc.id}</td>
-                                                            <td className="py-2 px-3 text-slate-500 font-medium">{doc.tipoNota || "-"}</td>
-                                                            <td className="py-2 px-3 font-mono text-[11px]">
-                                                                {muvInfo?.cuv ? (
-                                                                    <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 w-fit">
-                                                                        <span className="truncate max-w-[140px]" title={muvInfo.cuv}>{muvInfo.cuv}</span>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleCopyCuv(muvInfo.cuv)}
-                                                                            title="Copiar CUV"
-                                                                            className="text-emerald-700 hover:text-emerald-900 transition-colors p-0.5 cursor-pointer"
+                                                         <tr key={idx} className={`hover:bg-slate-50/60 ${isChecked ? 'bg-sky-50/30' : ''}`}>
+                                                             <td className="py-2 px-3 text-center">
+                                                                 <input 
+                                                                     type="checkbox" 
+                                                                     checked={isChecked}
+                                                                     onChange={() => toggleSelectDian(invoiceId)}
+                                                                     className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300 cursor-pointer" 
+                                                                 />
+                                                             </td>
+                                                             <td className="py-2 px-3">
+                                                                 <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wide border ${badgeClass}`}>
+                                                                     {badgeLabel}
+                                                                 </span>
+                                                             </td>
+                                                             <td className="py-2 px-3">
+                                                                 {doc.sourceMode === RIPS_MODES.LOCAL_PREVIEW ? (
+                                                                     <div className="flex flex-col">
+                                                                         <span className="font-bold text-slate-800">Recibo: {doc.id}</span>
+                                                                         <span className="text-[10px] text-amber-700 font-medium">Factura: No aplica (Previsualización Local)</span>
+                                                                     </div>
+                                                                 ) : doc.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV ? (
+                                                                     <div className="flex flex-col">
+                                                                         <span className="font-bold text-slate-800">Documento: {doc.id}</span>
+                                                                         <span className="text-[10px] text-sky-700 font-medium">RIPS sin Factura Oficial (numFactura: null)</span>
+                                                                     </div>
+                                                                 ) : (
+                                                                     <div className="flex flex-col">
+                                                                         <span className="font-bold text-slate-800">FEV: {doc.id}</span>
+                                                                         <span className="text-[10px] text-slate-500 font-medium">Factura Electrónica en Salud</span>
+                                                                     </div>
+                                                                 )}
+                                                             </td>
+                                                             <td className="py-2 px-3 text-slate-500 font-medium">{doc.tipoNota || "-"}</td>
+                                                             <td className="py-2 px-3 font-mono text-[11px]">
+                                                                 {muvInfo?.cuv ? (
+                                                                     <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 w-fit">
+                                                                         <span className="truncate max-w-[140px]" title={muvInfo.cuv}>{muvInfo.cuv}</span>
+                                                                         <button
+                                                                             type="button"
+                                                                             onClick={() => handleCopyCuv(muvInfo.cuv)}
+                                                                             title="Copiar CUV"
+                                                                             className="text-emerald-700 hover:text-emerald-900 transition-colors p-0.5 cursor-pointer"
+                                                                         >
+                                                                             {copiedCuv === muvInfo.cuv ? <FiCheck size={12} className="text-emerald-600" /> : <FiCopy size={12} />}
+                                                                         </button>
+                                                                     </div>
+                                                                 ) : (
+                                                                     <span className="text-slate-400 font-mono text-[10px]">{doc.cufe && doc.cufe !== "SIN_CUFE" ? `${doc.cufe.substring(0, 12)}...` : '-'}</span>
+                                                                 )}
+                                                             </td>
+                                                             <td className="py-2 px-3 text-center">
+                                                                 {doc.sourceMode === RIPS_MODES.LOCAL_PREVIEW ? (
+                                                                     <span 
+                                                                         className="inline-block px-2.5 py-1 text-[10px] font-bold text-amber-800 bg-amber-50 rounded border border-amber-200 uppercase tracking-tight"
+                                                                         title="Previsualización local — No apto para MUV (OFFICIAL_FEV_REQUIRED)"
+                                                                     >
+                                                                         PREVISUALIZACIÓN LOCAL — NO APTO PARA MUV
+                                                                     </span>
+                                                                 ) : doc.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV ? (
+                                                                     muvInfo?.cuv ? (
+                                                                         <div className="flex items-center justify-center gap-1 text-emerald-700 text-xs font-semibold">
+                                                                             <FiCheckCircle size={13} />
+                                                                             <span>Validado Sin FEV</span>
+                                                                         </div>
+                                                                     ) : (
+                                                                         <button
+                                                                             type="button"
+                                                                             onClick={() => handleSendRipsWithoutFevToMuv(doc.id)}
+                                                                             disabled={transmittingMuv}
+                                                                             className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white rounded text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
+                                                                             title="Enviar RIPS sin Factura al MUV"
                                                                         >
-                                                                            {copiedCuv === muvInfo.cuv ? <FiCheck size={12} className="text-emerald-600" /> : <FiCopy size={12} />}
+                                                                            <FiSend size={11} />
+                                                                            <span>Enviar RIPS Sin Factura</span>
                                                                         </button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-slate-400 font-mono text-[10px]">{doc.cufe && doc.cufe !== "SIN_CUFE" ? `${doc.cufe.substring(0, 12)}...` : '-'}</span>
-                                                                )}
-                                                            </td>
-                                                            <td className="py-2 px-3 text-center">
-                                                                {doc.sourceMode === 'LOCAL_PREVIEW' || !doc.isOfficialInvoice ? (
-                                                                    <span 
-                                                                        className="inline-block px-2.5 py-1 text-[10px] font-bold text-amber-800 bg-amber-50 rounded border border-amber-200 uppercase tracking-tight"
-                                                                        title="Previsualización local — No apto para MUV (OFFICIAL_FEV_REQUIRED)"
-                                                                    >
-                                                                        PREVISUALIZACIÓN LOCAL — NO APTO PARA MUV
-                                                                    </span>
-                                                                ) : muvInfo?.cuv ? (
-                                                                    <div className="flex items-center justify-center gap-1 text-emerald-700 text-xs font-semibold">
-                                                                        <FiCheckCircle size={13} />
-                                                                        <span>Validado</span>
-                                                                    </div>
-                                                                ) : (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleSendSingleToMuv(doc.id)}
-                                                                        disabled={transmittingMuv || doc.errors.length > 0}
-                                                                        className={`px-3 py-1 text-[11px] font-bold rounded shadow-2xs flex items-center justify-center gap-1 cursor-pointer transition-all mx-auto ${
-                                                                            doc.errors.length === 0
-                                                                                ? 'bg-sky-600 hover:bg-sky-700 text-white active:scale-95'
-                                                                                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                                                                        }`}
-                                                                        title={doc.errors.length > 0 ? "Corrige los datos clínicos antes de enviar." : "Enviar este RIPS a validación MUV"}
-                                                                    >
-                                                                        <FiSend size={11} />
-                                                                        <span>ENVIAR RIPS</span>
-                                                                    </button>
-                                                                )}
-                                                            </td>
+                                                                     )
+                                                                 ) : muvInfo?.cuv ? (
+                                                                     <div className="flex items-center justify-center gap-1 text-emerald-700 text-xs font-semibold">
+                                                                         <FiCheckCircle size={13} />
+                                                                         <span>Validado</span>
+                                                                     </div>
+                                                                 ) : (
+                                                                     <button
+                                                                         type="button"
+                                                                         onClick={() => handleSendSingleToMuv(invoiceId)}
+                                                                         disabled={transmittingMuv || doc.errors.length > 0}
+                                                                         className="inline-flex items-center gap-1 px-2.5 py-1 bg-sky-600 hover:bg-sky-700 active:scale-95 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded text-[11px] font-semibold transition-all cursor-pointer shadow-2xs"
+                                                                         title="Validar y enviar esta factura al MUV"
+                                                                     >
+                                                                         <FiSend size={11} />
+                                                                         <span>Enviar RIPS</span>
+                                                                     </button>
+                                                                 )}
+                                                             </td>
                                                         </tr>
                                                     );
                                                 })

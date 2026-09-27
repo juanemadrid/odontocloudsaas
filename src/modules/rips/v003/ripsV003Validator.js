@@ -89,9 +89,10 @@ export function isValidCalendarDateTime(dtStr, { allowFuture = false } = {}) {
  * Valida un JSON de RIPS v003 completo según Documento Técnico 1 v003.
  * 
  * @param {object} ripsJson 
+ * @param {object} [options] - Opciones de validación { context: 'FEV' | 'RIPS_WITHOUT_FEV' }
  * @returns {Promise<{ isValid: boolean, errors: Array<string>, warnings: Array<string> }>}
  */
-export async function validateRipsV003(ripsJson) {
+export async function validateRipsV003(ripsJson, options = {}) {
   const errors = [];
   const warnings = [];
 
@@ -105,9 +106,17 @@ export async function validateRipsV003(ripsJson) {
     errors.push("numDocumentoIdObligado es requerido y debe tener entre 5 y 20 caracteres.");
   }
 
-  const numFactura = String(ripsJson.numFactura || "").trim();
-  if (!numFactura || numFactura.length > 20) {
-    errors.push("numFactura es requerido y no puede exceder 20 caracteres.");
+  const context = options.context || (ripsJson.numFactura === null ? "RIPS_WITHOUT_FEV" : "FEV");
+
+  if (context === "RIPS_WITHOUT_FEV") {
+    if (ripsJson.numFactura !== null) {
+      errors.push("Para modalidad RIPS sin FEV, numFactura debe ser estrictamente null.");
+    }
+  } else {
+    const numFactura = String(ripsJson.numFactura || "").trim();
+    if (!numFactura || numFactura.length > 20) {
+      errors.push("numFactura es requerido y no puede exceder 20 caracteres.");
+    }
   }
 
   if (ripsJson.tipoNota !== null && typeof ripsJson.tipoNota !== "string") {
@@ -217,7 +226,7 @@ export async function validateRipsV003(ripsJson) {
         const codConsulta = String(c.codConsulta || "").trim().toUpperCase();
         if (!CUPS_REGEX.test(codConsulta)) {
           errors.push(`${cPrefix}: codConsulta '${codConsulta}' no cumple estándar CUPS de 6 caracteres.`);
-        } else {
+        } else if (!options.skipCupsCheck) {
           const cupsInfo = await getCupsClassification(codConsulta);
           if (!cupsInfo.exists) {
             errors.push(`${cPrefix}: ${cupsInfo.error}`);
@@ -319,7 +328,7 @@ export async function validateRipsV003(ripsJson) {
         const codProcedimiento = String(p.codProcedimiento || "").trim().toUpperCase();
         if (!CUPS_REGEX.test(codProcedimiento)) {
           errors.push(`${pPrefix}: codProcedimiento '${codProcedimiento}' no cumple estándar CUPS de 6 caracteres.`);
-        } else {
+        } else if (!options.skipCupsCheck) {
           const cupsInfo = await getCupsClassification(codProcedimiento);
           if (!cupsInfo.exists) {
             errors.push(`${pPrefix}: ${cupsInfo.error}`);

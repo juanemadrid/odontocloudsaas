@@ -23,6 +23,10 @@ import {
     getDoctorSisproStatus
 } from "../../services/tenantSecretsService";
 import { isFevRips0948Enabled } from "../rips/v003/ripsFeatureFlagService";
+import {
+    shouldDoctorShowGeneraRips,
+    PROVIDER_TYPES
+} from "../rips/v003/services/ripsProviderProfileService";
 import Input from "../../components/ui/Input";
 
 const normalizeDate = (val) => {
@@ -171,6 +175,7 @@ export default function EmpresaUsuarios() {
     const [formData, setFormData] = useState(initialForm);
     const [sisproConfigured, setSisproConfigured] = useState(false);
     const [fevRipsEnabled, setFevRipsEnabled] = useState(false);
+    const [tenantProviderType, setTenantProviderType] = useState(PROVIDER_TYPES.IPS);
 
     // 1. Load Data
     const loadData = async () => {
@@ -184,7 +189,8 @@ export default function EmpresaUsuarios() {
                 configUsersData,
                 configuredProfiles,
                 configuredSpecialties,
-                fevRipsActive
+                fevRipsActive,
+                empresaCfg
             ] = await Promise.all([
                 supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
                 getConfigItems(userProfile.inquilino, "sucursales", "sucursales"),
@@ -192,9 +198,12 @@ export default function EmpresaUsuarios() {
                 getConfigItems(userProfile.inquilino, "usuarios", null),
                 getConfigItems(userProfile.inquilino, "perfiles", null),
                 getConfigItems(userProfile.inquilino, "especialidades", "especialidades"),
-                isFevRips0948Enabled(userProfile.inquilino).catch(() => false)
+                isFevRips0948Enabled(userProfile.inquilino).catch(() => false),
+                getConfigSection(userProfile.inquilino, "empresa_datos", {})
             ]);
             setFevRipsEnabled(Boolean(fevRipsActive));
+            const pType = empresaCfg?.providerType || (empresaCfg?.esIps ? PROVIDER_TYPES.IPS : (empresaCfg?.esIps === false ? PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE : PROVIDER_TYPES.IPS));
+            setTenantProviderType(pType);
             if (uRes.error) throw uRes.error;
             const profilesMap = new Map();
 
@@ -1059,20 +1068,29 @@ export default function EmpresaUsuarios() {
                                                     {/* Sección FEV-RIPS v003 - Gated detrás de ENABLE_FEV_RIPS_0948 */}
                                                     {fevRipsEnabled && (
                                                         <>
-                                                            {/* ¿Genera RIPS? (1:1 OralDrive) */}
-                                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                                <span className="text-[12px] font-medium text-slate-700">¿Genera RIPS?</span>
-                                                                <button 
-                                                                    type="button" 
-                                                                    onClick={() => setFormData({ ...formData, generaRips: !formData.generaRips })} 
-                                                                    className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.generaRips ? "bg-blue-600" : "bg-slate-300"}`}
-                                                                >
-                                                                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.generaRips ? "left-6" : "left-1"}`} />
-                                                                </button>
-                                                            </div>
+                                                            {!shouldDoctorShowGeneraRips(tenantProviderType, formData) ? (
+                                                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-2.5 text-xs text-slate-600">
+                                                                    <FiInfo className="text-blue-500 shrink-0 mt-0.5" size={15} />
+                                                                    <span className="text-[11px] leading-tight">
+                                                                        <strong>Institución Prestadora (IPS):</strong> La responsabilidad RIPS recae en la institución clínica. Los profesionales no configuran habilitación individual.
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    {/* ¿Genera RIPS? (1:1 OralDrive para Profesional Independiente) */}
+                                                                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
+                                                                        <span className="text-[12px] font-medium text-slate-700">¿Genera RIPS?</span>
+                                                                        <button 
+                                                                            type="button" 
+                                                                            onClick={() => setFormData({ ...formData, generaRips: !formData.generaRips })} 
+                                                                            className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.generaRips ? "bg-blue-600" : "bg-slate-300"}`}
+                                                                        >
+                                                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.generaRips ? "left-6" : "left-1"}`} />
+                                                                        </button>
+                                                                    </div>
 
-                                                            {/* Configuración RIPS cuando está activado */}
-                                                            {formData.generaRips && (
+                                                                    {/* Configuración RIPS cuando está activado */}
+                                                                    {formData.generaRips && (
                                                                 <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-100 space-y-3 animate-in fade-in transition-all">
                                                                     {/* Selector de Código Prestador: Único vs Por Sucursal */}
                                                                     <div className="space-y-1.5">
@@ -1217,9 +1235,11 @@ export default function EmpresaUsuarios() {
                                                             )}
                                                         </>
                                                     )}
-                                                </div>
+                                                </>
                                             )}
                                         </div>
+                                    )}
+                                </div>
 
                                         <div className="space-y-3">
                                             <div className="space-y-1">

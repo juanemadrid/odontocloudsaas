@@ -20,6 +20,8 @@ scripts/*.mjs
 !scripts/test-production-readiness.mjs
 !scripts/test_rips_operational_export.mjs
 !scripts/test_rips_payment_source_normalization.mjs
+!scripts/test_rips_without_fev_compliance.mjs
+!scripts/test_rips_provider_context.mjs
 .supabase-auth-probe-local/
 .supabase-replay-local/
 supabase/backups/

@@ -21,8 +21,19 @@ import {
     FiPhone,
     FiMail,
     FiBriefcase,
-    FiFileText
+    FiFileText,
+    FiShield,
+    FiCheckCircle,
+    FiAlertCircle,
+    FiInfo,
+    FiLayers
 } from "react-icons/fi";
+import {
+    PROVIDER_TYPES,
+    BILLING_OBLIGATIONS,
+    PROVIDER_CODE_MODES,
+    UVT_REFERENCE_NOTICE,
+} from "../rips/v003/services/ripsProviderProfileService";
 
 export default function ConfigEmpresa() {
     const { userProfile } = useAuth();
@@ -32,6 +43,8 @@ export default function ConfigEmpresa() {
     const [uploading, setUploading] = useState(false);
     const [sisproHasPassword, setSisproHasPassword] = useState(false);
     const fileInputRef = useRef(null);
+
+    const [sucursalesList, setSucursalesList] = useState([]);
 
     // Estado del formulario
     const [formData, setFormData] = useState({
@@ -48,6 +61,11 @@ export default function ConfigEmpresa() {
         moneda: "COP",
         zonaHoraria: "America/Bogota",
         cuentaContable: "",
+        providerType: PROVIDER_TYPES.UNCONFIRMED,
+        billingObligation: BILLING_OBLIGATIONS.UNCONFIRMED,
+        providerCodeMode: PROVIDER_CODE_MODES.UNIQUE,
+        providerCodesByBranch: {},
+        administrativeConfirmation: false,
         esIps: false,
         sisproUsuario: "",
         sisproTipoDoc: "CC",
@@ -69,16 +87,22 @@ export default function ConfigEmpresa() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [tRes, cRes, sisproConfig] = await Promise.all([
+            const [tRes, cRes, sisproConfig, sRes] = await Promise.all([
                 supabase.from("tenants").select("*").eq("id", userProfile.inquilino).maybeSingle(),
                 getConfigSection(userProfile.inquilino, "empresa_datos", {}),
-                getSisproConfig(userProfile.inquilino).catch(() => null)
+                getSisproConfig(userProfile.inquilino).catch(() => null),
+                supabase.from("sucursales").select("id, nombre, codigo_sede").eq("tenant_id", userProfile.inquilino)
             ]);
 
             if (tRes.error) throw tRes.error;
             const data = tRes.data || {};
             const extraConfig = cRes || {};
             const privateSispro = sisproConfig || {};
+            const sucs = sRes.data || [];
+            setSucursalesList(sucs);
+
+            const pType = extraConfig.providerType || (data.esIps ? PROVIDER_TYPES.IPS : (data.esIps === false ? PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE : PROVIDER_TYPES.UNCONFIRMED));
+            const bObligation = extraConfig.billingObligation || (data.billingObligation || (pType === PROVIDER_TYPES.IPS ? BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED : BILLING_OBLIGATIONS.UNCONFIRMED));
 
             setFormData(prev => ({
                 ...prev,
@@ -95,11 +119,16 @@ export default function ConfigEmpresa() {
                 moneda: data.moneda || extraConfig.moneda || "COP",
                 zonaHoraria: data.zonaHoraria || extraConfig.zonaHoraria || "America/Bogota",
                 cuentaContable: data.cuentaContable || extraConfig.cuentaContable || "",
-                esIps: data.esIps ?? extraConfig.esIps ?? false,
+                providerType: pType,
+                billingObligation: bObligation,
+                providerCodeMode: extraConfig.providerCodeMode || (extraConfig.providerCodesByBranch ? PROVIDER_CODE_MODES.BY_BRANCH : PROVIDER_CODE_MODES.UNIQUE),
+                providerCodesByBranch: extraConfig.providerCodesByBranch || {},
+                administrativeConfirmation: Boolean(extraConfig.administrativeConfirmation),
+                esIps: pType === PROVIDER_TYPES.IPS,
                 sisproUsuario: privateSispro.sisproUsuario || extraConfig.sisproUsuario || "",
                 sisproTipoDoc: privateSispro.sisproTipoDoc || extraConfig.sisproTipoDoc || "CC",
                 sisproPassword: "",
-                codigoPrestador: privateSispro.codigoPrestador || extraConfig.codigoPrestador || "",
+                codigoPrestador: extraConfig.codigoPrestador || privateSispro.codigoPrestador || "",
                 logoUrl: data.logo_url || data.logo || extraConfig.logoUrl || "",
                 ciudad: data.ciudad || extraConfig.ciudad || "",
                 codigoPostal: data.codigoPostal || extraConfig.codigoPostal || ""
@@ -125,12 +154,16 @@ export default function ConfigEmpresa() {
                 ...empresaPublicData
             } = formData;
 
-            await configureSispro(userProfile.inquilino, {
-                sisproUsuario,
-                sisproTipoDoc,
-                sisproPassword,
-                codigoPrestador
-            });
+            const isIps = formData.providerType === PROVIDER_TYPES.IPS;
+
+            if (isIps || sisproUsuario) {
+                await configureSispro(userProfile.inquilino, {
+                    sisproUsuario,
+                    sisproTipoDoc,
+                    sisproPassword,
+                    codigoPrestador: formData.providerCodeMode === PROVIDER_CODE_MODES.UNIQUE ? codigoPrestador : ""
+                });
+            }
 
             const tenantPayload = {
                 nombre: formData.nombreComercial || formData.razonSocial || "Clínica",
@@ -138,7 +171,8 @@ export default function ConfigEmpresa() {
                 telefono: formData.telefono || formData.celular || "",
                 direccion: formData.direccion || "",
                 ciudad: formData.ciudad || "",
-                logo_url: formData.logoUrl || ""
+                logo_url: formData.logoUrl || "",
+                esIps: isIps,
             };
 
             const { data: updatedTenant, error: tErr } = await supabase
@@ -155,7 +189,16 @@ export default function ConfigEmpresa() {
             await saveConfigSection(
                 userProfile.inquilino,
                 "empresa_datos",
-                { ...empresaPublicData }
+                {
+                    ...empresaPublicData,
+                    codigoPrestador,
+                    providerType: formData.providerType,
+                    billingObligation: formData.billingObligation,
+                    providerCodeMode: formData.providerCodeMode,
+                    providerCodesByBranch: formData.providerCodesByBranch,
+                    administrativeConfirmation: formData.administrativeConfirmation,
+                    esIps: isIps,
+                }
             );
 
             // Limpiar caché de sesión de AuthContext para asegurar recarga limpia en F5
@@ -483,119 +526,224 @@ export default function ConfigEmpresa() {
                     </div>
 
                 </div>
-
-                {/* Tarjeta SISPRO & Adicional */}
-                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
+                {/* Tarjeta Prestador de Salud & SISPRO (Res. 0948 de 2026) */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                         <div className="w-7 h-7 rounded bg-blue-50 text-blue-600 flex items-center justify-center">
-                            <FiFileText size={15} />
+                            <FiShield size={15} />
                         </div>
-                        <h3 className="text-[13px] font-bold text-slate-800">Configuración Adicional & SISPRO</h3>
+                        <div>
+                            <h3 className="text-[13px] font-bold text-slate-800">Prestador de Salud & Perfil Tributario (RIPS Res. 0948)</h3>
+                            <p className="text-[11px] text-slate-400">Configuración del responsable RIPS y obligación de facturación electrónica</p>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2.5">
+                        {/* Columna Izquierda: Tipo de Prestador y Obligación */}
+                        <div className="space-y-3.5">
+                            {/* 1. Tipo de Prestador */}
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-slate-600">Agendamiento Online</label>
-                                <input
-                                    type="text"
-                                    value={formData.agendamientoUrl}
-                                    onChange={e => setFormData({ ...formData, agendamientoUrl: e.target.value })}
-                                    placeholder="https://..."
-                                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                />
+                                <label className="text-[11px] font-bold text-slate-600">Tipo de Prestador *</label>
+                                <select
+                                    value={formData.providerType}
+                                    onChange={e => {
+                                        const pVal = e.target.value;
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            providerType: pVal,
+                                            esIps: pVal === PROVIDER_TYPES.IPS,
+                                            billingObligation: pVal === PROVIDER_TYPES.IPS ? BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED : prev.billingObligation
+                                        }));
+                                    }}
+                                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                >
+                                    <option value={PROVIDER_TYPES.IPS}>IPS - Institución Prestadora de Salud</option>
+                                    <option value={PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE}>Profesional Independiente</option>
+                                    <option value={PROVIDER_TYPES.OTRO}>Otro tipo de entidad</option>
+                                    <option value={PROVIDER_TYPES.UNCONFIRMED}>Sin confirmar</option>
+                                </select>
                             </div>
+
+                            {/* 2. Obligación de Facturación Electrónica */}
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-slate-600">Cuenta Contable</label>
-                                <input
-                                    type="text"
-                                    value={formData.cuentaContable}
-                                    onChange={e => setFormData({ ...formData, cuentaContable: e.target.value })}
-                                    placeholder="Buscar Item..."
-                                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                />
+                                <label className="text-[11px] font-bold text-slate-600">Obligación de Facturación Electrónica *</label>
+                                <select
+                                    value={formData.billingObligation}
+                                    onChange={e => setFormData(prev => ({ ...prev, billingObligation: e.target.value }))}
+                                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                >
+                                    <option value={BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED}>Obligado a facturar electrónicamente (FEV requerida)</option>
+                                    <option value={BILLING_OBLIGATIONS.NOT_REQUIRED}>No obligado (E.T. Art. 616-2 / Habilita RIPS sin FEV)</option>
+                                    <option value={BILLING_OBLIGATIONS.UNCONFIRMED}>Sin confirmar (Previsualización local)</option>
+                                </select>
+                                <p className="text-[10px] text-slate-500 mt-1 leading-relaxed bg-slate-50 p-2 rounded border border-slate-100">
+                                    <FiInfo className="inline mr-1 text-blue-500" size={11} />
+                                    {UVT_REFERENCE_NOTICE}
+                                </p>
                             </div>
-                            <div className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg border border-slate-200 mt-2">
-                                <span className="text-[12px] font-semibold text-slate-700">¿Es una institución prestadora de salud (IPS)?</span>
-                                <label className="relative inline-flex items-center cursor-pointer">
+
+                            {/* Confirmación Administrativa si es No Obligado */}
+                            {formData.providerType === PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE && formData.billingObligation === BILLING_OBLIGATIONS.NOT_REQUIRED && (
+                                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg space-y-2">
+                                    <label className="flex items-start gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.administrativeConfirmation}
+                                            onChange={e => setFormData(prev => ({ ...prev, administrativeConfirmation: e.target.checked }))}
+                                            className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span className="text-[11px] text-amber-900 font-medium leading-tight">
+                                            Confirmo administrativamente que este profesional cumple los requisitos tributarios de la DIAN para no estar obligado a emitir factura electrónica.
+                                        </span>
+                                    </label>
+                                </div>
+                            )}
+
+                            {/* Cuenta contable & Agendamiento */}
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-600">Cuenta Contable</label>
                                     <input
-                                        type="checkbox"
-                                        className="sr-only peer"
-                                        checked={formData.esIps}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, esIps: e.target.checked }))}
+                                        type="text"
+                                        value={formData.cuentaContable}
+                                        onChange={e => setFormData({ ...formData, cuentaContable: e.target.value })}
+                                        placeholder="Buscar Item..."
+                                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                     />
-                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                                </label>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-600">Agendamiento Online</label>
+                                    <input
+                                        type="text"
+                                        value={formData.agendamientoUrl}
+                                        onChange={e => setFormData({ ...formData, agendamientoUrl: e.target.value })}
+                                        placeholder="https://..."
+                                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                </div>
                             </div>
                         </div>
 
-                        {/* Campos SISPRO (Condicionales si es IPS) */}
-                        {formData.esIps ? (
-                            <div className="space-y-2.5 bg-blue-50/40 p-3.5 rounded-xl border border-blue-100 animate-in fade-in duration-300">
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="space-y-1">
-                                        <label className="text-[11px] font-bold text-slate-600">Usuario SISPRO ⓘ</label>
-                                        <input
-                                            type="text"
-                                            value={formData.sisproUsuario}
-                                            onChange={e => setFormData({ ...formData, sisproUsuario: e.target.value })}
-                                            placeholder="Número de documento"
-                                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                        />
+                        {/* Columna Derecha: Código Prestador y SISPRO Institucional (Si es IPS) */}
+                        <div className="space-y-3">
+                            {formData.providerType === PROVIDER_TYPES.IPS ? (
+                                <div className="space-y-3 bg-blue-50/40 p-3.5 rounded-xl border border-blue-100 animate-in fade-in duration-300">
+                                    {/* Modalidad de Código Prestador */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] font-bold text-slate-700">Código de Prestador Institucional (REPS)</label>
+                                        <div className="flex items-center gap-4 text-xs text-slate-700">
+                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="providerCodeMode"
+                                                    value={PROVIDER_CODE_MODES.UNIQUE}
+                                                    checked={formData.providerCodeMode !== PROVIDER_CODE_MODES.BY_BRANCH}
+                                                    onChange={() => setFormData({ ...formData, providerCodeMode: PROVIDER_CODE_MODES.UNIQUE })}
+                                                    className="text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <span className="font-semibold">Código Único</span>
+                                            </label>
+                                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                                <input
+                                                    type="radio"
+                                                    name="providerCodeMode"
+                                                    value={PROVIDER_CODE_MODES.BY_BRANCH}
+                                                    checked={formData.providerCodeMode === PROVIDER_CODE_MODES.BY_BRANCH}
+                                                    onChange={() => setFormData({ ...formData, providerCodeMode: PROVIDER_CODE_MODES.BY_BRANCH })}
+                                                    className="text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <span className="font-semibold">Configurar por Sede</span>
+                                            </label>
+                                        </div>
                                     </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[11px] font-bold text-slate-600">Tipo Doc. SISPRO</label>
-                                        <select
-                                            value={formData.sisproTipoDoc}
-                                            onChange={e => setFormData({ ...formData, sisproTipoDoc: e.target.value })}
-                                            className="w-full h-9 px-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-700 outline-none focus:border-blue-500 transition-colors"
-                                        >
-                                            <option value="CC">Cédula de Ciudadanía</option>
-                                            <option value="NIT">NIT</option>
-                                            <option value="CE">Cédula de Extranjería</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="space-y-1">
+
+                                    {formData.providerCodeMode === PROVIDER_CODE_MODES.UNIQUE ? (
+                                        <div className="space-y-1">
+                                            <input
+                                                type="text"
+                                                value={formData.codigoPrestador}
+                                                onChange={e => setFormData({ ...formData, codigoPrestador: e.target.value })}
+                                                placeholder="Ej. 700010165701 (10 o 12 dígitos)"
+                                                className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                                            {(sucursalesList.length > 0 ? sucursalesList : [{ id: "sede_principal", nombre: "Sede Principal" }]).map(suc => (
+                                                <div key={suc.id} className="flex items-center gap-2">
+                                                    <span className="text-[11px] font-bold text-slate-600 w-32 truncate" title={suc.nombre}>{suc.nombre}</span>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Código REPS sede"
+                                                        value={formData.providerCodesByBranch?.[suc.id] || ""}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                providerCodesByBranch: {
+                                                                    ...(prev.providerCodesByBranch || {}),
+                                                                    [suc.id]: val
+                                                                }
+                                                            }));
+                                                        }}
+                                                        className="flex-1 h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* SISPRO Institucional */}
+                                    <div className="pt-2 border-t border-blue-100/80 space-y-2">
                                         <div className="flex items-center justify-between">
-                                            <label className="text-[11px] font-bold text-slate-600">Contraseña SISPRO ⓘ</label>
-                                            {sisproHasPassword && (
-                                                <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                                    Configurada
+                                            <label className="text-[11px] font-bold text-slate-700">Integración SISPRO Institucional</label>
+                                            {sisproHasPassword ? (
+                                                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                                    <FiCheckCircle size={10} /> Configurada
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                                    No configurada
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="relative">
+                                        <div className="grid grid-cols-2 gap-2">
                                             <input
-                                                type="password"
-                                                value={formData.sisproPassword}
-                                                onChange={e => setFormData({ ...formData, sisproPassword: e.target.value })}
-                                                placeholder={sisproHasPassword ? "•••••••• (Contraseña guardada)" : "Ingrese la contraseña"}
-                                                autoComplete="new-password"
-                                                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                                type="text"
+                                                value={formData.sisproUsuario}
+                                                onChange={e => setFormData({ ...formData, sisproUsuario: e.target.value })}
+                                                placeholder="Usuario SISPRO"
+                                                className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                             />
+                                            <select
+                                                value={formData.sisproTipoDoc}
+                                                onChange={e => setFormData({ ...formData, sisproTipoDoc: e.target.value })}
+                                                className="w-full h-8 px-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 outline-none focus:border-blue-500"
+                                            >
+                                                <option value="NIT">NIT</option>
+                                                <option value="CC">Cédula (CC)</option>
+                                                <option value="CE">Cédula Ext. (CE)</option>
+                                            </select>
                                         </div>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[11px] font-bold text-slate-600">Código de Prestador ⓘ</label>
                                         <input
-                                            type="text"
-                                            value={formData.codigoPrestador}
-                                            onChange={e => setFormData({ ...formData, codigoPrestador: e.target.value })}
-                                            placeholder="Ej. 7000101657"
-                                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[13px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                            type="password"
+                                            value={formData.sisproPassword}
+                                            onChange={e => setFormData({ ...formData, sisproPassword: e.target.value })}
+                                            placeholder={sisproHasPassword ? "•••••••• (Contraseña guardada - cambiar solo si desea actualizar)" : "Contraseña SISPRO"}
+                                            autoComplete="new-password"
+                                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                         />
                                     </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center h-full p-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/50 text-center">
-                                <span className="text-[11px] text-slate-400 font-medium">
-                                    Active el conmutador IPS para habilitar los campos de integración SISPRO.
-                                </span>
-                            </div>
-                        )}
+                            ) : (
+                                <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 text-center space-y-2">
+                                    <FiInfo className="mx-auto text-blue-500" size={20} />
+                                    <p className="text-[11px] text-slate-600 font-medium">
+                                        En modalidad <strong>Profesional Independiente</strong>, los códigos de habilitación prestador y credenciales SISPRO se configuran directamente en el perfil de cada Doctor autorizado (Configuración → Usuarios).
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
