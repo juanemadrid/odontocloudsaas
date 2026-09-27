@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import * as XLSX from "xlsx";
+import JSZip from "jszip";
 import { formatNitForRips } from '../../utils/ripsValidators';
 import {
     generateRipsV003,
@@ -23,9 +24,37 @@ import {
     MUV_UI_STATES,
     MUV_ERROR_CATALOG
 } from '../../services/muvService';
+import { downloadFactusAttachedDocumentXml } from '../../services/factusProxyService';
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
+
+/**
+ * Validador de cruce obligatorio JSON ↔ XML AttachedDocument
+ * Verifica que el XML provisto pertenezca a la misma factura electrónica (numFactura).
+ * Si hay inconsistencia, previene la inclusión y previene corrupción de paquetes.
+ */
+export function xmlMatchesInvoice(xmlString, invoiceId) {
+    if (!xmlString || typeof xmlString !== 'string') return false;
+    const cleanId = String(invoiceId || '').trim();
+    if (!cleanId) return false;
+
+    // Buscar en ParentDocumentID (UBL AttachedDocument)
+    const parentDocMatch = xmlString.match(/<[^:>]*:?ParentDocumentID[^>]*>([^<]+)<\/[^:>]*:?ParentDocumentID>/i);
+    if (parentDocMatch && parentDocMatch[1].trim() === cleanId) {
+        return true;
+    }
+
+    // Buscar en ID directo del documento
+    const idMatches = xmlString.matchAll(/<[^:>]*:?ID[^>]*>([^<]+)<\/[^:>]*:?ID>/gi);
+    for (const match of idMatches) {
+        if (match[1].trim() === cleanId) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 export default function RipsGenerator() {
     const { userProfile } = useAuth();
@@ -61,7 +90,7 @@ export default function RipsGenerator() {
     const [checkedAvailable, setCheckedAvailable] = useState(new Set());
     const [checkedSelected, setCheckedSelected] = useState(new Set());
 
-    // Acordeones y filtros de las 5 tablas 1:1 OralDrive
+    // Acordeones y filtros de las 5 tablas
     const [openDian, setOpenDian] = useState(true);
     const [openUsuarios, setOpenUsuarios] = useState(true);
     const [openConsultas, setOpenConsultas] = useState(true);
@@ -74,7 +103,19 @@ export default function RipsGenerator() {
     const [filterTextProcedimientos, setFilterTextProcedimientos] = useState('');
     const [filterTextOtros, setFilterTextOtros] = useState('');
 
-    const filteredTerceros = React.useMemo(() => {
+    // Selección de documentos DIAN para Enviar / Exportar
+    const [selectedDianDocIds, setSelectedDianDocIds] = useState(new Set());
+    const [exportingPackage, setExportingPackage] = useState(false);
+
+    // Paginación por sección (10 por página)
+    const [pageDian, setPageDian] = useState(1);
+    const [pageUsuarios, setPageUsuarios] = useState(1);
+    const [pageConsultas, setPageConsultas] = useState(1);
+    const [pageProcedimientos, setPageProcedimientos] = useState(1);
+    const [pageOtros, setPageOtros] = useState(1);
+    const PAGE_SIZE = 10;
+
+    const filteredTerceros = useMemo(() => {
         if (!searchTerceroQuery.trim()) return epsList;
         const q = searchTerceroQuery.toLowerCase().trim();
         return epsList.filter(t => 
@@ -83,6 +124,108 @@ export default function RipsGenerator() {
             (t.doc && t.doc.toLowerCase().includes(q))
         );
     }, [epsList, searchTerceroQuery]);
+
+    // Filtrado y paginación para Documentos DIAN
+    const filteredDian = useMemo(() => {
+        if (!filterTextDian.trim()) return dianDocs;
+        const q = filterTextDian.toLowerCase().trim();
+        return dianDocs.filter(d => 
+            (d.id || '').toLowerCase().includes(q) ||
+            (d.paciente || '').toLowerCase().includes(q) ||
+            (d.cufe || '').toLowerCase().includes(q) ||
+            (d.tipoNota || '').toLowerCase().includes(q)
+        );
+    }, [dianDocs, filterTextDian]);
+
+    const paginatedDian = useMemo(() => {
+        const start = (pageDian - 1) * PAGE_SIZE;
+        return filteredDian.slice(start, start + PAGE_SIZE);
+    }, [filteredDian, pageDian]);
+
+    // Filtrado y paginación para Usuarios
+    const filteredUsuarios = useMemo(() => {
+        if (!filterTextUsuarios.trim()) return usuarios;
+        const q = filterTextUsuarios.toLowerCase().trim();
+        return usuarios.filter(u => 
+            (u.numDocumentoIdentificacion || '').toLowerCase().includes(q) ||
+            (u.tipoDocumentoIdentificacion || '').toLowerCase().includes(q) ||
+            (u.nombreCompleto || '').toLowerCase().includes(q) ||
+            (u.codMunicipioResidencia || '').toLowerCase().includes(q)
+        );
+    }, [usuarios, filterTextUsuarios]);
+
+    const paginatedUsuarios = useMemo(() => {
+        const start = (pageUsuarios - 1) * PAGE_SIZE;
+        return filteredUsuarios.slice(start, start + PAGE_SIZE);
+    }, [filteredUsuarios, pageUsuarios]);
+
+    // Filtrado y paginación para Consultas
+    const filteredConsultas = useMemo(() => {
+        if (!filterTextConsultas.trim()) return consultas;
+        const q = filterTextConsultas.toLowerCase().trim();
+        return consultas.filter(c => 
+            (c.docPaciente || '').toLowerCase().includes(q) ||
+            (c.invoiceId || '').toLowerCase().includes(q) ||
+            (c.codConsulta || '').toLowerCase().includes(q) ||
+            (c.dxPrincipal || '').toLowerCase().includes(q)
+        );
+    }, [consultas, filterTextConsultas]);
+
+    const paginatedConsultas = useMemo(() => {
+        const start = (pageConsultas - 1) * PAGE_SIZE;
+        return filteredConsultas.slice(start, start + PAGE_SIZE);
+    }, [filteredConsultas, pageConsultas]);
+
+    // Filtrado y paginación para Procedimientos
+    const filteredProcedimientos = useMemo(() => {
+        if (!filterTextProcedimientos.trim()) return procedimientos;
+        const q = filterTextProcedimientos.toLowerCase().trim();
+        return procedimientos.filter(p => 
+            (p.docPaciente || '').toLowerCase().includes(q) ||
+            (p.invoiceId || '').toLowerCase().includes(q) ||
+            (p.codProcedimiento || '').toLowerCase().includes(q) ||
+            (p.dxPrincipal || '').toLowerCase().includes(q)
+        );
+    }, [procedimientos, filterTextProcedimientos]);
+
+    const paginatedProcedimientos = useMemo(() => {
+        const start = (pageProcedimientos - 1) * PAGE_SIZE;
+        return filteredProcedimientos.slice(start, start + PAGE_SIZE);
+    }, [filteredProcedimientos, pageProcedimientos]);
+
+    // Filtrado y paginación para Otros Servicios
+    const filteredOtrosServicios = useMemo(() => {
+        if (!filterTextOtros.trim()) return otrosServicios;
+        const q = filterTextOtros.toLowerCase().trim();
+        return otrosServicios.filter(o => 
+            (o.docPaciente || '').toLowerCase().includes(q) ||
+            (o.invoiceId || '').toLowerCase().includes(q) ||
+            (o.codTecnologiaSalud || '').toLowerCase().includes(q) ||
+            (o.nomTecnologiaSalud || '').toLowerCase().includes(q)
+        );
+    }, [otrosServicios, filterTextOtros]);
+
+    const paginatedOtrosServicios = useMemo(() => {
+        const start = (pageOtros - 1) * PAGE_SIZE;
+        return filteredOtrosServicios.slice(start, start + PAGE_SIZE);
+    }, [filteredOtrosServicios, pageOtros]);
+
+    const toggleSelectAllDian = () => {
+        if (selectedDianDocIds.size === filteredDian.length && filteredDian.length > 0) {
+            setSelectedDianDocIds(new Set());
+        } else {
+            const next = new Set();
+            filteredDian.forEach(d => next.add(d.id));
+            setSelectedDianDocIds(next);
+        }
+    };
+
+    const toggleSelectDian = (id) => {
+        const next = new Set(selectedDianDocIds);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setSelectedDianDocIds(next);
+    };
 
     // Transfer list handlers
     const handleTransferAllRight = () => {
@@ -722,7 +865,9 @@ export default function RipsGenerator() {
                     codPaisResidencia: "170",
                     codMunicipioResidencia: rawMunicipio,
                     codZonaTerritorialResidencia: rawZona,
-                    incapacidad: rawIncapacidad,
+                    incapacidad: rawIncapacidad === "01" || pacienteData?.incapacidad ? "Si" : "No",
+                    codPaisOrigen: "170",
+                    registroSiras: "",
                     nombreCompleto: pacienteData ? (pacienteData.nombreCompleto || `${pacienteData.nombres || ""} ${pacienteData.apellidos || ""}`.trim()) : pacNombre,
                     errors: patientErrors
                 };
@@ -1110,7 +1255,9 @@ export default function RipsGenerator() {
                     paciente: pacNombre,
                     cufe: f.cufe || f.cufeFactura || "SIN_CUFE",
                     errors: invoiceErrors,
-                    status: isValidInvoice ? "LISTO" : "CON_ERRORES"
+                    status: isValidInvoice ? "LISTO" : "CON_ERRORES",
+                    tipoNota: f.tipoNota || null,
+                    rawDoc: f,
                 });
             }
 
@@ -1119,6 +1266,13 @@ export default function RipsGenerator() {
             setConsultas(conList);
             setProcedimientos(procList);
             setOtrosServicios(otrosList);
+
+            setSelectedDianDocIds(new Set());
+            setPageDian(1);
+            setPageUsuarios(1);
+            setPageConsultas(1);
+            setPageProcedimientos(1);
+            setPageOtros(1);
 
             setPreflightValidationMap(validationMap);
             setPreflightSummary({
@@ -1422,138 +1576,390 @@ export default function RipsGenerator() {
         toast.info("Descargando lote de archivos RIPS JSON...");
     };
 
-    const exportDianExcel = () => {
-        const rows = (dianDocs.length > 0 ? dianDocs : [{}]).map(d => ({
-            "Estado": d.errors && d.errors.length > 0 ? "Con errores" : (d.id ? "Validado" : ""),
-            "Número de la factura": d.id || "",
-            "Tipo de nota": d.id ? "Factura Electrónica" : "",
-            "CUV": d.cufe || "",
-            "Acciones": ""
-        }));
-        const ws = XLSX.utils.json_to_sheet(rows);
+    const getDateSuffix = () => {
+        const startClean = (dateRange.start || '').replace(/-/g, '');
+        const endClean = (dateRange.end || '').replace(/-/g, '');
+        return `${startClean}-${endClean}`;
+    };
+
+    const buildExcelWithSummary = (rows, headers, summaryCounts, sheetName, fileName) => {
+        const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+        if (summaryCounts) {
+            const startRow = (rows.length > 0 ? rows.length : 1) + 2;
+            XLSX.utils.sheet_add_aoa(ws, [
+                [`Validado correctamente: ${summaryCounts.valid}`],
+                [`Validado con errores: ${summaryCounts.error}`],
+                [`Sin validar: ${summaryCounts.unvalidated}`]
+            ], { origin: `B${startRow}` });
+        }
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Documentos_DIAN");
-        XLSX.writeFile(wb, `RIPS_Documentos_DIAN_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        XLSX.writeFile(wb, fileName);
+    };
+
+    const exportDianExcel = () => {
+        const suffix = getDateSuffix();
+        const rows = (dianDocs.length > 0 ? dianDocs : []).map(d => {
+            const muvInfo = muvValidationsMap.get(d.id);
+            const isValid = d.errors.length === 0;
+            return {
+                "Estado": (muvInfo?.cuv || isValid) ? "Validado" : "Con errores",
+                "Número de la factura": d.id || "",
+                "Tipo de nota": d.tipoNota || "",
+                "CUV": muvInfo?.cuv || "",
+                "Acciones": ""
+            };
+        });
+        const summary = {
+            valid: dianDocs.filter(d => d.errors.length === 0).length,
+            error: dianDocs.filter(d => d.errors.length > 0).length,
+            unvalidated: preflightStatus === null ? dianDocs.length : 0
+        };
+        buildExcelWithSummary(
+            rows, 
+            ["Estado", "Número de la factura", "Tipo de nota", "CUV", "Acciones"], 
+            summary, 
+            "Documentos DIAN", 
+            `Documentos DIAN${suffix}.xlsx`
+        );
         toast.success("Documentos DIAN exportados a Excel");
     };
 
     const exportUsuariosExcel = () => {
-        const rows = (usuarios.length > 0 ? usuarios : [{}]).map(u => ({
-            "Tipo de documento Identificación": u.tipoDocumentoIdentificacion || "",
+        const suffix = getDateSuffix();
+        const rows = (usuarios.length > 0 ? usuarios : []).map(u => ({
+            "Tipo de documento Identificación": u.tipoDocumentoIdentificacion || "CC",
             "Nro. documento de Identificación": u.numDocumentoIdentificacion || "",
-            "Tipo de Usuario": u.tipoUsuario || "",
+            "Tipo de Usuario": u.tipoUsuario || "01",
             "Fecha de nacimiento": u.fechaNacimiento || "",
-            "Cód. Sexo": u.codSexo || "",
-            "Cód. país de residencia": "170",
-            "Cód. Municipio residencia": u.codMunicipioResidencia || "",
+            "cod. Sexo": u.codSexo || "",
+            "Cód. pais de residencia": u.codPaisResidencia || "170",
+            "Cód. Municipo residencia": u.codMunicipioResidencia || "",
+            "Cód Zona de Residencia": u.codZonaTerritorialResidencia || "02",
+            "Incapacidad": u.incapacidad === "01" || u.incapacidad === "SI" || u.incapacidad === "Si" ? "Si" : "No",
+            "Cod. pais de origen": u.codPaisOrigen || "170",
+            "Registro SIRAS": "",
             "Acciones": ""
         }));
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Usuarios");
-        XLSX.writeFile(wb, `RIPS_Usuarios_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        buildExcelWithSummary(
+            rows, 
+            [
+                "Tipo de documento Identificación",
+                "Nro. documento de Identificación",
+                "Tipo de Usuario",
+                "Fecha de nacimiento",
+                "cod. Sexo",
+                "Cód. pais de residencia",
+                "Cód. Municipo residencia",
+                "Cód Zona de Residencia",
+                "Incapacidad",
+                "Cod. pais de origen",
+                "Registro SIRAS",
+                "Acciones"
+            ], 
+            null, 
+            "Usuarios", 
+            `Usuarios${suffix}.xlsx`
+        );
         toast.success("Usuarios exportados a Excel");
     };
 
     const exportConsultasExcel = () => {
-        const rows = (consultas.length > 0 ? consultas : [{}]).map(c => ({
-            "Estado": c.errors && c.errors.length > 0 ? "Con errores" : (c.codConsulta ? "Validado" : ""),
+        const suffix = getDateSuffix();
+        const rows = (consultas.length > 0 ? consultas : []).map(c => ({
+            "Estado": c.errors.length === 0 ? "Validado" : "Con errores",
             "Identificación del paciente": c.docPaciente || "",
             "Número de la factura": c.invoiceId || "",
             "Código del Prestador": c.codPrestador || "",
             "Fecha de Consulta": c.fechaInicio || "",
-            "Nro. de Autorización": c.numAutorizacion || "",
+            "Nro de Autorización": c.numAutorizacion || "",
             "Código de la consulta": c.codConsulta || "",
             "Modalidad": c.modalidadGrupoServicioTecSal || "01",
-            "Grupo de Servicios": c.grupoServicios || "01",
-            "Cód. Servicio": c.codServicio || "360",
-            "Finalidad": c.finalidadTecnologiaSalud || "10",
-            "Causa Externa": c.causaMotivoAtencion || "38",
-            "Cód. Diagnóstico Principal": c.dxPrincipal || "",
-            "Tipo Diagnóstico Principal": "01",
-            "Tipo Identificación del Profesional": "CC",
-            "Nro. Identificación del Profesional": "64576359",
+            "Grupo servicio": c.grupoServicios || "01",
+            "Cod. servicio": c.codServicio || 334,
+            "Finalidad de la consulta": c.finalidadTecnologiaSalud || "10",
+            "Causa/motivo atención": c.causaMotivoAtencion || "38",
+            "Cód dx Principal": c.dxPrincipal || "",
+            "Cód dx Rel 1": c.codDiagnosticoRelacionado1 || "",
+            "Cód dx Rel 2": "",
+            "Cód dx Rel 3": "",
+            "Tipo de Diagnóstico": c.tipoDiagnosticoPrincipal || "01",
+            "Tipo de Identificación del Profesional": c.tipoDocumentoIdentificacion || "CC",
+            "Identificación del Profesional": c.numDocumentoIdentificacion || "",
             "Valor de la consulta": c.valorServicio || 0,
-            "Concepto recaudo": "05",
+            "Concepto recaudo": c.conceptoRecaudo || "05",
             "Valor pago moderador": c.valorPagoModerador || 0,
-            "Número de Factura pago moderador": c.numFEVPagoModerador || "",
+            "Número de factura pago moderador": c.numFEVPagoModerador || "",
             "CUV": "",
             "Acciones": ""
         }));
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Consultas");
-        XLSX.writeFile(wb, `RIPS_Consultas_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        const summary = {
+            valid: consultas.filter(c => c.errors.length === 0).length,
+            error: consultas.filter(c => c.errors.length > 0).length,
+            unvalidated: preflightStatus === null ? consultas.length : 0
+        };
+        buildExcelWithSummary(
+            rows, 
+            [
+                "Estado", "Identificación del paciente", "Número de la factura", "Código del Prestador",
+                "Fecha de Consulta", "Nro de Autorización", "Código de la consulta", "Modalidad",
+                "Grupo servicio", "Cod. servicio", "Finalidad de la consulta", "Causa/motivo atención",
+                "Cód dx Principal", "Cód dx Rel 1", "Cód dx Rel 2", "Cód dx Rel 3", "Tipo de Diagnóstico",
+                "Tipo de Identificación del Profesional", "Identificación del Profesional", "Valor de la consulta",
+                "Concepto recaudo", "Valor pago moderador", "Número de factura pago moderador", "CUV", "Acciones"
+            ], 
+            summary, 
+            "Consultas", 
+            `Consultas${suffix}.xlsx`
+        );
         toast.success("Consultas exportadas a Excel");
     };
 
     const exportProcedimientosExcel = () => {
-        const rows = (procedimientos.length > 0 ? procedimientos : [{}]).map(p => ({
-            "Estado": p.errors && p.errors.length > 0 ? "Con errores" : (p.codProcedimiento ? "Validado" : ""),
+        const suffix = getDateSuffix();
+        const rows = (procedimientos.length > 0 ? procedimientos : []).map(p => ({
+            "Estado": p.errors.length === 0 ? "Validado" : "Con errores",
             "Nro. Identificación del paciente": p.docPaciente || "",
             "Número de la factura": p.invoiceId || "",
             "Código del Prestador": p.codPrestador || "",
             "Fecha de Procedimiento": p.fechaProcedimiento || "",
             "Nro. de Autorización": p.numAutorizacion || "",
             "Código del Procedimiento": p.codProcedimiento || "",
-            "Vía de ingreso": p.viaIngresoServicioSalud || "01",
             "Modalidad": p.modalidadGrupoServicioTecSal || "01",
-            "Grupo de Servicios": p.grupoServicios || "02",
-            "Cód. Servicio": p.codServicio || "360",
-            "Finalidad": p.finalidadTecnologiaSalud || "10",
-            "Personal que atiende": p.tipoPersonal || "01",
-            "Cód. Diagnóstico Principal": p.dxPrincipal || "",
-            "Cód. Diagnóstico Relacionado": p.codDiagnosticoRelacionado || "",
-            "Cód. Complicación": p.codComplicacion || "",
-            "Forma realización acto quirúrgico": p.formaRealizacionActoQuirurgico || "01",
-            "Tipo Identificación del Profesional": "CC",
-            "Nro. Identificación del Profesional": "64576359",
-            "Valor del procedimiento": p.valorServicio || 0,
-            "Concepto recaudo": "05",
+            "Grupo de servicios": p.grupoServicios || "02",
+            "Cod. servicio": p.codServicio || 334,
+            "Tipo Identificación del Profesional": p.tipoDocumentoIdentificacion || "CC",
+            "Nro.Identificación del Profesional": p.numDocumentoIdentificacion || "",
+            "Cód dx Principal": p.dxPrincipal || "",
+            "Cód dx Relacionado": p.codDiagnosticoRelacionado || "",
+            "Finalidad del procedimiento": p.finalidadTecnologiaSalud || "02",
+            "Complicación": p.codComplicacion || "",
+            "Valor del servicio": p.valorServicio || 0,
+            "Concepto recaudo": p.conceptoRecaudo || "05",
             "Valor pago moderador": p.valorPagoModerador || 0,
-            "Número de Factura pago moderador": p.numFEVPagoModerador || "",
+            "Número de factura pago moderador": p.numFEVPagoModerador || "",
             "CUV": "",
             "Acciones": ""
         }));
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Procedimientos");
-        XLSX.writeFile(wb, `RIPS_Procedimientos_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        const summary = {
+            valid: procedimientos.filter(p => p.errors.length === 0).length,
+            error: procedimientos.filter(p => p.errors.length > 0).length,
+            unvalidated: preflightStatus === null ? procedimientos.length : 0
+        };
+        buildExcelWithSummary(
+            rows, 
+            [
+                "Estado", "Nro. Identificación del paciente", "Número de la factura", "Código del Prestador",
+                "Fecha de Procedimiento", "Nro. de Autorización", "Código del Procedimiento", "Modalidad",
+                "Grupo de servicios", "Cod. servicio", "Tipo Identificación del Profesional",
+                "Nro.Identificación del Profesional", "Cód dx Principal", "Cód dx Relacionado",
+                "Finalidad del procedimiento", "Complicación", "Valor del servicio", "Concepto recaudo",
+                "Valor pago moderador", "Número de factura pago moderador", "CUV", "Acciones"
+            ], 
+            summary, 
+            "Procedimientos", 
+            `Procedimientos${suffix}.xlsx`
+        );
         toast.success("Procedimientos exportados a Excel");
     };
 
     const exportOtrosServiciosExcel = () => {
-        const rows = (otrosServicios.length > 0 ? otrosServicios : [{}]).map(o => ({
-            "Estado": o.errors && o.errors.length > 0 ? "Con errores" : (o.codTecnologiaSalud ? "Validado" : ""),
+        const suffix = getDateSuffix();
+        const rows = (otrosServicios.length > 0 ? otrosServicios : []).map(o => ({
+            "Estado": (!o.errors || o.errors.length === 0) ? "Validado" : "Con errores",
             "Nro. Identificación del paciente": o.docPaciente || "",
             "Número de la factura": o.invoiceId || "",
             "Código del Prestador": o.codPrestador || "",
             "Fecha de Otro Servicio": o.fechaSuministroTecnologia || "",
             "Nro. de Autorización": o.numAutorizacion || "",
             "Código del Otro Servicio": o.codTecnologiaSalud || "",
-            "Tipo de Otro Servicio": o.tipoOS || "",
+            "Tipo de Otro Servicio": o.tipoOS || "01",
             "Tipo Identificación del Profesional": o.tipoDocumentoIdentificacion || "CC",
-            "Nro. Identificación del Profesional": o.numDocumentoIdentificacion || "",
+            "Nro.Identificación del Profesional": o.numDocumentoIdentificacion || "",
             "Valor unitario del servicio": o.vrUnitOS || 0,
             "Cantidad del servicio": o.cantidadOS || 0,
             "Valor del servicio": o.vrServicio || 0,
             "Concepto recaudo": o.conceptoRecaudo || "05",
             "Valor pago moderador": o.valorPagoModerador || 0,
-            "Número de Factura pago moderador": o.numFEVPagoModerador || "",
+            "Número de factura pago moderador": o.numFEVPagoModerador || "",
             "CUV": "",
             "Acciones": ""
         }));
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Otros_Servicios");
-        XLSX.writeFile(wb, `RIPS_Otros_Servicios_${dateRange.start || 'inicio'}_al_${dateRange.end || 'fin'}.xlsx`);
+        const summary = {
+            valid: otrosServicios.filter(o => !o.errors || o.errors.length === 0).length,
+            error: otrosServicios.filter(o => o.errors && o.errors.length > 0).length,
+            unvalidated: preflightStatus === null ? otrosServicios.length : 0
+        };
+        buildExcelWithSummary(
+            rows, 
+            [
+                "Estado", "Nro. Identificación del paciente", "Número de la factura", "Código del Prestador",
+                "Fecha de Otro Servicio", "Nro. de Autorización", "Código del Otro Servicio", "Tipo de Otro Servicio",
+                "Tipo Identificación del Profesional", "Nro.Identificación del Profesional", "Valor unitario del servicio",
+                "Cantidad del servicio", "Valor del servicio", "Concepto recaudo", "Valor pago moderador",
+                "Número de factura pago moderador", "CUV", "Acciones"
+            ], 
+            summary, 
+            "Otros Servicios", 
+            `OtrosServicios${suffix}.xlsx`
+        );
         toast.success("Otros Servicios exportados a Excel");
+    };
+
+    // ─────────────────────────────────────────────────────────────
+    // EXPORTACIÓN SUPERIOR: PAQUETE RIPS COMPRIMIDO (ZIP)
+    // Estructura: RIPS{START}-{END}/{FACTURA}/{FACTURA}.json y {FACTURA}.xml
+    // Cruce obligatorio JSON ↔ XML. Sin XML falso.
+    // ─────────────────────────────────────────────────────────────
+    const handleBulkExportPackage = async () => {
+        if (!searched) {
+            toast.info("Debe presionar BUSCAR primero para cargar las facturas.");
+            return;
+        }
+
+        let targetDocs = [];
+        if (selectedDianDocIds.size > 0) {
+            targetDocs = dianDocs.filter(d => selectedDianDocIds.has(d.id));
+        } else {
+            targetDocs = dianDocs;
+        }
+
+        if (targetDocs.length === 0) {
+            toast.error("No hay facturas para exportar.");
+            return;
+        }
+
+        setExportingPackage(true);
+        const toastId = toast.loading("Generando paquete RIPS comprimido...");
+        try {
+            const suffix = getDateSuffix();
+            const zipRootName = `RIPS${suffix}`;
+            const zip = new JSZip();
+            const rootFolder = zip.folder(zipRootName);
+
+            let missingXmlCount = 0;
+            let exportedCount = 0;
+
+            for (const doc of targetDocs) {
+                const invoiceId = doc.id;
+                const validationEntry = preflightValidationMap.get(invoiceId);
+                const ripsJson = validationEntry?.ripsJson || null;
+
+                const invoiceFolder = rootFolder.folder(invoiceId);
+
+                // 1. Incluir JSON normativo {FACTURA}.json
+                if (ripsJson) {
+                    invoiceFolder.file(`${invoiceId}.json`, JSON.stringify(ripsJson, null, 2));
+                }
+
+                // 2. Obtener AttachedDocument XML real (sin inventar XML)
+                let xmlContent = doc.rawDoc?.attached_document_xml || doc.rawDoc?.xml_content || doc.rawDoc?.xml || null;
+
+                if (!xmlContent && doc.rawDoc?.factus_id) {
+                    try {
+                        const xmlRes = await downloadFactusAttachedDocumentXml(invoiceId);
+                        if (xmlRes?.xml || xmlRes?.attachedDocument) {
+                            xmlContent = xmlRes.xml || xmlRes.attachedDocument;
+                        }
+                    } catch (xmlErr) {
+                        console.warn(`No se pudo descargar AttachedDocument para ${invoiceId}:`, xmlErr);
+                    }
+                }
+
+                if (xmlContent) {
+                    // Cruce obligatorio JSON ↔ XML
+                    const isCoherent = xmlMatchesInvoice(xmlContent, invoiceId);
+                    if (!isCoherent) {
+                        console.error(`RIPS_EXPORT_INVOICE_MISMATCH: XML AttachedDocument no coincide con factura ${invoiceId}`);
+                        toast.error(`RIPS_EXPORT_INVOICE_MISMATCH: Factura ${invoiceId} tiene XML no coincidente. Se excluye XML.`);
+                    } else {
+                        invoiceFolder.file(`${invoiceId}.xml`, xmlContent);
+                    }
+                } else {
+                    missingXmlCount++;
+                }
+
+                exportedCount++;
+            }
+
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            const url = URL.createObjectURL(zipBlob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${zipRootName}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            toast.dismiss(toastId);
+            if (missingXmlCount > 0) {
+                toast.warning(`El RIPS está disponible, pero el documento electrónico de ${missingXmlCount} factura(s) aún no ha sido generado o validado. Paquete oficial marcado como INCOMPLETO.`, { duration: 6000 });
+            } else {
+                toast.success(`Paquete RIPS comprimido exportado con éxito (${exportedCount} facturas con JSON y XML).`);
+            }
+        } catch (err) {
+            toast.dismiss(toastId);
+            toast.error(`Error al exportar paquete RIPS: ${err.message}`);
+        } finally {
+            setExportingPackage(false);
+        }
+    };
+
+    // ─────────────────────────────────────────────────────────────
+    // ACCIÓN SUPERIOR: ENVIAR RIPS A MUV
+    // Solo transmite facturas seleccionadas o válidas con AttachedDocument
+    // ─────────────────────────────────────────────────────────────
+    const handleBulkSendToMuv = async () => {
+        if (transmittingMuv) return;
+        if (!searched) {
+            toast.info("Debe presionar BUSCAR primero para cargar las facturas.");
+            return;
+        }
+
+        let targetDocs = [];
+        if (selectedDianDocIds.size > 0) {
+            targetDocs = dianDocs.filter(d => selectedDianDocIds.has(d.id));
+        } else {
+            targetDocs = dianDocs.filter(d => d.errors.length === 0);
+        }
+
+        if (targetDocs.length === 0) {
+            toast.error("Seleccione al menos una factura válida para enviar al MUV.");
+            return;
+        }
+
+        // Validación de AttachedDocument
+        const unattached = targetDocs.filter(d => {
+            const hasXml = Boolean(d.rawDoc?.attached_document_xml || d.rawDoc?.xml_content || d.rawDoc?.xml);
+            const hasCufe = Boolean(d.cufe && d.cufe !== "SIN_CUFE");
+            const hasFactus = Boolean(d.rawDoc?.factus_id);
+            return !hasXml && !hasCufe && !hasFactus;
+        });
+
+        if (unattached.length > 0) {
+            toast.error(`MUV bloqueado: ${unattached.length} factura(s) no cuentan con AttachedDocument DIAN validado.`);
+            return;
+        }
+
+        const withErrors = targetDocs.filter(d => d.errors.length > 0);
+        if (withErrors.length > 0) {
+            toast.error("Corrige los datos clínicos antes de enviar.");
+            return;
+        }
+
+        setTransmittingMuv(true);
+        setLogs(prev => [...prev, `🚀 [MUV] Transmitiendo ${targetDocs.length} factura(s) al MUV...`]);
+        for (const doc of targetDocs) {
+            await handleSendSingleToMuv(doc.id);
+        }
+        setTransmittingMuv(false);
     };
 
     return (
         <div className="p-6 max-w-7xl mx-auto animation-fade-in-up font-sans text-slate-800 space-y-5 pb-12">
             
-            {/* Header & Breadcrumb */}
+            {/* Header & Breadcrumb con Acciones Superiores */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
@@ -1568,9 +1974,32 @@ export default function RipsGenerator() {
                         <h1 className="text-sm font-bold text-slate-800 tracking-tight">Generador de RIPS JSON</h1>
                     </div>
                 </div>
-                <p className="text-xs text-slate-500 font-medium hidden md:block">
-                    Cumplimiento Resolución 2275 de 2023
-                </p>
+                
+                {/* Acciones Superiores: ENVIAR y EXPORTAR */}
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        id="btn-superior-enviar-rips"
+                        onClick={handleBulkSendToMuv}
+                        disabled={transmittingMuv || !searched}
+                        className="h-8 px-4 bg-sky-600 hover:bg-sky-700 active:scale-95 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
+                        title="Validar y transmitir facturas seleccionadas al MUV"
+                    >
+                        <FiSend size={13} />
+                        <span>ENVIAR</span>
+                    </button>
+                    <button
+                        type="button"
+                        id="btn-superior-exportar-paquete"
+                        onClick={handleBulkExportPackage}
+                        disabled={exportingPackage || !searched}
+                        className="h-8 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
+                        title="Descargar paquete RIPS comprimido (carpeta por factura con .json y .xml)"
+                    >
+                        <FiDownload size={13} />
+                        <span>EXPORTAR</span>
+                    </button>
+                </div>
             </div>
 
             {/* Warning Banner if Tenant Config is incomplete */}
@@ -2020,6 +2449,11 @@ export default function RipsGenerator() {
                             <div className="flex items-center gap-2 font-semibold text-xs text-slate-700">
                                 <span>Documentos DIAN</span>
                                 <span className="text-[10px] text-slate-400 font-bold">{openDian ? '▲' : '▼'}</span>
+                                {selectedDianDocIds.size > 0 && (
+                                    <span className="text-[10px] bg-sky-50 text-sky-700 px-2 py-0.5 rounded font-bold border border-sky-200">
+                                        {selectedDianDocIds.size} seleccionada(s)
+                                    </span>
+                                )}
                             </div>
                             <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                 <button title="Exportar a Excel" onClick={exportDianExcel} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer"><FiFileText size={13} /></button>
@@ -2028,7 +2462,10 @@ export default function RipsGenerator() {
                                         type="text" 
                                         placeholder="Buscar..."
                                         value={filterTextDian}
-                                        onChange={e => setFilterTextDian(e.target.value)}
+                                        onChange={e => {
+                                            setFilterTextDian(e.target.value);
+                                            setPageDian(1);
+                                        }}
                                         className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
                                     />
                                 </div>
@@ -2040,59 +2477,63 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
-                                                <th className="py-2 px-3">Estado MUV</th>
-                                                <th className="py-2 px-3">Número Factura</th>
-                                                <th className="py-2 px-3">Paciente</th>
-                                                <th className="py-2 px-3">CUV MinSalud</th>
-                                                <th className="py-2 px-3">Último Intento</th>
-                                                <th className="py-2 px-3">Observaciones</th>
+                                                <th className="py-2 px-3 text-center w-12">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={filteredDian.length > 0 && selectedDianDocIds.size === filteredDian.length}
+                                                        onChange={toggleSelectAllDian}
+                                                        className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300 cursor-pointer" 
+                                                    />
+                                                </th>
+                                                <th className="py-2 px-3">Estado</th>
+                                                <th className="py-2 px-3">Número de la factura</th>
+                                                <th className="py-2 px-3">Tipo de nota</th>
+                                                <th className="py-2 px-3">CUV</th>
                                                 <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
-                                            {dianDocs.length === 0 ? (
+                                            {paginatedDian.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan="8" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                    <td colSpan="6" className="py-8 text-center text-slate-400 italic">Sin datos</td>
                                                 </tr>
                                             ) : (
-                                                dianDocs.map((doc, idx) => {
+                                                paginatedDian.map((doc, idx) => {
                                                     const invoiceId = doc.id;
                                                     const muvInfo = muvValidationsMap.get(invoiceId);
+                                                    const isChecked = selectedDianDocIds.has(invoiceId);
 
-                                                    let badgeLabel = MUV_UI_STATES.DRAFT;
+                                                    let badgeLabel = "SIN VALIDAR";
                                                     let badgeClass = "bg-slate-100 text-slate-700 border-slate-200";
 
-                                                    if (muvInfo?.uiState === MUV_UI_STATES.ACCEPTED || muvInfo?.cuv) {
-                                                        badgeLabel = MUV_UI_STATES.ACCEPTED;
+                                                    if (muvInfo?.cuv || muvInfo?.uiState === MUV_UI_STATES.ACCEPTED) {
+                                                        badgeLabel = "VALIDADO";
                                                         badgeClass = "bg-emerald-100 text-emerald-800 border-emerald-300 font-bold";
-                                                    } else if (transmittingMuv || muvInfo?.uiState === MUV_UI_STATES.VALIDATING) {
-                                                        badgeLabel = MUV_UI_STATES.VALIDATING;
-                                                        badgeClass = "bg-purple-100 text-purple-800 border-purple-200 animate-pulse font-bold";
-                                                    } else if (muvInfo?.uiState === MUV_UI_STATES.REJECTED) {
-                                                        badgeLabel = MUV_UI_STATES.REJECTED;
-                                                        badgeClass = "bg-rose-100 text-rose-800 border-rose-300 font-bold";
-                                                    } else if (muvInfo?.uiState === MUV_UI_STATES.ERROR) {
-                                                        badgeLabel = "ERROR COMUNICACIÓN";
-                                                        badgeClass = "bg-amber-100 text-amber-800 border-amber-300 font-bold";
                                                     } else if (doc.errors.length === 0) {
-                                                        badgeLabel = MUV_UI_STATES.READY;
+                                                        badgeLabel = "VALIDADO";
                                                         badgeClass = "bg-blue-50 text-blue-700 border-blue-200 font-semibold";
                                                     } else {
-                                                        badgeLabel = "CON ERRORES CLÍNICOS";
+                                                        badgeLabel = "CON ERRORES";
                                                         badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
                                                     }
 
                                                     return (
-                                                        <tr key={idx} className="hover:bg-slate-50/60">
-                                                            <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <tr key={idx} className={`hover:bg-slate-50/60 ${isChecked ? 'bg-sky-50/30' : ''}`}>
+                                                            <td className="py-2 px-3 text-center">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    checked={isChecked}
+                                                                    onChange={() => toggleSelectDian(invoiceId)}
+                                                                    className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300 cursor-pointer" 
+                                                                />
+                                                            </td>
                                                             <td className="py-2 px-3">
                                                                 <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wide border ${badgeClass}`}>
                                                                     {badgeLabel}
                                                                 </span>
                                                             </td>
                                                             <td className="py-2 px-3 font-bold text-slate-800">{doc.id}</td>
-                                                            <td className="py-2 px-3 text-slate-600 font-medium truncate max-w-xs">{doc.paciente}</td>
+                                                            <td className="py-2 px-3 text-slate-500 font-medium">{doc.tipoNota || "-"}</td>
                                                             <td className="py-2 px-3 font-mono text-[11px]">
                                                                 {muvInfo?.cuv ? (
                                                                     <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 w-fit">
@@ -2110,90 +2551,26 @@ export default function RipsGenerator() {
                                                                     <span className="text-slate-400 font-mono text-[10px]">{doc.cufe && doc.cufe !== "SIN_CUFE" ? `${doc.cufe.substring(0, 12)}...` : '-'}</span>
                                                                 )}
                                                             </td>
-                                                            <td className="py-2 px-3 text-[11px] text-slate-500 font-mono">
-                                                                {muvInfo?.updatedAt ? new Date(muvInfo.updatedAt).toLocaleTimeString("es-CO", { hour: '2-digit', minute: '2-digit' }) : '-'}
-                                                            </td>
-                                                            <td className="py-2 px-3">
-                                                                {badgeLabel === MUV_UI_STATES.ACCEPTED ? (
-                                                                    <span className="text-emerald-700 text-[11px] font-semibold flex items-center gap-1">
-                                                                        <FiCheckCircle size={12} /> Aprobado por MinSalud
-                                                                    </span>
-                                                                ) : badgeLabel === MUV_UI_STATES.REJECTED ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setDetailModalData({ type: 'REJECTED', invoiceId: doc.id, info: muvInfo })}
-                                                                        className="text-rose-600 hover:text-rose-800 font-semibold text-[11px] underline flex items-center gap-1 cursor-pointer"
-                                                                    >
-                                                                        <FiAlertTriangle size={12} /> {muvInfo?.errores?.length || 1} error(es) normativo(s)
-                                                                    </button>
-                                                                ) : badgeLabel === 'ERROR COMUNICACIÓN' ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setDetailModalData({ type: 'ERROR', invoiceId: doc.id, info: muvInfo })}
-                                                                        className="text-amber-700 hover:text-amber-900 font-semibold text-[11px] underline flex items-center gap-1 cursor-pointer"
-                                                                    >
-                                                                        <FiInfo size={12} /> Fallo técnico de red/gateway
-                                                                    </button>
-                                                                ) : doc.errors.length > 0 ? (
-                                                                    <div className="text-[10px] text-rose-600 font-medium max-w-xs truncate" title={doc.errors.join(' | ')}>
-                                                                        {doc.errors[0]}
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="text-slate-400 text-[11px]">Listo para validar</span>
-                                                                )}
-                                                            </td>
                                                             <td className="py-2 px-3 text-center">
-                                                                {badgeLabel === MUV_UI_STATES.ACCEPTED ? (
+                                                                {muvInfo?.cuv ? (
                                                                     <div className="flex items-center justify-center gap-1 text-emerald-700 text-xs font-semibold">
                                                                         <FiCheckCircle size={13} />
-                                                                        <span>Validación completada</span>
+                                                                        <span>Validado</span>
                                                                     </div>
-                                                                ) : badgeLabel === MUV_UI_STATES.VALIDATING ? (
-                                                                    <div className="flex items-center justify-center gap-1.5 text-purple-700 text-xs font-semibold">
-                                                                        <FiRefreshCw size={12} className="animate-spin" />
-                                                                        <span>Validando...</span>
-                                                                    </div>
-                                                                ) : badgeLabel === MUV_UI_STATES.REJECTED ? (
-                                                                    <div className="flex items-center justify-center gap-2">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleRetryInvoice(doc.id)}
-                                                                            className="px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
-                                                                            title="Regenerar RIPS desde historia clínica y reintentar"
-                                                                        >
-                                                                            <FiRefreshCw size={11} />
-                                                                            <span>Corregir y reintentar</span>
-                                                                        </button>
-                                                                    </div>
-                                                                ) : badgeLabel === 'ERROR COMUNICACIÓN' ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleSendSingleToMuv(doc.id)}
-                                                                        disabled={transmittingMuv}
-                                                                        className="px-2.5 py-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
-                                                                        title="Reintentar transmisión"
-                                                                    >
-                                                                        <FiRefreshCw size={11} />
-                                                                        <span>Reintentar</span>
-                                                                    </button>
-                                                                ) : badgeLabel === MUV_UI_STATES.READY ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleSendSingleToMuv(doc.id)}
-                                                                        disabled={transmittingMuv}
-                                                                        className="px-2.5 py-1 text-[11px] font-bold text-white bg-sky-600 hover:bg-sky-700 active:scale-95 disabled:bg-slate-300 disabled:cursor-not-allowed rounded shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all"
-                                                                    >
-                                                                        <FiSend size={11} />
-                                                                        <span>Validar MUV</span>
-                                                                    </button>
                                                                 ) : (
                                                                     <button
                                                                         type="button"
-                                                                        disabled
-                                                                        title="Corrige los datos clínicos antes de enviar."
-                                                                        className="px-2.5 py-1 text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 rounded cursor-not-allowed"
+                                                                        onClick={() => handleSendSingleToMuv(doc.id)}
+                                                                        disabled={transmittingMuv || doc.errors.length > 0}
+                                                                        className={`px-3 py-1 text-[11px] font-bold rounded shadow-2xs flex items-center justify-center gap-1 cursor-pointer transition-all mx-auto ${
+                                                                            doc.errors.length === 0
+                                                                                ? 'bg-sky-600 hover:bg-sky-700 text-white active:scale-95'
+                                                                                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                                                        }`}
+                                                                        title={doc.errors.length > 0 ? "Corrige los datos clínicos antes de enviar." : "Enviar este RIPS a validación MUV"}
                                                                     >
-                                                                        Bloqueado
+                                                                        <FiSend size={11} />
+                                                                        <span>ENVIAR RIPS</span>
                                                                     </button>
                                                                 )}
                                                             </td>
@@ -2204,11 +2581,33 @@ export default function RipsGenerator() {
                                         </tbody>
                                     </table>
                                 </div>
-                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
-                                    <span>Total facturas: <strong className="text-slate-700">{dianDocs.length}</strong></span>
-                                    <span>Aceptadas con CUV: <strong className="text-emerald-700">{Array.from(muvValidationsMap.values()).filter(v => v.cuv).length}</strong></span>
-                                    <span>Rechazadas MUV: <strong className="text-rose-700">{Array.from(muvValidationsMap.values()).filter(v => v.uiState === MUV_UI_STATES.REJECTED).length}</strong></span>
-                                    <span>Errores de datos clínicos: <strong className="text-slate-700">{dianDocs.filter(d => d.errors.length > 0).length}</strong></span>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{dianDocs.filter(d => d.errors.length === 0).length}</strong></span>
+                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{dianDocs.filter(d => d.errors.length > 0).length}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? dianDocs.length : 0}</strong></span>
+                                    </div>
+                                    {filteredDian.length > PAGE_SIZE && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Pág {pageDian} de {Math.max(1, Math.ceil(filteredDian.length / PAGE_SIZE))}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageDian(p => Math.max(1, p - 1))}
+                                                disabled={pageDian === 1}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ‹
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageDian(p => Math.min(Math.ceil(filteredDian.length / PAGE_SIZE), p + 1))}
+                                                disabled={pageDian >= Math.ceil(filteredDian.length / PAGE_SIZE)}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ›
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -2231,7 +2630,10 @@ export default function RipsGenerator() {
                                         type="text" 
                                         placeholder="Buscar..."
                                         value={filterTextUsuarios}
-                                        onChange={e => setFilterTextUsuarios(e.target.value)}
+                                        onChange={e => {
+                                            setFilterTextUsuarios(e.target.value);
+                                            setPageUsuarios(1);
+                                        }}
                                         className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
                                     />
                                 </div>
@@ -2243,44 +2645,75 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
                                                 <th className="py-2 px-3">Tipo de documento Identificación</th>
                                                 <th className="py-2 px-3">Nro. documento de Identificación</th>
                                                 <th className="py-2 px-3">Tipo de Usuario</th>
                                                 <th className="py-2 px-3">Fecha de nacimiento</th>
-                                                <th className="py-2 px-3">Cód. Sexo</th>
-                                                <th className="py-2 px-3">Cód. país de residencia</th>
-                                                <th className="py-2 px-3">Cód. Municipio residencia</th>
+                                                <th className="py-2 px-3">cod. Sexo</th>
+                                                <th className="py-2 px-3">Cód. pais de residencia</th>
+                                                <th className="py-2 px-3">Cód. Municipo residencia</th>
+                                                <th className="py-2 px-3">Cód Zona de Residencia</th>
+                                                <th className="py-2 px-3">Incapacidad</th>
+                                                <th className="py-2 px-3">Cod. pais de origen</th>
+                                                <th className="py-2 px-3">Registro SIRAS</th>
                                                 <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
-                                            {usuarios.length === 0 ? (
+                                            {paginatedUsuarios.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan="9" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                    <td colSpan="13" className="py-8 text-center text-slate-400 italic">Sin datos</td>
                                                 </tr>
                                             ) : (
-                                                usuarios.map((u, idx) => (
+                                                paginatedUsuarios.map((u, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
                                                         <td className="py-2 px-3">{u.tipoDocumentoIdentificacion}</td>
                                                         <td className="py-2 px-3 font-bold">{u.numDocumentoIdentificacion}</td>
                                                         <td className="py-2 px-3">{u.tipoUsuario}</td>
                                                         <td className="py-2 px-3 font-mono">{u.fechaNacimiento}</td>
                                                         <td className="py-2 px-3 text-center font-bold">{u.codSexo}</td>
-                                                        <td className="py-2 px-3">170 (Colombia)</td>
+                                                        <td className="py-2 px-3 font-mono">{u.codPaisResidencia || "170"}</td>
                                                         <td className="py-2 px-3 font-mono">{u.codMunicipioResidencia}</td>
-                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                        <td className="py-2 px-3 font-mono">{u.codZonaTerritorialResidencia || "02"}</td>
+                                                        <td className="py-2 px-3">{u.incapacidad || "No"}</td>
+                                                        <td className="py-2 px-3 font-mono">{u.codPaisOrigen || "170"}</td>
+                                                        <td className="py-2 px-3 text-slate-400 font-mono">-</td>
+                                                        <td className="py-2 px-3 text-center text-slate-400">-</td>
                                                     </tr>
                                                 ))
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
-                                    <span>Validado correctamente: <strong className="text-slate-700">{usuarios.filter(u => u.errors.length === 0).length}</strong></span>
-                                    <span>Validado con errores: <strong className="text-slate-700">{usuarios.filter(u => u.errors.length > 0).length}</strong></span>
-                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{usuarios.filter(u => u.errors.length === 0).length}</strong></span>
+                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{usuarios.filter(u => u.errors.length > 0).length}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? usuarios.length : 0}</strong></span>
+                                    </div>
+                                    {filteredUsuarios.length > PAGE_SIZE && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Pág {pageUsuarios} de {Math.max(1, Math.ceil(filteredUsuarios.length / PAGE_SIZE))}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageUsuarios(p => Math.max(1, p - 1))}
+                                                disabled={pageUsuarios === 1}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ‹
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageUsuarios(p => Math.min(Math.ceil(filteredUsuarios.length / PAGE_SIZE), p + 1))}
+                                                disabled={pageUsuarios >= Math.ceil(filteredUsuarios.length / PAGE_SIZE)}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ›
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -2303,7 +2736,10 @@ export default function RipsGenerator() {
                                         type="text" 
                                         placeholder="Buscar..."
                                         value={filterTextConsultas}
-                                        onChange={e => setFilterTextConsultas(e.target.value)}
+                                        onChange={e => {
+                                            setFilterTextConsultas(e.target.value);
+                                            setPageConsultas(1);
+                                        }}
                                         className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
                                     />
                                 </div>
@@ -2315,55 +2751,51 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
                                                 <th className="py-2 px-3">Estado</th>
                                                 <th className="py-2 px-3">Identificación del paciente</th>
                                                 <th className="py-2 px-3">Número de la factura</th>
                                                 <th className="py-2 px-3">Código del Prestador</th>
                                                 <th className="py-2 px-3">Fecha de Consulta</th>
-                                                <th className="py-2 px-3">Nro. de Autorización</th>
+                                                <th className="py-2 px-3">Nro de Autorización</th>
                                                 <th className="py-2 px-3">Código de la consulta</th>
                                                 <th className="py-2 px-3">Modalidad</th>
-                                                <th className="py-2 px-3">Grupo de Servicios</th>
-                                                <th className="py-2 px-3">Cód. Servicio</th>
-                                                <th className="py-2 px-3">Finalidad</th>
-                                                <th className="py-2 px-3">Causa Externa</th>
-                                                <th className="py-2 px-3">Cód. Diagnóstico Principal</th>
-                                                <th className="py-2 px-3">Tipo Diagnóstico Principal</th>
-                                                <th className="py-2 px-3">Tipo Identificación del Profesional</th>
-                                                <th className="py-2 px-3">Nro. Identificación del Profesional</th>
+                                                <th className="py-2 px-3">Grupo servicio</th>
+                                                <th className="py-2 px-3">Cod. servicio</th>
+                                                <th className="py-2 px-3">Finalidad de la consulta</th>
+                                                <th className="py-2 px-3">Causa/motivo atención</th>
+                                                <th className="py-2 px-3">Cód dx Principal</th>
+                                                <th className="py-2 px-3">Cód dx Rel 1</th>
+                                                <th className="py-2 px-3">Cód dx Rel 2</th>
+                                                <th className="py-2 px-3">Cód dx Rel 3</th>
+                                                <th className="py-2 px-3">Tipo de Diagnóstico</th>
+                                                <th className="py-2 px-3">Tipo de Identificación del Profesional</th>
+                                                <th className="py-2 px-3">Identificación del Profesional</th>
                                                 <th className="py-2 px-3 text-right">Valor de la consulta</th>
                                                 <th className="py-2 px-3">Concepto recaudo</th>
                                                 <th className="py-2 px-3 text-right">Valor pago moderador</th>
-                                                <th className="py-2 px-3">Número de Factura pago moderador</th>
+                                                <th className="py-2 px-3">Número de factura pago moderador</th>
                                                 <th className="py-2 px-3">CUV</th>
                                                 <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
-                                            {consultas.length === 0 ? (
+                                            {paginatedConsultas.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan="23" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                    <td colSpan="26" className="py-8 text-center text-slate-400 italic">Sin datos</td>
                                                 </tr>
                                             ) : (
-                                                consultas.map((c, idx) => (
+                                                paginatedConsultas.map((c, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
                                                         <td className="py-2 px-3">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                    c.errors.length === 0 
-                                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                                                        : 'bg-rose-100 text-rose-800 border border-rose-200'
-                                                                }`}>
-                                                                    {c.errors.length === 0 ? 'LISTO' : 'CON ERRORES'}
-                                                                </span>
-                                                            </div>
-                                                            {c.errors.length > 0 && (
-                                                                <div className="text-[10px] text-rose-600 font-medium mt-0.5 max-w-xs truncate" title={c.errors.join(' | ')}>
-                                                                    {c.errors[0]}
-                                                                </div>
-                                                            )}
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                                c.errors.length === 0 
+                                                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                                                    : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                                            }`}>
+                                                                {c.errors.length === 0 ? 'VALIDADO' : 'CON ERRORES'}
+                                                            </span>
                                                         </td>
                                                         <td className="py-2 px-3 font-bold">{c.docPaciente}</td>
                                                         <td className="py-2 px-3">{c.invoiceId}</td>
@@ -2371,31 +2803,57 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{c.fechaInicio}</td>
                                                         <td className="py-2 px-3 text-slate-400">{c.numAutorizacion || '-'}</td>
                                                         <td className="py-2 px-3 font-bold text-sky-600 font-mono">{c.codConsulta}</td>
-                                                        <td className="py-2 px-3">{c.modalidadGrupoServicioTecSal || '01'}</td>
-                                                        <td className="py-2 px-3">{c.grupoServicios || '01'}</td>
-                                                        <td className="py-2 px-3">{c.codServicio || '360'}</td>
-                                                        <td className="py-2 px-3">{c.finalidadTecnologiaSalud || '10'}</td>
-                                                        <td className="py-2 px-3">{c.causaMotivoAtencion || '38'}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.modalidadGrupoServicioTecSal || '01'}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.grupoServicios || '01'}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.codServicio || 334}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.finalidadTecnologiaSalud || '10'}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.causaMotivoAtencion || '38'}</td>
                                                         <td className="py-2 px-3 font-mono font-bold text-emerald-600">{c.dxPrincipal}</td>
-                                                        <td className="py-2 px-3">01</td>
-                                                        <td className="py-2 px-3">CC</td>
-                                                        <td className="py-2 px-3 font-mono">64576359</td>
-                                                        <td className="py-2 px-3 text-right font-bold">{fmt(c.valorServicio)}</td>
-                                                        <td className="py-2 px-3">05</td>
-                                                        <td className="py-2 px-3 text-right font-mono">{fmt(c.valorPagoModerador || 0)}</td>
-                                                        <td className="py-2 px-3">{c.numFEVPagoModerador || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.codDiagnosticoRelacionado1 || '-'}</td>
                                                         <td className="py-2 px-3 font-mono text-slate-400">-</td>
-                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                        <td className="py-2 px-3 font-mono text-slate-400">-</td>
+                                                        <td className="py-2 px-3 font-mono">{c.tipoDiagnosticoPrincipal || "01"}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.tipoDocumentoIdentificacion || "CC"}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.numDocumentoIdentificacion}</td>
+                                                        <td className="py-2 px-3 text-right font-bold">{fmt(c.valorServicio)}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.conceptoRecaudo || "05"}</td>
+                                                        <td className="py-2 px-3 text-right font-mono">{fmt(c.valorPagoModerador || 0)}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.numFEVPagoModerador || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono text-slate-400">-</td>
+                                                        <td className="py-2 px-3 text-center text-slate-400">-</td>
                                                     </tr>
                                                 ))
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
-                                    <span>Validado correctamente: <strong className="text-slate-700">{consultas.filter(c => c.errors.length === 0).length}</strong></span>
-                                    <span>Validado con errores: <strong className="text-slate-700">{consultas.filter(c => c.errors.length > 0).length}</strong></span>
-                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{consultas.filter(c => c.errors.length === 0).length}</strong></span>
+                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{consultas.filter(c => c.errors.length > 0).length}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? consultas.length : 0}</strong></span>
+                                    </div>
+                                    {filteredConsultas.length > PAGE_SIZE && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Pág {pageConsultas} de {Math.max(1, Math.ceil(filteredConsultas.length / PAGE_SIZE))}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageConsultas(p => Math.max(1, p - 1))}
+                                                disabled={pageConsultas === 1}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ‹
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageConsultas(p => Math.min(Math.ceil(filteredConsultas.length / PAGE_SIZE), p + 1))}
+                                                disabled={pageConsultas >= Math.ceil(filteredConsultas.length / PAGE_SIZE)}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ›
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -2418,7 +2876,10 @@ export default function RipsGenerator() {
                                         type="text" 
                                         placeholder="Buscar..."
                                         value={filterTextProcedimientos}
-                                        onChange={e => setFilterTextProcedimientos(e.target.value)}
+                                        onChange={e => {
+                                            setFilterTextProcedimientos(e.target.value);
+                                            setPageProcedimientos(1);
+                                        }}
                                         className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
                                     />
                                 </div>
@@ -2430,7 +2891,7 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
                                                 <th className="py-2 px-3">Estado</th>
                                                 <th className="py-2 px-3">Nro. Identificación del paciente</th>
                                                 <th className="py-2 px-3">Número de la factura</th>
@@ -2438,50 +2899,40 @@ export default function RipsGenerator() {
                                                 <th className="py-2 px-3">Fecha de Procedimiento</th>
                                                 <th className="py-2 px-3">Nro. de Autorización</th>
                                                 <th className="py-2 px-3">Código del Procedimiento</th>
-                                                <th className="py-2 px-3">Vía de ingreso</th>
                                                 <th className="py-2 px-3">Modalidad</th>
-                                                <th className="py-2 px-3">Grupo de Servicios</th>
-                                                <th className="py-2 px-3">Cód. Servicio</th>
-                                                <th className="py-2 px-3">Finalidad</th>
-                                                <th className="py-2 px-3">Personal que atiende</th>
-                                                <th className="py-2 px-3">Cód. Diagnóstico Principal</th>
-                                                <th className="py-2 px-3">Cód. Diagnóstico Relacionado</th>
-                                                <th className="py-2 px-3">Cód. Complicación</th>
-                                                <th className="py-2 px-3">Forma realización acto quirúrgico</th>
+                                                <th className="py-2 px-3">Grupo de servicios</th>
+                                                <th className="py-2 px-3">Cod. servicio</th>
                                                 <th className="py-2 px-3">Tipo Identificación del Profesional</th>
-                                                <th className="py-2 px-3">Nro. Identificación del Profesional</th>
-                                                <th className="py-2 px-3 text-right">Valor del procedimiento</th>
+                                                <th className="py-2 px-3">Nro.Identificación del Profesional</th>
+                                                <th className="py-2 px-3">Cód dx Principal</th>
+                                                <th className="py-2 px-3">Cód dx Relacionado</th>
+                                                <th className="py-2 px-3">Finalidad del procedimiento</th>
+                                                <th className="py-2 px-3">Complicación</th>
+                                                <th className="py-2 px-3 text-right">Valor del servicio</th>
                                                 <th className="py-2 px-3">Concepto recaudo</th>
                                                 <th className="py-2 px-3 text-right">Valor pago moderador</th>
-                                                <th className="py-2 px-3">Número de Factura pago moderador</th>
+                                                <th className="py-2 px-3">Número de factura pago moderador</th>
                                                 <th className="py-2 px-3">CUV</th>
                                                 <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
-                                            {procedimientos.length === 0 ? (
+                                            {paginatedProcedimientos.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan="26" className="py-8 text-center text-slate-400 italic">Sin datos</td>
+                                                    <td colSpan="23" className="py-8 text-center text-slate-400 italic">Sin datos</td>
                                                 </tr>
                                             ) : (
-                                                procedimientos.map((p, idx) => (
+                                                paginatedProcedimientos.map((p, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
                                                         <td className="py-2 px-3">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                    p.errors.length === 0 
-                                                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                                                        : 'bg-rose-100 text-rose-800 border border-rose-200'
-                                                                }`}>
-                                                                    {p.errors.length === 0 ? 'LISTO' : 'CON ERRORES'}
-                                                                </span>
-                                                            </div>
-                                                            {p.errors.length > 0 && (
-                                                                <div className="text-[10px] text-rose-600 font-medium mt-0.5 max-w-xs truncate" title={p.errors.join(' | ')}>
-                                                                    {p.errors[0]}
-                                                                </div>
-                                                            )}
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                                p.errors.length === 0 
+                                                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                                                    : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                                            }`}>
+                                                                {p.errors.length === 0 ? 'VALIDADO' : 'CON ERRORES'}
+                                                            </span>
                                                         </td>
                                                         <td className="py-2 px-3 font-bold">{p.docPaciente}</td>
                                                         <td className="py-2 px-3">{p.invoiceId}</td>
@@ -2489,34 +2940,54 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{p.fechaProcedimiento}</td>
                                                         <td className="py-2 px-3 text-slate-400">{p.numAutorizacion || '-'}</td>
                                                         <td className="py-2 px-3 font-bold text-sky-600 font-mono">{p.codProcedimiento}</td>
-                                                        <td className="py-2 px-3">{p.viaIngresoServicioSalud || '01'}</td>
-                                                        <td className="py-2 px-3">{p.modalidadGrupoServicioTecSal || '01'}</td>
-                                                        <td className="py-2 px-3">{p.grupoServicios || '02'}</td>
-                                                        <td className="py-2 px-3">{p.codServicio || '360'}</td>
-                                                        <td className="py-2 px-3">{p.finalidadTecnologiaSalud || '10'}</td>
-                                                        <td className="py-2 px-3">{p.tipoPersonal || '01'}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.modalidadGrupoServicioTecSal || '01'}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.grupoServicios || '02'}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.codServicio || 334}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.tipoDocumentoIdentificacion || "CC"}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.numDocumentoIdentificacion}</td>
                                                         <td className="py-2 px-3 font-mono font-bold text-emerald-600">{p.dxPrincipal}</td>
                                                         <td className="py-2 px-3 font-mono">{p.codDiagnosticoRelacionado || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.finalidadTecnologiaSalud || '02'}</td>
                                                         <td className="py-2 px-3 font-mono">{p.codComplicacion || '-'}</td>
-                                                        <td className="py-2 px-3">{p.formaRealizacionActoQuirurgico || '01'}</td>
-                                                        <td className="py-2 px-3">CC</td>
-                                                        <td className="py-2 px-3 font-mono">64576359</td>
                                                         <td className="py-2 px-3 text-right font-bold">{fmt(p.valorServicio)}</td>
-                                                        <td className="py-2 px-3">05</td>
+                                                        <td className="py-2 px-3 font-mono">{p.conceptoRecaudo || '05'}</td>
                                                         <td className="py-2 px-3 text-right font-mono">{fmt(p.valorPagoModerador || 0)}</td>
-                                                        <td className="py-2 px-3">{p.numFEVPagoModerador || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.numFEVPagoModerador || '-'}</td>
                                                         <td className="py-2 px-3 font-mono text-slate-400">-</td>
-                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                        <td className="py-2 px-3 text-center text-slate-400">-</td>
                                                     </tr>
                                                 ))
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
-                                    <span>Validado correctamente: <strong className="text-slate-700">{procedimientos.filter(p => p.errors.length === 0).length}</strong></span>
-                                    <span>Validado con errores: <strong className="text-slate-700">{procedimientos.filter(p => p.errors.length > 0).length}</strong></span>
-                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{procedimientos.filter(p => p.errors.length === 0).length}</strong></span>
+                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{procedimientos.filter(p => p.errors.length > 0).length}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? procedimientos.length : 0}</strong></span>
+                                    </div>
+                                    {filteredProcedimientos.length > PAGE_SIZE && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Pág {pageProcedimientos} de {Math.max(1, Math.ceil(filteredProcedimientos.length / PAGE_SIZE))}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageProcedimientos(p => Math.max(1, p - 1))}
+                                                disabled={pageProcedimientos === 1}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ‹
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageProcedimientos(p => Math.min(Math.ceil(filteredProcedimientos.length / PAGE_SIZE), p + 1))}
+                                                disabled={pageProcedimientos >= Math.ceil(filteredProcedimientos.length / PAGE_SIZE)}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ›
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -2539,7 +3010,10 @@ export default function RipsGenerator() {
                                         type="text" 
                                         placeholder="Buscar..."
                                         value={filterTextOtros}
-                                        onChange={e => setFilterTextOtros(e.target.value)}
+                                        onChange={e => {
+                                            setFilterTextOtros(e.target.value);
+                                            setPageOtros(1);
+                                        }}
                                         className="h-6 w-28 px-2 text-[11px] border border-slate-200 rounded outline-none focus:border-sky-500"
                                     />
                                 </div>
@@ -2551,7 +3025,7 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3 h-3 rounded" /></th>
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
                                                 <th className="py-2 px-3">Estado</th>
                                                 <th className="py-2 px-3">Nro. Identificación del paciente</th>
                                                 <th className="py-2 px-3">Número de la factura</th>
@@ -2561,33 +3035,33 @@ export default function RipsGenerator() {
                                                 <th className="py-2 px-3">Código del Otro Servicio</th>
                                                 <th className="py-2 px-3">Tipo de Otro Servicio</th>
                                                 <th className="py-2 px-3">Tipo Identificación del Profesional</th>
-                                                <th className="py-2 px-3">Nro. Identificación del Profesional</th>
+                                                <th className="py-2 px-3">Nro.Identificación del Profesional</th>
                                                 <th className="py-2 px-3 text-right">Valor unitario del servicio</th>
                                                 <th className="py-2 px-3 text-center">Cantidad del servicio</th>
                                                 <th className="py-2 px-3 text-right">Valor del servicio</th>
                                                 <th className="py-2 px-3">Concepto recaudo</th>
                                                 <th className="py-2 px-3 text-right">Valor pago moderador</th>
-                                                <th className="py-2 px-3">Número de Factura pago moderador</th>
+                                                <th className="py-2 px-3">Número de factura pago moderador</th>
                                                 <th className="py-2 px-3">CUV</th>
                                                 <th className="py-2 px-3 text-center">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-slate-700 whitespace-nowrap text-xs">
-                                            {otrosServicios.length === 0 ? (
+                                            {paginatedOtrosServicios.length === 0 ? (
                                                 <tr>
                                                     <td colSpan="19" className="py-8 text-center text-slate-400 italic">Sin datos</td>
                                                 </tr>
                                             ) : (
-                                                otrosServicios.map((o, idx) => (
+                                                paginatedOtrosServicios.map((o, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3 h-3 rounded" /></td>
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
                                                         <td className="py-2 px-3">
                                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                o.errors && o.errors.length === 0 
+                                                                (!o.errors || o.errors.length === 0) 
                                                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
                                                                     : 'bg-rose-100 text-rose-800 border border-rose-200'
                                                             }`}>
-                                                                {o.errors && o.errors.length === 0 ? 'LISTO' : 'CON ERRORES'}
+                                                                {(!o.errors || o.errors.length === 0) ? 'VALIDADO' : 'CON ERRORES'}
                                                             </span>
                                                         </td>
                                                         <td className="py-2 px-3 font-bold">{o.docPaciente}</td>
@@ -2596,27 +3070,50 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{o.fechaSuministroTecnologia}</td>
                                                         <td className="py-2 px-3 text-slate-400">{o.numAutorizacion || '-'}</td>
                                                         <td className="py-2 px-3 font-bold text-sky-600 font-mono">{o.codTecnologiaSalud}</td>
-                                                        <td className="py-2 px-3">{o.tipoOS}</td>
-                                                        <td className="py-2 px-3">{o.tipoDocumentoIdentificacion || 'CC'}</td>
+                                                        <td className="py-2 px-3 font-mono">{o.tipoOS || "01"}</td>
+                                                        <td className="py-2 px-3 font-mono">{o.tipoDocumentoIdentificacion || 'CC'}</td>
                                                         <td className="py-2 px-3 font-mono">{o.numDocumentoIdentificacion}</td>
                                                         <td className="py-2 px-3 text-right">{fmt(o.vrUnitOS)}</td>
                                                         <td className="py-2 px-3 text-center">{o.cantidadOS}</td>
                                                         <td className="py-2 px-3 text-right font-bold">{fmt(o.vrServicio)}</td>
-                                                        <td className="py-2 px-3">{o.conceptoRecaudo || '05'}</td>
+                                                        <td className="py-2 px-3 font-mono">{o.conceptoRecaudo || '05'}</td>
                                                         <td className="py-2 px-3 text-right font-mono">{fmt(o.valorPagoModerador || 0)}</td>
-                                                        <td className="py-2 px-3">{o.numFEVPagoModerador || '-'}</td>
+                                                        <td className="py-2 px-3 font-mono">{o.numFEVPagoModerador || '-'}</td>
                                                         <td className="py-2 px-3 font-mono text-slate-400">-</td>
-                                                        <td className="py-2 px-3 text-center text-slate-500">-</td>
+                                                        <td className="py-2 px-3 text-center text-slate-400">-</td>
                                                     </tr>
                                                 ))
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex gap-6 text-[11px] text-slate-500 font-medium">
-                                    <span>Validado correctamente: <strong className="text-slate-700">{otrosServicios.filter(o => !o.errors || o.errors.length === 0).length}</strong></span>
-                                    <span>Validado con errores: <strong className="text-slate-700">{otrosServicios.filter(o => o.errors && o.errors.length > 0).length}</strong></span>
-                                    <span>Sin validar: <strong className="text-slate-700">0</strong></span>
+                                <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
+                                    <div className="flex flex-wrap items-center gap-4">
+                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{otrosServicios.filter(o => !o.errors || o.errors.length === 0).length}</strong></span>
+                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{otrosServicios.filter(o => o.errors && o.errors.length > 0).length}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? otrosServicios.length : 0}</strong></span>
+                                    </div>
+                                    {filteredOtrosServicios.length > PAGE_SIZE && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-400">Pág {pageOtros} de {Math.max(1, Math.ceil(filteredOtrosServicios.length / PAGE_SIZE))}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageOtros(p => Math.max(1, p - 1))}
+                                                disabled={pageOtros === 1}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ‹
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPageOtros(p => Math.min(Math.ceil(filteredOtrosServicios.length / PAGE_SIZE), p + 1))}
+                                                disabled={pageOtros >= Math.ceil(filteredOtrosServicios.length / PAGE_SIZE)}
+                                                className="px-2 py-0.5 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                                            >
+                                                ›
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
