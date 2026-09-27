@@ -12,6 +12,7 @@ import {
 import {
     adaptClinicalDataToRipsV003
 } from './v003/adapters/ripsV003ClinicalAdapter';
+import { normalizeRipsBillingSource } from './v003/adapters/ripsBillingSourceAdapter';
 import { 
     FiActivity, FiCalendar, FiChevronRight, FiDownload, FiSearch, 
     FiFileText, FiAlertTriangle, FiCheckCircle, FiSettings, FiLayers,
@@ -821,23 +822,28 @@ export default function RipsGenerator() {
 
             // 3. Procesar cada factura contra las fuentes clínicas reales
             for (const f of facturas) {
-                const pacId = f.pacienteId || f.patientId || f.paciente?.id || null;
-                const pacNombre = f.pacienteNombre || f.patientName || f.paciente?.nombre || "DESCONOCIDO";
-                const pacCedula = f.pacienteDocumento || f.paciente?.cedula || f.pacienteCedula || null;
+                const candidatePacId = f.paciente_id || f.pacienteId || f.patientId || f.paciente?.id || null;
+                const patientPlanesForDoc = candidatePacId ? (planesByPatient.get(candidatePacId) || []) : [];
+                const normalizedDoc = normalizeRipsBillingSource(f, f._coleccion, { patientPlanes: patientPlanesForDoc });
+
+                const pacId = normalizedDoc.pacienteId;
+                const pacNombre = normalizedDoc.pacienteNombre || (pacId && pacientesById.get(pacId)?.nombreCompleto) || "DESCONOCIDO";
+                const pacCedula = normalizedDoc.pacienteDocumento || null;
 
                 const pacienteData = (pacId && pacientesById.get(pacId))
                     || (pacCedula && pacientesByDoc.get(String(pacCedula).trim()))
-                    || pacientesByName.get(pacNombre.toLowerCase())
+                    || (pacNombre && pacNombre !== "DESCONOCIDO" ? pacientesByName.get(pacNombre.toLowerCase()) : null)
                     || null;
 
-                const patientDoc = pacienteData?.nroDocumento || pacienteData?.cedula || pacienteData?.numDoc || pacCedula || "0";
-                const invoiceId = f.nroConsecutivo || f.numeroFactura || f.cufe?.substring(0, 12) || f.id.substring(0, 10);
-                const fechaDoc = normalizeFecha(f.fecha || f.fechaFactura || f.fechaCreacion || f.createdAt) || new Date().toISOString().substring(0, 10);
+                const patientDoc = pacienteData?.nroDocumento || pacienteData?.cedula || pacienteData?.documento || pacienteData?.numDoc || pacCedula || (pacId ? null : "0");
+                const invoiceId = normalizedDoc.documentNumber;
+                const fechaDoc = normalizeFecha(normalizedDoc.fecha) || new Date().toISOString().substring(0, 10);
 
                 const invoiceErrors = [];
                 if (!pacienteData) invoiceErrors.push("Paciente no encontrado en base de datos oficial");
                 if (!tenantConfig.nit) invoiceErrors.push("Falta NIT de empresa emisora");
                 if (!codPrestador || codPrestador.length < 10) invoiceErrors.push("Código REPS inválido o ausente");
+                if (normalizedDoc.metadataError) invoiceErrors.push(normalizedDoc.metadataError);
 
                 // Datos demográficos canónicos del paciente
                 const rawSexo = String(pacienteData?.sexo || pacienteData?.genero || pacienteData?.codSexo || "").trim().toUpperCase();
@@ -857,7 +863,7 @@ export default function RipsGenerator() {
                 if (!/^\d{5}$/.test(rawMunicipio)) patientErrors.push("Código DIVIPOLA de municipio inválido (debe tener 5 dígitos)");
 
                 const usuarioWithValidation = {
-                    numDocumentoIdentificacion: patientDoc,
+                    numDocumentoIdentificacion: patientDoc || pacienteData?.nroDocumento || pacienteData?.cedula || "0",
                     tipoDocumentoIdentificacion: String(pacienteData?.tipoDoc || pacienteData?.tipoDocumento || "CC").toUpperCase(),
                     tipoUsuario: rawTipoUsuario,
                     fechaNacimiento: normalizeFecha(pacienteData?.fechaNacimiento || pacienteData?.fecha_nacimiento) || "",
@@ -876,12 +882,8 @@ export default function RipsGenerator() {
                     userList.push(usuarioWithValidation);
                 }
 
-                // Resolver atenciones clínicas reales para cada ítem facturado
-                const rawItems = f.items || f.conceptos || f.servicios || [];
-                const invoiceItems = rawItems.length > 0
-                    ? rawItems
-                    : [{ concepto: f.concepto || f.descripcion || "Consulta Odontológica", total: f.total || f.valorTotal || f.valor || 0 }];
-
+                // Resolver atenciones clínicas reales para cada ítem facturado/cobrado
+                const invoiceItems = normalizedDoc.items;
                 const adaptedAtencionesForInvoice = [];
                 const effectivePacId = pacienteData?.id || pacId;
                 const patientConsultas = effectivePacId ? (docClinicosByPatient.get(effectivePacId) || []) : [];
@@ -892,7 +894,7 @@ export default function RipsGenerator() {
                     const item = invoiceItems[i];
                     const descText = String(item.descripcion || item.concepto || item.desc || item.nombre || "").trim();
                     const upperDesc = descText.toUpperCase();
-                    const rawCupsCandidate = String(item.codigo || item.code || item.codigo_cups || "").trim().toUpperCase();
+                    const rawCupsCandidate = String(item.cups || item.codigo_cups || item.codigo || item.code || "").trim().toUpperCase();
 
                     // Buscar en catálogo
                     const catalogItem = catalogMap.get(rawCupsCandidate) || catalogMap.get(upperDesc) || null;
@@ -1255,9 +1257,13 @@ export default function RipsGenerator() {
                     paciente: pacNombre,
                     cufe: f.cufe || f.cufeFactura || "SIN_CUFE",
                     errors: invoiceErrors,
-                    status: isValidInvoice ? "LISTO" : "CON_ERRORES",
+                    status: isValidInvoice 
+                        ? (normalizedDoc.sourceMode === "LOCAL_PREVIEW" ? "LOCAL_PREVIEW" : "LISTO") 
+                        : "CON_ERRORES",
                     tipoNota: f.tipoNota || null,
                     rawDoc: f,
+                    sourceMode: normalizedDoc.sourceMode,
+                    isOfficialInvoice: normalizedDoc.isOfficialInvoice,
                 });
             }
 
@@ -1325,6 +1331,12 @@ export default function RipsGenerator() {
 
     const handleSendSingleToMuv = async (invoiceId) => {
         if (transmittingMuv) return; // Protección anti doble-clic
+
+        const targetDianDoc = dianDocs.find(d => d.id === invoiceId);
+        if (targetDianDoc?.sourceMode === 'LOCAL_PREVIEW' || !targetDianDoc?.isOfficialInvoice) {
+            toast.error("OFFICIAL_FEV_REQUIRED: No se puede enviar a MUV desde un recibo de previsualización local. Se requiere una Factura Electrónica en Salud (FEV) oficial emitida ante la DIAN.");
+            return;
+        }
 
         const preflightData = preflightValidationMap.get(invoiceId);
         if (!preflightData || !preflightData.valid || !preflightData.ripsJson) {
@@ -1929,6 +1941,12 @@ export default function RipsGenerator() {
             return;
         }
 
+        const localPreviews = targetDocs.filter(d => d.sourceMode === 'LOCAL_PREVIEW' || !d.isOfficialInvoice);
+        if (localPreviews.length > 0) {
+            toast.error("OFFICIAL_FEV_REQUIRED: Se seleccionaron documentos de previsualización local (recibos/pagos). Se requiere Factura Electrónica en Salud (FEV) oficial para enviar a MinSalud.");
+            return;
+        }
+
         // Validación de AttachedDocument
         const unattached = targetDocs.filter(d => {
             const hasXml = Boolean(d.rawDoc?.attached_document_xml || d.rawDoc?.xml_content || d.rawDoc?.xml);
@@ -2506,7 +2524,10 @@ export default function RipsGenerator() {
                                                     let badgeLabel = "SIN VALIDAR";
                                                     let badgeClass = "bg-slate-100 text-slate-700 border-slate-200";
 
-                                                    if (muvInfo?.cuv || muvInfo?.uiState === MUV_UI_STATES.ACCEPTED) {
+                                                    if (doc.sourceMode === 'LOCAL_PREVIEW' || !doc.isOfficialInvoice) {
+                                                        badgeLabel = "PREVISUALIZACIÓN LOCAL";
+                                                        badgeClass = "bg-amber-100 text-amber-800 border-amber-300 font-bold";
+                                                    } else if (muvInfo?.cuv || muvInfo?.uiState === MUV_UI_STATES.ACCEPTED) {
                                                         badgeLabel = "VALIDADO";
                                                         badgeClass = "bg-emerald-100 text-emerald-800 border-emerald-300 font-bold";
                                                     } else if (doc.errors.length === 0) {
@@ -2552,7 +2573,14 @@ export default function RipsGenerator() {
                                                                 )}
                                                             </td>
                                                             <td className="py-2 px-3 text-center">
-                                                                {muvInfo?.cuv ? (
+                                                                {doc.sourceMode === 'LOCAL_PREVIEW' || !doc.isOfficialInvoice ? (
+                                                                    <span 
+                                                                        className="inline-block px-2.5 py-1 text-[10px] font-bold text-amber-800 bg-amber-50 rounded border border-amber-200 uppercase tracking-tight"
+                                                                        title="Previsualización local — No apto para MUV (OFFICIAL_FEV_REQUIRED)"
+                                                                    >
+                                                                        PREVISUALIZACIÓN LOCAL — NO APTO PARA MUV
+                                                                    </span>
+                                                                ) : muvInfo?.cuv ? (
                                                                     <div className="flex items-center justify-center gap-1 text-emerald-700 text-xs font-semibold">
                                                                         <FiCheckCircle size={13} />
                                                                         <span>Validado</span>

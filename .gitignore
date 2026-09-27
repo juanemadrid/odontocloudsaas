@@ -19,6 +19,7 @@ scripts/*.mjs
 !scripts/test-odontograma.mjs
 !scripts/test-production-readiness.mjs
 !scripts/test_rips_operational_export.mjs
+!scripts/test_rips_payment_source_normalization.mjs
 .supabase-auth-probe-local/
 .supabase-replay-local/
 supabase/backups/
