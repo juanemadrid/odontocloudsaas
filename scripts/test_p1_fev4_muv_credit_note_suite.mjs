@@ -40,6 +40,7 @@ const SUPABASE_SERVICE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU";
 const TEST_GATEWAY_SECRET = "test_shared_secret_muv_gateway_1234567890abcdef_secure";
 const TEST_TENANT = "11111111-1111-1111-1111-111111111111";
+const ephemeralTestSecret = "ephemeral_mock_credential";
 
 let passedTests = 0;
 let totalTests = 0;
@@ -265,7 +266,7 @@ async function runSuite() {
     body: JSON.stringify({
       operation: "NC_TOTAL",
       identidad: { nit: "901234567", numDoc: "123", tipoDoc: "CC" },
-      password: "ephemeral_pwd",
+      password: ephemeralTestSecret,
       rips: "esto_debe_ser_ignorado_o_nulo",
       xmlFevFile: mockNcXml,
     }),
@@ -608,7 +609,7 @@ async function runSuite() {
     body: JSON.stringify({
       operation: "NC_PARTIAL",
       identidad: { nit: "901234567", numDoc: "123", tipoDoc: "CC" },
-      password: "ephemeral_pwd",
+      password: ephemeralTestSecret,
       rips: ripsJson,
       xmlFevFile: mockNcPartialXml,
     }),
