@@ -360,6 +360,40 @@ export default function ModalProducto({ item = null, categoria = "", onClose, on
                                         className="w-4 h-4 text-blue-600 rounded"
                                     />
                                 </div>
+                                <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl sm:col-span-2 space-y-2 mt-2">
+                                    <div className="flex items-center gap-2">
+                                        <input 
+                                            type="checkbox" 
+                                            id="modalUsarFijo"
+                                            checked={!!formData.usar_pago_fijo}
+                                            onChange={e => setFormData({...formData, usar_pago_fijo: e.target.checked})}
+                                            className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                                        />
+                                        <label htmlFor="modalUsarFijo" className="text-xs font-black text-slate-700 cursor-pointer">
+                                            Usar pago de valor fijo a doctores (omite el % configurado)
+                                        </label>
+                                    </div>
+                                    {formData.usar_pago_fijo && (
+                                        <div className="pt-1 space-y-1">
+                                            <label className="text-[10px] font-black text-blue-600 uppercase tracking-wider block">
+                                                Valor fijo a pagar al doctor (COP)
+                                            </label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600 font-bold">$</span>
+                                                <input 
+                                                    type="text"
+                                                    value={handleCOPFormat(formData.pago_fijo_doctor)}
+                                                    onChange={e => setFormData({...formData, pago_fijo_doctor: e.target.value.replace(/\D/g, '')})}
+                                                    placeholder="0"
+                                                    className="w-full h-8 pl-7 pr-3 bg-white border border-blue-200 rounded-lg text-xs font-black text-slate-800 outline-none"
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 font-medium">
+                                                💡 Si asigna <strong className="text-blue-700">$0</strong>, este ítem queda <strong>excluido</strong> de la liquidación de doctores.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}

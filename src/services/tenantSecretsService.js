@@ -1,4 +1,4 @@
-import supabase from "../lib/supabaseClient";
+import supabase from "../lib/supabaseClient.js";
 
 const invokeTenantSecrets = async (action, payload = {}) => {
   const { data, error } = await supabase.functions.invoke("tenant-secrets", {

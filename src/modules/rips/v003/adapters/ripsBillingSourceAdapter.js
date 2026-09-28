@@ -63,7 +63,7 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
   if (isOfficialInvoice) {
     sourceMode = RIPS_MODES.OFFICIAL_FEV;
     isOfficialRips = true;
-    numFactura = record.numeroFactura || record.nroConsecutivo || record.numero || record.consecutivo || null;
+    numFactura = record.numeroFactura || record.numero_factura || record.nroConsecutivo || record.numero || record.consecutivo || null;
   } else {
     // Fuentes de cobro locales (pagos / recibos_caja)
     const requestedMode = context.mode || context.requestedMode || null;

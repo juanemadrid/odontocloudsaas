@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { FiX, FiCheck, FiTrash2, FiPlus, FiActivity, FiLock, FiClock } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { getDoctorsList } from '../../../services/supabaseServices';
-import { getPlansByPatient } from '../../../services/planService';
+import { getPlansByPatient, updatePlan } from '../../../services/planService';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { isDoctorUser, isDoctorAssignedToPatient } from '../../../utils/doctorHelpers';
 import { useForm } from 'react-hook-form';
 import CIE10Search from './CIE10Search';
 import ClinicalAIAssistant from './ClinicalAIAssistant';
+import { computeCycleAvailability, registerSterilizationUsages } from '../../../services/sterilizationService';
 
 // Lista oficial de anestésicos dentales existentes en Colombia (1:1 OralDrive)
 export const ANESTESICOS_COLOMBIA = [
@@ -192,17 +193,31 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         const qty = parseInt(tempCantidad, 10);
         if (isNaN(qty) || qty <= 0) return toast.error("La cantidad debe ser mayor a 0");
 
-        // Buscar el ciclo seleccionado y el ítem para validar cantidad guardada
+        // Buscar el ciclo seleccionado y el ítem para validar cantidad disponible real
         const selectedCycle = sterilizationCycles.find(c => (c.nroLote || c.id) === tempCiclo);
         const itemInCarga = selectedCycle?.cargaItems?.find(i => i.concepto === tempConcepto);
-        const maxAvailable = itemInCarga ? parseInt(itemInCarga.cantidad, 10) : 0;
+        
+        let maxAvailable = 0;
+        if (itemInCarga) {
+            maxAvailable = itemInCarga.cantidadDisponible !== undefined ? itemInCarga.cantidadDisponible : parseInt(itemInCarga.cantidad, 10);
+        } else if (selectedCycle) {
+            maxAvailable = selectedCycle.totalPaquetesDisponibles !== undefined ? selectedCycle.totalPaquetesDisponibles : parseInt(selectedCycle.nroPaquetes, 10);
+        }
 
-        if (maxAvailable > 0 && qty > maxAvailable) {
-            setSterilizationError(`Cantidad de datos a insertar no disponible (${qty} ingresado, ${maxAvailable} disponible en lote)`);
+        // Restar lo que ya se agregó en esta misma evolución
+        const currentEsts = watch("esterilizaciones") || [];
+        const alreadyInForm = currentEsts
+            .filter(e => e.ciclo === tempCiclo.trim() && e.concepto === tempConcepto)
+            .reduce((sum, e) => sum + (parseInt(e.cantidad, 10) || 0), 0);
+
+        const realAvailable = Math.max(0, maxAvailable - alreadyInForm);
+
+        if (qty > realAvailable) {
+            const errorMsg = `Cantidad no disponible (${qty} ingresado, ${realAvailable} disponible en lote)`;
+            setSterilizationError(errorMsg);
             return toast.error("Oops! Cantidad de datos a insertar no disponible");
         }
 
-        const currentEsts = watch("esterilizaciones") || [];
         setValue("esterilizaciones", [...currentEsts, {
             ciclo: tempCiclo.trim(),
             concepto: tempConcepto,
@@ -271,7 +286,19 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             const tzoffset = safeDate.getTimezoneOffset() * 60000;
             const localISOTime = (new Date(safeDate.getTime() - tzoffset)).toISOString();
             reset({
+                ambito: initialData.ambito || 'Ambulatorio',
+                finalidad: initialData.finalidad || 'Diagnóstico',
+                modalidadAtencion: initialData.modalidadAtencion || 'Intramural',
+                tipoServicio: initialData.tipoServicio || '',
+                formaCirugia: initialData.formaCirugia || '',
+                personalAtiende: initialData.personalAtiende || '',
+                dxPrincipal: initialData.dxPrincipal || null,
+                dxRelacionado: initialData.dxRelacionado || null,
+                complicacion: initialData.complicacion || null,
+                aplicaMedicamento: initialData.aplicaMedicamento || false,
+                controlEsterilizacion: initialData.controlEsterilizacion || false,
                 ...initialData,
+                planId: initialData.planId || '',
                 fecha: localISOTime.slice(0, 10),
                 horaInicio: localISOTime.slice(11, 16),
                 horaFin: localISOTime.slice(11, 16),
@@ -372,6 +399,9 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     try {
                         const plansData = await getPlansByPatient(patient.id);
                         setPlanes(plansData);
+                        if (initialData?.planId) {
+                            setValue('planId', initialData.planId);
+                        }
                     } catch (e) {
                         console.error("Error loading plans via service:", e);
                     }
@@ -400,15 +430,26 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         list = cfgRow?.config?.ciclos_esterilizacion || [];
                     }
 
+                    // Cargar evoluciones para computar consumo histórico y disponibilidad
+                    let pastEvos = [];
+                    try {
+                        const { data: evoData } = await supabase
+                            .from("evoluciones")
+                            .select("id, fecha, created_at, tratamiento, paciente_id, profesional_id")
+                            .eq("tenant_id", tenantId);
+                        pastEvos = evoData || [];
+                    } catch (_) {}
+
                     const formattedCiclos = list.map((c, idx) => {
                         const dateParts = (c.fechaEsterilizacion || "").split("-");
                         const fallbackLote = dateParts.length === 3 ? `${dateParts[2]}${dateParts[1]}${dateParts[0]}-${idx + 1}` : `LOTE-${idx + 1}`;
-                        return {
+                        const baseCycle = {
                             id: c.id || `cycle_${idx}`,
                             ...c,
                             nroLote: c.nroLote || c.lote || fallbackLote,
                             cargaItems: Array.isArray(c.cargaItems) ? c.cargaItems : []
                         };
+                        return computeCycleAvailability(baseCycle, pastEvos);
                     });
                     formattedCiclos.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
                     setSterilizationCycles(formattedCiclos);
@@ -440,11 +481,14 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                  // Initialize checklist state
                  const initDetails = {};
                  srvs.forEach(s => {
-                     if (initialData?.plantillaItems?.[s.id]) {
-                         const saved = initialData.plantillaItems[s.id];
+                     const isExplicitlyPassed = initialData?.plantillaItems?.[s.id] || 
+                         (Array.isArray(initialData?.serviciosIds) && initialData.serviciosIds.some(id => String(id) === String(s.id)));
+
+                     if (isExplicitlyPassed) {
+                         const saved = typeof isExplicitlyPassed === 'object' ? isExplicitlyPassed : {};
                          initDetails[s.id] = { 
-                             checked: saved.checked !== undefined ? saved.checked : false,
-                             realizado: saved.realizado !== undefined ? saved.realizado : (saved.checked || false),
+                             checked: saved.checked !== undefined ? saved.checked : true,
+                             realizado: saved.realizado !== undefined ? saved.realizado : true,
                              observation: saved.observation || '',
                              desc: saved.desc || s.desc || s.procedimiento || s.nombre || '',
                              dientes: saved.dientes || s.dientes || ''
@@ -462,7 +506,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                  setPlantillaDetails(initDetails);
                  setAllChecked(false);
 
-                 if (!initialData) {
+                 if (!initialData?.id) {
                      const { finalidad, dxPrincipal } = inferRIPSFields(srvs);
                      setValue('finalidad', finalidad);
                      setValue('dxPrincipal', dxPrincipal);
@@ -536,11 +580,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
     const realizedItemIds = React.useMemo(() => {
         const completedSet = new Set();
-        const completedNames = new Set();
 
         pastEvolutions.forEach(evo => {
             // Ignore the current evolution if we are in edit mode
             if (initialData?.id && evo.id === initialData.id) return;
+            const evoPlanId = evo.planId || evo.plan_id;
+            if (watchPlanId && evoPlanId && String(evoPlanId) !== String(watchPlanId)) return;
+
             if (evo.plantillaItems) {
                 Object.keys(evo.plantillaItems).forEach(itemId => {
                     const item = evo.plantillaItems[itemId];
@@ -548,21 +594,17 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     // registros antiguos usaban solo `checked` para indicar que fue completado.
                     if (item?.realizado === true || (item?.realizado === undefined && item?.checked === true)) {
                         if (itemId) completedSet.add(String(itemId));
-                        const name = (item?.desc || item?.procedimiento || item?.nombre || '').trim().toLowerCase();
-                        if (name) completedNames.add(name);
                     }
                 });
             }
         });
         return {
-            has: (id, name) => {
+            has: (id) => {
                 if (id && completedSet.has(String(id))) return true;
-                const cleanName = (name || '').trim().toLowerCase();
-                if (cleanName && completedNames.has(cleanName)) return true;
                 return false;
             }
         };
-    }, [pastEvolutions, initialData?.id]);
+    }, [pastEvolutions, initialData?.id, watchPlanId]);
 
     // Build paid map for selected plan items
     const planPaidMap = React.useMemo(() => {
@@ -615,7 +657,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         setSaving(true);
         try {
             if (!patient?.id) throw new Error("Paciente no identificado");
-            const isEditing = !!initialData;
+            const isEditing = Boolean(initialData?.id);
             
             const effectiveDocId = esDoctor ? currentDoctorId : data.doctorId;
             let docName = currentDoctorName;
@@ -689,20 +731,25 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 tratamiento: JSON.stringify(evolutionData)
             };
 
+            let savedEvolutionRecord = null;
             if (isEditing) {
-                const { error: updateError } = await supabase
+                const { data: updatedData, error: updateError } = await supabase
                     .from("evoluciones")
                     .update(dbPayload)
-                    .eq("id", initialData.id);
+                    .eq("id", initialData.id)
+                    .select();
                 if (updateError) throw updateError;
+                savedEvolutionRecord = updatedData?.[0] || { id: initialData.id, ...dbPayload };
             } else {
-                const { error: insertError } = await supabase
+                const { data: insertedData, error: insertError } = await supabase
                     .from("evoluciones")
                     .insert([{
                         ...dbPayload,
                         created_at: new Date().toISOString()
-                    }]);
+                    }])
+                    .select();
                 if (insertError) throw insertError;
+                savedEvolutionRecord = insertedData?.[0] || dbPayload;
             }
 
             // Si se evolucionaron procedimientos de un plan, actualizar el estado en treatment_plans
@@ -718,20 +765,32 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                             }
                             return it;
                         });
-                        const d = selectedPlan.detalles || {};
-                        await supabase
-                            .from("treatment_plans")
-                            .update({
-                                detalles: {
-                                    ...d,
-                                    items: updatedItems
-                                },
-                                updated_at: new Date().toISOString()
-                            })
-                            .eq("id", watchPlanId);
+                        await updatePlan(watchPlanId, { items: updatedItems });
                     }
                 } catch (planUpdateErr) {
                     console.warn("Could not update plan items in treatment_plans:", planUpdateErr);
+                }
+            }
+
+            // Registrar consumo de paquetes de esterilización si aplica
+            if (data.controlEsterilizacion && Array.isArray(data.esterilizaciones) && data.esterilizaciones.length > 0) {
+                try {
+                    const usagesToRegister = data.esterilizaciones.map(st => ({
+                        ciclo: st.ciclo,
+                        concepto: st.concepto,
+                        cantidad: Number(st.cantidad) || 1,
+                        usuario: creatorName || docName || "Usuario",
+                        paciente: patient?.nombreCompleto || patient?.nombre || "Paciente",
+                        pacienteId: patient?.id,
+                        fecha: data.fecha || new Date().toISOString().split("T")[0],
+                        evolutionId: isEditing ? initialData.id : null
+                    }));
+                    await registerSterilizationUsages(
+                        userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "juanemadrid/odontocloudsaas",
+                        usagesToRegister
+                    );
+                } catch (stErr) {
+                    console.error("Error registering sterilization usages:", stErr);
                 }
             }
 
@@ -739,7 +798,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 ? (recordType === 'nota' ? "Nota aclaratoria actualizada" : "Evolución actualizada")
                 : (recordType === 'nota' ? "Nota aclaratoria registrada" : "Evolución registrada");
             toast.success(successMsg);
-            if (onSave) onSave();
+            if (onSave) onSave(savedEvolutionRecord);
             onClose();
         } catch (error) {
             console.error("Error saving evolution:", error);
@@ -775,7 +834,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         </div>
                         <div>
                             <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
-                                {initialData 
+                                {Boolean(initialData?.id) 
                                     ? (activeTab === 'nota' ? 'Editar Nota Aclaratoria' : 'Editar Evolución') 
                                     : (activeTab === 'nota' ? 'Nueva Nota Aclaratoria' : 'Nueva Evolución Clínica')
                                 }
@@ -869,6 +928,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                 </label>
                                 <select 
                                     {...register("planId")} 
+                                    value={watch("planId") || ""}
+                                    onChange={(e) => setValue("planId", e.target.value)}
                                     className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
                                 >
                                     <option value="">Seleccione...</option>
@@ -1372,7 +1433,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                             setTempCiclo(newCiclo);
                                                             const found = sterilizationCycles.find(c => (c.nroLote || c.id) === newCiclo);
                                                             if (found?.cargaItems?.length > 0) {
-                                                                setTempConcepto(found.cargaItems[0].concepto);
+                                                                const firstAvailable = found.cargaItems.find(it => (it.cantidadDisponible === undefined || it.cantidadDisponible > 0)) || found.cargaItems[0];
+                                                                setTempConcepto(firstAvailable.concepto);
                                                             } else {
                                                                 setTempConcepto("");
                                                             }
@@ -1381,11 +1443,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                         className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-sky-500 transition-all cursor-pointer font-mono"
                                                     >
                                                         <option value="">Seleccione ciclo / lote...</option>
-                                                        {sterilizationCycles.map((c) => (
-                                                            <option key={c.id} value={c.nroLote || c.id}>
-                                                                {c.nroLote || c.consecutivo} {c.fechaEsterilizacion ? `(${c.fechaEsterilizacion})` : ''}
-                                                            </option>
-                                                        ))}
+                                                        {sterilizationCycles
+                                                            .filter(c => (c.isActivo !== false && (c.totalPaquetesDisponibles === undefined || c.totalPaquetesDisponibles > 0)) || (watch("esterilizaciones") || []).some(e => e.ciclo === (c.nroLote || c.id)))
+                                                            .map((c) => (
+                                                                <option key={c.id} value={c.nroLote || c.id}>
+                                                                    {c.nroLote || c.consecutivo} {c.fechaEsterilizacion ? `(${c.fechaEsterilizacion})` : ''}
+                                                                </option>
+                                                            ))}
                                                     </select>
                                                 </div>
                                             </div>
@@ -1407,11 +1471,15 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                                 className="w-full h-9 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-sky-500 transition-all cursor-pointer disabled:bg-slate-50 disabled:text-slate-400"
                                                             >
                                                                 <option value="">{tempCiclo ? "Seleccione concepto de la carga..." : "Primero seleccione un ciclo..."}</option>
-                                                                {items.map((itm, idx) => (
-                                                                    <option key={idx} value={itm.concepto}>
-                                                                        {itm.concepto} ({itm.cantidad})
-                                                                    </option>
-                                                                ))}
+                                                                {items.map((itm, idx) => {
+                                                                    const disp = itm.cantidadDisponible !== undefined ? itm.cantidadDisponible : itm.cantidad;
+                                                                    const isExhausted = disp <= 0;
+                                                                    return (
+                                                                        <option key={idx} value={itm.concepto} disabled={isExhausted}>
+                                                                            {itm.concepto} ({disp}){isExhausted ? " - Agotado" : ""}
+                                                                        </option>
+                                                                    );
+                                                                })}
                                                             </select>
                                                         );
                                                     })()}
@@ -1586,7 +1654,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {servicios.map((s, idx) => {
-                                        const isPastRealized = realizedItemIds.has(s.id, s.desc || s.procedimiento || s.nombre) || s.status === 'completed' || s.realizado === true || s.completed === true;
+                                        const isPastRealized = realizedItemIds.has(s.id) || s.status === 'completed' || s.realizado === true || s.completed === true;
 
                                         return (
                                             <tr key={s.id} className={`hover:bg-slate-50/50 transition-colors ${isPastRealized ? 'opacity-70 bg-slate-50/40' : ''}`}>
@@ -1649,7 +1717,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                             setPlantillaDetails(prev => {
                                                 const next = { ...prev };
                                                 Object.keys(next).forEach(k => {
-                                                    if (!realizedItemIds.has(k, next[k]?.desc || next[k]?.procedimiento || next[k]?.nombre)) {
+                                                    if (!realizedItemIds.has(k)) {
                                                         // Solo marcar realizado en los seleccionados por el doctor
                                                         if (next[k]?.checked) {
                                                             next[k].realizado = val;

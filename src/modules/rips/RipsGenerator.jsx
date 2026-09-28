@@ -89,6 +89,8 @@ export default function RipsGenerator() {
 
     // Filtros dinámicos
     const [sucursales, setSucursales] = useState([]);
+    const [doctorRipsList, setDoctorRipsList] = useState([]);
+    const [selectedDoctor, setSelectedDoctor] = useState('');
     const [epsList, setEpsList] = useState([]);
     const [selectedSucursal, setSelectedSucursal] = useState('');
     const [selectedEps, setSelectedEps] = useState('');
@@ -144,18 +146,23 @@ export default function RipsGenerator() {
     });
     const [configWarning, setConfigWarning] = useState("");
 
+    // Modalidad prestador: IPS vs Profesional Independiente
+    const isIps = Boolean(tenantConfig?.esIps || tenantConfig?.providerProfile?.providerType === PROVIDER_TYPES.IPS);
+
     // Contexto resuelto del prestador responsable RIPS (Fase RIPS-PROVIDER-CONTEXT)
     const currentProviderContext = useMemo(() => {
         const rawTenant = tenantConfig?.rawTenant || {};
         const rawCfg = tenantConfig?.rawConfig || {};
         const branchObj = selectedSucursal ? sucursales.find(s => s.id === selectedSucursal || s.nombre === selectedSucursal) : null;
+        const selectedDoctorObj = selectedDoctor ? doctorRipsList.find(d => d.id === selectedDoctor) : null;
         return resolveRipsProviderContext({
             tenant: rawTenant,
             branch: branchObj || selectedSucursal || null,
+            professional: selectedDoctorObj,
             configData: rawCfg,
             sisproConfig: rawCfg.sispro_config || {},
         });
-    }, [tenantConfig, selectedSucursal, sucursales]);
+    }, [tenantConfig, selectedSucursal, sucursales, selectedDoctor, doctorRipsList]);
 
     // Estado Preflight RIPS v003
     const [preflightStatus, setPreflightStatus] = useState(null); // null | 'VALIDATING' | 'READY' | 'HAS_ERRORS'
@@ -482,6 +489,50 @@ export default function RipsGenerator() {
 
                 const sortedTerceros = Array.from(uniqueTercerosMap.values()).sort((a, b) => a.label.localeCompare(b.label));
                 setEpsList(sortedTerceros);
+
+                // Cargar lista de doctores que generan RIPS para modalidad Profesional Independiente
+                const userDetailsMap = snapCfg.data?.config?.user_details || {};
+                const configUsers = snapCfg.data?.config?.usuarios || [];
+                const doctorsMap = new Map();
+
+                (snapProfiles.data || []).forEach(p => {
+                    const detail = userDetailsMap[p.id] || {};
+                    const rolLower = (p.role || detail.rol || "").toLowerCase();
+                    const isDoc = detail.esDoctor ?? (rolLower.includes('doctor') || rolLower.includes('odontólog') || rolLower.includes('odontologo'));
+                    const generaRips = Boolean(detail.generaRips || p.generaRips);
+                    if (isDoc && generaRips) {
+                        doctorsMap.set(p.id, {
+                            id: p.id,
+                            nombreCompleto: detail.nombreCompleto || p.full_name || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || p.email,
+                            numeroDocumento: detail.numeroDocumento || p.registro_medico || '',
+                            ...detail,
+                            ...p,
+                            generaRips: true
+                        });
+                    }
+                });
+
+                configUsers.forEach(u => {
+                    const detail = userDetailsMap[u.id] || {};
+                    const rolLower = (u.rol || u.role || "").toLowerCase();
+                    const isDoc = u.esDoctor || detail.esDoctor || rolLower.includes('doctor') || rolLower.includes('odontólog') || rolLower.includes('odontologo');
+                    const generaRips = Boolean(u.generaRips || detail.generaRips);
+                    if (isDoc && generaRips && !doctorsMap.has(u.id)) {
+                        doctorsMap.set(u.id, {
+                            id: u.id,
+                            nombreCompleto: u.nombreCompleto || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email,
+                            numeroDocumento: u.numeroDocumento || detail.numeroDocumento || '',
+                            ...detail,
+                            ...u,
+                            generaRips: true
+                        });
+                    }
+                });
+
+                const sortedDoctors = Array.from(doctorsMap.values()).sort((a, b) => 
+                    (a.nombreCompleto || '').localeCompare(b.nombreCompleto || '')
+                );
+                setDoctorRipsList(sortedDoctors);
             } catch (e) {
                 console.error("Error al cargar metadatos RIPS:", e);
             }
@@ -555,6 +606,41 @@ export default function RipsGenerator() {
                     });
                 }
 
+                // Filtro por Profesional (Modalidad Profesional Independiente)
+                if (!isIps && selectedDoctor) {
+                    const selDocObj = doctorRipsList.find(d => d.id === selectedDoctor);
+                    const selDocName = (selDocObj?.nombreCompleto || selDocObj?.nombre || "").toLowerCase().trim();
+                    const selDocNum = String(selDocObj?.numeroDocumento || "").trim();
+
+                    allDocs = allDocs.filter(f => {
+                        const directMatch = f.profesionalId === selectedDoctor || 
+                                            f.profesional_id === selectedDoctor || 
+                                            f.doctorId === selectedDoctor || 
+                                            f.doctor_id === selectedDoctor ||
+                                            f.usuario_id === selectedDoctor;
+                        if (directMatch) return true;
+
+                        const nameMatch = selDocName && (
+                            (f.profesionalNombre && f.profesionalNombre.toLowerCase().includes(selDocName)) ||
+                            (f.doctor && f.doctor.toLowerCase().includes(selDocName)) ||
+                            (f.odontologo && f.odontologo.toLowerCase().includes(selDocName))
+                        );
+                        if (nameMatch) return true;
+
+                        const items = f.items || f.conceptos || f.detalles || [];
+                        if (Array.isArray(items) && items.length > 0) {
+                            return items.some(it => 
+                                it.profesionalId === selectedDoctor || 
+                                it.profesional_id === selectedDoctor || 
+                                it.doctorId === selectedDoctor || 
+                                it.doctor_id === selectedDoctor ||
+                                (selDocNum && String(it.profesionalDocumento || it.doctorDoc || "").trim() === selDocNum)
+                            );
+                        }
+                        return false;
+                    });
+                }
+
                 setAvailableInvoices(allDocs);
                 setSelectedInvoices([]);
                 setCheckedAvailable(new Set());
@@ -565,7 +651,7 @@ export default function RipsGenerator() {
         };
 
         fetchAvailable();
-    }, [inquilino, dateRange.start, dateRange.end, selectedEps, selectedSucursal, filterType]);
+    }, [inquilino, dateRange.start, dateRange.end, selectedEps, selectedSucursal, selectedDoctor, filterType, isIps]);
 
     // Normaliza cualquier campo de fecha (Timestamp, Date, string YYYY-MM-DD) a string "YYYY-MM-DD"
     const normalizeFecha = (val) => {
@@ -742,6 +828,41 @@ export default function RipsGenerator() {
                     seen.add(key);
                     return true;
                 });
+
+                // Filtro por Profesional (Modalidad Profesional Independiente)
+                if (!isIps && selectedDoctor) {
+                    const selDocObj = doctorRipsList.find(d => d.id === selectedDoctor);
+                    const selDocName = (selDocObj?.nombreCompleto || selDocObj?.nombre || "").toLowerCase().trim();
+                    const selDocNum = String(selDocObj?.numeroDocumento || "").trim();
+
+                    facturas = facturas.filter(f => {
+                        const directMatch = f.profesionalId === selectedDoctor || 
+                                            f.profesional_id === selectedDoctor || 
+                                            f.doctorId === selectedDoctor || 
+                                            f.doctor_id === selectedDoctor ||
+                                            f.usuario_id === selectedDoctor;
+                        if (directMatch) return true;
+
+                        const nameMatch = selDocName && (
+                            (f.profesionalNombre && f.profesionalNombre.toLowerCase().includes(selDocName)) ||
+                            (f.doctor && f.doctor.toLowerCase().includes(selDocName)) ||
+                            (f.odontologo && f.odontologo.toLowerCase().includes(selDocName))
+                        );
+                        if (nameMatch) return true;
+
+                        const items = f.items || f.conceptos || f.detalles || [];
+                        if (Array.isArray(items) && items.length > 0) {
+                            return items.some(it => 
+                                it.profesionalId === selectedDoctor || 
+                                it.profesional_id === selectedDoctor || 
+                                it.doctorId === selectedDoctor || 
+                                it.doctor_id === selectedDoctor ||
+                                (selDocNum && String(it.profesionalDocumento || it.doctorDoc || "").trim() === selDocNum)
+                            );
+                        }
+                        return false;
+                    });
+                }
             }
 
             if (facturas.length === 0) {
@@ -845,6 +966,10 @@ export default function RipsGenerator() {
                 planesByPatient.get(pId).push({ ...pl, _items: itemsArr });
             });
 
+            const selectedDoctorObj = selectedDoctor ? doctorRipsList.find(d => d.id === selectedDoctor) : null;
+            const selDocName = (selectedDoctorObj?.nombreCompleto || selectedDoctorObj?.nombre || "").toLowerCase().trim();
+            const selDocNum = String(selectedDoctorObj?.numeroDocumento || "").trim();
+
             const nitObligado = currentProviderContext?.obligatedDocument || tenantConfig.nit || "900000000";
             const codPrestador = currentProviderContext?.providerCode || tenantConfig.codigoPrestador || "000000000001";
 
@@ -910,10 +1035,6 @@ export default function RipsGenerator() {
                     errors: patientErrors
                 };
 
-                if (!userList.some(u => u.numDocumentoIdentificacion === usuarioWithValidation.numDocumentoIdentificacion)) {
-                    userList.push(usuarioWithValidation);
-                }
-
                 // Resolver atenciones clínicas reales para cada ítem facturado/cobrado
                 const invoiceItems = normalizedDoc.items;
                 const adaptedAtencionesForInvoice = [];
@@ -954,6 +1075,19 @@ export default function RipsGenerator() {
                     if (isOtroServicio) {
                         // ── FLUJO OTROS SERVICIOS (Fuente: insumos / contrataciones DT1 v003) ──
                         const profObj = resolveDoctorInfo(null, profilesList, tenantConfig);
+                        if (!isIps && selectedDoctor) {
+                            const matchDoc = 
+                                item.profesionalId === selectedDoctor || 
+                                item.profesional_id === selectedDoctor || 
+                                item.doctorId === selectedDoctor || 
+                                item.doctor_id === selectedDoctor ||
+                                f.profesionalId === selectedDoctor || 
+                                f.profesional_id === selectedDoctor || 
+                                f.doctorId === selectedDoctor || 
+                                f.doctor_id === selectedDoctor ||
+                                (selDocNum && profObj?.numDocumentoIdentificacion === selDocNum);
+                            if (!matchDoc) continue;
+                        }
                         const fechaAtencion = formatDateTimeRips(item.fecha || fechaDoc);
                         const tipoOS = String(item.tipoOS || catalogItem?.tipoOS || "01").padStart(2, "0");
                         const cantidadOS = Number(item.cantidad || 1);
@@ -1045,6 +1179,22 @@ export default function RipsGenerator() {
                         const codDxRel1 = dxRelArray[0]?.code || dxRelArray[0] || null;
 
                         const profObj = resolveDoctorInfo(matchedDoc?.profesional_id || docMeta.profesionalNombre, profilesList, tenantConfig);
+                        if (!isIps && selectedDoctor) {
+                            const matchDoc = 
+                                matchedDoc?.profesional_id === selectedDoctor || 
+                                matchedDoc?.usuario_id === selectedDoctor || 
+                                matchedDoc?.doctor_id === selectedDoctor || 
+                                item.profesionalId === selectedDoctor || 
+                                item.profesional_id === selectedDoctor || 
+                                item.doctorId === selectedDoctor || 
+                                item.doctor_id === selectedDoctor ||
+                                (selDocNum && (matchedDoc?.numeroDocumento === selDocNum || profObj?.numDocumentoIdentificacion === selDocNum)) ||
+                                (selDocName && (
+                                    (matchedDoc?.profesionalNombre && matchedDoc.profesionalNombre.toLowerCase().includes(selDocName)) ||
+                                    (docMeta?.profesionalNombre && docMeta.profesionalNombre.toLowerCase().includes(selDocName))
+                                ));
+                            if (!matchDoc) continue;
+                        }
                         const fechaAtencion = formatDateTimeRips(matchedDoc?.fecha || matchedDoc?.created_at || fechaDoc);
 
                         const consultaRow = {
@@ -1151,6 +1301,24 @@ export default function RipsGenerator() {
                         const codDxRel = evoData.dxRelacionado?.code || evoData.dxRelacionado || null;
                         const codComp = evoData.complicacion?.code || evoData.complicacion || null;
                         const profObj = resolveDoctorInfo(matchedEvo?.profesional_id || evoData.doctorId, profilesList, tenantConfig);
+                        if (!isIps && selectedDoctor) {
+                            const matchDoc = 
+                                matchedEvo?.profesional_id === selectedDoctor || 
+                                matchedEvo?.doctor_id === selectedDoctor || 
+                                matchedEvo?._tData?.doctorId === selectedDoctor || 
+                                matchedPlanItem?.profesionalId === selectedDoctor || 
+                                matchedPlanItem?.doctor_id === selectedDoctor || 
+                                item.profesionalId === selectedDoctor || 
+                                item.profesional_id === selectedDoctor || 
+                                item.doctorId === selectedDoctor || 
+                                item.doctor_id === selectedDoctor ||
+                                (selDocNum && (matchedEvo?.numeroDocumento === selDocNum || profObj?.numDocumentoIdentificacion === selDocNum)) ||
+                                (selDocName && (
+                                    (matchedEvo?.profesionalNombre && matchedEvo.profesionalNombre.toLowerCase().includes(selDocName)) ||
+                                    (matchedPlanItem?.profesionalNombre && matchedPlanItem.profesionalNombre.toLowerCase().includes(selDocName))
+                                ));
+                            if (!matchDoc) continue;
+                        }
                         const fechaAtencion = formatDateTimeRips(matchedEvo?.fecha || evoData.date || matchedPlanItem?.fechaRealizado || fechaDoc);
 
                         const procRow = {
@@ -1210,6 +1378,16 @@ export default function RipsGenerator() {
                     invoiceErrors.push(...patientErrors);
                 }
 
+                // Si se está filtrando por profesional independiente, omitir facturas que no tengan servicios de este doctor
+                if (!isIps && selectedDoctor && adaptedAtencionesForInvoice.length === 0) {
+                    continue;
+                }
+
+                // Solo agregar a la tabla de Usuarios si la factura tiene atenciones correspondientes
+                if (adaptedAtencionesForInvoice.length > 0 && !userList.some(u => u.numDocumentoIdentificacion === usuarioWithValidation.numDocumentoIdentificacion)) {
+                    userList.push(usuarioWithValidation);
+                }
+
                 // Ejecución de Preflight Adaptador y Motor v003
                 let v003ValidationResult = null;
                 let v003RipsJson = null;
@@ -1241,7 +1419,7 @@ export default function RipsGenerator() {
                                 codZonaTerritorialResidencia: usuarioWithValidation.codZonaTerritorialResidencia,
                                 incapacidad: usuarioWithValidation.incapacidad,
                             },
-                            profesional: resolveDoctorInfo(null, profilesList, tenantConfig),
+                            profesional: selectedDoctorObj || resolveDoctorInfo(null, profilesList, tenantConfig),
                             atenciones: adaptedAtencionesForInvoice,
                         });
 
@@ -2141,121 +2319,6 @@ export default function RipsGenerator() {
                 </div>
             </div>
 
-            {/* Contexto Normativo del Prestador Responsable (Fase RIPS-PROVIDER-CONTEXT) */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
-                        <h3 className="text-xs font-bold text-slate-800 tracking-wide uppercase">
-                            Contexto Normativo del Prestador Responsable RIPS
-                        </h3>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => navigate(buildDashboardPath("config"))}
-                        className="text-[11px] font-semibold text-sky-600 hover:text-sky-800 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                        <FiSettings size={12} /> Configurar Prestador / Sede
-                    </button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-3">
-                    {/* 1. Prestador Responsable */}
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Prestador Responsable
-                        </span>
-                        <span className="text-xs font-bold text-slate-800">
-                            {currentProviderContext.ripsResponsibility === RIPS_RESPONSIBILITY.INSTITUTION
-                                ? "IPS (Institucional)"
-                                : currentProviderContext.ripsResponsibility === RIPS_RESPONSIBILITY.PROFESSIONAL
-                                ? "Profesional Independiente"
-                                : currentProviderContext.providerType === PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE
-                                ? "Profesional Independiente"
-                                : "Sin confirmar"}
-                        </span>
-                    </div>
-
-                    {/* 2. Código Prestador */}
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Código Prestador
-                        </span>
-                        <span className="text-xs font-mono font-bold text-slate-800">
-                            {currentProviderContext.providerCode || (
-                                currentProviderContext.providerCodeMode === PROVIDER_CODE_MODES.BY_BRANCH
-                                    ? "Por sede (sin asignar)"
-                                    : "No configurado"
-                            )}
-                        </span>
-                    </div>
-
-                    {/* 3. Modalidad RIPS */}
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Modalidad RIPS
-                        </span>
-                        <div>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
-                                currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_FEV
-                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                    : currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV
-                                    ? "bg-indigo-100 text-indigo-800 border border-indigo-200"
-                                    : "bg-amber-100 text-amber-800 border border-amber-200"
-                            }`}>
-                                {currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_FEV
-                                    ? "FEV + RIPS"
-                                    : currentProviderContext.ripsMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV
-                                    ? "RIPS sin FEV"
-                                    : "Previsualización local"}
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* 4. Facturación Electrónica */}
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            Facturación Electrónica
-                        </span>
-                        <span className="text-xs font-semibold text-slate-700">
-                            {currentProviderContext.billingObligation === BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED
-                                ? "Obligado"
-                                : currentProviderContext.billingObligation === BILLING_OBLIGATIONS.NOT_REQUIRED
-                                ? "No obligado"
-                                : "Sin confirmar"}
-                        </span>
-                    </div>
-
-                    {/* 5. SISPRO */}
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                            SISPRO
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                            {currentProviderContext.sisproConfigured ? (
-                                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
-                                    <FiCheckCircle className="text-emerald-500" size={13} /> Configurado
-                                </span>
-                            ) : (
-                                <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
-                                    <FiXCircle className="text-slate-400" size={13} /> No configurado
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Sub-alerta contextual si hay bloqueo de sede */}
-                {currentProviderContext.error === "RIPS_PROVIDER_CODE_MISSING_FOR_BRANCH" && (
-                    <div className="mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                        <FiAlertTriangle className="text-rose-600 shrink-0" size={14} />
-                        <span>
-                            <strong>RIPS_PROVIDER_CODE_MISSING_FOR_BRANCH:</strong> La sede actual no tiene configurado su código de habilitación de prestador (REPS). Configure la sede antes de transmitir paquetes oficiales.
-                        </span>
-                    </div>
-                )}
-            </div>
-
             {/* Warning Banner if Tenant Config is incomplete */}
             {configWarning && (
                 <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
@@ -2312,22 +2375,44 @@ export default function RipsGenerator() {
                         </div>
                     </div>
 
-                    {/* Row 2: Sucursales + Botón Buscar */}
+                    {/* Row 2: Sucursales (IPS) o Profesionales (Profesional Independiente) + Botón Buscar */}
                     <div className="flex flex-col sm:flex-row items-center gap-4">
                         <div className="flex items-center gap-3 flex-1 w-full">
                             <label className="text-xs text-slate-500 w-28 text-right shrink-0">
-                                Sucursales
+                                {isIps ? "Sucursales" : "Profesionales"}
                             </label>
-                            <select 
-                                value={selectedSucursal} 
-                                onChange={(e) => setSelectedSucursal(e.target.value)}
-                                className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all cursor-pointer"
-                            >
-                                <option value="">Seleccione...</option>
-                                {sucursales.map(s => (
-                                    <option key={s.id} value={s.id}>{s.nombre || 'Sede Principal'}</option>
-                                ))}
-                            </select>
+                            {isIps ? (
+                                <select 
+                                    value={selectedSucursal} 
+                                    onChange={(e) => setSelectedSucursal(e.target.value)}
+                                    className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all cursor-pointer"
+                                >
+                                    <option value="">Seleccione...</option>
+                                    {sucursales.map(s => (
+                                        <option key={s.id} value={s.id}>{s.nombre || 'Sede Principal'}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <div className="flex-1 flex flex-col">
+                                    <select 
+                                        value={selectedDoctor} 
+                                        onChange={(e) => setSelectedDoctor(e.target.value)}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 outline-none focus:border-sky-500 transition-all cursor-pointer font-medium"
+                                    >
+                                        <option value="">Seleccione...</option>
+                                        {doctorRipsList.map(d => (
+                                            <option key={d.id} value={d.id}>
+                                                {d.nombreCompleto || d.nombre || 'Doctor'} {d.numeroDocumento ? `(${d.numeroDocumento})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {doctorRipsList.length === 0 && (
+                                        <span className="text-[10px] text-amber-600 font-medium mt-1">
+                                            No hay doctores habilitados con '¿Genera RIPS?' en Configuración &gt; Usuarios.
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <button 

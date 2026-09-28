@@ -57,26 +57,26 @@ export function resolveProviderProfile(tenantData = {}, configData = {}) {
 
   // 1. Tipo de prestador
   let providerType = PROVIDER_TYPES.UNCONFIRMED;
-  if (profileCfg.providerType && Object.values(PROVIDER_TYPES).includes(profileCfg.providerType)) {
-    providerType = profileCfg.providerType;
-  } else if (tenantData.tipoPrestador && Object.values(PROVIDER_TYPES).includes(tenantData.tipoPrestador)) {
-    providerType = tenantData.tipoPrestador;
-  } else if (profileCfg.esIps === true || tenantData.esIps === true) {
+  if (profileCfg.esIps === true || tenantData.esIps === true) {
     providerType = PROVIDER_TYPES.IPS;
   } else if (profileCfg.esIps === false || tenantData.esIps === false) {
     providerType = PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE;
+  } else if (profileCfg.providerType && Object.values(PROVIDER_TYPES).includes(profileCfg.providerType)) {
+    providerType = profileCfg.providerType;
+  } else if (tenantData.tipoPrestador && Object.values(PROVIDER_TYPES).includes(tenantData.tipoPrestador)) {
+    providerType = tenantData.tipoPrestador;
   } else {
     providerType = PROVIDER_TYPES.UNCONFIRMED;
   }
 
   // 2. Obligación de facturación
   let billingObligation = BILLING_OBLIGATIONS.UNCONFIRMED;
-  if (profileCfg.billingObligation && Object.values(BILLING_OBLIGATIONS).includes(profileCfg.billingObligation)) {
+  if (providerType === PROVIDER_TYPES.IPS) {
+    billingObligation = BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED;
+  } else if (profileCfg.billingObligation && Object.values(BILLING_OBLIGATIONS).includes(profileCfg.billingObligation)) {
     billingObligation = profileCfg.billingObligation;
   } else if (tenantData.billingObligation && Object.values(BILLING_OBLIGATIONS).includes(tenantData.billingObligation)) {
     billingObligation = tenantData.billingObligation;
-  } else if (providerType === PROVIDER_TYPES.IPS && (profileCfg.esIps === true || tenantData.esIps === true)) {
-    billingObligation = BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED;
   } else {
     billingObligation = BILLING_OBLIGATIONS.UNCONFIRMED;
   }
@@ -97,14 +97,18 @@ export function resolveProviderProfile(tenantData = {}, configData = {}) {
  * Determina si en la configuración del Doctor se debe mostrar u ocultar la opción "¿Genera RIPS?".
  * Si la organización es IPS, la responsabilidad recae en la institución clínica y los doctores no eligen individualmente.
  * 
- * @param {string} providerType - PROVIDER_TYPES
+ * @param {string|object} providerTypeOrTenant - PROVIDER_TYPES o entidad inquilino/configuración
  * @param {object} doctor - Objeto de usuario doctor
  * @returns {boolean}
  */
 export function shouldDoctorShowGeneraRips(providerTypeOrTenant, doctor = {}) {
   const pType = typeof providerTypeOrTenant === "string"
     ? providerTypeOrTenant
-    : (providerTypeOrTenant?.providerType || (providerTypeOrTenant?.esIps ? PROVIDER_TYPES.IPS : null));
+    : (providerTypeOrTenant?.esIps === true
+        ? PROVIDER_TYPES.IPS
+        : providerTypeOrTenant?.esIps === false
+          ? PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE
+          : (providerTypeOrTenant?.providerType || null));
 
   if (pType === PROVIDER_TYPES.IPS) {
     return false;
@@ -112,9 +116,28 @@ export function shouldDoctorShowGeneraRips(providerTypeOrTenant, doctor = {}) {
   if (!doctor || Object.keys(doctor).length === 0) {
     return true;
   }
-  if (doctor.rol && doctor.rol !== "Doctor" && !doctor.esDoctor) {
+
+  // Si explícitamente se marca esDoctor === false o rol no médico
+  if (doctor.esDoctor === false && !doctor.isDoctor && !doctor.es_doctor) {
+    const isDocRole = Boolean(
+      (doctor.rol && (doctor.rol.toLowerCase().includes("doctor") || doctor.rol.toLowerCase().includes("odont"))) ||
+      (doctor.role && (doctor.role.toLowerCase().includes("doctor") || doctor.role.toLowerCase().includes("odont"))) ||
+      (doctor.profileType && doctor.profileType.toLowerCase().includes("doctor")) ||
+      (doctor.profileId && (doctor.profileId.toLowerCase().includes("doctor") || doctor.profileId.toLowerCase().includes("odont")))
+    );
+    if (!isDocRole) return false;
+  }
+
+  if (doctor.rol && !doctor.rol.toLowerCase().includes("doctor") && !doctor.rol.toLowerCase().includes("odont") && !doctor.esDoctor) {
     return false;
   }
+  if (doctor.role && !doctor.role.toLowerCase().includes("doctor") && !doctor.role.toLowerCase().includes("odont") && !doctor.esDoctor) {
+    return false;
+  }
+  if (doctor.profileId && !doctor.profileId.toLowerCase().includes("doctor") && !doctor.profileId.toLowerCase().includes("odont") && !doctor.esDoctor) {
+    return false;
+  }
+
   return true;
 }
 

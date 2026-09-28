@@ -154,7 +154,7 @@ export default function ConfigEmpresa() {
                 ...empresaPublicData
             } = formData;
 
-            const isIps = formData.providerType === PROVIDER_TYPES.IPS;
+            const isIps = formData.esIps === true || formData.providerType === PROVIDER_TYPES.IPS;
 
             if (isIps || sisproUsuario) {
                 await configureSispro(userProfile.inquilino, {
@@ -172,7 +172,6 @@ export default function ConfigEmpresa() {
                 direccion: formData.direccion || "",
                 ciudad: formData.ciudad || "",
                 logo_url: formData.logoUrl || "",
-                esIps: isIps,
             };
 
             const { data: updatedTenant, error: tErr } = await supabase
@@ -192,11 +191,14 @@ export default function ConfigEmpresa() {
                 {
                     ...empresaPublicData,
                     codigoPrestador,
-                    providerType: formData.providerType,
-                    billingObligation: formData.billingObligation,
-                    providerCodeMode: formData.providerCodeMode,
-                    providerCodesByBranch: formData.providerCodesByBranch,
-                    administrativeConfirmation: formData.administrativeConfirmation,
+                    providerType: isIps ? PROVIDER_TYPES.IPS : (formData.providerType || PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE),
+                    billingObligation: formData.billingObligation || (isIps ? BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED : BILLING_OBLIGATIONS.NOT_REQUIRED),
+                    providerCodeMode: formData.providerCodeMode || PROVIDER_CODE_MODES.UNIQUE,
+                    providerCodesByBranch: formData.providerCodesByBranch || {},
+                    administrativeConfirmation: formData.administrativeConfirmation ?? true,
+                    sisproUsuario: formData.sisproUsuario || "",
+                    sisproTipoDoc: formData.sisproTipoDoc || "NIT",
+                    sisproConfigured: Boolean(sisproPassword || sisproHasPassword),
                     esIps: isIps,
                 }
             );
@@ -522,10 +524,32 @@ export default function ConfigEmpresa() {
                                     </select>
                                 </div>
                             </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-600">Cuenta Contable</label>
+                                    <input
+                                        type="text"
+                                        value={formData.cuentaContable}
+                                        onChange={e => setFormData({ ...formData, cuentaContable: e.target.value })}
+                                        placeholder="Buscar Item..."
+                                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-600">Agendamiento Online</label>
+                                    <input
+                                        type="text"
+                                        value={formData.agendamientoUrl}
+                                        onChange={e => setFormData({ ...formData, agendamientoUrl: e.target.value })}
+                                        placeholder="https://..."
+                                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
-
                 </div>
+
                 {/* Tarjeta Prestador de Salud & SISPRO (Res. 0948 de 2026) */}
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
@@ -581,122 +605,28 @@ export default function ConfigEmpresa() {
                                     {UVT_REFERENCE_NOTICE}
                                 </p>
                             </div>
-
-                            {/* Confirmación Administrativa si es No Obligado */}
-                            {formData.providerType === PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE && formData.billingObligation === BILLING_OBLIGATIONS.NOT_REQUIRED && (
-                                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg space-y-2">
-                                    <label className="flex items-start gap-2 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.administrativeConfirmation}
-                                            onChange={e => setFormData(prev => ({ ...prev, administrativeConfirmation: e.target.checked }))}
-                                            className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span className="text-[11px] text-amber-900 font-medium leading-tight">
-                                            Confirmo administrativamente que este profesional cumple los requisitos tributarios de la DIAN para no estar obligado a emitir factura electrónica.
-                                        </span>
-                                    </label>
-                                </div>
-                            )}
-
-                            {/* Cuenta contable & Agendamiento */}
-                            <div className="grid grid-cols-2 gap-2 pt-1">
-                                <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-slate-600">Cuenta Contable</label>
-                                    <input
-                                        type="text"
-                                        value={formData.cuentaContable}
-                                        onChange={e => setFormData({ ...formData, cuentaContable: e.target.value })}
-                                        placeholder="Buscar Item..."
-                                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-slate-600">Agendamiento Online</label>
-                                    <input
-                                        type="text"
-                                        value={formData.agendamientoUrl}
-                                        onChange={e => setFormData({ ...formData, agendamientoUrl: e.target.value })}
-                                        placeholder="https://..."
-                                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                    />
-                                </div>
-                            </div>
                         </div>
 
-                        {/* Columna Derecha: Código Prestador y SISPRO Institucional (Si es IPS) */}
+                        {/* Columna Derecha: Código Prestador Institucional y SISPRO Institucional (Si es IPS) */}
                         <div className="space-y-3">
                             {formData.providerType === PROVIDER_TYPES.IPS ? (
                                 <div className="space-y-3 bg-blue-50/40 p-3.5 rounded-xl border border-blue-100 animate-in fade-in duration-300">
-                                    {/* Modalidad de Código Prestador */}
-                                    <div className="space-y-1.5">
+                                    {/* Código de Prestador Institucional (REPS) - Directo sin radio buttons */}
+                                    <div className="space-y-1">
                                         <label className="text-[11px] font-bold text-slate-700">Código de Prestador Institucional (REPS)</label>
-                                        <div className="flex items-center gap-4 text-xs text-slate-700">
-                                            <label className="flex items-center gap-1.5 cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    name="providerCodeMode"
-                                                    value={PROVIDER_CODE_MODES.UNIQUE}
-                                                    checked={formData.providerCodeMode !== PROVIDER_CODE_MODES.BY_BRANCH}
-                                                    onChange={() => setFormData({ ...formData, providerCodeMode: PROVIDER_CODE_MODES.UNIQUE })}
-                                                    className="text-blue-600 focus:ring-blue-500"
-                                                />
-                                                <span className="font-semibold">Código Único</span>
-                                            </label>
-                                            <label className="flex items-center gap-1.5 cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    name="providerCodeMode"
-                                                    value={PROVIDER_CODE_MODES.BY_BRANCH}
-                                                    checked={formData.providerCodeMode === PROVIDER_CODE_MODES.BY_BRANCH}
-                                                    onChange={() => setFormData({ ...formData, providerCodeMode: PROVIDER_CODE_MODES.BY_BRANCH })}
-                                                    className="text-blue-600 focus:ring-blue-500"
-                                                />
-                                                <span className="font-semibold">Configurar por Sede</span>
-                                            </label>
-                                        </div>
+                                        <input
+                                            type="text"
+                                            value={formData.codigoPrestador || ""}
+                                            onChange={e => setFormData({ ...formData, codigoPrestador: e.target.value })}
+                                            placeholder="Ej. 700010165701 (10 o 12 dígitos)"
+                                            className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                        />
                                     </div>
 
-                                    {formData.providerCodeMode === PROVIDER_CODE_MODES.UNIQUE ? (
-                                        <div className="space-y-1">
-                                            <input
-                                                type="text"
-                                                value={formData.codigoPrestador}
-                                                onChange={e => setFormData({ ...formData, codigoPrestador: e.target.value })}
-                                                placeholder="Ej. 700010165701 (10 o 12 dígitos)"
-                                                className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                                            {(sucursalesList.length > 0 ? sucursalesList : [{ id: "sede_principal", nombre: "Sede Principal" }]).map(suc => (
-                                                <div key={suc.id} className="flex items-center gap-2">
-                                                    <span className="text-[11px] font-bold text-slate-600 w-32 truncate" title={suc.nombre}>{suc.nombre}</span>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Código REPS sede"
-                                                        value={formData.providerCodesByBranch?.[suc.id] || ""}
-                                                        onChange={e => {
-                                                            const val = e.target.value;
-                                                            setFormData(prev => ({
-                                                                ...prev,
-                                                                providerCodesByBranch: {
-                                                                    ...(prev.providerCodesByBranch || {}),
-                                                                    [suc.id]: val
-                                                                }
-                                                            }));
-                                                        }}
-                                                        className="flex-1 h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* SISPRO Institucional */}
+                                    {/* Integración SISPRO Institucional */}
                                     <div className="pt-2 border-t border-blue-100/80 space-y-2">
                                         <div className="flex items-center justify-between">
-                                            <label className="text-[11px] font-bold text-slate-700">Integración SISPRO Institucional</label>
+                                            <label className="text-[11px] font-bold text-slate-700">Integración SISPRO institucional</label>
                                             {sisproHasPassword ? (
                                                 <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
                                                     <FiCheckCircle size={10} /> Configurada
@@ -710,24 +640,25 @@ export default function ConfigEmpresa() {
                                         <div className="grid grid-cols-2 gap-2">
                                             <input
                                                 type="text"
-                                                value={formData.sisproUsuario}
+                                                value={formData.sisproUsuario || ""}
                                                 onChange={e => setFormData({ ...formData, sisproUsuario: e.target.value })}
-                                                placeholder="Usuario SISPRO"
+                                                placeholder="Cédula del prestador"
                                                 className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                             />
                                             <select
-                                                value={formData.sisproTipoDoc}
+                                                value={formData.sisproTipoDoc || "CC"}
                                                 onChange={e => setFormData({ ...formData, sisproTipoDoc: e.target.value })}
                                                 className="w-full h-8 px-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 outline-none focus:border-blue-500"
                                             >
-                                                <option value="NIT">NIT</option>
                                                 <option value="CC">Cédula (CC)</option>
+                                                <option value="NIT">NIT</option>
                                                 <option value="CE">Cédula Ext. (CE)</option>
+                                                <option value="PA">Pasaporte (PA)</option>
                                             </select>
                                         </div>
                                         <input
                                             type="password"
-                                            value={formData.sisproPassword}
+                                            value={formData.sisproPassword || ""}
                                             onChange={e => setFormData({ ...formData, sisproPassword: e.target.value })}
                                             placeholder={sisproHasPassword ? "•••••••• (Contraseña guardada - cambiar solo si desea actualizar)" : "Contraseña SISPRO"}
                                             autoComplete="new-password"

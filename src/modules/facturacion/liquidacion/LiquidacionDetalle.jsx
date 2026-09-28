@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { 
     FiArrowLeft, FiPlus, FiTrash2, FiSave, FiAlertCircle, 
-    FiCheckCircle, FiUser, FiInfo, FiLayers, FiDollarSign 
+    FiCheckCircle, FiUser, FiInfo, FiLayers, FiDollarSign, FiCalendar 
 } from "react-icons/fi";
-import { useNavigate } from "react-router-dom";
-import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
+import { getItemsPendientesPorDoctor, crearLiquidacionGenerada } from "../../../services/liquidacionDoctorService";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -14,7 +13,7 @@ const fmt = (n) =>
     maximumFractionDigits: 0,
   });
 
-export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
+export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems = null, onBack, onSuccess }) {
     const { userProfile } = useAuth();
     const inquilino = userProfile?.inquilino || "";
 
@@ -24,19 +23,20 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
     const [error, setError] = useState("");
 
     // Professional data
-    const [comisionPct, setComisionPct] = useState(50); // Default to 50%
+    const [comisionPct, setComisionPct] = useState(doctor?.comisionPorcentaje || 35);
 
-    // Payments to liquidate
-    const [payments, setPayments] = useState([]);
-    const [selectedPaymentIds, setSelectedPaymentIds] = useState({});
+    // Items to liquidate
+    const [items, setItems] = useState([]);
+    const [selectedItemKeys, setSelectedItemKeys] = useState({});
 
     // Adjustments arrays
+    // Gastos: tipo "laboratorio" (se resta antes de calcular el %) o "general"
     const [gastos, setGastos] = useState([]);
     const [bonificaciones, setBonificaciones] = useState([]);
     const [deducciones, setDeducciones] = useState([]);
 
     // Inputs for adding adjustments
-    const [newGasto, setNewGasto] = useState({ valor: "", desc: "" });
+    const [newGasto, setNewGasto] = useState({ valor: "", desc: "", tipo: "laboratorio" });
     const [newBono, setNewBono] = useState({ valor: "", desc: "" });
     const [newDeduccion, setNewDeduccion] = useState({ valor: "", desc: "" });
 
@@ -45,112 +45,26 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
     const [showBonoForm, setShowBonoForm] = useState(false);
     const [showDeduccionForm, setShowDeduccionForm] = useState(false);
 
-    const parseLocalDate = (dateStr) => {
-        const [y, m, d] = dateStr.split('-').map(Number);
-        return new Date(y, m - 1, d);
-    };
-
     const loadData = async () => {
         if (!inquilino || !doctor) return;
         setLoading(true);
         try {
-            // 1. Load Doctor commission pct from DB
-            const { data: docSnap } = await supabase
-                .from("profesionales")
-                .select("*")
-                .eq("id", doctor.id)
-                .maybeSingle();
+            setComisionPct(doctor.comisionPorcentaje || 35);
 
-            if (docSnap) {
-                const pct = Number(docSnap.comisionGeneral || docSnap.comisionEspecialista || 50);
-                setComisionPct(pct);
+            let itemList = preloadedItems;
+            if (!itemList || itemList.length === 0) {
+                const res = await getItemsPendientesPorDoctor(inquilino, doctor.id, dateRange);
+                itemList = res.items || [];
             }
 
-            // 2. Load all treatment plans for this tenant to cross-reference total costs
-            const { data: plansSnap } = await supabase
-                .from("treatment_plans")
-                .select("*")
-                .eq("tenant_id", inquilino);
-
-            const plansMap = {};
-            (plansSnap || []).forEach(pData => {
-                plansMap[pData.id] = {
-                    id: pData.id,
-                    title: pData.title || pData.nombre || "Tratamiento",
-                    total: Number(pData.total || pData.costoTotal || 0)
-                };
-            });
-
-            // 3. Fetch payments
-            const start = parseLocalDate(dateRange.desde);
-            start.setHours(0, 0, 0, 0);
-            const end = parseLocalDate(dateRange.hasta);
-            end.setHours(23, 59, 59, 999);
-
-            const { data: snap } = await supabase
-                .from("pagos")
-                .select("*")
-                .eq("tenant_id", inquilino)
-                .eq("profesionalId", doctor.id);
-
-            const list = (snap || []).map(data => {
-                const ts = data.fecha || data.created_at;
-                const dObj = new Date(ts || 0);
-                return {
-                    id: data.id,
-                    ...data,
-                    fechaObj: dObj
-                };
-            });
-
-            // Filter locally
-            const filtered = list.filter(p => {
-                const inRange = p.fechaObj >= start && p.fechaObj <= end;
-                const isActive = p.estado !== "Anulado";
-                const isNotAdvance = p.concepto !== "SALDO A FAVOR";
-                const isNotLiquidated = p.liquidado !== true;
-                return inRange && isActive && isNotAdvance && isNotLiquidated;
-            });
-
-            // Group payments by patient and treatment plan
-            const groups = {};
-            filtered.forEach(p => {
-                const planId = p.planId || "";
-                const key = planId ? `${p.pacienteId}_${planId}` : `${p.pacienteId}_noplan_${p.id}`;
-
-                if (!groups[key]) {
-                    groups[key] = {
-                        key,
-                        pacienteId: p.pacienteId,
-                        pacienteNombre: p.patientNombre || "Paciente",
-                        planId: planId,
-                        prestacion: planId && plansMap[planId] ? plansMap[planId].title : (p.concepto || "Abono"),
-                        valorPrestado: planId && plansMap[planId] ? plansMap[planId].total : p.monto,
-                        valorRecaudado: 0,
-                        fechaObj: p.fechaObj,
-                        paymentIds: []
-                    };
-                }
-
-                groups[key].valorRecaudado += Number(p.monto || 0);
-                groups[key].paymentIds.push(p.id);
-                if (p.fechaObj > groups[key].fechaObj) {
-                    groups[key].fechaObj = p.fechaObj;
-                }
-            });
-
-            const groupedList = Object.values(groups);
-            // Sort by date desc
-            groupedList.sort((a, b) => b.fechaObj - a.fechaObj);
-
-            setPayments(groupedList);
+            setItems(itemList);
 
             // Select all by default
             const initialSelection = {};
-            groupedList.forEach(g => {
-                initialSelection[g.key] = true;
+            itemList.forEach(it => {
+                initialSelection[it.key] = true;
             });
-            setSelectedPaymentIds(initialSelection);
+            setSelectedItemKeys(initialSelection);
 
         } catch (e) {
             console.error("Error loading liquidation details:", e);
@@ -166,37 +80,50 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
     const toggleSelectAll = (checked) => {
         const next = {};
         if (checked) {
-            payments.forEach(g => {
-                next[g.key] = true;
+            items.forEach(it => {
+                next[it.key] = true;
             });
         }
-        setSelectedPaymentIds(next);
+        setSelectedItemKeys(next);
     };
 
-    const toggleSelectPayment = (key) => {
-        setSelectedPaymentIds(prev => ({
+    const toggleSelectItem = (key) => {
+        setSelectedItemKeys(prev => ({
             ...prev,
             [key]: !prev[key]
         }));
     };
 
     const isAllSelected = useMemo(() => {
-        if (payments.length === 0) return false;
-        return payments.every(g => selectedPaymentIds[g.key]);
-    }, [payments, selectedPaymentIds]);
+        if (items.length === 0) return false;
+        return items.every(it => selectedItemKeys[it.key]);
+    }, [items, selectedItemKeys]);
 
     // Totals calculations
-    const selectedPayments = useMemo(() => {
-        return payments.filter(g => selectedPaymentIds[g.key]);
-    }, [payments, selectedPaymentIds]);
+    const selectedItems = useMemo(() => {
+        return items.filter(it => selectedItemKeys[it.key]);
+    }, [items, selectedItemKeys]);
 
     const totalRecaudado = useMemo(() => {
-        return selectedPayments.reduce((sum, g) => sum + Number(g.valorRecaudado || 0), 0);
-    }, [selectedPayments]);
+        return selectedItems.reduce((sum, it) => sum + Number(it.valorPrestacion || 0), 0);
+    }, [selectedItems]);
 
-    const totalComision = useMemo(() => {
-        return selectedPayments.reduce((sum, g) => sum + Math.round(Number(g.valorRecaudado || 0) * comisionPct / 100), 0);
-    }, [selectedPayments, comisionPct]);
+    // Gastos categorizados
+    const gastosLaboratorio = useMemo(() => {
+        return gastos.filter(g => g.tipo === "laboratorio" || !g.tipo);
+    }, [gastos]);
+
+    const otrosGastos = useMemo(() => {
+        return gastos.filter(g => g.tipo === "general");
+    }, [gastos]);
+
+    const totalGastosLab = useMemo(() => {
+        return gastosLaboratorio.reduce((sum, g) => sum + Number(g.valor || 0), 0);
+    }, [gastosLaboratorio]);
+
+    const totalOtrosGastos = useMemo(() => {
+        return otrosGastos.reduce((sum, g) => sum + Number(g.valor || 0), 0);
+    }, [otrosGastos]);
 
     const totalGastos = useMemo(() => {
         return gastos.reduce((sum, g) => sum + Number(g.valor || 0), 0);
@@ -210,16 +137,42 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
         return deducciones.reduce((sum, d) => sum + Number(d.valor || 0), 0);
     }, [deducciones]);
 
+    // Subtotal de ítems con pago fijo vs ítems a comisionar por %
+    const { totalItemsFijosPagar, baseItemsComisionables } = useMemo(() => {
+        let fijos = 0;
+        let baseCom = 0;
+        selectedItems.forEach(it => {
+            if (it.tipoLiquidacion === "fijo") {
+                fijos += Number(it.pagoFijoValor || 0);
+            } else {
+                baseCom += Number(it.valorPrestacion || 0);
+            }
+        });
+        return { totalItemsFijosPagar: fijos, baseItemsComisionables: baseCom };
+    }, [selectedItems]);
+
+    // Base de utilidad para el % = Base de ítems comisionables - Costos de laboratorio
+    const baseUtilidadComisionable = useMemo(() => {
+        return Math.max(0, baseItemsComisionables - totalGastosLab);
+    }, [baseItemsComisionables, totalGastosLab]);
+
+    // Total comisión: % sobre utilidad + ítems fijos
+    const totalComision = useMemo(() => {
+        const comisionCalculada = Math.round(baseUtilidadComisionable * comisionPct / 100);
+        return comisionCalculada + totalItemsFijosPagar;
+    }, [baseUtilidadComisionable, comisionPct, totalItemsFijosPagar]);
+
+    // Neto a pagar = Comisión + Bonificaciones - Deducciones - Otros Gastos
     const totalNetoPagar = useMemo(() => {
-        return totalComision + totalBonificaciones - totalGastos - totalDeducciones;
-    }, [totalComision, totalBonificaciones, totalGastos, totalDeducciones]);
+        return totalComision + totalBonificaciones - totalDeducciones - totalOtrosGastos;
+    }, [totalComision, totalBonificaciones, totalDeducciones, totalOtrosGastos]);
 
     // Adjustments helpers
     const addGasto = () => {
         const val = Number(newGasto.valor);
         if (!newGasto.desc.trim() || isNaN(val) || val <= 0) return;
-        setGastos([...gastos, { valor: val, desc: newGasto.desc.trim() }]);
-        setNewGasto({ valor: "", desc: "" });
+        setGastos([...gastos, { valor: val, desc: newGasto.desc.trim(), tipo: newGasto.tipo || "laboratorio" }]);
+        setNewGasto({ valor: "", desc: "", tipo: "laboratorio" });
         setShowGastoForm(false);
     };
 
@@ -251,10 +204,10 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
         setDeducciones(deducciones.filter((_, i) => i !== idx));
     };
 
-    // Save Liquidation
-    const handleLiquidar = async () => {
-        if (selectedPayments.length === 0) {
-            setError("Debes seleccionar al menos un recaudo / transacción.");
+    // Save Liquidation in state "Generada"
+    const handleGenerarLiquidacion = async () => {
+        if (selectedItems.length === 0) {
+            setError("Debes seleccionar al menos un procedimiento realizado para liquidar.");
             return;
         }
 
@@ -262,75 +215,54 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
         setError("");
 
         try {
-            // Collect all transaction payment IDs from selected groups
-            const allPaymentIds = [];
-            selectedPayments.forEach(g => {
-                allPaymentIds.push(...g.paymentIds);
-            });
+            const conceptosLiquidados = selectedItems.map(it => it.key);
 
-            // 1. Create liquidation document
-            const liqData = {
-                tenant_id: inquilino,
-                inquilino,
-                profesionalId: doctor.id,
-                profesionalNombre: doctor.nombre,
-                fechaInicio: dateRange.desde,
-                fechaFin: dateRange.hasta,
+            const payload = {
+                doctor,
+                dateRange,
                 totalRecaudado,
-                totalPagar: totalNetoPagar,
-                comisionesTotal: totalComision,
-                comisionPorcentaje: comisionPct,
+                totalNetoPagar,
+                totalComisiones: totalComision,
+                comisionPct,
+                totalGastosLab,
+                totalGastos,
                 gastos,
+                totalBonificaciones,
                 bonificaciones,
+                totalDeducciones,
                 deducciones,
-                conceptosLiquidados: allPaymentIds,
-                estado: "Pagado",
-                registradoPor: userProfile?.nombre || userProfile?.email || "Administración",
-                created_at: new Date().toISOString()
+                conceptosLiquidados,
+                selectedItems
             };
 
-            const { data: insertedLiq } = await supabase
-                .from("liquidaciones")
-                .insert([liqData])
-                .select()
-                .single();
-
-            // 2. Mark payments as liquidated
-            if (allPaymentIds.length > 0) {
-                for (const pId of allPaymentIds) {
-                    await supabase
-                        .from("pagos")
-                        .update({
-                            liquidado: true,
-                            liquidacionId: insertedLiq?.id || null,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq("id", pId);
-                }
-            }
+            await crearLiquidacionGenerada(inquilino, payload, userProfile);
 
             setSuccess(true);
             setTimeout(() => {
-                onBack();
-            }, 1500);
+                if (onSuccess) {
+                    onSuccess();
+                } else {
+                    onBack();
+                }
+            }, 1200);
 
         } catch (e) {
             console.error("Error saving liquidation:", e);
-            setError("Error al guardar la liquidación. Revisa la consola.");
+            setError("Error al guardar la liquidación. Inténtalo de nuevo.");
         } finally {
             setSaving(false);
         }
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
+        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-300">
             
             {/* Header / Nav */}
             <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">
                 <div className="flex items-center gap-4">
                     <button 
                         onClick={onBack}
-                        className="w-10 h-10 flex items-center justify-center hover:bg-slate-50 rounded-xl transition-all text-slate-400 hover:text-purple-600 border border-transparent hover:border-purple-100 active:scale-95 group"
+                        className="w-10 h-10 flex items-center justify-center hover:bg-slate-50 rounded-xl transition-all text-slate-400 hover:text-purple-600 border border-transparent hover:border-purple-100 active:scale-95 group cursor-pointer"
                         title="Volver"
                     >
                         <FiArrowLeft className="group-hover:-translate-x-0.5 transition-transform" size={18} />
@@ -342,42 +274,48 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                             <span>-</span>
                             <span>Liquidaciones</span>
                             <span>-</span>
-                            <span>Detalle liquidación</span>
+                            <span>Detalle de Liquidación</span>
                         </div>
                         <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mt-1">
-                            Detalle liquidación
+                            Liquidación: {doctor.nombre}
                         </h2>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="h-10 px-6 rounded-full bg-slate-50 border border-slate-100 text-xs font-black uppercase tracking-widest text-slate-500 flex items-center justify-center gap-1">
-                        Otros: <span className="text-purple-600 ml-1">{fmt(totalComision)}</span>
-                    </div>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <button
                         onClick={() => setShowGastoForm(!showGastoForm)}
-                        className="h-10 px-5 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-xs font-black uppercase tracking-widest text-slate-500 transition-all flex items-center justify-center gap-1"
+                        className={`h-10 px-4 rounded-full border text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                            showGastoForm ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600"
+                        }`}
                     >
-                        Gastos
+                        <FiPlus size={14} />
+                        Gastos / Laboratorio
                     </button>
                     <button
                         onClick={() => setShowBonoForm(!showBonoForm)}
-                        className="h-10 px-5 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-xs font-black uppercase tracking-widest text-slate-500 transition-all flex items-center justify-center gap-1"
+                        className={`h-10 px-4 rounded-full border text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                            showBonoForm ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600"
+                        }`}
                     >
+                        <FiPlus size={14} />
                         Bonificaciones
                     </button>
                     <button
                         onClick={() => setShowDeduccionForm(!showDeduccionForm)}
-                        className="h-10 px-5 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-xs font-black uppercase tracking-widest text-slate-500 transition-all flex items-center justify-center gap-1"
+                        className={`h-10 px-4 rounded-full border text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                            showDeduccionForm ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600"
+                        }`}
                     >
+                        <FiPlus size={14} />
                         Deducciones
                     </button>
                     <button 
-                        onClick={handleLiquidar}
-                        disabled={saving || payments.length === 0}
-                        className="h-10 px-8 flex items-center justify-center bg-[#8cc33f] text-white rounded-full text-xs font-black uppercase tracking-widest hover:bg-[#7db02b] shadow-lg shadow-[#8cc33f]/20 transition-all active:scale-95 disabled:opacity-45"
+                        onClick={handleGenerarLiquidacion}
+                        disabled={saving || selectedItems.length === 0}
+                        className="h-10 px-7 flex items-center justify-center bg-purple-600 text-white rounded-full text-xs font-black uppercase tracking-widest hover:bg-purple-700 shadow-lg shadow-purple-600/20 transition-all active:scale-95 disabled:opacity-45 cursor-pointer ml-auto sm:ml-0"
                     >
-                        Liquidar
+                        {saving ? "Generando..." : "Generar Liquidación"}
                     </button>
                 </div>
             </div>
@@ -388,14 +326,16 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                         <FiCheckCircle />
                     </div>
                     <div>
-                        <h4 className="text-emerald-800 font-black uppercase text-sm">¡Liquidación Realizada!</h4>
-                        <p className="text-emerald-600 text-xs font-medium uppercase tracking-wide">La liquidación de comisiones se guardó con éxito en el historial.</p>
+                        <h4 className="text-emerald-800 font-black uppercase text-sm">Liquidación Generada</h4>
+                        <p className="text-emerald-600 text-xs font-medium uppercase tracking-wide">
+                            La liquidación se guardó con éxito en estado "Generada" para su validación o pago.
+                        </p>
                     </div>
                 </div>
             )}
 
             {error && (
-                <div className="bg-rose-50 border border-rose-100 p-6 rounded-[24px] flex items-center gap-4 animate-in shake">
+                <div className="bg-rose-50 border border-rose-100 p-6 rounded-[24px] flex items-center gap-4 animate-in zoom-in">
                     <div className="w-12 h-12 bg-rose-500 text-white rounded-full flex items-center justify-center text-xl shadow-lg shadow-rose-500/20">
                         <FiAlertCircle />
                     </div>
@@ -408,28 +348,39 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
 
             {/* Main Table card */}
             <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest block">Recaudos de {doctor.nombre}</h3>
-                        <span className="text-[10px] text-slate-400 font-medium">Período: {dateRange.desde} al {dateRange.hasta} (Comisión: {comisionPct}%)</span>
+                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest block">
+                            Procedimientos Realizados por {doctor.nombre}
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                            Período: {dateRange.desde} al {dateRange.hasta} · Comisión configurada: {comisionPct}% · Modo: {doctor.formaPago || "Realizadas y pagadas"}
+                        </span>
+                    </div>
+
+                    <div className="text-xs font-black text-slate-500">
+                        Seleccionados: <strong className="text-purple-600">{selectedItems.length}</strong> de {items.length}
                     </div>
                 </div>
+
                 {loading ? (
                     <div className="p-20 text-center flex flex-col items-center justify-center gap-4">
                         <div className="w-10 h-10 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin" />
-                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Cargando recaudos...</p>
+                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Cargando procedimientos...</p>
                     </div>
-                ) : payments.length === 0 ? (
+                ) : items.length === 0 ? (
                     <div className="p-20 text-center flex flex-col items-center justify-center gap-2">
                         <span className="text-4xl">🧾</span>
-                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-2">No se encontraron recaudos pendientes en este período.</p>
+                        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-2">
+                            No se encontraron procedimientos pendientes en este período.
+                        </p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                             <thead>
                                 <tr className="bg-slate-50/50 border-b border-slate-100">
-                                    <th className="py-4 px-6 text-center w-12">
+                                    <th className="py-4 px-4 text-center w-12">
                                         <input
                                             type="checkbox"
                                             checked={isAllSelected}
@@ -438,56 +389,67 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                                         />
                                     </th>
                                     <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Paciente</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Prestación</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Plan de Tratamiento</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor prestado</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor Recaudado</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">%</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor a pagar</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
+                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Procedimiento / Ítem</th>
+                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Plan Tratamiento</th>
+                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Fecha Realizado</th>
+                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor Ítem</th>
+                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Tipo Comisión</th>
+                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor Liquidar</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {payments.map((p) => (
-                                    <tr key={p.key} className={`hover:bg-slate-50/20 transition-colors ${selectedPaymentIds[p.key] ? "bg-slate-50/10" : "opacity-60"}`}>
-                                        <td className="py-3 px-6 text-center align-middle">
-                                            <input
-                                                type="checkbox"
-                                                checked={!!selectedPaymentIds[p.key]}
-                                                onChange={() => toggleSelectPayment(p.key)}
-                                                className="w-4 h-4 text-purple-600 border-slate-200 rounded cursor-pointer focus:ring-purple-500"
-                                            />
-                                        </td>
-                                        <td className="py-3.5 px-4 font-black text-slate-700">{p.pacienteNombre}</td>
-                                        <td className="py-3.5 px-4 font-bold text-slate-500">{p.prestacion}</td>
-                                        <td className="py-3.5 px-4 font-bold text-slate-400 font-mono">{p.planId ? `#${p.planId.slice(0, 8)}` : "—"}</td>
-                                        <td className="py-3.5 px-4 font-bold text-slate-400">{p.fechaObj.toLocaleDateString("es-CO")}</td>
-                                        <td className="py-3.5 px-4 text-right font-medium text-slate-400">{fmt(p.valorPrestado)}</td>
-                                        <td className="py-3.5 px-4 text-right font-black text-slate-700">{fmt(p.valorRecaudado)}</td>
-                                        <td className="py-3.5 px-4 text-center font-black text-slate-500 font-mono">{comisionPct}%</td>
-                                        <td className="py-3.5 px-4 text-right font-black text-purple-600">{fmt(Math.round(p.valorRecaudado * comisionPct / 100))}</td>
-                                        <td className="py-3.5 px-4 text-center">
-                                            <a 
-                                                href={`${import.meta.env.BASE_URL || '/odontocloudsaas/'}dashboard/pacientes`}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="h-7 px-3 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-100 hover:border-slate-200 rounded-lg inline-flex items-center justify-center font-bold"
-                                            >
-                                                Ver Ficha
-                                            </a>
-                                        </td>
-                                    </tr>
-                                ))}
-                                <tr className="bg-slate-50/50 font-black border-t border-slate-100 text-slate-700">
-                                    <td colSpan={6} className="py-4 px-4 text-right uppercase text-slate-400 tracking-wider">
-                                        % Recau: {fmt(totalRecaudado)} | Total Comisión:
-                                    </td>
-                                    <td colSpan={3} className="py-4 px-4 text-right text-purple-700 text-sm">
-                                        {fmt(totalComision)}
-                                    </td>
-                                    <td></td>
-                                </tr>
+                                {items.map((it) => {
+                                    const isChecked = !!selectedItemKeys[it.key];
+                                    const itemPayVal = it.tipoLiquidacion === "fijo" 
+                                        ? it.pagoFijoValor 
+                                        : Math.round(it.valorPrestacion * comisionPct / 100);
+
+                                    return (
+                                        <tr key={it.key} className={`hover:bg-slate-50/30 transition-colors ${isChecked ? "bg-purple-50/10" : "opacity-50"}`}>
+                                            <td className="py-3 px-4 text-center align-middle">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={() => toggleSelectItem(it.key)}
+                                                    className="w-4 h-4 text-purple-600 border-slate-200 rounded cursor-pointer focus:ring-purple-500"
+                                                />
+                                            </td>
+                                            <td className="py-3 px-4">
+                                                <div className="font-black text-slate-800">{it.pacienteNombre}</div>
+                                                {it.pacienteDocumento && (
+                                                    <span className="text-[10px] text-slate-400 font-mono">{it.pacienteDocumento}</span>
+                                                )}
+                                            </td>
+                                            <td className="py-3 px-4 font-bold text-slate-700">
+                                                {it.prestacion}
+                                                {it.codigoCups && it.codigoCups !== "—" && (
+                                                    <span className="ml-1 text-[10px] text-slate-400 font-mono">[{it.codigoCups}]</span>
+                                                )}
+                                            </td>
+                                            <td className="py-3 px-4 text-slate-500 font-medium font-mono text-[11px]">
+                                                {it.planTitulo}
+                                            </td>
+                                            <td className="py-3 px-4 text-center text-slate-500 font-medium whitespace-nowrap">
+                                                {it.fechaFormateada}
+                                            </td>
+                                            <td className="py-3 px-4 text-right font-black text-slate-700 whitespace-nowrap">
+                                                {fmt(it.valorPrestacion)}
+                                            </td>
+                                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                                                    it.tipoLiquidacion === "fijo" 
+                                                        ? "bg-amber-50 text-amber-600 border border-amber-100" 
+                                                        : "bg-purple-50 text-purple-600 border border-purple-100"
+                                                }`}>
+                                                    {it.tipoLiquidacion === "fijo" ? `Fijo: ${fmt(it.pagoFijoValor)}` : `${comisionPct}%`}
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-4 text-right font-black text-purple-700 whitespace-nowrap">
+                                                {fmt(itemPayVal)}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -496,67 +458,89 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
 
             {/* Inline adjustments add forms */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* CARD GASTOS */}
-                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Gastos</h3>
-                        <span className="text-xs font-black text-rose-500">-{fmt(totalGastos)}</span>
+                
+                {/* CARD GASTOS / LABORATORIO */}
+                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                    <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Gastos / Costos</span>
+                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight">Laboratorio u Otros</h4>
+                        </div>
+                        <span className="text-xs font-black text-rose-600 font-mono">-{fmt(totalGastos)}</span>
                     </div>
-                    <div className="p-4 space-y-4">
+
+                    <div className="p-4 flex-1 space-y-3">
                         {showGastoForm && (
-                            <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl space-y-3">
+                            <div className="p-4 bg-rose-50/40 border border-rose-100 rounded-2xl space-y-3 animate-in fade-in">
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Valor *</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Tipo de Gasto</label>
+                                    <select
+                                        value={newGasto.tipo}
+                                        onChange={e => setNewGasto({ ...newGasto, tipo: e.target.value })}
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                    >
+                                        <option value="laboratorio">Costo Laboratorio (Resta antes del %)</option>
+                                        <option value="general">Gasto General (Resta después del %)</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Valor *</label>
                                     <input 
                                         type="number"
                                         value={newGasto.valor}
                                         onChange={e => setNewGasto({ ...newGasto, valor: e.target.value })}
                                         placeholder="0"
-                                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Descripción *</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Descripción / Proveedor *</label>
                                     <input 
                                         type="text"
                                         value={newGasto.desc}
                                         onChange={e => setNewGasto({ ...newGasto, desc: e.target.value })}
-                                        placeholder="Ej. Materiales extra"
-                                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                        placeholder="Ej. Guía Laboratorio Dental"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
                                     />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-1">
                                     <button 
                                         type="button" 
                                         onClick={() => setShowGastoForm(false)} 
-                                        className="h-8 px-3 rounded-lg text-[10px] font-black uppercase bg-white border border-slate-200 text-slate-400"
+                                        className="h-7 px-3 rounded-lg text-[10px] font-black uppercase bg-white border border-slate-200 text-slate-500 cursor-pointer"
                                     >
                                         Cancelar
                                     </button>
                                     <button 
                                         type="button" 
                                         onClick={addGasto} 
-                                        className="h-8 px-4 rounded-lg text-[10px] font-black uppercase bg-rose-500 text-white"
+                                        className="h-7 px-4 rounded-lg text-[10px] font-black uppercase bg-rose-500 text-white cursor-pointer"
                                     >
                                         Añadir
                                     </button>
                                 </div>
                             </div>
                         )}
+
                         {gastos.length === 0 ? (
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide text-center py-4">No hay gastos añadidos.</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide text-center py-6">
+                                Sin gastos de laboratorio asociados.
+                            </p>
                         ) : (
                             <div className="space-y-2">
                                 {gastos.map((g, i) => (
-                                    <div key={i} className="flex items-center justify-between p-3 bg-slate-50/50 border border-slate-100 rounded-xl">
+                                    <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50/50 border border-slate-100 rounded-xl">
                                         <div className="flex flex-col text-xs font-bold">
-                                            <span className="text-slate-600">{g.desc}</span>
-                                            <span className="text-rose-500 font-mono mt-0.5">-{fmt(g.valor)}</span>
+                                            <span className="text-slate-700">{g.desc}</span>
+                                            <span className="text-[10px] text-slate-400">
+                                                {g.tipo === "laboratorio" ? "Laboratorio (antes de %)" : "General"}
+                                            </span>
+                                            <span className="text-rose-500 font-mono font-black mt-0.5">-{fmt(g.valor)}</span>
                                         </div>
                                         <button 
                                             type="button" 
                                             onClick={() => removeGasto(i)}
-                                            className="w-7 h-7 flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 border border-transparent rounded-lg text-slate-300 transition-colors"
+                                            className="w-6 h-6 flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 rounded-lg text-slate-300 transition-colors cursor-pointer"
                                         >
                                             ✕
                                         </button>
@@ -568,66 +552,73 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                 </div>
 
                 {/* CARD BONIFICACIONES */}
-                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Bonificaciones</h3>
-                        <span className="text-xs font-black text-emerald-600">+{fmt(totalBonificaciones)}</span>
+                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                    <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Valores Adicionales</span>
+                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight">Bonificaciones</h4>
+                        </div>
+                        <span className="text-xs font-black text-emerald-600 font-mono">+{fmt(totalBonificaciones)}</span>
                     </div>
-                    <div className="p-4 space-y-4">
+
+                    <div className="p-4 flex-1 space-y-3">
                         {showBonoForm && (
-                            <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl space-y-3">
+                            <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-2xl space-y-3 animate-in fade-in">
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Valor *</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Valor *</label>
                                     <input 
                                         type="number"
                                         value={newBono.valor}
                                         onChange={e => setNewBono({ ...newBono, valor: e.target.value })}
                                         placeholder="0"
-                                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Descripción *</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Descripción / Motivo *</label>
                                     <input 
                                         type="text"
                                         value={newBono.desc}
                                         onChange={e => setNewBono({ ...newBono, desc: e.target.value })}
-                                        placeholder="Ej. Bono cumplimiento"
-                                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                        placeholder="Ej. Cumplimiento de meta"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
                                     />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-1">
                                     <button 
                                         type="button" 
                                         onClick={() => setShowBonoForm(false)} 
-                                        className="h-8 px-3 rounded-lg text-[10px] font-black uppercase bg-white border border-slate-200 text-slate-400"
+                                        className="h-7 px-3 rounded-lg text-[10px] font-black uppercase bg-white border border-slate-200 text-slate-500 cursor-pointer"
                                     >
                                         Cancelar
                                     </button>
                                     <button 
                                         type="button" 
                                         onClick={addBono} 
-                                        className="h-8 px-4 rounded-lg text-[10px] font-black uppercase bg-[#8cc33f] text-white"
+                                        className="h-7 px-4 rounded-lg text-[10px] font-black uppercase bg-emerald-600 text-white cursor-pointer"
                                     >
                                         Añadir
                                     </button>
                                 </div>
                             </div>
                         )}
+
                         {bonificaciones.length === 0 ? (
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide text-center py-4">No hay bonificaciones añadidas.</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide text-center py-6">
+                                Sin bonificaciones adicionales.
+                            </p>
                         ) : (
                             <div className="space-y-2">
                                 {bonificaciones.map((b, i) => (
-                                    <div key={i} className="flex items-center justify-between p-3 bg-slate-50/50 border border-slate-100 rounded-xl">
+                                    <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50/50 border border-slate-100 rounded-xl">
                                         <div className="flex flex-col text-xs font-bold">
-                                            <span className="text-slate-600">{b.desc}</span>
-                                            <span className="text-emerald-600 font-mono mt-0.5">+{fmt(b.valor)}</span>
+                                            <span className="text-slate-700">{b.desc}</span>
+                                            <span className="text-emerald-600 font-mono font-black mt-0.5">+{fmt(b.valor)}</span>
                                         </div>
                                         <button 
                                             type="button" 
                                             onClick={() => removeBono(i)}
-                                            className="w-7 h-7 flex items-center justify-center hover:bg-[#8cc33f]/10 hover:text-[#8cc33f] border border-transparent rounded-lg text-slate-300 transition-colors"
+                                            className="w-6 h-6 flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 rounded-lg text-slate-300 transition-colors cursor-pointer"
                                         >
                                             ✕
                                         </button>
@@ -639,66 +630,73 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                 </div>
 
                 {/* CARD DEDUCCIONES */}
-                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Deducciones</h3>
-                        <span className="text-xs font-black text-rose-500">-{fmt(totalDeducciones)}</span>
+                <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                    <div className="p-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Descuentos</span>
+                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight">Deducciones</h4>
+                        </div>
+                        <span className="text-xs font-black text-rose-600 font-mono">-{fmt(totalDeducciones)}</span>
                     </div>
-                    <div className="p-4 space-y-4">
+
+                    <div className="p-4 flex-1 space-y-3">
                         {showDeduccionForm && (
-                            <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl space-y-3">
+                            <div className="p-4 bg-rose-50/40 border border-rose-100 rounded-2xl space-y-3 animate-in fade-in">
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Valor *</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Valor *</label>
                                     <input 
                                         type="number"
                                         value={newDeduccion.valor}
                                         onChange={e => setNewDeduccion({ ...newDeduccion, valor: e.target.value })}
                                         placeholder="0"
-                                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Descripción *</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Descripción / Concepto *</label>
                                     <input 
                                         type="text"
                                         value={newDeduccion.desc}
                                         onChange={e => setNewDeduccion({ ...newDeduccion, desc: e.target.value })}
-                                        placeholder="Ej. Retención de fuente"
-                                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                                        placeholder="Ej. Anticipo o Préstamo"
+                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
                                     />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-1">
                                     <button 
                                         type="button" 
                                         onClick={() => setShowDeduccionForm(false)} 
-                                        className="h-8 px-3 rounded-lg text-[10px] font-black uppercase bg-white border border-slate-200 text-slate-400"
+                                        className="h-7 px-3 rounded-lg text-[10px] font-black uppercase bg-white border border-slate-200 text-slate-500 cursor-pointer"
                                     >
                                         Cancelar
                                     </button>
                                     <button 
                                         type="button" 
                                         onClick={addDeduccion} 
-                                        className="h-8 px-4 rounded-lg text-[10px] font-black uppercase bg-rose-500 text-white"
+                                        className="h-7 px-4 rounded-lg text-[10px] font-black uppercase bg-rose-500 text-white cursor-pointer"
                                     >
                                         Añadir
                                     </button>
                                 </div>
                             </div>
                         )}
+
                         {deducciones.length === 0 ? (
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide text-center py-4">No hay deducciones añadidas.</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide text-center py-6">
+                                Sin deducciones aplicadas.
+                            </p>
                         ) : (
                             <div className="space-y-2">
                                 {deducciones.map((d, i) => (
-                                    <div key={i} className="flex items-center justify-between p-3 bg-slate-50/50 border border-slate-100 rounded-xl">
+                                    <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50/50 border border-slate-100 rounded-xl">
                                         <div className="flex flex-col text-xs font-bold">
-                                            <span className="text-slate-600">{d.desc}</span>
-                                            <span className="text-rose-500 font-mono mt-0.5">-{fmt(d.valor)}</span>
+                                            <span className="text-slate-700">{d.desc}</span>
+                                            <span className="text-rose-500 font-mono font-black mt-0.5">-{fmt(d.valor)}</span>
                                         </div>
                                         <button 
                                             type="button" 
                                             onClick={() => removeDeduccion(i)}
-                                            className="w-7 h-7 flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 border border-transparent rounded-lg text-slate-300 transition-colors"
+                                            className="w-6 h-6 flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 rounded-lg text-slate-300 transition-colors cursor-pointer"
                                         >
                                             ✕
                                         </button>
@@ -708,18 +706,21 @@ export default function LiquidacionDetalle({ doctor, dateRange, onBack }) {
                         )}
                     </div>
                 </div>
+
             </div>
 
             {/* Total summary board card */}
             <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div className="space-y-1">
                     <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider block">Resumen de Liquidación</h3>
-                    <p className="text-[11px] text-slate-400 font-medium">Neto = Comisión ({fmt(totalComision)}) + Bonos ({fmt(totalBonificaciones)}) - Gastos ({fmt(totalGastos)}) - Deducciones ({fmt(totalDeducciones)})</p>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                        Base: {fmt(baseUtilidadComisionable)} · Comisión ({fmt(totalComision)}) + Bonos ({fmt(totalBonificaciones)}) - Deducciones ({fmt(totalDeducciones)}) {totalOtrosGastos > 0 ? `- Gastos (${fmt(totalOtrosGastos)})` : ""}
+                    </p>
                 </div>
                 <div className="flex items-center gap-6">
                     <div className="flex flex-col text-right">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Neto a Liquidar al Doctor</span>
-                        <strong className="text-purple-600 text-xl font-black">{fmt(totalNetoPagar)}</strong>
+                        <strong className="text-purple-600 text-2xl font-black">{fmt(totalNetoPagar)}</strong>
                     </div>
                 </div>
             </div>

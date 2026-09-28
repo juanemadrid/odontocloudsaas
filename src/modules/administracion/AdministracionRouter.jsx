@@ -1,20 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { 
   FiFileText, FiUsers, FiCalendar, FiBriefcase, 
-  FiThermometer, FiTrash2, FiBox, FiActivity, 
-  FiPlusSquare, FiShield, FiCheckSquare, FiPieChart, FiArrowLeft, FiChevronRight
+  FiTrash2, FiActivity, 
+  FiShield, FiCheckSquare, FiArrowLeft, FiChevronRight
 } from "react-icons/fi";
 
 // Sub-views
 import FacturacionHub from "./views/FacturacionHub";
-import Inventario from "../inventario/Inventario";
 import RipsGenerator from "../rips/RipsGenerator";
 import GestionAgenda from "./views/GestionAgenda";
 import Terceros from "./views/Terceros";
 import Convenios from "./views/Convenios";
-import Campanas from "./views/Campanas";
-import TemperaturaHumedad from "./views/TemperaturaHumedad";
-import MedicamentosHub from "../medicamentos/MedicamentosHub";
 import ResiduosHub from "../residuos/ResiduosHub";
 import Esterilizacion from "../esterilizacion/Esterilizacion";
 
@@ -23,12 +19,8 @@ const ADMIN_MODULES = [
   { id: "convenios", label: "Convenios", desc: "Descuentos y listas", icon: FiCheckSquare, color: "bg-emerald-50 text-emerald-600" },
   { id: "agenda", label: "Gestión Agenda", desc: "Turnos y horarios", icon: FiCalendar, color: "bg-indigo-50 text-indigo-600" },
   { id: "terceros", label: "Terceros", desc: "Proveedores y clientes", icon: FiUsers, color: "bg-purple-50 text-purple-600" },
-  { id: "campanas", label: "Campañas", desc: "Estrategias comerciales", icon: FiPieChart, color: "bg-amber-50 text-amber-600" },
-  { id: "temp", label: "Temp. y Humedad", desc: "Cadena de frío", icon: FiThermometer, color: "bg-cyan-50 text-cyan-600" },
   { id: "residuos", label: "Residuos Hosp.", desc: "Gestión ambiental", icon: FiTrash2, color: "bg-rose-50 text-rose-600" },
-  { id: "inventario", label: "Inventario", desc: "Control de insumos", icon: FiBox, color: "bg-slate-900 text-white" },
   { id: "rips", label: "RIPS JSON", desc: "Archivos Res. 2275", icon: FiActivity, color: "bg-teal-50 text-teal-600" },
-  { id: "medicamentos", label: "Medicamentos", desc: "Recetas y vademécum", icon: FiPlusSquare, color: "bg-sky-50 text-sky-600" },
   { id: "esterilizacion", label: "Esterilización", desc: "Cargas de autoclaves", icon: FiShield, color: "bg-violet-50 text-violet-600" },
 ];
 
@@ -114,14 +106,10 @@ export default function AdministracionRouter() {
           {/* Renderizado de la Sub-Vista */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 min-h-[600px]">
             {selectedModule === "facturacion" && <FacturacionHub />}
-            {selectedModule === "inventario" && <Inventario />}
             {selectedModule === "rips" && <RipsGenerator />}
             {selectedModule === "agenda" && <GestionAgenda />}
             {selectedModule === "terceros" && <Terceros />}
             {selectedModule === "convenios" && <Convenios />}
-            {selectedModule === "campanas" && <Campanas />}
-            {selectedModule === "temp" && <TemperaturaHumedad />}
-            {selectedModule === "medicamentos" && <MedicamentosHub />}
             {selectedModule === "residuos" && <ResiduosHub />}
             {selectedModule === "esterilizacion" && <Esterilizacion />}
           </div>
@@ -142,7 +130,7 @@ export default function AdministracionRouter() {
             </div>
 
             <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-              11 Submódulos
+              {ADMIN_MODULES.length} Submódulos
             </span>
           </div>
 

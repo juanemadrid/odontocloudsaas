@@ -1814,50 +1814,23 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     {/* INTERACTIVE PRESCRIPTION EDITOR */}
                     {docType === 'Receta' ? (
                         <div className="space-y-4">
-                            {/* Row 1: Odontólogo Prescriptor* & Plan de formulación */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Profesional Responsable *</label>
-                                    <select 
-                                        value={profesional}
-                                        onChange={(e) => setProfesional(e.target.value)}
-                                        disabled={isViewOnly}
-                                        className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
-                                    >
-                                        <option value="">Seleccione un profesional...</option>
-                                        {catalogProfesionales.map(p => {
-                                            const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
-                                            return (
-                                                <option key={p.id || name} value={name}>{name.toUpperCase()}</option>
-                                            );
-                                        })}
-                                    </select>
-                                </div>
-
-                                <div className="space-y-1">
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Plan de formulación</label>
-                                    <div className="flex gap-2 items-center">
-                                        <select 
-                                            value={selectedPlan}
-                                            onChange={(e) => setSelectedPlan(e.target.value)}
-                                            disabled={isViewOnly}
-                                            className="flex-1 bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
-                                        >
-                                            <option value="">Seleccione...</option>
-                                            {treatmentPlans.map(plan => (
-                                                <option key={plan.id} value={plan.nombre}>{(plan.nombre || "").toUpperCase()}</option>
-                                            ))}
-                                        </select>
-                                        <button 
-                                            type="button"
-                                            onClick={() => toast.info("Planes de formulación")}
-                                            className="w-9 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-sm shrink-0"
-                                            title="Ver plan de formulación"
-                                        >
-                                            <FiList size={16} />
-                                        </button>
-                                    </div>
-                                </div>
+                            {/* Row 1: Profesional Responsable * */}
+                            <div className="max-w-md space-y-1">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Profesional Responsable *</label>
+                                <select 
+                                    value={profesional}
+                                    onChange={(e) => setProfesional(e.target.value)}
+                                    disabled={isViewOnly}
+                                    className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                                >
+                                    <option value="">Seleccione un profesional...</option>
+                                    {catalogProfesionales.map(p => {
+                                        const name = p.nombreCompleto || p.nombre || p.displayName || p.id || "";
+                                        return (
+                                            <option key={p.id || name} value={name}>{name.toUpperCase()}</option>
+                                        );
+                                    })}
+                                </select>
                             </div>
 
                             {/* Row 2: Ingrese el medicamento a añadir, Añadir, + Nuevo medicamento, Asociar consulta */}
@@ -1916,15 +1889,6 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         className="px-5 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5"
                                     >
                                         <FiPlus size={14} /> Nuevo medicamento
-                                    </button>
-
-                                    <button 
-                                        type="button"
-                                        onClick={handleOpenAsocConsulta}
-                                        className="w-9 h-9 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-sm shrink-0"
-                                        title="Asociar consulta"
-                                    >
-                                        <FiSearch size={16} />
                                     </button>
                                 </div>
                             )}

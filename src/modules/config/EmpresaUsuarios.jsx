@@ -18,11 +18,11 @@ import {
     saveConfigItem,
     saveConfigSection,
 } from "../../services/configPersistenceService";
+import { loadConfigSection } from "../../services/configCacheService";
 import {
     configureDoctorSispro,
     getDoctorSisproStatus
 } from "../../services/tenantSecretsService";
-import { isFevRips0948Enabled } from "../rips/v003/ripsFeatureFlagService";
 import {
     shouldDoctorShowGeneraRips,
     PROVIDER_TYPES
@@ -167,18 +167,19 @@ export default function EmpresaUsuarios() {
         generaRips: false,
         ripsTipoPrestador: "unico", // "unico" | "sucursal"
         ripsCodigoUnico: "",
-        newSisproPassword: "",
         ripsSucursales: {},
+        sisproUsuario: "",
+        sisproTipoDoc: "CC",
+        newSisproPassword: "",
 
         password: ""
     };
     const [formData, setFormData] = useState(initialForm);
     const [sisproConfigured, setSisproConfigured] = useState(false);
-    const [fevRipsEnabled, setFevRipsEnabled] = useState(false);
     const [tenantProviderType, setTenantProviderType] = useState(PROVIDER_TYPES.IPS);
 
     // 1. Load Data
-    const loadData = async () => {
+    const loadData = async (forceRefresh = false) => {
         if (!userProfile?.inquilino) return;
         setLoading(true);
         try {
@@ -189,7 +190,6 @@ export default function EmpresaUsuarios() {
                 configUsersData,
                 configuredProfiles,
                 configuredSpecialties,
-                fevRipsActive,
                 empresaCfg
             ] = await Promise.all([
                 supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino),
@@ -198,11 +198,11 @@ export default function EmpresaUsuarios() {
                 getConfigItems(userProfile.inquilino, "usuarios", null),
                 getConfigItems(userProfile.inquilino, "perfiles", null),
                 getConfigItems(userProfile.inquilino, "especialidades", "especialidades"),
-                isFevRips0948Enabled(userProfile.inquilino).catch(() => false),
-                getConfigSection(userProfile.inquilino, "empresa_datos", {})
+                loadConfigSection(userProfile.inquilino, "empresa_datos", {}, forceRefresh)
             ]);
-            setFevRipsEnabled(Boolean(fevRipsActive));
-            const pType = empresaCfg?.providerType || (empresaCfg?.esIps ? PROVIDER_TYPES.IPS : (empresaCfg?.esIps === false ? PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE : PROVIDER_TYPES.IPS));
+            const isTenantIps = empresaCfg?.providerType === PROVIDER_TYPES.IPS || 
+                                (empresaCfg?.providerType !== PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE && empresaCfg?.esIps === true);
+            const pType = isTenantIps ? PROVIDER_TYPES.IPS : PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE;
             setTenantProviderType(pType);
             if (uRes.error) throw uRes.error;
             const profilesMap = new Map();
@@ -339,6 +339,11 @@ export default function EmpresaUsuarios() {
 
     useEffect(() => {
         loadData();
+        const handleTenantUpdated = () => {
+            loadData(true);
+        };
+        window.addEventListener("tenant-updated", handleTenantUpdated);
+        return () => window.removeEventListener("tenant-updated", handleTenantUpdated);
     }, [userProfile]);
 
     // 2. Filter Logic
@@ -371,6 +376,15 @@ export default function EmpresaUsuarios() {
 
     const handleOpenModal = async (user = null) => {
         setErrors({});
+        if (userProfile?.inquilino) {
+            getConfigSection(userProfile.inquilino, "empresa_datos", {})
+                .then(cfg => {
+                    const isIps = cfg?.providerType === PROVIDER_TYPES.IPS || 
+                                  (cfg?.providerType !== PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE && cfg?.esIps === true);
+                    setTenantProviderType(isIps ? PROVIDER_TYPES.IPS : PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE);
+                })
+                .catch(() => {});
+        }
         if (user) {
             setEditId(user.id);
             
@@ -405,8 +419,10 @@ export default function EmpresaUsuarios() {
                 generaRips: user.generaRips || false,
                 ripsTipoPrestador: user.ripsTipoPrestador || "unico",
                 ripsCodigoUnico: user.ripsCodigoUnico || "",
-                newSisproPassword: "",
                 ripsSucursales: user.ripsSucursales || {},
+                sisproUsuario: user.sisproUsuario || "",
+                sisproTipoDoc: user.sisproTipoDoc || "CC",
+                newSisproPassword: "",
 
                 profileId: user.profileId || user.rol || "",
                 sucursales: user.sucursales || [],
@@ -414,7 +430,7 @@ export default function EmpresaUsuarios() {
                 password: user.password || ""
             });
             setSisproConfigured(false);
-            if (fevRipsEnabled && user.id && userProfile?.inquilino) {
+            if (user.id && userProfile?.inquilino) {
                 getDoctorSisproStatus(userProfile.inquilino, user.id)
                     .then(res => setSisproConfigured(Boolean(res?.configured)))
                     .catch(() => setSisproConfigured(false));
@@ -584,7 +600,9 @@ export default function EmpresaUsuarios() {
                 generaRips: formData.generaRips || false,
                 ripsTipoPrestador: formData.ripsTipoPrestador || "unico",
                 ripsCodigoUnico: formData.ripsCodigoUnico || "",
-                ripsSucursales: formData.ripsSucursales || {}
+                ripsSucursales: formData.ripsSucursales || {},
+                sisproUsuario: formData.sisproUsuario || "",
+                sisproTipoDoc: formData.sisproTipoDoc || "CC",
             };
             await saveConfigSection(userProfile.inquilino, "user_details", {
                 ...(currentUserDetails || {}),
@@ -1030,9 +1048,22 @@ export default function EmpresaUsuarios() {
                                                         </button>
                                                     </div>
 
-                                                    <div className="space-y-1 transition-all">
-                                                        <label className="text-[11px] font-medium text-slate-500">Porcentaje</label>
-                                                        <input type="number" value={formData.comisionPorcentaje} onChange={e => handleFieldChange("comisionPorcentaje", e.target.value)} placeholder="0" className="h-8 bg-white border-slate-200 rounded-lg px-4 font-black text-blue-600 text-[16px] shadow-sm" />
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 transition-all">
+                                                        <div className="space-y-1">
+                                                            <label className="text-[11px] font-medium text-slate-500">Porcentaje comisión (%)</label>
+                                                            <input type="number" value={formData.comisionPorcentaje} onChange={e => handleFieldChange("comisionPorcentaje", e.target.value)} placeholder="0" className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 font-black text-blue-600 text-[15px] shadow-sm outline-none focus:border-blue-500" />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[11px] font-medium text-slate-500">Forma de liquidación</label>
+                                                            <select 
+                                                                value={formData.formaPago || "Realizadas y pagadas"} 
+                                                                onChange={e => handleFieldChange("formaPago", e.target.value)}
+                                                                className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 font-bold text-slate-700 text-xs shadow-sm outline-none focus:border-blue-500 cursor-pointer"
+                                                            >
+                                                                <option value="Realizadas y pagadas">Realizado y Pagado (Por paciente)</option>
+                                                                <option value="Realizadas">Realizado (Al evolucionar)</option>
+                                                            </select>
+                                                        </div>
                                                     </div>
 
                                                     <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
@@ -1065,177 +1096,175 @@ export default function EmpresaUsuarios() {
                                                         </div>
                                                     )}
 
-                                                    {/* Sección FEV-RIPS v003 - Gated detrás de ENABLE_FEV_RIPS_0948 */}
-                                                    {fevRipsEnabled && (
-                                                        <>
-                                                            {!shouldDoctorShowGeneraRips(tenantProviderType, formData) ? (
-                                                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start gap-2.5 text-xs text-slate-600">
-                                                                    <FiInfo className="text-blue-500 shrink-0 mt-0.5" size={15} />
-                                                                    <span className="text-[11px] leading-tight">
-                                                                        <strong>Institución Prestadora (IPS):</strong> La responsabilidad RIPS recae en la institución clínica. Los profesionales no configuran habilitación individual.
-                                                                    </span>
+                                                    {/* Configuración Prestador & SISPRO Doctor (Modalidad Profesional Independiente) */}
+                                                    {(tenantProviderType !== PROVIDER_TYPES.IPS) && (
+                                                        <div className="space-y-3">
+                                                            {/* ¿Genera RIPS? Checkbox (1:1 OralDrive para Profesional Independiente) */}
+                                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <input 
+                                                                        type="checkbox"
+                                                                        id="checkbox-genera-rips"
+                                                                        checked={Boolean(formData.generaRips)}
+                                                                        onChange={e => handleFieldChange("generaRips", e.target.checked)}
+                                                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                                                                    />
+                                                                    <label htmlFor="checkbox-genera-rips" className="text-[12px] font-semibold text-slate-700 cursor-pointer">
+                                                                        ¿Genera RIPS?
+                                                                    </label>
+                                                                </div>
+                                                                <span className="text-[11px] text-slate-400">
+                                                                    {formData.generaRips ? "Habilitado para RIPS independiente" : "No genera RIPS"}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Al estar palomeado "¿Genera RIPS?", se activa el recuadro con Código REPS y SISPRO */}
+                                                            {formData.generaRips && (
+                                                                <div className="space-y-3 bg-blue-50/40 p-3.5 rounded-xl border border-blue-100 animate-in fade-in duration-300">
+                                                            {/* Selector de Código Prestador: Código Único vs Configurar por sede */}
+                                                            <div className="space-y-1.5">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <label className="text-[11px] font-bold text-slate-700">Código de Prestador (REPS)</label>
+                                                                    <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Seleccione si el profesional maneja un código de habilitación único o uno configurado por sede" />
+                                                                </div>
+                                                                <div className="flex items-center gap-4 text-xs text-slate-700">
+                                                                    <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                        <input 
+                                                                            type="radio" 
+                                                                            name="ripsTipoPrestador"
+                                                                            value="unico"
+                                                                            checked={formData.ripsTipoPrestador !== 'sucursal'}
+                                                                            onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'unico' })}
+                                                                            className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                        />
+                                                                        <span className="font-semibold">Código Único</span>
+                                                                    </label>
+                                                                    <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                        <input 
+                                                                            type="radio" 
+                                                                            name="ripsTipoPrestador"
+                                                                            value="sucursal"
+                                                                            checked={formData.ripsTipoPrestador === 'sucursal'}
+                                                                            onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'sucursal' })}
+                                                                            className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                        />
+                                                                        <span className="font-semibold">Configurar por sede</span>
+                                                                    </label>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Caso 1: Código Único */}
+                                                            {formData.ripsTipoPrestador !== 'sucursal' ? (
+                                                                <div className="space-y-1">
+                                                                    <input 
+                                                                        type="text" 
+                                                                        value={formData.ripsCodigoUnico || ''} 
+                                                                        onChange={e => handleFieldChange("ripsCodigoUnico", e.target.value)} 
+                                                                        placeholder="Ej. 700010165701 (10 o 12 dígitos)" 
+                                                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                                                    />
                                                                 </div>
                                                             ) : (
-                                                                <>
-                                                                    {/* ¿Genera RIPS? (1:1 OralDrive para Profesional Independiente) */}
-                                                                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                                        <span className="text-[12px] font-medium text-slate-700">¿Genera RIPS?</span>
-                                                                        <button 
-                                                                            type="button" 
-                                                                            onClick={() => setFormData({ ...formData, generaRips: !formData.generaRips })} 
-                                                                            className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.generaRips ? "bg-blue-600" : "bg-slate-300"}`}
-                                                                        >
-                                                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.generaRips ? "left-6" : "left-1"}`} />
-                                                                        </button>
-                                                                    </div>
-
-                                                                    {/* Configuración RIPS cuando está activado */}
-                                                                    {formData.generaRips && (
-                                                                <div className="p-3.5 bg-blue-50/50 rounded-xl border border-blue-100 space-y-3 animate-in fade-in transition-all">
-                                                                    {/* Selector de Código Prestador: Único vs Por Sucursal */}
-                                                                    <div className="space-y-1.5">
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            <label className="text-[11px] font-bold text-slate-700">Código prestador de servicio</label>
-                                                                            <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Seleccione si el profesional maneja un código de habilitación único o uno configurado por sucursal" />
-                                                                        </div>
-                                                                        <div className="flex items-center gap-4 text-xs text-slate-700">
-                                                                            <label className="flex items-center gap-1.5 cursor-pointer">
-                                                                                <input 
-                                                                                    type="radio" 
-                                                                                    name="ripsTipoPrestador"
-                                                                                    value="unico"
-                                                                                    checked={formData.ripsTipoPrestador !== 'sucursal'}
-                                                                                    onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'unico' })}
-                                                                                    className="text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                                                />
-                                                                                <span className="font-semibold">Único</span>
-                                                                            </label>
-                                                                            <label className="flex items-center gap-1.5 cursor-pointer">
-                                                                                <input 
-                                                                                    type="radio" 
-                                                                                    name="ripsTipoPrestador"
-                                                                                    value="sucursal"
-                                                                                    checked={formData.ripsTipoPrestador === 'sucursal'}
-                                                                                    onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'sucursal' })}
-                                                                                    className="text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                                                />
-                                                                                <span className="font-semibold">Configurar por sucursal</span>
-                                                                            </label>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Caso 1: Código Único (Imagen 2) */}
-                                                                    {formData.ripsTipoPrestador !== 'sucursal' ? (
-                                                                        <div className="space-y-2">
-                                                                            <div className="space-y-1">
-                                                                                <label className="text-[11px] font-medium text-slate-600">Código único</label>
-                                                                                <input 
-                                                                                    type="text" 
-                                                                                    value={formData.ripsCodigoUnico || ''} 
-                                                                                    onChange={e => handleFieldChange("ripsCodigoUnico", e.target.value)} 
-                                                                                    placeholder="Código de servicio" 
-                                                                                    className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 text-xs text-slate-800 outline-none focus:border-blue-500 shadow-2xs transition-all"
-                                                                                />
-                                                                            </div>
-                                                                        </div>
-                                                                    ) : (
-                                                                        /* Caso 2: Configurar por sucursal (Imagen 1) */
-                                                                        <div className="space-y-2">
-                                                                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                                                                                <table className="w-full text-left text-xs">
-                                                                                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
-                                                                                        <tr>
-                                                                                            <th className="px-3 py-2">Sucursal</th>
-                                                                                            <th className="px-3 py-2">Código</th>
-                                                                                            <th className="px-3 py-2">Extra_III:CodigoPrestador</th>
+                                                                /* Caso 2: Configurar por sede */
+                                                                <div className="space-y-2">
+                                                                    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                                                        <table className="w-full text-left text-xs">
+                                                                            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
+                                                                                <tr>
+                                                                                    <th className="px-3 py-2">Sede</th>
+                                                                                    <th className="px-3 py-2">Código REPS sede</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody className="divide-y divide-slate-100">
+                                                                                {(sucursales.length > 0 ? sucursales : [{ id: 'sede_principal', nombre: userProfile?.tenant?.nombre || 'Sede Principal' }]).map(suc => {
+                                                                                    const rawVal = formData.ripsSucursales?.[suc.id];
+                                                                                    const codeVal = typeof rawVal === 'object' ? (rawVal?.codigo || '') : (rawVal || '');
+                                                                                    return (
+                                                                                        <tr key={suc.id} className="hover:bg-slate-50/50">
+                                                                                            <td className="px-3 py-2 font-bold text-slate-700 whitespace-nowrap text-[11px]">
+                                                                                                {suc.nombre || 'Sede Principal'}
+                                                                                            </td>
+                                                                                            <td className="px-3 py-1.5">
+                                                                                                <input 
+                                                                                                    type="text" 
+                                                                                                    placeholder="Código REPS sede"
+                                                                                                    value={codeVal}
+                                                                                                    onChange={e => {
+                                                                                                        const val = e.target.value;
+                                                                                                        setFormData(prev => ({
+                                                                                                            ...prev,
+                                                                                                            ripsSucursales: {
+                                                                                                                ...(prev.ripsSucursales || {}),
+                                                                                                                [suc.id]: {
+                                                                                                                    ...(typeof prev.ripsSucursales?.[suc.id] === 'object' ? prev.ripsSucursales[suc.id] : {}),
+                                                                                                                    codigo: val
+                                                                                                                }
+                                                                                                            }
+                                                                                                        }));
+                                                                                                    }}
+                                                                                                    className="w-full h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
+                                                                                                />
+                                                                                            </td>
                                                                                         </tr>
-                                                                                    </thead>
-                                                                                    <tbody className="divide-y divide-slate-100">
-                                                                                        {(sucursales.length > 0 ? sucursales : [{ id: 'sede_principal', nombre: userProfile?.tenant?.nombre || 'ATM CENTRO DEL DOLOR OROFACIAL' }]).map(suc => {
-                                                                                            const sucData = formData.ripsSucursales?.[suc.id] || {};
-                                                                                            return (
-                                                                                                <tr key={suc.id} className="hover:bg-slate-50/50">
-                                                                                                    <td className="px-3 py-2 font-bold text-slate-700 whitespace-nowrap text-[11px]">
-                                                                                                        {suc.nombre || 'Sede Principal'}
-                                                                                                    </td>
-                                                                                                    <td className="px-3 py-1.5">
-                                                                                                        <input 
-                                                                                                            type="text" 
-                                                                                                            placeholder="Código de servicio"
-                                                                                                            value={sucData.codigo || ''}
-                                                                                                            onChange={e => {
-                                                                                                                const val = e.target.value;
-                                                                                                                setFormData(prev => ({
-                                                                                                                    ...prev,
-                                                                                                                    ripsSucursales: {
-                                                                                                                        ...(prev.ripsSucursales || {}),
-                                                                                                                        [suc.id]: {
-                                                                                                                            ...(prev.ripsSucursales?.[suc.id] || {}),
-                                                                                                                            codigo: val
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                }));
-                                                                                                            }}
-                                                                                                            className="w-full h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
-                                                                                                        />
-                                                                                                    </td>
-                                                                                                    <td className="px-3 py-1.5">
-                                                                                                        <input 
-                                                                                                            type="text" 
-                                                                                                            placeholder="Código de servicio"
-                                                                                                            value={sucData.extraCodigoPrestador || ''}
-                                                                                                            onChange={e => {
-                                                                                                                const val = e.target.value;
-                                                                                                                setFormData(prev => ({
-                                                                                                                    ...prev,
-                                                                                                                    ripsSucursales: {
-                                                                                                                        ...(prev.ripsSucursales || {}),
-                                                                                                                        [suc.id]: {
-                                                                                                                            ...(prev.ripsSucursales?.[suc.id] || {}),
-                                                                                                                            extraCodigoPrestador: val
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                }));
-                                                                                                            }}
-                                                                                                            className="w-full h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
-                                                                                                        />
-                                                                                                    </td>
-                                                                                                </tr>
-                                                                                            );
-                                                                                        })}
-                                                                                    </tbody>
-                                                                                </table>
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Contraseña SISPRO del Doctor */}
-                                                                    <div className="space-y-1">
-                                                                        <div className="flex items-center justify-between">
-                                                                            <div className="flex items-center gap-1.5">
-                                                                                <label className="text-[11px] font-bold text-slate-700">Contraseña SISPRO</label>
-                                                                                <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Contraseña asignada al usuario o prestador en el portal SISPRO del Ministerio de Salud" />
-                                                                            </div>
-                                                                            {sisproConfigured && (
-                                                                                <span className="text-[10px] text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                                                                    ✓ Configurada
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                        <input 
-                                                                            type="password" 
-                                                                            value={formData.newSisproPassword || ''} 
-                                                                            onChange={e => handleFieldChange("newSisproPassword", e.target.value)} 
-                                                                            placeholder={sisproConfigured ? "Dejar en blanco para mantener la actual" : "Contraseña Usuario SISPRO"} 
-                                                                            autoComplete="new-password"
-                                                                            className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 text-xs text-slate-800 outline-none focus:border-blue-500 shadow-2xs transition-all"
-                                                                        />
+                                                                                    );
+                                                                                })}
+                                                                            </tbody>
+                                                                        </table>
                                                                     </div>
                                                                 </div>
                                                             )}
-                                                        </>
+
+                                                            {/* SISPRO del Doctor */}
+                                                            <div className="pt-2 border-t border-blue-100/80 space-y-2">
+                                                                <div className="flex items-center justify-between">
+                                                                    <label className="text-[11px] font-bold text-slate-700">Integración SISPRO institucional</label>
+                                                                    {sisproConfigured ? (
+                                                                        <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                                                            <FiCheckCircle size={10} /> Configurada
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                                                            No configurada
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <div className="space-y-1">
+                                                                        <input 
+                                                                            type="text" 
+                                                                            value={formData.sisproUsuario || ''} 
+                                                                            onChange={e => handleFieldChange("sisproUsuario", e.target.value)} 
+                                                                            placeholder="Cédula del prestador" 
+                                                                            className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                                                        />
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <select 
+                                                                            value={formData.sisproTipoDoc || 'CC'} 
+                                                                            onChange={e => handleFieldChange("sisproTipoDoc", e.target.value)}
+                                                                            className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-[11px] text-slate-700 outline-none focus:border-blue-500"
+                                                                        >
+                                                                            <option value="CC">Cédula (CC)</option>
+                                                                            <option value="NIT">NIT</option>
+                                                                            <option value="CE">Cédula Ext. (CE)</option>
+                                                                            <option value="PA">Pasaporte (PA)</option>
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="space-y-1">
+                                                                    <input 
+                                                                        type="password" 
+                                                                        value={formData.newSisproPassword || ''} 
+                                                                        onChange={e => handleFieldChange("newSisproPassword", e.target.value)} 
+                                                                        placeholder={sisproConfigured ? "•••••••• (Contraseña guardada - cambiar solo si desea actualizar)" : "Contraseña SISPRO"} 
+                                                                        autoComplete="new-password"
+                                                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     )}
-                                                </>
+                                                </div>
                                             )}
                                         </div>
                                     )}

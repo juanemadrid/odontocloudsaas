@@ -4,6 +4,7 @@ import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 import { resolvePrivateFileUrl, uploadPrivateFile } from "../../services/privateStorageService";
+import { computeCycleAvailability } from "../../services/sterilizationService";
 
 // Helper para calcular el siguiente número de lote: DDMMYYYY-1, DDMMYYYY-2...
 export const computeNextLote = (dateStr, allCycles = [], currentId = null) => {
@@ -123,6 +124,10 @@ export default function Esterilizacion() {
   // Lightbox Modal state for full image viewing
   const [previewImageModal, setPreviewImageModal] = useState({ isOpen: false, url: "", title: "" });
 
+  // Histórico de usos Modal state (1:1 OralDrive)
+  const [showHistoricoModal, setShowHistoricoModal] = useState(false);
+  const [activeCycleForHistorico, setActiveCycleForHistorico] = useState(null);
+
   // Load clinic users/staff for dropdown
   useEffect(() => {
     if (!inquilino) return;
@@ -187,6 +192,18 @@ export default function Esterilizacion() {
         list = cfgRow?.config?.ciclos_esterilizacion || [];
       }
 
+      // Cargar evoluciones para computar usos históricos y disponibilidad real
+      let evosList = [];
+      try {
+        const { data: evosData } = await supabase
+          .from("evoluciones")
+          .select("id, fecha, created_at, tratamiento, paciente_id, profesional_id")
+          .eq("tenant_id", inquilino);
+        evosList = evosData || [];
+      } catch (evErr) {
+        console.warn("Could not load evoluciones for sterilization usage calculation:", evErr);
+      }
+
       const formatted = await Promise.all(list.map(async (docData, idx) => {
         const rawQ = docData.quimicoImg || "";
         const rawB = docData.biologicoImg || docData.biologcioImg || "";
@@ -202,7 +219,7 @@ export default function Esterilizacion() {
         const dateParts = (docData.fechaEsterilizacion || "").split("-");
         const dateLoteFallback = dateParts.length === 3 ? `${dateParts[2]}${dateParts[1]}${dateParts[0]}-${idx + 1}` : `LOTE-${idx + 1}`;
 
-        return {
+        const baseCycle = {
           id: docData.id || `cycle_${idx}`,
           consecutivo: idx + 1,
           ...docData,
@@ -210,6 +227,8 @@ export default function Esterilizacion() {
           quimicoImg: qUrl,
           biologicoImg: bUrl
         };
+
+        return computeCycleAvailability(baseCycle, evosList);
       }));
       formatted.sort((a, b) => (b.fechaEsterilizacion || "").localeCompare(a.fechaEsterilizacion || ""));
       setCycles(formatted);
@@ -876,8 +895,8 @@ export default function Esterilizacion() {
                       <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-800 font-semibold">{c.temperatura}°C</td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center text-slate-800 font-semibold">{c.presion} psi</td>
                       <td className="py-2 px-3 border-r border-slate-100 font-medium text-slate-700 uppercase">{c.responsable}</td>
-                      <td className="py-2 px-3 border-r border-slate-100 text-center">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500" title="Activo" />
+                      <td className="py-2 px-3 border-r border-slate-100 text-center font-normal text-xs text-slate-700">
+                        {c.isActivo !== false ? "Sí" : "No"}
                       </td>
                       <td className="py-2 px-3 border-r border-slate-100 text-center">
                         {c.quimicoImg ? (
@@ -910,11 +929,11 @@ export default function Esterilizacion() {
                           <button
                             type="button"
                             onClick={() => {
-                              setActiveCycleDetail(c);
-                              setShowDetailModal(true);
+                              setActiveCycleForHistorico(c);
+                              setShowHistoricoModal(true);
                             }}
-                            className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:bg-sky-50 hover:text-sky-600 flex items-center justify-center transition-colors cursor-pointer"
-                            title="Ver detalles"
+                            className="w-6 h-6 rounded border border-sky-600 bg-sky-600 text-white hover:bg-sky-700 flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                            title="Histórico de usos"
                           >
                             <FiEye size={12} />
                           </button>
@@ -943,6 +962,72 @@ export default function Esterilizacion() {
             </table>
           </div>
         </div>
+
+        {/* ─── MODAL HISTÓRICO DE USOS 1:1 ORALDRIVE ─── */}
+        {showHistoricoModal && activeCycleForHistorico && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+              {/* Header */}
+              <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+                <h3 className="text-sm font-semibold text-slate-800">
+                  Histórico de usos
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowHistoricoModal(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer p-1 border-0 bg-transparent"
+                >
+                  <FiX size={18} />
+                </button>
+              </div>
+
+              {/* Table */}
+              <div className="p-6 overflow-y-auto flex-1">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-600 font-normal">
+                      <th className="py-2.5 px-4 font-normal text-slate-500">Usado por usuario</th>
+                      <th className="py-2.5 px-4 font-normal text-slate-500">Usado por paciente</th>
+                      <th className="py-2.5 px-4 font-normal text-slate-500">Fecha de uso</th>
+                      <th className="py-2.5 px-4 font-normal text-slate-500">Concepto</th>
+                      <th className="py-2.5 px-4 font-normal text-slate-500 text-center">Cantidad</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {(!activeCycleForHistorico.usos || activeCycleForHistorico.usos.length === 0) ? (
+                      <tr>
+                        <td colSpan="5" className="py-20 text-center text-slate-400 text-xs">
+                          No data
+                        </td>
+                      </tr>
+                    ) : (
+                      activeCycleForHistorico.usos.map((u, uIdx) => (
+                        <tr key={u.id || uIdx} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3 px-4 font-normal text-slate-700 uppercase">{u.usuario || "—"}</td>
+                          <td className="py-3 px-4 font-normal text-slate-700 uppercase">{u.paciente || "—"}</td>
+                          <td className="py-3 px-4 text-slate-600 font-normal">{u.fecha || "—"}</td>
+                          <td className="py-3 px-4 text-slate-800 font-normal">{u.concepto || "—"}</td>
+                          <td className="py-3 px-4 text-slate-800 font-normal text-center">{u.cantidad || 1}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3.5 border-t border-slate-100 bg-white flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowHistoricoModal(false)}
+                  className="px-5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-normal rounded transition-colors cursor-pointer shadow-2xs"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Details View Modal */}
         {showDetailModal && activeCycleDetail && (
