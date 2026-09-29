@@ -132,7 +132,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                 <div 
                   onMouseEnter={() => setIsMonitorHovered(true)}
                   onMouseLeave={() => setIsMonitorHovered(false)}
-                  className="relative z-20 transition-all duration-300"
+                  className="peer/laptop relative z-20 transition-all duration-300"
                 >
                   <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[22px] xl:rounded-[26px] p-2.5 xl:p-3 shadow-[0_25px_60px_-15px_rgba(15,23,42,0.4)] border border-slate-300">
                     
@@ -397,10 +397,10 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                 <div 
                   onMouseEnter={() => setIsMonitorHovered(false)}
                   onClick={() => setIsMonitorHovered(false)}
-                  className={`absolute -bottom-4 lg:-bottom-6 -left-8 lg:-left-12 xl:-left-16 2xl:-left-20 w-[145px] lg:w-[160px] xl:w-[185px] 2xl:w-[210px] transition-all duration-500 ease-in-out cursor-pointer ${
+                  className={`absolute -bottom-4 lg:-bottom-6 -left-8 lg:-left-12 xl:-left-16 2xl:-left-20 w-[145px] lg:w-[160px] xl:w-[185px] 2xl:w-[210px] transition-all duration-500 ease-in-out cursor-pointer z-30 peer-hover/laptop:z-10 peer-hover/laptop:-translate-x-12 peer-hover/laptop:translate-y-4 peer-hover/laptop:opacity-40 peer-hover/laptop:scale-90 hover:!z-30 hover:!translate-x-0 hover:!translate-y-0 hover:!opacity-100 hover:!scale-100 shadow-2xl ${
                     isMonitorHovered 
-                      ? "z-10 -translate-x-10 translate-y-4 opacity-75 scale-95 pointer-events-auto" 
-                      : "z-30 translate-x-0 translate-y-0 opacity-100 scale-100 hover:scale-[1.03] shadow-2xl"
+                      ? "z-10 -translate-x-12 translate-y-4 opacity-40 scale-90" 
+                      : ""
                   }`}
                   title={isMonitorHovered ? "Haz clic para traer el móvil al frente" : "Pasa el mouse sobre el monitor para ocultar el móvil"}
                 >
