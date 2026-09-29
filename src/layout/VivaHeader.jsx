@@ -120,8 +120,8 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
 
     return (
         <header className="fixed top-0 left-0 w-full z-[100] transition-all duration-300">
-            <nav className={`${navClasses} h-20 flex items-center`}>
-                <div className="w-full mx-auto px-4 md:px-8 flex justify-between items-center h-full max-w-[1600px]">
+            <nav className={`${navClasses} h-20 sm:h-22 flex items-center`}>
+                <div className="w-full mx-auto px-4 sm:px-8 xl:px-12 2xl:px-16 flex justify-between items-center h-full max-w-[1800px]">
 
                     {/* LEFT: LOGO & APP BRANDING */}
                     <div 
@@ -132,12 +132,16 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
                         }}
                     >
                         {isMaster ? (
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5 sm:gap-3">
                                 <img
                                     src={logoSrc}
-                                    alt="OdontoCloud"
-                                    className="h-10 md:h-12 w-auto object-contain shrink-0 group-hover:scale-105 transition-transform drop-shadow-sm"
+                                    alt="OdontoCloud Logo"
+                                    className="h-9 sm:h-10 lg:h-11 xl:h-12 w-auto object-contain shrink-0 group-hover:scale-105 transition-transform drop-shadow-xs"
                                 />
+                                <div className="flex items-center tracking-tight leading-none font-sans">
+                                    <span className="text-xl sm:text-2xl lg:text-[26px] font-black text-slate-900">Odonto</span>
+                                    <span className="text-xl sm:text-2xl lg:text-[26px] font-black text-[#2563EB]">Cloud</span>
+                                </div>
                             </div>
                         ) : (
                             <>
