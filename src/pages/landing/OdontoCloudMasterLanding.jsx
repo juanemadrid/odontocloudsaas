@@ -50,24 +50,24 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
           <div className="absolute inset-0 bg-gradient-to-r from-[#E6F0FD]/95 via-[#EEF5FE]/80 to-transparent" />
         </div>
 
-        <div className="w-full max-w-[1680px] 2xl:max-w-[1850px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 relative z-10 py-4 lg:py-6">
+        <div className="w-full max-w-[1680px] 2xl:max-w-[2100px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 relative z-10 py-4 lg:py-6 2xl:py-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 xl:gap-12 2xl:gap-16 items-center">
             
             {/* COLUMNA IZQUIERDA: Titular, Beneficios y CTAs */}
-            <div className="lg:col-span-5 text-left space-y-3.5 lg:space-y-4 xl:space-y-5">
+            <div className="lg:col-span-5 text-left space-y-3.5 lg:space-y-4 xl:space-y-5 2xl:space-y-7">
               
               {/* Badge Azul Superior */}
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-600/10 border border-blue-600/25 text-[#2563EB] text-xs font-black tracking-wide shadow-xs">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-600/10 border border-blue-600/25 text-[#2563EB] text-xs 2xl:text-sm font-black tracking-wide shadow-xs">
                 <span className="w-2 h-2 rounded-full bg-[#2563EB] animate-pulse" />
                 <span>Software Odontológico en la Nube</span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[34px] xl:text-[44px] 2xl:text-[54px] font-sans font-black text-slate-900 tracking-tight leading-[1.14]">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[34px] xl:text-[44px] 2xl:text-[60px] font-sans font-black text-slate-900 tracking-tight leading-[1.14]">
                 Gestiona tu clínica dental de forma{" "}
                 <span className="text-[#2563EB] drop-shadow-xs">simple y profesional</span>
               </h1>
 
-              <p className="text-sm sm:text-base lg:text-[14px] xl:text-base 2xl:text-lg text-slate-600 leading-relaxed font-normal max-w-lg xl:max-w-xl">
+              <p className="text-sm sm:text-base lg:text-[14px] xl:text-base 2xl:text-xl text-slate-600 leading-relaxed font-normal max-w-lg xl:max-w-xl 2xl:max-w-2xl">
                 Agenda, historia clínica, odontograma, facturación electrónica y más. Todo en un solo lugar, accesible desde cualquier dispositivo.
               </p>
 
@@ -75,7 +75,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               <div className="flex flex-wrap items-center gap-3 sm:gap-4 pt-1">
                 <button
                   onClick={handleDemo}
-                  className="px-6 sm:px-7 py-3 sm:py-3.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full font-bold text-sm sm:text-base xl:text-base shadow-lg shadow-blue-600/30 transition-all duration-200 transform hover:-translate-y-0.5 flex items-center gap-2 group cursor-pointer border-0"
+                  className="px-6 sm:px-7 2xl:px-9 py-3 sm:py-3.5 2xl:py-4.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-lg shadow-blue-600/30 transition-all duration-200 transform hover:-translate-y-0.5 flex items-center gap-2 group cursor-pointer border-0"
                 >
                   <span>Solicitar demostración gratuita</span>
                   <FiArrowRight size={17} className="transition-transform group-hover:translate-x-1" />
@@ -83,7 +83,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
 
                 <button
                   onClick={() => setShowDocModal(true)}
-                  className="px-5 sm:px-6 py-3 sm:py-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 cursor-pointer"
+                  className="px-5 sm:px-6 2xl:px-8 py-3 sm:py-3.5 2xl:py-4.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 cursor-pointer"
                 >
                   <FiPlay size={13} className="text-[#2563EB] fill-[#2563EB]" />
                   <span>Ver video (2 min)</span>
@@ -91,7 +91,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               </div>
 
               {/* 3 Insignias de Confianza */}
-              <div className="pt-2 flex flex-wrap items-center gap-4 sm:gap-6 text-slate-700 text-xs sm:text-sm font-bold">
+              <div className="pt-2 flex flex-wrap items-center gap-4 sm:gap-6 text-slate-700 text-xs sm:text-sm 2xl:text-base font-bold">
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
                     ✓
@@ -126,7 +126,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                   A) VISTA ESCRITORIO (>= lg): LAPTOP MACBOOK PRO COMPLETO
                      + SMARTPHONE A LA IZQUIERDA (SIN BLOQUEAR EL SISTEMA)
                   ══════════════════════════════════════════════════════════════ */}
-              <div className="hidden lg:block relative w-full max-w-[580px] lg:max-w-[650px] xl:max-w-[780px] 2xl:max-w-[920px]">
+              <div className="hidden lg:block relative w-full max-w-[580px] lg:max-w-[650px] xl:max-w-[800px] 2xl:max-w-[1080px]">
                 
                 {/* CONTENEDOR LAPTOP MACBOOK PRO */}
                 <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[24px] xl:rounded-[28px] p-2.5 xl:p-3.5 shadow-[0_30px_70px_-20px_rgba(15,23,42,0.4)] border border-slate-300">
@@ -364,12 +364,10 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
 
                 {/* 
                   SMARTPHONE SLENDER A UN LADO (Desktop):
-                  - Posicionado a la izquierda y abajo, sobreponiéndose ÚNICAMENTE
-                    a la esquina inferior del marco/menú.
-                  - DEJA LIBRE Y 100% VISIBLE EL RESTO DEL SISTEMA (BIENVENIDA,
-                    MÉTRICAS, AGENDA Y GRÁFICAS).
+                  - Posicionado bien a la izquierda, apoyado sobre la base
+                    sin tapar NINGÚN texto ni métricas del sistema.
                 */}
-                <div className="absolute -bottom-4 lg:-bottom-6 -left-6 lg:-left-9 xl:-left-12 w-[160px] lg:w-[175px] xl:w-[200px] 2xl:w-[220px] z-30 transition-transform duration-300 hover:scale-[1.03]">
+                <div className="absolute -bottom-4 lg:-bottom-6 -left-10 lg:-left-14 xl:-left-18 2xl:-left-22 w-[145px] lg:w-[160px] xl:w-[185px] 2xl:w-[210px] z-30 transition-transform duration-300 hover:scale-[1.03]">
                   
                   {/* Chasis Titánio Gris Espacial Realista */}
                   <div className="relative bg-[#1c1d22] rounded-[32px] xl:rounded-[38px] p-2 xl:p-2.5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.6),0_10px_20px_-5px_rgba(37,99,235,0.3)] border-[2.5px] border-[#383a42] ring-1 ring-white/10">
