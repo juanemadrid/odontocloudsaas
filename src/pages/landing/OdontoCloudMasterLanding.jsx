@@ -35,7 +35,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
           ───────────────────────────────────────────────────────────── */}
       <section 
         id="inicio" 
-        className="relative w-full min-h-screen lg:h-screen lg:max-h-screen flex items-center pt-20 pb-12 sm:pt-24 sm:pb-16 lg:py-0 overflow-hidden bg-gradient-to-b from-[#E6F0FD] via-[#EEF5FE] to-[#F5F8FE]"
+        className="relative w-full min-h-[calc(100vh-5rem)] lg:min-h-screen flex items-center pt-20 pb-12 sm:pt-24 sm:pb-14 lg:py-6 overflow-hidden bg-gradient-to-b from-[#E6F0FD] via-[#EEF5FE] to-[#F5F8FE]"
       >
         {/* Fondo fotográfico y resplandores azulados médicos */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
@@ -44,54 +44,54 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
             alt="Clínica OdontoCloud"
             className="w-full h-full object-cover object-right opacity-30 mix-blend-multiply filter saturate-150"
           />
-          <div className="absolute -top-32 right-10 w-[750px] 2xl:w-[950px] h-[700px] 2xl:h-[850px] bg-gradient-to-br from-blue-500/25 via-sky-400/20 to-indigo-600/15 rounded-full blur-[150px]" />
-          <div className="absolute top-20 left-0 w-[650px] 2xl:w-[850px] h-[650px] bg-gradient-to-tr from-cyan-400/20 via-blue-400/15 to-transparent rounded-full blur-[140px]" />
-          <div className="absolute bottom-0 right-1/4 w-[800px] h-[400px] bg-blue-600/10 rounded-full blur-[130px]" />
+          <div className="absolute -top-32 right-10 w-[700px] 2xl:w-[900px] h-[650px] 2xl:h-[800px] bg-gradient-to-br from-blue-500/25 via-sky-400/20 to-blue-600/15 rounded-full blur-[140px]" />
+          <div className="absolute top-20 left-0 w-[600px] 2xl:w-[800px] h-[600px] bg-gradient-to-tr from-cyan-400/20 via-blue-500/15 to-transparent rounded-full blur-[130px]" />
+          <div className="absolute bottom-0 right-1/4 w-[750px] h-[350px] bg-blue-600/15 rounded-full blur-[120px]" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#E6F0FD]/95 via-[#EEF5FE]/80 to-transparent" />
         </div>
 
-        <div className="w-full max-w-[1720px] 2xl:max-w-[1850px] mx-auto px-4 sm:px-8 xl:px-12 2xl:px-16 relative z-10 py-6 sm:py-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 xl:gap-14 2xl:gap-16 items-center">
+        <div className="w-full max-w-[1680px] 2xl:max-w-[1850px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 relative z-10 py-4 lg:py-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 xl:gap-12 2xl:gap-16 items-center">
             
             {/* COLUMNA IZQUIERDA: Titular, Beneficios y CTAs */}
-            <div className="lg:col-span-5 text-left space-y-4 sm:space-y-6">
+            <div className="lg:col-span-5 text-left space-y-3.5 lg:space-y-4 xl:space-y-5">
               
               {/* Badge Azul Superior */}
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-600/10 border border-blue-600/20 text-[#2563EB] text-xs font-black tracking-wide">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-600/10 border border-blue-600/25 text-[#2563EB] text-xs font-black tracking-wide shadow-xs">
                 <span className="w-2 h-2 rounded-full bg-[#2563EB] animate-pulse" />
                 <span>Software Odontológico en la Nube</span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[44px] xl:text-[54px] 2xl:text-[62px] font-sans font-black text-slate-900 tracking-tight leading-[1.12]">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[34px] xl:text-[44px] 2xl:text-[54px] font-sans font-black text-slate-900 tracking-tight leading-[1.14]">
                 Gestiona tu clínica dental de forma{" "}
                 <span className="text-[#2563EB] drop-shadow-xs">simple y profesional</span>
               </h1>
 
-              <p className="text-sm sm:text-base xl:text-lg text-slate-600 leading-relaxed font-normal max-w-xl">
+              <p className="text-sm sm:text-base lg:text-[14px] xl:text-base 2xl:text-lg text-slate-600 leading-relaxed font-normal max-w-lg xl:max-w-xl">
                 Agenda, historia clínica, odontograma, facturación electrónica y más. Todo en un solo lugar, accesible desde cualquier dispositivo.
               </p>
 
               {/* Botones de Acción */}
-              <div className="flex flex-wrap items-center gap-3 sm:gap-4 pt-1 sm:pt-2">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4 pt-1">
                 <button
                   onClick={handleDemo}
-                  className="px-6 sm:px-8 py-3.5 sm:py-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full font-bold text-sm sm:text-base xl:text-lg shadow-xl shadow-blue-600/30 transition-all duration-200 transform hover:-translate-y-0.5 flex items-center gap-2.5 group cursor-pointer border-0"
+                  className="px-6 sm:px-7 py-3 sm:py-3.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full font-bold text-sm sm:text-base xl:text-base shadow-lg shadow-blue-600/30 transition-all duration-200 transform hover:-translate-y-0.5 flex items-center gap-2 group cursor-pointer border-0"
                 >
                   <span>Solicitar demostración gratuita</span>
-                  <FiArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                  <FiArrowRight size={17} className="transition-transform group-hover:translate-x-1" />
                 </button>
 
                 <button
                   onClick={() => setShowDocModal(true)}
-                  className="px-5 sm:px-7 py-3.5 sm:py-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base xl:text-lg shadow-md shadow-slate-200/50 transition-all duration-200 flex items-center gap-2.5 cursor-pointer"
+                  className="px-5 sm:px-6 py-3 sm:py-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 cursor-pointer"
                 >
-                  <FiPlay size={14} className="text-[#2563EB] fill-[#2563EB]" />
+                  <FiPlay size={13} className="text-[#2563EB] fill-[#2563EB]" />
                   <span>Ver video (2 min)</span>
                 </button>
               </div>
 
               {/* 3 Insignias de Confianza */}
-              <div className="pt-2 sm:pt-4 flex flex-wrap items-center gap-4 sm:gap-6 text-slate-700 text-xs sm:text-sm font-bold">
+              <div className="pt-2 flex flex-wrap items-center gap-4 sm:gap-6 text-slate-700 text-xs sm:text-sm font-bold">
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
                     ✓
@@ -114,26 +114,27 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
             </div>
 
             {/* COLUMNA DERECHA:
-                - En Desktop: Monitor Laptop grande + Teléfono inteligente grande superpuesto
-                - En Pantalla Chica (Móvil / Tablet): Teléfono inteligente destacado y adaptativo
+                - En Desktop: Monitor Laptop amplio + Celular estilizado a un lado (sin tapar el sistema)
+                - En Móvil / Tablet: Celular centrado y proporcional
             */}
-            <div className="lg:col-span-7 relative w-full flex justify-center items-center py-2 sm:py-4">
+            <div className="lg:col-span-7 relative w-full flex justify-center items-center py-2">
               
-              {/* Brillo Azul de Fondo */}
-              <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/20 via-sky-400/25 to-indigo-500/15 rounded-full blur-[100px] pointer-events-none scale-110" />
+              {/* Brillo Azul Clínico de Fondo */}
+              <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/25 via-sky-400/20 to-blue-600/15 rounded-full blur-[110px] pointer-events-none scale-105" />
 
               {/* ══════════════════════════════════════════════════════════════
-                  A) VISTA ESCRITORIO (>= lg): LAPTOP GRANDE + SMARTPHONE GRANDE
+                  A) VISTA ESCRITORIO (>= lg): LAPTOP MACBOOK PRO COMPLETO
+                     + SMARTPHONE A LA IZQUIERDA (SIN BLOQUEAR EL SISTEMA)
                   ══════════════════════════════════════════════════════════════ */}
-              <div className="hidden lg:block relative w-full max-w-[840px] xl:max-w-[940px] 2xl:max-w-[1060px]">
+              <div className="hidden lg:block relative w-full max-w-[580px] lg:max-w-[650px] xl:max-w-[780px] 2xl:max-w-[920px]">
                 
                 {/* CONTENEDOR LAPTOP MACBOOK PRO */}
-                <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[28px] xl:rounded-[32px] p-3 xl:p-4 shadow-[0_35px_80px_-20px_rgba(15,23,42,0.4)] border border-slate-300">
+                <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[24px] xl:rounded-[28px] p-2.5 xl:p-3.5 shadow-[0_30px_70px_-20px_rgba(15,23,42,0.4)] border border-slate-300">
                   
                   {/* Marco de Pantalla Negro Vidriado */}
-                  <div className="bg-slate-950 rounded-[20px] xl:rounded-[24px] p-2.5 xl:p-3 pt-2 shadow-2xl">
+                  <div className="bg-slate-950 rounded-[18px] xl:rounded-[22px] p-2 xl:p-2.5 pt-2 shadow-2xl">
                     {/* Cámara Web HD y sensor */}
-                    <div className="flex items-center justify-center gap-1.5 mb-2">
+                    <div className="flex items-center justify-center gap-1.5 mb-1.5">
                       <div className="w-2 h-2 rounded-full bg-slate-800 border border-slate-700/60" />
                       <div className="w-1 h-1 rounded-full bg-emerald-500/80 animate-pulse" />
                     </div>
@@ -142,26 +143,26 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                     <div className="w-full bg-[#F8FAFC] rounded-lg xl:rounded-xl overflow-hidden text-left text-slate-800 select-none border border-slate-200">
                       
                       {/* Barra Superior del Sistema */}
-                      <div className="h-11 xl:h-12 bg-white border-b border-slate-150 px-4 xl:px-5 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <img src={logoUrl} alt="OdontoCloud" className="h-6 xl:h-7 w-auto object-contain" />
+                      <div className="h-10 xl:h-11 bg-white border-b border-slate-150 px-3.5 xl:px-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <img src={logoUrl} alt="OdontoCloud" className="h-5 xl:h-6 w-auto object-contain" />
                           <span className="font-black text-xs xl:text-sm tracking-tight text-slate-900 flex items-center">
                             <span>Odonto</span>
                             <span className="text-[#2563EB]">Cloud</span>
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             <span>En línea</span>
                           </div>
                           <div className="relative text-slate-400">
-                            <FiBell size={14} />
+                            <FiBell size={13} />
                             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
                           </div>
-                          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+                            <div className="w-5 h-5 xl:w-6 xl:h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
                               JM
                             </div>
                             <div className="text-[10px] leading-tight">
@@ -173,32 +174,32 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                       </div>
 
                       {/* Cuerpo: Menú Lateral + Tablero */}
-                      <div className="flex min-h-[380px] xl:min-h-[440px] 2xl:min-h-[480px]">
+                      <div className="flex min-h-[310px] xl:min-h-[380px] 2xl:min-h-[420px]">
                         
                         {/* Menú Lateral */}
-                        <div className="w-34 xl:w-42 bg-white border-r border-slate-150 p-2.5 space-y-1 shrink-0">
-                          <div className="px-2 py-1 mb-2 bg-slate-50 rounded-lg border border-slate-150 flex items-center gap-1.5 text-[9px] text-slate-400">
+                        <div className="w-30 xl:w-38 bg-white border-r border-slate-150 p-2 space-y-1 shrink-0">
+                          <div className="px-2 py-1 mb-1.5 bg-slate-50 rounded-lg border border-slate-150 flex items-center gap-1.5 text-[9px] text-slate-400">
                             <FiSearch size={10} />
                             <span>Buscar...</span>
                           </div>
 
-                          <div className="text-[8px] font-bold uppercase text-slate-400 px-2 py-0.5 tracking-wider">
+                          <div className="text-[7.5px] font-bold uppercase text-slate-400 px-2 py-0.5 tracking-wider">
                             MENÚ PRINCIPAL
                           </div>
 
-                          <div className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-[#2563EB] to-blue-700 text-white font-bold text-[10px] xl:text-xs flex items-center gap-2 shadow-xs">
+                          <div className="px-2 py-1.5 rounded-lg bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] text-white font-bold text-[10px] xl:text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/30">
                             <span>●</span>
                             <span>INICIO</span>
                           </div>
 
                           {[
-                            { name: "AGENDA", icon: <FiCalendar size={12} /> },
-                            { name: "PACIENTES", icon: <FiUsers size={12} /> },
-                            { name: "CAJA", icon: <FiDollarSign size={12} /> },
-                            { name: "ADMINISTRACIÓN", icon: <FiSettings size={12} /> },
-                            { name: "REPORTES", icon: <FiBarChart2 size={12} /> }
+                            { name: "AGENDA", icon: <FiCalendar size={11} /> },
+                            { name: "PACIENTES", icon: <FiUsers size={11} /> },
+                            { name: "CAJA", icon: <FiDollarSign size={11} /> },
+                            { name: "ADMINISTRACIÓN", icon: <FiSettings size={11} /> },
+                            { name: "REPORTES", icon: <FiBarChart2 size={11} /> }
                           ].map((item, idx) => (
-                            <div key={idx} className="px-2.5 py-1.5 text-[10px] xl:text-xs font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg flex items-center gap-2 transition-colors">
+                            <div key={idx} className="px-2 py-1 text-[10px] xl:text-[11px] font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg flex items-center gap-1.5 transition-colors">
                               <span>{item.icon}</span>
                               <span>{item.name}</span>
                             </div>
@@ -206,64 +207,64 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                         </div>
 
                         {/* Área de Trabajo Principal */}
-                        <div className="flex-1 p-3.5 xl:p-5 space-y-3 xl:space-y-4 bg-[#F8FAFC]">
+                        <div className="flex-1 p-2.5 xl:p-4 space-y-2.5 xl:space-y-3.5 bg-[#F8FAFC]">
                           
-                          {/* Banner de Bienvenida Azul-Morado Real */}
-                          <div className="rounded-xl bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#4F46E5] p-3.5 xl:p-4 text-white shadow-md shadow-blue-500/20 flex items-center justify-between">
+                          {/* Banner de Bienvenida Azul Clínico Real */}
+                          <div className="rounded-xl bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#0284C7] p-2.5 xl:p-3.5 text-white shadow-md shadow-blue-500/25 flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-blue-100">
-                                <span>ADMINISTRADOR</span>
+                              <div className="flex items-center gap-1.5 text-[8.5px] font-bold uppercase tracking-wider text-blue-100">
+                                <span className="bg-white/20 px-1.5 py-0.5 rounded">ADMINISTRADOR</span>
                                 <span>•</span>
-                                <span>Martes, 29 de Septiembre de 2026</span>
+                                <span>Clínica Central</span>
                               </div>
-                              <h4 className="text-sm xl:text-base 2xl:text-lg font-black text-white">¡Buenas tardes, Juan! 👋</h4>
-                              <p className="text-[10px] xl:text-xs text-blue-100 font-normal">
+                              <h4 className="text-xs xl:text-sm 2xl:text-base font-black text-white">¡Buenas tardes, Juan! 👋</h4>
+                              <p className="text-[9px] xl:text-[11px] text-blue-100 font-normal">
                                 Bienvenido a tu panel de gestión clínica OdontoCloud.
                               </p>
                             </div>
                           </div>
 
-                          {/* 3 Tarjetas de Métricas */}
-                          <div className="grid grid-cols-3 gap-2.5 xl:gap-3">
-                            <div className="bg-white p-2.5 xl:p-3 rounded-xl border border-slate-150 shadow-2xs">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <div className="w-5 h-5 xl:w-6 xl:h-6 rounded bg-purple-50 text-purple-600 flex items-center justify-center text-xs">
+                          {/* 3 Tarjetas de Métricas con Azul Clínico Predominante */}
+                          <div className="grid grid-cols-3 gap-2 xl:gap-2.5">
+                            <div className="bg-white p-2 xl:p-2.5 rounded-xl border border-blue-100 shadow-2xs">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-xs">
                                   <FiCalendar size={11} />
                                 </div>
-                                <span className="text-sm xl:text-base 2xl:text-lg font-black text-slate-900">12</span>
+                                <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">12</span>
                               </div>
-                              <span className="text-[9px] xl:text-[10px] text-slate-500 block">Citas hoy</span>
+                              <span className="text-[8.5px] xl:text-[9.5px] text-slate-500 block">Citas hoy</span>
                             </div>
 
-                            <div className="bg-white p-2.5 xl:p-3 rounded-xl border border-slate-150 shadow-2xs">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <div className="w-5 h-5 xl:w-6 xl:h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-xs">
+                            <div className="bg-white p-2 xl:p-2.5 rounded-xl border border-sky-100 shadow-2xs">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded bg-sky-50 text-sky-600 flex items-center justify-center text-xs">
                                   <FiUsers size={11} />
                                 </div>
-                                <span className="text-sm xl:text-base 2xl:text-lg font-black text-slate-900">28</span>
+                                <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">28</span>
                               </div>
-                              <span className="text-[9px] xl:text-[10px] text-slate-500 block">Pacientes activos</span>
+                              <span className="text-[8.5px] xl:text-[9.5px] text-slate-500 block">Pacientes activos</span>
                             </div>
 
-                            <div className="bg-white p-2.5 xl:p-3 rounded-xl border border-slate-150 shadow-2xs">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <div className="w-5 h-5 xl:w-6 xl:h-6 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">
+                            <div className="bg-white p-2 xl:p-2.5 rounded-xl border border-emerald-100 shadow-2xs">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">
                                   $
                                 </div>
                                 <span className="text-xs xl:text-sm 2xl:text-base font-black text-emerald-600">$1.450.000</span>
                               </div>
-                              <span className="text-[9px] xl:text-[10px] text-slate-500 block">Ingresos mes</span>
+                              <span className="text-[8.5px] xl:text-[9.5px] text-slate-500 block">Ingresos mes</span>
                             </div>
                           </div>
 
-                          {/* Agenda y Gráfica */}
-                          <div className="grid grid-cols-12 gap-3">
+                          {/* Agenda + Gráficas Clínicas */}
+                          <div className="grid grid-cols-12 gap-2 xl:gap-2.5">
                             
-                            {/* Agenda de hoy */}
-                            <div className="col-span-7 bg-white p-3 rounded-xl border border-slate-150 shadow-2xs space-y-1.5">
+                            {/* Agenda del día */}
+                            <div className="col-span-7 bg-white p-2 xl:p-2.5 rounded-xl border border-slate-150 shadow-2xs space-y-1">
                               <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                                <span className="text-[11px] font-bold text-slate-900">Agenda del día</span>
-                                <span className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer">
+                                <span className="text-[10px] xl:text-[11px] font-bold text-slate-900">Agenda del día</span>
+                                <span className="text-[9px] xl:text-[10px] font-bold text-blue-600 hover:underline cursor-pointer">
                                   Ver agenda →
                                 </span>
                               </div>
@@ -275,15 +276,15 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                                   { time: "11:00", name: "Ana Torres", svc: "Restauración resina", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600" },
                                   { time: "14:00", name: "Luis Gómez", svc: "Valoración inicial", badge: "Pendiente", bg: "bg-amber-50 text-amber-600" }
                                 ].map((a, i) => (
-                                  <div key={i} className="flex items-center justify-between text-[10px] py-0.5 border-b border-slate-50 last:border-0">
+                                  <div key={i} className="flex items-center justify-between text-[9px] xl:text-[10px] py-0.5 border-b border-slate-50 last:border-0">
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-bold text-slate-400">{a.time}</span>
                                       <div>
                                         <span className="font-bold text-slate-800 block leading-tight">{a.name}</span>
-                                        <span className="text-[8px] text-slate-400 block leading-none">{a.svc}</span>
+                                        <span className="text-[7.5px] xl:text-[8.5px] text-slate-400 block leading-none">{a.svc}</span>
                                       </div>
                                     </div>
-                                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${a.bg}`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[7.5px] xl:text-[8px] font-bold ${a.bg}`}>
                                       {a.badge}
                                     </span>
                                   </div>
@@ -291,36 +292,62 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                               </div>
                             </div>
 
-                            {/* Gráfica Donut */}
-                            <div className="col-span-5 bg-white p-3 rounded-xl border border-slate-150 shadow-2xs flex flex-col justify-between">
-                              <span className="text-[11px] font-bold text-slate-900 pb-1 border-b border-slate-100 block">
-                                Distribución tratamientos
-                              </span>
-
-                              <div className="flex items-center justify-center my-1">
-                                <svg className="w-16 h-16 xl:w-20 xl:h-20 transform -rotate-90" viewBox="0 0 36 36">
-                                  <circle cx="18" cy="18" r="14" fill="none" stroke="#F1F5F9" strokeWidth="5" />
-                                  <circle cx="18" cy="18" r="14" fill="none" stroke="#2563EB" strokeWidth="5" strokeDasharray="40 60" strokeDashoffset="0" />
-                                  <circle cx="18" cy="18" r="14" fill="none" stroke="#F97316" strokeWidth="5" strokeDasharray="30 70" strokeDashoffset="-40" />
-                                  <circle cx="18" cy="18" r="14" fill="none" stroke="#06B6D4" strokeWidth="5" strokeDasharray="20 80" strokeDashoffset="-70" />
-                                  <circle cx="18" cy="18" r="14" fill="none" stroke="#94A3B8" strokeWidth="5" strokeDasharray="10 90" strokeDashoffset="-90" />
-                                </svg>
-                              </div>
-
-                              <div className="space-y-1 text-[9px]">
-                                <div className="flex items-center justify-between text-slate-600">
-                                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />Preventivos</span>
-                                  <span className="font-bold">40%</span>
+                            {/* Columna Derecha: Gráfica de Barras Azules + Donut */}
+                            <div className="col-span-5 flex flex-col gap-2">
+                              
+                              {/* Gráfica de Barras Azules: Ingresos Mensuales */}
+                              <div className="bg-white p-2 rounded-xl border border-slate-150 shadow-2xs">
+                                <div className="flex items-center justify-between mb-1 pb-1 border-b border-slate-100">
+                                  <span className="text-[9.5px] font-bold text-slate-800">Ingresos</span>
+                                  <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded">+18.5%</span>
                                 </div>
-                                <div className="flex items-center justify-between text-slate-600">
-                                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F97316]" />Resinas</span>
-                                  <span className="font-bold">30%</span>
-                                </div>
-                                <div className="flex items-center justify-between text-slate-600">
-                                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#06B6D4]" />Ortodoncia</span>
-                                  <span className="font-bold">20%</span>
+                                <div className="flex items-end justify-between h-9 px-1 pt-1 gap-1">
+                                  {[
+                                    { h: "35%", val: "May" },
+                                    { h: "50%", val: "Jun" },
+                                    { h: "45%", val: "Jul" },
+                                    { h: "70%", val: "Ago" },
+                                    { h: "90%", val: "Sep" },
+                                    { h: "100%", val: "Oct", active: true }
+                                  ].map((bar, bi) => (
+                                    <div key={bi} className="flex-1 flex flex-col items-center gap-0.5 h-full justify-end">
+                                      <div 
+                                        style={{ height: bar.h }} 
+                                        className={`w-full rounded-t-sm ${bar.active ? 'bg-gradient-to-t from-blue-600 to-sky-400 shadow-xs' : 'bg-blue-100 hover:bg-blue-200'}`} 
+                                      />
+                                      <span className="text-[6.5px] text-slate-400">{bar.val}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
+
+                              {/* Donut Tratamientos */}
+                              <div className="bg-white p-2 rounded-xl border border-slate-150 shadow-2xs flex items-center justify-between">
+                                <div className="flex items-center justify-center">
+                                  <svg className="w-10 h-10 xl:w-11 xl:h-11 transform -rotate-90" viewBox="0 0 36 36">
+                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#F1F5F9" strokeWidth="5" />
+                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#2563EB" strokeWidth="5" strokeDasharray="40 60" strokeDashoffset="0" />
+                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#F97316" strokeWidth="5" strokeDasharray="30 70" strokeDashoffset="-40" />
+                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#06B6D4" strokeWidth="5" strokeDasharray="20 80" strokeDashoffset="-70" />
+                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#94A3B8" strokeWidth="5" strokeDasharray="10 90" strokeDashoffset="-90" />
+                                  </svg>
+                                </div>
+                                <div className="space-y-0.5 text-[8px] pl-1.5 flex-1">
+                                  <div className="flex items-center justify-between text-slate-600">
+                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />Preventivos</span>
+                                    <span className="font-bold text-slate-800">40%</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-slate-600">
+                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F97316]" />Resinas</span>
+                                    <span className="font-bold text-slate-800">30%</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-slate-600">
+                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#06B6D4]" />Ortodoncia</span>
+                                    <span className="font-bold text-slate-800">20%</span>
+                                  </div>
+                                </div>
+                              </div>
+
                             </div>
 
                           </div>
@@ -332,151 +359,131 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                   </div>
 
                   {/* Base del portátil */}
-                  <div className="w-32 xl:w-36 h-2 bg-slate-400 rounded-full mx-auto mt-2 shadow-sm" />
+                  <div className="w-28 xl:w-32 h-1.5 bg-slate-400 rounded-full mx-auto mt-1.5 shadow-sm" />
                 </div>
 
-                {/* SMARTPHONE REALISTA DE GRAN TAMAÑO (Desktop: Superpuesto a la izquierda) */}
-                <div className="absolute -bottom-8 xl:-bottom-10 -left-6 xl:-left-10 2xl:-left-12 w-[270px] xl:w-[310px] 2xl:w-[335px] z-30 transition-transform duration-300 hover:scale-[1.03]">
+                {/* 
+                  SMARTPHONE SLENDER A UN LADO (Desktop):
+                  - Posicionado a la izquierda y abajo, sobreponiéndose ÚNICAMENTE
+                    a la esquina inferior del marco/menú.
+                  - DEJA LIBRE Y 100% VISIBLE EL RESTO DEL SISTEMA (BIENVENIDA,
+                    MÉTRICAS, AGENDA Y GRÁFICAS).
+                */}
+                <div className="absolute -bottom-4 lg:-bottom-6 -left-6 lg:-left-9 xl:-left-12 w-[160px] lg:w-[175px] xl:w-[200px] 2xl:w-[220px] z-30 transition-transform duration-300 hover:scale-[1.03]">
                   
                   {/* Chasis Titánio Gris Espacial Realista */}
-                  <div className="relative bg-[#1c1d22] rounded-[44px] xl:rounded-[48px] p-3 xl:p-3.5 shadow-[0_30px_70px_-10px_rgba(0,0,0,0.65),0_15px_30px_-5px_rgba(37,99,235,0.3)] border-[3px] border-[#383a42] ring-1 ring-white/10">
+                  <div className="relative bg-[#1c1d22] rounded-[32px] xl:rounded-[38px] p-2 xl:p-2.5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.6),0_10px_20px_-5px_rgba(37,99,235,0.3)] border-[2.5px] border-[#383a42] ring-1 ring-white/10">
                     
                     {/* Botones de Hardware Laterales */}
-                    <div className="absolute -left-1.5 top-24 w-1 h-10 bg-slate-600 rounded-l" />
-                    <div className="absolute -left-1.5 top-36 w-1 h-10 bg-slate-600 rounded-l" />
-                    <div className="absolute -right-1.5 top-28 w-1 h-14 bg-slate-600 rounded-r" />
+                    <div className="absolute -left-1 top-16 w-0.5 h-7 bg-slate-600 rounded-l" />
+                    <div className="absolute -left-1 top-25 w-0.5 h-7 bg-slate-600 rounded-l" />
+                    <div className="absolute -right-1 top-20 w-0.5 h-10 bg-slate-600 rounded-r" />
 
-                    {/* Dynamic Island / Isla Dinámica de Pantalla */}
-                    <div className="absolute top-4.5 left-1/2 -translate-x-1/2 w-26 xl:w-28 h-5 xl:h-5.5 bg-black rounded-full z-40 flex items-center justify-between px-2.5 shadow-md">
-                      <div className="w-2.5 h-2.5 rounded-full bg-[#0a0d1a] border border-blue-900/60 flex items-center justify-center">
-                        <div className="w-1 h-1 rounded-full bg-blue-500/40" />
+                    {/* Dynamic Island */}
+                    <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-16 xl:w-20 h-3.5 xl:h-4 bg-black rounded-full z-40 flex items-center justify-between px-1.5 shadow-md">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#0a0d1a] border border-blue-900/60 flex items-center justify-center">
+                        <div className="w-0.5 h-0.5 rounded-full bg-blue-500/40" />
                       </div>
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#151518]" />
+                      <div className="w-1 h-1 rounded-full bg-[#151518]" />
                     </div>
 
                     {/* Pantalla del Teléfono */}
-                    <div className="relative bg-white rounded-[34px] xl:rounded-[38px] pt-8 pb-3 px-3.5 text-left text-slate-800 space-y-2.5 border border-slate-200 overflow-hidden shadow-inner">
+                    <div className="relative bg-white rounded-[26px] xl:rounded-[30px] pt-6 pb-2.5 px-2.5 text-left text-slate-800 space-y-1.5 border border-slate-200 overflow-hidden shadow-inner">
                       
                       {/* Reflejo Vidriado de Pantalla */}
-                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent rounded-[34px] xl:rounded-[38px] z-30" />
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent rounded-[26px] xl:rounded-[30px] z-30" />
 
                       {/* Barra de Estado iOS (Hora, Wifi, Batería) */}
-                      <div className="flex items-center justify-between text-[10px] text-slate-800 font-bold px-1 pt-0.5">
+                      <div className="flex items-center justify-between text-[8px] text-slate-800 font-bold px-0.5">
                         <span>9:41</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[9px]">5G</span>
-                          <span className="text-[10px]">📶</span>
-                          <div className="w-5 h-2.5 border border-slate-700 rounded-xs p-0.5 flex items-center">
-                            <div className="w-full h-full bg-emerald-500 rounded-2xs" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-[7px]">5G</span>
+                          <span className="text-[8px]">📶</span>
+                          <div className="w-4 h-2 border border-slate-700 rounded-2xs p-0.5 flex items-center">
+                            <div className="w-full h-full bg-emerald-500 rounded-3xs" />
                           </div>
                         </div>
                       </div>
 
                       {/* Header App Móvil con Avatar Real */}
-                      <div className="flex items-center justify-between pt-1 pb-1 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
+                      <div className="flex items-center justify-between pt-0.5 pb-1 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-[9px] shadow-xs">
                             JM
                           </div>
                           <div>
-                            <span className="text-xs xl:text-sm font-black text-slate-900 block leading-tight">¡Hola, Dr. Juan! 👋</span>
-                            <span className="text-[9px] xl:text-[10px] text-blue-600 font-bold flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[10px] xl:text-[11px] font-black text-slate-900 block leading-tight">¡Hola, Juan!</span>
+                            <span className="text-[7.5px] xl:text-[8.5px] text-blue-600 font-bold flex items-center gap-0.5">
+                              <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
                               OdontoCloud Móvil
                             </span>
                           </div>
                         </div>
-                        <div className="w-7 h-7 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 relative">
-                          <FiBell size={13} />
-                          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500" />
+                        <div className="w-5 h-5 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 relative">
+                          <FiBell size={10} />
+                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
                         </div>
                       </div>
 
                       {/* Resumen Rápido de Métricas */}
-                      <div className="grid grid-cols-3 gap-1.5 py-1">
-                        <div className="bg-blue-50/70 p-1.5 rounded-xl text-center border border-blue-100">
-                          <span className="text-[11px] xl:text-xs font-black text-blue-700 block">12</span>
-                          <span className="text-[8px] text-slate-500 font-bold">Citas hoy</span>
+                      <div className="grid grid-cols-3 gap-1 py-0.5">
+                        <div className="bg-blue-50/80 p-1 rounded-lg text-center border border-blue-100">
+                          <span className="text-[9px] xl:text-[10px] font-black text-blue-700 block">12</span>
+                          <span className="text-[6.5px] text-slate-500 font-bold">Citas</span>
                         </div>
-                        <div className="bg-purple-50/70 p-1.5 rounded-xl text-center border border-purple-100">
-                          <span className="text-[11px] xl:text-xs font-black text-purple-700 block">28</span>
-                          <span className="text-[8px] text-slate-500 font-bold">Pacientes</span>
+                        <div className="bg-sky-50/80 p-1 rounded-lg text-center border border-sky-100">
+                          <span className="text-[9px] xl:text-[10px] font-black text-sky-700 block">28</span>
+                          <span className="text-[6.5px] text-slate-500 font-bold">Pac.</span>
                         </div>
-                        <div className="bg-emerald-50/70 p-1.5 rounded-xl text-center border border-emerald-100">
-                          <span className="text-[11px] xl:text-xs font-black text-emerald-700 block">$1.4M</span>
-                          <span className="text-[8px] text-slate-500 font-bold">Ingresos</span>
+                        <div className="bg-emerald-50/80 p-1 rounded-lg text-center border border-emerald-100">
+                          <span className="text-[9px] xl:text-[10px] font-black text-emerald-700 block">$1.4M</span>
+                          <span className="text-[6.5px] text-slate-500 font-bold">Ingr.</span>
                         </div>
                       </div>
 
                       {/* Próxima Cita Activa */}
-                      <div className="p-2 xl:p-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25">
-                        <div className="flex items-center justify-between text-[8px] xl:text-[9px] font-bold text-blue-100 mb-1">
-                          <span>PRÓXIMO PACIENTE (08:30 AM)</span>
-                          <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-white text-[8px]">En atención</span>
+                      <div className="p-1.5 xl:p-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs">
+                        <div className="flex items-center justify-between text-[7px] font-bold text-blue-100 mb-0.5">
+                          <span>PRÓXIMO PACIENTE</span>
+                          <span className="px-1 py-0.2 rounded-full bg-white/20 text-white text-[6.5px]">08:30 AM</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="text-xs xl:text-sm font-black text-white block">María López</span>
-                            <span className="text-[9px] xl:text-[10px] text-blue-100">Limpieza dental + Profilaxis</span>
+                            <span className="text-[9.5px] xl:text-[10.5px] font-black text-white block">María López</span>
+                            <span className="text-[7.5px] xl:text-[8px] text-blue-100">Limpieza dental</span>
                           </div>
-                          <span className="text-base xl:text-lg">🦷</span>
+                          <span className="text-xs">🦷</span>
                         </div>
                       </div>
 
                       {/* Botones de Acceso Rápido 2x2 */}
-                      <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                          <span className="text-sm">📅</span>
+                      <div className="grid grid-cols-2 gap-1 pt-0.5">
+                        <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-150 flex items-center gap-1 hover:bg-blue-50 transition-colors">
+                          <span className="text-[11px]">📅</span>
                           <div className="leading-tight">
-                            <span className="text-[10px] xl:text-[11px] font-bold text-slate-800 block">Agenda</span>
-                            <span className="text-[8px] text-blue-600 font-bold">4 pendientes</span>
+                            <span className="text-[8.5px] font-bold text-slate-800 block">Agenda</span>
+                            <span className="text-[6.5px] text-blue-600 font-bold">4 hoy</span>
                           </div>
                         </div>
-                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                          <span className="text-sm">🦷</span>
+                        <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-150 flex items-center gap-1 hover:bg-blue-50 transition-colors">
+                          <span className="text-[11px]">🦷</span>
                           <div className="leading-tight">
-                            <span className="text-[10px] xl:text-[11px] font-bold text-slate-800 block">Odontograma</span>
-                            <span className="text-[8px] text-blue-600 font-bold">3D permanente</span>
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                          <span className="text-sm">👥</span>
-                          <div className="leading-tight">
-                            <span className="text-[10px] xl:text-[11px] font-bold text-slate-800 block">Pacientes</span>
-                            <span className="text-[8px] text-blue-600 font-bold">Historias clínicas</span>
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                          <span className="text-sm">📄</span>
-                          <div className="leading-tight">
-                            <span className="text-[10px] xl:text-[11px] font-bold text-slate-800 block">Facturación</span>
-                            <span className="text-[8px] text-emerald-600 font-bold">DIAN al día</span>
+                            <span className="text-[8.5px] font-bold text-slate-800 block">Odonto</span>
+                            <span className="text-[6.5px] text-blue-600 font-bold">HD 3D</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Barra de Navegación Móvil Inferior con Indicador de Inicio */}
-                      <div className="pt-2 border-t border-slate-150 flex items-center justify-around text-[10px] font-bold text-slate-400">
-                        <span className="text-[#2563EB] flex flex-col items-center gap-0.5">
-                          <span>🏠</span>
-                          <span className="text-[8px]">Inicio</span>
-                        </span>
-                        <span className="flex flex-col items-center gap-0.5 hover:text-slate-700">
-                          <span>📅</span>
-                          <span className="text-[8px]">Agenda</span>
-                        </span>
-                        <span className="flex flex-col items-center gap-0.5 hover:text-slate-700">
-                          <span>👥</span>
-                          <span className="text-[8px]">Pacientes</span>
-                        </span>
-                        <span className="flex flex-col items-center gap-0.5 hover:text-slate-700">
-                          <span>💵</span>
-                          <span className="text-[8px]">Caja</span>
-                        </span>
+                      {/* Barra de Navegación Móvil Inferior */}
+                      <div className="pt-1 border-t border-slate-150 flex items-center justify-around text-[8px] font-bold text-slate-400">
+                        <span className="text-[#2563EB]">Inicio</span>
+                        <span>Agenda</span>
+                        <span>Pacientes</span>
+                        <span>Caja</span>
                       </div>
 
                       {/* Home Indicator Bar */}
-                      <div className="w-24 xl:w-28 h-1 bg-slate-800 rounded-full mx-auto mt-1" />
+                      <div className="w-16 h-0.5 bg-slate-800 rounded-full mx-auto mt-0.5" />
 
                     </div>
                   </div>
@@ -486,150 +493,137 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
 
               {/* ══════════════════════════════════════════════════════════════
                   B) VISTA PANTALLA CHICA (MÓVIL Y TABLET < lg):
-                     TAL COMO SOLICITÓ EL USUARIO: SE DESTACA EL TELÉFONO
-                     INTELIGENTE CENTRADO, ADAPTATIVO Y SIN DESBORDES.
+                     TELÉFONO INTELIGENTE CENTRADO, ADAPTATIVO Y ELEGANTE
                   ══════════════════════════════════════════════════════════════ */}
-              <div className="block lg:hidden w-full max-w-[320px] sm:max-w-[340px] mx-auto mt-4 sm:mt-6">
+              <div className="block lg:hidden w-full max-w-[280px] sm:max-w-[310px] mx-auto mt-3 sm:mt-5">
                 
                 {/* Chasis Titánio Móvil */}
-                <div className="relative bg-[#1c1d22] rounded-[44px] p-3 sm:p-3.5 shadow-[0_25px_60px_-10px_rgba(0,0,0,0.55),0_10px_25px_-5px_rgba(37,99,235,0.3)] border-[3px] border-[#383a42] ring-1 ring-white/10">
+                <div className="relative bg-[#1c1d22] rounded-[40px] p-2.5 sm:p-3 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.55),0_10px_20px_-5px_rgba(37,99,235,0.3)] border-[2.5px] border-[#383a42] ring-1 ring-white/10">
                   
                   {/* Botones de Hardware Laterales */}
-                  <div className="absolute -left-1.5 top-20 w-1 h-9 bg-slate-600 rounded-l" />
-                  <div className="absolute -left-1.5 top-32 w-1 h-9 bg-slate-600 rounded-l" />
-                  <div className="absolute -right-1.5 top-24 w-1 h-12 bg-slate-600 rounded-r" />
+                  <div className="absolute -left-1 top-20 w-0.5 h-8 bg-slate-600 rounded-l" />
+                  <div className="absolute -left-1 top-30 w-0.5 h-8 bg-slate-600 rounded-l" />
+                  <div className="absolute -right-1 top-24 w-0.5 h-11 bg-slate-600 rounded-r" />
 
                   {/* Dynamic Island */}
-                  <div className="absolute top-4.5 left-1/2 -translate-x-1/2 w-24 h-5 bg-black rounded-full z-40 flex items-center justify-between px-2.5 shadow-md">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#0a0d1a] border border-blue-900/60 flex items-center justify-center">
-                      <div className="w-1 h-1 rounded-full bg-blue-500/40" />
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 w-22 h-4.5 bg-black rounded-full z-40 flex items-center justify-between px-2 shadow-md">
+                    <div className="w-2 h-2 rounded-full bg-[#0a0d1a] border border-blue-900/60 flex items-center justify-center">
+                      <div className="w-0.5 h-0.5 rounded-full bg-blue-500/40" />
                     </div>
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#151518]" />
+                    <div className="w-1 h-1 rounded-full bg-[#151518]" />
                   </div>
 
                   {/* Pantalla del Celular */}
-                  <div className="relative bg-white rounded-[34px] pt-8 pb-3 px-3.5 text-left text-slate-800 space-y-2.5 border border-slate-200 overflow-hidden shadow-inner">
+                  <div className="relative bg-white rounded-[32px] pt-7 pb-3 px-3 text-left text-slate-800 space-y-2 border border-slate-200 overflow-hidden shadow-inner">
                     
                     {/* Reflejo Vidriado */}
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent rounded-[34px] z-30" />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent rounded-[32px] z-30" />
 
                     {/* Barra de Estado */}
-                    <div className="flex items-center justify-between text-[10px] text-slate-800 font-bold px-1 pt-0.5">
+                    <div className="flex items-center justify-between text-[9px] text-slate-800 font-bold px-1">
                       <span>9:41</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[9px]">5G</span>
-                        <span className="text-[10px]">📶</span>
-                        <div className="w-5 h-2.5 border border-slate-700 rounded-xs p-0.5 flex items-center">
-                          <div className="w-full h-full bg-emerald-500 rounded-2xs" />
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px]">5G</span>
+                        <span className="text-[9px]">📶</span>
+                        <div className="w-4.5 h-2 border border-slate-700 rounded-2xs p-0.5 flex items-center">
+                          <div className="w-full h-full bg-emerald-500 rounded-3xs" />
                         </div>
                       </div>
                     </div>
 
                     {/* Header App Móvil */}
-                    <div className="flex items-center justify-between pt-1 pb-1 border-b border-slate-100">
+                    <div className="flex items-center justify-between pt-0.5 pb-1 border-b border-slate-100">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xs">
                           JM
                         </div>
                         <div>
-                          <span className="text-xs sm:text-sm font-black text-slate-900 block leading-tight">¡Hola, Dr. Juan! 👋</span>
-                          <span className="text-[9px] text-blue-600 font-bold flex items-center gap-1">
+                          <span className="text-xs font-black text-slate-900 block leading-tight">¡Hola, Dr. Juan! 👋</span>
+                          <span className="text-[8.5px] text-blue-600 font-bold flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             OdontoCloud Móvil
                           </span>
                         </div>
                       </div>
-                      <div className="w-7 h-7 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 relative">
-                        <FiBell size={13} />
-                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500" />
+                      <div className="w-6 h-6 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 relative">
+                        <FiBell size={12} />
+                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
                       </div>
                     </div>
 
                     {/* Métricas Móvil */}
                     <div className="grid grid-cols-3 gap-1.5 py-1">
-                      <div className="bg-blue-50/70 p-1.5 rounded-xl text-center border border-blue-100">
+                      <div className="bg-blue-50/80 p-1.5 rounded-xl text-center border border-blue-100">
                         <span className="text-xs font-black text-blue-700 block">12</span>
-                        <span className="text-[8px] text-slate-500 font-bold">Citas hoy</span>
+                        <span className="text-[7.5px] text-slate-500 font-bold">Citas</span>
                       </div>
-                      <div className="bg-purple-50/70 p-1.5 rounded-xl text-center border border-purple-100">
-                        <span className="text-xs font-black text-purple-700 block">28</span>
-                        <span className="text-[8px] text-slate-500 font-bold">Pacientes</span>
+                      <div className="bg-sky-50/80 p-1.5 rounded-xl text-center border border-sky-100">
+                        <span className="text-xs font-black text-sky-700 block">28</span>
+                        <span className="text-[7.5px] text-slate-500 font-bold">Pacientes</span>
                       </div>
-                      <div className="bg-emerald-50/70 p-1.5 rounded-xl text-center border border-emerald-100">
+                      <div className="bg-emerald-50/80 p-1.5 rounded-xl text-center border border-emerald-100">
                         <span className="text-xs font-black text-emerald-700 block">$1.4M</span>
-                        <span className="text-[8px] text-slate-500 font-bold">Ingresos</span>
+                        <span className="text-[7.5px] text-slate-500 font-bold">Ingresos</span>
                       </div>
                     </div>
 
                     {/* Próxima Cita Activa */}
-                    <div className="p-2 sm:p-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25">
-                      <div className="flex items-center justify-between text-[8px] font-bold text-blue-100 mb-1">
+                    <div className="p-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs">
+                      <div className="flex items-center justify-between text-[7.5px] font-bold text-blue-100 mb-0.5">
                         <span>PRÓXIMO PACIENTE (08:30 AM)</span>
-                        <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-white text-[8px]">En atención</span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-white text-[7.5px]">En atención</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <div>
                           <span className="text-xs font-black text-white block">María López</span>
-                          <span className="text-[9px] text-blue-100">Limpieza dental + Profilaxis</span>
+                          <span className="text-[8.5px] text-blue-100">Limpieza dental</span>
                         </div>
-                        <span className="text-base">🦷</span>
+                        <span className="text-sm">🦷</span>
                       </div>
                     </div>
 
                     {/* Acciones Rápidas */}
                     <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                        <span className="text-sm">📅</span>
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-1.5 hover:bg-blue-50 transition-colors">
+                        <span className="text-xs">📅</span>
                         <div className="leading-tight">
-                          <span className="text-[10px] font-bold text-slate-800 block">Agenda</span>
-                          <span className="text-[8px] text-blue-600 font-bold">4 pendientes</span>
+                          <span className="text-[9.5px] font-bold text-slate-800 block">Agenda</span>
+                          <span className="text-[7.5px] text-blue-600 font-bold">4 citas hoy</span>
                         </div>
                       </div>
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                        <span className="text-sm">🦷</span>
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-1.5 hover:bg-blue-50 transition-colors">
+                        <span className="text-xs">🦷</span>
                         <div className="leading-tight">
-                          <span className="text-[10px] font-bold text-slate-800 block">Odontograma</span>
-                          <span className="text-[8px] text-blue-600 font-bold">3D permanente</span>
+                          <span className="text-[9.5px] font-bold text-slate-800 block">Odontograma</span>
+                          <span className="text-[7.5px] text-blue-600 font-bold">HD 3D</span>
                         </div>
                       </div>
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                        <span className="text-sm">👥</span>
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-1.5 hover:bg-blue-50 transition-colors">
+                        <span className="text-xs">👥</span>
                         <div className="leading-tight">
-                          <span className="text-[10px] font-bold text-slate-800 block">Pacientes</span>
-                          <span className="text-[8px] text-blue-600 font-bold">Historias</span>
+                          <span className="text-[9.5px] font-bold text-slate-800 block">Pacientes</span>
+                          <span className="text-[7.5px] text-blue-600 font-bold">Historias</span>
                         </div>
                       </div>
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-2 hover:bg-blue-50 transition-colors">
-                        <span className="text-sm">📄</span>
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-150 flex items-center gap-1.5 hover:bg-blue-50 transition-colors">
+                        <span className="text-xs">📄</span>
                         <div className="leading-tight">
-                          <span className="text-[10px] font-bold text-slate-800 block">Facturación</span>
-                          <span className="text-[8px] text-emerald-600 font-bold">DIAN al día</span>
+                          <span className="text-[9.5px] font-bold text-slate-800 block">Facturación</span>
+                          <span className="text-[7.5px] text-emerald-600 font-bold">DIAN al día</span>
                         </div>
                       </div>
                     </div>
 
                     {/* Barra de Navegación Móvil */}
-                    <div className="pt-2 border-t border-slate-150 flex items-center justify-around text-[10px] font-bold text-slate-400">
-                      <span className="text-[#2563EB] flex flex-col items-center gap-0.5">
-                        <span>🏠</span>
-                        <span className="text-[8px]">Inicio</span>
-                      </span>
-                      <span className="flex flex-col items-center gap-0.5 hover:text-slate-700">
-                        <span>📅</span>
-                        <span className="text-[8px]">Agenda</span>
-                      </span>
-                      <span className="flex flex-col items-center gap-0.5 hover:text-slate-700">
-                        <span>👥</span>
-                        <span className="text-[8px]">Pacientes</span>
-                      </span>
-                      <span className="flex flex-col items-center gap-0.5 hover:text-slate-700">
-                        <span>💵</span>
-                        <span className="text-[8px]">Caja</span>
-                      </span>
+                    <div className="pt-1.5 border-t border-slate-150 flex items-center justify-around text-[9px] font-bold text-slate-400">
+                      <span className="text-[#2563EB]">Inicio</span>
+                      <span>Agenda</span>
+                      <span>Pacientes</span>
+                      <span>Caja</span>
                     </div>
 
                     {/* Home Indicator Bar */}
-                    <div className="w-24 h-1 bg-slate-800 rounded-full mx-auto mt-1" />
+                    <div className="w-20 h-1 bg-slate-800 rounded-full mx-auto mt-1" />
 
                   </div>
                 </div>
