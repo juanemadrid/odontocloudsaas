@@ -8,6 +8,7 @@ import DocumentationModal from "../../components/landing/DocumentationModal";
 
 export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
   const [showDocModal, setShowDocModal] = useState(false);
+  const [isMonitorHovered, setIsMonitorHovered] = useState(false);
 
   const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
   const logoUrl = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/logo.png`;
@@ -125,248 +126,284 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               {/* ══════════════════════════════════════════════════════════════
                   A) VISTA ESCRITORIO (>= lg): LAPTOP MACBOOK PRO PANORÁMICO
                   ══════════════════════════════════════════════════════════════ */}
-              <div className="hidden lg:block relative w-full max-w-[640px] lg:max-w-[720px] xl:max-w-[880px] 2xl:max-w-[1140px]">
+              <div className="hidden lg:block relative w-full max-w-[680px] lg:max-w-[760px] xl:max-w-[920px] 2xl:max-w-[1180px]">
                 
                 {/* CONTENEDOR LAPTOP MACBOOK PRO */}
-                <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[22px] xl:rounded-[26px] p-2.5 xl:p-3 shadow-[0_25px_60px_-15px_rgba(15,23,42,0.4)] border border-slate-300">
-                  
-                  {/* Marco de Pantalla Negro Vidriado */}
-                  <div className="bg-slate-950 rounded-[16px] xl:rounded-[20px] p-2 xl:p-2.5 pt-1.5 shadow-2xl">
-                    {/* Cámara Web HD y sensor */}
-                    <div className="flex items-center justify-center gap-1.5 mb-1">
-                      <div className="w-2 h-2 rounded-full bg-slate-800 border border-slate-700/60" />
-                      <div className="w-1 h-1 rounded-full bg-emerald-500/80 animate-pulse" />
-                    </div>
-
-                    {/* Pantalla del Sistema OdontoCloud */}
-                    <div className="w-full bg-[#F8FAFC] rounded-lg xl:rounded-xl overflow-hidden text-left text-slate-800 select-none border border-slate-200">
-                      
-                      {/* Barra Superior del Sistema */}
-                      <div className="h-9 xl:h-10 bg-white border-b border-slate-150 px-3.5 xl:px-4 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <img src={logoUrl} alt="OdontoCloud" className="h-4.5 xl:h-5.5 w-auto object-contain" />
-                          <span className="font-black text-xs xl:text-sm tracking-tight text-slate-900 flex items-center">
-                            <span>Odonto</span>
-                            <span className="text-[#2563EB]">Cloud</span>
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[9.5px] font-bold border border-emerald-100">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>En línea</span>
-                          </div>
-                          <div className="relative text-slate-400">
-                            <FiBell size={12} />
-                            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
-                          </div>
-                          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
-                            <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[9.5px] font-bold shadow-xs">
-                              JM
-                            </div>
-                            <div className="text-[9.5px] leading-tight">
-                              <span className="font-bold text-slate-800 block">Juan Madrid</span>
-                              <span className="text-[7.5px] text-slate-400">Administrador</span>
-                            </div>
-                          </div>
-                        </div>
+                <div 
+                  onMouseEnter={() => setIsMonitorHovered(true)}
+                  onMouseLeave={() => setIsMonitorHovered(false)}
+                  className="relative z-20 transition-all duration-300"
+                >
+                  <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[22px] xl:rounded-[26px] p-2.5 xl:p-3 shadow-[0_25px_60px_-15px_rgba(15,23,42,0.4)] border border-slate-300">
+                    
+                    {/* Marco de Pantalla Negro Vidriado */}
+                    <div className="bg-slate-950 rounded-[16px] xl:rounded-[20px] p-2 xl:p-2.5 pt-1.5 shadow-2xl">
+                      {/* Cámara Web HD y sensor */}
+                      <div className="flex items-center justify-center gap-1.5 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-slate-800 border border-slate-700/60" />
+                        <div className="w-1 h-1 rounded-full bg-emerald-500/80 animate-pulse" />
                       </div>
 
-                      {/* Cuerpo: Menú Lateral + Tablero Panorámico */}
-                      <div className="flex min-h-[260px] lg:min-h-[275px] xl:min-h-[310px] 2xl:min-h-[360px]">
+                      {/* Pantalla del Sistema OdontoCloud */}
+                      <div className="w-full bg-[#F8FAFC] rounded-lg xl:rounded-xl overflow-hidden text-left text-slate-800 select-none border border-slate-200">
                         
-                        {/* Menú Lateral */}
-                        <div className="w-28 xl:w-34 2xl:w-38 bg-white border-r border-slate-150 p-2 space-y-0.5 shrink-0">
-                          <div className="px-2 py-0.5 mb-1 bg-slate-50 rounded-lg border border-slate-150 flex items-center gap-1.5 text-[8.5px] text-slate-400">
-                            <FiSearch size={9} />
-                            <span>Buscar...</span>
-                          </div>
-
-                          <div className="text-[7px] font-bold uppercase text-slate-400 px-2 py-0.5 tracking-wider">
-                            MENÚ PRINCIPAL
-                          </div>
-
-                          <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] text-white font-bold text-[9.5px] xl:text-[11px] flex items-center gap-1.5 shadow-sm shadow-blue-500/30">
-                            <span>●</span>
-                            <span>INICIO</span>
-                          </div>
-
-                          {[
-                            { name: "AGENDA", icon: <FiCalendar size={11} /> },
-                            { name: "PACIENTES", icon: <FiUsers size={11} /> },
-                            { name: "CAJA", icon: <FiDollarSign size={11} /> },
-                            { name: "ADMINISTRACIÓN", icon: <FiSettings size={11} /> },
-                            { name: "REPORTES", icon: <FiBarChart2 size={11} /> }
-                          ].map((item, idx) => (
-                            <div key={idx} className="px-2 py-0.5 text-[9px] xl:text-[10.5px] font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg flex items-center gap-1.5 transition-colors">
-                              <span>{item.icon}</span>
-                              <span>{item.name}</span>
+                        {/* Barra Superior del Sistema (Blindada contra desbordamientos) */}
+                        <div className="h-9 xl:h-10 bg-white border-b border-slate-150 px-3 xl:px-4 flex items-center justify-between overflow-hidden">
+                          {/* Marca del Sistema */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="w-5.5 h-5.5 xl:w-6 xl:h-6 rounded-md bg-blue-600 text-white flex items-center justify-center text-[10px] xl:text-xs font-black shadow-xs shrink-0">
+                              🦷
                             </div>
-                          ))}
-                        </div>
-
-                        {/* Área de Trabajo Principal Panorámica */}
-                        <div className="flex-1 p-2 xl:p-3 2xl:p-4 space-y-2 xl:space-y-2.5 bg-[#F8FAFC]">
-                          
-                          {/* Banner de Bienvenida Azul Clínico Compacto */}
-                          <div className="rounded-xl bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#0284C7] px-3 py-2 xl:py-2.5 text-white shadow-md shadow-blue-500/20 flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-1.5 text-[8px] xl:text-[9px] font-bold uppercase tracking-wider text-blue-100">
-                                <span className="bg-white/20 px-1.5 py-0.2 rounded">ADMINISTRADOR</span>
-                                <span>•</span>
-                                <span>Clínica Central</span>
-                              </div>
-                              <h4 className="text-xs xl:text-sm font-black text-white">¡Buenas tardes, Juan! 👋</h4>
-                            </div>
-                            <span className="text-[8.5px] xl:text-[9.5px] text-blue-100 bg-white/10 px-2 py-0.5 rounded-full font-medium hidden sm:inline-block">
-                              Panel OdontoCloud
+                            <span className="font-black text-xs xl:text-sm tracking-tight text-slate-900 flex items-center shrink-0">
+                              <span>Odonto</span>
+                              <span className="text-[#2563EB]">Cloud</span>
                             </span>
                           </div>
 
-                          {/* 3 Tarjetas de Métricas con Azul Clínico */}
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-blue-100 shadow-2xs">
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-4.5 h-4.5 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-[10px]">
-                                  <FiCalendar />
-                                </div>
-                                <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">12</span>
-                              </div>
-                              <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Citas hoy</span>
+                          {/* Estado, Notificaciones y Perfil */}
+                          <div className="flex items-center gap-2 xl:gap-3 shrink-0">
+                            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[9px] xl:text-[9.5px] font-bold border border-emerald-100 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>En línea</span>
                             </div>
-
-                            <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-sky-100 shadow-2xs">
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-4.5 h-4.5 rounded bg-sky-50 text-sky-600 flex items-center justify-center text-[10px]">
-                                  <FiUsers />
-                                </div>
-                                <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">28</span>
-                              </div>
-                              <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Pacientes activos</span>
+                            <div className="relative text-slate-400 shrink-0">
+                              <FiBell size={12} />
+                              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
                             </div>
-
-                            <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-emerald-100 shadow-2xs">
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-4.5 h-4.5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center text-[10px] font-black">
-                                  $
-                                </div>
-                                <span className="text-xs xl:text-sm 2xl:text-base font-black text-emerald-600">$1.450.000</span>
+                            <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 shrink-0">
+                              <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[9px] xl:text-[9.5px] font-bold shadow-xs shrink-0">
+                                JM
                               </div>
-                              <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Ingresos mes</span>
+                              <div className="text-[9px] xl:text-[9.5px] leading-tight text-left">
+                                <span className="font-bold text-slate-800 block whitespace-nowrap">Juan Madrid</span>
+                                <span className="text-[7.5px] text-slate-400 block whitespace-nowrap">Administrador</span>
+                              </div>
                             </div>
                           </div>
+                        </div>
 
-                          {/* Agenda + Gráficas Clínicas (Alineación Horizontal) */}
-                          <div className="grid grid-cols-12 gap-2 xl:gap-2.5">
+                        {/* Cuerpo: Menú Lateral + Tablero Panorámico */}
+                        <div className="flex min-h-[250px] lg:min-h-[265px] xl:min-h-[295px] 2xl:min-h-[340px]">
+                          
+                          {/* Menú Lateral */}
+                          <div className="w-28 xl:w-34 2xl:w-38 bg-white border-r border-slate-150 p-2 space-y-0.5 shrink-0">
+                            <div className="px-2 py-0.5 mb-1 bg-slate-50 rounded-lg border border-slate-150 flex items-center gap-1.5 text-[8.5px] text-slate-400">
+                              <FiSearch size={9} />
+                              <span>Buscar...</span>
+                            </div>
+
+                            <div className="text-[7px] font-bold uppercase text-slate-400 px-2 py-0.5 tracking-wider">
+                              MENÚ PRINCIPAL
+                            </div>
+
+                            <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] text-white font-bold text-[9.5px] xl:text-[11px] flex items-center gap-1.5 shadow-sm shadow-blue-500/30">
+                              <span>●</span>
+                              <span>INICIO</span>
+                            </div>
+
+                            {[
+                              { name: "AGENDA", icon: <FiCalendar size={11} /> },
+                              { name: "PACIENTES", icon: <FiUsers size={11} /> },
+                              { name: "CAJA", icon: <FiDollarSign size={11} /> },
+                              { name: "ADMINISTRACIÓN", icon: <FiSettings size={11} /> },
+                              { name: "REPORTES", icon: <FiBarChart2 size={11} /> }
+                            ].map((item, idx) => (
+                              <div key={idx} className="px-2 py-0.5 text-[9px] xl:text-[10.5px] font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg flex items-center gap-1.5 transition-colors">
+                                <span>{item.icon}</span>
+                                <span>{item.name}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Área de Trabajo Principal Panorámica */}
+                          <div className="flex-1 p-2 xl:p-3 2xl:p-4 space-y-2 xl:space-y-2.5 bg-[#F8FAFC]">
                             
-                            {/* Agenda del día */}
-                            <div className="col-span-7 bg-white p-2 xl:p-2.5 rounded-xl border border-slate-150 shadow-2xs space-y-1">
-                              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                                <span className="text-[10px] xl:text-[11px] font-bold text-slate-900">Agenda del día</span>
-                                <span className="text-[9px] xl:text-[10px] font-bold text-blue-600 hover:underline cursor-pointer">
-                                  Ver agenda →
-                                </span>
+                            {/* Banner de Bienvenida Azul Clínico Compacto */}
+                            <div className="rounded-xl bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#0284C7] px-3 py-2 xl:py-2.5 text-white shadow-md shadow-blue-500/20 flex items-center justify-between">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1.5 text-[8px] xl:text-[9px] font-bold uppercase tracking-wider text-blue-100">
+                                  <span className="bg-white/20 px-1.5 py-0.2 rounded">ADMINISTRADOR</span>
+                                  <span>•</span>
+                                  <span>Clínica Central</span>
+                                </div>
+                                <h4 className="text-xs xl:text-sm font-black text-white">¡Buenas tardes, Juan! 👋</h4>
+                              </div>
+                              <span className="text-[8.5px] xl:text-[9.5px] text-blue-100 bg-white/10 px-2 py-0.5 rounded-full font-medium hidden sm:inline-block">
+                                Panel OdontoCloud
+                              </span>
+                            </div>
+
+                            {/* 4 Tarjetas de Métricas Distribuidas Panorámicamente */}
+                            <div className="grid grid-cols-4 gap-2">
+                              <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-blue-100 shadow-2xs">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-4.5 h-4.5 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-[10px]">
+                                    <FiCalendar />
+                                  </div>
+                                  <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">12</span>
+                                </div>
+                                <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Citas hoy</span>
                               </div>
 
-                              <div className="space-y-1">
-                                {[
-                                  { time: "08:00", name: "María López", svc: "Limpieza dental", badge: "En atención", bg: "bg-blue-50 text-blue-600" },
-                                  { time: "09:30", name: "Carlos Ramírez", svc: "Control ortodoncia", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600" },
-                                  { time: "11:00", name: "Ana Torres", svc: "Restauración resina", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600" },
-                                  { time: "14:00", name: "Luis Gómez", svc: "Valoración inicial", badge: "Pendiente", bg: "bg-amber-50 text-amber-600" }
-                                ].map((a, i) => (
-                                  <div key={i} className="flex items-center justify-between text-[9px] xl:text-[10px] py-0.5 border-b border-slate-50 last:border-0">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="font-bold text-slate-400">{a.time}</span>
-                                      <div>
-                                        <span className="font-bold text-slate-800 block leading-tight">{a.name}</span>
-                                        <span className="text-[7.5px] xl:text-[8.5px] text-slate-400 block leading-none">{a.svc}</span>
-                                      </div>
-                                    </div>
-                                    <span className={`px-1.5 py-0.5 rounded text-[7.5px] xl:text-[8px] font-bold ${a.bg}`}>
-                                      {a.badge}
-                                    </span>
+                              <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-sky-100 shadow-2xs">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-4.5 h-4.5 rounded bg-sky-50 text-sky-600 flex items-center justify-center text-[10px]">
+                                    <FiUsers />
                                   </div>
-                                ))}
+                                  <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">28</span>
+                                </div>
+                                <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Pacientes activos</span>
+                              </div>
+
+                              <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-emerald-100 shadow-2xs">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-4.5 h-4.5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center text-[10px] font-black">
+                                    $
+                                  </div>
+                                  <span className="text-xs xl:text-sm 2xl:text-base font-black text-emerald-600">$1.450.000</span>
+                                </div>
+                                <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Ingresos mes</span>
+                              </div>
+
+                              <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-indigo-100 shadow-2xs">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-4.5 h-4.5 rounded bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px]">
+                                    <FiCheck />
+                                  </div>
+                                  <span className="text-xs xl:text-sm 2xl:text-base font-black text-indigo-600">98%</span>
+                                </div>
+                                <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Eficiencia</span>
                               </div>
                             </div>
 
-                            {/* Columna Derecha: Gráfica de Barras Azules + Donut */}
-                            <div className="col-span-5 flex flex-col gap-2">
+                            {/* Agenda + Gráficas Clínicas (Alineación Horizontal) */}
+                            <div className="grid grid-cols-12 gap-2 xl:gap-2.5">
                               
-                              {/* Gráfica de Barras Azules: Ingresos Mensuales */}
-                              <div className="bg-white p-2 rounded-xl border border-slate-150 shadow-2xs">
-                                <div className="flex items-center justify-between mb-1 pb-1 border-b border-slate-100">
-                                  <span className="text-[9.5px] font-bold text-slate-800">Ingresos</span>
-                                  <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded">+18.5%</span>
+                              {/* Agenda del día */}
+                              <div className="col-span-7 bg-white p-2 xl:p-2.5 rounded-xl border border-slate-150 shadow-2xs space-y-1">
+                                <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                                  <span className="text-[10px] xl:text-[11px] font-bold text-slate-900">Agenda del día</span>
+                                  <span className="text-[9px] xl:text-[10px] font-bold text-blue-600 hover:underline cursor-pointer">
+                                    Ver agenda →
+                                  </span>
                                 </div>
-                                <div className="flex items-end justify-between h-9 px-1 pt-1 gap-1">
+
+                                <div className="space-y-1">
                                   {[
-                                    { h: "35%", val: "May" },
-                                    { h: "50%", val: "Jun" },
-                                    { h: "45%", val: "Jul" },
-                                    { h: "70%", val: "Ago" },
-                                    { h: "90%", val: "Sep" },
-                                    { h: "100%", val: "Oct", active: true }
-                                  ].map((bar, bi) => (
-                                    <div key={bi} className="flex-1 flex flex-col items-center gap-0.5 h-full justify-end">
-                                      <div 
-                                        style={{ height: bar.h }} 
-                                        className={`w-full rounded-t-sm ${bar.active ? 'bg-gradient-to-t from-blue-600 to-sky-400 shadow-xs' : 'bg-blue-100 hover:bg-blue-200'}`} 
-                                      />
-                                      <span className="text-[6.5px] text-slate-400">{bar.val}</span>
+                                    { time: "08:00", name: "María López", svc: "Limpieza dental", badge: "En atención", bg: "bg-blue-50 text-blue-600" },
+                                    { time: "09:30", name: "Carlos Ramírez", svc: "Control ortodoncia", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600" },
+                                    { time: "11:00", name: "Ana Torres", svc: "Restauración resina", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600" },
+                                    { time: "14:00", name: "Luis Gómez", svc: "Valoración inicial", badge: "Pendiente", bg: "bg-amber-50 text-amber-600" }
+                                  ].map((a, i) => (
+                                    <div key={i} className="flex items-center justify-between text-[9px] xl:text-[10px] py-0.5 border-b border-slate-50 last:border-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-bold text-slate-400">{a.time}</span>
+                                        <div>
+                                          <span className="font-bold text-slate-800 block leading-tight">{a.name}</span>
+                                          <span className="text-[7.5px] xl:text-[8.5px] text-slate-400 block leading-none">{a.svc}</span>
+                                        </div>
+                                      </div>
+                                      <span className={`px-1.5 py-0.5 rounded text-[7.5px] xl:text-[8px] font-bold ${a.bg}`}>
+                                        {a.badge}
+                                      </span>
                                     </div>
                                   ))}
                                 </div>
                               </div>
 
-                              {/* Donut Tratamientos */}
-                              <div className="bg-white p-2 rounded-xl border border-slate-150 shadow-2xs flex items-center justify-between">
-                                <div className="flex items-center justify-center">
-                                  <svg className="w-10 h-10 xl:w-11 xl:h-11 transform -rotate-90" viewBox="0 0 36 36">
-                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#F1F5F9" strokeWidth="5" />
-                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#2563EB" strokeWidth="5" strokeDasharray="40 60" strokeDashoffset="0" />
-                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#F97316" strokeWidth="5" strokeDasharray="30 70" strokeDashoffset="-40" />
-                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#06B6D4" strokeWidth="5" strokeDasharray="20 80" strokeDashoffset="-70" />
-                                    <circle cx="18" cy="18" r="14" fill="none" stroke="#94A3B8" strokeWidth="5" strokeDasharray="10 90" strokeDashoffset="-90" />
-                                  </svg>
+                              {/* Columna Derecha: Gráfica de Barras Azules + Donut */}
+                              <div className="col-span-5 flex flex-col gap-2">
+                                
+                                {/* Gráfica de Barras Azules: Ingresos Mensuales */}
+                                <div className="bg-white p-2 rounded-xl border border-slate-150 shadow-2xs">
+                                  <div className="flex items-center justify-between mb-1 pb-1 border-b border-slate-100">
+                                    <span className="text-[9.5px] font-bold text-slate-800">Ingresos</span>
+                                    <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded">+18.5%</span>
+                                  </div>
+                                  <div className="flex items-end justify-between h-9 px-1 pt-1 gap-1">
+                                    {[
+                                      { h: "35%", val: "May" },
+                                      { h: "50%", val: "Jun" },
+                                      { h: "45%", val: "Jul" },
+                                      { h: "70%", val: "Ago" },
+                                      { h: "90%", val: "Sep" },
+                                      { h: "100%", val: "Oct", active: true }
+                                    ].map((bar, bi) => (
+                                      <div key={bi} className="flex-1 flex flex-col items-center gap-0.5 h-full justify-end">
+                                        <div 
+                                          style={{ height: bar.h }} 
+                                          className={`w-full rounded-t-sm ${bar.active ? 'bg-gradient-to-t from-blue-600 to-sky-400 shadow-xs' : 'bg-blue-100 hover:bg-blue-200'}`} 
+                                        />
+                                        <span className="text-[6.5px] text-slate-400">{bar.val}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="space-y-0.5 text-[8px] pl-1.5 flex-1">
-                                  <div className="flex items-center justify-between text-slate-600">
-                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />Preventivos</span>
-                                    <span className="font-bold text-slate-800">40%</span>
+
+                                {/* Donut Tratamientos */}
+                                <div className="bg-white p-2 rounded-xl border border-slate-150 shadow-2xs flex items-center justify-between">
+                                  <div className="flex items-center justify-center">
+                                    <svg className="w-10 h-10 xl:w-11 xl:h-11 transform -rotate-90" viewBox="0 0 36 36">
+                                      <circle cx="18" cy="18" r="14" fill="none" stroke="#F1F5F9" strokeWidth="5" />
+                                      <circle cx="18" cy="18" r="14" fill="none" stroke="#2563EB" strokeWidth="5" strokeDasharray="40 60" strokeDashoffset="0" />
+                                      <circle cx="18" cy="18" r="14" fill="none" stroke="#F97316" strokeWidth="5" strokeDasharray="30 70" strokeDashoffset="-40" />
+                                      <circle cx="18" cy="18" r="14" fill="none" stroke="#06B6D4" strokeWidth="5" strokeDasharray="20 80" strokeDashoffset="-70" />
+                                      <circle cx="18" cy="18" r="14" fill="none" stroke="#94A3B8" strokeWidth="5" strokeDasharray="10 90" strokeDashoffset="-90" />
+                                    </svg>
                                   </div>
-                                  <div className="flex items-center justify-between text-slate-600">
-                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F97316]" />Resinas</span>
-                                    <span className="font-bold text-slate-800">30%</span>
-                                  </div>
-                                  <div className="flex items-center justify-between text-slate-600">
-                                    <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#06B6D4]" />Ortodoncia</span>
-                                    <span className="font-bold text-slate-800">20%</span>
+                                  <div className="space-y-0.5 text-[8px] pl-1.5 flex-1">
+                                    <div className="flex items-center justify-between text-slate-600">
+                                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />Preventivos</span>
+                                      <span className="font-bold text-slate-800">40%</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-slate-600">
+                                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F97316]" />Resinas</span>
+                                      <span className="font-bold text-slate-800">30%</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-slate-600">
+                                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#06B6D4]" />Ortodoncia</span>
+                                      <span className="font-bold text-slate-800">20%</span>
+                                    </div>
                                   </div>
                                 </div>
+
                               </div>
 
                             </div>
 
                           </div>
-
                         </div>
-                      </div>
 
+                      </div>
+                    </div>
+
+                    {/* Base / Teclado inferior MacBook Pro Panorámico */}
+                    <div className="relative w-[102%] -ml-[1%] h-3.5 xl:h-4 bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-b-xl shadow-xl flex items-start justify-center border-t border-slate-300">
+                      {/* Muesca de apertura central (Notch de MacBook) */}
+                      <div className="w-24 xl:w-32 h-1 xl:h-1.5 bg-slate-400/80 rounded-b-md shadow-inner" />
                     </div>
                   </div>
 
-                  {/* Base del portátil */}
-                  <div className="w-28 xl:w-32 h-1.5 bg-slate-400 rounded-full mx-auto mt-1.5 shadow-sm" />
+                  {/* Sombra de apoyo en escritorio */}
+                  <div className="w-[96%] mx-auto h-3 bg-slate-900/15 rounded-full blur-md -mt-1" />
                 </div>
 
                 {/* 
-                  SMARTPHONE SLENDER A UN LADO (Desktop):
-                  - Posicionado bien a la izquierda, apoyado sobre la base
-                    sin tapar NINGÚN texto ni métricas del sistema.
+                  SMARTPHONE INTERACTIVO SLENDER (Desktop):
+                  - Por defecto: al frente del monitor (z-30).
+                  - Al pasar el cursor sobre el monitor: se oculta suavemente detrás (z-10, deslizamiento lateral).
+                  - Al pasar el cursor sobre el móvil o hacer clic: regresa inmediatamente al frente (z-30).
                 */}
-                <div className="absolute -bottom-4 lg:-bottom-6 -left-10 lg:-left-14 xl:-left-18 2xl:-left-22 w-[145px] lg:w-[160px] xl:w-[185px] 2xl:w-[210px] z-30 transition-transform duration-300 hover:scale-[1.03]">
+                <div 
+                  onMouseEnter={() => setIsMonitorHovered(false)}
+                  onClick={() => setIsMonitorHovered(false)}
+                  className={`absolute -bottom-4 lg:-bottom-6 -left-8 lg:-left-12 xl:-left-16 2xl:-left-20 w-[145px] lg:w-[160px] xl:w-[185px] 2xl:w-[210px] transition-all duration-500 ease-in-out cursor-pointer ${
+                    isMonitorHovered 
+                      ? "z-10 -translate-x-10 translate-y-4 opacity-75 scale-95 pointer-events-auto" 
+                      : "z-30 translate-x-0 translate-y-0 opacity-100 scale-100 hover:scale-[1.03] shadow-2xl"
+                  }`}
+                  title={isMonitorHovered ? "Haz clic para traer el móvil al frente" : "Pasa el mouse sobre el monitor para ocultar el móvil"}
+                >
                   
                   {/* Chasis Titánio Gris Espacial Realista */}
                   <div className="relative bg-[#1c1d22] rounded-[32px] xl:rounded-[38px] p-2 xl:p-2.5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.6),0_10px_20px_-5px_rgba(37,99,235,0.3)] border-[2.5px] border-[#383a42] ring-1 ring-white/10">
