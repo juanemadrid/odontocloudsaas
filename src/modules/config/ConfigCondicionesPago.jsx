@@ -8,7 +8,7 @@ import { getConfigItems, saveConfigItem, deleteConfigItem } from "../../services
 export default function ConfigCondicionesPago() {
     const { userProfile } = useAuth();
     const toast = useToast();
-    const inquilino = userProfile?.inquilino;
+    const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
 
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -16,6 +16,12 @@ export default function ConfigCondicionesPago() {
     const [modalOpen, setModalOpen] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [saving, setSaving] = useState(false);
+
+    const DEFAULT_CONDICIONES = [
+        { id: "contado", nombre: "Contado", admiteCredito: false, diasPlazo: 0, dias_plazo: 0 },
+        { id: "15_dias", nombre: "15 días", admiteCredito: true, diasPlazo: 15, dias_plazo: 15 },
+        { id: "30_dias", nombre: "30 días", admiteCredito: true, diasPlazo: 30, dias_plazo: 30 }
+    ];
 
     useEffect(() => {
         fetchItems();
@@ -25,7 +31,36 @@ export default function ConfigCondicionesPago() {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const data = await getConfigItems(inquilino, "condiciones_pago", "condiciones_pago");
+            let data = await getConfigItems(inquilino, "condiciones_pago", "condiciones_pago");
+            
+            // Si no existen condiciones para la clínica, sembramos las 3 por defecto
+            if (!data || data.length === 0) {
+                for (const def of DEFAULT_CONDICIONES) {
+                    try {
+                        await saveConfigItem(inquilino, "condiciones_pago", "condiciones_pago", def);
+                    } catch (e) {}
+                }
+                data = [...DEFAULT_CONDICIONES];
+            } else {
+                // Normalizar registros que no tengan aún diasPlazo
+                data = data.map(item => {
+                    let dias = item.diasPlazo ?? item.dias_plazo;
+                    if (dias === undefined || dias === null) {
+                        if (item.admiteCredito) {
+                            const match = (item.nombre || "").match(/\d+/);
+                            dias = match ? parseInt(match[0], 10) : 30;
+                        } else {
+                            dias = 0;
+                        }
+                    }
+                    return {
+                        ...item,
+                        diasPlazo: Number(dias) || 0,
+                        dias_plazo: Number(dias) || 0
+                    };
+                });
+            }
+
             setItems(data.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
         } catch (error) {
             console.error("Error fetching payment conditions:", error);
@@ -37,9 +72,22 @@ export default function ConfigCondicionesPago() {
 
     const handleOpenModal = (item = null) => {
         if (item) {
-            setCurrentItem({ ...item });
+            let dias = item.diasPlazo ?? item.dias_plazo;
+            if (dias === undefined || dias === null) {
+                if (item.admiteCredito) {
+                    const match = (item.nombre || "").match(/\d+/);
+                    dias = match ? parseInt(match[0], 10) : 30;
+                } else {
+                    dias = 0;
+                }
+            }
+            setCurrentItem({
+                ...item,
+                admiteCredito: !!item.admiteCredito,
+                diasPlazo: dias
+            });
         } else {
-            setCurrentItem({ nombre: "", admiteCredito: false });
+            setCurrentItem({ nombre: "", admiteCredito: false, diasPlazo: 0 });
         }
         setModalOpen(true);
     };
@@ -64,12 +112,25 @@ export default function ConfigCondicionesPago() {
             if (toast?.warning) toast.warning("El nombre es obligatorio");
             return;
         }
+
+        const admiteCredito = !!currentItem.admiteCredito;
+        let dias = 0;
+        if (admiteCredito) {
+            dias = parseInt(currentItem.diasPlazo, 10);
+            if (isNaN(dias) || dias <= 0) {
+                if (toast?.warning) toast.warning("Debes indicar un número válido de días de plazo mayor a 0");
+                return;
+            }
+        }
+
         setSaving(true);
         try {
             await saveConfigItem(inquilino, "condiciones_pago", "condiciones_pago", {
                 ...(currentItem.id ? { id: currentItem.id } : {}),
                 nombre: currentItem.nombre.trim(),
-                admiteCredito: !!currentItem.admiteCredito
+                admiteCredito,
+                diasPlazo: dias,
+                dias_plazo: dias
             });
 
             if (toast?.success) toast.success("Guardado correctamente en Supabase");
@@ -128,20 +189,21 @@ export default function ConfigCondicionesPago() {
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-black uppercase tracking-wider">
                             <th className="py-3 px-4">Nombre de la Condición</th>
                             <th className="py-3 px-4 text-center">Permite Crédito</th>
+                            <th className="py-3 px-4 text-center">Días de Plazo</th>
                             <th className="py-3 px-4 text-right">Acciones</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                         {loading && items.length === 0 ? (
                             <tr>
-                                <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
+                                <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
                                     <div className="w-5 h-5 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
                                     Cargando condiciones de pago...
                                 </td>
                             </tr>
                         ) : filteredItems.length === 0 ? (
                             <tr>
-                                <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
+                                <td colSpan={4} className="py-12 text-center text-slate-400 font-medium">
                                     No hay condiciones de pago registradas
                                 </td>
                             </tr>
@@ -160,6 +222,15 @@ export default function ConfigCondicionesPago() {
                                         <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold ${item.admiteCredito ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-slate-100 text-slate-500"}`}>
                                             {item.admiteCredito ? "Sí" : "No (Contado)"}
                                         </span>
+                                    </td>
+                                    <td className="py-3 px-4 text-center">
+                                        {item.admiteCredito ? (
+                                            <span className="font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2.5 py-0.5 rounded-lg text-[10.5px]">
+                                                {item.diasPlazo ?? item.dias_plazo ?? 0} días
+                                            </span>
+                                        ) : (
+                                            <span className="text-slate-400 font-medium text-[10.5px]">Inmediato (0 días)</span>
+                                        )}
                                     </td>
                                     <td className="py-3 px-4 text-right">
                                         <div className="flex items-center justify-end gap-1.5">
@@ -210,7 +281,7 @@ export default function ConfigCondicionesPago() {
                                     className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                     value={currentItem?.nombre || ""}
                                     onChange={e => setCurrentItem({ ...currentItem, nombre: e.target.value })}
-                                    placeholder="Ej. Contado, Crédito a 30 días"
+                                    placeholder="Ej. Contado, 15 días, 30 días"
                                     autoFocus
                                 />
                             </div>
@@ -225,11 +296,46 @@ export default function ConfigCondicionesPago() {
                                         type="checkbox"
                                         className="sr-only peer"
                                         checked={!!currentItem?.admiteCredito}
-                                        onChange={e => setCurrentItem({ ...currentItem, admiteCredito: e.target.checked })}
+                                        onChange={e => {
+                                            const checked = e.target.checked;
+                                            let defaultDias = currentItem?.diasPlazo;
+                                            if (checked && (!defaultDias || defaultDias <= 0)) {
+                                                const match = (currentItem?.nombre || "").match(/\d+/);
+                                                defaultDias = match ? parseInt(match[0], 10) : 15;
+                                            }
+                                            setCurrentItem({
+                                                ...currentItem,
+                                                admiteCredito: checked,
+                                                diasPlazo: checked ? defaultDias : 0
+                                            });
+                                        }}
                                     />
                                     <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
                                 </label>
                             </div>
+
+                            {/* Campo condicional: Días de plazo (se activa cuando Permite Venta a Crédito está activado) */}
+                            {currentItem?.admiteCredito && (
+                                <div className="space-y-1.5 p-3.5 bg-blue-50/60 border border-blue-100 rounded-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[11px] font-bold text-slate-700">Días de Plazo *</label>
+                                        <span className="text-[10px] font-bold text-blue-600 uppercase tracking-tight">Para Vencimiento</span>
+                                    </div>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="365"
+                                        required
+                                        className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors shadow-xs"
+                                        value={currentItem?.diasPlazo ?? ""}
+                                        onChange={e => setCurrentItem({ ...currentItem, diasPlazo: e.target.value })}
+                                        placeholder="Ej. 15, 30"
+                                    />
+                                    <p className="text-[10px] font-medium text-slate-500">
+                                        Número de días para que las facturas a crédito se reflejen como vencidas.
+                                    </p>
+                                </div>
+                            )}
 
                             <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
                                 <button
