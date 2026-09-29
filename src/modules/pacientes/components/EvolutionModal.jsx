@@ -151,7 +151,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const [isCustomMed, setIsCustomMed] = useState(false);
     const [tempVia, setTempVia] = useState('');
     const [isCustomVia, setIsCustomVia] = useState(false);
-    const [tempDosis, setTempDosis] = useState('1 cartucho');
+    const [tempDosis, setTempDosis] = useState('');
     const [tempHora, setTempHora] = useState('');
     const [sterilizationError, setSterilizationError] = useState(null);
 
@@ -162,7 +162,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const handleAddMedicamento = () => {
         if (!tempMedicamento.trim()) return toast.error("Debe seleccionar o ingresar el nombre del medicamento");
         if (!tempVia.trim()) return toast.error("Debe seleccionar la vía de administración");
-        if (!tempDosis.trim()) return toast.error("Debe ingresar la dosis");
+        if (!tempDosis.trim()) return toast.error("Debe seleccionar la dosis");
 
         const currentMeds = watch("medicamentos") || [];
         setValue("medicamentos", [...currentMeds, {
@@ -176,7 +176,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         setIsCustomMed(false);
         setTempVia('');
         setIsCustomVia(false);
-        setTempDosis('1 cartucho');
+        setTempDosis('');
         setTempHora(getCurrentTimeFormatted());
     };
 
@@ -270,7 +270,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         setIsCustomMed(false);
         setTempVia('');
         setIsCustomVia(false);
-        setTempDosis('1 cartucho');
+        setTempDosis('');
         setTempCiclo('');
         setTempConcepto('');
         setTempCantidad(1);
@@ -1310,25 +1310,16 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1 whitespace-nowrap truncate h-4">
                                                     Dosis <span className="text-rose-500">*</span>
                                                 </label>
-                                                <input 
-                                                    type="text"
-                                                    list="dosis-sug"
+                                                <select
                                                     value={tempDosis}
                                                     onChange={(e) => setTempDosis(e.target.value)}
-                                                    placeholder="1 cartucho, 1.8 ml..."
-                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all placeholder:text-slate-300 caret-slate-950"
-                                                />
-                                                <datalist id="dosis-sug">
-                                                    <option value="1 cartucho (1.8 ml)" />
-                                                    <option value="2 cartuchos (3.6 ml)" />
-                                                    <option value="1/2 cartucho (0.9 ml)" />
-                                                    <option value="3 cartuchos (5.4 ml)" />
-                                                    <option value="1 tableta" />
-                                                    <option value="Cada 8 horas" />
-                                                    <option value="Cada 12 horas" />
-                                                    <option value="Dosis única" />
-                                                    <option value="Según dolor" />
-                                                </datalist>
+                                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] focus:ring-1 focus:ring-[#8dc63f]/20 transition-all cursor-pointer"
+                                                >
+                                                    <option value="">Seleccione...</option>
+                                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                                                        <option key={num} value={num.toString()}>{num}</option>
+                                                    ))}
+                                                </select>
                                             </div>
 
                                             {/* Hora de aplicación (1:1 OralDrive con botón de reloj) */}
