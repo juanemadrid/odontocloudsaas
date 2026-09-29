@@ -22,7 +22,7 @@ export default function PricingSection({ config, dbPlans, onShowTrial, dark = fa
     const featureMapping = {
         "Agenda": "Agenda Inteligente con Recordatorios",
         "Pacientes": "Gestión de Pacientes e Historia Clínica Digital",
-        "Inventario": "Control de Inventarios y Suministros",
+        "Odontograma": "Odontograma Clínico Interactivo",
         "Facturación": "Módulo de Facturación Integrado",
         "Facturacion": "Módulo de Facturación Integrado",
         "RIPS": "RIPS y Normativa de Salud Vigente",

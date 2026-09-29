@@ -170,7 +170,7 @@ export default function HeroSection({ config = {}, onShowTrial }) {
                                 { icon: <FiUser />, bg: "bg-emerald-50 text-emerald-600", title: "Historia Clínica", desc: "Fichas completas y seguras siempre disponibles." },
                                 { icon: <span>🦷</span>, bg: "bg-purple-50 text-purple-600", title: "Odontograma 3D", desc: "Visualiza y registra tratamientos de forma interactiva." },
                                 { icon: <FiDollarSign />, bg: "bg-amber-50 text-amber-600", title: "Facturación y Caja", desc: "Factura electrónicamente y controla tus ingresos fácilmente." },
-                                { icon: <FiBox />, bg: "bg-sky-50 text-sky-600", title: "Inventario", desc: "Controla productos, stock y proveedores." },
+                                { icon: <FiFileText />, bg: "bg-sky-50 text-sky-600", title: "RIPS y Normativa", desc: "Generación y validación automática de archivos RIPS." },
                                 { icon: <FiMessageSquare />, bg: "bg-emerald-50 text-emerald-600", title: "Recordatorios", desc: "Envía recordatorios automáticos por WhatsApp y SMS." },
                             ].map((f, i) => (
                                 <div key={i} className="p-5 rounded-2xl bg-white border border-slate-150 shadow-sm hover:shadow-md transition-shadow">

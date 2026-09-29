@@ -39,13 +39,13 @@ export default function FeatureDetail() {
             color: "#10b981"
         },
         {
-            slug: "inventarios",
-            title: "Inventario Digital",
-            desc: "Gestión de materiales y alertas de stock bajo para que nunca interrumpas tu operación.",
-            longDesc: "Evita el desabastecimiento y el vencimiento de insumos. Controla las entradas y salidas de materiales por bodega y asocia consumos a procedimientos específicos para un costeo preciso.",
-            features: ["Control Multi-bodega", "Alertas de Stock Bajo y Vencimiento", "Kardex de Productos", "Consumo por Procedimiento"],
-            benefits: ["Cero Desperdicio de Materiales", "Orden Operativo", "Compras Más Eficientes", "Costeo Exacto de Tratamientos"],
-            color: "#f59e0b"
+            slug: "odontograma",
+            title: "Odontograma Clínico Digital",
+            desc: "Odontograma interactivo 2D y 3D para registro anatómico y seguimiento visual de tratamientos.",
+            longDesc: "Potente herramienta visual e interactiva adaptada a la odontología moderna. Permite registrar diagnósticos, tratamientos presupuestados y realizados por pieza y superficie, tanto para adultos como para niños.",
+            features: ["Odontograma Adulto e Infantil", "Registro Anatómico por Pieza", "Planes de Tratamiento Visuales", "Histórico de Evolución Dental"],
+            benefits: ["Explicación Visual al Paciente", "Mayor Tasa de Aceptación de Presupuestos", "Historia Odontológica Precisa", "Ahorro de Tiempo en Consulta"],
+            color: "#6366f1"
         },
         {
             slug: "portal",
@@ -82,7 +82,8 @@ export default function FeatureDetail() {
             const fuzzy = services.find(s =>
                 s.title.toLowerCase().includes("agenda") && slug.includes("agenda") ||
                 s.title.toLowerCase().includes("historia") && slug.includes("historia") ||
-                s.title.toLowerCase().includes("finanza") && slug.includes("finanza")
+                s.title.toLowerCase().includes("finanza") && slug.includes("finanza") ||
+                s.title.toLowerCase().includes("odontograma") && slug.includes("odontograma")
             );
             if (fuzzy) setFeature(fuzzy);
         }

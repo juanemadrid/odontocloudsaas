@@ -65,12 +65,12 @@ export default function ServicesSection({ config, onShowTrial, dark = false, hid
             benefits: ["Dashboard Ejecutivo", "Reportes Financieros", "Métricas de Productividad", "Exportación a Excel/PDF"]
         },
         {
-            title: "Inventario",
-            desc: "Control total de insumos y materiales para evitar desabastecimientos.",
-            icon: <FiFolder />,
-            slug: "inventario",
-            longDesc: "Mantenga su inventario bajo control. Registre entradas y salidas de materiales, controle fechas de vencimiento y reciba alertas de stock bajo.",
-            benefits: ["Control de Stock", "Alertas de Vencimiento", "Proveedores", "Costeo de Tratamientos"]
+            title: "Odontograma Clínico",
+            desc: "Odontograma digital e interactivo para registro anatómico y seguimiento visual de tratamientos.",
+            icon: <span className="text-xl">🦷</span>,
+            slug: "odontograma",
+            longDesc: "Odontograma digital interactivo de alta precisión clínica. Registre hallazgos, procedimientos, evoluciones por pieza dental y genere planes de tratamiento visuales para sus pacientes.",
+            benefits: ["Odontograma Adulto e Infantil", "Registro Anatómico por Pieza", "Planes de Tratamiento Visuales", "Historial de Evolución Dental"]
         },
         {
             title: "Marketing Dental",

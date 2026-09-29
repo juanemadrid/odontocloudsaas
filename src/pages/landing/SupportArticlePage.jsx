@@ -303,7 +303,7 @@ const ARTICLES = {
                         <div className="bg-white p-5 rounded-xl border border-slate-200" style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
                             <div className="font-bold text-emerald-600 mb-2" style={{ color: '#059669' }}>3. Evolución Real</div>
                             <p className="text-xs text-slate-500" style={{ color: '#64748b' }}>
-                                Lo que <strong>realmente hiciste</strong> hoy. Se marca como realizado y descarta del inventario si aplica.
+                                Lo que <strong>realmente hiciste</strong> hoy. Se marca como realizado y queda registrado en la historia clínica del paciente.
                             </p>
                         </div>
                     </div>
@@ -379,7 +379,7 @@ const ARTICLES = {
                                 <span className="font-bold text-blue-900" style={{ color: '#1e3a8a' }}>Estructura JSON</span>
                             </div>
                             <p className="text-sm text-blue-800" style={{ color: '#1e40af' }}>
-                                El sistema genera automáticamente el archivo con los campos obligatorios: Datos del usuario, transacción, y detalles de medicamentos/procedimientos.
+                                El sistema genera automáticamente el archivo con los campos obligatorios: Datos del usuario, transacción, y detalles de procedimientos y consultas odontológicas.
                             </p>
                         </div>
                     </div>
