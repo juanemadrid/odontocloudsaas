@@ -53,11 +53,11 @@ export default defineConfig({
       }
     }
   ],
-  base: '/odontocloudsaas/',
+  base: process.env.VITE_BASE_PATH || '/',
   server: {
     port: 3002,
     strictPort: true,
-    open: '/odontocloudsaas/',
+    open: true,
   },
   build: {
     chunkSizeWarningLimit: 1600,

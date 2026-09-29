@@ -95,7 +95,7 @@ export default function TenantsPanelV2() {
         setResetSent(false);
         try {
             const { error } = await supabase.auth.resetPasswordForEmail(adminEmail, {
-                redirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}reset-password`
+                redirectTo: `${window.location.origin}/reset-password`
             });
             if (error) throw error;
             setResetSent(true);

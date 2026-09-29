@@ -9,7 +9,7 @@ import "../styles/login.css";
 import fondo from "/assets/fondo.png";
 import logo from "/assets/logo.png";
 
-const BASE_PATH = import.meta.env.BASE_URL || "/odontocloudsaas/";
+const BASE_PATH = import.meta.env.BASE_URL || "/";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -66,7 +66,7 @@ const Login = () => {
         type: 'signup',
         email: targetEmail,
         options: {
-          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}`
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/'}`
         }
       });
 
@@ -101,7 +101,7 @@ const Login = () => {
 
     try {
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: `${window.location.origin}${import.meta.env.BASE_URL || '/odontocloudsaas/'}reset-password`
+        redirectTo: `${window.location.origin}/reset-password`
       });
 
       if (resetErr) throw resetErr;

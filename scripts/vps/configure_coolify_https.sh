@@ -8,8 +8,8 @@ $application->fqdn = "https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.
 $application->save();
 
 $values = [
-    "GOTRUE_SITE_URL" => "https://juanemadrid.github.io/odontocloudsaas/",
-    "ADDITIONAL_REDIRECT_URLS" => "https://juanemadrid.github.io/odontocloudsaas/,https://juanemadrid.github.io/odontocloudsaas/reset-password",
+    "GOTRUE_SITE_URL" => "https://odontocloudcolombia.com/",
+    "ADDITIONAL_REDIRECT_URLS" => "https://odontocloudcolombia.com/,https://odontocloudcolombia.com/reset-password,https://juanemadrid.github.io/odontocloudsaas/,https://juanemadrid.github.io/odontocloudsaas/reset-password",
 ];
 
 foreach ($values as $key => $value) {
