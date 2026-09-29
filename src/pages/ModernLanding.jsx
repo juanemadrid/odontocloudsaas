@@ -8,6 +8,7 @@ import { fetchTenantConfigBySlug } from "../utils/tenantConfigHelper";
 
 // Components
 import HeroSection from "./landing/HeroSection";
+import OdontoCloudMasterLanding from "./landing/OdontoCloudMasterLanding";
 import ServicesSection from "./landing/ServicesSection";
 import PageHeader from "../components/common/PageHeader";
 import TestimonialsSection from "./landing/TestimonialsSection";
@@ -169,16 +170,19 @@ export default function ModernLanding({ previewConfig, isMaster = false, section
             </Helmet>
 
             <main className="landing-mode min-h-screen" style={brandStyle}>
-                {/* HeroSection:
-                    - For MASTER: renders the OdontoCloud SaaS hero + features section
-                    - For CLINICS: renders the full clinic website (hero + servicios + nosotros + sedes + contacto)
-                    Only show when no specific sub-section is requested */}
-                {!section && <HeroSection key={heroKey} config={config} onShowTrial={onShowTrial} />}
+                {/* MASTER HOMEPAGE (OdontoCloud SaaS) */}
+                {config.isMaster && !section && (
+                    <OdontoCloudMasterLanding config={config} onShowTrial={onShowTrial} />
+                )}
 
+                {/* CLINIC HOMEPAGE */}
+                {!config.isMaster && !section && (
+                    <HeroSection key={heroKey} config={config} onShowTrial={onShowTrial} />
+                )}
 
-                {/* Services Section - Show for MASTER homepage or if 'servicios' section explicitly requested */}
-                {((config.isMaster && !section) || section === 'servicios') && (
-                    <div id="features" className={section === 'servicios' ? "min-h-screen bg-white" : ""}>
+                {/* Services Section - Show when explicitly requested as sub-section */}
+                {section === 'servicios' && (
+                    <div id="features" className="min-h-screen bg-white">
                         {/* Dedicated Page Header */}
                         {section === 'servicios' && (
                             <PageHeader
@@ -368,34 +372,8 @@ export default function ModernLanding({ previewConfig, isMaster = false, section
                     </div>
                 )}
 
-                {/* Testimonials - Master Homepage Only */}
-                {(config.isMaster && !section) && <TestimonialsSection config={config} dark={true} />}
-
-                {/* Trial/CTA Section - Master Homepage Only */}
-                {(config.isMaster && !section) && (
-                    <section id="trial" className="py-24 relative overflow-hidden text-center">
-                        <div className="absolute inset-0 bg-[var(--viva-blue)] z-0" />
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-4xl bg-sky-500/10 blur-[120px] rounded-full pointer-events-none" />
-
-                        <div className="container mx-auto px-6 relative z-10 max-w-4xl">
-                            <h2 className="text-4xl md:text-5xl font-serif font-bold mb-6 text-white drop-shadow-xl">
-                                {config.ctaTitle || "¿Listo para transformar tu clínica?"}
-                            </h2>
-                            <p className="text-xl text-slate-400 mb-10 font-light leading-relaxed">
-                                {config.ctaText || "Únete a la nueva era de la odontología digital. Sin contratos de permanencia, sin complicaciones."}
-                            </p>
-
-                            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                                <button
-                                    onClick={onShowTrial}
-                                    className="relative inline-block bg-gradient-to-r from-sky-500 to-blue-600 text-white font-bold py-4 px-12 rounded-full shadow-[0_10px_30px_-10px_rgba(14,165,233,0.5)] hover:shadow-[0_20px_40px_-10px_rgba(14,165,233,0.6)] hover:-translate-y-1 transition-all uppercase tracking-widest text-sm"
-                                >
-                                    COMENZAR PRUEBA GRATIS
-                                </button>
-                            </div>
-                        </div>
-                    </section>
-                )}
+                {/* Testimonials - Clinic only */}
+                {(!config.isMaster && !section) && <TestimonialsSection config={config} dark={true} />}
 
 
                 {/* TRIAL MODAL */}

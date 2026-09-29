@@ -96,9 +96,10 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
     const menuItems = isMaster
         ? [
             { name: 'Inicio', path: '/' },
-            { name: 'Funcionalidades', path: '/funcionalidades' },
+            { name: 'Funciones', path: '/#funciones' },
             { name: 'Precios', path: '/planes' },
-            { name: 'Recursos', path: '/faq' }
+            { name: 'Recursos', path: '/faq', hasDropdown: true },
+            { name: 'Contacto', path: '/#contacto' }
         ]
         : [
             { name: 'Inicio', path: `${clinicBase}` },
@@ -111,36 +112,32 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
         ? config.name
         : (userProfile?.empresaNombre || userProfile?.tenant?.name || config?.tenantName || config?.name || "ATM");
 
-    const sloganText = config?.slogan || (isMaster ? "Software Odontológico Multi-Sede" : "Salud Oral & Odontología Especializada");
+    const sloganText = config?.slogan || (isMaster ? "Software Odontológico en la Nube" : "Salud Oral & Odontología Especializada");
 
     const brandColorStyle = config?.brandTextColor || (config?.primaryColor && config.primaryColor !== "#38bdf8" ? config.primaryColor : "#0f172a");
+
+    const logoSrc = `${(import.meta.env.BASE_URL || '/').replace(/\/$/, '')}/assets/logo.png`;
 
     return (
         <header className="fixed top-0 left-0 w-full z-[100] transition-all duration-300">
             <nav className={`${navClasses} h-20 flex items-center`}>
                 <div className="w-full mx-auto px-4 md:px-8 flex justify-between items-center h-full max-w-[1600px]">
 
-                    {/* LEFT: LOGO & CLINIC / APP BRANDING */}
+                    {/* LEFT: LOGO & APP BRANDING */}
                     <div 
-                        className="flex-shrink-0 flex items-center gap-3.5 cursor-pointer group" 
+                        className="flex-shrink-0 flex items-center gap-3 cursor-pointer group" 
                         onClick={() => {
                             if (isPreview) return;
                             navigate(isMaster ? '/' : (clinicBase || '/'));
                         }}
                     >
                         {isMaster ? (
-                            <div className="flex items-center gap-2.5">
+                            <div className="flex items-center gap-3">
                                 <img
-                                    src={`${(import.meta.env.BASE_URL || '/').replace(/\/$/, '')}/assets/logo.png`}
-                                    alt="OdontoCloud Logo"
-                                    className="h-8 md:h-10 w-auto object-contain shrink-0 group-hover:scale-105 transition-transform"
+                                    src={logoSrc}
+                                    alt="OdontoCloud"
+                                    className="h-10 md:h-12 w-auto object-contain shrink-0 group-hover:scale-105 transition-transform drop-shadow-sm"
                                 />
-                                <div className="flex flex-col justify-center text-left">
-                                    <h1 className="text-xl md:text-2xl font-black tracking-tight leading-none font-sans flex items-center">
-                                        <span className="text-slate-900 font-black">Odonto</span>
-                                        <span className="text-blue-600 font-black">Cloud</span>
-                                    </h1>
-                                </div>
                             </div>
                         ) : (
                             <>
@@ -177,74 +174,93 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
                     {/* RIGHT: NAVIGATION + ACTIONS */}
                     <div className="hidden lg:flex items-center gap-8">
                         <div className="flex items-center gap-7">
-                            {menuItems.map((item) => (
-                                <a
-                                    key={item.name}
-                                    href={item.path}
-                                    onClick={(e) => handleNavClick(e, item)}
-                                    className="text-xs font-bold tracking-wide text-slate-700 hover:text-blue-600 transition-colors py-2 relative group cursor-pointer"
-                                >
-                                    {item.name}
-                                    <span className="absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full rounded-full transition-all duration-300 bg-blue-600"></span>
-                                </a>
-                            ))}
+                            {menuItems.map((item) => {
+                                const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '/' && !location.hash);
+                                return (
+                                    <a
+                                        key={item.name}
+                                        href={item.path}
+                                        onClick={(e) => handleNavClick(e, item)}
+                                        className={`text-xs font-bold tracking-wide transition-colors py-2 relative group flex items-center gap-1 cursor-pointer ${
+                                            isActive ? 'text-blue-600 font-extrabold' : 'text-slate-700 hover:text-blue-600'
+                                        }`}
+                                    >
+                                        <span>{item.name}</span>
+                                        {item.hasDropdown && <span className="text-[10px] text-slate-400">▾</span>}
+                                        {isActive && (
+                                            <span className="absolute bottom-0 left-0 h-[2px] w-full rounded-full bg-blue-600"></span>
+                                        )}
+                                        {!isActive && (
+                                            <span className="absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full rounded-full transition-all duration-300 bg-blue-600"></span>
+                                        )}
+                                    </a>
+                                );
+                            })}
                         </div>
 
                         {/* RIGHT ACTIONS */}
-                        <div className="flex items-center gap-4 border-l border-slate-200/80 pl-6">
+                        <div className="flex items-center gap-3 border-l border-slate-200/80 pl-6">
                             {isMaster ? (
-                                <Link 
-                                    to={user ? getDashboardPath() : "/login"} 
-                                    className="text-xs font-bold text-slate-700 hover:text-blue-600 transition-colors"
-                                >
-                                    {user ? "Mi Cuenta" : "Iniciar Sesión"}
-                                </Link>
+                                <>
+                                    <Link 
+                                        to={user ? getDashboardPath() : "/login"} 
+                                        className="text-xs font-bold text-slate-700 hover:text-blue-600 px-4 py-2 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all shadow-xs"
+                                    >
+                                        {user ? "Mi Cuenta" : "Iniciar sesión"}
+                                    </Link>
+                                    <button
+                                        onClick={() => {
+                                            if (user) {
+                                                navigate(getDashboardPath());
+                                            } else {
+                                                const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
+                                                const msg = encodeURIComponent("Hola, estoy interesado en una demostración gratuita de OdontoCloud Colombia.");
+                                                window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
+                                            }
+                                        }}
+                                        className="px-5 py-2.5 rounded-full text-white text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] shadow-sm shadow-blue-500/20 transition-all duration-200 hover:scale-[1.02] flex items-center gap-1.5 cursor-pointer border-0"
+                                    >
+                                        <span>Solicitar demostración gratuita</span>
+                                        <span className="text-sm">→</span>
+                                    </button>
+                                </>
                             ) : (
-                                <button
-                                    onClick={() => {
-                                        if (isPreview) {
-                                            alert("En vista previa: simula el acceso al portal de pacientes de tu clínica.");
-                                            return;
-                                        }
-                                        const portalUrl = clinicBase ? `${clinicBase}/portal` : (slug ? `/c/${slug}/portal` : "/portal");
-                                        navigate(portalUrl);
-                                    }}
-                                    className="text-xs font-bold text-slate-700 hover:text-blue-600 transition-colors bg-transparent border-0 cursor-pointer"
-                                >
-                                    Acceso Pacientes
-                                </button>
-                            )}
-
-                            <button
-                                onClick={() => {
-                                    if (isPreview) {
-                                        const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
-                                        const msg = encodeURIComponent(`Hola, quisiera solicitar información o agendar una cita en ${displayName}.`);
-                                        window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
-                                        return;
-                                    }
-                                    if (isMaster) {
-                                        if (user) {
-                                            navigate(getDashboardPath());
-                                        } else {
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            if (isPreview) {
+                                                alert("En vista previa: simula el acceso al portal de pacientes de tu clínica.");
+                                                return;
+                                            }
+                                            const portalUrl = clinicBase ? `${clinicBase}/portal` : (slug ? `/c/${slug}/portal` : "/portal");
+                                            navigate(portalUrl);
+                                        }}
+                                        className="text-xs font-bold text-slate-700 hover:text-blue-600 transition-colors bg-transparent border-0 cursor-pointer"
+                                    >
+                                        Acceso Pacientes
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (isPreview) {
+                                                const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
+                                                const msg = encodeURIComponent(`Hola, quisiera solicitar información o agendar una cita en ${displayName}.`);
+                                                window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
+                                                return;
+                                            }
                                             const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
-                                            const msg = encodeURIComponent("Hola, quisiera solicitar una demostración de OdontoCloud.");
+                                            const msg = encodeURIComponent(`Hola, quisiera agendar una cita de valoración en ${displayName}.`);
                                             window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
-                                        }
-                                    } else {
-                                        const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
-                                        const msg = encodeURIComponent(`Hola, quisiera agendar una cita de valoración en ${displayName}.`);
-                                        window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
-                                    }
-                                }}
-                                className="px-5 py-2.5 rounded-xl text-white text-xs font-extrabold shadow-lg shadow-blue-500/25 transition-all duration-200 transform hover:scale-105 flex items-center gap-2 cursor-pointer border-0"
-                                style={{
-                                    backgroundColor: isMaster ? '#2563eb' : (config?.primaryColor || '#1e3a8a')
-                                }}
-                            >
-                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                <span>{isMaster ? (user ? "Mi Panel" : "Solicitar Demo") : (config.heroBtn1Text || "Agendar Cita")}</span>
-                            </button>
+                                        }}
+                                        className="px-5 py-2.5 rounded-xl text-white text-xs font-extrabold shadow-lg shadow-blue-500/25 transition-all duration-200 transform hover:scale-105 flex items-center gap-2 cursor-pointer border-0"
+                                        style={{
+                                            backgroundColor: config?.primaryColor || '#1e3a8a'
+                                        }}
+                                    >
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                        <span>{config.heroBtn1Text || "Agendar Cita"}</span>
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
 
