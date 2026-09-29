@@ -58,9 +58,7 @@ export default function Planes() {
     };
 
     const COMPARATIVA_DATA = [
-        { label: 'Precio anual (5 dentistas)', otrosSoftwares: '$2.205.000', odontoCloud: '$1.100.000', highlight: true },
-        { label: 'Usuarios y profesionales incluidos', otrosSoftwares: 'Cobro por cada profesional', odontoCloud: 'Hasta 2, 4 y 8 profesionales según el plan', highlight: true },
-        { label: 'Mínimo de usuarios obligatorio', otrosSoftwares: '3 usuarios mínimo', odontoCloud: 'Sin mínimo obligatorio' },
+        { label: 'Precio anual (4 dentistas)', otrosSoftwares: '$2.205.000', odontoCloud: '$1.100.000', highlight: true },
         { label: 'Evolución clínica por Voz con IA', otrosSoftwares: 'Dictado básico', odontoCloud: 'IA Asistente Clínica' },
         { label: 'Sitio Web Corporativo (CMS)', otrosSoftwares: 'No disponible', odontoCloud: 'Incluido gratis en Clínica' },
         { label: 'Facturación Electrónica DIAN + RIPS', otrosSoftwares: 'Solo en plan pro', odontoCloud: 'Incluido (300 docs/año)' },
@@ -257,7 +255,7 @@ export default function Planes() {
                             OdontoCloud vs La Competencia
                         </h2>
                         <p className="text-slate-500 text-sm mt-2">
-                            Compara la inversión real estimada para una clínica con 5 dentistas activos.
+                            Compara la inversión real estimada para una clínica con 4 dentistas activos.
                         </p>
                     </div>
 
