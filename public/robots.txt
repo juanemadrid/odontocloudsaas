@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+Allow: /servicios
+Allow: /funcionalidades
+Allow: /planes
+Allow: /faq
+Allow: /login
+
+# Proteger rutas privadas del rastreo
+Disallow: /dashboard/
+Disallow: /superadmin/
+Disallow: /dashboard_admin/
+Disallow: /dashboard_doctor/
+Disallow: /dashboard_recepcion/
+Disallow: /reset-password
+Disallow: /portal-paciente/
+
+# Mapa del sitio para Google y Bing
+Sitemap: https://odontocloudcolombia.com/sitemap.xml
