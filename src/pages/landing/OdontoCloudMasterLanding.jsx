@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import {
   FiArrowRight, FiPlay, FiCalendar, FiUsers,
-  FiFileText, FiBell, FiCloud, FiCheck
+  FiFileText, FiBell, FiCloud, FiCheck, FiSearch,
+  FiSettings, FiBarChart2, FiDollarSign
 } from "react-icons/fi";
 import DocumentationModal from "../../components/landing/DocumentationModal";
 
@@ -10,8 +11,11 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
 
   const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
   const logoUrl = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/logo.png`;
+  const clinicHeroBg = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/clinic_hero_bg.jpg`;
   const dentistImg = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/dentist_tablet.jpg`;
   const doctorImg = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/doctor_carolina.jpg`;
+  const teethSuperior = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/dontograma/permanente/superior.png`;
+  const teethInferior = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/dontograma/permanente/inferior.png`;
 
   const handleDemo = () => {
     if (onShowTrial) {
@@ -28,18 +32,27 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
     <div className="w-full bg-white text-slate-900 font-sans selection:bg-blue-500/20 selection:text-blue-700 overflow-x-hidden">
       
       {/* ─────────────────────────────────────────────────────────────
-          1. HERO SECTION (100% Fluid & Adaptative for Wide Screens)
+          1. HERO SECTION
+          Real Clinic Photographic Background + Authentic OdontoCloud UI
           ───────────────────────────────────────────────────────────── */}
-      <section id="inicio" className="relative w-full pt-28 sm:pt-36 lg:pt-40 pb-16 sm:pb-24 overflow-hidden bg-gradient-to-b from-[#F3F7FF] via-[#F9FBFF] to-white">
-        {/* Soft background ambient glows */}
-        <div className="absolute top-0 right-1/4 w-[700px] 2xl:w-[900px] h-[600px] 2xl:h-[800px] bg-blue-500/10 rounded-full blur-[160px] pointer-events-none" />
-        <div className="absolute top-40 left-10 w-[500px] 2xl:w-[700px] h-[500px] 2xl:h-[700px] bg-sky-400/10 rounded-full blur-[150px] pointer-events-none" />
+      <section id="inicio" className="relative w-full pt-28 sm:pt-36 lg:pt-40 pb-16 sm:pb-24 overflow-hidden">
+        {/* Background Image: Dental Clinic Room with soft gradient overlay */}
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+          <img
+            src={clinicHeroBg}
+            alt="Clínica OdontoCloud"
+            className="w-full h-full object-cover object-right opacity-35 sm:opacity-40"
+          />
+          {/* Subtle gradient so text on left is super readable and clinic shines on right */}
+          <div className="absolute inset-0 bg-gradient-to-r from-white via-white/90 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/70 via-transparent to-white" />
+        </div>
 
         <div className="w-full max-w-[1720px] 2xl:max-w-[1850px] mx-auto px-4 sm:px-8 xl:px-12 2xl:px-16 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 xl:gap-14 2xl:gap-20 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 xl:gap-14 2xl:gap-20 items-center">
             
-            {/* LEFT COLUMN: Headings, CTAs and Trust badges */}
-            <div className="lg:col-span-6 xl:col-span-5 text-left space-y-6 sm:space-y-8">
+            {/* LEFT COLUMN: Headings, Value Proposition and CTAs */}
+            <div className="lg:col-span-5 text-left space-y-6 sm:space-y-8">
               <h1 className="text-4xl sm:text-5xl lg:text-5xl xl:text-6xl 2xl:text-[68px] font-sans font-black text-slate-900 tracking-tight leading-[1.12]">
                 Gestiona tu clínica dental de forma{" "}
                 <span className="text-[#2563EB]">simple y profesional</span>
@@ -69,21 +82,21 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               </div>
 
               {/* 3 Trust Badges */}
-              <div className="pt-4 sm:pt-6 flex flex-wrap items-center gap-6 sm:gap-8 text-slate-600 text-xs sm:text-sm font-semibold">
+              <div className="pt-4 sm:pt-6 flex flex-wrap items-center gap-6 sm:gap-8 text-slate-700 text-xs sm:text-sm font-bold">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center text-xs font-bold">
+                  <div className="w-5 h-5 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center text-xs font-black shadow-2xs">
                     ✓
                   </div>
                   <span>100% en la nube</span>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center text-xs font-bold">
+                  <div className="w-5 h-5 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center text-xs font-black shadow-2xs">
                     ✓
                   </div>
                   <span>Seguro y confiable</span>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-5 h-5 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center text-xs font-bold">
+                  <div className="w-5 h-5 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center text-xs font-black shadow-2xs">
                     ✓
                   </div>
                   <span>Soporte en español</span>
@@ -91,148 +104,162 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               </div>
             </div>
 
-            {/* RIGHT COLUMN: MacBook & Smartphone Mockup Composition */}
-            <div className="lg:col-span-6 xl:col-span-7 relative w-full flex justify-center items-center py-4">
+            {/* RIGHT COLUMN: MacBook & Smartphone Composition with Real OdontoCloud UI */}
+            <div className="lg:col-span-7 relative w-full flex justify-center items-center py-4">
               
-              {/* LAPTOP CONTAINER (Realistic MacBook / Air Style) */}
-              <div className="relative w-full max-w-[720px] xl:max-w-[820px] 2xl:max-w-[940px] bg-[#E2E8F0] rounded-[24px] sm:rounded-[28px] p-2.5 sm:p-3 shadow-2xl shadow-slate-900/20 border border-slate-300">
+              {/* LAPTOP FRAME (MacBook Air style with sleek aluminum shell) */}
+              <div className="relative w-full max-w-[760px] xl:max-w-[840px] 2xl:max-w-[940px] bg-[#E2E8F0] rounded-[24px] sm:rounded-[28px] p-2.5 sm:p-3 shadow-2xl shadow-slate-900/25 border border-slate-300">
                 {/* Display Bezel */}
                 <div className="bg-slate-950 rounded-[18px] sm:rounded-[22px] p-2 sm:p-3 pt-2 shadow-inner">
                   {/* WebCam dot */}
                   <div className="w-2 h-2 rounded-full bg-slate-800 mx-auto mb-2 border border-slate-700/60" />
 
-                  {/* Inner Screen */}
+                  {/* Inner Screen: Exact OdontoCloud Real UI */}
                   <div className="w-full bg-[#FAFCFE] rounded-lg sm:rounded-xl overflow-hidden text-left text-slate-800 select-none border border-slate-200">
                     
-                    {/* Screen Topbar */}
+                    {/* Screen Top Header (Real Topbar) */}
                     <div className="h-11 sm:h-12 bg-white border-b border-slate-150 px-4 sm:px-5 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <img src={logoUrl} alt="OdontoCloud" className="h-7 sm:h-8 w-auto object-contain" />
-                        <span className="font-extrabold text-xs sm:text-sm tracking-tight text-slate-900 flex items-center">
+                        <img src={logoUrl} alt="OdontoCloud" className="h-6 sm:h-7 w-auto object-contain" />
+                        <span className="font-black text-xs sm:text-sm tracking-tight text-slate-900 flex items-center">
                           <span>Odonto</span>
                           <span className="text-[#2563EB]">Cloud</span>
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-3 sm:gap-4">
-                        <div className="relative text-slate-400 hover:text-slate-600">
-                          <FiBell size={15} />
-                          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500" />
+                      <div className="flex items-center gap-3">
+                        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>En línea</span>
                         </div>
-                        <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
-                          <img
-                            src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&q=80&w=150"
-                            alt="Dra. Garcia"
-                            className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-slate-200"
-                          />
-                          <div className="text-[10px] sm:text-xs leading-tight">
-                            <span className="font-bold text-slate-800 block">Dra. Garcia</span>
-                            <span className="text-[8px] sm:text-[9px] text-slate-400">Clínica Dental</span>
+                        <div className="relative text-slate-400">
+                          <FiBell size={14} />
+                          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
+                        </div>
+                        <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                          <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold">
+                            JM
+                          </div>
+                          <div className="text-[10px] leading-tight hidden xs:block">
+                            <span className="font-bold text-slate-800 block">Juan Madrid</span>
+                            <span className="text-[8px] text-slate-400">Administrador</span>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Screen Body: Sidebar + Main Content */}
-                    <div className="flex min-h-[380px] sm:min-h-[440px] xl:min-h-[480px]">
+                    {/* Screen Body: Real Sidebar + Real Dashboard Modules */}
+                    <div className="flex min-h-[380px] sm:min-h-[430px] xl:min-h-[460px]">
                       
-                      {/* Sidebar */}
-                      <div className="w-32 sm:w-38 xl:w-42 bg-white border-r border-slate-150 p-2 sm:p-3 space-y-1 shrink-0 hidden sm:block">
-                        <div className="px-3 py-2 rounded-xl bg-[#2563EB] text-white font-bold text-xs flex items-center gap-2 shadow-xs">
-                          <span>●</span>
-                          <span>Inicio</span>
+                      {/* Real Left Sidebar */}
+                      <div className="w-32 sm:w-36 bg-white border-r border-slate-150 p-2.5 space-y-1 shrink-0 hidden sm:block">
+                        <div className="px-2 py-1 mb-2 bg-slate-50 rounded-lg border border-slate-150 flex items-center gap-1.5 text-[9px] text-slate-400">
+                          <FiSearch size={10} />
+                          <span>Buscar...</span>
                         </div>
+
+                        <div className="text-[8px] font-bold uppercase text-slate-400 px-2 py-0.5 tracking-wider">
+                          MENÚ PRINCIPAL
+                        </div>
+
+                        <div className="px-2.5 py-1.5 rounded-lg bg-[#2563EB] text-white font-bold text-[10px] flex items-center gap-2 shadow-xs">
+                          <span>●</span>
+                          <span>INICIO</span>
+                        </div>
+
                         {[
-                          { name: "Agenda" },
-                          { name: "Pacientes" },
-                          { name: "Historia Clínica" },
-                          { name: "Odontograma" },
-                          { name: "Facturación" },
-                          { name: "Inventario" },
-                          { name: "Reportes" }
+                          { name: "AGENDA", icon: <FiCalendar size={11} /> },
+                          { name: "PACIENTES", icon: <FiUsers size={11} /> },
+                          { name: "CAJA", icon: <FiDollarSign size={11} /> },
+                          { name: "ADMINISTRACIÓN", icon: <FiSettings size={11} /> },
+                          { name: "REPORTES", icon: <FiBarChart2 size={11} /> }
                         ].map((item, idx) => (
-                          <div key={idx} className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg transition-colors">
-                            {item.name}
+                          <div key={idx} className="px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg flex items-center gap-2">
+                            <span>{item.icon}</span>
+                            <span>{item.name}</span>
                           </div>
                         ))}
                       </div>
 
-                      {/* Main Dashboard Area */}
-                      <div className="flex-1 p-3.5 sm:p-5 xl:p-6 space-y-3.5 sm:space-y-4 bg-[#F8FAFC]">
+                      {/* Main Dashboard Workspace */}
+                      <div className="flex-1 p-3.5 sm:p-4 space-y-3 bg-[#F8FAFC]">
                         
-                        {/* Header: Greeting & Date Selector */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-sm sm:text-base xl:text-lg font-black text-slate-900 leading-tight">¡Hola, Dra. Garcia!</h4>
-                            <p className="text-[10px] sm:text-xs text-slate-400">Aquí tienes un resumen de tu clínica hoy.</p>
-                          </div>
-                          <div className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] sm:text-xs font-medium text-slate-600 shadow-2xs flex items-center gap-1.5">
-                            <span>Hoy, 26 de enero de 2026</span>
-                            <span>▾</span>
+                        {/* Real Glowing Hero Welcome Banner */}
+                        <div className="rounded-xl bg-gradient-to-r from-[#2563EB] to-[#4F46E5] p-3 sm:p-3.5 text-white shadow-md flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider text-blue-100">
+                              <span>ADMINISTRADOR</span>
+                              <span>•</span>
+                              <span>Hoy, 26 de Enero de 2026</span>
+                            </div>
+                            <h4 className="text-sm sm:text-base font-black text-white">¡Buenas tardes, Juan! 👋</h4>
+                            <p className="text-[9px] sm:text-[10px] text-blue-100/90 font-normal">
+                              Bienvenido a tu panel de gestión clínica OdontoCloud.
+                            </p>
                           </div>
                         </div>
 
-                        {/* 3 Metric Cards */}
-                        <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5">
-                          <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-150 shadow-2xs">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center text-xs">
-                                <FiCalendar />
+                        {/* 3 Real KPI Metric Cards */}
+                        <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-150 shadow-2xs">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <div className="w-5 h-5 rounded bg-purple-50 text-purple-600 flex items-center justify-center text-xs">
+                                <FiCalendar size={10} />
                               </div>
-                              <span className="text-base sm:text-xl xl:text-2xl font-black text-slate-900">12</span>
+                              <span className="text-sm sm:text-base font-black text-slate-900">12</span>
                             </div>
-                            <span className="text-[10px] sm:text-xs text-slate-500 block">Citas hoy</span>
+                            <span className="text-[9px] text-slate-500 block">Citas hoy</span>
                           </div>
 
-                          <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-150 shadow-2xs">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-xs">
-                                <FiUsers />
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-150 shadow-2xs">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <div className="w-5 h-5 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-xs">
+                                <FiUsers size={10} />
                               </div>
-                              <span className="text-base sm:text-xl xl:text-2xl font-black text-slate-900">28</span>
+                              <span className="text-sm sm:text-base font-black text-slate-900">28</span>
                             </div>
-                            <span className="text-[10px] sm:text-xs text-slate-500 block">Pacientes activos</span>
+                            <span className="text-[9px] text-slate-500 block">Pacientes activos</span>
                           </div>
 
-                          <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-150 shadow-2xs">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">
+                          <div className="bg-white p-2.5 rounded-xl border border-slate-150 shadow-2xs">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <div className="w-5 h-5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">
                                 $
                               </div>
-                              <span className="text-sm sm:text-lg xl:text-xl font-black text-emerald-600">$1.450.000</span>
+                              <span className="text-xs sm:text-sm font-black text-emerald-600">$1.450.000</span>
                             </div>
-                            <span className="text-[10px] sm:text-xs text-slate-500 block">Ingresos del mes</span>
+                            <span className="text-[9px] text-slate-500 block">Ingresos mes</span>
                           </div>
                         </div>
 
-                        {/* 2-Column Split: Agenda + Donut Chart */}
-                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 pt-1">
+                        {/* 2-Column Split: Agenda + Treatments Donut Chart */}
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
                           
                           {/* Agenda de hoy */}
-                          <div className="sm:col-span-7 bg-white p-3 sm:p-4 rounded-2xl border border-slate-150 shadow-2xs space-y-2.5">
-                            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                              <span className="text-xs sm:text-sm font-bold text-slate-900">Agenda de hoy</span>
-                              <span className="text-[10px] sm:text-xs font-bold text-blue-600 hover:underline cursor-pointer">
+                          <div className="sm:col-span-7 bg-white p-2.5 rounded-xl border border-slate-150 shadow-2xs space-y-1.5">
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                              <span className="text-[10px] font-bold text-slate-900">Agenda del día</span>
+                              <span className="text-[9px] font-bold text-blue-600 hover:underline cursor-pointer">
                                 Ver agenda →
                               </span>
                             </div>
 
-                            <div className="space-y-2">
+                            <div className="space-y-1.5">
                               {[
-                                { time: "08:00", name: "María López", svc: "Limpieza dental", badge: "En atención", bg: "bg-blue-50 text-blue-600 border border-blue-100" },
-                                { time: "09:30", Carlos: "Carlos Ramírez", name: "Carlos Ramírez", svc: "Control ortodoncia", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600 border border-emerald-100" },
-                                { time: "11:00", name: "Ana Torres", svc: "Restauración resina", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600 border border-emerald-100" },
-                                { time: "14:00", name: "Luis Alejandro Gómez", svc: "Valoración inicial", badge: "Pendiente", bg: "bg-amber-50 text-amber-600 border border-amber-100" }
+                                { time: "08:00", name: "María López", svc: "Limpieza dental", badge: "En atención", bg: "bg-blue-50 text-blue-600" },
+                                { time: "09:30", name: "Carlos Ramírez", svc: "Control ortodoncia", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600" },
+                                { time: "11:00", name: "Ana Torres", svc: "Restauración resina", badge: "Confirmada", bg: "bg-emerald-50 text-emerald-600" },
+                                { time: "14:00", name: "Luis Gómez", svc: "Valoración inicial", badge: "Pendiente", bg: "bg-amber-50 text-amber-600" }
                               ].map((a, i) => (
-                                <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0">
-                                  <div className="flex items-center gap-2.5">
-                                    <span className="font-bold text-slate-400 text-[11px]">{a.time}</span>
+                                <div key={i} className="flex items-center justify-between text-[9px] py-0.5 border-b border-slate-50 last:border-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-400">{a.time}</span>
                                     <div>
-                                      <span className="font-bold text-slate-800 block text-[11px] sm:text-xs leading-tight">{a.name}</span>
-                                      <span className="text-[9px] sm:text-[10px] text-slate-400 block leading-tight">{a.svc}</span>
+                                      <span className="font-bold text-slate-800 block leading-tight">{a.name}</span>
+                                      <span className="text-[8px] text-slate-400 block leading-tight">{a.svc}</span>
                                     </div>
                                   </div>
-                                  <span className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${a.bg}`}>
+                                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${a.bg}`}>
                                     {a.badge}
                                   </span>
                                 </div>
@@ -240,14 +267,14 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                             </div>
                           </div>
 
-                          {/* Distribución de Tratamientos (Donut Chart) */}
-                          <div className="sm:col-span-5 bg-white p-3 sm:p-4 rounded-2xl border border-slate-150 shadow-2xs flex flex-col justify-between">
-                            <span className="text-xs sm:text-sm font-bold text-slate-900 pb-2 border-b border-slate-100 block">
-                              Distribución de tratamientos
+                          {/* Distribución de Tratamientos Donut Chart */}
+                          <div className="sm:col-span-5 bg-white p-2.5 rounded-xl border border-slate-150 shadow-2xs flex flex-col justify-between">
+                            <span className="text-[10px] font-bold text-slate-900 pb-1 border-b border-slate-100 block">
+                              Distribución tratamientos
                             </span>
 
-                            <div className="flex items-center justify-center my-2">
-                              <svg className="w-20 h-20 sm:w-24 sm:h-24 transform -rotate-90" viewBox="0 0 36 36">
+                            <div className="flex items-center justify-center my-1">
+                              <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
                                 <circle cx="18" cy="18" r="14" fill="none" stroke="#F1F5F9" strokeWidth="5" />
                                 <circle cx="18" cy="18" r="14" fill="none" stroke="#2563EB" strokeWidth="5" strokeDasharray="40 60" strokeDashoffset="0" />
                                 <circle cx="18" cy="18" r="14" fill="none" stroke="#F97316" strokeWidth="5" strokeDasharray="30 70" strokeDashoffset="-40" />
@@ -256,22 +283,18 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                               </svg>
                             </div>
 
-                            <div className="space-y-1.5 text-[10px] sm:text-xs">
+                            <div className="space-y-1 text-[8px]">
                               <div className="flex items-center justify-between text-slate-600">
-                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#2563EB]" />Preventivos</span>
+                                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />Preventivos</span>
                                 <span className="font-bold">40%</span>
                               </div>
                               <div className="flex items-center justify-between text-slate-600">
-                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#F97316]" />Restauradores</span>
+                                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F97316]" />Resinas</span>
                                 <span className="font-bold">30%</span>
                               </div>
                               <div className="flex items-center justify-between text-slate-600">
-                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#06B6D4]" />Ortodoncia</span>
+                                <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#06B6D4]" />Ortodoncia</span>
                                 <span className="font-bold">20%</span>
-                              </div>
-                              <div className="flex items-center justify-between text-slate-600">
-                                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#94A3B8]" />Otros</span>
-                                <span className="font-bold">10%</span>
                               </div>
                             </div>
                           </div>
@@ -284,7 +307,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                   </div>
                 </div>
 
-                {/* Laptop metallic bottom bezel & notch */}
+                {/* Laptop bottom hinge */}
                 <div className="w-24 sm:w-28 h-1.5 bg-slate-400 rounded-full mx-auto mt-2" />
               </div>
 
@@ -330,7 +353,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
           {/* ─────────────────────────────────────────────────────────────
               2. FOUR FEATURE CARDS (Directly below hero, fluid width)
               ───────────────────────────────────────────────────────────── */}
-          <div id="funciones" className="pt-10 sm:pt-16 pb-12 scroll-mt-28">
+          <div id="funciones" className="pt-10 sm:pt-16 pb-6 scroll-mt-28">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 xl:gap-8 text-left">
               
               {/* Card 1: Agenda inteligente */}
@@ -393,12 +416,13 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
 
       {/* ─────────────────────────────────────────────────────────────
           3. "MÁS QUE UN SOFTWARE" SHOWCASE SECTION
+          Featuring Real Odontocloud Dental Arch Illustrations
           ───────────────────────────────────────────────────────────── */}
       <section className="py-20 sm:py-28 bg-white border-t border-slate-100">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1850px] mx-auto px-4 sm:px-8 xl:px-12 2xl:px-16">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 xl:gap-20 items-center">
             
-            {/* Left: Professional Dentist Image + Vector Odontograma Card */}
+            {/* Left: Professional Dentist Image + Real Dental Arch Card */}
             <div className="lg:col-span-6 relative">
               <div className="relative rounded-[32px] sm:rounded-[40px] overflow-hidden shadow-2xl border border-slate-150 aspect-[4/3] w-full max-w-[640px] xl:max-w-[720px] mx-auto">
                 <img
@@ -407,63 +431,39 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                   className="w-full h-full object-cover"
                 />
                 
-                {/* Floating "Historia Clínica" Vector Odontograma Card */}
-                <div className="absolute top-4 right-4 sm:top-6 sm:right-6 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl border border-slate-200/80 max-w-[280px] sm:max-w-[340px] xl:max-w-[380px]">
-                  <div className="flex items-center gap-2.5 pb-2.5 mb-2.5 border-b border-slate-100">
-                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold">
-                      🦷
+                {/* Floating "Historia Clínica" Dental Odontograma Card */}
+                <div className="absolute top-4 right-4 sm:top-6 sm:right-6 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl border border-slate-200/80 max-w-[290px] sm:max-w-[360px] xl:max-w-[400px]">
+                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600 text-sm">🦷</span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800">Historia Clínica</span>
                     </div>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800">Historia Clínica</span>
+                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold">
+                      Odontograma HD
+                    </span>
                   </div>
 
-                  {/* Clean SVG Vector Dental Odontograma Arch */}
-                  <div className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/70">
-                    {/* Upper Arch (16 teeth) */}
-                    <div className="flex items-center justify-center gap-1 sm:gap-1.5 py-1">
-                      {[18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28].map((t, idx) => {
-                        const isTreated = idx === 2 || idx === 12;
-                        const isPending = idx === 4;
-                        return (
-                          <div key={t} className="flex flex-col items-center">
-                            <div className={`w-3.5 h-4 sm:w-4 sm:h-5 rounded-t-sm border flex items-center justify-center transition-all ${
-                              isTreated
-                                ? "bg-blue-500 border-blue-600"
-                                : isPending
-                                ? "bg-amber-400 border-amber-500"
-                                : "bg-white border-slate-300 hover:border-blue-400"
-                            }`}>
-                              {(isTreated || isPending) && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-white block" />
-                              )}
-                            </div>
-                            <span className="text-[6px] sm:text-[7px] text-slate-400 mt-0.5">{t}</span>
-                          </div>
-                        );
-                      })}
+                  {/* Real Dental Arch Diagram from OdontoCloud */}
+                  <div className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/70 space-y-2">
+                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider text-center">
+                      Arcada Superior
                     </div>
+                    <img
+                      src={teethSuperior}
+                      alt="Arcada Superior Odontograma"
+                      className="w-full h-auto object-contain max-h-12 mx-auto"
+                    />
 
-                    <div className="w-full h-[1px] bg-slate-200/80 my-2" />
+                    <div className="w-full h-[1px] bg-slate-200 my-1" />
 
-                    {/* Lower Arch (16 teeth) */}
-                    <div className="flex items-center justify-center gap-1 sm:gap-1.5 py-1">
-                      {[48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38].map((t, idx) => {
-                        const isTreated = idx === 10;
-                        return (
-                          <div key={t} className="flex flex-col items-center">
-                            <div className={`w-3.5 h-4 sm:w-4 sm:h-5 rounded-b-sm border flex items-center justify-center transition-all ${
-                              isTreated
-                                ? "bg-emerald-500 border-emerald-600"
-                                : "bg-white border-slate-300 hover:border-blue-400"
-                            }`}>
-                              {isTreated && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-white block" />
-                              )}
-                            </div>
-                            <span className="text-[6px] sm:text-[7px] text-slate-400 mt-0.5">{t}</span>
-                          </div>
-                        );
-                      })}
+                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider text-center">
+                      Arcada Inferior
                     </div>
+                    <img
+                      src={teethInferior}
+                      alt="Arcada Inferior Odontograma"
+                      className="w-full h-auto object-contain max-h-12 mx-auto"
+                    />
                   </div>
                 </div>
 
