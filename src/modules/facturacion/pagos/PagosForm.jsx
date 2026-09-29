@@ -187,34 +187,43 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     console.warn("Error cargando terceros en PagosForm:", e);
                 }
 
-                // Cargar Pacientes de la clínica
+                // Cargar Pacientes de la clínica (usando select("*") para compatibilidad total con cualquier esquema)
                 let pacientesList = [];
                 try {
-                    const { data: pDb } = await supabase
+                    const { data: pDb, error: pErr } = await supabase
                         .from("pacientes")
-                        .select("id,tenant_id,tipo_documento,tipoDocumento,documento,nroDocumento,nombres,apellidos,nombre,apellido,nombreCompleto,telefono,celular")
+                        .select("*")
                         .eq("tenant_id", inquilino);
                     
-                    const tenantMatches = (pDb || []).filter(p => 
-                        !p.tenant_id || 
-                        p.tenant_id === inquilino || 
-                        p.tenant_id === userProfile?.tenant_id ||
-                        p.tenant_id === "2e573a5a-70b2-4175-8332-4ebfa9bc0836" ||
-                        p.tenant_id === "atm_centro_del_dolor_01"
-                    );
+                    let rawPacientes = (pDb && pDb.length > 0) ? pDb : [];
 
-                    pacientesList = (tenantMatches.length > 0 ? tenantMatches : (pDb || [])).map(p => {
-                        const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || p.displayName || p.documento || "Paciente";
-                        return {
-                            id: p.id,
-                            nombre: full,
-                            documento: p.documento || p.nroDocumento || p.identificacion || "",
-                            nroDocumento: p.documento || p.nroDocumento || p.identificacion || "",
-                            tipoDocumento: p.tipoDocumento || p.tipo_documento || "CC",
-                            telefono: p.telefono || p.celular || p.movil || "",
-                            tipo: "paciente"
-                        };
-                    });
+                    if (rawPacientes.length === 0) {
+                        try {
+                            const { data: cfgRow } = await supabase
+                                .from("website_config")
+                                .select("config")
+                                .eq("tenant_id", inquilino)
+                                .maybeSingle();
+                            rawPacientes = cfgRow?.config?.pacientes || [];
+                        } catch (cfgErr) {}
+                    }
+
+                    if (rawPacientes.length > 0) {
+                        pacientesList = rawPacientes.map(p => {
+                            const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || p.displayName || p.documento || "Paciente";
+                            const doc = p.documento || p.nroDocumento || p.identificacion || p.numero_documento || "";
+                            return {
+                                ...p,
+                                id: p.id,
+                                nombre: full,
+                                documento: doc,
+                                nroDocumento: doc,
+                                tipoDocumento: p.tipoDocumento || p.tipo_documento || "CC",
+                                telefono: p.telefono || p.celular || p.movil || "",
+                                tipo: "paciente"
+                            };
+                        });
+                    }
                 } catch (e) {
                     console.warn("Error cargando pacientes en PagosForm:", e);
                 }
@@ -447,10 +456,10 @@ export default function PagosForm({ onCancel, onSuccess }) {
         return items.reduce((acc, item) => acc + (parseFloat(item.total) || 0), 0);
     }, [items]);
 
-    // Filtrar Terceros y Pacientes en tiempo real por el buscador
+    // Filtrar Terceros y Pacientes en tiempo real por el buscador (solo cuando el usuario escribe)
     const filteredTerceros = useMemo(() => {
         const q = (terceroSearchQuery || "").toLowerCase().trim();
-        if (!q) return terceros.slice(0, 30);
+        if (!q) return [];
         return terceros.filter(t => {
             const name = String(t.nombre || "").toLowerCase();
             const doc = String(t.documento || t.nroDocumento || "").toLowerCase();
@@ -966,14 +975,19 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                             type="text"
                                             value={terceroSearchQuery}
                                             onChange={(e) => {
-                                                setTerceroSearchQuery(e.target.value);
-                                                setIsSearchingTercero(true);
-                                                if (selectedTerceroObj && selectedTerceroObj.nombre !== e.target.value) {
+                                                const v = e.target.value;
+                                                setTerceroSearchQuery(v);
+                                                setIsSearchingTercero(Boolean(v.trim()));
+                                                if (selectedTerceroObj && selectedTerceroObj.nombre !== v) {
                                                     setSelectedTerceroObj(null);
                                                     setTerceroId("");
                                                 }
                                             }}
-                                            onFocus={() => setIsSearchingTercero(true)}
+                                            onFocus={() => {
+                                                if (terceroSearchQuery.trim()) {
+                                                    setIsSearchingTercero(true);
+                                                }
+                                            }}
                                             placeholder="Escribe nombre o documento..."
                                             className={`w-full h-9 pl-9 pr-8 bg-white border ${selectedTerceroObj ? 'border-emerald-400 bg-emerald-50/20 font-medium text-slate-800' : 'border-slate-200 text-slate-700'} rounded text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all`}
                                             required
@@ -1011,7 +1025,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                     )}
 
                                     {/* Menú Flotante de Resultados Filtrados */}
-                                    {isSearchingTercero && (
+                                    {isSearchingTercero && Boolean(terceroSearchQuery.trim()) && (
                                         <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50 divide-y divide-slate-100">
                                             {filteredTerceros.length > 0 ? (
                                                 filteredTerceros.map((t) => (

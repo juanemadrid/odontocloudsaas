@@ -121,11 +121,11 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             let pacsList = [];
             let tercsList = [];
 
-            // A. Pacientes de la clínica
+            // A. Pacientes de la clínica (usando select("*") para compatibilidad total)
             try {
                 const { data: pacData } = await supabase
                     .from("pacientes")
-                    .select("id,nombres,apellidos,documento,nroDocumento,tipo_documento,telefono")
+                    .select("*")
                     .eq("tenant_id", inquilino);
                 if (pacData && pacData.length > 0) pacsList = pacData;
             } catch (e) {
@@ -236,7 +236,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
 
      const filteredPatients = useMemo(() => {
          const q = (patientSearch || "").toLowerCase().trim();
-         if (!q) return pacientes.slice(0, 15);
+         if (!q) return [];
          return pacientes.filter(p => 
              (p.nombre || "").toLowerCase().includes(q) ||
              (p.cedula || "").toLowerCase().includes(q)
@@ -557,13 +557,16 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                             placeholder={paciente ? `${paciente.nombre} (CC: ${paciente.cedula})` : "Seleccione o escribe para buscar..."}
                                             value={patientSearch}
                                             onChange={e => {
-                                                setPatientSearch(e.target.value);
-                                                setShowPatientDrop(true);
+                                                const v = e.target.value;
+                                                setPatientSearch(v);
+                                                setShowPatientDrop(Boolean(v.trim()));
                                             }}
-                                            onFocus={() => setShowPatientDrop(true)}
+                                            onFocus={() => {
+                                                if (patientSearch.trim()) setShowPatientDrop(true);
+                                            }}
                                             className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
                                         />
-                                        {showPatientDrop && (
+                                        {showPatientDrop && Boolean(patientSearch.trim()) && (
                                             <div className="absolute left-0 right-0 top-10 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-52 overflow-y-auto">
                                                 {filteredPatients.length > 0 ? (
                                                     filteredPatients.map(p => (
