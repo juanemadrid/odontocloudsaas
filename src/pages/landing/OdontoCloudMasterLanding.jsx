@@ -35,7 +35,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
           ───────────────────────────────────────────────────────────── */}
       <section 
         id="inicio" 
-        className="relative w-full min-h-[calc(100vh-5rem)] lg:min-h-screen flex items-center pt-20 pb-12 sm:pt-24 sm:pb-14 lg:py-6 overflow-hidden bg-gradient-to-b from-[#E6F0FD] via-[#EEF5FE] to-[#F5F8FE]"
+        className="relative w-full min-h-[calc(100vh-5rem)] lg:min-h-screen flex items-center pt-28 sm:pt-32 lg:pt-24 xl:pt-28 pb-10 sm:pb-14 overflow-hidden bg-gradient-to-b from-[#E6F0FD] via-[#EEF5FE] to-[#F5F8FE]"
       >
         {/* Fondo fotográfico y resplandores azulados médicos */}
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
@@ -50,19 +50,19 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
           <div className="absolute inset-0 bg-gradient-to-r from-[#E6F0FD]/95 via-[#EEF5FE]/80 to-transparent" />
         </div>
 
-        <div className="w-full max-w-[1680px] 2xl:max-w-[2100px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 relative z-10 py-4 lg:py-6 2xl:py-10">
+        <div className="w-full max-w-[1680px] 2xl:max-w-[2100px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 relative z-10 py-3 lg:py-6 2xl:py-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 xl:gap-12 2xl:gap-16 items-center">
             
             {/* COLUMNA IZQUIERDA: Titular, Beneficios y CTAs */}
-            <div className="lg:col-span-5 text-left space-y-3.5 lg:space-y-4 xl:space-y-5 2xl:space-y-7">
+            <div className="lg:col-span-5 text-left space-y-3 lg:space-y-4 xl:space-y-5 2xl:space-y-6">
               
-              {/* Badge Azul Superior */}
+              {/* Badge Azul Superior (Con espacio garantizado debajo del header) */}
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-600/10 border border-blue-600/25 text-[#2563EB] text-xs 2xl:text-sm font-black tracking-wide shadow-xs">
                 <span className="w-2 h-2 rounded-full bg-[#2563EB] animate-pulse" />
                 <span>Software Odontológico en la Nube</span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[34px] xl:text-[44px] 2xl:text-[60px] font-sans font-black text-slate-900 tracking-tight leading-[1.14]">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-[34px] xl:text-[44px] 2xl:text-[58px] font-sans font-black text-slate-900 tracking-tight leading-[1.14]">
                 Gestiona tu clínica dental de forma{" "}
                 <span className="text-[#2563EB] drop-shadow-xs">simple y profesional</span>
               </h1>
@@ -75,7 +75,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               <div className="flex flex-wrap items-center gap-3 sm:gap-4 pt-1">
                 <button
                   onClick={handleDemo}
-                  className="px-6 sm:px-7 2xl:px-9 py-3 sm:py-3.5 2xl:py-4.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-lg shadow-blue-600/30 transition-all duration-200 transform hover:-translate-y-0.5 flex items-center gap-2 group cursor-pointer border-0"
+                  className="px-6 sm:px-7 2xl:px-9 py-3 sm:py-3.5 2xl:py-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-lg shadow-blue-600/30 transition-all duration-200 transform hover:-translate-y-0.5 flex items-center gap-2 group cursor-pointer border-0"
                 >
                   <span>Solicitar demostración gratuita</span>
                   <FiArrowRight size={17} className="transition-transform group-hover:translate-x-1" />
@@ -83,7 +83,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
 
                 <button
                   onClick={() => setShowDocModal(true)}
-                  className="px-5 sm:px-6 2xl:px-8 py-3 sm:py-3.5 2xl:py-4.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 cursor-pointer"
+                  className="px-5 sm:px-6 2xl:px-8 py-3 sm:py-3.5 2xl:py-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 cursor-pointer"
                 >
                   <FiPlay size={13} className="text-[#2563EB] fill-[#2563EB]" />
                   <span>Ver video (2 min)</span>
@@ -91,7 +91,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               </div>
 
               {/* 3 Insignias de Confianza */}
-              <div className="pt-2 flex flex-wrap items-center gap-4 sm:gap-6 text-slate-700 text-xs sm:text-sm 2xl:text-base font-bold">
+              <div className="pt-1.5 flex flex-wrap items-center gap-4 sm:gap-6 text-slate-700 text-xs sm:text-sm 2xl:text-base font-bold">
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
                     ✓
@@ -114,8 +114,8 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
             </div>
 
             {/* COLUMNA DERECHA:
-                - En Desktop: Monitor Laptop amplio + Celular estilizado a un lado (sin tapar el sistema)
-                - En Móvil / Tablet: Celular centrado y proporcional
+                - En Desktop: Monitor Laptop Panorámico 16:10 (aprovecha el ancho sin estirarse a lo alto)
+                - Celular estilizado a un lado sin tapar datos
             */}
             <div className="lg:col-span-7 relative w-full flex justify-center items-center py-2">
               
@@ -123,18 +123,17 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
               <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/25 via-sky-400/20 to-blue-600/15 rounded-full blur-[110px] pointer-events-none scale-105" />
 
               {/* ══════════════════════════════════════════════════════════════
-                  A) VISTA ESCRITORIO (>= lg): LAPTOP MACBOOK PRO COMPLETO
-                     + SMARTPHONE A LA IZQUIERDA (SIN BLOQUEAR EL SISTEMA)
+                  A) VISTA ESCRITORIO (>= lg): LAPTOP MACBOOK PRO PANORÁMICO
                   ══════════════════════════════════════════════════════════════ */}
-              <div className="hidden lg:block relative w-full max-w-[580px] lg:max-w-[650px] xl:max-w-[800px] 2xl:max-w-[1080px]">
+              <div className="hidden lg:block relative w-full max-w-[640px] lg:max-w-[720px] xl:max-w-[880px] 2xl:max-w-[1140px]">
                 
                 {/* CONTENEDOR LAPTOP MACBOOK PRO */}
-                <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[24px] xl:rounded-[28px] p-2.5 xl:p-3.5 shadow-[0_30px_70px_-20px_rgba(15,23,42,0.4)] border border-slate-300">
+                <div className="relative w-full bg-gradient-to-b from-[#E2E8F0] via-[#CBD5E1] to-[#94A3B8] rounded-[22px] xl:rounded-[26px] p-2.5 xl:p-3 shadow-[0_25px_60px_-15px_rgba(15,23,42,0.4)] border border-slate-300">
                   
                   {/* Marco de Pantalla Negro Vidriado */}
-                  <div className="bg-slate-950 rounded-[18px] xl:rounded-[22px] p-2 xl:p-2.5 pt-2 shadow-2xl">
+                  <div className="bg-slate-950 rounded-[16px] xl:rounded-[20px] p-2 xl:p-2.5 pt-1.5 shadow-2xl">
                     {/* Cámara Web HD y sensor */}
-                    <div className="flex items-center justify-center gap-1.5 mb-1.5">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
                       <div className="w-2 h-2 rounded-full bg-slate-800 border border-slate-700/60" />
                       <div className="w-1 h-1 rounded-full bg-emerald-500/80 animate-pulse" />
                     </div>
@@ -143,9 +142,9 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                     <div className="w-full bg-[#F8FAFC] rounded-lg xl:rounded-xl overflow-hidden text-left text-slate-800 select-none border border-slate-200">
                       
                       {/* Barra Superior del Sistema */}
-                      <div className="h-10 xl:h-11 bg-white border-b border-slate-150 px-3.5 xl:px-4 flex items-center justify-between">
+                      <div className="h-9 xl:h-10 bg-white border-b border-slate-150 px-3.5 xl:px-4 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <img src={logoUrl} alt="OdontoCloud" className="h-5 xl:h-6 w-auto object-contain" />
+                          <img src={logoUrl} alt="OdontoCloud" className="h-4.5 xl:h-5.5 w-auto object-contain" />
                           <span className="font-black text-xs xl:text-sm tracking-tight text-slate-900 flex items-center">
                             <span>Odonto</span>
                             <span className="text-[#2563EB]">Cloud</span>
@@ -153,41 +152,41 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                         </div>
 
                         <div className="flex items-center gap-2.5">
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100">
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[9.5px] font-bold border border-emerald-100">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             <span>En línea</span>
                           </div>
                           <div className="relative text-slate-400">
-                            <FiBell size={13} />
+                            <FiBell size={12} />
                             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
                           </div>
                           <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
-                            <div className="w-5 h-5 xl:w-6 xl:h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                            <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-[9.5px] font-bold shadow-xs">
                               JM
                             </div>
-                            <div className="text-[10px] leading-tight">
+                            <div className="text-[9.5px] leading-tight">
                               <span className="font-bold text-slate-800 block">Juan Madrid</span>
-                              <span className="text-[8px] text-slate-400">Administrador</span>
+                              <span className="text-[7.5px] text-slate-400">Administrador</span>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Cuerpo: Menú Lateral + Tablero */}
-                      <div className="flex min-h-[310px] xl:min-h-[380px] 2xl:min-h-[420px]">
+                      {/* Cuerpo: Menú Lateral + Tablero Panorámico */}
+                      <div className="flex min-h-[260px] lg:min-h-[275px] xl:min-h-[310px] 2xl:min-h-[360px]">
                         
                         {/* Menú Lateral */}
-                        <div className="w-30 xl:w-38 bg-white border-r border-slate-150 p-2 space-y-1 shrink-0">
-                          <div className="px-2 py-1 mb-1.5 bg-slate-50 rounded-lg border border-slate-150 flex items-center gap-1.5 text-[9px] text-slate-400">
-                            <FiSearch size={10} />
+                        <div className="w-28 xl:w-34 2xl:w-38 bg-white border-r border-slate-150 p-2 space-y-0.5 shrink-0">
+                          <div className="px-2 py-0.5 mb-1 bg-slate-50 rounded-lg border border-slate-150 flex items-center gap-1.5 text-[8.5px] text-slate-400">
+                            <FiSearch size={9} />
                             <span>Buscar...</span>
                           </div>
 
-                          <div className="text-[7.5px] font-bold uppercase text-slate-400 px-2 py-0.5 tracking-wider">
+                          <div className="text-[7px] font-bold uppercase text-slate-400 px-2 py-0.5 tracking-wider">
                             MENÚ PRINCIPAL
                           </div>
 
-                          <div className="px-2 py-1.5 rounded-lg bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] text-white font-bold text-[10px] xl:text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/30">
+                          <div className="px-2 py-1 rounded-lg bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] text-white font-bold text-[9.5px] xl:text-[11px] flex items-center gap-1.5 shadow-sm shadow-blue-500/30">
                             <span>●</span>
                             <span>INICIO</span>
                           </div>
@@ -199,65 +198,65 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                             { name: "ADMINISTRACIÓN", icon: <FiSettings size={11} /> },
                             { name: "REPORTES", icon: <FiBarChart2 size={11} /> }
                           ].map((item, idx) => (
-                            <div key={idx} className="px-2 py-1 text-[10px] xl:text-[11px] font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg flex items-center gap-1.5 transition-colors">
+                            <div key={idx} className="px-2 py-0.5 text-[9px] xl:text-[10.5px] font-semibold text-slate-600 hover:text-blue-600 cursor-default rounded-lg flex items-center gap-1.5 transition-colors">
                               <span>{item.icon}</span>
                               <span>{item.name}</span>
                             </div>
                           ))}
                         </div>
 
-                        {/* Área de Trabajo Principal */}
-                        <div className="flex-1 p-2.5 xl:p-4 space-y-2.5 xl:space-y-3.5 bg-[#F8FAFC]">
+                        {/* Área de Trabajo Principal Panorámica */}
+                        <div className="flex-1 p-2 xl:p-3 2xl:p-4 space-y-2 xl:space-y-2.5 bg-[#F8FAFC]">
                           
-                          {/* Banner de Bienvenida Azul Clínico Real */}
-                          <div className="rounded-xl bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#0284C7] p-2.5 xl:p-3.5 text-white shadow-md shadow-blue-500/25 flex items-center justify-between">
+                          {/* Banner de Bienvenida Azul Clínico Compacto */}
+                          <div className="rounded-xl bg-gradient-to-r from-[#1D4ED8] via-[#2563EB] to-[#0284C7] px-3 py-2 xl:py-2.5 text-white shadow-md shadow-blue-500/20 flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <div className="flex items-center gap-1.5 text-[8.5px] font-bold uppercase tracking-wider text-blue-100">
-                                <span className="bg-white/20 px-1.5 py-0.5 rounded">ADMINISTRADOR</span>
+                              <div className="flex items-center gap-1.5 text-[8px] xl:text-[9px] font-bold uppercase tracking-wider text-blue-100">
+                                <span className="bg-white/20 px-1.5 py-0.2 rounded">ADMINISTRADOR</span>
                                 <span>•</span>
                                 <span>Clínica Central</span>
                               </div>
-                              <h4 className="text-xs xl:text-sm 2xl:text-base font-black text-white">¡Buenas tardes, Juan! 👋</h4>
-                              <p className="text-[9px] xl:text-[11px] text-blue-100 font-normal">
-                                Bienvenido a tu panel de gestión clínica OdontoCloud.
-                              </p>
+                              <h4 className="text-xs xl:text-sm font-black text-white">¡Buenas tardes, Juan! 👋</h4>
                             </div>
+                            <span className="text-[8.5px] xl:text-[9.5px] text-blue-100 bg-white/10 px-2 py-0.5 rounded-full font-medium hidden sm:inline-block">
+                              Panel OdontoCloud
+                            </span>
                           </div>
 
-                          {/* 3 Tarjetas de Métricas con Azul Clínico Predominante */}
-                          <div className="grid grid-cols-3 gap-2 xl:gap-2.5">
-                            <div className="bg-white p-2 xl:p-2.5 rounded-xl border border-blue-100 shadow-2xs">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-xs">
-                                  <FiCalendar size={11} />
+                          {/* 3 Tarjetas de Métricas con Azul Clínico */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-blue-100 shadow-2xs">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-4.5 h-4.5 rounded bg-blue-50 text-blue-600 flex items-center justify-center text-[10px]">
+                                  <FiCalendar />
                                 </div>
                                 <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">12</span>
                               </div>
-                              <span className="text-[8.5px] xl:text-[9.5px] text-slate-500 block">Citas hoy</span>
+                              <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Citas hoy</span>
                             </div>
 
-                            <div className="bg-white p-2 xl:p-2.5 rounded-xl border border-sky-100 shadow-2xs">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded bg-sky-50 text-sky-600 flex items-center justify-center text-xs">
-                                  <FiUsers size={11} />
+                            <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-sky-100 shadow-2xs">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-4.5 h-4.5 rounded bg-sky-50 text-sky-600 flex items-center justify-center text-[10px]">
+                                  <FiUsers />
                                 </div>
                                 <span className="text-xs xl:text-sm 2xl:text-base font-black text-slate-900">28</span>
                               </div>
-                              <span className="text-[8.5px] xl:text-[9.5px] text-slate-500 block">Pacientes activos</span>
+                              <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Pacientes activos</span>
                             </div>
 
-                            <div className="bg-white p-2 xl:p-2.5 rounded-xl border border-emerald-100 shadow-2xs">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <div className="w-5 h-5 xl:w-5.5 xl:h-5.5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">
+                            <div className="bg-white p-1.5 xl:p-2 rounded-xl border border-emerald-100 shadow-2xs">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-4.5 h-4.5 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center text-[10px] font-black">
                                   $
                                 </div>
                                 <span className="text-xs xl:text-sm 2xl:text-base font-black text-emerald-600">$1.450.000</span>
                               </div>
-                              <span className="text-[8.5px] xl:text-[9.5px] text-slate-500 block">Ingresos mes</span>
+                              <span className="text-[8px] xl:text-[9px] text-slate-500 block pt-0.5">Ingresos mes</span>
                             </div>
                           </div>
 
-                          {/* Agenda + Gráficas Clínicas */}
+                          {/* Agenda + Gráficas Clínicas (Alineación Horizontal) */}
                           <div className="grid grid-cols-12 gap-2 xl:gap-2.5">
                             
                             {/* Agenda del día */}
