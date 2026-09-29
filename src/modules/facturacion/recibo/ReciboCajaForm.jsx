@@ -48,7 +48,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
     const navigate = useNavigate();
     const { id } = useParams();
     const { userProfile } = useAuth();
-    const inquilino = userProfile?.inquilino || "";
+    const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id || "";
 
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -117,38 +117,78 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 console.warn("getDoctorsList notice in ReciboCajaForm:", e);
             }
 
-            // 2. Patients / Terceros
+            // 2. Patients & Terceros unificados (Administración -> Terceros + Pacientes)
             let pacsList = [];
+            let tercsList = [];
+
+            // A. Pacientes de la clínica
             try {
                 const { data: pacData } = await supabase
                     .from("pacientes")
-                    .select("id,nombres,apellidos,documento,tipo_documento,telefono")
+                    .select("id,nombres,apellidos,documento,nroDocumento,tipo_documento,telefono")
                     .eq("tenant_id", inquilino);
                 if (pacData && pacData.length > 0) pacsList = pacData;
-            } catch (e) {}
+            } catch (e) {
+                console.warn("Error cargando pacientes en ReciboCajaForm:", e);
+            }
 
-            if (pacsList.length === 0) {
+            // B. Terceros creados desde Administración -> Terceros
+            try {
+                const { data: tercData } = await supabase
+                    .from("terceros")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (tercData && tercData.length > 0) tercsList = tercData;
+            } catch (e) {
+                console.warn("Error cargando terceros en ReciboCajaForm:", e);
+            }
+
+            // Fallback a website_config si alguno está vacío
+            if (tercsList.length === 0) {
                 try {
-                    const { data: tercData } = await supabase
-                        .from("terceros")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    if (tercData && tercData.length > 0) pacsList = tercData;
+                    const cfgTerceros = await getConfigSection(inquilino, "terceros", []);
+                    if (Array.isArray(cfgTerceros) && cfgTerceros.length > 0) tercsList = cfgTerceros;
                 } catch (e) {}
             }
 
             if (pacsList.length === 0) {
-                const configPatients = await getConfigSection(inquilino, "pacientes", []);
-                pacsList = Array.isArray(configPatients) && configPatients.length > 0
-                    ? configPatients
-                    : await getConfigSection(inquilino, "terceros", []);
+                try {
+                    const cfgPatients = await getConfigSection(inquilino, "pacientes", []);
+                    if (Array.isArray(cfgPatients) && cfgPatients.length > 0) pacsList = cfgPatients;
+                } catch (e) {}
             }
 
-            setPacientes(pacsList.map(d => ({ 
-                id: d.id, 
-                nombre: d.nombreCompleto || d.full_name || d.nombre || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim(),
-                cedula: d.nroDocumento || d.cedula || d.documento || ""
-            })));
+            const mappedPacientes = pacsList.map(d => ({
+                id: d.id,
+                nombre: d.nombreCompleto || d.full_name || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim() || d.razonSocial || d.nombre || "Paciente",
+                cedula: d.nroDocumento || d.cedula || d.documento || "",
+                tipo: "Paciente"
+            }));
+
+            const mappedTerceros = tercsList.map(t => {
+                const fullName = [t.nombre, t.apellidos].filter(Boolean).join(" ").trim();
+                const displayName = t.razonSocial || t.razon_social || fullName || t.nombreCompleto || t.nombre_completo || t.nombre || "Tercero";
+                const doc = t.nroDocumento || t.documento || t.numero_documento || t.nit || t.identificacion || "";
+                return {
+                    id: t.id,
+                    nombre: displayName,
+                    cedula: doc,
+                    tipo: "Tercero"
+                };
+            });
+
+            // Combinar Terceros y Pacientes unificados sin duplicados
+            const seen = new Set();
+            const unified = [];
+            [...mappedTerceros, ...mappedPacientes].forEach(item => {
+                const key = item.id || `${item.cedula}_${item.nombre}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    unified.push(item);
+                }
+            });
+
+            setPacientes(unified);
 
             // 3. Active Caja
             const uId = userProfile?.uid || userProfile?.id || "";
@@ -195,12 +235,12 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
      }, []);
 
      const filteredPatients = useMemo(() => {
-         const q = patientSearch.toLowerCase().trim();
-         if (!q) return [];
+         const q = (patientSearch || "").toLowerCase().trim();
+         if (!q) return pacientes.slice(0, 15);
          return pacientes.filter(p => 
-             p.nombre.toLowerCase().includes(q) ||
-             p.cedula.toLowerCase().includes(q)
-         ).slice(0, 8);
+             (p.nombre || "").toLowerCase().includes(q) ||
+             (p.cedula || "").toLowerCase().includes(q)
+         ).slice(0, 20);
      }, [patientSearch, pacientes]);
 
      const formatNumberWithDots = (val) => {
@@ -295,10 +335,34 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             const selectedPatientObj = {
                 id: createdPatient.id,
                 nombre: name,
-                cedula: newTercero.nroDocumento.trim()
+                cedula: newTercero.nroDocumento.trim(),
+                tipo: "Tercero"
             };
 
-            // Select newly created patient
+            // Guardar también en tabla terceros para que aparezca en Administración -> Terceros
+            try {
+                const nuevoTerceroObj = {
+                    id: `tercero_${Date.now()}`,
+                    tenant_id: inquilino,
+                    nombre: newTercero.nombre.trim(),
+                    apellidos: newTercero.apellidos.trim(),
+                    razonSocial: newTercero.razonSocial.trim(),
+                    nroDocumento: newTercero.nroDocumento.trim(),
+                    tipoDocumento: newTercero.tipoDocumento || "CC",
+                    telefono: newTercero.telefono.trim(),
+                    direccion: newTercero.direccion.trim(),
+                    pais: newTercero.pais || "Colombia",
+                    ciudad: newTercero.ciudad.trim(),
+                    email: newTercero.email.trim(),
+                    activo: true,
+                    created_at: new Date().toISOString()
+                };
+                await supabase.from("terceros").insert([nuevoTerceroObj]);
+            } catch (e) {
+                console.warn("Aviso guardando en tabla terceros:", e);
+            }
+
+            // Select newly created patient / tercero
             setPaciente(selectedPatientObj);
 
             // Reset modal form
@@ -499,21 +563,37 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                             onFocus={() => setShowPatientDrop(true)}
                                             className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all"
                                         />
-                                        {showPatientDrop && filteredPatients.length > 0 && (
+                                        {showPatientDrop && (
                                             <div className="absolute left-0 right-0 top-10 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-52 overflow-y-auto">
-                                                {filteredPatients.map(p => (
-                                                    <div
-                                                        key={p.id}
-                                                        onClick={() => {
-                                                            setPaciente(p);
-                                                            setPatientSearch("");
-                                                            setShowPatientDrop(false);
-                                                        }}
-                                                        className="px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer border-b border-slate-50 last:border-0"
-                                                    >
-                                                        {p.nombre} <span className="text-[10px] text-slate-400 font-medium font-mono">(CC: {p.cedula})</span>
+                                                {filteredPatients.length > 0 ? (
+                                                    filteredPatients.map(p => (
+                                                        <div
+                                                            key={p.id + (p.tipo || "")}
+                                                            onClick={() => {
+                                                                setPaciente(p);
+                                                                setPatientSearch("");
+                                                                setShowPatientDrop(false);
+                                                            }}
+                                                            className="px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600 transition-colors cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between"
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <span>{p.nombre}</span>
+                                                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                                                                    p.tipo === 'Tercero' 
+                                                                        ? 'bg-amber-100 text-amber-700' 
+                                                                        : 'bg-purple-100 text-purple-700'
+                                                                }`}>
+                                                                    {p.tipo || 'Tercero'}
+                                                                </span>
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 font-medium font-mono">(Doc: {p.cedula || 'Sin doc'})</span>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <div className="p-3 text-center text-xs text-slate-400">
+                                                        No se encontraron terceros ni pacientes con "<strong>{patientSearch}</strong>"
                                                     </div>
-                                                ))}
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -530,7 +610,14 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                     <div className="mt-2 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
                                         <FiUser size={11} className="text-emerald-600" />
                                         <span className="text-xs font-bold text-emerald-700">{paciente.nombre}</span>
-                                        <span className="text-[10px] text-emerald-500 font-mono ml-auto">CC: {paciente.cedula}</span>
+                                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                                            paciente.tipo === 'Tercero' 
+                                                ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                                : 'bg-purple-100 text-purple-800 border border-purple-200'
+                                        }`}>
+                                            {paciente.tipo || 'Tercero'}
+                                        </span>
+                                        <span className="text-[10px] text-emerald-600 font-mono ml-auto">DOC: {paciente.cedula || 'N/A'}</span>
                                     </div>
                                 )}
                             </div>

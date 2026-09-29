@@ -20,7 +20,7 @@ const fmt = (n) =>
 
 export default function PagosForm({ onCancel, onSuccess }) {
     const { user, userProfile } = useAuth();
-    const inquilino = userProfile?.inquilino || "";
+    const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id || "";
 
     const [saving, setSaving] = useState(false);
     const [showInsuficienteModal, setShowInsuficienteModal] = useState(false);
@@ -146,40 +146,53 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 // 2. Cargar Terceros y Pacientes unificados
                 let tercerosList = [];
                 try {
-                    const { data: tDb } = await supabase
+                    const { data: tDb, error: tErr } = await supabase
                         .from("terceros")
                         .select("*")
-                        .or(`tenant_id.eq.${inquilino},tenant_id.eq.${userProfile?.tenant_id || ''}`);
-                    if (tDb && tDb.length > 0) {
-                        tercerosList = tDb.map(t => ({
-                            id: t.id,
-                            nombre: t.nombre || t.razon_social || t.nombre_completo || "Tercero",
-                            documento: t.numero_documento || t.documento || t.nit || t.nroDocumento || "",
-                            tipoDocumento: t.tipo_documento || t.tipoDocumento || "NIT",
-                            telefono: t.telefono || "",
-                            tipo: "tercero"
-                        }));
-                    }
-                } catch (e) {}
+                        .eq("tenant_id", inquilino);
+                    
+                    let rawTerceros = (tDb && tDb.length > 0) ? tDb : [];
 
-                if (tercerosList.length === 0) {
-                    const rawT = cfg.terceros || cfg.proveedores || [];
-                    tercerosList = rawT.map(t => ({
-                        id: t.id || t.documento || t.nombre,
-                        nombre: t.nombre || t.razonSocial || "Tercero",
-                        documento: t.documento || t.nit || t.nroDocumento || "",
-                        tipoDocumento: t.tipoDocumento || "NIT",
-                        telefono: t.telefono || "",
-                        tipo: "tercero"
-                    }));
+                    // Fallback a website_config si la tabla está vacía
+                    if (rawTerceros.length === 0) {
+                        try {
+                            const { data: cfgRow } = await supabase
+                                .from("website_config")
+                                .select("config")
+                                .eq("tenant_id", inquilino)
+                                .maybeSingle();
+                            rawTerceros = cfgRow?.config?.terceros || cfg.terceros || cfg.proveedores || [];
+                        } catch (cfgErr) {}
+                    }
+
+                    if (rawTerceros.length > 0) {
+                        tercerosList = rawTerceros.map(t => {
+                            const fullName = [t.nombre, t.apellidos].filter(Boolean).join(" ").trim();
+                            const displayName = t.razonSocial || t.razon_social || fullName || t.nombreCompleto || t.nombre_completo || t.nombre || "Tercero";
+                            const doc = t.nroDocumento || t.documento || t.numero_documento || t.nit || t.identificacion || "";
+                            return {
+                                ...t,
+                                id: t.id || doc || displayName,
+                                nombre: displayName,
+                                razonSocial: t.razonSocial || t.razon_social || "",
+                                documento: doc,
+                                nroDocumento: doc,
+                                tipoDocumento: t.tipoDocumento || t.tipo_documento || "NIT",
+                                telefono: t.telefono || t.celular || "",
+                                tipo: "tercero"
+                            };
+                        });
+                    }
+                } catch (e) {
+                    console.warn("Error cargando terceros en PagosForm:", e);
                 }
 
-                // Cargar Pacientes de la clínica (con select("*") para asegurar lectura de nombres y documentos)
+                // Cargar Pacientes de la clínica
                 let pacientesList = [];
                 try {
                     const { data: pDb } = await supabase
                         .from("pacientes")
-                        .select("id,tenant_id,tipo_documento,documento,nombres,apellidos,telefono")
+                        .select("id,tenant_id,tipo_documento,tipoDocumento,documento,nroDocumento,nombres,apellidos,nombre,apellido,nombreCompleto,telefono,celular")
                         .eq("tenant_id", inquilino);
                     
                     const tenantMatches = (pDb || []).filter(p => 
@@ -196,6 +209,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                             id: p.id,
                             nombre: full,
                             documento: p.documento || p.nroDocumento || p.identificacion || "",
+                            nroDocumento: p.documento || p.nroDocumento || p.identificacion || "",
                             tipoDocumento: p.tipoDocumento || p.tipo_documento || "CC",
                             telefono: p.telefono || p.celular || p.movil || "",
                             tipo: "paciente"
@@ -205,7 +219,16 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     console.warn("Error cargando pacientes en PagosForm:", e);
                 }
 
-                const unifiedTerceros = [...tercerosList, ...pacientesList];
+                // Unificar terceros y pacientes evitando duplicados
+                const seenTerceros = new Set();
+                const unifiedTerceros = [];
+                [...tercerosList, ...pacientesList].forEach(item => {
+                    const key = item.id || `${item.documento}_${item.nombre}`;
+                    if (!seenTerceros.has(key)) {
+                        seenTerceros.add(key);
+                        unifiedTerceros.push(item);
+                    }
+                });
                 setTerceros(unifiedTerceros);
 
                 // 3. Cargar Profesionales / Doctores exclusivamente
@@ -432,7 +455,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
             const name = String(t.nombre || "").toLowerCase();
             const doc = String(t.documento || t.nroDocumento || "").toLowerCase();
             const tel = String(t.telefono || "").toLowerCase();
-            return name.includes(q) || doc.includes(q) || tel.includes(q);
+            const rs = String(t.razonSocial || t.razon_social || "").toLowerCase();
+            return name.includes(q) || doc.includes(q) || tel.includes(q) || rs.includes(q);
         }).slice(0, 30);
     }, [terceros, terceroSearchQuery]);
 
