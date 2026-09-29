@@ -747,41 +747,41 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                 <img
                   src={dentistImg}
                   alt="Doctora OdontoCloud"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover object-[18%_center]"
                 />
                 
-                {/* Tarjeta Flotante Historia Clínica con Arcadas Reales */}
-                <div className="absolute top-4 right-4 sm:top-6 sm:right-6 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl border border-blue-100 max-w-[290px] sm:max-w-[360px] xl:max-w-[400px]">
-                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-150">
-                    <div className="flex items-center gap-2">
+                {/* Tarjeta Flotante Historia Clínica con Arcadas Reales (Ubicada a la derecha sin tapar el rostro) */}
+                <div className="absolute top-4 right-3 sm:top-6 sm:right-4 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl p-3 sm:p-4 shadow-2xl border border-blue-100 max-w-[220px] sm:max-w-[250px] xl:max-w-[270px] z-10">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-150">
+                    <div className="flex items-center gap-1.5">
                       <span className="text-blue-600 text-sm">🦷</span>
                       <span className="text-xs sm:text-sm font-bold text-slate-800">Historia Clínica</span>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
+                    <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold">
                       Odontograma HD
                     </span>
                   </div>
 
                   {/* Diagrama de Arcadas de OdontoCloud */}
-                  <div className="p-3 bg-gradient-to-b from-blue-50/50 to-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
-                    <div className="text-[9px] text-blue-600 font-extrabold uppercase tracking-wider text-center">
+                  <div className="p-2 sm:p-2.5 bg-gradient-to-b from-blue-50/50 to-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
+                    <div className="text-[8.5px] text-blue-600 font-extrabold uppercase tracking-wider text-center">
                       Arcada Superior
                     </div>
                     <img
                       src={teethSuperior}
                       alt="Arcada Superior Odontograma"
-                      className="w-full h-auto object-contain max-h-12 mx-auto drop-shadow-2xs"
+                      className="w-full h-auto object-contain max-h-9 mx-auto drop-shadow-2xs"
                     />
 
-                    <div className="w-full h-[1px] bg-blue-200/60 my-1" />
+                    <div className="w-full h-[1px] bg-blue-200/60 my-0.5" />
 
-                    <div className="text-[9px] text-blue-600 font-extrabold uppercase tracking-wider text-center">
+                    <div className="text-[8.5px] text-blue-600 font-extrabold uppercase tracking-wider text-center">
                       Arcada Inferior
                     </div>
                     <img
                       src={teethInferior}
                       alt="Arcada Inferior Odontograma"
-                      className="w-full h-auto object-contain max-h-12 mx-auto drop-shadow-2xs"
+                      className="w-full h-auto object-contain max-h-9 mx-auto drop-shadow-2xs"
                     />
                   </div>
                 </div>

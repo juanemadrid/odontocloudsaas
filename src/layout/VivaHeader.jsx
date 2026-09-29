@@ -96,7 +96,7 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
     const menuItems = isMaster
         ? [
             { name: 'Inicio', path: '/' },
-            { name: 'Funciones', path: '/#funciones' },
+            { name: 'Funciones', path: '/funcionalidades' },
             { name: 'Precios', path: '/planes' },
             { name: 'Recursos', path: '/faq', hasDropdown: true },
             { name: 'Contacto', path: '/#contacto' }

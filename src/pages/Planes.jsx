@@ -59,7 +59,7 @@ export default function Planes() {
 
     const COMPARATIVA_DATA = [
         { label: 'Precio anual (5 dentistas)', otrosSoftwares: '$2.205.000', odontoCloud: '$1.100.000', highlight: true },
-        { label: 'Cobro por usuario adicional', otrosSoftwares: '+$120.150 / usuario', odontoCloud: '$0 (Tarifa Fija)', highlight: true },
+        { label: 'Usuarios y profesionales incluidos', otrosSoftwares: 'Cobro por cada profesional', odontoCloud: 'Hasta 3, 5 y 11 profesionales según plan', highlight: true },
         { label: 'Mínimo de usuarios obligatorio', otrosSoftwares: '3 usuarios mínimo', odontoCloud: 'Sin mínimo obligatorio' },
         { label: 'Evolución clínica por Voz con IA', otrosSoftwares: 'Dictado básico', odontoCloud: 'IA Asistente Clínica' },
         { label: 'Sitio Web Corporativo (CMS)', otrosSoftwares: 'No disponible', odontoCloud: 'Incluido gratis en Clínica' },
@@ -294,7 +294,7 @@ export default function Planes() {
                 </h2>
                 <div className="space-y-3">
                     {[
-                        { q: "¿Puedo agregar usuarios sin costo adicional?", a: "¡Sí! Con la tarifa fija de OdontoCloud puedes crear los usuarios que tu clínica requiera sin cobros por persona." },
+                        { q: "¿Cuántos usuarios u odontólogos incluye cada plan y qué pasa si necesito más?", a: "Cada plan incluye un cupo de profesionales y odontólogos adaptado a tu clínica (por ejemplo, hasta 3, 5 u 11 usuarios según el plan). Si tu clínica crece y requieres odontólogos adicionales, puedes añadirlos fácilmente con tarifa preferencial o escalar al siguiente plan." },
                         { q: "¿Los cambios que realiza el SuperAdmin se aplican en tiempo real?", a: "Totalmente. Cualquier actualización de precios, nombres o características en el panel del SuperAdmin se refleja de inmediato en esta vista." },
                         { q: "¿Cómo funcionan los 30 días gratis?", a: "No requieres ingresar tarjeta de crédito. Simplemente registras tu consultorio y tienes acceso total a todas las herramientas durante un mes completo." },
                         { q: "¿Incluye facturación electrónica DIAN y RIPS?", a: "Sí, el plan Clínica e IPS Enterprise incluyen el módulo de facturación electrónica integrado y generación de RIPS según la normativa vigente en Colombia." }
