@@ -46,8 +46,25 @@ const TIPOS_PERSONA = [
 ];
 
 const MODALIDADES_PAGO = [
-  "Contado", "Crédito 30 días", "Crédito 60 días", "Crédito 90 días", 
-  "Débito automático", "Otro"
+  "Paquete / Canasta / Conjunto Integral en Salud",
+  "Grupos Relacionados por Diagnóstico",
+  "Integral por grupo de riesgo",
+  "Pago por contacto por especialidad",
+  "Pago por escenario de atención",
+  "Pago por tipo de servicio",
+  "Pago global prospectivo por episodio",
+  "Pago global prospectivo por grupo de riesgo",
+  "Pago global prospectivo por especialidad",
+  "Pago global prospectivo por nivel de complejidad",
+  "Capitación",
+  "Por servicio",
+  "Por evento",
+  "Contado",
+  "Crédito 30 días",
+  "Crédito 60 días",
+  "Crédito 90 días",
+  "Débito automático",
+  "Otro"
 ];
 
 const CUENTAS_CONTABLES = [
@@ -92,7 +109,7 @@ export default function Terceros() {
     identificadorProcedencia: "Nacional",
     responsabilidadTributaria: "No responsable de IVA",
     tipoPersona: "Natural",
-    modalidadPago: "Contado",
+    modalidadPago: "",
     contrato: "",
     isEps: false,
     isIps: false,
@@ -152,7 +169,7 @@ export default function Terceros() {
       identificadorProcedencia: "Nacional",
       responsabilidadTributaria: "No responsable de IVA",
       tipoPersona: "Natural",
-      modalidadPago: "Contado",
+      modalidadPago: "",
       contrato: "",
       isEps: false,
       isIps: false,
@@ -180,7 +197,7 @@ export default function Terceros() {
       identificadorProcedencia: tercero.identificadorProcedencia || "Nacional",
       responsabilidadTributaria: tercero.responsabilidadTributaria || "No responsable de IVA",
       tipoPersona: tercero.tipoPersona || "Natural",
-      modalidadPago: tercero.modalidadPago || "Contado",
+      modalidadPago: tercero.modalidadPago || "",
       contrato: tercero.contrato || "",
       isEps: tercero.isEps || false,
       isIps: Boolean(tercero.isIps || tercero.is_ips || tercero.esIps || tercero.es_ips),
@@ -877,9 +894,13 @@ export default function Terceros() {
                   onChange={(e) => setFormData({ ...formData, modalidadPago: e.target.value })}
                   className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
                 >
+                  <option value="">Seleccione...</option>
                   {MODALIDADES_PAGO.map(mp => (
                     <option key={mp} value={mp}>{mp}</option>
                   ))}
+                  {formData.modalidadPago && !MODALIDADES_PAGO.includes(formData.modalidadPago) && (
+                    <option value={formData.modalidadPago}>{formData.modalidadPago}</option>
+                  )}
                 </select>
               </div>
 
