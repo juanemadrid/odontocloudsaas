@@ -438,11 +438,33 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         setError("");
 
         try {
-            // Leer la configuración activa de consecutivos desde website_config (configPersistenceService)
+            // 1. Leer la configuración activa de consecutivos desde website_config
             const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
             const activeConsDoc = (Array.isArray(consList) && consList.length > 0) ? consList[0] : {};
 
-            const currentCount = parseInt(String(activeConsDoc.contReciboCaja || activeConsDoc.cont_recibo_caja || 1), 10) || 1;
+            let currentCount = parseInt(String(activeConsDoc.contReciboCaja || activeConsDoc.cont_recibo_caja || 0), 10);
+
+            // 2. Si la configuración no tiene o se repitió, obtener el número máximo real ya guardado en la base de datos
+            try {
+                const { data: maxRecibos } = await supabase
+                    .from("recibos_caja")
+                    .select("numero, nroConsecutivo, nro_consecutivo")
+                    .eq("tenant_id", inquilino);
+
+                if (maxRecibos && maxRecibos.length > 0) {
+                    const maxDbNum = maxRecibos.reduce((max, r) => {
+                        const val = parseInt(String(r.numero || r.nroConsecutivo || r.nro_consecutivo || 0), 10);
+                        return (!isNaN(val) && val > max) ? val : max;
+                    }, 0);
+                    if (maxDbNum >= currentCount) {
+                        currentCount = maxDbNum + 1;
+                    }
+                }
+            } catch (dbErr) {
+                console.warn("No se pudo calcular max consecutivo desde DB:", dbErr);
+            }
+
+            if (!currentCount || currentCount < 1) currentCount = 1;
             const nextCount = currentCount + 1;
             const finalConsecutivo = String(currentCount).padStart(4, '0');
 
@@ -472,8 +494,8 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 descuentoTotal: totals.descuento,
                 total: totals.total,
                 observaciones,
-                caja_id: currentActiveCaja ? currentActiveCaja.id : null,
-                cajaId: currentActiveCaja ? currentActiveCaja.id : null,
+                caja_id: currentActiveCaja ? String(currentActiveCaja.id) : null,
+                cajaId: currentActiveCaja ? String(currentActiveCaja.id) : null,
                 creado_por: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
                 creadoPor: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
                 created_at: new Date().toISOString()

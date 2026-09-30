@@ -303,6 +303,7 @@ export default function ReciboCajaList({ onNew }) {
                         referencia: d.referencia || d.comprobante || "",
                         venceEn: 0,
                         isPago: false,
+                        nroConsecutivo: d.nroConsecutivo || d.nro_consecutivo || d.numero || null,
                         fevNumero: invoiceMap[d.id] || d.factura_id || null,
                         rawDate: d.fecha || d.created_at
                     };
