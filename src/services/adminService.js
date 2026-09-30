@@ -315,6 +315,12 @@ export const deleteTenant = async (tenantId) => {
         }
 
         // 2. Respaldo directo en caso de fallo de red en la Edge Function
+        // Obtener los emails de los perfiles antes de eliminarlos para purgar auth.users
+        const { data: clinicProfiles } = await supabase
+            .from("profiles")
+            .select("email")
+            .eq("tenant_id", tenantId);
+
         const { data: existingRow } = await supabase
             .from("website_config")
             .select("config")
@@ -322,6 +328,7 @@ export const deleteTenant = async (tenantId) => {
             .maybeSingle();
 
         const currentTenants = existingRow?.config?.registered_tenants || [];
+        const deletedTenant = currentTenants.find(t => String(t.id) === String(tenantId));
         const updatedTenants = currentTenants.filter(t => String(t.id) !== String(tenantId));
 
         const updatedConfig = {
@@ -337,6 +344,21 @@ export const deleteTenant = async (tenantId) => {
                 config: updatedConfig,
                 updated_at: new Date().toISOString()
             });
+
+        // Intentar purgar los usuarios de auth.users usando el RPC seguro
+        const emailsToPurge = new Set([
+            deletedTenant?.adminEmail,
+            deletedTenant?.contactEmail,
+            ...(clinicProfiles || []).map(p => p.email)
+        ].filter(Boolean));
+
+        for (const email of emailsToPurge) {
+            try {
+                await supabase.rpc("admin_purge_orphan_user", { p_email: email });
+            } catch (pErr) {
+                console.warn("Aviso al purgar usuario huérfano:", email, pErr?.message);
+            }
+        }
 
         // Eliminar perfiles de la clínica
         await supabase
@@ -1076,8 +1098,8 @@ const invokeRegisterClinic = async (action, payload = {}) => {
 
 export const createTenant = async (tenantData) => {
     const clinicName = tenantData.name || tenantData.nombre || "Nueva Clinica";
-    const adminEmail = tenantData.adminEmail || tenantData.contactEmail || "";
-    const response = await invokeRegisterClinic("create_clinic", {
+    const adminEmail = (tenantData.adminEmail || tenantData.contactEmail || "").trim().toLowerCase();
+    const payload = {
         clinicName,
         adminName: tenantData.adminName || `Administrador ${clinicName}`,
         adminEmail,
@@ -1089,7 +1111,30 @@ export const createTenant = async (tenantData) => {
         direccion: tenantData.address || tenantData.direccion || "",
         ciudad: tenantData.ciudad || "",
         contactEmail: tenantData.contactEmail || tenantData.email || adminEmail
-    });
+    };
+
+    let response;
+    try {
+        response = await invokeRegisterClinic("create_clinic", payload);
+    } catch (err) {
+        const errMsg = String(err?.message || "").toLowerCase();
+        // Si el correo ya tiene cuenta, intentar purgar la cuenta huérfana de la clínica eliminada y reintentar
+        if (errMsg.includes("ya tiene una cuenta") || errMsg.includes("ya existe") || errMsg.includes("registrada")) {
+            try {
+                const { data: purgeResult } = await supabase.rpc("admin_purge_orphan_user", { p_email: adminEmail });
+                if (purgeResult?.purged) {
+                    console.info("Cuenta huérfana purgada exitosamente para:", adminEmail, "- Reintentando creación...");
+                    response = await invokeRegisterClinic("create_clinic", payload);
+                } else {
+                    throw err;
+                }
+            } catch (retryErr) {
+                throw err;
+            }
+        } else {
+            throw err;
+        }
+    }
 
     return {
         id: response.tenantId,
