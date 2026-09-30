@@ -165,16 +165,12 @@ export default function ReciboCajaList({ onNew }) {
         setVoiding(true);
         try {
             const recibo = voidModal.recibo;
-            const targetTable = recibo.isPago ? "pagos" : "recibos_caja";
             const nowIso = new Date().toISOString();
             const operator = voidUser.trim() || userProfile?.nombreCompleto || userProfile?.email || "Administración";
-            
-            let updatePayload = {
-                estado: "Anulado"
-            };
+            const reason = voidReason.trim();
 
             if (recibo.isPago) {
-                // En tabla pagos, guardar en notas JSON y en columnas si existen
+                // 1. CASO TABLA PAGOS
                 let prevNotes = {};
                 try {
                     if (typeof recibo._raw?.notas === "string" && recibo._raw.notas.startsWith("{")) {
@@ -188,45 +184,175 @@ export default function ReciboCajaList({ onNew }) {
                     ...prevNotes,
                     anulado: true,
                     estado: "Anulado",
-                    motivoAnulacion: voidReason.trim(),
+                    motivoAnulacion: reason,
                     anuladoPor: operator,
                     fechaAnulacion: nowIso
                 };
 
-                updatePayload = {
-                    notas: JSON.stringify(updatedNotes)
-                };
-            } else {
-                updatePayload = {
+                const voidTextNote = `ANULADO - ${reason} (${operator})`;
+
+                // Intentar actualizar en pagos con estado, referencia y notas
+                const fullPayload = {
                     estado: "Anulado",
-                    motivoAnulacion: voidReason.trim(),
-                    motivo_anulacion: voidReason.trim(),
+                    referencia: "ANULADO",
+                    notas: JSON.stringify(updatedNotes),
+                    motivoAnulacion: reason,
+                    anuladoPor: operator,
+                    fechaAnulacion: nowIso
+                };
+
+                const { error: errPago } = await supabase
+                    .from("pagos")
+                    .update(fullPayload)
+                    .eq("id", recibo.id);
+
+                if (errPago) {
+                    console.warn("Fallo update completo en pagos, intentando fallback seguro:", errPago);
+                    await supabase
+                        .from("pagos")
+                        .update({
+                            referencia: "ANULADO",
+                            notas: JSON.stringify(updatedNotes)
+                        })
+                        .eq("id", recibo.id);
+                }
+
+                // Si fue un saldo a favor en pagos, sincronizar saldo del paciente
+                const pId = recibo.paciente_id || recibo.pacienteId || recibo._raw?.paciente_id || recibo._raw?.pacienteId;
+                if (pId) {
+                    try {
+                        const { data: pac } = await supabase
+                            .from("pacientes")
+                            .select("id, saldo_favor")
+                            .eq("id", pId)
+                            .single();
+                        if (pac) {
+                            const curSaldo = Number(pac.saldo_favor || 0);
+                            const montoRecibo = Number(recibo.total || recibo.monto || 0);
+                            const medioStr = String(recibo.medioPago || "").toLowerCase();
+                            const concStr = String(recibo._raw?.concepto || recibo.concepto || "").toUpperCase();
+
+                            if (concStr.includes("SALDO A FAVOR") || medioStr === "saldo a favor") {
+                                const newSaldo = Math.max(0, curSaldo - montoRecibo);
+                                await supabase.from("pacientes").update({ saldo_favor: newSaldo }).eq("id", pId);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Aviso al sincronizar saldo paciente en anulación:", e);
+                    }
+                }
+
+            } else {
+                // 2. CASO TABLA RECIBOS_CAJA
+                const voidTextObs = `[ANULADO: ${reason} por ${operator}] ${recibo.observaciones || ""}`.trim();
+                const voidTextConc = `[ANULADO] ${recibo.concepto || ""}`.trim();
+
+                const fullReciboPayload = {
+                    estado: "Anulado",
+                    motivoAnulacion: reason,
+                    motivo_anulacion: reason,
                     anuladoPor: operator,
                     anulado_por: operator,
                     fechaAnulacion: nowIso,
-                    fecha_anulacion: nowIso
+                    fecha_anulacion: nowIso,
+                    observaciones: voidTextObs,
+                    concepto: voidTextConc
                 };
-            }
 
-            const { error: updErr } = await supabase
-                .from(targetTable)
-                .update(updatePayload)
-                .eq("id", recibo.id);
+                const { error: errRecibo } = await supabase
+                    .from("recibos_caja")
+                    .update(fullReciboPayload)
+                    .eq("id", recibo.id);
 
-            if (updErr) {
-                console.error("Error from Supabase on void:", updErr);
-                // Si falló por alguna columna que no existe, intentar actualizar solo estado
-                if (!recibo.isPago) {
-                    await supabase
-                        .from(targetTable)
-                        .update({ estado: "Anulado" })
+                if (errRecibo) {
+                    console.warn("Fallo update completo en recibos_caja, aplicando fallback resiliente:", errRecibo);
+                    const { error: errFallback1 } = await supabase
+                        .from("recibos_caja")
+                        .update({
+                            estado: "Anulado",
+                            observaciones: voidTextObs
+                        })
                         .eq("id", recibo.id);
+
+                    if (errFallback1) {
+                        await supabase
+                            .from("recibos_caja")
+                            .update({
+                                observaciones: voidTextObs,
+                                concepto: voidTextConc
+                            })
+                            .eq("id", recibo.id);
+                    }
                 }
             }
 
-            toast && toast.success("Documento anulado correctamente");
-            await loadData();
+            // 3. SINCRONIZACIÓN CON CAJA Y MOVIMIENTOS DE CAJA
+            try {
+                const targetCajaId = recibo.caja_id || recibo.cajaId || recibo._raw?.caja_id || recibo._raw?.cajaId;
+                const pId = recibo.paciente_id || recibo.pacienteId || recibo._raw?.paciente_id;
+                const pNombre = recibo.pacienteNombre || "Paciente";
+                const montoAnulado = Number(recibo.total || recibo.monto || 0);
+
+                if (montoAnulado > 0) {
+                    await supabase
+                        .from("movimientos_caja")
+                        .insert([{
+                            tenant_id: inquilino,
+                            caja_id: targetCajaId || null,
+                            usuario_id: userProfile?.uid || userProfile?.id || null,
+                            tipo: "egreso",
+                            concepto: `[ANULACION RC] ${recibo.consecutivoNumero ? `RC-${String(recibo.consecutivoNumero).padStart(4, "0")}` : "Recibo"}`,
+                            monto: montoAnulado,
+                            metodo_pago: recibo.medioPago || "Efectivo",
+                            descripcion: `Anulación de documento: ${reason} (Operador: ${operator})`,
+                            paciente_id: pId || null,
+                            paciente_nombre: pNombre,
+                            recibo_id: recibo.isPago ? null : recibo.id,
+                            created_at: nowIso
+                        }]);
+
+                    if (targetCajaId) {
+                        const { data: curCaja } = await supabase
+                            .from("cajas")
+                            .select("id, saldo_actual, total_ingresos, total_egresos")
+                            .eq("id", targetCajaId)
+                            .single();
+
+                        if (curCaja) {
+                            const curSaldo = Number(curCaja.saldo_actual || 0);
+                            const curEgresos = Number(curCaja.total_egresos || 0);
+                            await supabase
+                                .from("cajas")
+                                .update({
+                                    saldo_actual: Math.max(0, curSaldo - montoAnulado),
+                                    total_egresos: curEgresos + montoAnulado
+                                })
+                                .eq("id", targetCajaId);
+                        }
+                    }
+                }
+            } catch (cajaErr) {
+                console.warn("Aviso al sincronizar egreso en movimientos_caja/cajas:", cajaErr);
+            }
+
+            // 4. Actualizar inmediatamente en memoria para feedback visual instantáneo
+            setRecibos(prev => prev.map(item => {
+                if (item.id === recibo.id) {
+                    return {
+                        ...item,
+                        estado: "Anulado",
+                        anulado: true,
+                        motivoAnulacion: reason,
+                        anuladoPor: operator,
+                        fechaAnulacion: nowIso
+                    };
+                }
+                return item;
+            }));
+
+            toast && toast.success("Documento anulado y sincronizado correctamente");
             setVoidModal({ open: false, recibo: null });
+            await loadData();
         } catch (e) {
             console.error("Error voiding receipt:", e);
             toast && toast.error("Error al anular el recibo");
@@ -341,6 +467,20 @@ export default function ReciboCajaList({ onNew }) {
                     const pId = d.paciente_id || d.pacienteId || d.patient_id || d.paciente;
                     const pacInfo = patientMap[pId] || {};
                     const pName = d.pacienteNombre || d.patientNombre || pacInfo.nombre || "—";
+                    const obsStr = String(d.observaciones || "");
+                    const concStr = String(d.concepto || "");
+                    const isReciboAnulado = 
+                        Boolean(d.estado && d.estado.toLowerCase() === "anulado") ||
+                        Boolean(d.anulado) ||
+                        obsStr.includes("[ANULADO") ||
+                        concStr.includes("[ANULADO");
+
+                    let motivoRecibo = d.motivoAnulacion || d.motivo_anulacion || "";
+                    if (!motivoRecibo && obsStr.includes("[ANULADO:")) {
+                        const mMatch = obsStr.match(/\[ANULADO:\s*([^\]]+)\]/i);
+                        if (mMatch) motivoRecibo = mMatch[1].replace(/por\s+.*$/i, "").trim();
+                    }
+
                     return { 
                         ...d, 
                         pacienteNombre: pName,
@@ -355,8 +495,9 @@ export default function ReciboCajaList({ onNew }) {
                         venceEn: 0,
                         isPago: false,
                         nroConsecutivo: d.nroConsecutivo || d.nro_consecutivo || d.numero || null,
-                        estado: d.estado ? (d.estado.toLowerCase() === "anulado" ? "Anulado" : "Activo") : "Activo",
-                        motivoAnulacion: d.motivoAnulacion || d.motivo_anulacion || "",
+                        estado: isReciboAnulado ? "Anulado" : (d.estado || "Activo"),
+                        anulado: isReciboAnulado,
+                        motivoAnulacion: motivoRecibo,
                         anuladoPor: d.anuladoPor || d.anulado_por || "",
                         fechaAnulacion: d.fechaAnulacion || d.fecha_anulacion || "",
                         fevNumero: invoiceMap[d.id] || d.factura_id || null,
@@ -371,6 +512,22 @@ export default function ReciboCajaList({ onNew }) {
                         try { metadata = JSON.parse(pData.notas); } catch (e) {}
                     } else if (pData.notas && typeof pData.notas === "object") {
                         metadata = pData.notas;
+                    }
+
+                    const notesStr = typeof pData.notas === "string" ? pData.notas : JSON.stringify(pData.notas || "");
+                    const refStr = String(pData.referencia || "").toUpperCase();
+                    
+                    const isPagoAnulado = 
+                        Boolean(pData.estado && pData.estado.toLowerCase() === "anulado") ||
+                        Boolean(metadata.anulado) ||
+                        Boolean(metadata.estado && metadata.estado.toLowerCase() === "anulado") ||
+                        refStr.includes("ANULADO") ||
+                        notesStr.includes("ANULADO");
+
+                    let motivoPago = pData.motivoAnulacion || metadata.motivoAnulacion || "";
+                    if (!motivoPago && notesStr.includes("ANULADO")) {
+                        const mMatch = notesStr.match(/ANULADO\s*-\s*([^()]+)/i);
+                        if (mMatch) motivoPago = mMatch[1].trim();
                     }
 
                     const pId = pData.paciente_id || pData.pacienteId || metadata.paciente_id || pData.paciente;
@@ -393,8 +550,9 @@ export default function ReciboCajaList({ onNew }) {
                         referencia: metadata.referencia || pData.referencia || "",
                         venceEn: 0,
                         total: pData.monto || 0,
-                        estado: pData.estado || (metadata.anulado ? "Anulado" : "Activo"),
-                        motivoAnulacion: pData.motivoAnulacion || metadata.motivoAnulacion || "",
+                        estado: isPagoAnulado ? "Anulado" : (pData.estado || "Activo"),
+                        anulado: isPagoAnulado,
+                        motivoAnulacion: motivoPago,
                         anuladoPor: pData.anuladoPor || metadata.anuladoPor || "",
                         fechaAnulacion: pData.fechaAnulacion || metadata.fechaAnulacion || "",
                         nroConsecutivo: metadata.nroConsecutivo || pData.nroConsecutivo || pData.nro_consecutivo || "",
