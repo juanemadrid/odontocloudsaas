@@ -14,30 +14,19 @@ import {
   formatNITWithDV,
   validateTerceroForDian
 } from "../../../utils/dian/dianHelpers";
+import { CIUDADES_COLOMBIA } from "../../pacientes/constants/colombianCities";
+import { PAISES } from "../../pacientes/constants/patientConstants";
+import SearchableSelect from "../../../components/ui/SearchableSelect";
+import { getPostalCodeForCity } from "../../../data/colombianPostalCodes";
 
 const TIPO_DOCUMENTS = [
-  { id: "CC", label: "Cédula de Ciudadanía" },
   { id: "NIT", label: "NIT" },
+  { id: "CC", label: "Cédula de Ciudadanía" },
   { id: "CE", label: "Cédula de Extranjería" },
   { id: "PA", label: "Pasaporte" },
   { id: "TI", label: "Tarjeta de Identidad" },
   { id: "RC", label: "Registro Civil" },
   { id: "Otro", label: "Otro" }
-];
-
-const PAISES = [
-  "Colombia", "Venezuela", "Ecuador", "Perú", "Chile", 
-  "Argentina", "España", "Estados Unidos", "Otro"
-];
-
-const CIUDADES_COLOMBIA = [
-  "Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena", 
-  "Bucaramanga", "Cúcuta", "Pereira", "Santa Marta", "Ibagué", 
-  "Pasto", "Manizales", "Neiva", "Villavicencio", "Valledupar", 
-  "Montería", "Sincelejo", "Tunja", "Popayán", "Riohacha", 
-  "Quibdó", "Florencia", "Yopal", "Arauca", "San Andrés", 
-  "Mocoa", "San José del Guaviare", "Mitú", "Puerto Inírida", 
-  "Leticia", "Otro"
 ];
 
 const PROCEDENCIAS = [
@@ -90,7 +79,7 @@ export default function Terceros() {
   const [formData, setFormData] = useState({
     nombre: "",
     apellidos: "",
-    tipoDocumento: "CC",
+    tipoDocumento: "NIT",
     nroDocumento: "",
     razonSocial: "",
     telefono: "",
@@ -150,7 +139,7 @@ export default function Terceros() {
     setFormData({
       nombre: "",
       apellidos: "",
-      tipoDocumento: "CC",
+      tipoDocumento: "NIT",
       nroDocumento: "",
       razonSocial: "",
       telefono: "",
@@ -178,7 +167,7 @@ export default function Terceros() {
     setFormData({
       nombre: tercero.nombre || "",
       apellidos: tercero.apellidos || "",
-      tipoDocumento: tercero.tipoDocumento || "CC",
+      tipoDocumento: tercero.tipoDocumento || "NIT",
       nroDocumento: tercero.nroDocumento || "",
       razonSocial: tercero.razonSocial || "",
       telefono: tercero.telefono || "",
@@ -609,6 +598,7 @@ export default function Terceros() {
                   onChange={(e) => setFormData({ ...formData, tipoDocumento: e.target.value })}
                   className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
                 >
+                  <option value="">Seleccione...</option>
                   {TIPO_DOCUMENTS.map(doc => (
                     <option key={doc.id} value={doc.id}>{doc.label}</option>
                   ))}
@@ -713,15 +703,23 @@ export default function Terceros() {
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
                   País de domicilio
                 </label>
-                <select
+                <SearchableSelect
                   value={formData.pais}
-                  onChange={(e) => setFormData({ ...formData, pais: e.target.value, ciudad: "" })}
-                  className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                >
-                  {PAISES.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+                  onChange={(selectedPais) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      pais: selectedPais,
+                      ciudad: "",
+                      codigoPostal: selectedPais === "Colombia" ? prev.codigoPostal : ""
+                    }));
+                  }}
+                  options={PAISES.map(p => typeof p === "object" ? p.pais : p)}
+                  placeholder="Seleccione país..."
+                  requireSearch={true}
+                  minSearchChars={1}
+                  emptySearchPlaceholder="Escriba para buscar país..."
+                  className="w-full"
+                />
               </div>
 
               {/* Ciudad de Domicilio */}
@@ -730,16 +728,23 @@ export default function Terceros() {
                   Ciudad de domicilio
                 </label>
                 {formData.pais === "Colombia" ? (
-                  <select
+                  <SearchableSelect
                     value={formData.ciudad}
-                    onChange={(e) => setFormData({ ...formData, ciudad: e.target.value })}
-                    className="w-full h-11 px-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 transition-all"
-                  >
-                    <option value="">Seleccione...</option>
-                    {CIUDADES_COLOMBIA.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
+                    onChange={(selectedCity) => {
+                      const autoPostal = getPostalCodeForCity(selectedCity);
+                      setFormData(prev => ({
+                        ...prev,
+                        ciudad: selectedCity,
+                        ...(autoPostal ? { codigoPostal: autoPostal } : {})
+                      }));
+                    }}
+                    options={Array.from(new Set(CIUDADES_COLOMBIA)).sort((a, b) => a.localeCompare(b))}
+                    placeholder="Seleccione ciudad o pueblo..."
+                    requireSearch={true}
+                    minSearchChars={1}
+                    emptySearchPlaceholder="Escriba para buscar ciudad, municipio o pueblo..."
+                    className="w-full"
+                  />
                 ) : (
                   <input
                     type="text"
@@ -768,21 +773,17 @@ export default function Terceros() {
 
               {/* Código Postal */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
-                    Código postal (6 dígitos DIAN)
-                  </label>
-                  <span className="text-[9px] font-bold text-slate-400">Doc. Soporte</span>
-                </div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
+                  Código Postal
+                </label>
                 <input
                   type="text"
                   maxLength={6}
                   value={formData.codigoPostal}
                   onChange={(e) => setFormData({ ...formData, codigoPostal: e.target.value.replace(/[^0-9]/g, "").slice(0, 6) })}
-                  placeholder="Ej: 110111 (6 dígitos)"
+                  placeholder="Código postal"
                   className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-slate-50/30 outline-none focus:border-blue-400 focus:bg-white transition-all caret-slate-950"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">Debe contener exactamente 6 dígitos numéricos para la DIAN.</p>
               </div>
 
               {/* Correo Electrónico */}

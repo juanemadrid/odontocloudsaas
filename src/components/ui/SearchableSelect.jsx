@@ -87,19 +87,19 @@ export default function SearchableSelect({
     const isWaitingForSearch = requireSearch && (search || "").trim().length < minSearchChars;
 
     return (
-        <div ref={containerRef} className={`relative inline-block w-full md:w-64 ${className}`}>
+        <div ref={containerRef} className={`relative inline-block ${className || "w-full md:w-64"}`}>
             {/* Trigger Button */}
             <button
                 type="button"
                 disabled={disabled || loading}
                 onClick={() => setIsOpen(!isOpen)}
-                className={`w-full flex items-center justify-between bg-white border rounded-xl px-4 py-2 text-sm text-left font-medium transition-all ${
+                className={`w-full h-11 flex items-center justify-between bg-white border rounded-xl px-4 text-sm text-left font-bold transition-all ${
                     disabled || loading
                         ? "border-slate-100 bg-slate-50/50 text-slate-400 cursor-not-allowed"
-                        : "border-slate-200 text-slate-800 hover:border-slate-300 active:scale-[0.99] cursor-pointer shadow-sm focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30"
+                        : "border-slate-200 text-slate-700 hover:border-blue-400 active:scale-[0.99] cursor-pointer shadow-sm focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30"
                 }`}
             >
-                <span className="truncate text-slate-700">
+                <span className={`truncate ${!value ? "text-slate-400 font-medium" : "text-slate-700"}`}>
                     {value || displayPlaceholder}
                 </span>
                 <FiChevronDown
