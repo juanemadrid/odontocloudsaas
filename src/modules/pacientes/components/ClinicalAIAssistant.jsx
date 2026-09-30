@@ -668,7 +668,7 @@ export default function ClinicalAIAssistant({
     };
 
     return (
-        <div className="bg-white border border-slate-100 rounded-[16px] p-5 shadow-xl flex flex-col gap-4 animate-fadeIn relative overflow-y-auto custom-scrollbar h-full max-h-[480px]">
+        <div className="bg-white border border-slate-100 rounded-[16px] p-5 shadow-xl flex flex-col gap-4 animate-fadeIn relative overflow-y-auto custom-scrollbar h-full max-h-[550px]">
             {/* Top gradient accent */}
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-[#8dc63f] rounded-t-[16px]" />
             

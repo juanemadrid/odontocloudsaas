@@ -823,8 +823,10 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
     return (
         <>
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white w-full max-w-5xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-5 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+            <div className={`bg-white w-full rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[95vh] transition-all duration-300 ${
+                showAIAssistant ? 'max-w-[96vw] 2xl:max-w-[1540px] xl:max-w-[1420px]' : 'max-w-5xl'
+            }`}>
                 
                 {/* Modal Header */}
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -892,7 +894,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-8 flex flex-col lg:flex-row gap-6">
                     
                     {/* COLUMNA IZQUIERDA (Oculta si es Nota Aclaratoria) */}
-                    <div className={`flex-1 space-y-4 ${activeTab === 'nota' ? 'hidden' : 'block'}`}>
+                    <div className={`flex-1 min-w-0 space-y-4 ${activeTab === 'nota' ? 'hidden' : 'block'}`}>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1123,7 +1125,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     </div>
 
                     {/* COLUMNA DERECHA (Siempre visible, pero expandida si es Nota) */}
-                    <div className={`flex-1 space-y-5 ${activeTab === 'nota' ? '' : 'border-t md:border-t-0 md:border-l border-slate-100 pt-6 md:pt-0 md:pl-8'}`}>
+                    <div className={`flex-1 min-w-0 space-y-5 ${activeTab === 'nota' ? '' : 'border-t lg:border-t-0 lg:border-l border-slate-100 pt-6 lg:pt-0 lg:pl-8'}`}>
                         
                         {/* Selector de doctor exclusivo para la vista Nota Aclaratoria */}
                         {activeTab === 'nota' && (
@@ -1576,7 +1578,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     
                     {/* COLUMNA COPILOTO IA DE VOZ (SIDEBAR DEDICADO) */}
                     {showAIAssistant && (
-                        <div className="w-full md:w-96 shrink-0 border-t md:border-t-0 md:border-l border-slate-100 pt-6 md:pt-0 md:pl-6 flex flex-col">
+                        <div className="w-full lg:w-[380px] xl:w-[410px] shrink-0 border-t lg:border-t-0 lg:border-l border-slate-100 pt-6 lg:pt-0 lg:pl-6 flex flex-col">
                             <ClinicalAIAssistant 
                                 onApply={handleApplyAI} 
                                 onClose={() => setShowAIAssistant(false)} 
@@ -1603,13 +1605,14 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         <button 
                             type="submit"
                             disabled={saving || (esDoctor && !isAssigned)} 
-                            className={`flex-1 sm:flex-none px-8 sm:px-10 py-3 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md ${
+                            className={`relative overflow-hidden flex-1 sm:flex-none px-8 sm:px-10 py-3 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md cursor-pointer ${
                                 esDoctor && !isAssigned 
                                     ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
                                     : "bg-[#8dc63f] hover:bg-[#7cb035] text-white shadow-lime-500/20"
                             }`}
                         >
                             {saving ? "Guardando..." : "Guardar"}
+                            {saving && <span className="animate-saving-bar" />}
                         </button>
                     </div>
                 </form>
