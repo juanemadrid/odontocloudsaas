@@ -108,6 +108,156 @@ export default function PagosList({ onNew }) {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
+    const isDevolucion = (pago.concepto || "").toLowerCase().includes("devolución") || (pago.concepto || "").toLowerCase().includes("devolucion");
+    const isEgreso = pago.tipoDocumento === "Egreso" || isDevolucion;
+
+    if (isEgreso) {
+      const clinic = userProfile?.tenant || {};
+      const clinicName = userProfile?.tenantNombre || userProfile?.clinica || clinic.nombre || "CLÍNICA ODONTOLÓGICA";
+      const nit = userProfile?.tenantNit || clinic.nit || userProfile?.nit || "";
+      const direccion = userProfile?.tenantDireccion || clinic.direccion || userProfile?.direccion || "";
+      const ciudad = userProfile?.tenantCiudad || clinic.ciudad || userProfile?.ciudad || "Sincelejo";
+      const telefono = userProfile?.tenantTelefono || clinic.telefono || userProfile?.telefono || "";
+      const email = userProfile?.tenantEmail || clinic.email || userProfile?.email || "";
+      const logoUrl = userProfile?.tenantLogo || clinic.logo || "";
+
+      const pacName = (pago.tercero || pago.proveedor || "PACIENTE").toUpperCase();
+      const pacDoc = pago.documentoTercero || pago.nit || pago.cedula || "—";
+      const bancoCaja = pago.bancoCaja || pago.caja || pago.banco || "Bancolombia";
+      const medioPago = pago.medioPago || "Efectivo";
+      const consecutivo = pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "1608";
+      const concepto = pago.concepto || "Devolución saldo a favor";
+      const monto = Number(pago.monto || pago.total || 0);
+      const observaciones = pago.observaciones || "";
+      const elaboradoPor = (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "ADMINISTRADOR").toUpperCase();
+      const expeditionDate = fmtDate(pago.fecha || pago.created_at);
+
+      printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Egreso No. ${consecutivo} - ${pacName}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: Arial, Helvetica, sans-serif; 
+            margin: 0; 
+            padding: 30px 40px; 
+            color: #0f172a; 
+            font-size: 11px;
+            background: #ffffff;
+        }
+        @media print { 
+            @page { margin: 12mm 15mm; size: letter portrait; }
+            body { padding: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <table style="width: 100%; margin-bottom: 24px; border-collapse: collapse;">
+        <tr>
+            <td style="width: 25%; vertical-align: middle;">
+                ${logoUrl ? `<img src="${logoUrl}" style="max-height: 65px; max-width: 160px; object-fit: contain;" />` : `<div style="font-size: 16px; font-weight: 900; color: #1e293b;">${clinicName}</div>`}
+            </td>
+            <td style="width: 50%; text-align: center; vertical-align: middle; font-size: 10.5px; line-height: 1.35;">
+                <div style="font-weight: 900; font-size: 12px; text-transform: uppercase; margin-bottom: 2px;">${clinicName}</div>
+                ${nit ? `<div>NIT ${nit}</div>` : ''}
+                ${direccion ? `<div>${direccion}${ciudad ? ` - ${ciudad}` : ''}</div>` : ''}
+                ${telefono ? `<div>${telefono}</div>` : ''}
+                ${email ? `<div>${email}</div>` : ''}
+            </td>
+            <td style="width: 25%; text-align: right; vertical-align: top; font-size: 11px; font-weight: 700; color: #1e293b;">
+                <div style="font-size: 12px; font-weight: 900; text-transform: uppercase;">Egreso</div>
+                <div style="font-size: 12px; font-weight: 900; font-family: monospace; margin-top: 2px;">No. ${consecutivo}</div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Grid Table (OralDrive Style - Imagen 4) -->
+    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #334155; margin-bottom: 22px; font-size: 9.5px;">
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase; width: 15%;">SEÑOR(A)</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; width: 45%; text-transform: uppercase;">${pacName}</td>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; width: 22%; text-transform: uppercase;">FECHA DE EXPEDICIÓN (DD/MM/AA)</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; width: 18%; text-align: center;">${expeditionDate}</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">DIRECCIÓN</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; text-transform: uppercase;">—</td>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">Banco/Caja</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-align: center;">${bancoCaja}</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">CIUDAD</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; text-transform: uppercase;">${ciudad}</td>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">TARJETA DE IDENTIDAD / CC</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-align: center; font-family: monospace;">${pacDoc}</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">TELÉFONO</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px;">—</td>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">Medio de pago</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-align: center;">${medioPago}</td>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">ELABORADO POR</td>
+            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-transform: uppercase;" colspan="3">${elaboradoPor}</td>
+        </tr>
+    </table>
+
+    <!-- Concepts Table (OralDrive Image 4) -->
+    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #334155; margin-bottom: 24px; font-size: 9.5px;">
+        <thead>
+            <tr style="background: #ffffff; text-transform: uppercase;">
+                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: left; width: 55%; font-weight: 900;">Concepto</th>
+                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: center; width: 12%; font-weight: 900;">Cantidad</th>
+                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: right; width: 15%; font-weight: 900;">Impuesto</th>
+                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: right; width: 18%; font-weight: 900;">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: left;">${concepto}</td>
+                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: center; font-weight: 700;">1</td>
+                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: right; font-family: monospace;">$0</td>
+                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700;">${fmt(monto)}</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #334155; padding: 6px 8px; vertical-align: top;" rowspan="2">
+                    <span style="font-weight: 900; text-transform: uppercase;">Observaciones:</span>
+                    <span style="font-style: italic; color: #475569; margin-left: 6px;">${observaciones}</span>
+                </td>
+                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-weight: 900;" colspan="2">Subtotal</td>
+                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-family: monospace; font-weight: 700;">${fmt(monto)}</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-weight: 900;" colspan="2">Total</td>
+                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-family: monospace; font-weight: 900; font-size: 10.5px;">${fmt(monto)}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Signatures -->
+    <div style="margin-top: 70px; display: flex; justify-content: space-around;">
+        <div style="width: 250px; text-align: center;">
+            <div style="border-top: 1.5px solid #334155; margin-bottom: 6px;"></div>
+            <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase;">ELABORADO POR</div>
+        </div>
+        <div style="width: 250px; text-align: center;">
+            <div style="border-top: 1.5px solid #334155; margin-bottom: 6px;"></div>
+            <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase;">ACEPTADA. FIRMA Y/O SELLO Y FECHA</div>
+        </div>
+    </div>
+
+    <script>window.print();</script>
+</body>
+</html>`);
+      printWindow.document.close();
+      return;
+    }
+
     const itemsHtml = (pago.items || []).map(it => `
       <tr>
         <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${it.concepto || '—'}</td>
