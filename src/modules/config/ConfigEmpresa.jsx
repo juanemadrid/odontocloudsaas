@@ -242,56 +242,14 @@ export default function ConfigEmpresa() {
         setUploading(true);
         try {
             const extension = (file.name?.split(".").pop() || "jpg").toLowerCase();
-            let finalUrl = "";
-
-            try {
-                const uploaded = await uploadOptimizedPublicFile({
-                    bucket: "public-assets",
-                    path: `${userProfile.inquilino}/branding/logo-${Date.now()}.${extension}`,
-                    file,
-                    profile: "avatar"
-                });
-                finalUrl = uploaded?.publicUrl || "";
-            } catch (storageErr) {
-                console.warn("Storage upload falló por políticas RLS, utilizando respaldo base64 optimizado:", storageErr);
-                // Respaldo resiliente: comprime la imagen a WebP de bajo peso (máx 500px) en Base64
-                finalUrl = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const img = new Image();
-                        img.onload = () => {
-                            try {
-                                const canvas = document.createElement("canvas");
-                                let width = img.width;
-                                let height = img.height;
-                                const maxDim = 500;
-                                if (width > maxDim || height > maxDim) {
-                                    if (width > height) {
-                                        height = Math.round((height * maxDim) / width);
-                                        width = maxDim;
-                                    } else {
-                                        width = Math.round((width * maxDim) / height);
-                                        height = maxDim;
-                                    }
-                                }
-                                canvas.width = width;
-                                canvas.height = height;
-                                const ctx = canvas.getContext("2d");
-                                ctx.drawImage(img, 0, 0, width, height);
-                                resolve(canvas.toDataURL("image/webp", 0.88));
-                            } catch (_) {
-                                resolve(event.target.result);
-                            }
-                        };
-                        img.onerror = () => resolve(event.target.result);
-                        img.src = event.target.result;
-                    };
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                });
-            }
-
-            if (!finalUrl) throw new Error("No se pudo procesar la imagen del logo.");
+            const uploaded = await uploadOptimizedPublicFile({
+                bucket: "public-assets",
+                path: `${userProfile.inquilino}/branding/logo-${Date.now()}.${extension}`,
+                file,
+                profile: "avatar"
+            });
+            const finalUrl = uploaded.publicUrl;
+            if (!finalUrl) throw new Error("Storage no devolvió la URL del logo.");
 
             setFormData(prev => ({ ...prev, logoUrl: finalUrl }));
 
