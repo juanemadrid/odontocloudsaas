@@ -306,7 +306,15 @@ export const toggleTenantStatus = async (tenantId, currentActive) => {
  */
 export const deleteTenant = async (tenantId) => {
     try {
-        // 1. Eliminar de website_config JSONB
+        // 1. Intentar borrado integral vía Edge Function (purga auth.users, profiles, recursos y tenant)
+        try {
+            await invokeRegisterClinic("delete_clinic", { tenantId });
+            return true;
+        } catch (edgeErr) {
+            console.warn("Fallo delete_clinic en Edge Function, aplicando borrado directo de respaldo:", edgeErr);
+        }
+
+        // 2. Respaldo directo en caso de fallo de red en la Edge Function
         const { data: existingRow } = await supabase
             .from("website_config")
             .select("config")
@@ -330,13 +338,13 @@ export const deleteTenant = async (tenantId) => {
                 updated_at: new Date().toISOString()
             });
 
-        // 2. Desactivar perfiles de usuarios vinculados a esta clínica
+        // Eliminar perfiles de la clínica
         await supabase
             .from("profiles")
-            .update({ activo: false, role: "inactivo", tenant_id: null })
+            .delete()
             .eq("tenant_id", tenantId);
 
-        // 3. Eliminar también de la tabla nativa 'tenants' de PostgreSQL
+        // Eliminar de la tabla nativa tenants
         await supabase
             .from("tenants")
             .delete()

@@ -193,6 +193,62 @@ Deno.serve(async (request) => {
       return json({ success: true });
     }
 
+    if (action === "delete_clinic") {
+      const tenantId = String(body?.tenantId || "");
+      if (!tenantId) throw new HttpError(400, "El ID de la clinica es obligatorio.");
+
+      // 1. Obtener todos los perfiles vinculados a la clínica
+      const { data: clinicProfiles } = await admin
+        .from("profiles")
+        .select("id, email")
+        .eq("tenant_id", tenantId);
+
+      // 2. Eliminar cada usuario de Supabase Auth (auth.users)
+      if (clinicProfiles && clinicProfiles.length > 0) {
+        for (const p of clinicProfiles) {
+          try {
+            await admin.auth.admin.deleteUser(p.id);
+          } catch (delAuthErr) {
+            console.warn("No se pudo eliminar auth user:", p.id, delAuthErr);
+          }
+        }
+        await admin.from("profiles").delete().eq("tenant_id", tenantId);
+      }
+
+      // 3. Eliminar recursos físicos asociados
+      await admin.from("sucursales").delete().eq("tenant_id", tenantId);
+      await admin.from("consultorios").delete().eq("tenant_id", tenantId);
+
+      // 4. Eliminar de la tabla tenants
+      await admin.from("tenants").delete().eq("id", tenantId);
+
+      // 5. Eliminar de website_config.registered_tenants
+      const { data: globalRow } = await admin
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+        .maybeSingle();
+
+      if (globalRow?.config?.registered_tenants) {
+        const currentList = Array.isArray(globalRow.config.registered_tenants)
+          ? globalRow.config.registered_tenants
+          : [];
+        const updatedTenants = currentList.filter(
+          (t: Record<string, unknown>) => String(t?.id) !== tenantId
+        );
+        await admin.from("website_config").upsert({
+          tenant_id: GLOBAL_CONFIG_TENANT_ID,
+          config: {
+            ...globalRow.config,
+            registered_tenants: updatedTenants,
+          },
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      return json({ success: true, message: "Clinica y usuarios eliminados completamente." });
+    }
+
     let requestId = "";
     let requestRow: Record<string, unknown> | null = null;
     if (action === "approve_request") {
@@ -240,11 +296,43 @@ Deno.serve(async (request) => {
 
     validateRegistration({ adminEmail, adminPassword, adminName, clinicName });
 
+    // Validar si el correo ya existe en auth.users
     for (let page = 1; page <= 20; page += 1) {
       const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
       if (error) throw error;
-      if (data.users.some((user) => user.email?.toLowerCase() === adminEmail)) {
-        throw new HttpError(409, "El correo ya tiene una cuenta registrada.");
+      const existingUser = data.users.find((u) => u.email?.toLowerCase() === adminEmail);
+      if (existingUser) {
+        // Verificar si este usuario pertenece a una clínica REAL y ACTIVA
+        const { data: prof } = await admin
+          .from("profiles")
+          .select("id, tenant_id, activo, role")
+          .eq("id", existingUser.id)
+          .maybeSingle();
+
+        let tenantIsActive = false;
+        if (prof?.tenant_id) {
+          const { data: activeTenant } = await admin
+            .from("tenants")
+            .select("id, activo")
+            .eq("id", prof.tenant_id)
+            .maybeSingle();
+          if (activeTenant && activeTenant.activo !== false) {
+            tenantIsActive = true;
+          }
+        }
+
+        if (tenantIsActive) {
+          throw new HttpError(409, "El correo ya tiene una cuenta registrada con una clínica activa.");
+        } else {
+          // La clínica anterior fue eliminada o el usuario quedó huérfano.
+          // Purgamos el usuario antiguo para permitir la nueva creación limpia.
+          try {
+            await admin.auth.admin.deleteUser(existingUser.id);
+            await admin.from("profiles").delete().eq("id", existingUser.id);
+          } catch (purgeErr) {
+            console.warn("No se pudo purgar usuario huérfano:", purgeErr);
+          }
+        }
       }
       if (data.users.length < 100) break;
     }

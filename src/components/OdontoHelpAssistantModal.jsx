@@ -1,86 +1,9 @@
-import React, { useState, useRef, useEffect } from "react";
-import { 
-    FiX, FiSend, FiHelpCircle, FiSearch, FiMessageSquare, 
-    FiCheckCircle, FiExternalLink, FiCalendar, FiDollarSign, 
-    FiUsers, FiLayers, FiFileText, FiShield, FiMapPin, FiPhoneCall,
-    FiCreditCard, FiActivity, FiStar, FiCornerDownRight
-} from "react-icons/fi";
-import { generateGeminiContent } from "../services/geminiKeyService";
+import React, { useState, useRef, useEffect } from 'react';
+import { FiX, FiSend, FiSearch, FiBookOpen, FiCheckCircle, FiCornerDownRight, FiMessageSquare, FiRefreshCw } from 'react-icons/fi';
+import { useAuth } from '../context/AuthContext';
+import { askHelp } from '../services/helpAssistantService';
+import { HELP_GUIDES, formatGuide, normalize, searchGuides } from '../../supabase/functions/_shared/helpKnowledge.mjs';
 
-const QUICK_TOPICS = [
-    {
-        id: "sedes",
-        icon: FiMapPin,
-        title: "Gestión de Sedes",
-        keywords: ["sede", "sucursal", "sucursales", "monteria", "cambiar sede", "crear sede"],
-        question: "¿Cómo gestionar o cambiar de Sede / Sucursal?",
-        answer: `**Gestión de Sedes y Sucursales en OdontoCloud:**
-1. **Cambiar de Sede Activa:** Haz clic en el botón verde de sede en la barra superior (ej: [ATM MONTERÍA]) y elige la sucursal de atención.
-2. **Crear o Editar Sedes:** Ingresa a **Configuración > Sucursales y Sedes**. Allí configuras nombre, dirección, ciudad, almacén y sillones.
-3. **Historia Clínica Global:** Los pacientes y sus tratamientos están disponibles en todas las sedes automáticamente para garantizar continuidad clínica.`
-    },
-    {
-        id: "pagos",
-        icon: FiCreditCard,
-        title: "Pagos y Proveedores",
-        keywords: ["pago", "pagos", "proveedor", "facturas compra", "egreso", "nuevo pago", "tercero"],
-        question: "¿Cómo registrar un pago o egreso a proveedor?",
-        answer: `**Registro de Pagos y Egresos a Proveedores:**
-1. Ingresa a **Facturación > Pagos** y haz clic en **+ Nuevo pago**.
-2. **Banco / Caja:** Selecciona tu caja activa o la cuenta bancaria de donde sale el dinero.
-3. **Modos de Pago:**
-   - **Pago facturas de compra (Desactivado):** Pulsa **+ Nuevo concepto** para registrar gastos de insumos o servicios libres.
-   - **Pago facturas de compra (Activado):** Pulsa **+ Añadir factura** para asociar y liquidar facturas de compra pendientes del proveedor.
-4. Presiona **Guardar** para asentar el egreso en caja y generar el comprobante imprimible.`
-    },
-    {
-        id: "caja",
-        icon: FiDollarSign,
-        title: "Apertura y Cierre de Caja",
-        keywords: ["caja", "abrir caja", "cerrar caja", "arqueo", "efectivo", "ingreso", "egreso"],
-        question: "¿Cómo abrir, cuadrar o cerrar la Caja diaria?",
-        answer: `**Flujo de Caja Diaria:**
-1. **Apertura de Caja:** Entra al módulo **Caja** y digita el monto base en efectivo al iniciar turno.
-2. **Registro Automático:** Cada cobro a paciente y pago a proveedor se descuenta o suma en tiempo real a tu caja activa.
-3. **Cierre y Arqueo:** Al finalizar el día, digita el conteo físico de dinero. OdontoCloud calcula diferencias o cuadre exacto y emite el acta de arqueo.`
-    },
-    {
-        id: "citas",
-        icon: FiCalendar,
-        title: "Agenda de Citas",
-        keywords: ["cita", "agenda", "agendar", "cancelar cita", "doctor", "calendario", "turno"],
-        question: "¿Cómo agendar y gestionar citas odontológicas?",
-        answer: `**Gestión de la Agenda:**
-1. Ve a **Agenda**.
-2. Haz clic sobre el horario y sillón deseado.
-3. Busca al paciente por nombre o documento, asigna el profesional y procedimiento.
-4. Guarda la cita y envía confirmación por WhatsApp en 1 clic.`
-    },
-    {
-        id: "facturacion",
-        icon: FiFileText,
-        title: "Facturación DIAN",
-        keywords: ["factura", "factura electronica", "dian", "factus", "resolucion", "cufe"],
-        question: "¿Cómo emitir Factura Electrónica DIAN?",
-        answer: `**Facturación Electrónica DIAN:**
-1. En **Facturación > Factura de Venta**, selecciona el paciente y los tratamientos liquidados.
-2. Presiona **Emitir Factura Electrónica**. El sistema se enlaza a la DIAN vía Factus.
-3. Se genera el código **CUFE**, QR y se despacha la factura oficial en PDF al correo del paciente.`
-    },
-    {
-        id: "odontograma",
-        icon: FiActivity,
-        title: "Odontograma y Evolución",
-        keywords: ["odontograma", "diente", "caries", "tratamiento", "evolucion", "historia clinica"],
-        question: "¿Cómo registrar Odontograma y Evoluciones?",
-        answer: `**Odontograma & Evoluciones Clínicas:**
-1. Entra a la ficha del paciente y haz clic en la pestaña **Odontograma**.
-2. Selecciona la superficie o pieza dental (Adulto o Infantil) y asigna el hallazgo clínico (Caries, Resina, Corona, Extracción, etc.).
-3. En **Evolución**, escribe el resumen de la cita y guarda con tu firma digital del perfil.`
-    }
-];
-
-// Helper para renderizar texto enriquecido sin asteriscos markdown sin procesar
 function FormattedMessage({ text }) {
     if (!text) return null;
 
@@ -179,238 +102,137 @@ function FormattedMessage({ text }) {
 }
 
 export default function OdontoHelpAssistantModal({ isOpen, onClose }) {
-    const [messages, setMessages] = useState([
-        {
-            id: 1,
-            sender: "bot",
-            text: "👋 ¡Hola! Soy **OdontoIA**, tu asistente inteligente para OdontoCloud.\n\nSelecciona un tema frecuente o escribe cualquier duda sobre el sistema para guiarte paso a paso."
-        }
-    ]);
-    const [input, setInput] = useState("");
+    const { user, userProfile } = useAuth();
+    if (!isOpen) return null;
+    // Remount on account/clinic changes: no conversation can survive a change of scope.
+    return <HelpPanel key={String(user?.id) + ':' + String(userProfile?.tenant_id || userProfile?.inquilino)} onClose={onClose} />;
+}
+
+function HelpPanel({ onClose }) {
+    const welcome = { sender: 'bot', text: '¡Hola! Soy la ayuda de OdontoCloud. Puedo explicarte cómo usar el sistema, paso a paso. Pregúntame o consulta una guía de la biblioteca.', sources: [] };
+    const [messages, setMessages] = useState([welcome]);
+    const [input, setInput] = useState('');
+    const [search, setSearch] = useState('');
+    const [category, setCategory] = useState('Todos');
     const [isTyping, setIsTyping] = useState(false);
-    const messagesEndRef = useRef(null);
+    const [showLibrary, setShowLibrary] = useState(false);
+    const [previousIds, setPreviousIds] = useState([]);
+    const pending = useRef(false);
+    const generation = useRef(0);
+    const endRef = useRef(null);
+    const inputRef = useRef(null);
+    const searchRef = useRef(null);
+    const dialogRef = useRef(null);
+    const categories = ['Todos', ...new Set(HELP_GUIDES.map(g => g.category))];
+    const matches = search.trim() ? searchGuides(search) : HELP_GUIDES;
+    const visibleGuides = HELP_GUIDES.filter(g => (category === 'Todos' || g.category === category) &&
+        (!search.trim() || matches.some(m => m.id === g.id) || normalize(g.title).includes(normalize(search))));
 
     useEffect(() => {
-        if (isOpen) {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [messages, isOpen]);
+        const previousFocus = document.activeElement;
+        inputRef.current?.focus();
+        return () => { generation.current += 1; previousFocus?.focus?.(); };
+    }, []);
+    useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
+    useEffect(() => { (showLibrary ? searchRef : inputRef).current?.focus(); }, [showLibrary]);
 
-    if (!isOpen) return null;
-
-    const findKnowledgeAnswer = (query) => {
-        const q = query.toLowerCase();
-        let bestMatch = null;
-        let highestScore = 0;
-
-        for (const item of QUICK_TOPICS) {
-            let score = 0;
-            for (const kw of item.keywords) {
-                if (q.includes(kw)) score += 2;
-            }
-            if (score > highestScore) {
-                highestScore = score;
-                bestMatch = item;
-            }
-        }
-
-        return highestScore >= 2 ? bestMatch.answer : null;
+    const reset = () => {
+        generation.current += 1;
+        pending.current = false;
+        setIsTyping(false);
+        setMessages([welcome]);
+        setPreviousIds([]);
+        setInput('');
+        inputRef.current?.focus();
     };
-
-    const handleSend = async (userQuery) => {
-        const queryText = (userQuery || input).trim();
-        if (!queryText) return;
-
-        const userMsg = { id: Date.now(), sender: "user", text: queryText };
-        setMessages(prev => [...prev, userMsg]);
-        setInput("");
+    const showGuide = guide => {
+        // A guide selection supersedes an outstanding answer.
+        generation.current += 1;
+        pending.current = false;
+        setIsTyping(false);
+        setMessages(prev => [...prev, { sender: 'bot', text: formatGuide(guide), provider: 'manual', sources: [] }]);
+        setPreviousIds([guide.id]);
+        setShowLibrary(false);
+        inputRef.current?.focus();
+    };
+    const handleSend = async event => {
+        event.preventDefault();
+        const question = input.trim();
+        if (!question || pending.current) return;
+        pending.current = true;
+        const requestId = ++generation.current;
+        setMessages(prev => [...prev, { sender: 'user', text: question }]);
+        setInput('');
         setIsTyping(true);
-
-        // 1. Base de conocimiento local exacta
-        const localAnswer = findKnowledgeAnswer(queryText);
-
-        if (localAnswer) {
-            setTimeout(() => {
-                setMessages(prev => [
-                    ...prev,
-                    { id: Date.now() + 1, sender: "bot", text: localAnswer }
-                ]);
-                setIsTyping(false);
-            }, 300);
-            return;
-        }
-
-        // 2. Consulta IA Gemini contextualizada
-        try {
-            const systemPrompt = `Eres OdontoIA, el copiloto inteligente del software dental OdontoCloud en Colombia.
-Tu trabajo es responder dudas de doctores, recepcionistas y administradores con explicaciones claras, pasos numerados y lenguaje amable.
-Módulos principales: Agenda de citas, Historias Clínicas, Odontograma interactivo, Facturación DIAN (Factus), Pagos y Egresos, Múltiples Sedes/Sucursales, Caja diaria.
-Pregunta del usuario: "${queryText}".
-Responde estructuradamente con pasos numerados. Evita explicaciones complejas innecesarias.`;
-
-            const aiResponse = await generateGeminiContent(
-                [{ parts: [{ text: systemPrompt }] }],
-                { temperature: 0.2, maxOutputTokens: 500 },
-                "gemini-2.5-flash"
-            );
-
-            const botText = aiResponse?.candidates?.[0]?.content?.parts?.[0]?.text || 
-                "Para este procedimiento, puedes ingresar directamente al módulo desde la barra lateral o presionar el botón inferior de WhatsApp para soporte con un asesor.";
-
-            setMessages(prev => [
-                ...prev,
-                { id: Date.now() + 1, sender: "bot", text: botText }
-            ]);
-        } catch (e) {
-            console.warn("AI error fallback:", e);
-            setMessages(prev => [
-                ...prev,
-                { 
-                    id: Date.now() + 1, 
-                    sender: "bot", 
-                    text: "**Guía del Sistema:**\nPuedes navegar directamente al módulo correspondiente en el menú lateral o comunicarte con nuestro equipo de soporte por WhatsApp." 
-                }
-            ]);
-        } finally {
-            setIsTyping(false);
-        }
+        const result = await askHelp(question, previousIds);
+        if (requestId !== generation.current) return;
+        const sources = (result.sources || []).filter(s => s && HELP_GUIDES.some(g => g.id === s.id));
+        setMessages(prev => [...prev, { sender: 'bot', text: result.answer, provider: result.provider, reason: result.reason, sources }]);
+        setPreviousIds(sources.map(s => s.id));
+        pending.current = false;
+        setIsTyping(false);
+        inputRef.current?.focus();
     };
-
+    const handleKeys = event => {
+        if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+        if (event.key !== 'Tab') return;
+        const nodes = [...dialogRef.current.querySelectorAll('button:not([disabled]), input:not([disabled])')].filter(el => el.getClientRects().length);
+        const first = nodes[0], last = nodes[nodes.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-xl overflow-hidden animate-scaleIn flex flex-col h-[640px] max-h-[92vh]">
-                
-                {/* Header Asistente IA */}
-                <div className="px-5 py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-lg shadow-xs">
-                            🤖
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h2 className="text-xs font-bold uppercase tracking-wider">Asistente OdontoIA</h2>
-                                <span className="px-2 py-0.5 bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 rounded-full text-[9px] font-black uppercase">
-                                    En línea
-                                </span>
-                            </div>
-                            <p className="text-[10px] text-blue-100">Centro de ayuda & guía inteligente del sistema</p>
-                        </div>
+        <div className="fixed inset-0 z-[110] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-5">
+            <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="help-title" onKeyDown={handleKeys}
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[740px] max-h-[94dvh] flex flex-col overflow-hidden">
+                <header className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between gap-3">
+                    <div><div className="text-emerald-300 text-[10px] uppercase tracking-widest font-bold">Tu guía de uso</div>
+                        <h2 id="help-title" className="text-lg font-semibold !text-white">Ayuda de OdontoCloud</h2>
+                        <p className="text-xs text-slate-300 mt-1">Respuestas basadas en las guías del sistema</p></div>
+                    <div className="flex gap-2">
+                        <button type="button" onClick={reset} title="Nueva conversación" aria-label="Nueva conversación" className="p-2 rounded-lg hover:bg-white/10"><FiRefreshCw size={18} /></button>
+                        <button type="button" onClick={onClose} aria-label="Cerrar ayuda" className="p-2 rounded-lg hover:bg-white/10"><FiX size={22} /></button>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="text-white/80 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
-                    >
-                        <FiX size={18} />
-                    </button>
-                </div>
-
-                {/* Quick Topics Grid Elegante (Sin scrollbar rota) */}
-                <div className="p-3 bg-slate-50 border-b border-slate-100">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <FiStar className="text-amber-500" size={12} />
-                        <span>Temas rápidos de ayuda:</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                        {QUICK_TOPICS.map(item => {
-                            const IconComponent = item.icon;
-                            return (
-                                <button
-                                    key={item.id}
-                                    type="button"
-                                    onClick={() => handleSend(item.question)}
-                                    className="p-2 bg-white hover:bg-blue-50 border border-slate-200/80 hover:border-blue-300 rounded-xl text-left transition-all shadow-2xs group cursor-pointer active:scale-95 flex items-center gap-2"
-                                >
-                                    <div className="w-6 h-6 rounded-lg bg-blue-50 group-hover:bg-blue-600 group-hover:text-white text-blue-600 flex items-center justify-center shrink-0 transition-colors">
-                                        <IconComponent size={12} />
-                                    </div>
-                                    <span className="text-[11px] font-bold text-slate-700 group-hover:text-blue-700 truncate">
-                                        {item.title}
-                                    </span>
-                                </button>
-                            );
-                        })}
+                </header>
+                <button type="button" className="md:hidden px-4 py-2 text-sm border-b text-blue-700 text-left" onClick={() => setShowLibrary(!showLibrary)}>
+                    {showLibrary ? 'Volver a la conversación' : 'Explorar las guías del sistema'}
+                </button>
+                <div className="flex flex-1 min-h-0">
+                    <aside aria-label="Biblioteca de ayuda" className={(showLibrary ? 'flex' : 'hidden') + ' md:flex flex-col w-full md:w-72 shrink-0 bg-slate-50 border-r border-slate-200 min-h-0'}>
+                        <div className="p-4 border-b space-y-3">
+                            <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm"><FiBookOpen /> Biblioteca <span className="ml-auto text-xs text-slate-500">{HELP_GUIDES.length} guías</span></div>
+                            <label className="flex items-center gap-2 bg-white rounded-lg border px-3 py-2"><FiSearch className="text-slate-400 shrink-0" />
+                                <input ref={searchRef} aria-label="Buscar guía" value={search} onChange={e => setSearch(e.target.value)} placeholder="Citas, pagos, pacientes…" className="w-full min-w-0 bg-transparent text-xs outline-none" /></label>
+                            <div className="flex gap-1.5 flex-wrap">{categories.map(c => <button type="button" key={c} aria-pressed={category === c} onClick={() => setCategory(c)} className={'text-[10px] rounded-full px-2.5 py-1 border ' + (category === c ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white text-slate-600 border-slate-200')}>{c}</button>)}</div>
+                        </div>
+                        <div className="overflow-y-auto p-2 flex-1">
+                            {visibleGuides.map(g => <button type="button" key={g.id} onClick={() => showGuide(g)} className="w-full text-left p-3 rounded-xl hover:bg-white hover:shadow-sm focus-visible:outline-blue-600">
+                                <span className="block text-[10px] uppercase tracking-wide text-slate-400">{g.category}</span><span className="block text-xs font-semibold text-slate-700 mt-1">{g.title}</span>
+                            </button>)}
+                            {!visibleGuides.length && <p className="p-3 text-xs text-slate-500">No hay guías con esos filtros. Prueba otra palabra o selecciona Todos.</p>}
+                        </div>
+                    </aside>
+                    <div className={(showLibrary ? 'hidden' : 'flex') + ' md:flex flex-col flex-1 min-w-0'}>
+                        <div role="log" aria-live="polite" aria-label="Conversación de ayuda" className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 bg-white">
+                            {messages.map((message, index) => <div key={index} className={message.sender === 'user' ? 'ml-auto max-w-[90%] bg-blue-600 text-white rounded-2xl rounded-br-sm p-3 text-sm whitespace-pre-wrap break-words' : 'max-w-full text-slate-700'}>
+                                {message.sender === 'user' ? message.text : <>
+                                    <div className="flex items-center gap-2 mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400"><FiMessageSquare /> {message.provider === 'ollama' ? 'Respuesta de IA local' : 'Guía del sistema'}</div>
+                                    {['unavailable', 'not_configured'].includes(message.reason) && <p className="text-xs text-amber-800 bg-amber-50 rounded-lg p-2 mb-3">La IA local no está disponible. Te muestro las guías relacionadas.</p>}
+                                    <FormattedMessage text={message.text} />
+                                    {message.sources?.length > 0 && <div className="mt-3 pt-2 border-t border-slate-100"><p className="text-[10px] text-slate-400 mb-1">Guías de referencia</p><div className="flex flex-wrap gap-2">{message.sources.map(source => <button type="button" key={source.id} onClick={() => showGuide(HELP_GUIDES.find(g => g.id === source.id))} className="text-xs text-blue-700 bg-blue-50 px-2 py-1 rounded-lg">{source.title}</button>)}</div></div>}
+                                </>}
+                            </div>)}
+                            {isTyping && <p role="status" className="text-xs text-slate-500 animate-pulse">Consultando las guías con la IA local…</p>}
+                            <div ref={endRef} />
+                        </div>
+                        <form onSubmit={handleSend} className="border-t p-4 bg-slate-50">
+                            <div className="flex gap-2"><input ref={inputRef} aria-label="Pregunta sobre OdontoCloud" maxLength={1200} value={input} onChange={e => setInput(e.target.value)} placeholder="¿Cómo hago para apartar una cita?" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-3 text-sm focus:outline-blue-500" />
+                                <button type="submit" aria-label="Enviar pregunta" disabled={isTyping || !input.trim()} className="bg-blue-600 text-white rounded-xl px-4 disabled:opacity-40 hover:bg-blue-700"><FiSend /></button></div>
+                            <p className="text-[10px] text-slate-500 mt-2">Describe la función que necesitas. No incluyas datos de pacientes. Las opciones dependen de tus permisos.</p>
+                        </form>
                     </div>
                 </div>
-
-                {/* Chat Messages Area */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-[#f8fafc] text-xs custom-scrollbar">
-                    {messages.map((m) => (
-                        <div
-                            key={m.id}
-                            className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}
-                        >
-                            <div
-                                className={`max-w-[88%] p-3.5 rounded-2xl shadow-xs ${
-                                    m.sender === "user"
-                                        ? "bg-blue-600 text-white rounded-br-xs font-semibold"
-                                        : "bg-white text-slate-800 rounded-bl-xs border border-slate-200/80 shadow-sm"
-                                }`}
-                            >
-                                {m.sender === "user" ? (
-                                    <p className="whitespace-pre-wrap">{m.text}</p>
-                                ) : (
-                                    <FormattedMessage text={m.text} />
-                                )}
-                            </div>
-                        </div>
-                    ))}
-
-                    {isTyping && (
-                        <div className="flex justify-start">
-                            <div className="bg-white border border-slate-200 px-4 py-2.5 rounded-2xl rounded-bl-xs text-slate-400 text-xs flex items-center gap-2 shadow-xs">
-                                <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" />
-                                <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.2s]" />
-                                <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.4s]" />
-                                <span className="text-[11px] text-slate-500 font-medium">OdontoIA está buscando la respuesta...</span>
-                            </div>
-                        </div>
-                    )}
-                    <div ref={messagesEndRef} />
-                </div>
-
-                {/* Footer Input + WhatsApp Direct Advisor */}
-                <div className="p-3 bg-white border-t border-slate-100 space-y-2">
-                    <form
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            handleSend();
-                        }}
-                        className="flex items-center gap-2"
-                    >
-                        <input
-                            type="text"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            placeholder="Escribe tu duda sobre el sistema (ej. ¿Cómo crear una cita?)..."
-                            className="flex-1 h-9 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 outline-none focus:border-blue-500 focus:bg-white transition-all placeholder:text-slate-400"
-                        />
-                        <button
-                            type="submit"
-                            disabled={!input.trim() || isTyping}
-                            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
-                        >
-                            <FiSend size={13} />
-                        </button>
-                    </form>
-
-                    {/* Botón WhatsApp de Asesor Humano */}
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-100/80 px-1">
-                        <span className="text-[10px] text-slate-400 font-medium">
-                            ¿Prefieres atención personalizada?
-                        </span>
-                        <a
-                            href="https://wa.me/573103583706?text=Hola,%20necesito%20asistencia%20en%20el%20sistema%20OdontoCloud"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 hover:underline cursor-pointer"
-                        >
-                            <span>💬 Contactar Asesor por WhatsApp</span>
-                            <FiExternalLink size={10} />
-                        </a>
-                    </div>
-                </div>
-
-            </div>
+            </section>
         </div>
     );
 }
