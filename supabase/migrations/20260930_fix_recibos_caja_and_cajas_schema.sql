@@ -32,7 +32,17 @@ ALTER TABLE public.recibos_caja
   ADD COLUMN IF NOT EXISTS "creadoPor" TEXT,
   ADD COLUMN IF NOT EXISTS creado_por TEXT,
   ADD COLUMN IF NOT EXISTS factura_id UUID,
-  ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'activo';
+  ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'Activo',
+  ADD COLUMN IF NOT EXISTS "motivoAnulacion" TEXT,
+  ADD COLUMN IF NOT EXISTS motivo_anulacion TEXT,
+  ADD COLUMN IF NOT EXISTS "anuladoPor" TEXT,
+  ADD COLUMN IF NOT EXISTS anulado_por TEXT,
+  ADD COLUMN IF NOT EXISTS "fechaAnulacion" TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS fecha_anulacion TIMESTAMPTZ;
+
+-- Asegurar columnas de anulación en pagos
+ALTER TABLE public.pagos
+  ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'Activo';
 
 -- 2. Asegurar columnas completas en movimientos_caja
 ALTER TABLE public.movimientos_caja
