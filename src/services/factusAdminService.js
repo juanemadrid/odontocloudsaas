@@ -1,4 +1,4 @@
-import { getTenants } from "./adminService.js";
+import { getTenants, updateTenantDetails } from "./adminService.js";
 import {
   configureFactus,
   getFactusStatus
@@ -22,6 +22,16 @@ const toCompatibilityCredentials = (status) => {
 
 export const saveClinicFactusConfig = async (tenantId, configData) => {
   await configureFactus(tenantId, configData);
+  try {
+    await updateTenantDetails(tenantId, {
+      facturacionCuota: Number(configData.facturacionCuota) || 0,
+      hasFactusCreds: true,
+      factusTestMode: configData.factusTestMode === true,
+      factusNumberingRangeId: configData.factusNumberingRangeId || ""
+    });
+  } catch (syncErr) {
+    console.warn("Aviso al sincronizar cuota de facturas con website_config:", syncErr?.message);
+  }
   return true;
 };
 
