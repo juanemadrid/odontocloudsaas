@@ -117,7 +117,33 @@ export const getTenants = async () => {
             });
         });
 
-        return Array.from(tenantsMap.values());
+        const baseTenants = Array.from(tenantsMap.values());
+
+        // 3. Sincronizar cuota y estado real de Factus directamente desde el backend seguro
+        try {
+            const { getFactusStatus } = await import("./factusProxyService.js");
+            const enriched = await Promise.all(baseTenants.map(async t => {
+                try {
+                    const status = await getFactusStatus(t.id);
+                    if (status && status.configured) {
+                        return {
+                            ...t,
+                            hasFactusCreds: true,
+                            facturacionCuota: Number(status.facturacionCuota ?? t.facturacionCuota ?? 0),
+                            facturacionUsadas: Number(status.facturacionUsadas ?? t.facturacionUsadas ?? 0),
+                            factusTestMode: status.factusTestMode !== false,
+                            factusNumberingRangeId: status.factusNumberingRangeId || t.factusNumberingRangeId
+                        };
+                    }
+                } catch {
+                    // Si falla consulta individual, continúa con el valor base
+                }
+                return t;
+            }));
+            return enriched;
+        } catch {
+            return baseTenants;
+        }
     } catch (error) {
         console.error("Error al obtener clínicas desde Supabase:", error);
         return [];
