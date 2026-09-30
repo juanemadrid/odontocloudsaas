@@ -887,62 +887,12 @@ export const generateReciboCajaHtml = ({
       line-height: 1.25;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
-    }
-    .watermark-anulado {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%) rotate(-30deg);
-      font-size: 105px;
-      font-weight: 900;
-      color: rgba(225, 29, 72, 0.16);
-      border: 8px solid rgba(225, 29, 72, 0.22);
-      padding: 14px 65px;
-      text-transform: uppercase;
-      letter-spacing: 12px;
-      border-radius: 20px;
-      pointer-events: none;
-      z-index: 9999;
-      user-select: none;
-      white-space: nowrap;
-    }
-    .header-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    .header-logo { width: 25%; vertical-align: middle; text-align: left; }
-    .header-company { width: 50%; text-align: center; vertical-align: middle; font-size: 11px; line-height: 1.35; }
-    .company-title { font-size: 13px; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; }
-    .header-meta { width: 25%; text-align: right; vertical-align: middle; }
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-    .info-table td { border: 1px solid #111; padding: 4.5px 7px; font-size: 10.5px; vertical-align: middle; }
-    .info-table td.lbl { font-weight: bold; font-size: 9.5px; text-transform: uppercase; }
-    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-    .items-table th { border: 1px solid #111; font-weight: bold; font-size: 10.5px; padding: 5px 8px; text-align: left; }
-    .items-table td { border: 1px solid #111; }
-    .summary-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-    .obs-cell { width: 58%; vertical-align: top; padding-right: 12px; font-size: 10.5px; }
-    .totals-cell { width: 42%; vertical-align: top; }
-    .totals-inner-table { width: 100%; border-collapse: collapse; }
-    .totals-inner-table td { padding: 4px 8px; font-size: 11px; }
-    .totals-inner-table td.tot-label { font-weight: bold; text-align: right; width: 45%; }
-    .totals-inner-table td.tot-val { font-weight: bold; text-align: right; width: 55%; white-space: nowrap; }
-    .signatures-table { width: 100%; border-collapse: collapse; margin-top: 50px; margin-bottom: 20px; }
-    .sig-block { width: 50%; text-align: center; vertical-align: bottom; padding: 0 30px; }
-    .sig-line { border-top: 1px solid #000; width: 85%; margin: 0 auto 6px auto; }
-    .sig-title { font-size: 9.5px; font-weight: bold; text-transform: uppercase; }
     @media print { 
-      body { padding: 0; }
-      .watermark-anulado {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%) rotate(-30deg);
-        color: rgba(225, 29, 72, 0.16) !important;
-        border-color: rgba(225, 29, 72, 0.22) !important;
-      }
+      body { padding: 0; } 
     }
   </style>
 </head>
 <body>
-  ${isAnulado ? `<div class="watermark-anulado">ANULADO</div>` : ""}
   <table class="header-table">
     <tr>
       <td class="header-logo">${logoHtml}</td>
