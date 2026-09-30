@@ -169,9 +169,35 @@ export default function ReciboCajaList({ onNew }) {
             const nowIso = new Date().toISOString();
             const operator = voidUser.trim() || userProfile?.nombreCompleto || userProfile?.email || "Administración";
             
-            await supabase
-                .from(targetTable)
-                .update({
+            let updatePayload = {
+                estado: "Anulado"
+            };
+
+            if (recibo.isPago) {
+                // En tabla pagos, guardar en notas JSON y en columnas si existen
+                let prevNotes = {};
+                try {
+                    if (typeof recibo._raw?.notas === "string" && recibo._raw.notas.startsWith("{")) {
+                        prevNotes = JSON.parse(recibo._raw.notas);
+                    } else if (typeof recibo._raw?.notas === "object") {
+                        prevNotes = recibo._raw.notas || {};
+                    }
+                } catch (e) {}
+
+                const updatedNotes = {
+                    ...prevNotes,
+                    anulado: true,
+                    estado: "Anulado",
+                    motivoAnulacion: voidReason.trim(),
+                    anuladoPor: operator,
+                    fechaAnulacion: nowIso
+                };
+
+                updatePayload = {
+                    notas: JSON.stringify(updatedNotes)
+                };
+            } else {
+                updatePayload = {
                     estado: "Anulado",
                     motivoAnulacion: voidReason.trim(),
                     motivo_anulacion: voidReason.trim(),
@@ -179,8 +205,24 @@ export default function ReciboCajaList({ onNew }) {
                     anulado_por: operator,
                     fechaAnulacion: nowIso,
                     fecha_anulacion: nowIso
-                })
+                };
+            }
+
+            const { error: updErr } = await supabase
+                .from(targetTable)
+                .update(updatePayload)
                 .eq("id", recibo.id);
+
+            if (updErr) {
+                console.error("Error from Supabase on void:", updErr);
+                // Si falló por alguna columna que no existe, intentar actualizar solo estado
+                if (!recibo.isPago) {
+                    await supabase
+                        .from(targetTable)
+                        .update({ estado: "Anulado" })
+                        .eq("id", recibo.id);
+                }
+            }
 
             toast && toast.success("Documento anulado correctamente");
             await loadData();
@@ -590,7 +632,7 @@ export default function ReciboCajaList({ onNew }) {
                                 </tr>
                             ) : (
                                 filteredRecibos.map((r) => {
-                                    const isAnulado = r.estado === "Anulado";
+                                    const isAnulado = String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado);
                                     const isExpanded = expandedRowId === r.id;
 
                                     return (
