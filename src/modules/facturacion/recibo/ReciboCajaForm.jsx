@@ -449,20 +449,32 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             const reciboData = {
                 tenant_id: inquilino,
                 inquilino,
+                numero: finalConsecutivo,
+                nro_consecutivo: finalConsecutivo,
                 nroConsecutivo: finalConsecutivo,
                 fecha: new Date(fecha + "T00:00:00").toISOString(),
+                profesional_id: profesional.id || null,
                 profesionalId: profesional.id || null,
+                profesional_nombre: profesional.nombre || null,
                 profesionalNombre: profesional.nombre || null,
+                paciente_id: paciente.id,
                 pacienteId: paciente.id,
+                paciente_nombre: paciente.nombre,
                 pacienteNombre: paciente.nombre,
+                condicion_pago: condicionPago,
                 condicionPago,
+                medio_pago: medioPago,
                 medioPago,
                 conceptos,
+                monto: totals.total,
                 subtotal: totals.subtotal,
+                descuento_total: totals.descuento,
                 descuentoTotal: totals.descuento,
                 total: totals.total,
                 observaciones,
+                caja_id: currentActiveCaja ? currentActiveCaja.id : null,
                 cajaId: currentActiveCaja ? currentActiveCaja.id : null,
+                creado_por: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
                 creadoPor: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
                 created_at: new Date().toISOString()
             };
@@ -483,29 +495,38 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             };
             await saveConfigItem(inquilino, "consecutivos", "consecutivos", updatedConsDoc);
 
-            if (currentActiveCaja) {
-                const movData = {
-                    tenant_id: inquilino,
-                    tipo: "ingreso",
-                    concepto: "Recibo de Caja #" + newRecibo.id.slice(0,6).toUpperCase(),
-                    monto: totals.total,
-                    metodo_pago: medioPago,
-                    descripcion: `Cobro a ${paciente.nombre}. Conceptos: ${conceptos.map(c => c.concepto).join(", ")}`,
-                    paciente_id: paciente.id,
-                    paciente_nombre: paciente.nombre,
-                    recibo_id: newRecibo.id,
-                    usuario_id: userProfile?.uid,
-                    caja_id: currentActiveCaja.id,
-                    created_at: new Date().toISOString()
-                };
-                await supabase.from("movimientos_caja").insert([movData]);
-                await supabase
-                    .from("cajas")
-                    .update({
-                        saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + totals.total,
-                        total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + totals.total
-                    })
-                    .eq("id", currentActiveCaja.id);
+            if (currentActiveCaja && newRecibo?.id) {
+                try {
+                    const movData = {
+                        tenant_id: inquilino,
+                        tipo: "ingreso",
+                        concepto: "Recibo de Caja #" + newRecibo.id.slice(0,6).toUpperCase(),
+                        monto: totals.total,
+                        metodo_pago: medioPago,
+                        descripcion: `Cobro a ${paciente.nombre}. Conceptos: ${conceptos.map(c => c.concepto).join(", ")}`,
+                        paciente_id: paciente.id,
+                        paciente_nombre: paciente.nombre,
+                        recibo_id: newRecibo.id,
+                        usuario_id: userProfile?.uid,
+                        caja_id: currentActiveCaja.id,
+                        created_at: new Date().toISOString()
+                    };
+                    await supabase.from("movimientos_caja").insert([movData]);
+                } catch (movErr) {
+                    console.warn("Aviso al registrar movimiento de caja:", movErr?.message);
+                }
+
+                try {
+                    await supabase
+                        .from("cajas")
+                        .update({
+                            saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + totals.total,
+                            total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + totals.total
+                        })
+                        .eq("id", currentActiveCaja.id);
+                } catch (cajaErr) {
+                    console.warn("Aviso al actualizar saldo de caja:", cajaErr?.message);
+                }
             }
 
             setSuccess(true);
