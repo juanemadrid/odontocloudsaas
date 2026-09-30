@@ -130,7 +130,12 @@ export default function ReciboCajaList({ onNew }) {
                 medioPago: recibo.medioPago || "Efectivo",
                 conceptos: conceptosList,
                 total: recibo.total,
-                observaciones: recibo.observaciones || recibo.notas || ""
+                observaciones: recibo.observaciones || recibo.notas || "",
+                estado: recibo.estado,
+                anulado: recibo.anulado,
+                motivoAnulacion: recibo.motivoAnulacion,
+                anuladoPor: recibo.anuladoPor,
+                fechaAnulacion: recibo.fechaAnulacion
             },
             patient: {
                 nombreCompleto: recibo.pacienteNombre,

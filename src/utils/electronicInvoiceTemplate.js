@@ -848,15 +848,35 @@ export const generateReciboCajaHtml = ({
 
   const observacionesText = recibo?.observaciones || recibo?.notas || "";
 
+  const isAnulado =
+    Boolean(recibo?.anulado) ||
+    String(recibo?.estado || "").toLowerCase() === "anulado" ||
+    String(recibo?.referencia || "").toUpperCase().includes("ANULADO") ||
+    String(recibo?.observaciones || "").includes("[ANULADO") ||
+    String(recibo?.notas || "").includes("ANULADO");
+
+  const motivoAnulacion =
+    recibo?.motivoAnulacion ||
+    recibo?.motivo_anulacion ||
+    (String(recibo?.observaciones || "").match(/\[ANULADO:\s*([^\]]+)\]/i)?.[1]) ||
+    (String(recibo?.notas || "").match(/ANULADO\s*-\s*([^()]+)/i)?.[1]?.trim()) ||
+    "";
+
+  const anuladoPor = recibo?.anuladoPor || recibo?.anulado_por || "";
+  const fechaAnulacion = (recibo?.fechaAnulacion || recibo?.fecha_anulacion)
+    ? formatDateSlash(recibo?.fechaAnulacion || recibo?.fecha_anulacion)
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Recibo de Caja No.${nroRecibo}</title>
+  <title>Recibo de Caja No.${nroRecibo}${isAnulado ? " (ANULADO)" : ""}</title>
   <style>
     @page { size: portrait; margin: 10mm 12mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
+      position: relative;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 11px;
       color: #000;
@@ -867,6 +887,24 @@ export const generateReciboCajaHtml = ({
       line-height: 1.25;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+    }
+    .watermark-anulado {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-30deg);
+      font-size: 105px;
+      font-weight: 900;
+      color: rgba(225, 29, 72, 0.16);
+      border: 8px solid rgba(225, 29, 72, 0.22);
+      padding: 14px 65px;
+      text-transform: uppercase;
+      letter-spacing: 12px;
+      border-radius: 20px;
+      pointer-events: none;
+      z-index: 9999;
+      user-select: none;
+      white-space: nowrap;
     }
     .header-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
     .header-logo { width: 25%; vertical-align: middle; text-align: left; }
@@ -890,10 +928,21 @@ export const generateReciboCajaHtml = ({
     .sig-block { width: 50%; text-align: center; vertical-align: bottom; padding: 0 30px; }
     .sig-line { border-top: 1px solid #000; width: 85%; margin: 0 auto 6px auto; }
     .sig-title { font-size: 9.5px; font-weight: bold; text-transform: uppercase; }
-    @media print { body { padding: 0; } }
+    @media print { 
+      body { padding: 0; }
+      .watermark-anulado {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-30deg);
+        color: rgba(225, 29, 72, 0.16) !important;
+        border-color: rgba(225, 29, 72, 0.22) !important;
+      }
+    }
   </style>
 </head>
 <body>
+  ${isAnulado ? `<div class="watermark-anulado">ANULADO</div>` : ""}
   <table class="header-table">
     <tr>
       <td class="header-logo">${logoHtml}</td>
@@ -907,7 +956,11 @@ export const generateReciboCajaHtml = ({
       <td class="header-meta">
         <div style="text-align: right;">
           <div style="font-size: 12px; font-weight: normal;">Recibo de caja</div>
-          <div style="font-size: 15px; font-weight: bold; margin-top: 2px;">No.${nroRecibo}</div>
+          <div style="font-size: 15px; font-weight: bold; margin-top: 2px; color: ${isAnulado ? '#e11d48' : '#000'};">No.${nroRecibo}</div>
+          ${isAnulado ? `
+          <div style="display: inline-block; background-color: #ffe4e6; color: #be123c; border: 1.5px solid #f43f5e; font-size: 9.5px; font-weight: 900; padding: 2px 7px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;">
+            ANULADO
+          </div>` : ""}
         </div>
       </td>
     </tr>
@@ -963,6 +1016,13 @@ export const generateReciboCajaHtml = ({
   <table class="summary-table">
     <tr>
       <td class="obs-cell">
+        ${isAnulado ? `
+        <div style="background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px;">
+          <div style="font-weight: 900; color: #e11d48; font-size: 10px; text-transform: uppercase;">⚠️ DOCUMENTO ANULADO</div>
+          <div style="color: #9f1239; font-size: 9.5px; font-weight: 600; margin-top: 2px;">
+            ${motivoAnulacion ? `Motivo: ${motivoAnulacion}` : 'Documento invalidado en sistema'}${anuladoPor ? ` | Por: ${anuladoPor}` : ''}${fechaAnulacion ? ` | Fecha: ${fechaAnulacion}` : ''}
+          </div>
+        </div>` : ""}
         <div style="font-weight: bold; margin-bottom: 4px;">Observaciones:</div>
         <div>${observacionesText}</div>
       </td>
