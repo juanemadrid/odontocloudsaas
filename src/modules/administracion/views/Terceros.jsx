@@ -267,9 +267,6 @@ export default function Terceros() {
     if (!formData.identificadorProcedencia) return toast?.error("El identificador de procedencia es requerido");
     if (!formData.tipoPersona) return toast?.error("El tipo de persona es requerido");
     if (!formData.modalidadPago) return toast?.error("La modalidad de pago es requerida");
-    if (formData.isEps && !formData.codigoEntidadAdministradora?.trim()) {
-      return toast?.error("El código de entidad administradora es requerido para EPS");
-    }
 
     // Validaciones DIAN para NIT
     let finalDoc = formData.nroDocumento.trim();
@@ -547,10 +544,11 @@ export default function Terceros() {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100 disabled:opacity-50"
+              className="relative overflow-hidden flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#8dc63f] hover:bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-emerald-100 disabled:opacity-50 cursor-pointer"
             >
               <FiSave size={14} />
               <span>{saving ? "Guardando..." : "Guardar"}</span>
+              {saving && <span className="animate-saving-bar" />}
             </button>
           </div>
 
@@ -899,59 +897,40 @@ export default function Terceros() {
                 />
               </div>
 
-              {/* Toggle IPS */}
+              {/* Toggle EPS / Entidad de convenio */}
               <div className="md:col-span-2 flex items-center justify-between p-4 bg-slate-50 border border-slate-200/50 rounded-2xl">
                 <div>
                   <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider block mb-1">
-                    ¿Es una Institución Prestadora de Servicios de Salud (IPS) / Entidad de convenio?
+                    ¿Es una Entidad Promotora de Salud (EPS) / Entidad de convenio?
                   </span>
                   <span className="text-[10px] font-medium text-slate-400">
-                    Si se marca como IPS, este tercero estará disponible como Entidad en los presupuestos del módulo de pacientes, y las facturas se generarán a su nombre.
+                    Si se marca como EPS o entidad de convenio, este tercero estará disponible en los presupuestos del módulo de pacientes, en el generador de RIPS y las facturas se podrán emitir a su nombre.
                   </span>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={formData.isIps || false}
-                    onChange={(e) => setFormData({ ...formData, isIps: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              {/* Toggle EPS */}
-              <div className="md:col-span-2 flex items-center justify-between p-4 bg-slate-50 border border-slate-200/50 rounded-2xl">
-                <div>
-                  <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider block mb-1">
-                    ¿Es una entidad promotora de salud (EPS)?
-                  </span>
-                  <span className="text-[10px] font-medium text-slate-400">
-                    Si se marca, se habilitará automáticamente en las opciones del Generador de RIPS de la clínica.
-                  </span>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isEps}
-                    onChange={(e) => setFormData({ ...formData, isEps: e.target.checked })}
+                    checked={formData.isEps || formData.isIps || false}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setFormData({ ...formData, isEps: val, isIps: val });
+                    }}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8dc63f]"></div>
                 </label>
               </div>
 
-              {formData.isEps && (
+              {(formData.isEps || formData.isIps) && (
                 <div className="md:col-span-2 animate-fadeIn">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                    Código de entidad administradora *
+                    Código de entidad administradora (Opcional para convenios / Obligatorio para RIPS)
                   </label>
                   <input
                     type="text"
-                    required
                     value={formData.codigoEntidadAdministradora || ""}
                     onChange={(e) => setFormData({ ...formData, codigoEntidadAdministradora: e.target.value })}
-                    placeholder="Código de entidad administradora"
+                    placeholder="Código de entidad administradora (Ej: EPS001)"
                     className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-slate-50/30 outline-none focus:border-blue-400 focus:bg-white transition-all caret-slate-950"
                   />
                 </div>
@@ -972,9 +951,10 @@ export default function Terceros() {
             <button
               type="submit"
               disabled={saving}
-              className="px-8 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-blue-100"
+              className="relative overflow-hidden px-8 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-md shadow-blue-100 disabled:opacity-50 cursor-pointer"
             >
               {saving ? "Guardando..." : "Guardar"}
+              {saving && <span className="animate-saving-bar" />}
             </button>
           </div>
         </form>
