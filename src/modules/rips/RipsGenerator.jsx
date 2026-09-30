@@ -474,19 +474,6 @@ export default function RipsGenerator() {
                     }
                 });
 
-                // 5. Usuarios / Personal
-                (snapProfiles.data || []).forEach(u => {
-                    const name = (u.nombreCompleto || u.nombre || u.full_name || u.email || "").trim();
-                    if (name && !uniqueTercerosMap.has(`USER_${name.toUpperCase()}`)) {
-                        uniqueTercerosMap.set(`USER_${name.toUpperCase()}`, {
-                            label: name,
-                            value: name,
-                            doc: "",
-                            tipo: "Usuario"
-                        });
-                    }
-                });
-
                 const sortedTerceros = Array.from(uniqueTercerosMap.values()).sort((a, b) => a.label.localeCompare(b.label));
                 setEpsList(sortedTerceros);
 
