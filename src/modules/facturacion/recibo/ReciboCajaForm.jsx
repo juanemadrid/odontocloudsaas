@@ -62,6 +62,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
     const [patientSearch, setPatientSearch] = useState("");
     const [showPatientDrop, setShowPatientDrop] = useState(false);
     const [condicionPago, setCondicionPago] = useState("Contado");
+    const [condicionesPagoList, setCondicionesPagoList] = useState([]);
     const [medioPago, setMedioPago] = useState("Efectivo");
     const [conceptos, setConceptos] = useState([]);
     const [observaciones, setObservaciones] = useState("");
@@ -210,6 +211,37 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             if (activeMetodos.length > 0) {
                 setPaymentMethods(activeMetodos);
                 setMedioPago(activeMetodos[0] || "Efectivo");
+            }
+
+            // 5. Dynamic condiciones de pago creadas en Configuración
+            let condList = [];
+            try {
+                const cpData = await getConfigItems(inquilino, "condiciones_pago", "condiciones_pago");
+                if (cpData && cpData.length > 0) condList = cpData;
+            } catch (e) {}
+
+            if (condList.length === 0) {
+                try {
+                    const cfgCond = await getConfigSection(inquilino, "condiciones_pago", []);
+                    if (Array.isArray(cfgCond) && cfgCond.length > 0) condList = cfgCond;
+                } catch (e) {}
+            }
+
+            if (condList.length === 0) {
+                condList = [
+                    { id: "contado", nombre: "Contado" },
+                    { id: "15_dias", nombre: "15 días" },
+                    { id: "30_dias", nombre: "30 días" }
+                ];
+            }
+
+            setCondicionesPagoList(condList);
+            if (condList.length > 0) {
+                const firstCond = typeof condList[0] === 'string' ? condList[0] : (condList[0].nombre || condList[0].label || "Contado");
+                setCondicionPago(prev => {
+                    const exists = condList.some(c => (typeof c === 'string' ? c : c.nombre) === prev);
+                    return exists ? prev : firstCond;
+                });
             }
 
          } catch (e) {
@@ -631,10 +663,14 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                     value={condicionPago}
                                     onChange={e => setCondicionPago(e.target.value)}
                                 >
-                                    <option value="Contado">Contado</option>
-                                    <option value="15 días">15 días</option>
-                                    <option value="30 días">30 días</option>
-                                    <option value="60 días">60 días</option>
+                                    {condicionesPagoList.map((cond, idx) => {
+                                        const condName = typeof cond === 'string' ? cond : (cond.nombre || cond.label || cond.condicion || "Condición");
+                                        return (
+                                            <option key={cond.id || `cp_${idx}`} value={condName}>
+                                                {condName}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                             </div>
                             <div>

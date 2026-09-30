@@ -314,7 +314,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 if (condList.length === 0) {
                     condList = [
                         { id: "contado", nombre: "Contado" },
-                        { id: "credito_30", nombre: "Crédito 30 días" }
+                        { id: "15_dias", nombre: "15 días" },
+                        { id: "30_dias", nombre: "30 días" }
                     ];
                 }
                 setCondicionesPagoList(condList);
