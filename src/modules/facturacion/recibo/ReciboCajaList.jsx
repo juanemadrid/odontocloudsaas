@@ -155,23 +155,30 @@ export default function ReciboCajaList({ onNew }) {
         setVoidModal({ open: true, recibo });
     };
 
+    const [voiding, setVoiding] = useState(false);
+
     const handleConfirmVoid = async () => {
         if (!voidReason.trim()) {
             alert("El motivo de la anulación es obligatorio");
             return;
         }
+        setVoiding(true);
         try {
             const recibo = voidModal.recibo;
             const targetTable = recibo.isPago ? "pagos" : "recibos_caja";
+            const nowIso = new Date().toISOString();
+            const operator = voidUser.trim() || userProfile?.nombreCompleto || userProfile?.email || "Administración";
             
             await supabase
                 .from(targetTable)
                 .update({
                     estado: "Anulado",
                     motivoAnulacion: voidReason.trim(),
-                    anuladoPor: voidUser.trim(),
-                    fechaAnulacion: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
+                    motivo_anulacion: voidReason.trim(),
+                    anuladoPor: operator,
+                    anulado_por: operator,
+                    fechaAnulacion: nowIso,
+                    fecha_anulacion: nowIso
                 })
                 .eq("id", recibo.id);
 
@@ -181,6 +188,8 @@ export default function ReciboCajaList({ onNew }) {
         } catch (e) {
             console.error("Error voiding receipt:", e);
             toast && toast.error("Error al anular el recibo");
+        } finally {
+            setVoiding(false);
         }
     };
 
@@ -304,6 +313,10 @@ export default function ReciboCajaList({ onNew }) {
                         venceEn: 0,
                         isPago: false,
                         nroConsecutivo: d.nroConsecutivo || d.nro_consecutivo || d.numero || null,
+                        estado: d.estado ? (d.estado.toLowerCase() === "anulado" ? "Anulado" : "Activo") : "Activo",
+                        motivoAnulacion: d.motivoAnulacion || d.motivo_anulacion || "",
+                        anuladoPor: d.anuladoPor || d.anulado_por || "",
+                        fechaAnulacion: d.fechaAnulacion || d.fecha_anulacion || "",
                         fevNumero: invoiceMap[d.id] || d.factura_id || null,
                         rawDate: d.fecha || d.created_at
                     };
@@ -588,7 +601,7 @@ export default function ReciboCajaList({ onNew }) {
                                                     isExpanded 
                                                         ? 'bg-blue-50/40' 
                                                         : isAnulado 
-                                                            ? 'hover:bg-rose-50/30' 
+                                                            ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500' 
                                                             : 'hover:bg-slate-50/80'
                                                 }`}
                                             >
@@ -598,12 +611,19 @@ export default function ReciboCajaList({ onNew }) {
                                                 </td>
 
                                                 {/* Doc. (Consecutivo) */}
-                                                <td className={`py-3 px-3 font-semibold font-mono ${isAnulado ? 'text-rose-500 font-bold' : 'text-slate-700'}`}>
-                                                    {r.consecutivoNumero}
+                                                <td className={`py-3 px-3 font-semibold font-mono ${isAnulado ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span>{r.consecutivoNumero}</span>
+                                                        {isAnulado && (
+                                                            <span className="px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-extrabold bg-rose-100 text-rose-700 rounded-md border border-rose-300">
+                                                                ANULADO
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
 
                                                 {/* Tipo doc. */}
-                                                <td className="py-3 px-4 font-medium text-slate-600">
+                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500 line-through opacity-75' : 'text-slate-600'}`}>
                                                     {r.tipoDoc || "Recibo de caja"}
                                                 </td>
 
@@ -619,17 +639,17 @@ export default function ReciboCajaList({ onNew }) {
                                                 </td>
 
                                                 {/* Pac./Ter. */}
-                                                <td className={`py-3 px-4 font-semibold uppercase ${isAnulado ? 'text-rose-500 font-bold' : 'text-slate-800'}`}>
+                                                <td className={`py-3 px-4 font-semibold uppercase ${isAnulado ? 'text-rose-600 font-bold' : 'text-slate-800'}`}>
                                                     {r.pacienteNombre}
                                                 </td>
 
                                                 {/* Profesional */}
-                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500' : 'text-slate-600'}`}>
+                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500 opacity-80' : 'text-slate-600'}`}>
                                                     {r.profesionalNombre}
                                                 </td>
 
                                                 {/* Medio de pago */}
-                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500 font-bold' : 'text-slate-600'}`}>
+                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500 opacity-80' : 'text-slate-600'}`}>
                                                     {r.medioPago}
                                                 </td>
 
@@ -644,7 +664,7 @@ export default function ReciboCajaList({ onNew }) {
                                                 </td>
 
                                                 {/* T. Doc. */}
-                                                <td className={`py-3 px-4 text-right font-bold font-mono ${isAnulado ? 'text-rose-500' : 'text-slate-800'}`}>
+                                                <td className={`py-3 px-4 text-right font-bold font-mono ${isAnulado ? 'text-rose-600 line-through opacity-75' : 'text-slate-800'}`}>
                                                     {fmt(r.total)}
                                                 </td>
 
@@ -895,16 +915,28 @@ export default function ReciboCajaList({ onNew }) {
                         {/* Footer */}
                         <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-2">
                             <button 
+                                type="button"
+                                disabled={voiding}
                                 onClick={() => setVoidModal({ open: false, recibo: null })}
-                                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-xs transition-all cursor-pointer disabled:opacity-50"
                             >
                                 Cancelar
                             </button>
                             <button 
+                                type="button"
+                                disabled={voiding}
                                 onClick={handleConfirmVoid}
-                                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-rose-600/20 active:scale-95 cursor-pointer"
+                                className="relative overflow-hidden px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-rose-600/20 active:scale-95 cursor-pointer disabled:opacity-60"
                             >
-                                Confirmar Anulación
+                                {voiding ? (
+                                    <span className="flex items-center gap-1.5">
+                                        <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
+                                        Anulando documento...
+                                    </span>
+                                ) : (
+                                    "Confirmar Anulación"
+                                )}
+                                {voiding && <span className="animate-saving-bar" />}
                             </button>
                         </div>
                     </div>

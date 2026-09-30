@@ -834,15 +834,17 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                             Cancelar
                         </button>
                         <button
+                            type="button"
                             onClick={handleSubmit}
                             disabled={saving}
-                            className="h-9 px-5 flex items-center gap-1.5 justify-center bg-[#8cc33f] text-white rounded-lg text-xs font-bold hover:bg-[#7db02b] shadow-xs transition-all active:scale-95 disabled:opacity-60"
+                            className="relative overflow-hidden h-9 px-5 flex items-center gap-1.5 justify-center bg-[#8cc33f] text-white rounded-lg text-xs font-bold hover:bg-[#7db02b] shadow-xs transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
                         >
                             {saving ? (
-                                <><div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Guardando...</>
+                                <><div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Guardando recibo...</>
                             ) : (
                                 <><FiSave size={13} /> Guardar recibo</>
                             )}
+                            {saving && <span className="animate-saving-bar" />}
                         </button>
                     </div>
                 </div>

@@ -2100,3 +2100,20 @@ input[type="search"] {
         animation: none !important;
     }
 }
+
+/* Barra de progreso de guardado tipo Factus / Stripe */
+@keyframes savingProgress {
+    0% { transform: translateX(-100%); }
+    50% { transform: translateX(0%); }
+    100% { transform: translateX(100%); }
+}
+
+.animate-saving-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent);
+    animation: savingProgress 1.4s ease-in-out infinite;
+}
