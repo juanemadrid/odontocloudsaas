@@ -409,11 +409,24 @@ export default function ReciboCajaList({ onNew }) {
             // 2. Recibos de caja
             let dataRecibos = [];
             try {
-                const { data } = await supabase
+                const { data, error: errRecs } = await supabase
                     .from("recibos_caja")
                     .select("*")
                     .eq("tenant_id", inquilino);
-                if (data && data.length > 0) dataRecibos = data;
+                if (!errRecs && data && data.length > 0) dataRecibos = data;
+            } catch (e) {}
+
+            // Fallback resiliente a website_config para no perder ningún recibo
+            try {
+                const cfgRecibos = await getConfigSection(inquilino, "recibos_caja", []);
+                if (Array.isArray(cfgRecibos) && cfgRecibos.length > 0) {
+                    const existingIds = new Set(dataRecibos.map(r => r.id));
+                    cfgRecibos.forEach(cr => {
+                        if (cr && cr.id && !existingIds.has(cr.id)) {
+                            dataRecibos.push(cr);
+                        }
+                    });
+                }
             } catch (e) {}
 
             // 3. Pagos / Recaudos
@@ -608,6 +621,13 @@ export default function ReciboCajaList({ onNew }) {
             setLoading(false);
         }
     }, [inquilino, fechaInicio, fechaFin, userProfile, companyInfo]);
+
+    // Carga inicial automática de recibos para el período actual
+    useEffect(() => {
+        if (inquilino) {
+            loadData();
+        }
+    }, [inquilino, loadData]);
 
     const filteredRecibos = useMemo(() => {
         const term = searchTerm.trim().toLowerCase();

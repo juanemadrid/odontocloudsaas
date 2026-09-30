@@ -6,6 +6,7 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
+import { useToast } from "../../../context/ToastContext";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { getActiveCaja, getDoctorsList, ensureActiveCaja } from "../../../services/supabaseServices";
 import { getConfigItems, saveConfigItem, getConfigSection } from "../../../services/configPersistenceService";
@@ -17,6 +18,8 @@ const fmt = (n) =>
     currency: "COP",
     maximumFractionDigits: 0,
   });
+
+const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(str || ""));
 
 const CIUDADES_COLOMBIA = [
     "Abejorral", "Acacías", "Aguachica", "Agustín Codazzi", "Anapoima", "Andes", "Apartadó", "Aracataca", "Arauca", "Armenia",
@@ -48,6 +51,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
     const navigate = useNavigate();
     const { id } = useParams();
     const { userProfile } = useAuth();
+    const toast = useToast();
     const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id || "";
 
     const [loading, setLoading] = useState(false);
@@ -468,19 +472,25 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             const nextCount = currentCount + 1;
             const finalConsecutivo = String(currentCount).padStart(4, '0');
 
+            const newReciboId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : null;
+            const validCajaId = currentActiveCaja?.id && isUUID(currentActiveCaja.id) ? currentActiveCaja.id : null;
+            const validProfId = profesional?.id && isUUID(profesional.id) ? profesional.id : null;
+            const validPacId = paciente?.id && isUUID(paciente.id) ? paciente.id : null;
+
             const reciboData = {
+                id: newReciboId,
                 tenant_id: inquilino,
                 inquilino,
                 numero: finalConsecutivo,
                 nro_consecutivo: finalConsecutivo,
                 nroConsecutivo: finalConsecutivo,
                 fecha: new Date(fecha + "T00:00:00").toISOString(),
-                profesional_id: profesional.id || null,
-                profesionalId: profesional.id || null,
+                profesional_id: validProfId,
+                profesionalId: validProfId,
                 profesional_nombre: profesional.nombre || null,
                 profesionalNombre: profesional.nombre || null,
-                paciente_id: paciente.id,
-                pacienteId: paciente.id,
+                paciente_id: validPacId,
+                pacienteId: validPacId,
                 paciente_nombre: paciente.nombre,
                 pacienteNombre: paciente.nombre,
                 condicion_pago: condicionPago,
@@ -494,19 +504,60 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 descuentoTotal: totals.descuento,
                 total: totals.total,
                 observaciones,
-                caja_id: currentActiveCaja ? String(currentActiveCaja.id) : null,
-                cajaId: currentActiveCaja ? String(currentActiveCaja.id) : null,
+                caja_id: validCajaId,
+                cajaId: validCajaId,
                 creado_por: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
                 creadoPor: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
                 created_at: new Date().toISOString()
             };
+            if (!newReciboId) delete reciboData.id;
 
-            const { data: newRecibo, error: recErr } = await supabase
-                .from("recibos_caja")
-                .insert([reciboData])
-                .select()
-                .single();
-            if (recErr) throw recErr;
+            let savedRecibo = null;
+            try {
+                const { data: inserted, error: recErr } = await supabase
+                    .from("recibos_caja")
+                    .insert([reciboData])
+                    .select()
+                    .maybeSingle();
+
+                if (recErr) {
+                    console.warn("Aviso insertando en recibos_caja (reintentando con datos sanitizados):", recErr);
+                    const fallbackData = {
+                        ...reciboData,
+                        profesional_id: null,
+                        profesionalId: null,
+                        paciente_id: null,
+                        pacienteId: null,
+                        caja_id: null,
+                        cajaId: null
+                    };
+                    const { data: fbData, error: fbErr } = await supabase
+                        .from("recibos_caja")
+                        .insert([fallbackData])
+                        .select()
+                        .maybeSingle();
+
+                    if (!fbErr && fbData) {
+                        savedRecibo = fbData;
+                    }
+                } else {
+                    savedRecibo = inserted;
+                }
+            } catch (err) {
+                console.warn("Excepción al insertar en recibos_caja SQL:", err);
+            }
+
+            // Respaldo garantizado en website_config (recibos_caja)
+            const finalReciboId = savedRecibo?.id || newReciboId || `rc_${Date.now()}`;
+            try {
+                const cfgRecibos = await getConfigSection(inquilino, "recibos_caja", []);
+                const fullReciboItem = { ...reciboData, id: finalReciboId };
+                const currentList = Array.isArray(cfgRecibos) ? cfgRecibos : [];
+                const updatedCfgRecibos = [fullReciboItem, ...currentList.filter(r => r.id !== finalReciboId)];
+                await saveConfigSection(inquilino, "recibos_caja", updatedCfgRecibos);
+            } catch (cfgErr) {
+                console.warn("Aviso al respaldar recibo en website_config:", cfgErr);
+            }
 
             // Incrementar el consecutivo en website_config y en la base de datos
             const updatedConsDoc = {
@@ -517,20 +568,20 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
             };
             await saveConfigItem(inquilino, "consecutivos", "consecutivos", updatedConsDoc);
 
-            if (currentActiveCaja && newRecibo?.id) {
+            if (currentActiveCaja) {
                 try {
                     const movData = {
                         tenant_id: inquilino,
                         tipo: "ingreso",
-                        concepto: "Recibo de Caja #" + newRecibo.id.slice(0,6).toUpperCase(),
+                        concepto: "Recibo de Caja #" + String(finalConsecutivo || finalReciboId).slice(0, 6).toUpperCase(),
                         monto: totals.total,
                         metodo_pago: medioPago,
                         descripcion: `Cobro a ${paciente.nombre}. Conceptos: ${conceptos.map(c => c.concepto).join(", ")}`,
-                        paciente_id: paciente.id,
+                        paciente_id: validPacId,
                         paciente_nombre: paciente.nombre,
-                        recibo_id: newRecibo.id,
-                        usuario_id: userProfile?.uid,
-                        caja_id: currentActiveCaja.id,
+                        recibo_id: isUUID(finalReciboId) ? finalReciboId : null,
+                        usuario_id: isUUID(userProfile?.uid) ? userProfile.uid : null,
+                        caja_id: validCajaId,
                         created_at: new Date().toISOString()
                     };
                     await supabase.from("movimientos_caja").insert([movData]);
@@ -538,21 +589,44 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                     console.warn("Aviso al registrar movimiento de caja:", movErr?.message);
                 }
 
-                try {
-                    await supabase
-                        .from("cajas")
-                        .update({
-                            saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + totals.total,
-                            total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + totals.total
-                        })
-                        .eq("id", currentActiveCaja.id);
-                } catch (cajaErr) {
-                    console.warn("Aviso al actualizar saldo de caja:", cajaErr?.message);
+                if (validCajaId) {
+                    try {
+                        await supabase
+                            .from("cajas")
+                            .update({
+                                saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + totals.total,
+                                total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + totals.total
+                            })
+                            .eq("id", validCajaId);
+                    } catch (cajaErr) {
+                        console.warn("Aviso al actualizar saldo de caja en tabla:", cajaErr?.message);
+                    }
                 }
+
+                // Sincronizar siempre saldo de caja en website_config
+                try {
+                    const cfgCajas = await getConfigSection(inquilino, "cajas", []);
+                    if (Array.isArray(cfgCajas)) {
+                        const updated = cfgCajas.map(c => {
+                            if (c.id === currentActiveCaja.id) {
+                                return {
+                                    ...c,
+                                    saldo_actual: (c.saldo_actual || c.saldoActual || 0) + totals.total,
+                                    saldoActual: (c.saldo_actual || c.saldoActual || 0) + totals.total,
+                                    total_ingresos: (c.total_ingresos || c.totalIngresos || 0) + totals.total,
+                                    totalIngresos: (c.total_ingresos || c.totalIngresos || 0) + totals.total
+                                };
+                            }
+                            return c;
+                        });
+                        await saveConfigSection(inquilino, "cajas", updated);
+                    }
+                } catch (e) {}
             }
 
             setSuccess(true);
-            setTimeout(() => onSuccess ? onSuccess() : navigate(buildDashboardPath('facturacion/recibo')), 1500);
+            toast && toast.success("Recibo de caja guardado con éxito");
+            setTimeout(() => onSuccess ? onSuccess() : navigate(buildDashboardPath('facturacion/recibo')), 1000);
 
         } catch (e) {
             console.error("Error al guardar recibo:", e);

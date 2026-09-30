@@ -909,7 +909,9 @@ export const ensureActiveCaja = async (tenantId, userProfile) => {
     userProfile?.displayName || 
     "Usuario";
 
-  const newCajaId = `caja_${Date.now()}`;
+  const newCajaId = (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `caja_${Date.now()}`;
   const now = new Date().toISOString();
 
   const newCajaData = {
