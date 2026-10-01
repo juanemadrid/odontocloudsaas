@@ -456,15 +456,17 @@ export default function ReciboCajaList({ onNew }) {
             // 4. Mapeo de Facturas Electrónicas vinculadas a recibos (P1-FEV1)
             let invoiceMap = {};
             try {
-                const { data: factsData } = await supabase
-                    .from("facturas")
-                    .select("id, numero, detalles")
-                    .eq("tenant_id", inquilino);
-                (factsData || []).forEach((f) => {
+                const [factsRes, fevRes] = await Promise.all([
+                    supabase.from("facturas").select("id, numero, detalles, recibo_id, factura_id").eq("tenant_id", inquilino),
+                    supabase.from("facturas_electronicas").select("id, numero, detalles, recibo_id, prefix, number").eq("tenant_id", inquilino)
+                ]);
+                const allInvoices = [...(factsRes?.data || []), ...(fevRes?.data || [])];
+                allInvoices.forEach((f) => {
                     let det = f.detalles;
                     if (typeof det === "string") {
                         try { det = JSON.parse(det); } catch {}
                     }
+                    const numFact = f.numero || (f.prefix && f.number ? `${f.prefix}${f.number}` : null) || (f.id ? `FE-${f.id.slice(0, 6)}` : "");
                     const linked = Array.isArray(det?.recibos_asociados)
                         ? det.recibos_asociados
                         : det?.recibo_asociado
@@ -473,14 +475,19 @@ export default function ReciboCajaList({ onNew }) {
                     linked.forEach((lr) => {
                         const lrId = lr.id || lr.recibo_id;
                         if (lrId) {
-                            invoiceMap[lrId] = f.numero || `FE-${f.id.slice(0, 6)}`;
+                            invoiceMap[lrId] = numFact;
                         }
                     });
+                    if (f.recibo_id) {
+                        invoiceMap[f.recibo_id] = numFact;
+                    }
                     if (f.id) {
-                        invoiceMap[f.id] = f.numero || `FE-${f.id.slice(0, 6)}`;
+                        invoiceMap[f.id] = numFact;
                     }
                 });
-            } catch (e) {}
+            } catch (e) {
+                console.warn("Error cargando mapeo de facturas:", e);
+            }
 
             const isConsumoSaldo = (item, metadata = {}) => {
                 const cond = (item.condicionPago || item.condicion || item.metodo_pago || item.metodo || item.medio || metadata.metodo || metadata.medio || "").toLowerCase();
@@ -641,7 +648,7 @@ export default function ReciboCajaList({ onNew }) {
                     ...item,
                     nroConsecutivo: n,
                     consecutivoNumero: n,
-                    docRefNumber: `FCEV${n + 50}` // Número de factura asociada
+                    docRefNumber: item.fevNumero || invoiceMap[item.id] || null // Solo si existe factura asociada real
                 };
             });
 
@@ -900,15 +907,19 @@ export default function ReciboCajaList({ onNew }) {
                                                     {r.tipoDoc || "Recibo de caja"}
                                                 </td>
 
-                                                {/* Doc. Ref. (Blue Eye Button) */}
+                                                {/* Doc. Ref. (Blue Eye Button only if real linked invoice exists) */}
                                                 <td className="py-3 px-3 text-center" onClick={e => e.stopPropagation()}>
-                                                    <button 
-                                                        onClick={() => setAssociatedDocsModal({ open: true, recibo: r })}
-                                                        className="w-7 h-6 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
-                                                        title="Ver documentos asociados"
-                                                    >
-                                                        <FiEye size={13} />
-                                                    </button>
+                                                    {r.docRefNumber ? (
+                                                        <button 
+                                                            onClick={() => setAssociatedDocsModal({ open: true, recibo: r })}
+                                                            className="w-7 h-6 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
+                                                            title={`Ver factura asociada (${r.docRefNumber})`}
+                                                        >
+                                                            <FiEye size={13} />
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-slate-300 font-semibold select-none">—</span>
+                                                    )}
                                                 </td>
 
                                                 {/* Pac./Ter. */}
@@ -1084,40 +1095,52 @@ export default function ReciboCajaList({ onNew }) {
 
                         {/* Body / Table */}
                         <div className="p-6">
-                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                                <table className="w-full text-left border-collapse">
-                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold">
-                                        <tr>
-                                            <th className="py-2.5 px-4">Número documento</th>
-                                            <th className="py-2.5 px-4">Tipo documento</th>
-                                            <th className="py-2.5 px-4">Valor</th>
-                                            <th className="py-2.5 px-4 text-center">Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                                        <tr>
-                                            <td className="py-3 px-4 font-bold font-mono text-slate-800">
-                                                {associatedDocsModal.recibo.docRefNumber || `FCEV${associatedDocsModal.recibo.consecutivoNumero}`}
-                                            </td>
-                                            <td className="py-3 px-4 font-medium text-slate-600">
-                                                Factura de venta
-                                            </td>
-                                            <td className="py-3 px-4 font-bold font-mono text-slate-800">
-                                                {fmt(associatedDocsModal.recibo.total)}
-                                            </td>
-                                            <td className="py-3 px-4 text-center">
-                                                <button 
-                                                    onClick={() => handlePrint(associatedDocsModal.recibo)}
-                                                    className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
-                                                    title="Imprimir documento asociado"
-                                                >
-                                                    <FiPrinter size={13} />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                            {associatedDocsModal.recibo?.docRefNumber ? (
+                                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold">
+                                            <tr>
+                                                <th className="py-2.5 px-4">Número documento</th>
+                                                <th className="py-2.5 px-4">Tipo documento</th>
+                                                <th className="py-2.5 px-4">Valor</th>
+                                                <th className="py-2.5 px-4 text-center">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                                            <tr>
+                                                <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                                                    {associatedDocsModal.recibo.docRefNumber}
+                                                </td>
+                                                <td className="py-3 px-4 font-medium text-slate-600">
+                                                    Factura de venta
+                                                </td>
+                                                <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                                                    {fmt(associatedDocsModal.recibo.total)}
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                    <button 
+                                                        onClick={() => handlePrint(associatedDocsModal.recibo)}
+                                                        className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
+                                                        title="Imprimir documento asociado"
+                                                    >
+                                                        <FiPrinter size={13} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="py-8 px-4 text-center">
+                                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                                        <FiFileText size={22} />
+                                    </div>
+                                    <h4 className="text-sm font-bold text-slate-800 mb-1">Sin factura de venta asociada</h4>
+                                    <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                                        Los recibos de caja son independientes de las facturas de venta. Este recibo no tiene ninguna factura vinculada automáticamente.
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Footer */}

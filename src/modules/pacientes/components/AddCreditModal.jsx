@@ -136,7 +136,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                 paciente_id: patient?.id || "",
                 monto: Number(data.valor) || 0,
                 metodo: data.medio || "Efectivo",
-                referencia: referenceStr ? `Ref: ${referenceStr}` : "SALDO A FAVOR",
+                referencia: referenceStr ? `SALDO A FAVOR - Ref: ${referenceStr}` : "SALDO A FAVOR",
                 nro_consecutivo: nroConsecutivo ? String(nroConsecutivo) : null,
                 notas: notesPayload,
                 created_at: new Date().toISOString()
@@ -152,6 +152,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
             const { error: insertError } = await supabase.from("pagos").insert([creditData]);
             if (insertError) throw insertError;
 
+            // 1. Sincronizar saldo_favor en paciente
             try {
                 const { data: pac } = await supabase
                     .from("pacientes")
@@ -164,9 +165,116 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                         .from("pacientes")
                         .update({ saldo_favor: nuevoSaldo })
                         .eq("id", patient.id);
+                    if (patient) {
+                        patient.saldo_favor = nuevoSaldo;
+                        patient.saldoFavor = nuevoSaldo;
+                    }
                 }
             } catch (e) {
                 console.warn("No se pudo actualizar saldo_favor en paciente:", e.message);
+            }
+
+            // 2. Registrar en recibos_caja formalmente para Facturación -> Recibos de Caja
+            const patientName = patient?.nombreCompleto || `${patient?.nombres || patient?.nombre || ""} ${patient?.apellidos || patient?.apellido || ""}`.trim() || "Paciente";
+            const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(str || ""));
+            const finalConsStr = nroConsecutivo ? String(nroConsecutivo).padStart(4, "0") : null;
+            const newReciboId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : null;
+
+            let activeCajaObj = null;
+            let validCajaId = null;
+            try {
+                const { getActiveCaja } = await import("../../../services/supabaseServices");
+                const uId = userProfile?.uid || userProfile?.id || "";
+                activeCajaObj = await getActiveCaja(currentInq, uId);
+                if (activeCajaObj?.id && isUUID(activeCajaObj.id)) {
+                    validCajaId = activeCajaObj.id;
+                }
+            } catch (cErr) {
+                console.warn("Aviso al obtener caja activa en AddCreditModal:", cErr);
+            }
+
+            try {
+                const reciboPayload = {
+                    id: newReciboId,
+                    tenant_id: currentInq,
+                    inquilino: currentInq,
+                    numero: finalConsStr,
+                    nro_consecutivo: finalConsStr,
+                    nroConsecutivo: finalConsStr,
+                    fecha: new Date(data.fecha).toISOString(),
+                    paciente_id: isUUID(patient?.id) ? patient.id : null,
+                    pacienteId: isUUID(patient?.id) ? patient.id : null,
+                    paciente_nombre: patientName,
+                    pacienteNombre: patientName,
+                    condicion_pago: "Contado",
+                    condicionPago: "Contado",
+                    medio_pago: data.medio || "Efectivo",
+                    medioPago: data.medio || "Efectivo",
+                    concepto: "SALDO A FAVOR",
+                    conceptos: [{ concepto: "SALDO A FAVOR", precioUnitario: creditData.monto, cantidad: 1, total: creditData.monto }],
+                    monto: creditData.monto,
+                    subtotal: creditData.monto,
+                    total: creditData.monto,
+                    observaciones: observationsStr ? `SALDO A FAVOR - ${observationsStr}` : "Abono Saldo a Favor",
+                    caja_id: validCajaId,
+                    cajaId: validCajaId,
+                    creado_por: currentUserName,
+                    creadoPor: currentUserName,
+                    created_at: new Date().toISOString()
+                };
+                if (!reciboPayload.id) delete reciboPayload.id;
+                await supabase.from("recibos_caja").insert([reciboPayload]);
+            } catch (rErr) {
+                console.warn("Aviso insertando en recibos_caja:", rErr);
+            }
+
+            // 3. Registrar en Caja activa y movimientos_caja (Administración / Caja)
+            if (activeCajaObj) {
+                try {
+                    const movData = {
+                        id: (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `mov_${Date.now()}`,
+                        tenant_id: currentInq,
+                        tipo: "ingreso",
+                        concepto: nroConsecutivo ? `[RC-${String(nroConsecutivo).padStart(4, "0")}] Saldo a favor` : "Abono Saldo a Favor",
+                        monto: creditData.monto,
+                        metodo_pago: data.medio || "Efectivo",
+                        descripcion: `Saldo a favor para ${patientName}${referenceStr ? ' | Ref: ' + referenceStr : ''}`,
+                        paciente_id: isUUID(patient?.id) ? patient.id : null,
+                        paciente_nombre: patientName,
+                        usuario_id: isUUID(userProfile?.uid || userProfile?.id) ? (userProfile?.uid || userProfile?.id) : null,
+                        caja_id: validCajaId,
+                        created_at: new Date().toISOString()
+                    };
+                    await supabase.from("movimientos_caja").insert([movData]);
+
+                    if (validCajaId) {
+                        const currentSaldo = Number(activeCajaObj.saldo_actual ?? activeCajaObj.saldoActual ?? 0);
+                        const currentIngresos = Number(activeCajaObj.total_ingresos ?? activeCajaObj.totalIngresos ?? 0);
+                        await supabase
+                            .from("cajas")
+                            .update({
+                                saldo_actual: currentSaldo + creditData.monto,
+                                total_ingresos: currentIngresos + creditData.monto,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq("id", validCajaId);
+                    }
+                } catch (movErr) {
+                    console.warn("Aviso al registrar movimiento en caja activa:", movErr);
+                }
+            }
+
+            // 4. Sincronizar website_config como respaldo (pagos y saldos_favor)
+            try {
+                const { saveConfigSection } = await import("../../../services/configPersistenceService");
+                const currentPagos = await getConfigSection(currentInq, "pagos", []);
+                const currentSaldos = await getConfigSection(currentInq, "saldos_favor", []);
+                const updatedPagos = [creditData, ...(Array.isArray(currentPagos) ? currentPagos.filter(p => p.id !== creditData.id) : [])];
+                const updatedSaldos = [creditData, ...(Array.isArray(currentSaldos) ? currentSaldos.filter(s => s.id !== creditData.id) : [])];
+                await saveConfigSection(currentInq, "pagos", updatedPagos);
+                await saveConfigSection(currentInq, "saldos_favor", updatedSaldos);
+            } catch (cfgErr) {
+                console.warn("Aviso respaldando en website_config:", cfgErr);
             }
 
             toast.success("Saldo a favor registrado exitosamente");

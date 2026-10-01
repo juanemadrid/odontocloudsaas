@@ -204,13 +204,21 @@ export default function SaldoTab({ patient }) {
 
     const { totals, pagos = [] } = financials;
 
-    const creditPayments = pagos.filter(p => {
-        const ref = (p.referencia || p.concepto || "").toUpperCase();
-        const notes = (p.notas || p.notes || "").toUpperCase();
-        const tipo = (p.tipo || "").toLowerCase();
-        const isAnulado = (p.estado || "").toLowerCase() === "anulado" || ref.includes("ANULADO") || notes.includes("ANULADO");
-        return isAnulado || ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR") || ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipo === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
-    });
+    const isSaldoMovement = (p) => {
+        const ref = String(p.referencia || "").toUpperCase();
+        const concepto = String(p.concepto || "").toUpperCase();
+        const notes = String(p.notas || p.notes || p.rawNotas || "").toUpperCase();
+        const m = String(p.metodo || p.medio || "").toLowerCase();
+        const tipo = String(p.tipo || "").toLowerCase();
+
+        const isDevolucion = ref.includes("DEVOLUCI") || concepto.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipo === "egreso" && (ref.includes("SALDO") || concepto.includes("SALDO") || notes.includes("SALDO")));
+        const isUsage = m === "saldo a favor" || m.includes("saldo a favor") || concepto.includes("USO SALDO") || concepto.includes("CONSUMO SALDO") || ref.includes("USO SALDO") || ref.includes("CONSUMO SALDO") || notes.includes("USO SALDO") || notes.includes("CONSUMO SALDO");
+        const isTopUp = m !== "saldo a favor" && tipo !== "egreso" && !isDevolucion && (concepto.includes("SALDO A FAVOR") || ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR"));
+
+        return isTopUp || isUsage || isDevolucion;
+    };
+
+    const creditPayments = pagos.filter(p => isSaldoMovement(p));
 
     const filteredCredits = creditPayments.filter(p => 
         (p.medio || p.metodo || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -263,12 +271,13 @@ export default function SaldoTab({ patient }) {
                                 {filteredCredits.length > 0 ? (
                                     filteredCredits.map(pago => {
                                         const dateStr = pago.fechaISO ? new Date(pago.fechaISO).toLocaleDateString('es-CO') : "—";
-                                        const isVoided = pago.estado === "Anulado";
-                                        const ref = (pago.referencia || pago.concepto || "").toUpperCase();
-                                        const notes = (pago.notas || pago.notes || "").toUpperCase();
-                                        const tipo = (pago.tipo || "").toLowerCase();
-                                        const isDevolucion = ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipo === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
-                                        const isUsage = (pago.medio || pago.metodo || "").toLowerCase() === "saldo a favor";
+                                        const isVoided = pago.estado === "Anulado" || Boolean(pago.anulado);
+                                        const ref = String(pago.referencia || "").toUpperCase();
+                                        const concepto = String(pago.concepto || "").toUpperCase();
+                                        const notes = String(pago.notas || pago.notes || pago.rawNotas || "").toUpperCase();
+                                        const tipo = String(pago.tipo || "").toLowerCase();
+                                        const isDevolucion = ref.includes("DEVOLUCI") || concepto.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipo === "egreso" && (ref.includes("SALDO") || concepto.includes("SALDO") || notes.includes("SALDO")));
+                                        const isUsage = (pago.medio || pago.metodo || "").toLowerCase().includes("saldo a favor") || concepto.includes("USO SALDO") || concepto.includes("CONSUMO SALDO") || ref.includes("USO SALDO") || ref.includes("CONSUMO SALDO");
                                         const isSalida = isUsage || isDevolucion;
                                         const displayNotes = getDisplayNotes(pago);
                                         return (

@@ -334,8 +334,8 @@ export const generateElectronicInvoiceHtml = ({
   <title>Factura Electrónica ${facturaNumero}</title>
   <style>
     @page {
-      size: portrait;
-      margin: 10mm 12mm;
+      size: 5.5in 8.5in;
+      margin: 8mm 10mm;
     }
     * {
       margin: 0;
@@ -846,7 +846,42 @@ export const generateReciboCajaHtml = ({
     ? `<img src="${tenant.logoUrl}" style="max-height: 80px; max-width: 170px; object-fit: contain; display: block;" alt="Logo" />`
     : `<div style="font-size: 18px; font-weight: bold; color: #333; line-height: 1.1; text-transform: uppercase;">${clinicName}</div>`;
 
-  const observacionesText = recibo?.observaciones || recibo?.notas || "";
+  let cleanObs = "";
+  const rawNotesVal = recibo?.observaciones || recibo?.notas || "";
+  if (typeof rawNotesVal === "string" && rawNotesVal.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(rawNotesVal);
+      cleanObs = String(parsed.observaciones || parsed.observacion || "").trim();
+    } catch (_) {
+      cleanObs = "";
+    }
+  } else if (typeof rawNotesVal === "string") {
+    cleanObs = rawNotesVal.trim();
+  }
+
+  const genericBanned = [
+    "abono a tratamiento",
+    "abono de tratamiento",
+    "saldo a favor",
+    "uso de saldo a favor",
+    "consumo saldo a favor",
+    "devolución saldo a favor",
+    "devolucion saldo a favor",
+    "recibo de caja"
+  ];
+  if (genericBanned.includes(cleanObs.toLowerCase())) {
+    cleanObs = "";
+  }
+  const observacionesText = cleanObs;
+
+  const isConsumoSaldo = 
+    recibo?.documentTitle?.toLowerCase().includes("consumo") ||
+    recibo?.tipoDocumento === "Consumo Saldo a Favor" ||
+    recibo?.tipoDoc === "Uso de saldo a favor" ||
+    String(recibo?.medioPago || recibo?.metodo || "").toLowerCase() === "saldo a favor";
+
+  const docTitleLabel = recibo?.documentTitle 
+    || (isConsumoSaldo ? "Consumo saldo a favor" : "Recibo de caja");
 
   const isAnulado =
     Boolean(recibo?.anulado) ||
@@ -871,17 +906,17 @@ export const generateReciboCajaHtml = ({
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Recibo de Caja No.${nroRecibo}${isAnulado ? " (ANULADO)" : ""}</title>
+  <title>${docTitleLabel} No.${nroRecibo}${isAnulado ? " (ANULADO)" : ""}</title>
   <style>
-    @page { size: portrait; margin: 10mm 12mm; }
+    @page { size: 5.5in 8.5in; margin: 8mm 10mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       position: relative;
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 11px;
+      font-size: 10.5px;
       color: #000;
       background: #fff;
-      padding: 16px 20px;
+      padding: 14px 18px;
       max-width: 780px;
       margin: 0 auto;
       line-height: 1.25;
@@ -905,7 +940,7 @@ export const generateReciboCajaHtml = ({
       </td>
       <td class="header-meta">
         <div style="text-align: right;">
-          <div style="font-size: 12px; font-weight: normal;">Recibo de caja</div>
+          <div style="font-size: 12px; font-weight: bold; text-transform: uppercase;">${docTitleLabel}</div>
           <div style="font-size: 15px; font-weight: bold; margin-top: 2px; color: ${isAnulado ? '#e11d48' : '#000'};">No.${nroRecibo}</div>
           ${isAnulado ? `
           <div style="display: inline-block; background-color: #ffe4e6; color: #be123c; border: 1.5px solid #f43f5e; font-size: 9.5px; font-weight: 900; padding: 2px 7px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;">

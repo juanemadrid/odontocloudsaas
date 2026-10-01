@@ -197,17 +197,33 @@ export default function PagoTab({ patient }) {
     const paidMap = selectedPlan ? getPaidMap(selectedPlan.items || [], planPayments) : {};
 
     // Calculate net credit balance (Saldo a favor)
-    const isNotAnulado = (p) => (p.estado || "").toLowerCase() !== "anulado";
+    const isNotAnulado = (p) => {
+        const estadoStr = String(p.estado || "").toLowerCase();
+        const refStr = String(p.referencia || "").toUpperCase();
+        const notesStr = String(p.notas || p.notes || "").toUpperCase();
+        return estadoStr !== "anulado" && !refStr.includes("ANULADO") && !notesStr.includes("ANULADO") && !p.anulado;
+    };
+
     const totalCredits = payments.filter(p => {
-        const ref = (p.referencia || p.concepto || "").toUpperCase();
-        const notes = (p.notas || p.notes || "").toUpperCase();
-        const m = (p.metodo || p.medio || "").toLowerCase();
-        return m !== "saldo a favor" && (ref === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR")) && isNotAnulado(p);
+        const ref = String(p.referencia || "").toUpperCase();
+        const concepto = String(p.concepto || "").toUpperCase();
+        const notes = String(p.notas || p.notes || "").toUpperCase();
+        const m = String(p.metodo || p.medio || "").toLowerCase();
+        const tipo = String(p.tipo || "").toLowerCase();
+        if (m === "saldo a favor" || tipo === "egreso") return false;
+        if (ref.includes("DEVOLUCI") || concepto.includes("DEVOLUCI") || notes.includes("DEVOLUCI")) return false;
+        return (concepto.includes("SALDO A FAVOR") || ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR")) && isNotAnulado(p);
     }).reduce((sum, p) => sum + Number(p.monto || 0), 0);
 
     const usedCredits = payments.filter(p => {
-        const m = (p.metodo || p.medio || "").toLowerCase();
-        return m === "saldo a favor" && isNotAnulado(p);
+        const m = String(p.metodo || p.medio || "").toLowerCase();
+        const ref = String(p.referencia || "").toUpperCase();
+        const concepto = String(p.concepto || "").toUpperCase();
+        const notes = String(p.notas || p.notes || "").toUpperCase();
+        const tipo = String(p.tipo || "").toLowerCase();
+        const isDevolucion = ref.includes("DEVOLUCI") || concepto.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipo === "egreso" && (ref.includes("SALDO") || concepto.includes("SALDO") || notes.includes("SALDO")));
+        const isConsumo = m === "saldo a favor" || m.includes("saldo a favor") || concepto.includes("USO SALDO") || concepto.includes("CONSUMO SALDO");
+        return (isConsumo || isDevolucion) && isNotAnulado(p);
     }).reduce((sum, p) => sum + Number(p.monto || 0), 0);
 
     const patientSaldoFavor = Number(patient?.saldo_favor || patient?.saldoFavor || 0);
@@ -426,7 +442,7 @@ export default function PagoTab({ patient }) {
                 factura_id: null,
                 monto: paymentAmount,
                 metodo: method,
-                referencia: reference || (method === "Saldo a favor" ? "USO SALDO A FAVOR" : null),
+                referencia: reference ? (concept === "SALDO A FAVOR" ? `SALDO A FAVOR - Ref: ${reference}` : reference) : (method === "Saldo a favor" ? "USO SALDO A FAVOR" : (concept === "SALDO A FAVOR" ? "SALDO A FAVOR" : null)),
                 nro_consecutivo: nroConsecutivo ? String(nroConsecutivo) : null,
                 fecha: new Date().toISOString(),
                 notas: JSON.stringify(metadataNotas)

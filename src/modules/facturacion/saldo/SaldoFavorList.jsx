@@ -206,31 +206,36 @@ export default function SaldoFavorList({ onNew }) {
 
     const isCreditTopUp = (p) => {
         if (!isNotAnulado(p)) return false;
-        const tipoStr = (p.tipo || "").toLowerCase();
+        const tipoStr = String(p.tipo || "").toLowerCase();
         if (tipoStr === "egreso") return false;
-        const concept = (p.concepto || p.referencia || "").toUpperCase();
-        const notes = (p.notas || p.notes || "").toUpperCase();
-        if (concept.includes("DEVOLUCI") || notes.includes("DEVOLUCI")) return false;
-        const method = (p.metodo || p.medio || "").toLowerCase();
-        return method !== "saldo a favor" && (concept === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR"));
+        const concept = String(p.concepto || "").toUpperCase();
+        const ref = String(p.referencia || "").toUpperCase();
+        const notes = String(p.notas || p.notes || "").toUpperCase();
+        if (concept.includes("DEVOLUCI") || ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI")) return false;
+        const method = String(p.metodo || p.medio || "").toLowerCase();
+        return method !== "saldo a favor" && (concept.includes("SALDO A FAVOR") || ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR"));
     };
 
     const isCreditUsed = (p) => {
         if (!isNotAnulado(p)) return false;
-        const m = (p.metodo || p.medio || "").toLowerCase();
-        const c = (p.concepto || p.referencia || p.notas || "").toUpperCase();
-        const tipoStr = (p.tipo || "").toLowerCase();
-        return m === "saldo a favor" || c.includes("DEVOLUCI") || (tipoStr === "egreso" && (c.includes("SALDO") || c.includes("A FAVOR")));
+        const m = String(p.metodo || p.medio || "").toLowerCase();
+        const concept = String(p.concepto || "").toUpperCase();
+        const ref = String(p.referencia || "").toUpperCase();
+        const notes = String(p.notas || p.notes || "").toUpperCase();
+        const tipoStr = String(p.tipo || "").toLowerCase();
+        const isDevolucion = ref.includes("DEVOLUCI") || concept.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipoStr === "egreso" && (ref.includes("SALDO") || concept.includes("SALDO") || notes.includes("SALDO")));
+        const isConsumo = m === "saldo a favor" || m.includes("saldo a favor") || concept.includes("USO SALDO") || concept.includes("CONSUMO SALDO") || ref.includes("USO SALDO") || ref.includes("CONSUMO SALDO") || notes.includes("USO SALDO") || notes.includes("CONSUMO SALDO");
+        return isConsumo || isDevolucion;
     };
 
     const filteredTerceros = useMemo(() => {
-        if (!searchTermTercero.trim()) return pacientes.slice(0, 50);
-        const q = searchTermTercero.toLowerCase();
+        const q = searchTermTercero.trim().toLowerCase();
+        if (!q) return [];
         return pacientes.filter(p => {
             const name = (p.nombreCompleto || `${p.nombres || ""} ${p.apellidos || ""}`).toLowerCase();
             const doc = (p.documento || p.nroDocumento || p.nro_documento || p.cedula || p.identificacion || "").toLowerCase();
             return name.includes(q) || doc.includes(q);
-        });
+        }).slice(0, 30);
     }, [pacientes, searchTermTercero]);
 
     const loadCajasBancos = async () => {
@@ -517,16 +522,14 @@ export default function SaldoFavorList({ onNew }) {
     }, [selectedPaciente, pagos]);
 
     const selectedMovements = useMemo(() => {
-        let listPayments = pagos;
+        if (!selectedPaciente) return [];
 
-        if (selectedPaciente) {
-            listPayments = pagos.filter(p => 
-                p.paciente_id === selectedPaciente.id || 
-                p.pacienteId === selectedPaciente.id || 
-                p.patient_id === selectedPaciente.id || 
-                p.patientId === selectedPaciente.id
-            );
-        }
+        const listPayments = pagos.filter(p => 
+            p.paciente_id === selectedPaciente.id || 
+            p.pacienteId === selectedPaciente.id || 
+            p.patient_id === selectedPaciente.id || 
+            p.patientId === selectedPaciente.id
+        );
 
         // 1. Mapa de consecutivos independientes para Consumos de Saldo a Favor (comienza en 1 y aumenta correlativamente)
         const allConsumosChronological = [...pagos]
@@ -592,20 +595,26 @@ export default function SaldoFavorList({ onNew }) {
 
         // 3. Filtrar pagos correspondientes al historial de saldos
         const creditPayments = listPayments.filter(p => {
-            const ref = (p.referencia || p.concepto || "").toUpperCase();
-            const notes = (p.notas || p.notes || "").toUpperCase();
-            const m = (p.metodo || p.medio || "").toLowerCase();
-            const tipo = (p.tipo || "").toLowerCase();
+            const ref = String(p.referencia || "").toUpperCase();
+            const concept = String(p.concepto || "").toUpperCase();
+            const notes = String(p.notas || p.notes || "").toUpperCase();
+            const m = String(p.metodo || p.medio || "").toLowerCase();
+            const tipo = String(p.tipo || "").toLowerCase();
             return m === "saldo a favor" || 
+                   m.includes("saldo a favor") ||
+                   concept.includes("SALDO A FAVOR") ||
                    ref.includes("SALDO A FAVOR") || 
                    notes.includes("SALDO A FAVOR") || 
+                   concept.includes("USO SALDO") ||
+                   concept.includes("CONSUMO SALDO") ||
                    ref.includes("USO SALDO") || 
                    ref.includes("CONSUMO SALDO") || 
                    notes.includes("CONSUMO SALDO") || 
                    notes.includes("USO SALDO") ||
+                   concept.includes("DEVOLUCI") ||
                    ref.includes("DEVOLUCI") ||
                    notes.includes("DEVOLUCI") ||
-                   (tipo === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
+                   (tipo === "egreso" && (concept.includes("SALDO") || ref.includes("SALDO") || notes.includes("SALDO")));
         });
         
         const list = creditPayments.map(p => {
@@ -703,51 +712,106 @@ export default function SaldoFavorList({ onNew }) {
         return list;
     }, [selectedPaciente, pagos, pacientes, searchTermTercero]);
 
-    const handlePrint = async (pago) => {
+    const handlePrint = async (pago, mov = null) => {
         try {
-            const pId = pago.paciente_id || pago.pacienteId || pago.patient_id || pago.patientId;
-            if (!pId) return;
-            const { data: patientData } = await supabase
-                .from("pacientes")
-                .select("*")
-                .eq("id", pId)
-                .single();
-            if (!patientData) {
-                toast.error("No se pudo cargar la información del paciente");
-                return;
+            const pId = pago?.paciente_id || pago?.pacienteId || pago?.patient_id || pago?.patientId || mov?.pagoOriginal?.paciente_id || mov?.pagoOriginal?.pacienteId || selectedPaciente?.id;
+            
+            // 1. Resolver información del paciente sin fallar silenciosamente
+            let patientData = null;
+            if (selectedPaciente && (!pId || selectedPaciente.id === pId)) {
+                patientData = selectedPaciente;
+            } else if (pId && Array.isArray(pacientes)) {
+                patientData = pacientes.find(p => p.id === pId);
             }
 
-            const refStr = (pago.referencia || pago.concepto || "").toUpperCase();
-            const notesStr = (pago.notas || pago.notes || "").toUpperCase();
-            const tipoStr = (pago.tipo || "").toLowerCase();
-            const isDevolucion = refStr.includes("DEVOLUCI") || notesStr.includes("DEVOLUCI") || (tipoStr === "egreso" && (refStr.includes("SALDO") || notesStr.includes("SALDO")));
+            if (!patientData && pId) {
+                try {
+                    const { data } = await supabase
+                        .from("pacientes")
+                        .select("*")
+                        .eq("id", pId)
+                        .maybeSingle();
+                    if (data) patientData = data;
+                } catch (e) {
+                    console.warn("Could not fetch patient info for print:", e);
+                }
+            }
+
+            // Fallback garantizado para que NUNCA falle ni se quede mudo el botón
+            if (!patientData) {
+                const thirdPartyName = mov?.tercero || pago?.paciente_nombre || pago?.pacienteNombre || pago?.patientNombre || (selectedPaciente ? (selectedPaciente.nombreCompleto || `${selectedPaciente.nombres || ''} ${selectedPaciente.apellidos || ''}`).trim() : "Paciente");
+                patientData = {
+                    id: pId || "paciente-generico",
+                    nombreCompleto: thirdPartyName,
+                    nombres: thirdPartyName,
+                    apellidos: "",
+                    documento: pago?.pacienteDocumento || pago?.documento || selectedPaciente?.documento || "—",
+                    telefono: pago?.pacienteTelefono || pago?.telefono || selectedPaciente?.telefono || "—",
+                    direccion: pago?.pacienteDireccion || pago?.direccion || selectedPaciente?.direccion || "—",
+                    ciudad: pago?.pacienteCiudad || companyInfo?.ciudad || selectedPaciente?.ciudad || "Sincelejo"
+                };
+            }
+
+            const refStr = String(pago?.referencia || pago?.concepto || mov?.pagoOriginal?.referencia || "").toUpperCase();
+            const notesStr = String(pago?.notas || pago?.notes || mov?.pagoOriginal?.notas || "").toUpperCase();
+            const tipoStr = String(pago?.tipo || mov?.tipoDocumento || "").toLowerCase();
+            const isDevolucion = mov?.tipoDocumento === "Egreso" || 
+                                 tipoStr === "egreso" || 
+                                 refStr.includes("DEVOLUCI") || 
+                                 notesStr.includes("DEVOLUCI") || 
+                                 (tipoStr === "egreso" && (refStr.includes("SALDO") || notesStr.includes("SALDO")));
 
             if (isDevolucion) {
                 let parsedN = null;
-                if (pago.notas && typeof pago.notas === "string" && pago.notas.trim().startsWith("{")) {
-                    try { parsedN = JSON.parse(pago.notas); } catch (_) {}
+                const rawNotas = pago?.notas || mov?.pagoOriginal?.notas;
+                if (rawNotas && typeof rawNotas === "string" && rawNotas.trim().startsWith("{")) {
+                    try { parsedN = JSON.parse(rawNotas); } catch (_) {}
                 }
-                const consVal = pago.nroConsecutivo || pago.nro_consecutivo || pago.consecutivo || parsedN?.nroConsecutivo || "1";
+                const consVal = pago?.nroConsecutivo || pago?.nro_consecutivo || pago?.consecutivo || mov?.documento || parsedN?.nroConsecutivo || "1";
+                let cleanDevObs = parsedN?.observaciones || (typeof rawNotas === "string" && !rawNotas.startsWith("{") ? rawNotas : "") || "";
+                if (cleanDevObs.toLowerCase() === "devolución saldo a favor" || cleanDevObs.toLowerCase() === "devolucion saldo a favor") {
+                    cleanDevObs = "";
+                }
                 printComprobanteEgreso({
                     consecutivo: String(consVal).replace(/^EGR-/i, ""),
-                    bancoCaja: pago.bancoCaja || parsedN?.bancoCaja || "Caja Principal",
-                    medioPago: pago.metodo || pago.medio || parsedN?.medio || "Efectivo",
+                    bancoCaja: pago?.bancoCaja || parsedN?.bancoCaja || "Caja Principal",
+                    medioPago: pago?.metodo || pago?.medio || parsedN?.medio || "Efectivo",
                     concepto: "Devolución saldo a favor",
-                    monto: Number(pago.monto || pago.total || 0),
-                    observaciones: parsedN?.observaciones || pago.notas || "Devolución saldo a favor"
+                    monto: Number(pago?.monto || pago?.total || mov?.valor || 0),
+                    observaciones: cleanDevObs
                 }, patientData);
                 return;
             }
             
             const clinic = userProfile?.tenant || {
-                nombre: userProfile?.tenantNombre || userProfile?.clinica || "Clínica",
-                inquilino: userProfile?.inquilino || userProfile?.tenantId
+                nombre: userProfile?.tenantNombre || userProfile?.clinica || companyInfo?.nombre || "Clínica Dental",
+                inquilino: userProfile?.inquilino || userProfile?.tenantId || inquilino,
+                nit: userProfile?.tenantNit || companyInfo?.nit || "",
+                direccion: userProfile?.tenantDireccion || companyInfo?.direccion || "",
+                telefono: userProfile?.tenantTelefono || companyInfo?.telefono || "",
+                ciudad: userProfile?.tenantCiudad || companyInfo?.ciudad || "Sincelejo"
+            };
+
+            const isConsumo = mov?.tipoDocumento === "Consumo Saldo a Favor" || 
+                              pago?.tipoDocumento === "Consumo Saldo a Favor" || 
+                              pago?.tipoDoc === "Uso de saldo a favor" || 
+                              String(pago?.metodo || pago?.medio || "").toLowerCase() === "saldo a favor";
+
+            const printPayload = {
+                ...pago,
+                nroConsecutivo: mov?.documento || pago?.nroConsecutivo || pago?.nro_consecutivo || pago?.consecutivo,
+                monto: Number(pago?.monto || pago?.total || mov?.valor || 0),
+                total: Number(pago?.total || pago?.monto || mov?.valor || 0),
+                tipoDocumento: isConsumo ? "Consumo Saldo a Favor" : (mov?.tipoDocumento || pago?.tipoDocumento || "Recibo de caja"),
+                documentTitle: isConsumo ? "CONSUMO SALDO A FAVOR" : (pago?.documentTitle || "Recibo de Caja"),
+                pacienteNombre: patientData.nombreCompleto || patientData.nombres,
+                pacienteDocumento: patientData.documento
             };
             
-            await ReceiptPrintService.generatePDF(pago, patientData, clinic, userProfile);
+            await ReceiptPrintService.generatePDF(printPayload, patientData, clinic, userProfile);
         } catch (e) {
             console.error("Error printing receipt:", e);
-            toast.error("Error al preparar la impresión");
+            toast.error("Error al preparar la impresión: " + (e?.message || ""));
         }
     };
 
@@ -784,13 +848,13 @@ export default function SaldoFavorList({ onNew }) {
         body { 
             font-family: Arial, Helvetica, sans-serif; 
             margin: 0; 
-            padding: 30px 40px; 
+            padding: 16px 20px; 
             color: #0f172a; 
-            font-size: 11px;
+            font-size: 10px;
             background: #ffffff;
         }
         @media print { 
-            @page { margin: 12mm 15mm; size: letter portrait; }
+            @page { size: 5.5in 8.5in; margin: 8mm 10mm; }
             body { padding: 0; }
         }
     </style>
@@ -930,10 +994,27 @@ export default function SaldoFavorList({ onNew }) {
             : ledgerAvailable;
 
         const creditPayments = pacPayments.filter(p => {
-            const ref = (p.referencia || p.concepto || "").toUpperCase();
-            const notes = (p.notas || p.notes || "").toUpperCase();
-            const m = (p.metodo || p.medio || "").toLowerCase();
-            return ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR") || m === "saldo a favor" || !isNotAnulado(p);
+            const ref = String(p.referencia || "").toUpperCase();
+            const concept = String(p.concepto || "").toUpperCase();
+            const notes = String(p.notas || p.notes || "").toUpperCase();
+            const m = String(p.metodo || p.medio || "").toLowerCase();
+            const tipo = String(p.tipo || "").toLowerCase();
+            return m === "saldo a favor" || 
+                   m.includes("saldo a favor") ||
+                   concept.includes("SALDO A FAVOR") ||
+                   ref.includes("SALDO A FAVOR") || 
+                   notes.includes("SALDO A FAVOR") || 
+                   concept.includes("USO SALDO") ||
+                   concept.includes("CONSUMO SALDO") ||
+                   ref.includes("USO SALDO") || 
+                   ref.includes("CONSUMO SALDO") || 
+                   notes.includes("CONSUMO SALDO") || 
+                   notes.includes("USO SALDO") ||
+                   concept.includes("DEVOLUCI") ||
+                   ref.includes("DEVOLUCI") ||
+                   notes.includes("DEVOLUCI") ||
+                   (tipo === "egreso" && (concept.includes("SALDO") || ref.includes("SALDO") || notes.includes("SALDO"))) ||
+                   !isNotAnulado(p);
         });
 
         const list = creditPayments.map(p => {
@@ -1050,13 +1131,13 @@ export default function SaldoFavorList({ onNew }) {
         body { 
             font-family: Arial, Helvetica, sans-serif; 
             margin: 0; 
-            padding: 30px 40px; 
+            padding: 16px 20px; 
             color: #0f172a; 
-            font-size: 11px;
+            font-size: 10px;
             background: #ffffff;
         }
         @media print { 
-            @page { margin: 12mm 15mm; size: letter portrait; }
+            @page { size: 5.5in 8.5in; margin: 8mm 10mm; }
             body { padding: 0; }
         }
     </style>
@@ -1464,13 +1545,13 @@ export default function SaldoFavorList({ onNew }) {
         body { 
             font-family: Arial, Helvetica, sans-serif; 
             margin: 0; 
-            padding: 30px 40px; 
+            padding: 16px 20px; 
             color: #0f172a; 
-            font-size: 11px;
+            font-size: 10px;
             background: #ffffff;
         }
         @media print { 
-            @page { margin: 12mm 15mm; size: letter portrait; }
+            @page { size: 5.5in 8.5in; margin: 8mm 10mm; }
             body { padding: 0; }
         }
     </style>
@@ -1634,8 +1715,12 @@ export default function SaldoFavorList({ onNew }) {
                                 </span>
                                 <button
                                     type="button"
-                                    onClick={() => setSelectedPaciente(null)}
-                                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-xs"
+                                    onClick={() => {
+                                        setSelectedPaciente(null);
+                                        setSearchTermTercero("");
+                                        setShowTerceroDropdown(false);
+                                    }}
+                                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-xs cursor-pointer"
                                 >
                                     Cambiar
                                 </button>
@@ -1650,14 +1735,18 @@ export default function SaldoFavorList({ onNew }) {
                                     value={searchTermTercero}
                                     onChange={(e) => {
                                         setSearchTermTercero(e.target.value);
-                                        setShowTerceroDropdown(true);
+                                        setShowTerceroDropdown(Boolean(e.target.value.trim()));
                                     }}
-                                    onFocus={() => setShowTerceroDropdown(true)}
+                                    onFocus={() => {
+                                        if (searchTermTercero.trim()) setShowTerceroDropdown(true);
+                                    }}
                                 />
-                                {showTerceroDropdown && (
+                                {showTerceroDropdown && searchTermTercero.trim().length > 0 && (
                                     <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto divide-y divide-slate-100">
                                         {filteredTerceros.length === 0 ? (
-                                            <div className="px-3 py-2 text-xs text-slate-400 italic">No se encontraron resultados</div>
+                                            <div className="px-3 py-3 text-xs text-slate-400 italic text-center">
+                                                No se encontraron pacientes que coincidan con "{searchTermTercero}"
+                                            </div>
                                         ) : (
                                             filteredTerceros.map(p => (
                                                 <button
@@ -1668,7 +1757,7 @@ export default function SaldoFavorList({ onNew }) {
                                                         setSearchTermTercero("");
                                                         setShowTerceroDropdown(false);
                                                     }}
-                                                    className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors flex flex-col gap-0.5"
+                                                    className="w-full text-left px-3 py-2.5 hover:bg-blue-50/50 transition-colors flex flex-col gap-0.5 cursor-pointer"
                                                 >
                                                     <span className="text-xs font-bold text-slate-800 uppercase">
                                                         {(p.nombreCompleto || `${p.nombres || ""} ${p.apellidos || ""}`).trim()}
@@ -1693,6 +1782,8 @@ export default function SaldoFavorList({ onNew }) {
                             onChange={() => {
                                 setDetalleMovimientos(!detalleMovimientos);
                                 setSelectedPaciente(null);
+                                setSearchTermTercero("");
+                                setShowTerceroDropdown(false);
                             }}
                             className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
                         />
@@ -1785,10 +1876,21 @@ export default function SaldoFavorList({ onNew }) {
                                     </td>
                                 </tr>
                             ) : detalleMovimientos ? (
-                                selectedMovements.length === 0 ? (
+                                !selectedPaciente ? (
+                                    <tr>
+                                        <td colSpan="8" className="py-16 text-center text-slate-400">
+                                            <div className="flex flex-col items-center justify-center gap-2">
+                                                <FiSearch size={28} className="text-slate-300" />
+                                                <span className="text-xs font-semibold text-slate-500">
+                                                    Busca y selecciona un paciente o tercero en el buscador superior para ver su detalle de movimientos
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ) : selectedMovements.length === 0 ? (
                                     <tr>
                                         <td colSpan="8" className="py-12 text-center text-slate-400 italic">
-                                            No se registran movimientos de saldo a favor.
+                                            No se registran movimientos de saldo a favor para este paciente.
                                         </td>
                                     </tr>
                                 ) : (
@@ -1827,7 +1929,14 @@ export default function SaldoFavorList({ onNew }) {
                                                     <button 
                                                         className="w-7 h-7 rounded-md bg-[#38bdf8] hover:bg-[#0284c7] text-white flex items-center justify-center transition-all shadow-xs cursor-pointer"
                                                         title="Imprimir Documento"
-                                                        onClick={() => handlePrint({ ...mov.pagoOriginal, nroConsecutivo: mov.documento })}
+                                                        onClick={() => handlePrint({ 
+                                                            ...mov.pagoOriginal, 
+                                                            nroConsecutivo: mov.documento,
+                                                            tipoDocumento: mov.tipoDocumento,
+                                                            monto: mov.valor,
+                                                            total: mov.valor,
+                                                            documentTitle: mov.tipoDocumento === "Consumo Saldo a Favor" ? "CONSUMO SALDO A FAVOR" : undefined 
+                                                        }, mov)}
                                                     >
                                                         <FiPrinter size={13} />
                                                     </button>

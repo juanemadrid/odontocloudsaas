@@ -3,6 +3,7 @@ import { FiCreditCard, FiSearch, FiCalendar, FiPrinter, FiTrash2, FiPlus, FiHome
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
+import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -104,256 +105,54 @@ export default function PagosList({ onNew }) {
     }
   };
 
-  const handlePrintPago = (pago) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
+  const handlePrintPago = async (pago) => {
+    try {
+      const clinic = userProfile?.tenant || {
+        nombre: userProfile?.tenantNombre || userProfile?.clinica || "CLÍNICA ODONTOLÓGICA",
+        inquilino: userProfile?.inquilino || userProfile?.tenantId
+      };
 
-    const isDevolucion = (pago.concepto || "").toLowerCase().includes("devolución") || (pago.concepto || "").toLowerCase().includes("devolucion");
-    const isEgreso = pago.tipoDocumento === "Egreso" || isDevolucion;
+      const terceroNombre = pago.tercero || pago.proveedor || "BENEFICIARIO / TERCERO";
+      const terceroDoc = pago.documentoTercero || pago.nit || pago.cedula || "—";
+      const isNit = String(terceroDoc).replace(/\D/g, "").length >= 9;
 
-    if (isEgreso) {
-      const clinic = userProfile?.tenant || {};
-      const clinicName = userProfile?.tenantNombre || userProfile?.clinica || clinic.nombre || "CLÍNICA ODONTOLÓGICA";
-      const nit = userProfile?.tenantNit || clinic.nit || userProfile?.nit || "";
-      const direccion = userProfile?.tenantDireccion || clinic.direccion || userProfile?.direccion || "";
-      const ciudad = userProfile?.tenantCiudad || clinic.ciudad || userProfile?.ciudad || "Sincelejo";
-      const telefono = userProfile?.tenantTelefono || clinic.telefono || userProfile?.telefono || "";
-      const email = userProfile?.tenantEmail || clinic.email || userProfile?.email || "";
-      const logoUrl = userProfile?.tenantLogo || clinic.logo || "";
+      const patientPayload = {
+        nombreCompleto: terceroNombre,
+        documento: terceroDoc,
+        tipoDocumento: isNit ? "NIT" : "CC",
+        direccion: pago.direccion || "—",
+        ciudad: pago.ciudad || userProfile?.tenantCiudad || "Sincelejo",
+        celular: pago.telefono || "—"
+      };
 
-      const pacName = (pago.tercero || pago.proveedor || "PACIENTE").toUpperCase();
-      const pacDoc = pago.documentoTercero || pago.nit || pago.cedula || "—";
-      const bancoCaja = pago.bancoCaja || pago.caja || pago.banco || "Bancolombia";
-      const medioPago = pago.medioPago || "Efectivo";
-      const consecutivo = pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "1608";
-      const concepto = pago.concepto || "Devolución saldo a favor";
-      const monto = Number(pago.monto || pago.total || 0);
-      const observaciones = pago.observaciones || "";
-      const elaboradoPor = (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "ADMINISTRADOR").toUpperCase();
-      const expeditionDate = fmtDate(pago.fecha || pago.created_at);
+      const itemsList = (pago.items && pago.items.length > 0)
+        ? pago.items.map(it => ({
+            desc: (it.concepto && it.descripcion && it.concepto !== it.descripcion)
+              ? `${it.concepto} - ${it.descripcion}`
+              : (it.concepto || it.descripcion || "Item"),
+            monto: it.total || it.precioUnitario || 0
+          }))
+        : null;
 
-      printWindow.document.write(`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8" />
-    <title>Egreso No. ${consecutivo} - ${pacName}</title>
-    <style>
-        * { box-sizing: border-box; }
-        body { 
-            font-family: Arial, Helvetica, sans-serif; 
-            margin: 0; 
-            padding: 30px 40px; 
-            color: #0f172a; 
-            font-size: 11px;
-            background: #ffffff;
-        }
-        @media print { 
-            @page { margin: 12mm 15mm; size: letter portrait; }
-            body { padding: 0; }
-        }
-    </style>
-</head>
-<body>
+      const pagoPayload = {
+        ...pago,
+        tipo: "egreso",
+        tipoDocumento: "Egreso",
+        documentTitle: "COMPROBANTE DE EGRESO",
+        monto: Number(pago.monto || pago.total || 0),
+        concepto: pago.concepto || "Egreso / Pago a proveedor",
+        nroConsecutivo: pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "S/N",
+        medio: pago.medioPago || pago.bancoCaja || "Efectivo",
+        registradoPor: (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador"),
+        itemPayments: itemsList,
+        observaciones: pago.observaciones || ""
+      };
 
-    <!-- Header -->
-    <table style="width: 100%; margin-bottom: 24px; border-collapse: collapse;">
-        <tr>
-            <td style="width: 25%; vertical-align: middle;">
-                ${logoUrl ? `<img src="${logoUrl}" style="max-height: 65px; max-width: 160px; object-fit: contain;" />` : `<div style="font-size: 16px; font-weight: 900; color: #1e293b;">${clinicName}</div>`}
-            </td>
-            <td style="width: 50%; text-align: center; vertical-align: middle; font-size: 10.5px; line-height: 1.35;">
-                <div style="font-weight: 900; font-size: 12px; text-transform: uppercase; margin-bottom: 2px;">${clinicName}</div>
-                ${nit ? `<div>NIT ${nit}</div>` : ''}
-                ${direccion ? `<div>${direccion}${ciudad ? ` - ${ciudad}` : ''}</div>` : ''}
-                ${telefono ? `<div>${telefono}</div>` : ''}
-                ${email ? `<div>${email}</div>` : ''}
-            </td>
-            <td style="width: 25%; text-align: right; vertical-align: top; font-size: 11px; font-weight: 700; color: #1e293b;">
-                <div style="font-size: 12px; font-weight: 900; text-transform: uppercase;">Egreso</div>
-                <div style="font-size: 12px; font-weight: 900; font-family: monospace; margin-top: 2px;">No. ${consecutivo}</div>
-            </td>
-        </tr>
-    </table>
-
-    <!-- Grid Table (OralDrive Style - Imagen 4) -->
-    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #334155; margin-bottom: 22px; font-size: 9.5px;">
-        <tr>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase; width: 15%;">SEÑOR(A)</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; width: 45%; text-transform: uppercase;">${pacName}</td>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; width: 22%; text-transform: uppercase;">FECHA DE EXPEDICIÓN (DD/MM/AA)</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; width: 18%; text-align: center;">${expeditionDate}</td>
-        </tr>
-        <tr>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">DIRECCIÓN</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; text-transform: uppercase;">—</td>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">Banco/Caja</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-align: center;">${bancoCaja}</td>
-        </tr>
-        <tr>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">CIUDAD</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; text-transform: uppercase;">${ciudad}</td>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">TARJETA DE IDENTIDAD / CC</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-align: center; font-family: monospace;">${pacDoc}</td>
-        </tr>
-        <tr>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">TELÉFONO</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px;">—</td>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">Medio de pago</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-align: center;">${medioPago}</td>
-        </tr>
-        <tr>
-            <td style="border: 1px solid #334155; background: #ffffff; padding: 5px 8px; font-weight: 900; text-transform: uppercase;">ELABORADO POR</td>
-            <td style="border: 1px solid #334155; padding: 5px 8px; font-weight: 700; text-transform: uppercase;" colspan="3">${elaboradoPor}</td>
-        </tr>
-    </table>
-
-    <!-- Concepts Table (OralDrive Image 4) -->
-    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #334155; margin-bottom: 24px; font-size: 9.5px;">
-        <thead>
-            <tr style="background: #ffffff; text-transform: uppercase;">
-                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: left; width: 55%; font-weight: 900;">Concepto</th>
-                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: center; width: 12%; font-weight: 900;">Cantidad</th>
-                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: right; width: 15%; font-weight: 900;">Impuesto</th>
-                <th style="border: 1px solid #334155; padding: 5px 8px; text-align: right; width: 18%; font-weight: 900;">Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: left;">${concepto}</td>
-                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: center; font-weight: 700;">1</td>
-                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: right; font-family: monospace;">$0</td>
-                <td style="border: 1px solid #334155; padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700;">${fmt(monto)}</td>
-            </tr>
-            <tr>
-                <td style="border: 1px solid #334155; padding: 6px 8px; vertical-align: top;" rowspan="2">
-                    <span style="font-weight: 900; text-transform: uppercase;">Observaciones:</span>
-                    <span style="font-style: italic; color: #475569; margin-left: 6px;">${observaciones}</span>
-                </td>
-                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-weight: 900;" colspan="2">Subtotal</td>
-                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-family: monospace; font-weight: 700;">${fmt(monto)}</td>
-            </tr>
-            <tr>
-                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-weight: 900;" colspan="2">Total</td>
-                <td style="border: 1px solid #334155; padding: 5px 8px; text-align: right; font-family: monospace; font-weight: 900; font-size: 10.5px;">${fmt(monto)}</td>
-            </tr>
-        </tbody>
-    </table>
-
-    <!-- Signatures -->
-    <div style="margin-top: 70px; display: flex; justify-content: space-around;">
-        <div style="width: 250px; text-align: center;">
-            <div style="border-top: 1.5px solid #334155; margin-bottom: 6px;"></div>
-            <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase;">ELABORADO POR</div>
-        </div>
-        <div style="width: 250px; text-align: center;">
-            <div style="border-top: 1.5px solid #334155; margin-bottom: 6px;"></div>
-            <div style="font-size: 9.5px; font-weight: 900; text-transform: uppercase;">ACEPTADA. FIRMA Y/O SELLO Y FECHA</div>
-        </div>
-    </div>
-
-    <script>window.print();</script>
-</body>
-</html>`);
-      printWindow.document.close();
-      return;
+      await ReceiptPrintService.generatePDF(pagoPayload, patientPayload, clinic, userProfile);
+    } catch (e) {
+      console.error("Error generating egreso PDF:", e);
+      toast.error("Error al preparar la impresión del comprobante");
     }
-
-    const itemsHtml = (pago.items || []).map(it => `
-      <tr>
-        <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${it.concepto || '—'}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${it.descripcion || '—'}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">${fmt(it.precioUnitario)}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${it.cantidad || 1}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">${fmt(it.total)}</td>
-      </tr>
-    `).join("");
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Comprobante de Egreso / Pago</title>
-        <style>
-          body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1e293b; max-width: 800px; margin: 0 auto; }
-          .header { border-bottom: 2px solid #8dc63f; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; }
-          .title { font-size: 20px; font-weight: bold; color: #0f172a; }
-          .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; font-size: 13px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 13px; }
-          th { background: #f8fafc; text-align: left; padding: 10px 8px; border-bottom: 2px solid #cbd5e1; }
-          .total-box { text-align: right; font-size: 16px; font-weight: bold; margin-top: 15px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <div class="title">COMPROBANTE DE EGRESO / PAGO</div>
-            <div style="font-size: 12px; color: #64748b;">Clínica Odontológica</div>
-          </div>
-          <div style="text-align: right; font-size: 12px; color: #64748b;">
-            <div>Fecha: ${fmtDate(pago.fecha)}</div>
-            <div>Ref: ${pago.id}</div>
-          </div>
-        </div>
-
-        <div class="meta-grid">
-          <div>
-            <strong>Beneficiario / Tercero:</strong> ${pago.tercero || pago.proveedor || '—'}<br/>
-            <strong>Condición de pago:</strong> ${pago.condicionPago || 'Contado'}<br/>
-            <strong>Profesional:</strong> ${pago.profesional || '—'}
-          </div>
-          <div>
-            <strong>Medio de Pago / Caja:</strong> ${pago.medioPago || pago.bancoCaja || 'Efectivo'}<br/>
-            <strong>Pagador:</strong> ${pago.pagadorEmail || '—'}
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Concepto</th>
-              <th>Descripción</th>
-              <th style="text-align: right;">Precio Unitario</th>
-              <th style="text-align: center;">Cant.</th>
-              <th style="text-align: right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml || `
-              <tr>
-                <td style="padding: 8px;">${pago.concepto || 'Pago a proveedor'}</td>
-                <td style="padding: 8px;">${pago.observaciones || '—'}</td>
-                <td style="padding: 8px; text-align: right;">${fmt(pago.monto || pago.total)}</td>
-                <td style="padding: 8px; text-align: center;">1</td>
-                <td style="padding: 8px; text-align: right; font-weight: bold;">${fmt(pago.monto || pago.total)}</td>
-              </tr>
-            `}
-          </tbody>
-        </table>
-
-        <div class="total-box">
-          Total Pagado: ${fmt(pago.monto || pago.total)}
-        </div>
-
-        ${pago.observaciones ? `
-          <div style="margin-top: 20px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 10px;">
-            <strong>Observaciones:</strong> ${pago.observaciones}
-          </div>
-        ` : ''}
-
-        <div style="margin-top: 60px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; text-align: center; font-size: 12px;">
-          <div>
-            <div style="border-top: 1px solid #94a3b8; padding-top: 5px;">Firma Autorizada</div>
-          </div>
-          <div>
-            <div style="border-top: 1px solid #94a3b8; padding-top: 5px;">Recibí Conforme (Firma y Cédula)</div>
-          </div>
-        </div>
-
-        <script>window.print();</script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
   };
 
   return (

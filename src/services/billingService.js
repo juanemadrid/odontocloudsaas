@@ -93,15 +93,17 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             } catch (e) {}
 
             const isVoided = (p.estado || "").toLowerCase() === "anulado" ||
+                             Boolean(p.anulado) ||
+                             Boolean(notasParsed.anulado) ||
                              (p.referencia || "").toUpperCase().includes("ANULADO") ||
                              (p.notas || "").toUpperCase().includes("ANULADO");
 
             let motivo = notasParsed.motivoAnulacion || p.motivo_anulacion || "";
-            if (!motivo && isVoided && p.notas && !p.notas.startsWith("{")) {
+            if (!motivo && isVoided && p.notas && typeof p.notas === "string" && !p.notas.startsWith("{")) {
                 motivo = p.notas.replace(/^ANULADO\s*-\s*/i, "").trim();
             }
 
-            let rawConcepto = notasParsed.concepto || p.concepto || p.referencia || "ABONO GENERAL";
+            let rawConcepto = notasParsed.concepto || p.concepto || (p.referencia && p.referencia.toUpperCase().includes("SALDO A FAVOR") ? "SALDO A FAVOR" : p.referencia) || "ABONO GENERAL";
             if (notasParsed.planTitle && !rawConcepto.toLowerCase().includes(notasParsed.planTitle.toLowerCase())) {
                 rawConcepto = `${rawConcepto} (${notasParsed.planTitle})`;
             }
@@ -118,12 +120,14 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                 referencia: notasParsed.referencia || p.referencia || "",
                 estado: isVoided ? "Anulado" : (p.estado || "Completado"),
                 motivoAnulacion: motivo,
-                notas: notasParsed.notas || notasParsed.observaciones || (p.notas && !p.notas.startsWith("{") ? p.notas : "") || "",
+                notas: notasParsed.notas || notasParsed.observaciones || (typeof p.notas === "string" && !p.notas.startsWith("{") ? p.notas : "") || "",
                 notes: notasParsed.notas || notasParsed.observaciones || "",
-                nroConsecutivo: notasParsed.nroConsecutivo || "",
-                consecutivo: notasParsed.nroConsecutivo || "",
+                rawNotas: p.notas,
+                nroConsecutivo: notasParsed.nroConsecutivo || p.nro_consecutivo || p.nroConsecutivo || "",
+                consecutivo: notasParsed.nroConsecutivo || p.nro_consecutivo || p.consecutivo || "",
                 registradoPor: validUser,
-                usuarioNombre: validUser
+                usuarioNombre: validUser,
+                tipoDoc: notasParsed.tipoDoc || p.tipoDoc || (rawConcepto === "SALDO A FAVOR" ? "Recibo de caja" : "")
             };
         }).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
 
