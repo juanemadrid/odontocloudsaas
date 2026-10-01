@@ -230,7 +230,7 @@ export default function HeroSection({ config = {}, onShowTrial }) {
                     muted
                     loop
                     playsInline
-                    preload="auto"
+                    preload="none"
                     className="absolute inset-0 w-full h-full object-cover"
                     style={{ zIndex: 0 }}
                 >

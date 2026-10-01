@@ -24,7 +24,7 @@ export function ClinicPageHero({ config, title, subtitle, badge }) {
     return (
         <div className="relative min-h-[65vh] flex items-end overflow-hidden" style={{ paddingTop: '80px' }}>
             {/* Video background */}
-            <video autoPlay muted loop playsInline preload="auto"
+            <video autoPlay muted loop playsInline preload="none"
                 className="absolute inset-0 w-full h-full object-cover" style={{ zIndex: 0 }}>
                 <source src={`${import.meta.env.BASE_URL}video.mp4`} type="video/mp4" />
             </video>

@@ -12,7 +12,7 @@ import OdontoCloudMasterLanding from "./landing/OdontoCloudMasterLanding";
 import ServicesSection from "./landing/ServicesSection";
 import PageHeader from "../components/common/PageHeader";
 import TestimonialsSection from "./landing/TestimonialsSection";
-import { getPlans } from "../services/adminService";
+import { getPlans, OFFICIAL_DEFAULT_PLANS } from "../services/adminService";
 import { FiMessageCircle, FiAlertTriangle } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { isAccessBlocked } from "../utils/subscriptionHelper";
@@ -30,7 +30,7 @@ export default function ModernLanding({ previewConfig, isMaster = false, section
     // Allows previewing directly from CMS without fetching
     const [config, setConfig] = useState(previewConfig || baseInitialConfig);
     const [loading, setLoading] = useState(!previewConfig && !isMaster);
-    const [plans, setPlans] = useState([]);
+    const [plans, setPlans] = useState(OFFICIAL_DEFAULT_PLANS || []);
     const [showTrialModal, setShowTrialModal] = useState(false);
     const [selectedPlan, setSelectedPlan] = useState("");
     const [tenantInfo, setTenantInfo] = useState(null);

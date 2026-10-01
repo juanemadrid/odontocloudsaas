@@ -284,7 +284,7 @@ export default function PatientPortal() {
             <div className="min-h-screen relative flex items-center justify-center font-sans overflow-hidden">
                 {/* Video background */}
                 <video
-                    autoPlay muted loop playsInline preload="auto"
+                    autoPlay muted loop playsInline preload="none"
                     className="absolute inset-0 w-full h-full object-cover"
                     style={{ zIndex: 0 }}
                 >

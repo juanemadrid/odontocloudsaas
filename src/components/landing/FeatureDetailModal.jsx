@@ -8,14 +8,14 @@ export default function FeatureDetailModal({ feature, isOpen, onClose }) {
     return (
         <AnimatePresence>
             {isOpen && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-6 overflow-y-auto">
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 md:p-6 overflow-y-auto">
                     {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={onClose}
-                        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+                        className="fixed inset-0 bg-slate-950/75"
                     />
 
                     {/* Modal Content */}

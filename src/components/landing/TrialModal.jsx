@@ -39,13 +39,13 @@ export default function TrialModal({ isOpen, onClose }) {
     return (
         <AnimatePresence>
             {isOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={onClose}
-                        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+                        className="fixed inset-0 bg-slate-950/75"
                     />
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -94,7 +94,8 @@ export default function TrialModal({ isOpen, onClose }) {
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tu Nombre</label>
                                         <input
                                             required
-                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium"
+                                            style={{ fontSize: "16px" }}
+                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium text-base sm:text-sm"
                                             placeholder="Ej: Dr. Juan Pérez"
                                             value={formData.adminName}
                                             onChange={e => setFormData({ ...formData, adminName: e.target.value })}
@@ -104,7 +105,8 @@ export default function TrialModal({ isOpen, onClose }) {
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Clínica</label>
                                         <input
                                             required
-                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium"
+                                            style={{ fontSize: "16px" }}
+                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium text-base sm:text-sm"
                                             placeholder="Ej: OdontoSalud"
                                             value={formData.clinicName}
                                             onChange={e => setFormData({ ...formData, clinicName: e.target.value })}
@@ -117,7 +119,8 @@ export default function TrialModal({ isOpen, onClose }) {
                                         required
                                         type="email"
                                         autoComplete="off"
-                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium"
+                                        style={{ fontSize: "16px" }}
+                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium text-base sm:text-sm"
                                         placeholder="correo@ejemplo.com"
                                         value={formData.adminEmail}
                                         onChange={e => setFormData({ ...formData, adminEmail: e.target.value })}
@@ -127,7 +130,8 @@ export default function TrialModal({ isOpen, onClose }) {
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono / WhatsApp</label>
                                     <input
                                         type="tel"
-                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium"
+                                        style={{ fontSize: "16px" }}
+                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium text-base sm:text-sm"
                                         placeholder="Ej: +57 300 123 4567"
                                         value={formData.phone}
                                         onChange={e => setFormData({ ...formData, phone: e.target.value })}
