@@ -9,6 +9,7 @@ import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { useAuth } from "../../../context/AuthContext";
 import { getDoctorsList, getActiveCaja, ensureActiveCaja } from "../../../services/supabaseServices";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/consecutivosService";
 
 const CIUDADES_COLOMBIA = [
     "Abejorral", "Acacías", "Aguachica", "Agustín Codazzi", "Anapoima", "Andes", "Apartadó", "Aracataca", "Arauca", "Armenia",
@@ -276,6 +277,23 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
             const fechaIso = new Date(fecha + "T00:00:00").toISOString();
             const nowIso = new Date().toISOString();
 
+            // Consumir el siguiente consecutivo oficial de Recibo de Caja (misma numeración correlativa)
+            let nextConsecutivoNum = null;
+            try {
+                nextConsecutivoNum = await consumeNextConsecutivo(inquilino, CONSECUTIVO_TYPES.RECIBO_CAJA);
+            } catch (consErr) {
+                console.warn("Aviso consumiendo consecutivo para saldo a favor:", consErr);
+            }
+
+            const metadataNotas = {
+                concepto: "SALDO A FAVOR",
+                tipoDoc: "Recibo de caja",
+                nroConsecutivo: nextConsecutivoNum || null,
+                consecutivo: nextConsecutivoNum || null,
+                observaciones: observaciones || "",
+                registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrativo"
+            };
+
             // Datos a guardar en tabla pagos (solo columnas válidas en PostgreSQL Supabase)
             const dbData = {
                 id: creditId,
@@ -285,7 +303,8 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                 monto: valNum,
                 metodo: medioPago,
                 referencia: "SALDO A FAVOR",
-                notas: observaciones ? `SALDO A FAVOR - ${observaciones}` : "ABONO SALDO A FAVOR",
+                nro_consecutivo: nextConsecutivoNum ? String(nextConsecutivoNum) : null,
+                notas: JSON.stringify(metadataNotas),
                 created_at: nowIso
             };
 
@@ -316,6 +335,46 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                 );
             } catch (e) {}
 
+            // Registrar también formalmente en recibos_caja como Recibo de Caja
+            const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(str || ""));
+            const validCajaId = currentActiveCaja?.id && isUUID(currentActiveCaja.id) ? currentActiveCaja.id : null;
+            const finalConsStr = nextConsecutivoNum ? String(nextConsecutivoNum).padStart(4, "0") : null;
+
+            try {
+                const reciboPayload = {
+                    id: crypto.randomUUID ? crypto.randomUUID() : null,
+                    tenant_id: inquilino,
+                    inquilino,
+                    numero: finalConsStr,
+                    nro_consecutivo: finalConsStr,
+                    nroConsecutivo: finalConsStr,
+                    fecha: fechaIso,
+                    paciente_id: isUUID(paciente.id) ? paciente.id : null,
+                    pacienteId: isUUID(paciente.id) ? paciente.id : null,
+                    paciente_nombre: paciente.nombre,
+                    pacienteNombre: paciente.nombre,
+                    condicion_pago: "Contado",
+                    condicionPago: "Contado",
+                    medio_pago: medioPago,
+                    medioPago: medioPago,
+                    concepto: "SALDO A FAVOR",
+                    conceptos: [{ concepto: "SALDO A FAVOR", precioUnitario: valNum, cantidad: 1, total: valNum }],
+                    monto: valNum,
+                    subtotal: valNum,
+                    total: valNum,
+                    observaciones: observaciones ? `SALDO A FAVOR - ${observaciones}` : "Abono Saldo a Favor",
+                    caja_id: validCajaId,
+                    cajaId: validCajaId,
+                    creado_por: `${userProfile?.nombre || userProfile?.email || "Administrativo"}`,
+                    creadoPor: `${userProfile?.nombre || userProfile?.email || "Administrativo"}`,
+                    created_at: nowIso
+                };
+                if (!reciboPayload.id) delete reciboPayload.id;
+                await supabase.from("recibos_caja").insert([reciboPayload]);
+            } catch (rErr) {
+                console.warn("Aviso insertando en recibos_caja desde SaldoFavorForm:", rErr);
+            }
+
             // Sync with active Caja & Movimientos
             if (currentActiveCaja) {
                 const movId = crypto.randomUUID ? crypto.randomUUID() : `mov_${Date.now()}`;
@@ -323,15 +382,15 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                     id: movId,
                     tenant_id: inquilino,
                     tipo: "ingreso",
-                    concepto: "SALDO A FAVOR",
+                    concepto: "Recibo de Caja #" + (finalConsStr || "SF"),
                     monto: valNum,
                     metodo_pago: medioPago,
                     descripcion: `Saldo a favor para ${paciente.nombre}`,
-                    paciente_id: paciente.id,
+                    paciente_id: isUUID(paciente.id) ? paciente.id : null,
                     paciente_nombre: paciente.nombre,
                     pago_id: creditId,
-                    usuario_id: userProfile?.uid || null,
-                    caja_id: currentActiveCaja.id,
+                    usuario_id: isUUID(userProfile?.uid) ? userProfile.uid : null,
+                    caja_id: validCajaId,
                     created_at: nowIso
                 };
 
@@ -339,16 +398,18 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                     await supabase.from("movimientos_caja").insert([movData]);
                 } catch (e) {}
 
-                try {
-                    await supabase
-                        .from("cajas")
-                        .update({
-                            saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + valNum,
-                            total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + valNum,
-                            updated_at: nowIso
-                        })
-                        .eq("id", currentActiveCaja.id);
-                } catch (e) {}
+                if (validCajaId) {
+                    try {
+                        await supabase
+                            .from("cajas")
+                            .update({
+                                saldo_actual: (currentActiveCaja.saldo_actual || currentActiveCaja.saldoActual || 0) + valNum,
+                                total_ingresos: (currentActiveCaja.total_ingresos || currentActiveCaja.totalIngresos || 0) + valNum,
+                                updated_at: nowIso
+                            })
+                            .eq("id", validCajaId);
+                    } catch (e) {}
+                }
 
                 try {
                     const { data: cfgRow } = await supabase

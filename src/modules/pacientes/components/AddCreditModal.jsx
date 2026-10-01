@@ -137,6 +137,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
                 monto: Number(data.valor) || 0,
                 metodo: data.medio || "Efectivo",
                 referencia: referenceStr ? `Ref: ${referenceStr}` : "SALDO A FAVOR",
+                nro_consecutivo: nroConsecutivo ? String(nroConsecutivo) : null,
                 notas: notesPayload,
                 created_at: new Date().toISOString()
             };

@@ -596,12 +596,17 @@ export default function ReciboCajaList({ onNew }) {
             // Sort ascending by date to assign sequential consecutive number if missing, then invert for display
             combined.sort((a, b) => new Date(a.rawDate || 0) - new Date(b.rawDate || 0));
 
-            const baseConsecutivo = 1999;
-            const withConsecutivos = combined.map((item, idx) => {
-                const storedCons = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo;
-                const cleanConsecutivo = storedCons && !isNaN(Number(storedCons))
-                    ? Number(storedCons)
-                    : (baseConsecutivo + idx);
+            let runningCons = 0;
+            const withConsecutivos = combined.map((item) => {
+                const storedCons = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
+                let cleanConsecutivo;
+                if (storedCons && !isNaN(Number(storedCons)) && Number(storedCons) < 1900) {
+                    cleanConsecutivo = Number(storedCons);
+                    runningCons = Math.max(runningCons, cleanConsecutivo);
+                } else {
+                    runningCons += 1;
+                    cleanConsecutivo = runningCons;
+                }
                 
                 return {
                     ...item,

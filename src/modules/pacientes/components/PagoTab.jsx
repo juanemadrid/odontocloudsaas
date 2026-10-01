@@ -427,6 +427,7 @@ export default function PagoTab({ patient }) {
                 monto: paymentAmount,
                 metodo: method,
                 referencia: reference || (method === "Saldo a favor" ? "USO SALDO A FAVOR" : null),
+                nro_consecutivo: nroConsecutivo ? String(nroConsecutivo) : null,
                 fecha: new Date().toISOString(),
                 notas: JSON.stringify(metadataNotas)
             };

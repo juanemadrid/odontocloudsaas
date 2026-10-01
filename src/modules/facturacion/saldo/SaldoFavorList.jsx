@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { FiPlus, FiCalendar, FiSearch, FiPrinter, FiUser, FiCornerUpLeft, FiX, FiCheck } from "react-icons/fi";
+import { FiPlus, FiCalendar, FiSearch, FiPrinter, FiTrash2, FiUser, FiCornerUpLeft, FiX, FiCheck } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
@@ -84,6 +84,110 @@ export default function SaldoFavorList({ onNew }) {
     const [observacionesDevolucion, setObservacionesDevolucion] = useState("Devolución saldo a favor");
     const [savingDevolucion, setSavingDevolucion] = useState(false);
     const [cajasBancosList, setCajasBancosList] = useState([]);
+
+    // Modal Anular Movimiento State
+    const [voidModal, setVoidModal] = useState({
+        open: false,
+        mov: null,
+        reason: "",
+        submitting: false
+    });
+
+    const handleConfirmVoid = async () => {
+        if (!voidModal.reason.trim()) {
+            toast.error("Por favor ingrese el motivo de la anulación");
+            return;
+        }
+        setVoidModal(prev => ({ ...prev, submitting: true }));
+        const mov = voidModal.mov;
+        const p = mov.pagoOriginal;
+        const nowIso = new Date().toISOString();
+        const reason = voidModal.reason.trim();
+        const userName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrativo";
+
+        try {
+            let updatedNotas = p.notas;
+            try {
+                const parsed = typeof p.notas === "string" && p.notas.trim().startsWith("{") 
+                    ? JSON.parse(p.notas) 
+                    : { original: p.notas };
+                parsed.estado = "Anulado";
+                parsed.motivoAnulacion = reason;
+                parsed.anuladoPor = userName;
+                parsed.fechaAnulacion = nowIso;
+                updatedNotas = JSON.stringify(parsed);
+            } catch (_) {}
+
+            // 1. Update pagos table
+            const { error: pErr } = await supabase
+                .from("pagos")
+                .update({
+                    estado: "Anulado",
+                    motivo_anulacion: reason,
+                    notas: updatedNotas,
+                    updated_at: nowIso
+                })
+                .eq("id", p.id);
+
+            if (pErr) throw pErr;
+
+            // 2. Adjust patient saldo_favor
+            const pacId = p.paciente_id || p.pacienteId || p.patient_id || p.patientId;
+            if (pacId) {
+                const { data: pacData } = await supabase
+                    .from("pacientes")
+                    .select("id, saldo_favor")
+                    .eq("id", pacId)
+                    .single();
+
+                if (pacData) {
+                    const currentSaldo = Number(pacData.saldo_favor || 0);
+                    let newSaldo = currentSaldo;
+                    if (mov.tipoMovimiento === "Entrada") {
+                        // Si se anula un abono, se descuenta del saldo a favor
+                        newSaldo = Math.max(0, currentSaldo - Number(p.monto || 0));
+                    } else if (mov.tipoMovimiento === "Salida") {
+                        // Si se anula un consumo, se restaura el saldo a favor al paciente
+                        newSaldo = currentSaldo + Number(p.monto || 0);
+                    }
+
+                    await supabase
+                        .from("pacientes")
+                        .update({ saldo_favor: newSaldo, updated_at: nowIso })
+                        .eq("id", pacId);
+
+                    setPacientes(prev => prev.map(pac => pac.id === pacId ? { ...pac, saldo_favor: newSaldo, saldoFavor: newSaldo } : pac));
+                    if (selectedPaciente && selectedPaciente.id === pacId) {
+                        setSelectedPaciente(prev => ({ ...prev, saldo_favor: newSaldo, saldoFavor: newSaldo }));
+                    }
+                }
+            }
+
+            // 3. Update recibos_caja table if linked
+            try {
+                await supabase
+                    .from("recibos_caja")
+                    .update({ estado: "Anulado", motivo_anulacion: reason, updated_at: nowIso })
+                    .or(`id.eq.${p.id},numero.eq.${mov.documento},nro_consecutivo.eq.${mov.documento}`);
+            } catch (_) {}
+
+            // 4. Update local pagos state
+            setPagos(prev => prev.map(item => item.id === p.id ? { 
+                ...item, 
+                estado: "Anulado", 
+                motivo_anulacion: reason, 
+                motivoAnulacion: reason,
+                notas: updatedNotas 
+            } : item));
+
+            toast.success("Movimiento anulado correctamente");
+            setVoidModal({ open: false, mov: null, reason: "", submitting: false });
+        } catch (err) {
+            console.error("Error al anular movimiento:", err);
+            toast.error("Error al anular el movimiento: " + (err.message || ""));
+            setVoidModal(prev => ({ ...prev, submitting: false }));
+        }
+    };
 
     useEffect(() => {
         const handleClickOutside = () => {
@@ -335,53 +439,143 @@ export default function SaldoFavorList({ onNew }) {
             );
         }
 
+        // 1. Mapa de consecutivos independientes para Consumos de Saldo a Favor (comienza en 1 y aumenta correlativamente)
+        const allConsumosChronological = [...pagos]
+            .filter(p => {
+                const m = (p.metodo || p.medio || "").toLowerCase();
+                const ref = (p.referencia || p.concepto || "").toUpperCase();
+                const notes = (p.notas || p.notes || "").toUpperCase();
+                return m === "saldo a favor" || ref.includes("USO SALDO") || ref.includes("CONSUMO SALDO") || notes.includes("CONSUMO SALDO") || notes.includes("USO SALDO");
+            })
+            .sort((a, b) => {
+                const timeA = new Date(a.fecha || a.created_at || 0).getTime();
+                const timeB = new Date(b.fecha || b.created_at || 0).getTime();
+                return timeA - timeB;
+            });
+
+        const consumoDocMap = new Map();
+        let runningConsumoCounter = 0;
+        allConsumosChronological.forEach((p) => {
+            let parsedN = null;
+            if (p.notas && typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+                try { parsedN = JSON.parse(p.notas); } catch (_) {}
+            }
+            const storedNum = p.nro_consecutivo || p.nroConsecutivo || parsedN?.nroConsecutivo || parsedN?.consecutivo;
+            const validNum = storedNum && !isNaN(Number(storedNum)) && Number(storedNum) > 0 ? Number(storedNum) : null;
+            
+            if (validNum) {
+                consumoDocMap.set(p.id, String(validNum));
+                runningConsumoCounter = Math.max(runningConsumoCounter, validNum);
+            } else {
+                runningConsumoCounter += 1;
+                consumoDocMap.set(p.id, String(runningConsumoCounter));
+            }
+        });
+
+        // 2. Mapa para Entradas (Abonos de Saldo a Favor = Recibo de Caja)
+        const allAbonosChronological = [...pagos]
+            .filter(p => {
+                const m = (p.metodo || p.medio || "").toLowerCase();
+                const ref = (p.referencia || p.concepto || "").toUpperCase();
+                const notes = (p.notas || p.notes || "").toUpperCase();
+                return m !== "saldo a favor" && (ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR"));
+            })
+            .sort((a, b) => {
+                const timeA = new Date(a.fecha || a.created_at || 0).getTime();
+                const timeB = new Date(b.fecha || b.created_at || 0).getTime();
+                return timeA - timeB;
+            });
+
+        const abonoDocMap = new Map();
+        allAbonosChronological.forEach((p) => {
+            let parsedN = null;
+            if (p.notas && typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+                try { parsedN = JSON.parse(p.notas); } catch (_) {}
+            }
+            let rawCons = p.nro_consecutivo || p.nroConsecutivo || p.consecutivo || parsedN?.nroConsecutivo || parsedN?.consecutivo;
+            if (rawCons && !isNaN(Number(rawCons))) {
+                abonoDocMap.set(p.id, String(Number(rawCons)));
+            } else if (p.referencia && /\d+/.test(p.referencia)) {
+                const match = p.referencia.match(/\d+/);
+                abonoDocMap.set(p.id, match ? match[0] : "");
+            }
+        });
+
+        // 3. Filtrar pagos correspondientes al historial de saldos
         const creditPayments = listPayments.filter(p => {
             const ref = (p.referencia || p.concepto || "").toUpperCase();
             const notes = (p.notas || p.notes || "").toUpperCase();
             const m = (p.metodo || p.medio || "").toLowerCase();
-            return ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR") || m === "saldo a favor" || !isNotAnulado(p);
+            return m === "saldo a favor" || 
+                   ref.includes("SALDO A FAVOR") || 
+                   notes.includes("SALDO A FAVOR") || 
+                   ref.includes("USO SALDO") || 
+                   ref.includes("CONSUMO SALDO") || 
+                   notes.includes("CONSUMO SALDO") || 
+                   notes.includes("USO SALDO") ||
+                   ref.includes("DEVOLUCI") ||
+                   notes.includes("DEVOLUCI");
         });
         
         const list = creditPayments.map(p => {
-            const isTopUp = isCreditTopUp(p);
+            const m = (p.metodo || p.medio || "").toLowerCase();
+            const ref = (p.referencia || p.concepto || "").toUpperCase();
+            const notes = (p.notas || p.notes || "").toUpperCase();
+            const isDevolucion = ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI");
+            const isConsumo = m === "saldo a favor" || ref.includes("USO SALDO") || ref.includes("CONSUMO SALDO") || notes.includes("CONSUMO SALDO") || notes.includes("USO SALDO");
+            const isTopUp = !isConsumo && !isDevolucion;
             const isVoid = !isNotAnulado(p);
-            const isDevolucion = (p.concepto || p.referencia || p.notas || "").toUpperCase().includes("DEVOLUCI");
             const motivo = p.motivoAnulacion || p.motivo_anulacion || (p.notas && p.notas.includes("ANULADO") ? p.notas.replace(/^ANULADO\s*-\s*/i, "") : "");
             
             const pId = p.paciente_id || p.pacienteId || p.patient_id || p.patientId;
             const pacObj = pacientes.find(pac => pac.id === pId);
             const pacName = p.paciente_nombre || p.pacienteNombre || (pacObj ? (pacObj.nombreCompleto || `${pacObj.nombres || ""} ${pacObj.apellidos || ""}`).trim() : "Tercero");
 
-            let displayPlan = p.planTitle || "";
-            if (!displayPlan && p.notas) {
-                if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
-                    try {
-                        const parsed = JSON.parse(p.notas);
-                        displayPlan = parsed.planTitle || (parsed.itemPayments && parsed.itemPayments.map(it => it.desc).filter(Boolean).join(", ")) || parsed.concepto || parsed.observaciones || "Abono a tratamiento";
-                    } catch (_) {}
-                } else if (p.notas !== "SALDO A FAVOR") {
-                    displayPlan = p.notas;
-                }
+            let parsedN = null;
+            if (p.notas && typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+                try { parsedN = JSON.parse(p.notas); } catch (_) {}
             }
-            if (!displayPlan) displayPlan = isTopUp ? "Abono Saldo a Favor" : (isDevolucion ? "Devolución saldo a favor" : "Tratamiento Odontológico");
 
-            let docLabel = p.nroConsecutivo || p.consecutivo || "";
-            if (!docLabel) {
-                if (p.referencia && p.referencia !== "SALDO A FAVOR") {
-                    docLabel = p.referencia;
-                } else {
-                    docLabel = isTopUp ? "SALDO A FAVOR" : (isDevolucion ? "EGRESO" : "USO SALDO A FAVOR");
+            let displayPlan = p.planTitle || parsedN?.planTitle || "";
+            if (!displayPlan && parsedN) {
+                displayPlan = (parsedN.itemPayments && parsedN.itemPayments.map(it => it.desc).filter(Boolean).join(", ")) || parsedN.concepto || parsedN.observaciones || "";
+            }
+            if (!displayPlan && !isTopUp && p.notas && p.notas !== "SALDO A FAVOR" && !p.notas.startsWith("{")) {
+                displayPlan = p.notas;
+            }
+
+            // En OralDrive:
+            // Entrada -> P. de trat queda vacío / guión ("")
+            // Salida -> P. de trat muestra el plan de tratamiento seleccionado (ej. "Rehabilitación")
+            if (isTopUp) {
+                displayPlan = "";
+            } else if (!displayPlan) {
+                displayPlan = isDevolucion ? "Devolución saldo a favor" : "Tratamiento Odontológico";
+            }
+
+            // Número limpio de documento (sin '#' ni prefijos de texto)
+            let cleanDoc = "";
+            if (isConsumo) {
+                cleanDoc = consumoDocMap.get(p.id) || (parsedN?.nroConsecutivo ? String(parsedN.nroConsecutivo) : "1");
+            } else if (isTopUp) {
+                cleanDoc = abonoDocMap.get(p.id) || p.nro_consecutivo || p.nroConsecutivo || parsedN?.nroConsecutivo || "";
+                if (cleanDoc) {
+                    cleanDoc = String(cleanDoc).replace(/^[#\s]+/, "").trim();
+                } else if (p.referencia && /\d+/.test(p.referencia)) {
+                    cleanDoc = p.referencia.match(/\d+/)[0];
                 }
+            } else {
+                cleanDoc = p.nro_consecutivo || p.consecutivo || parsedN?.nroConsecutivo || (p.referencia ? p.referencia.replace(/^[#\s]+/, "") : "1");
             }
 
             return {
                 id: p.id,
                 fecha: p.fecha || p.createdAt || p.created_at,
                 tercero: pacName,
-                tipoMovimiento: isTopUp ? "Abono a saldo a favor" : (isDevolucion ? "Devolución s. a favor" : "Consumo s. a favor"),
+                tipoMovimiento: isTopUp ? "Entrada" : "Salida",
                 valor: Number(p.monto || 0),
-                tipoDocumento: isTopUp ? "Recibo de saldo" : (isDevolucion ? "Egreso" : "Recibo de caja"),
-                documento: docLabel,
+                tipoDocumento: isTopUp ? "Recibo de caja" : (isDevolucion ? "Egreso" : "Consumo Saldo a Favor"),
+                documento: cleanDoc,
                 planTratamiento: displayPlan,
                 estado: isVoid ? "Anulado" : "Activo",
                 motivoAnulacion: motivo,
@@ -394,13 +588,14 @@ export default function SaldoFavorList({ onNew }) {
             return list.filter(m => 
                 (m.tercero || "").toLowerCase().includes(q) ||
                 (m.planTratamiento || "").toLowerCase().includes(q) ||
+                (m.documento || "").toLowerCase().includes(q) ||
                 (m.motivoAnulacion || "").toLowerCase().includes(q)
             );
         }
 
         list.sort((a, b) => {
-            const timeA = a.fecha?.seconds || new Date(a.fecha).getTime() / 1000;
-            const timeB = b.fecha?.seconds || new Date(b.fecha).getTime() / 1000;
+            const timeA = new Date(a.fecha || 0).getTime();
+            const timeB = new Date(b.fecha || 0).getTime();
             return timeB - timeA;
         });
 
@@ -409,7 +604,7 @@ export default function SaldoFavorList({ onNew }) {
 
     const handlePrint = async (pago) => {
         try {
-            const pId = pago.pacienteId || pago.patientId;
+            const pId = pago.paciente_id || pago.pacienteId || pago.patient_id || pago.patientId;
             if (!pId) return;
             const { data: patientData } = await supabase
                 .from("pacientes")
@@ -417,7 +612,7 @@ export default function SaldoFavorList({ onNew }) {
                 .eq("id", pId)
                 .single();
             if (!patientData) {
-                alert("No se pudo cargar la información del paciente");
+                toast.error("No se pudo cargar la información del paciente");
                 return;
             }
             
@@ -429,7 +624,7 @@ export default function SaldoFavorList({ onNew }) {
             await ReceiptPrintService.generatePDF(pago, patientData, clinic, userProfile);
         } catch (e) {
             console.error("Error printing receipt:", e);
-            alert("Error al preparar la impresión");
+            toast.error("Error al preparar la impresión");
         }
     };
 
@@ -1376,7 +1571,7 @@ export default function SaldoFavorList({ onNew }) {
                         <span className="text-sm font-bold text-rose-600 font-mono">{fmt(selectedTotals.usado)}</span>
                     </div>
                     <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Saldo Disponible</span>
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Saldo a Favor</span>
                         <span className="text-sm font-bold text-emerald-600 font-mono">{fmt(selectedTotals.disponible)}</span>
                     </div>
                 </div>
@@ -1391,13 +1586,13 @@ export default function SaldoFavorList({ onNew }) {
                                 {detalleMovimientos ? (
                                     <>
                                         <th className="py-3 px-4">Fecha</th>
-                                        <th className="py-3 px-4">Tipo Movimiento</th>
+                                        <th className="py-3 px-4">Tipo de movimiento</th>
                                         <th className="py-3 px-4 text-right">Valor</th>
-                                        <th className="py-3 px-4">Tipo Documento</th>
+                                        <th className="py-3 px-4">Tipo documento</th>
                                         <th className="py-3 px-4">Documento</th>
-                                        <th className="py-3 px-4">Plan Tratamiento</th>
+                                        <th className="py-3 px-4">P. de trat</th>
                                         <th className="py-3 px-4">Estado</th>
-                                        <th className="py-3 px-4 text-center w-20">Acciones</th>
+                                        <th className="py-3 px-4 text-center w-28">Acciones</th>
                                     </>
                                 ) : (
                                     <>
@@ -1432,42 +1627,56 @@ export default function SaldoFavorList({ onNew }) {
                                 ) : (
                                     selectedMovements.map(mov => (
                                         <tr key={mov.id} className="hover:bg-slate-50/60 transition-colors">
-                                            <td className="py-2.5 px-4 font-medium text-slate-500">
+                                            <td className="py-2.5 px-4 font-medium text-slate-500 whitespace-nowrap">
                                                 {formatDateOnly(mov.fecha)}
                                             </td>
-                                            <td className="py-2.5 px-4 font-semibold text-slate-800 uppercase">
+                                            <td className="py-2.5 px-4 font-semibold text-slate-800">
                                                 {mov.tipoMovimiento}
                                             </td>
-                                            <td className={`py-2.5 px-4 text-right font-bold font-mono ${mov.tipoMovimiento.includes("Abono") ? "text-emerald-600" : "text-rose-600"}`}>
-                                                {fmt(mov.valor)}
+                                            <td className="py-2.5 px-4 text-right font-mono font-semibold text-slate-800 whitespace-nowrap">
+                                                {mov.tipoMovimiento === "Salida" ? `-${fmt(mov.valor)}` : fmt(mov.valor)}
                                             </td>
-                                            <td className="py-2.5 px-4 text-slate-500 font-medium uppercase">
+                                            <td className="py-2.5 px-4 text-slate-600 font-medium">
                                                 {mov.tipoDocumento}
                                             </td>
-                                            <td className="py-2.5 px-4 font-mono font-bold text-slate-600">
-                                                #{mov.documento}
+                                            <td className="py-2.5 px-4 font-mono font-bold text-slate-700">
+                                                {mov.documento}
                                             </td>
-                                             <td className="py-2.5 px-4 text-slate-600 font-medium">
-                                                 <div>{mov.planTratamiento}</div>
-                                                 {mov.estado === "Anulado" && mov.motivoAnulacion && (
-                                                     <div className="text-[10px] font-semibold text-rose-600 italic mt-0.5">
-                                                         ⚠️ Motivo: {mov.motivoAnulacion}
-                                                     </div>
-                                                 )}
-                                             </td>
+                                            <td className="py-2.5 px-4 text-slate-600 font-medium">
+                                                <div>{mov.planTratamiento || "—"}</div>
+                                                {mov.estado === "Anulado" && mov.motivoAnulacion && (
+                                                    <div className="text-[10px] font-semibold text-rose-600 italic mt-0.5">
+                                                        ⚠️ Motivo: {mov.motivoAnulacion}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="py-2.5 px-4">
                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${mov.estado === "Anulado" ? "bg-rose-50 text-rose-600 border border-rose-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
                                                     {mov.estado}
                                                 </span>
                                             </td>
                                             <td className="py-2.5 px-4 text-center">
-                                                <button 
-                                                    className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-colors mx-auto"
-                                                    title="Imprimir Recibo"
-                                                    onClick={() => handlePrint(mov.pagoOriginal)}
-                                                >
-                                                    <FiPrinter size={13} />
-                                                </button>
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    <button 
+                                                        className="w-7 h-7 rounded-md bg-[#38bdf8] hover:bg-[#0284c7] text-white flex items-center justify-center transition-all shadow-xs cursor-pointer"
+                                                        title="Imprimir Documento"
+                                                        onClick={() => handlePrint({ ...mov.pagoOriginal, nroConsecutivo: mov.documento })}
+                                                    >
+                                                        <FiPrinter size={13} />
+                                                    </button>
+                                                    <button 
+                                                        disabled={mov.estado === "Anulado"}
+                                                        className={`w-7 h-7 rounded-md flex items-center justify-center transition-all shadow-xs ${
+                                                            mov.estado === "Anulado" 
+                                                                ? "bg-slate-200 text-slate-400 cursor-not-allowed" 
+                                                                : "bg-[#f43f5e] hover:bg-[#e11d48] text-white cursor-pointer"
+                                                        }`}
+                                                        title={mov.estado === "Anulado" ? "Movimiento ya anulado" : "Anular movimiento"}
+                                                        onClick={() => setVoidModal({ open: true, mov, reason: "", submitting: false })}
+                                                    >
+                                                        <FiTrash2 size={13} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
@@ -1661,6 +1870,106 @@ export default function SaldoFavorList({ onNew }) {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Anular Movimiento */}
+            {voidModal.open && voidModal.mov && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-rose-50/50">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                                    <FiTrash2 size={16} />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-800">Anular Movimiento</h3>
+                                    <p className="text-[11px] text-slate-500">Saldo a Favor</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={voidModal.submitting}
+                                onClick={() => setVoidModal({ open: false, mov: null, reason: "", submitting: false })}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                <FiX size={18} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-4">
+                            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5 font-medium">
+                                <div className="flex justify-between">
+                                    <span className="text-slate-500">Tipo de movimiento:</span>
+                                    <span className="font-bold text-slate-800 uppercase">{voidModal.mov.tipoMovimiento} ({voidModal.mov.tipoDocumento})</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-500">Documento:</span>
+                                    <span className="font-bold font-mono text-slate-800">{voidModal.mov.documento}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-500">Tercero / Paciente:</span>
+                                    <span className="font-bold text-slate-800">{voidModal.mov.tercero}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-slate-200/80 pt-1.5 mt-1">
+                                    <span className="text-slate-500 font-semibold">Valor a revertir:</span>
+                                    <span className={`font-mono font-bold ${voidModal.mov.tipoMovimiento === "Salida" ? "text-rose-600" : "text-slate-800"}`}>
+                                        {voidModal.mov.tipoMovimiento === "Salida" ? `-${fmt(voidModal.mov.valor)}` : fmt(voidModal.mov.valor)}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <p className="text-[11px] text-amber-700 bg-amber-50 p-2.5 rounded-lg border border-amber-200 leading-relaxed">
+                                {voidModal.mov.tipoMovimiento === "Entrada"
+                                    ? "⚠️ Al anular este abono, el monto será descontado del saldo a favor del paciente."
+                                    : "⚠️ Al anular este consumo, el saldo utilizado será restituido al paciente."}
+                            </p>
+
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-700">
+                                    Motivo de anulación <span className="text-rose-500">*</span>
+                                </label>
+                                <textarea
+                                    required
+                                    rows="3"
+                                    disabled={voidModal.submitting}
+                                    value={voidModal.reason}
+                                    onChange={(e) => setVoidModal(prev => ({ ...prev, reason: e.target.value }))}
+                                    placeholder="Ingrese detalladamente el motivo de la anulación..."
+                                    className="w-full p-2.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                                />
+                            </div>
+
+                            {/* Footer Buttons */}
+                            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                                <button
+                                    type="button"
+                                    disabled={voidModal.submitting}
+                                    onClick={() => setVoidModal({ open: false, mov: null, reason: "", submitting: false })}
+                                    className="h-8 px-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={voidModal.submitting || !voidModal.reason.trim()}
+                                    onClick={handleConfirmVoid}
+                                    className="h-8 px-5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95"
+                                >
+                                    {voidModal.submitting ? (
+                                        <>
+                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            <span>Anulando...</span>
+                                        </>
+                                    ) : (
+                                        <span>Confirmar Anulación</span>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
