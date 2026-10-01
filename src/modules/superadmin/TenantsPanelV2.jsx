@@ -116,7 +116,12 @@ export default function TenantsPanelV2() {
             }
         } catch (err) {
             console.error("Error al reenviar correo de bienvenida:", err);
-            alert(`❌ Error al enviar correo:\n${err.message}`);
+            const msg = err.message || "";
+            if (msg.toLowerCase().includes("desconocida")) {
+                alert("⚠️ La función del servidor (Edge Function 'register-clinic') aún tiene la versión previa.\n\nEs necesario actualizar la función en Coolify para habilitar el envío y reenvío de correos de bienvenida.");
+            } else {
+                alert(`❌ Error al enviar correo:\n${msg}`);
+            }
         } finally {
             setSendingEmailId(null);
         }
