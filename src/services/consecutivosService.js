@@ -84,7 +84,42 @@ export const consumeNextConsecutivo = async (tenantId, tipoField) => {
       tenant_id: tenantId,
     };
 
-    const currentVal = Number(activeItem[tipoField] ?? 0);
+    let currentVal = Number(activeItem[tipoField] ?? 0);
+
+    // Dynamic max checking across tables to prevent duplicate consecutive numbers
+    try {
+      if (tipoField === CONSECUTIVO_TYPES.RECIBO_CAJA) {
+        const [recsRes, pagsRes] = await Promise.all([
+          supabase.from("recibos_caja").select("numero, nroConsecutivo, nro_consecutivo").eq("tenant_id", tenantId),
+          supabase.from("pagos").select("nro_consecutivo").eq("tenant_id", tenantId)
+        ]);
+        let maxDb = 0;
+        (recsRes?.data || []).forEach(r => {
+          const val = parseInt(String(r.numero || r.nroConsecutivo || r.nro_consecutivo || 0), 10);
+          if (!isNaN(val) && val > maxDb && val < 100000) maxDb = val;
+        });
+        (pagsRes?.data || []).forEach(p => {
+          const val = parseInt(String(p.nro_consecutivo || 0), 10);
+          if (!isNaN(val) && val > maxDb && val < 100000) maxDb = val;
+        });
+        if (maxDb >= currentVal) {
+          currentVal = maxDb;
+        }
+      } else if (tipoField === CONSECUTIVO_TYPES.EGRESOS) {
+        const provRes = await supabase.from("pagos_proveedor").select("numero, consecutivo").eq("tenant_id", tenantId);
+        let maxDb = 0;
+        (provRes?.data || []).forEach(p => {
+          const val = parseInt(String(p.numero || p.consecutivo || 0), 10);
+          if (!isNaN(val) && val > maxDb && val < 100000) maxDb = val;
+        });
+        if (maxDb >= currentVal) {
+          currentVal = maxDb;
+        }
+      }
+    } catch (e) {
+      console.warn("Aviso al verificar max consecutivo en tablas:", e.message);
+    }
+
     const nextVal = (currentVal > 0 ? currentVal : 0) + 1;
 
     activeItem[tipoField] = nextVal;

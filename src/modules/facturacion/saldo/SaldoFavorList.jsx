@@ -7,7 +7,7 @@ import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { formatCurrency } from "../../../utils/formatters";
 import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/consecutivosService";
-import { getConfigItems, saveConfigItem } from "../../../services/configPersistenceService";
+import { getConfigItems, saveConfigItem, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
 
 const fmt = (n) =>
@@ -205,16 +205,22 @@ export default function SaldoFavorList({ onNew }) {
     };
 
     const isCreditTopUp = (p) => {
-        const ref = (p.referencia || p.concepto || "").toUpperCase();
+        if (!isNotAnulado(p)) return false;
+        const tipoStr = (p.tipo || "").toLowerCase();
+        if (tipoStr === "egreso") return false;
+        const concept = (p.concepto || p.referencia || "").toUpperCase();
         const notes = (p.notas || p.notes || "").toUpperCase();
+        if (concept.includes("DEVOLUCI") || notes.includes("DEVOLUCI")) return false;
         const method = (p.metodo || p.medio || "").toLowerCase();
-        return method !== "saldo a favor" && (ref === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR")) && isNotAnulado(p);
+        return method !== "saldo a favor" && (concept === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR"));
     };
 
     const isCreditUsed = (p) => {
+        if (!isNotAnulado(p)) return false;
         const m = (p.metodo || p.medio || "").toLowerCase();
         const c = (p.concepto || p.referencia || p.notas || "").toUpperCase();
-        return (m === "saldo a favor" || c.includes("DEVOLUCIÓN SALDO A FAVOR") || c.includes("DEVOLUCION SALDO A FAVOR")) && isNotAnulado(p);
+        const tipoStr = (p.tipo || "").toLowerCase();
+        return m === "saldo a favor" || c.includes("DEVOLUCIÓN SALDO A FAVOR") || c.includes("DEVOLUCION SALDO A FAVOR") || (tipoStr === "egreso" && c.includes("SALDO A FAVOR"));
     };
 
     const filteredTerceros = useMemo(() => {
@@ -343,9 +349,12 @@ export default function SaldoFavorList({ onNew }) {
                 .filter(p => isCreditUsed(p))
                 .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
-            // Available credit (takes into account patient profile saldo_favor and total topup payments)
-            const patientSaldoFavor = Number(pac.saldo_favor || pac.saldoFavor || 0);
-            const availableCredit = Math.max(0, Math.max(patientSaldoFavor, totalCredits) - usedCredits);
+            // Available credit (prioritizes active patient profile saldo_favor, verified with ledger)
+            const patientSaldoFavor = Number(pac.saldo_favor ?? pac.saldoFavor ?? 0);
+            const ledgerAvailable = Math.max(0, totalCredits - usedCredits);
+            const availableCredit = (pac.saldo_favor !== undefined && pac.saldo_favor !== null)
+                ? patientSaldoFavor
+                : ledgerAvailable;
 
             // Get date of the latest credit top-up
             const creditDates = pacPayments
@@ -421,10 +430,12 @@ export default function SaldoFavorList({ onNew }) {
             .filter(p => isCreditUsed(p))
             .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
-        const patientSaldoFavor = Number(selectedPaciente.saldo_favor || selectedPaciente.saldoFavor || 0);
-        const totalBase = Math.max(patientSaldoFavor, total);
-        const disponible = Math.max(0, totalBase - usado);
-        return { disponible, usado, total: totalBase };
+        const patientSaldoFavor = Number(selectedPaciente.saldo_favor ?? selectedPaciente.saldoFavor ?? 0);
+        const ledgerAvailable = Math.max(0, total - usado);
+        const disponible = (selectedPaciente.saldo_favor !== undefined && selectedPaciente.saldo_favor !== null)
+            ? patientSaldoFavor
+            : ledgerAvailable;
+        return { disponible, usado, total };
     }, [selectedPaciente, pagos]);
 
     const selectedMovements = useMemo(() => {
@@ -800,9 +811,11 @@ export default function SaldoFavorList({ onNew }) {
             .filter(p => isCreditUsed(p))
             .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
-        const patientSaldoFavor = Number(pacObj.saldo_favor || pacObj.saldoFavor || 0);
-        const totalBase = Math.max(patientSaldoFavor, total);
-        const disponible = Math.max(0, totalBase - usado);
+        const patientSaldoFavor = Number(pacObj.saldo_favor ?? pacObj.saldoFavor ?? 0);
+        const ledgerAvailable = Math.max(0, total - usado);
+        const disponible = (pacObj.saldo_favor !== undefined && pacObj.saldo_favor !== null)
+            ? patientSaldoFavor
+            : ledgerAvailable;
 
         const creditPayments = pacPayments.filter(p => {
             const ref = (p.referencia || p.concepto || "").toUpperCase();
@@ -1056,16 +1069,16 @@ export default function SaldoFavorList({ onNew }) {
             patient: pacObj,
             valorDisponible: item.valorDisponible
         });
-        setDevolucionMonto(item.valorDisponible);
+        setDevolucionMonto(item.valorDisponible ? Number(item.valorDisponible).toLocaleString("es-CO") : "");
         setSelectedMedioPago("Efectivo");
         setSelectedCajaBanco(cajasBancosList[0]?.value || "Caja Principal");
         setObservacionesDevolucion("Devolución saldo a favor");
     };
 
-    // Guarda la devolución, registra pago/egreso, descuenta saldo del paciente y genera la impresión
+    // Guarda la devolución, registra pago/egreso, descuenta saldo del paciente sin forzar impresion obligatoria
     const handleSaveDevolucion = async (e) => {
         if (e) e.preventDefault();
-        const montoNum = parseFloat(devolucionMonto);
+        const montoNum = Number(String(devolucionMonto || "").replace(/\D/g, ""));
         if (isNaN(montoNum) || montoNum <= 0) {
             alert("Por favor ingrese un monto de devolución válido mayor a 0.");
             return;
@@ -1081,29 +1094,43 @@ export default function SaldoFavorList({ onNew }) {
             const pacName = (patientObj?.nombreCompleto || `${patientObj?.nombres || ""} ${patientObj?.apellidos || ""}`).trim();
             const pacDoc = patientObj?.documento || patientObj?.nroDocumento || patientObj?.nro_documento || patientObj?.cedula || "—";
 
-            // 1. Obtener consecutivo de egreso
+            // 1. Obtener consecutivo oficial de egreso
             let consecutivoNum = 1;
             try {
                 consecutivoNum = await consumeNextConsecutivo(inquilino, CONSECUTIVO_TYPES.EGRESOS);
             } catch (errC) {
                 console.warn("Fallo al consumir consecutivo de egreso, usando fallback:", errC);
-                consecutivoNum = Date.now() % 10000;
+                consecutivoNum = 1;
             }
 
             const egrDocLabel = `EGR-${String(consecutivoNum).padStart(4, "0")}`;
 
-            // 2. Descontar saldo_favor en tabla pacientes
-            const curSaldoPac = Number(patientObj?.saldo_favor || patientObj?.saldoFavor || 0);
+            // 2. Descontar saldo_favor en tabla pacientes de forma segura y atomica
+            let curSaldoPac = 0;
+            try {
+                const { data: freshPac } = await supabase
+                    .from("pacientes")
+                    .select("id, saldo_favor")
+                    .eq("id", patientObj.id)
+                    .maybeSingle();
+                curSaldoPac = (freshPac && freshPac.saldo_favor != null)
+                    ? Number(freshPac.saldo_favor)
+                    : Number(patientObj?.saldo_favor || patientObj?.saldoFavor || 0);
+            } catch (e) {
+                curSaldoPac = Number(patientObj?.saldo_favor || patientObj?.saldoFavor || 0);
+            }
+
             const newSaldoPac = Math.max(0, curSaldoPac - montoNum);
             try {
                 await supabase
                     .from("pacientes")
                     .update({
                         saldo_favor: newSaldoPac,
-                        saldoFavor: newSaldoPac,
                         updated_at: new Date().toISOString()
                     })
                     .eq("id", patientObj.id);
+
+                setPacientes(prev => prev.map(p => p.id === patientObj.id ? { ...p, saldo_favor: newSaldoPac, saldoFavor: newSaldoPac } : p));
             } catch (errP) {
                 console.warn("Error actualizando saldo_favor en paciente:", errP);
             }
@@ -1140,16 +1167,18 @@ export default function SaldoFavorList({ onNew }) {
                 console.warn("Error insertando en pagos:", errPag);
             }
 
-            // 4. Insertar en pagos_proveedor (para que aparezca en Administración -> Facturación -> Pagos)
+            // 4. Insertar en pagos_proveedor y sincronizar en config (para Facturación -> Pagos / Egresos)
             const pagoProveedorRecord = {
                 id: `egr_${Date.now()}`,
                 tenant_id: inquilino,
                 consecutivo: consecutivoNum,
                 numero: String(consecutivoNum),
+                nroConsecutivo: String(consecutivoNum),
                 tipoDocumento: "Egreso",
                 fecha: new Date().toISOString(),
                 tercero: pacName,
                 documentoTercero: pacDoc,
+                proveedor: pacName,
                 medioPago: selectedMedioPago,
                 bancoCaja: selectedCajaBanco,
                 concepto: "Devolución saldo a favor",
@@ -1171,6 +1200,15 @@ export default function SaldoFavorList({ onNew }) {
                 await supabase.from("pagos_proveedor").insert([pagoProveedorRecord]);
             } catch (errProv) {
                 console.warn("Error insertando en pagos_proveedor:", errProv);
+            }
+            try {
+                const currPagos = await getConfigSection(inquilino, "pagos_proveedor", []);
+                await saveConfigSection(inquilino, "pagos_proveedor", [
+                    pagoProveedorRecord,
+                    ...(Array.isArray(currPagos) ? currPagos : [])
+                ]);
+            } catch (errCfg) {
+                console.warn("Error sincronizando pagos_proveedor en config:", errCfg);
             }
 
             // 5. Si la opción seleccionada es una Caja, registrar en movimientos_caja y descontar saldo
@@ -1205,19 +1243,9 @@ export default function SaldoFavorList({ onNew }) {
                 }
             }
 
-            // 6. Imprimir Comprobante de Egreso (Imagen 4)
-            printComprobanteEgreso({
-                consecutivo: consecutivoNum,
-                bancoCaja: selectedCajaBanco,
-                medioPago: selectedMedioPago,
-                monto: montoNum,
-                concepto: "Devolución saldo a favor",
-                observaciones: observacionesDevolucion || ""
-            }, patientObj);
-
             toast.success("Devolución aplicada y egreso registrado con éxito");
 
-            // 7. Cerrar modal y refrescar datos
+            // 6. Cerrar modal y refrescar datos sin abrir ventana de impresion automaticamente
             setDevolucionModal({ open: false, patient: null, valorDisponible: 0 });
             await loadData();
         } catch (err) {
@@ -1787,12 +1815,14 @@ export default function SaldoFavorList({ onNew }) {
                                     <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">$</span>
                                         <input
-                                            type="number"
-                                            min="1"
-                                            max={devolucionModal.valorDisponible}
+                                            type="text"
+                                            inputMode="numeric"
                                             required
                                             value={devolucionMonto}
-                                            onChange={(e) => setDevolucionMonto(e.target.value)}
+                                            onChange={(e) => {
+                                                const clean = e.target.value.replace(/\D/g, "");
+                                                setDevolucionMonto(clean ? Number(clean).toLocaleString("es-CO") : "");
+                                            }}
                                             placeholder="0"
                                             className="w-full h-9 pl-7 pr-3 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 font-mono focus:border-[#8cc33f] focus:ring-1 focus:ring-[#8cc33f] outline-none"
                                         />

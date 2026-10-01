@@ -53,13 +53,9 @@ export default function ReciboCajaList({ onNew }) {
     const [voidReason, setVoidReason] = useState("");
     const [voidUser, setVoidUser] = useState("");
 
-    // Filters
-    const [fechaInicio, setFechaInicio] = useState(() => {
-        const d = new Date();
-        d.setDate(1); // 1st of current month
-        return d.toISOString().split('T')[0];
-    });
-    const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]);
+    // Filters (Inicialmente vacíos para mostrar todos los recibos y no filtrar automáticamente de entrada)
+    const [fechaInicio, setFechaInicio] = useState("");
+    const [fechaFin, setFechaFin] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
 
     useEffect(() => {
@@ -368,18 +364,36 @@ export default function ReciboCajaList({ onNew }) {
 
     // --- CARGA DE DATOS ---
     const parseLocalDate = (dateStr) => {
-        const [y, m, d] = dateStr.split('-').map(Number);
+        if (!dateStr) return null;
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return null;
+        const [y, m, d] = parts.map(Number);
         return new Date(y, m - 1, d);
     };
 
-    const loadData = useCallback(async () => {
+    const loadData = useCallback(async (customFilter = {}) => {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const start = parseLocalDate(fechaInicio);
-            start.setHours(0, 0, 0, 0);
-            const end = parseLocalDate(fechaFin);
-            end.setHours(23, 59, 59, 999);
+            const fIni = customFilter.fechaInicio !== undefined ? customFilter.fechaInicio : fechaInicio;
+            const fFin = customFilter.fechaFin !== undefined ? customFilter.fechaFin : fechaFin;
+
+            let startTime = null;
+            let endTime = null;
+            if (fIni) {
+                const start = parseLocalDate(fIni);
+                if (start) {
+                    start.setHours(0, 0, 0, 0);
+                    startTime = start.getTime();
+                }
+            }
+            if (fFin) {
+                const end = parseLocalDate(fFin);
+                if (end) {
+                    end.setHours(23, 59, 59, 999);
+                    endTime = end.getTime();
+                }
+            }
 
             // 1. Pacientes map
             let patientMap = {};
@@ -582,37 +596,52 @@ export default function ReciboCajaList({ onNew }) {
                 })
                 .filter(p => !isConsumoSaldo(p._raw, p._meta));
 
-            // Combine and filter by date range
+            // Combine and filter by date range if specified
             let combined = [...mappedRecibos, ...mappedPagos];
-            const startTime = start.getTime();
-            const endTime = end.getTime();
 
             combined = combined.filter(r => {
+                if (!startTime && !endTime) return true;
                 if (!r.rawDate) return true;
                 const rTime = new Date(r.rawDate).getTime();
-                return isNaN(rTime) || (rTime >= startTime && rTime <= endTime);
+                if (isNaN(rTime)) return true;
+                if (startTime && rTime < startTime) return false;
+                if (endTime && rTime > endTime) return false;
+                return true;
             });
 
             // Sort ascending by date to assign sequential consecutive number if missing, then invert for display
             combined.sort((a, b) => new Date(a.rawDate || 0) - new Date(b.rawDate || 0));
 
-            let runningCons = 0;
-            const withConsecutivos = combined.map((item) => {
-                const storedCons = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
-                let cleanConsecutivo;
-                if (storedCons && !isNaN(Number(storedCons)) && Number(storedCons) < 1900) {
-                    cleanConsecutivo = Number(storedCons);
-                    runningCons = Math.max(runningCons, cleanConsecutivo);
-                } else {
-                    runningCons += 1;
-                    cleanConsecutivo = runningCons;
+            // Dedup and guarantee strictly unique sequential consecutive numbers (sin números repetidos)
+            const seenNumbers = new Set();
+            let currentHighest = 0;
+
+            // First pass: find the highest explicitly assigned number
+            combined.forEach(item => {
+                const rawC = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
+                const n = Number(rawC);
+                if (!isNaN(n) && n > 0 && n < 100000) {
+                    currentHighest = Math.max(currentHighest, n);
                 }
-                
+            });
+
+            // Second pass: assign ensuring NO DUPLICATES
+            const withConsecutivos = combined.map((item) => {
+                const rawC = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
+                let n = (!isNaN(Number(rawC)) && Number(rawC) > 0 && Number(rawC) < 100000) ? Number(rawC) : null;
+
+                if (!n || seenNumbers.has(n)) {
+                    // Collision or missing: assign next available unique number
+                    currentHighest += 1;
+                    n = currentHighest;
+                }
+                seenNumbers.add(n);
+
                 return {
                     ...item,
-                    nroConsecutivo: cleanConsecutivo,
-                    consecutivoNumero: cleanConsecutivo,
-                    docRefNumber: `FCEV${cleanConsecutivo + 50}` // Número de factura asociada
+                    nroConsecutivo: n,
+                    consecutivoNumero: n,
+                    docRefNumber: `FCEV${n + 50}` // Número de factura asociada
                 };
             });
 
@@ -695,11 +724,25 @@ export default function ReciboCajaList({ onNew }) {
                     </div>
 
                     <button
-                        onClick={loadData}
+                        type="button"
+                        onClick={() => loadData()}
                         className="bg-[#8CC63F] hover:bg-[#7bb335] text-white px-5 py-1.5 rounded-lg font-bold text-[12px] transition-all cursor-pointer border-0 shadow-sm"
                     >
                         Buscar
                     </button>
+                    {(fechaInicio || fechaFin) && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setFechaInicio("");
+                                setFechaFin("");
+                                loadData({ fechaInicio: "", fechaFin: "" });
+                            }}
+                            className="text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg font-medium text-[12px] transition-all cursor-pointer border border-slate-200 hover:bg-slate-50"
+                        >
+                            Ver todos
+                        </button>
+                    )}
                 </div>
             </div>
 
