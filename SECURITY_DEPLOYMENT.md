@@ -38,7 +38,13 @@ supabase secrets set WA_TOKEN=<token-meta> WA_PHONE_ID=<phone-number-id>
 supabase secrets set WA_TEMPLATE_CONFIRMACION=cita_confirmacion
 supabase secrets set WA_TEMPLATE_RECORDATORIO=cita_recordatorio
 supabase secrets set WA_TEMPLATE_LANGUAGE=es_CO WA_GRAPH_API_VERSION=<version-soportada>
+supabase secrets set RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxx
 ```
+
+> **Nota Resend:** Cree la API Key en Resend con permisos mínimos de envío ("Sending access") asociada exclusivamente al dominio verificado `odontocloudcolombia.com`. NUNCA configure esta clave con prefijo `VITE_` ni en archivos del frontend.
+>
+> **Redirect URLs en Supabase Auth:** En el dashboard de Supabase (Authentication -> URL Configuration -> Redirect URLs), asegúrese de tener agregada la URL autorizada:
+> `https://odontocloudcolombia.com/reset-password`
 
 Las credenciales Factus y las claves Gemini por clinica se configuran desde la aplicacion. Nunca deben configurarse como variables `VITE_`.
 

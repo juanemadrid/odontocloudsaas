@@ -67,9 +67,24 @@ export default function ModernLanding({ previewConfig, isMaster = false, section
                 }
             }, 300);
         }
-    }, [location]);
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        if (params.get('openTrial') === 'true') {
+            setSelectedPlan('clinica');
+            setShowTrialModal(true);
+        }
+    }, [location.search]);
 
     useEffect(() => {
+        const handleOpenTrialEvent = (e) => {
+            const plan = e?.detail?.plan || "clinica";
+            setSelectedPlan(plan);
+            setShowTrialModal(true);
+        };
+        window.addEventListener('open-trial-modal', handleOpenTrialEvent);
+        return () => window.removeEventListener('open-trial-modal', handleOpenTrialEvent);
+    }, []);
+
         if (previewConfig) {
             setConfig({ ...previewConfig });
             setLoading(false);

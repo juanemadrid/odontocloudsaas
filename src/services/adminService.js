@@ -1217,3 +1217,25 @@ export const rejectSubscriptionRequest = async (requestId, reason = "") => {
     await invokeRegisterClinic("reject_request", { requestId, reason });
     return true;
 };
+
+export const resendWelcomeEmail = async (tenantId, adminEmail = "") => {
+    return await invokeRegisterClinic("resend_welcome_email", { tenantId, adminEmail });
+};
+
+export const getEmailLogsByTenant = async (tenantId) => {
+    try {
+        const { data, error } = await supabase
+            .from("email_logs")
+            .select("id, recipient_email, recipient_name, subject, template_type, status, resend_id, error_message, sent_at, created_at, initiated_by")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: false })
+            .limit(20);
+        if (error) {
+            console.warn("No se pudieron consultar los logs de correo:", error.message);
+            return [];
+        }
+        return data || [];
+    } catch {
+        return [];
+    }
+};

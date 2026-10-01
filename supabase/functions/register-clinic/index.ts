@@ -1,6 +1,9 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { dispatchWelcomeEmail } from "../_shared/resendEmail.ts";
 
 const GLOBAL_CONFIG_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+const ODONTOCLOUD_RESET_URL = "https://odontocloudcolombia.com/reset-password";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -62,6 +65,48 @@ const validateRegistration = ({
   }
 };
 
+/**
+ * Validador estricto de autenticación SuperAdmin para acciones protegidas.
+ * No confía en parámetros enviados por el cliente: valida la firma criptográfica
+ * del JWT contra Supabase Auth y consulta el rol y estado activo en la BD.
+ */
+const verifySuperadminCaller = async (
+  request: Request,
+  admin: SupabaseClient
+) => {
+  const authorization = request.headers.get("Authorization") || "";
+  if (!authorization.startsWith("Bearer ")) {
+    throw new HttpError(401, "Debes iniciar sesión con privilegios de SuperAdmin.");
+  }
+
+  const token = authorization.slice("Bearer ".length).trim();
+  if (!token) {
+    throw new HttpError(401, "Token de autenticación faltante o inválido.");
+  }
+
+  const { data: authData, error: authError } = await admin.auth.getUser(token);
+  if (authError || !authData.user) {
+    throw new HttpError(401, "La sesión no es válida o ha expirado.");
+  }
+
+  const { data: profile, error: profError } = await admin
+    .from("profiles")
+    .select("id, role, activo, email")
+    .eq("id", authData.user.id)
+    .maybeSingle();
+
+  if (
+    profError ||
+    !profile ||
+    profile.activo !== true ||
+    String(profile.role || "").trim().toLowerCase() !== "superadmin"
+  ) {
+    throw new HttpError(403, "Acceso denegado: se requieren privilegios activos de SuperAdmin.");
+  }
+
+  return { callerUser: authData.user, callerProfile: profile };
+};
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -86,23 +131,9 @@ Deno.serve(async (request) => {
     const body = await request.json();
     const action = String(body?.action || "submit_request");
 
-    let callerIsSuperadmin = false;
-    const authorization = request.headers.get("Authorization") || "";
-    if (authorization.startsWith("Bearer ")) {
-      const token = authorization.slice("Bearer ".length);
-      const { data: callerAuth } = await admin.auth.getUser(token);
-      if (callerAuth.user) {
-        const { data: callerProfile } = await admin
-          .from("profiles")
-          .select("role, activo")
-          .eq("id", callerAuth.user.id)
-          .maybeSingle();
-        callerIsSuperadmin =
-          callerProfile?.activo === true &&
-          String(callerProfile?.role || "").trim().toLowerCase() === "superadmin";
-      }
-    }
-
+    // ──────────────────────────────────────────────────────────────────────────
+    // 1. ACCIÓN PÚBLICA: Solicitud de registro desde la Landing (Rate-limited)
+    // ──────────────────────────────────────────────────────────────────────────
     if (action === "submit_request") {
       const adminEmail = String(body?.adminEmail || "").trim().toLowerCase();
       const adminPassword = String(body?.adminPassword || "");
@@ -148,6 +179,7 @@ Deno.serve(async (request) => {
           p_requested_plan_name: requestedPlanName,
         },
       );
+
       if (requestError || !requestId) {
         throw requestError || new Error("No se pudo guardar la solicitud.");
       }
@@ -166,10 +198,107 @@ Deno.serve(async (request) => {
       }, 201);
     }
 
-    if (!callerIsSuperadmin) {
-      throw new HttpError(403, "Solo el superadministrador puede gestionar clinicas.");
+    // ──────────────────────────────────────────────────────────────────────────
+    // 2. PROTECCIÓN ESTRICTA: Todas las demás acciones requieren SuperAdmin
+    // ──────────────────────────────────────────────────────────────────────────
+    const { callerProfile } = await verifySuperadminCaller(request, admin);
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 3. REENVIAR CORREO DE BIENVENIDA (Manual por SuperAdmin)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (action === "resend_welcome_email") {
+      const tenantId = String(body?.tenantId || "").trim();
+      const adminEmailTarget = String(body?.adminEmail || "").trim().toLowerCase();
+
+      if (!tenantId && !adminEmailTarget) {
+        throw new HttpError(400, "El ID de la clinica o el correo es obligatorio.");
+      }
+
+      let tenantQuery = admin.from("tenants").select("id, nombre, plan");
+      if (tenantId) tenantQuery = tenantQuery.eq("id", tenantId);
+      const { data: targetTenant, error: tErr } = await tenantQuery.maybeSingle();
+      if (tErr || !targetTenant) {
+        throw new HttpError(404, "No se encontro la clinica especificada.");
+      }
+
+      let profQuery = admin
+        .from("profiles")
+        .select("id, email, full_name, role, tenant_id")
+        .eq("tenant_id", targetTenant.id);
+      if (adminEmailTarget) profQuery = profQuery.eq("email", adminEmailTarget);
+      const { data: targetProfiles, error: pErr } = await profQuery;
+
+      const targetProfile =
+        (targetProfiles || []).find((p) =>
+          String(p.role || "").toLowerCase().includes("admin")
+        ) || targetProfiles?.[0];
+
+      if (!targetProfile || !targetProfile.email) {
+        throw new HttpError(404, "No se encontro un usuario administrador para esta clinica.");
+      }
+
+      const targetEmail = targetProfile.email.toLowerCase();
+      const targetName = targetProfile.full_name || `Administrador ${targetTenant.nombre}`;
+
+      // Protección contra flood / reenvíos dobles accidentales (mínimo 60s entre envíos)
+      const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
+      const { data: recentLogs } = await admin
+        .from("email_logs")
+        .select("id, status, created_at")
+        .eq("recipient_email", targetEmail)
+        .eq("template_type", "welcome_clinic")
+        .gte("created_at", sixtySecondsAgo)
+        .limit(1);
+
+      if (recentLogs && recentLogs.length > 0) {
+        throw new HttpError(
+          429,
+          "Ya se envio un correo a este destinatario hace menos de 1 minuto. Espera un momento antes de reenviar."
+        );
+      }
+
+      // Generar nuevo enlace de recuperación seguro
+      let setupPasswordUrl = ODONTOCLOUD_RESET_URL;
+      try {
+        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+          type: "recovery",
+          email: targetEmail,
+          options: { redirectTo: ODONTOCLOUD_RESET_URL },
+        });
+        if (!linkErr && linkData?.properties?.action_link) {
+          setupPasswordUrl = linkData.properties.action_link;
+        } else if (linkErr) {
+          console.warn("generateLink error:", linkErr.message);
+        }
+      } catch (linkGenErr) {
+        console.warn("Exception generating password link:", linkGenErr);
+      }
+
+      // Disparar envío con Resend y registrar en email_logs
+      const sendResult = await dispatchWelcomeEmail(admin, {
+        tenantId: targetTenant.id,
+        clinicName: targetTenant.nombre,
+        adminName: targetName,
+        adminEmail: targetEmail,
+        planName: targetTenant.plan || "standard",
+        setupPasswordUrl,
+        initiatedBy: callerProfile.email || "superadmin",
+      });
+
+      if (!sendResult.success) {
+        throw new HttpError(502, `No se pudo enviar el correo mediante Resend: ${sendResult.error}`);
+      }
+
+      return json({
+        success: true,
+        message: `Correo de bienvenida reenviado exitosamente a ${targetEmail}.`,
+        resendId: sendResult.resendId,
+      });
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 4. RECHAZAR SOLICITUD
+    // ──────────────────────────────────────────────────────────────────────────
     if (action === "reject_request") {
       const requestId = String(body?.requestId || "");
       if (!requestId) throw new HttpError(400, "La solicitud es obligatoria.");
@@ -193,6 +322,9 @@ Deno.serve(async (request) => {
       return json({ success: true });
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 5. ELIMINAR CLÍNICA
+    // ──────────────────────────────────────────────────────────────────────────
     if (action === "delete_clinic") {
       const tenantId = String(body?.tenantId || "");
       if (!tenantId) throw new HttpError(400, "El ID de la clinica es obligatorio.");
@@ -249,20 +381,26 @@ Deno.serve(async (request) => {
       return json({ success: true, message: "Clinica y usuarios eliminados completamente." });
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 6. APROBAR SOLICITUD O CREAR CLÍNICA DIRECTA
+    // ──────────────────────────────────────────────────────────────────────────
     let requestId = "";
     let requestRow: Record<string, unknown> | null = null;
+
     if (action === "approve_request") {
       requestId = String(body?.requestId || "");
       if (!requestId) throw new HttpError(400, "La solicitud es obligatoria.");
 
+      // Protección de idempotencia: sólo procesar si está estrictamente en pending
       const { data, error } = await admin
         .from("subscription_requests")
         .select("*")
         .eq("id", requestId)
         .eq("status", "pending")
         .maybeSingle();
+
       if (error || !data) {
-        throw new HttpError(404, "La solicitud pendiente no existe.");
+        throw new HttpError(409, "La solicitud ya fue procesada anteriormente o no existe.");
       }
       requestRow = data;
     } else if (action !== "create_clinic") {
@@ -324,8 +462,7 @@ Deno.serve(async (request) => {
         if (tenantIsActive) {
           throw new HttpError(409, "El correo ya tiene una cuenta registrada con una clínica activa.");
         } else {
-          // La clínica anterior fue eliminada o el usuario quedó huérfano.
-          // Purgamos el usuario antiguo para permitir la nueva creación limpia.
+          // La clínica anterior fue eliminada o el usuario quedó huérfano. Purgar.
           try {
             await admin.auth.admin.deleteUser(existingUser.id);
             await admin.from("profiles").delete().eq("id", existingUser.id);
@@ -337,6 +474,7 @@ Deno.serve(async (request) => {
       if (data.users.length < 100) break;
     }
 
+    // A. Crear registro en tabla tenants
     const { data: tenant, error: tenantError } = await admin
       .from("tenants")
       .insert({
@@ -353,6 +491,7 @@ Deno.serve(async (request) => {
     if (tenantError || !tenant) throw tenantError || new Error("No se pudo crear la clinica.");
     createdTenantId = tenant.id;
 
+    // B. Crear usuario en auth.users
     const { data: authResult, error: authError } = await admin.auth.admin.createUser({
       email: adminEmail,
       password: adminPassword,
@@ -365,6 +504,7 @@ Deno.serve(async (request) => {
     }
     createdUserId = authResult.user.id;
 
+    // C. Crear perfil en profiles
     const { error: profileError } = await admin.from("profiles").insert({
       id: createdUserId,
       tenant_id: tenant.id,
@@ -376,6 +516,7 @@ Deno.serve(async (request) => {
     });
     if (profileError) throw profileError;
 
+    // D. Crear sede y consultorio por defecto
     const [{ error: branchError }, { error: officeError }] = await Promise.all([
       admin.from("sucursales").insert({
         tenant_id: tenant.id,
@@ -391,6 +532,7 @@ Deno.serve(async (request) => {
     if (branchError) throw branchError;
     if (officeError) throw officeError;
 
+    // E. Actualizar catálogo en website_config
     const createdAt = new Date();
     const subscriptionDays = planDuration === "yearly" ? 365 : 30;
     const subscriptionEndDate = new Date(
@@ -440,6 +582,7 @@ Deno.serve(async (request) => {
     });
     if (catalogError) throw catalogError;
 
+    // F. Finalizar solicitud si venía de un submit_request
     if (requestId) {
       const { error: requestUpdateError } = await admin
         .from("subscription_requests")
@@ -455,12 +598,46 @@ Deno.serve(async (request) => {
       if (secretCleanupError) throw secretCleanupError;
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // G. ENVÍO DE CORREO AUTOMÁTICO DE BIENVENIDA (Completamente Desacoplado)
+    // ──────────────────────────────────────────────────────────────────────────
+    // Se ejecuta estrictamente después de que la clínica y el usuario ya están
+    // creados y consolidados. Si Resend llegara a fallar, la creación de la clínica
+    // NO se revertirá.
+    try {
+      let setupPasswordUrl = ODONTOCLOUD_RESET_URL;
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type: "recovery",
+        email: adminEmail,
+        options: { redirectTo: ODONTOCLOUD_RESET_URL },
+      });
+      if (!linkErr && linkData?.properties?.action_link) {
+        setupPasswordUrl = linkData.properties.action_link;
+      } else if (linkErr) {
+        console.warn("generateLink error:", linkErr.message);
+      }
+
+      await dispatchWelcomeEmail(admin, {
+        tenantId: tenant.id,
+        clinicName,
+        adminName,
+        adminEmail,
+        planName: plan,
+        setupPasswordUrl,
+        initiatedBy: callerProfile.email || "superadmin",
+      });
+    } catch (emailDispatchErr) {
+      // Capturamos el error aquí para que jamás rompa el retorno exitoso de la creación
+      console.error("register-clinic welcome email warning:", emailDispatchErr);
+    }
+
     return json({
       success: true,
       tenantId: tenant.id,
       user: { id: createdUserId, email: adminEmail },
     }, 201);
   } catch (error) {
+    // Si falló ANTES de completar la creación, se limpian recursos parciales
     try {
       const supabaseUrl = Deno.env.get("SUPABASE_URL");
       const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

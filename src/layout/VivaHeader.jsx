@@ -217,9 +217,10 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
                                             if (user) {
                                                 navigate(getDashboardPath());
                                             } else {
-                                                const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
-                                                const msg = encodeURIComponent("Hola, estoy interesado en una demostración gratuita de OdontoCloud Colombia.");
-                                                window.open(`https://wa.me/57${phone}?text=${msg}`, '_blank');
+                                                window.dispatchEvent(new CustomEvent('open-trial-modal', { detail: { plan: 'clinica' } }));
+                                                if (window.location.pathname !== '/' && window.location.pathname !== '') {
+                                                    navigate('/?openTrial=true');
+                                                }
                                             }
                                         }}
                                         className="px-5 py-2.5 rounded-full text-white text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] shadow-sm shadow-blue-500/20 transition-all duration-200 hover:scale-[1.02] flex items-center gap-1.5 cursor-pointer border-0"

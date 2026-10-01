@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import {
     getTenants, createTenant, getPlans, toggleTenantStatus, updateTenantPlan,
     getSubscriptionRequests, approveSubscriptionRequest, rejectSubscriptionRequest,
-    grantFreeMonth, deleteTenant, updateTenantDetails
+    grantFreeMonth, deleteTenant, updateTenantDetails,
+    resendWelcomeEmail, getEmailLogsByTenant
 } from "../../services/adminService";
 import supabase from "../../lib/supabaseClient";
 import { adminChangePassword } from "../../lib/supabaseAdmin";
@@ -62,6 +63,9 @@ export default function TenantsPanelV2() {
     const [changingPwd, setChangingPwd] = useState(false);
     const [updatingPlan, setUpdatingPlan] = useState(false);
     const [grantingId, setGrantingId] = useState(null);
+    const [sendingEmailId, setSendingEmailId] = useState(null);
+    const [clinicEmailLogs, setClinicEmailLogs] = useState([]);
+    const [loadingEmailLogs, setLoadingEmailLogs] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -76,6 +80,46 @@ export default function TenantsPanelV2() {
             setRequests(rData || []);
             if (pData.length > 0) setNewTenant(p => ({ ...p, planId: p.planId || pData[0].id }));
         } finally { setLoading(false); }
+    };
+
+    const loadClinicEmailLogs = async (tenantId) => {
+        if (!tenantId) return;
+        setLoadingEmailLogs(true);
+        try {
+            const logs = await getEmailLogsByTenant(tenantId);
+            setClinicEmailLogs(logs || []);
+        } catch {
+            setClinicEmailLogs([]);
+        } finally {
+            setLoadingEmailLogs(false);
+        }
+    };
+
+    const handleResendWelcome = async (tenant) => {
+        const targetEmail = tenant.contactEmail || tenant.adminEmail || tenant.email;
+        if (!targetEmail) {
+            alert("⚠️ Esta clínica no tiene un correo de contacto o administrador registrado.");
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `✉️ ¿Reenviar correo de bienvenida oficial de OdontoCloud a:\n\n${targetEmail}?\n\nSe generará un nuevo enlace seguro de un solo uso para que el usuario configure su contraseña de acceso.`
+        );
+        if (!confirmed) return;
+
+        setSendingEmailId(tenant.id);
+        try {
+            const res = await resendWelcomeEmail(tenant.id, targetEmail);
+            alert(`✅ ${res.message || "Correo de bienvenida enviado exitosamente."}`);
+            if (showDetail?.id === tenant.id) {
+                await loadClinicEmailLogs(tenant.id);
+            }
+        } catch (err) {
+            console.error("Error al reenviar correo de bienvenida:", err);
+            alert(`❌ Error al enviar correo:\n${err.message}`);
+        } finally {
+            setSendingEmailId(null);
+        }
     };
 
     const loadAuditLogs = async (inquilino) => {
@@ -378,7 +422,7 @@ export default function TenantsPanelV2() {
                                     return (
                                         <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                                             <td className="px-5 py-4">
-                                                <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-3 cursor-pointer group/name" onClick={() => { setShowDetail(t); loadClinicEmailLogs(t.id); }}>
                                                     <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0">
                                                         {(t.name||"?")[0].toUpperCase()}
                                                     </div>
@@ -445,6 +489,19 @@ export default function TenantsPanelV2() {
                                                         <FiEdit3 size={13}/>
                                                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                                                             Editar Clínica
+                                                        </span>
+                                                    </button>
+                                                    <button onClick={()=>handleResendWelcome(t)}
+                                                        disabled={sendingEmailId === t.id}
+                                                        title="Reenviar correo oficial de bienvenida (Resend)"
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 transition-all disabled:opacity-50 group relative">
+                                                        {sendingEmailId === t.id ? (
+                                                            <div className="w-3.5 h-3.5 border-2 border-sky-600 border-t-transparent rounded-full animate-spin"/>
+                                                        ) : (
+                                                            <FiMail size={13}/>
+                                                        )}
+                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                                            {sendingEmailId === t.id ? "Enviando..." : "Reenviar Bienvenida"}
                                                         </span>
                                                     </button>
                                                     <button onClick={()=>{ setShowChangePwd(t); setPwdForm({ newPassword: "", confirm: "", show: false }); }}
@@ -592,6 +649,78 @@ export default function TenantsPanelV2() {
                                 <p className="text-[10px] text-amber-600 text-center">
                                     El admin recibirá un email para crear una nueva contraseña.
                                 </p>
+                            </div>
+
+                            {/* ── Correo Oficial de Bienvenida y Auditoría (Resend) ── */}
+                            <div className="bg-sky-50/70 border border-sky-100 rounded-2xl p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs font-black text-sky-800 uppercase tracking-wide flex items-center gap-2">
+                                        <FiMail size={13}/> Correo Oficial de Bienvenida (Resend)
+                                    </p>
+                                    <button
+                                        onClick={() => loadClinicEmailLogs(showDetail.id)}
+                                        className="text-[11px] text-sky-600 hover:text-sky-800 font-bold flex items-center gap-1"
+                                        title="Actualizar historial de correos"
+                                    >
+                                        <FiRefreshCw size={11} className={loadingEmailLogs ? "animate-spin" : ""} /> Actualizar
+                                    </button>
+                                </div>
+                                <p className="text-[11px] text-slate-500">
+                                    Envía la plantilla corporativa con remitente <strong>bienvenido@odontocloudcolombia.com</strong> y enlace seguro de un solo uso para establecer contraseña.
+                                </p>
+                                <button
+                                    onClick={() => handleResendWelcome(showDetail)}
+                                    disabled={sendingEmailId === showDetail.id}
+                                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200 transition-all disabled:opacity-60"
+                                >
+                                    {sendingEmailId === showDetail.id ? (
+                                        <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/> Procesando Envío...</>
+                                    ) : (
+                                        <><FiMail size={13}/> Reenviar Correo de Bienvenida</>
+                                    )}
+                                </button>
+
+                                {/* Historial de envíos */}
+                                <div className="pt-2 border-t border-sky-100">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">
+                                        Historial de Envíos Registrados:
+                                    </p>
+                                    {loadingEmailLogs ? (
+                                        <div className="flex items-center justify-center py-2 text-xs text-slate-400 gap-1.5">
+                                            <div className="w-3.5 h-3.5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"/>
+                                            Consultando logs...
+                                        </div>
+                                    ) : clinicEmailLogs.length === 0 ? (
+                                        <p className="text-[11px] text-slate-400 italic text-center py-1">
+                                            Sin registros de envíos de correo aún.
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                                            {clinicEmailLogs.map((log) => (
+                                                <div key={log.id} className="p-2 rounded-lg bg-white border border-slate-200 text-[11px] space-y-0.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                            log.status === "sent" ? "bg-emerald-100 text-emerald-700" :
+                                                            log.status === "pending" ? "bg-amber-100 text-amber-700" :
+                                                            "bg-rose-100 text-rose-700"
+                                                        }`}>
+                                                            {log.status === "sent" ? "Enviado" : log.status === "pending" ? "Pendiente" : "Fallido"}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-mono">
+                                                            {fmt(log.sent_at || log.created_at)}
+                                                        </span>
+                                                    </div>
+                                                    <p className="font-medium text-slate-700 truncate">{log.recipient_email}</p>
+                                                    {log.error_message && (
+                                                        <p className="text-[10px] text-rose-600 font-mono truncate" title={log.error_message}>
+                                                            Error: {log.error_message}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Quick actions */}

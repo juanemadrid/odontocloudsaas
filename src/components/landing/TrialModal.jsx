@@ -4,6 +4,12 @@ import { FiX, FiShield, FiActivity, FiCheckCircle, FiArrowRight, FiEye, FiEyeOff
 import { useNavigate } from 'react-router-dom';
 import { registerTrialClinic } from '../../services/registrationService';
 
+const OFFICIAL_PLANS_TRIAL = [
+    { id: "clinica", name: "Plan Clínica (Recomendado — Facturación DIAN y RIPS — 30 Días Gratis)" },
+    { id: "consultorio", name: "Plan Consultorio (1 a 2 Doctores — 30 Días Gratis)" },
+    { id: "enterprise", name: "Plan Enterprise (Multi-Sede y Cadenas — 30 Días Gratis)" },
+];
+
 export default function TrialModal({ isOpen, onClose, initialPlan }) {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -13,16 +19,31 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
         adminName: '',
         adminEmail: '',
         adminPassword: '',
-        requestedPlan: initialPlan?.name || initialPlan || 'Basic',
-        features: initialPlan?.features || []
+        requestedPlan: 'clinica',
+        features: []
     });
+
+    React.useEffect(() => {
+        if (initialPlan) {
+            const raw = typeof initialPlan === 'string' ? initialPlan.toLowerCase() : (initialPlan.id || initialPlan.name || '').toLowerCase();
+            let matched = 'clinica';
+            if (raw.includes('consultorio') || raw.includes('basic') || raw.includes('esencial')) matched = 'consultorio';
+            if (raw.includes('enterprise') || raw.includes('elite') || raw.includes('ips')) matched = 'enterprise';
+            setFormData(prev => ({ ...prev, requestedPlan: matched }));
+        }
+    }, [initialPlan]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
+            const selectedObj = OFFICIAL_PLANS_TRIAL.find(p => p.id === formData.requestedPlan) || OFFICIAL_PLANS_TRIAL[0];
             await registerTrialClinic({
                 ...formData,
+                requestedPlan: {
+                    id: selectedObj.id,
+                    name: selectedObj.name
+                },
                 requestedPlanFeatures: formData.features
             });
             onClose();
@@ -75,18 +96,20 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                             <div className="text-center mb-8">
                                 <h3 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">Inicia tu Prueba Gratuita</h3>
                                 <div className="mb-4">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Plan Seleccionado:</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Plan de Prueba (30 Días):</label>
                                     <select
-                                        className="w-full bg-blue-50 border border-blue-100 text-blue-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-bold"
-                                        value={typeof formData.requestedPlan === 'string' ? formData.requestedPlan : formData.requestedPlan.name}
+                                        className="w-full bg-blue-50/80 border border-blue-200 text-blue-950 text-xs sm:text-sm rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 block p-2.5 font-bold"
+                                        value={formData.requestedPlan}
                                         onChange={(e) => setFormData({ ...formData, requestedPlan: e.target.value })}
                                     >
-                                        <option value="Esencial">Plan Esencial</option>
-                                        <option value="Pro Professional">Plan Pro Professional</option>
-                                        <option value="Élite Multi-Sede">Plan Élite Multi-Sede</option>
+                                        {OFFICIAL_PLANS_TRIAL.map(plan => (
+                                            <option key={plan.id} value={plan.id}>
+                                                {plan.name}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
-                                <p className="text-slate-600 font-medium text-sm">Experimenta la gestión dental moderna por 30 días.</p>
+                                <p className="text-slate-600 font-medium text-sm">Experimenta la gestión dental moderna por 30 días sin costo.</p>
                             </div>
                             <div className="space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
