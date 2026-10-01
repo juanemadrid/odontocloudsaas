@@ -29,9 +29,8 @@ import { useSearchParams } from "react-router-dom";
 export default function AdministracionRouter() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get("tab");
-  const storedTab = sessionStorage.getItem("admin_tab");
 
-  const [selectedModule, setSelectedModuleState] = useState(urlTab || storedTab || null);
+  const [selectedModule, setSelectedModuleState] = useState(urlTab || null);
 
   const setSelectedModule = (mod) => {
     setSelectedModuleState(mod);
@@ -44,6 +43,7 @@ export default function AdministracionRouter() {
       });
     } else {
       sessionStorage.removeItem("admin_tab");
+      sessionStorage.removeItem("fact_sub");
       setSearchParams(prev => {
         const next = new URLSearchParams(prev);
         next.delete("tab");
@@ -54,8 +54,11 @@ export default function AdministracionRouter() {
   };
 
   useEffect(() => {
-    if (urlTab && urlTab !== selectedModule) {
-      setSelectedModuleState(urlTab);
+    setSelectedModuleState(urlTab || null);
+    if (!urlTab) {
+      sessionStorage.removeItem("admin_tab");
+      sessionStorage.removeItem("fact_sub");
+    } else {
       sessionStorage.setItem("admin_tab", urlTab);
     }
   }, [urlTab]);

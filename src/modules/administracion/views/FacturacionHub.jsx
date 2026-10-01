@@ -50,9 +50,8 @@ import { useSearchParams } from "react-router-dom";
 export default function FacturacionHub() {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSub = searchParams.get("sub");
-  const storedSub = sessionStorage.getItem("fact_sub");
 
-  const [activeSubView, setActiveSubViewState] = useState(urlSub || storedSub || null);
+  const [activeSubView, setActiveSubViewState] = useState(urlSub || null);
 
   const setActiveSubView = (sub) => {
     setActiveSubViewState(sub);
@@ -74,8 +73,10 @@ export default function FacturacionHub() {
   };
 
   useEffect(() => {
-    if (urlSub && urlSub !== activeSubView) {
-      setActiveSubViewState(urlSub);
+    setActiveSubViewState(urlSub || null);
+    if (!urlSub) {
+      sessionStorage.removeItem("fact_sub");
+    } else {
       sessionStorage.setItem("fact_sub", urlSub);
     }
   }, [urlSub]);

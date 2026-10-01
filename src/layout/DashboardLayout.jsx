@@ -300,6 +300,13 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             return;
         }
 
+        if (id === 'administracion') {
+            try {
+                sessionStorage.removeItem("admin_tab");
+                sessionStorage.removeItem("fact_sub");
+            } catch (_) {}
+        }
+
         // Dispatch reset event for active module resetting
         const lowerId = String(id).toLowerCase();
         window.dispatchEvent(new CustomEvent(`reset-module-${lowerId}`));
@@ -487,9 +494,9 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                         {/* Configuración rápida */}
                         <button
                             type="button"
-                            onClick={() => navigate(`${basePath}/config/parametros`)}
+                            onClick={() => navigate(`${basePath}/config/datos-basicos`)}
                             className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
-                            title="Parámetros por Empresa"
+                            title="Ajustes - Datos Básicos"
                         >
                             <FiSettings size={16} />
                         </button>

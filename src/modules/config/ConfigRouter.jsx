@@ -71,7 +71,7 @@ export default function ConfigRouter() {
         } else if (pathLower.includes("/config/")) {
             slug = pathLower.split("/config/")[1]?.split("/")[0];
         } else {
-            slug = "parametros";
+            slug = "datos-basicos";
         }
     }
 
