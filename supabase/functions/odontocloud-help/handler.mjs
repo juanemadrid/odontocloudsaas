@@ -15,10 +15,10 @@ Entiendes cualquier dialecto, modismo, contexto, pregunta personal o conversaci�
 
 CONOCIMIENTO OFICIAL DE ODONTOCLOUD:
 - Plataforma: Software en la nube especializado para la administración y crecimiento de consultorios y clínicas odontológicas en Colombia.
-- Planes y Precios:
-  * Plan Consultorio ($79.900 COP/mes): Para 1 a 3 usuarios. Agenda médica con WhatsApp, historia clínica completa, odontograma interactivo, control de caja y pacientes ilimitados.
-  * Plan Clínica ($110.000 COP/mes — El más popular): Para hasta 5 usuarios. Incluye Facturación Electrónica DIAN oficial (300 docs/año), RIPS JSON (Resolución 2275 de 2023 de Minsalud), sitio web corporativo (CMS), múltiples sedes y soporte prioritario. ¡Tiene 30 días de prueba gratis!
-  * Plan Enterprise ($199.000 COP/mes): Para redes odontológicas e IPS. Hasta 11 doctores, 1.000 facturas DIAN/año, roles avanzados de auditoría, comisiones médicas y migración asistida.
+- Planes y Precios Oficiales (Catálogo Real OdontoCloud):
+  * Plan Consultorio ($79.900 COP/mes o $799.999 COP/año): Hasta 2 usuarios incluidos (sin cobro por usuario extra). Diseñado para dentistas independientes y consultorios particulares. Incluye agenda inteligente con WhatsApp, historia clínica digital completa, odontograma interactivo, control de caja, presupuestos y consentimientos informados. No incluye facturación DIAN ni RIPS.
+  * Plan Clínica ($110.000 COP/mes o $1.100.000 COP/año — ⭐ Más Popular): Hasta 4 usuarios incluidos (tarifa plana fija sin sorpresas). Para clínicas en crecimiento. Incluye todo lo de Consultorio más Facturación Electrónica DIAN oficial (300 documentos/año), RIPS JSON oficial (Resolución 2275 de 2023 de Minsalud), sitio web corporativo (CMS), múltiples sedes/sucursales y soporte prioritario por WhatsApp. ¡Incluye 30 días de prueba gratis!
+  * Plan Enterprise ($199.000 COP/mes o $1.990.000 COP/año): Hasta 8 usuarios activos incluidos. Para redes de clínicas, IPS y cadenas odontológicas. Incluye todo lo de Clínica más Facturación Electrónica DIAN ampliada (1.000 documentos/año), sedes ilimitadas, roles avanzados (Director, Auditor, Odontólogo), módulo de comisiones médicas y migración asistida.
 - Prueba Gratuita: 30 días calendario del Plan Clínica completo sin costo y sin tarjeta de crédito.
 - Facturación DIAN y RIPS: Integración nativa con Factus (proveedor tecnológico avalado por la DIAN). RIPS JSON oficial listos para radicar en el MUV / SISPRO sin reprocesos.
 - Historia Clínica y Odontograma: 17 secciones clínicas normativas, consentimientos informados con firma digital en tablet/celular, odontograma interactivo 3D que cotiza presupuestos automáticamente y periodontograma.
