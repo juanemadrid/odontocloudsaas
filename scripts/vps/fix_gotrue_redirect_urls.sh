@@ -7,7 +7,10 @@ set -euo pipefail
 # ====================================================================
 
 ENV_FILE="/data/coolify/services/ueh7xuehxl9thmhre7fpk4xx/.env"
-CONTAINER_NAME="supabase-gotrue-ueh7xuehxl9thmhre7fpk4xx"
+CONTAINER_NAME="supabase-auth-ueh7xuehxl9thmhre7fpk4xx"
+if ! docker ps -a --format '{{.Names}}' | grep -q "^$CONTAINER_NAME$"; then
+    CONTAINER_NAME=$(docker ps -a --filter "name=ueh7xuehxl9thmhre7fpk4xx" --format "{{.Names}}" | grep -E "auth|gotrue" | head -n 1 || echo "")
+fi
 
 echo "=== 1. Actualizando variables de entorno de GoTrue para OdontoCloud ==="
 if [[ -f "$ENV_FILE" ]]; then
@@ -56,10 +59,16 @@ if docker ps --format '{{.Names}}' | grep -q '^coolify$'; then
     ' || true
 fi
 
-echo "=== 3. Reiniciando contenedor de GoTrue de OdontoCloud ==="
-docker restart "$CONTAINER_NAME"
-sleep 3
-docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.State}}"
+echo "=== 3. Reiniciando contenedor de Auth / GoTrue de OdontoCloud ==="
+if [[ -n "$CONTAINER_NAME" ]]; then
+    echo "Reiniciando $CONTAINER_NAME..."
+    docker restart "$CONTAINER_NAME"
+    sleep 3
+    docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.State}}"
+else
+    echo "⚠️ No se encontró contenedor con nombre exacto, buscando contenedores activos de OdontoCloud..."
+    docker ps --filter "name=ueh7xuehxl9thmhre7fpk4xx" --format "table {{.Names}}\t{{.Status}}"
+fi
 
 echo ""
 echo "🎉 ¡GoTrue actualizado con éxito! Ahora los enlaces de activación redirigen directamente a https://odontocloudcolombia.com/reset-password"
