@@ -26,7 +26,7 @@ ODONTO_HELP_OLLAMA_MODEL=qwen3:4b-instruct
 # ODONTO_HELP_OLLAMA_TOKEN=
 ```
 
-La URL y el modelo son ejemplos: confirmar la red interna y el modelo instalado. La URL debe ser la base de Ollama, sin `/api/chat` ni `/v1`. No usar variables `VITE_` para esta configuración. La función usa `/api/chat`, sin streaming y con 35 segundos de límite. No hay sustitución por proveedores de pago.
+La URL y el modelo son ejemplos: confirmar la red interna y el modelo instalado. La URL debe ser la base de Ollama, sin `/api/chat` ni `/v1`. No usar variables `VITE_` para esta configuración. La función usa `/api/chat`, sin streaming y con 28 segundos de límite para Ollama y 8 segundos para validar la sesión. No hay sustitución por proveedores de pago.
 
 En un Supabase autohospedado, desplegar `odontocloud-help` junto con `_shared/helpKnowledge.mjs` en el volumen de funciones siguiendo el despliegue existente; conservar las demás funciones y configurar las variables en el contenedor de funciones. Si se usa Supabase administrado, desplegar la función y definir secretos con el flujo del proyecto. No se ha identificado ni modificado el despliegue remoto desde esta sesión.
 
@@ -45,3 +45,7 @@ El contenedor de funciones debe alcanzar Ollama por la red privada. `localhost` 
 No se ha probado el modelo real ni desplegado esta función en el servidor. La IA clínica (Nova, Insights, reportes IA) conserva su integración anterior con Gemini; esta entrega cambia exclusivamente la ayuda de uso del sistema.
 
 Referencias de implementación: https://docs.ollama.com/api/chat y https://supabase.com/docs/reference/javascript/auth-getuser.
+
+## Diagnóstico de demoras
+
+La revisión de tiempo limita la generación a una guía, 120 tokens y una respuesta solicitada de hasta 60 palabras. Las preguntas generales para apartar una cita usan un resumen revisado; las preguntas detalladas y los demás temas mantienen la guía completa. Las respuestas truncadas siguen usando la guía de respaldo. `keep_alive: 15m` solicita mantener cargado el modelo; consume memoria durante ese período. Los logs `odontocloud-help` registran etapa, tiempo transcurrido, estado HTTP y motivo de respuesta local, sin preguntas, tokens ni identificadores personales. La carga en frío y las guías largas todavía pueden exceder el plazo; estos ajustes requieren comprobarse con el modelo real. Una prueba directa con un texto breve y el modelo caliente tardó 13,4 segundos en el VPS ARM de cuatro núcleos; no es una medición del flujo completo de la aplicación.
