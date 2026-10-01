@@ -423,7 +423,7 @@ export const OFFICIAL_DEFAULT_PLANS = [
         recommended: false,
         status: "active",
         features: [
-            "Hasta 2 usuarios incluidos (Sin cobro por usuario extra)",
+            "Hasta 2 usuarios incluidos",
             "Agenda inteligente con confirmación y recordatorios por WhatsApp",
             "Historia clínica digital y Odontograma interactivo",
             "Evolución clínica con Asistente de IA y dictado por Voz",

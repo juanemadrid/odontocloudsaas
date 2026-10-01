@@ -102,7 +102,7 @@ export default function Planes() {
                         transition={{ delay: 0.1 }}
                         className="text-slate-500 text-lg md:text-xl max-w-2xl mx-auto font-normal leading-relaxed mb-10"
                     >
-                        Sin cobros por usuario adicional ni aumentos inesperados. Elige la suscripción que impulse la rentabilidad de tu clínica.
+                        Tarifas claras y transparentes adaptadas al tamaño de tu equipo. Elige la suscripción que impulse la rentabilidad de tu clínica.
                     </motion.p>
 
                     {/* Billing Switch Toggle */}

@@ -4,49 +4,30 @@ import { FiX, FiShield, FiActivity, FiCheckCircle, FiArrowRight, FiPhone, FiMail
 import { useNavigate } from 'react-router-dom';
 import { registerTrialClinic } from '../../services/registrationService';
 
-const OFFICIAL_PLANS_TRIAL = [
-    { id: "clinica", name: "Plan Clínica (Recomendado — Facturación DIAN y RIPS — 30 Días Gratis)" },
-    { id: "consultorio", name: "Plan Consultorio (1 a 2 Doctores — 30 Días Gratis)" },
-    { id: "enterprise", name: "Plan Enterprise (Multi-Sede y Cadenas — 30 Días Gratis)" },
-];
-
-export default function TrialModal({ isOpen, onClose, initialPlan }) {
+export default function TrialModal({ isOpen, onClose }) {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         clinicName: '',
         adminName: '',
         adminEmail: '',
-        phone: '',
-        requestedPlan: 'clinica',
-        features: []
+        phone: ''
     });
-
-    React.useEffect(() => {
-        if (initialPlan) {
-            const raw = typeof initialPlan === 'string' ? initialPlan.toLowerCase() : (initialPlan.id || initialPlan.name || '').toLowerCase();
-            let matched = 'clinica';
-            if (raw.includes('consultorio') || raw.includes('basic') || raw.includes('esencial')) matched = 'consultorio';
-            if (raw.includes('enterprise') || raw.includes('elite') || raw.includes('ips')) matched = 'enterprise';
-            setFormData(prev => ({ ...prev, requestedPlan: matched }));
-        }
-    }, [initialPlan]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
-            const selectedObj = OFFICIAL_PLANS_TRIAL.find(p => p.id === formData.requestedPlan) || OFFICIAL_PLANS_TRIAL[0];
             await registerTrialClinic({
                 ...formData,
                 requestedPlan: {
-                    id: selectedObj.id,
-                    name: selectedObj.name
+                    id: 'trial',
+                    name: 'Plan de Prueba Gratuita (30 Días)'
                 },
-                requestedPlanFeatures: formData.features
+                requestedPlanFeatures: []
             });
             onClose();
-            alert(`¡Solicitud enviada exitosamente!\n\nTu solicitud para "${formData.clinicName || 'tu clínica'}" ha sido registrada. Recibirás un correo oficial en ${formData.adminEmail} con el enlace para activar tu cuenta y definir tu contraseña.`);
+            alert(`¡Solicitud enviada exitosamente!\n\nTu solicitud de prueba para "${formData.clinicName || 'tu clínica'}" ha sido registrada. Recibirás un correo oficial en ${formData.adminEmail} con el enlace para activar tu cuenta y definir tu contraseña.`);
         } catch (error) {
             console.error(error);
             alert("Error al registrar: " + (error.message || "Intenta con otro correo."));
@@ -58,25 +39,25 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
     return (
         <AnimatePresence>
             {isOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={onClose}
-                        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+                        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
                     />
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        initial={{ opacity: 0, scale: 0.95, y: 15 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                        className="relative !bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200"
+                        exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                        className="relative !bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[88dvh] overflow-y-auto my-auto border border-slate-200 z-10"
                     >
                         <button
                             onClick={onClose}
-                            className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 transition-colors p-2 hover:bg-slate-100 rounded-full"
+                            className="absolute top-4 right-4 sm:top-5 sm:right-5 text-slate-400 hover:text-slate-600 transition-colors p-2 hover:bg-slate-100 rounded-full z-20"
                         >
-                            <FiX size={24} />
+                            <FiX size={22} />
                         </button>
 
                         <style>
@@ -91,24 +72,21 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                 }
                             `}
                         </style>
-                        <form onSubmit={handleSubmit} className="p-8 md:p-12" autoComplete="off">
-                            <div className="text-center mb-8">
-                                <h3 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">Inicia tu Prueba Gratuita</h3>
-                                <div className="mb-4">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Plan de Prueba (30 Días):</label>
-                                    <select
-                                        className="w-full bg-blue-50/80 border border-blue-200 text-blue-950 text-xs sm:text-sm rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 block p-2.5 font-bold"
-                                        value={formData.requestedPlan}
-                                        onChange={(e) => setFormData({ ...formData, requestedPlan: e.target.value })}
-                                    >
-                                        {OFFICIAL_PLANS_TRIAL.map(plan => (
-                                             <option key={plan.id} value={plan.id}>
-                                                 {plan.name}
-                                             </option>
-                                        ))}
-                                    </select>
+                        <form onSubmit={handleSubmit} className="p-6 sm:p-8 md:p-10" autoComplete="off">
+                            <div className="text-center mb-6">
+                                <h3 className="text-xl sm:text-2xl font-black text-slate-900 mb-2 tracking-tight">Inicia tu Prueba Gratuita</h3>
+                                <div className="mb-3 p-3 bg-blue-50/90 border border-blue-200 rounded-2xl text-center">
+                                    <div className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-wider rounded-full mb-1">
+                                        ✨ Plan de Prueba (30 Días)
+                                    </div>
+                                    <p className="text-blue-950 font-bold text-xs sm:text-sm">
+                                        Explora Agenda, Odontograma, Historias Clínicas y Caja sin costo.
+                                    </p>
+                                    <p className="text-slate-500 text-[11px] mt-0.5 font-medium">
+                                        (No incluye facturación electrónica DIAN ni RIPS)
+                                    </p>
                                 </div>
-                                <p className="text-slate-600 font-medium text-sm">Prueba sin costo durante 30 días. No requiere tarjeta de crédito.</p>
+                                <p className="text-slate-500 font-medium text-xs">Prueba sin costo durante 30 días. No requiere tarjeta de crédito.</p>
                             </div>
                             <div className="space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
