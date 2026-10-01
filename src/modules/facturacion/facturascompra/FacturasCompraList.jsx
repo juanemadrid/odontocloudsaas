@@ -479,8 +479,8 @@ export default function FacturasCompraList({ onNew }) {
         tercero: terceroObj,
       });
 
-      const billData = res?.data?.bill || res?.bill || res?.data || res;
-      const cuds = billData?.cuds || res?.cuds || "CUDS-DIAN-OK";
+      const billData = res?.data?.bill || res?.bill || res?.data?.support_document || res?.support_document || res?.data || res;
+      const cuds = billData?.cuds || billData?.cufe || res?.cuds || "CUDS-DIAN-OK";
       const number = billData?.number || res?.number || factura.nroFactura;
 
       const updatedFactura = {

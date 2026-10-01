@@ -456,10 +456,67 @@ export const downloadAttachedDocumentXml = async (billNumber) => {
  * Endpoint: POST /v2/support-documents/validate
  */
 export const sendSupportDocument = async (supportDocData) => {
-  const numberingRangeId = supportDocData.numberingRangeId || supportDocData.rangoId || undefined;
+  let numberingRangeId = supportDocData.numberingRangeId || supportDocData.rangoId || supportDocData.numbering_range_id;
+
+  // Si no viene en los datos, buscar el rango activo de Factus automáticamente
+  if (!numberingRangeId) {
+    try {
+      const rangesData = await getNumberingRanges();
+      let ranges = [];
+      if (Array.isArray(rangesData)) {
+        ranges = rangesData;
+      } else if (Array.isArray(rangesData?.data)) {
+        ranges = rangesData.data;
+      } else if (Array.isArray(rangesData?.data?.data)) {
+        ranges = rangesData.data.data;
+      }
+
+      const isUsable = (r) =>
+        (r.is_active === true || r.is_active === 1 || r.is_active === "1") &&
+        r.is_expired !== true && r.is_expired !== 1;
+
+      // Prioridad 1: Rango explícito de Documento Soporte
+      const isSupportDoc = (doc) => {
+        const d = (doc || "").toLowerCase();
+        return d.includes("soporte") || d.includes("support");
+      };
+
+      let selectedRange = ranges.find((r) => isUsable(r) && isSupportDoc(r.document));
+
+      // Prioridad 2: Rango con prefijo que coincida con el prefijo del documento o "DS"
+      if (!selectedRange) {
+        const pref = String(supportDocData.prefijo || "DS").toUpperCase();
+        selectedRange = ranges.find((r) => isUsable(r) && String(r.prefix || "").toUpperCase() === pref);
+      }
+
+      // Prioridad 3: Rango con prefijo iniciado en DS o SD
+      if (!selectedRange) {
+        selectedRange = ranges.find(
+          (r) => isUsable(r) && (String(r.prefix || "").toUpperCase().startsWith("DS") || String(r.prefix || "").toUpperCase().startsWith("SD"))
+        );
+      }
+
+      // Prioridad 4: Cualquier rango usable activo como fallback
+      if (!selectedRange) {
+        selectedRange = ranges.find(isUsable) || ranges[0];
+      }
+
+      if (selectedRange?.id) {
+        numberingRangeId = Number(selectedRange.id);
+        console.info(`✅ Rango de numeración asignado para Documento Soporte: "${selectedRange.document}" (ID: ${numberingRangeId}, Prefijo: ${selectedRange.prefix})`);
+      }
+    } catch (e) {
+      console.warn("No se pudo obtener rangos de Factus automáticamente:", e);
+    }
+  }
+
+  if (!numberingRangeId) {
+    throw new Error("No se encontró un rango de numeración Factus activo para Documento Soporte. Por favor verifica tus rangos de numeración en Factus.");
+  }
+
   const tercero = supportDocData.tercero || {};
   const docNum = String(tercero.numero_documento || tercero.identificacion || "").trim();
-  const rawTipo = String(tercero.tipo_documento || "NIT").toUpperCase();
+  const rawTipo = String(tercero.tipo_documento || tercero.tipoDocumento || "NIT").toUpperCase();
   const tipoDoc = getDocTypeCode(rawTipo);
   const fullName = String(
     tercero.nombre_completo ||
@@ -476,39 +533,66 @@ export const sendSupportDocument = async (supportDocData) => {
   const rawItems = supportDocData.items || supportDocData.detalles || [];
   const factusItems = rawItems.map((item, idx) => {
     const qty = parseFloat(item.cantidad || item.quantity || 1) || 1;
-    const price = parseFloat(item.precioUnitario || item.precio || item.valor || 0) || 0;
-    const discountRate = parseFloat(item.descuento || 0) || 0;
+    const price = parseFloat(item.precioUnitario || item.precio || item.valor || item.price || 0) || 0;
+    const discountRate = parseFloat(item.descuento || item.discount || 0) || 0;
 
     return {
-      code_reference: item.code || `COMPRA-${String(idx + 1).padStart(4, "0")}`,
+      code_reference: item.code || item.code_reference || `COMPRA-${String(idx + 1).padStart(4, "0")}`,
       name: String(item.descripcion || item.nombre || item.concepto || "Compra o Servicio Recibido").slice(0, 100),
       quantity: Number(qty.toFixed(2)),
       discount_rate: Number(discountRate.toFixed(2)),
       price: Number(price.toFixed(2)),
       unit_measure_code: "94", // unidad
       standard_code: "0001",
+      taxes: [
+        { code: "01", rate: "0.00" } // IVA 0% (Obligatorio en Factus V2 para cada ítem)
+      ],
     };
   });
 
   if (factusItems.length === 0) {
+    const fallbackPrice = parseFloat(supportDocData.total || supportDocData.totalConceptos || 0);
     factusItems.push({
       code_reference: "COMPRA-0001",
       name: "Compra de bienes o servicios a no obligados a facturar",
       quantity: 1,
       discount_rate: 0,
-      price: parseFloat(supportDocData.total || 0),
+      price: Number(fallbackPrice.toFixed(2)),
       unit_measure_code: "94",
       standard_code: "0001",
+      taxes: [{ code: "01", rate: "0.00" }],
     });
   }
 
-  const paymentForm = String(supportDocData.condicionPago || (supportDocData.tipo_pago === "credito" ? "2" : "1"));
-  const paymentMethodCode = String(supportDocData.medioPago || "10"); // 10 = Efectivo
-  const totalAmount = parseFloat(supportDocData.total || 0).toFixed(2);
+  // ── Payment Form (1: Contado, 2: Crédito) ──
+  const rawCondicion = String(supportDocData.condicionPago || supportDocData.condicion_pago || supportDocData.tipo_pago || "1").toLowerCase();
+  const paymentForm = (rawCondicion.includes("crédit") || rawCondicion.includes("credit") || rawCondicion === "2") ? "2" : "1";
+
+  // ── Payment Method Code (Códigos oficiales DIAN) ──
+  const mapPaymentMethodCode = (raw) => {
+    if (!raw) return "10";
+    const str = String(raw).trim().toLowerCase();
+    if (/^\d+$/.test(str)) return str;
+    if (str.includes("consigna")) return "42";
+    if (str.includes("transfer")) return "42";
+    if (str.includes("efectivo") || str.includes("cash")) return "10";
+    if (str.includes("crédito") || str.includes("credito")) return "48";
+    if (str.includes("débito") || str.includes("debito")) return "49";
+    if (str.includes("cheque")) return "20";
+    if (str.includes("nequi") || str.includes("daviplata") || str.includes("bancolombia")) return "42";
+    return "10";
+  };
+  const paymentMethodCode = mapPaymentMethodCode(supportDocData.medioPago || supportDocData.medio_pago || supportDocData.metodoPago);
+
+  const itemsTotal = factusItems.reduce((sum, item) => {
+    const lineTotal = item.price * item.quantity * (1 - (item.discount_rate || 0) / 100);
+    return sum + lineTotal;
+  }, 0);
+  const totalAmount = itemsTotal > 0 ? itemsTotal.toFixed(2) : parseFloat(supportDocData.total || 0).toFixed(2);
   const referenceCode = supportDocData.referenceCode || `DS-${Date.now().toString(36).toUpperCase()}`;
 
   const payload = {
-    ...(numberingRangeId ? { numbering_range_id: Number(numberingRangeId) } : {}),
+    numbering_range_id: Number(numberingRangeId),
     reference_code: referenceCode,
     observation: (supportDocData.observaciones || "Documento soporte en adquisiciones efectuadas a no obligados a facturar").slice(0, 500),
     payment_details: [
