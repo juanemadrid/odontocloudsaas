@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 // import { AnimatePresence } from "framer-motion"; // REMOVED to fix crash
 import { useAuth } from "./context/AuthContext";
+import { Toaster } from "sonner";
 
 // Components
 import PremiumLoading from "./components/PremiumLoading";
@@ -98,6 +99,7 @@ export default function App() {
   return (
     <Suspense fallback={<PremiumLoading />}>
       <ScrollToTop />
+      <Toaster position="top-right" richColors closeButton />
       <Routes>
         {/* Public Routes with Isolated Layout */}
         <Route path="/login" element={

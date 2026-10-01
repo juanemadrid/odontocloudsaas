@@ -11,6 +11,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 import { MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 import factusService from "../../../services/factusService";
+import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -68,8 +69,14 @@ export default function FacturasCompraList({ onNew }) {
 
   const parseLocalDate = (s) => { 
     if (!s) return new Date();
-    const [y, m, d] = s.split("-").map(Number); 
-    return new Date(y, m - 1, d); 
+    if (typeof s === "string") {
+      const match = s.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) {
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      }
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? new Date() : d;
   };
 
   const loadData = useCallback(async () => {
@@ -86,12 +93,19 @@ export default function FacturasCompraList({ onNew }) {
       } catch (e) {}
 
       if (list.length === 0) {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
-        list = cfgRow?.config?.facturas_compra || [];
+        try {
+          const cfgList = await getConfigSection(inquilino, "facturas_compra", []);
+          if (Array.isArray(cfgList) && cfgList.length > 0) {
+            list = cfgList;
+          }
+        } catch (e) {
+          const { data: cfgRow } = await supabase
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", inquilino)
+            .maybeSingle();
+          list = cfgRow?.config?.facturas_compra || [];
+        }
       }
 
       // Cargar egresos/pagos para el modal de asociación
@@ -113,8 +127,9 @@ export default function FacturasCompraList({ onNew }) {
       const filteredByDate = (list || [])
         .filter(f => {
           if (!f.fecha && !f.created_at) return true;
-          const ts = new Date(f.fecha || f.created_at).getTime();
-          return ts >= start.getTime() && ts <= end.getTime();
+          const fDate = parseLocalDate(f.fecha || f.created_at);
+          fDate.setHours(12, 0, 0, 0);
+          return fDate.getTime() >= start.getTime() && fDate.getTime() <= end.getTime();
         })
         .sort((a, b) => new Date(b.fecha || b.created_at || 0).getTime() - new Date(a.fecha || a.created_at || 0).getTime());
 
@@ -292,19 +307,12 @@ export default function FacturasCompraList({ onNew }) {
       } catch (e) {}
 
       try {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
-
-        const currentCfg = cfgRow?.config || {};
-        currentCfg.facturas_compra = (currentCfg.facturas_compra || []).filter(f => f.id !== id);
-
-        await supabase
-          .from("website_config")
-          .upsert({ tenant_id: inquilino, config: currentCfg });
-      } catch (e) {}
+        const currentFacturas = await getConfigSection(inquilino, "facturas_compra", []);
+        const nextFacturas = (currentFacturas || []).filter(f => f.id !== id);
+        await saveConfigSection(inquilino, "facturas_compra", nextFacturas);
+      } catch (e) {
+        console.warn("Error deleting factura from config:", e);
+      }
 
       setFacturas(prev => prev.filter(f => f.id !== id));
       if (selectedFacturaId === id) setSelectedFacturaId(null);
@@ -376,18 +384,11 @@ export default function FacturasCompraList({ onNew }) {
 
       // Sincronizar en website_config (notas_credito y facturas_compra)
       try {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
+        const currentNotas = await getConfigSection(inquilino, "notas_credito", []);
+        await saveConfigSection(inquilino, "notas_credito", [nuevaNota, ...(currentNotas || [])]);
 
-        const currentCfg = cfgRow?.config || {};
-        const currentNotas = currentCfg.notas_credito || [];
-        currentCfg.notas_credito = [nuevaNota, ...currentNotas];
-
-        const currentFacturas = currentCfg.facturas_compra || [];
-        const nextFacturas = currentFacturas.map(item => item.id === f.id ? {
+        const currentFacturas = await getConfigSection(inquilino, "facturas_compra", []);
+        const nextFacturas = (currentFacturas || []).map(item => item.id === f.id ? {
           ...item,
           estado: "Anulada",
           motivoAnulacion: motivoObj.label,
@@ -397,13 +398,10 @@ export default function FacturasCompraList({ onNew }) {
           fechaAnulacion: ahoraISO,
           anuladoPor: userName
         } : item);
-        currentCfg.facturas_compra = nextFacturas;
-
-        await supabase.from("website_config").upsert({
-          tenant_id: inquilino,
-          config: currentCfg
-        });
-      } catch (e) {}
+        await saveConfigSection(inquilino, "facturas_compra", nextFacturas);
+      } catch (e) {
+        console.warn("Error saving annulment to config:", e);
+      }
 
       // Actualizar en tabla facturas_compra de Supabase
       try {
@@ -494,15 +492,25 @@ export default function FacturasCompraList({ onNew }) {
         transmitted_at: new Date().toISOString()
       };
 
-      await supabase
-        .from("facturas_compra")
-        .update({
-          factus_validated: true,
-          cuds,
-          factus_number: number,
-          dian_status: "Validado por DIAN"
-        })
-        .eq("id", factura.id);
+      try {
+        await supabase
+          .from("facturas_compra")
+          .update({
+            factus_validated: true,
+            cuds,
+            factus_number: number,
+            dian_status: "Validado por DIAN"
+          })
+          .eq("id", factura.id);
+      } catch (e) {}
+
+      try {
+        const currentFacturas = await getConfigSection(inquilino, "facturas_compra", []);
+        const nextFacturas = (currentFacturas || []).map(item => item.id === factura.id ? updatedFactura : item);
+        await saveConfigSection(inquilino, "facturas_compra", nextFacturas);
+      } catch (cfgErr) {
+        console.warn("Error updating transmitted factura in config:", cfgErr);
+      }
 
       setFacturas(prev => prev.map(item => item.id === factura.id ? updatedFactura : item));
       toast.success("Documento Soporte validado y transmitido con éxito a la DIAN ✅", { id: "tx-dian" });

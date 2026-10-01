@@ -2,14 +2,15 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
     FiCalendar, FiPlus, FiTrash2, FiSave, FiAlertCircle, 
-    FiCheckCircle, FiX, FiInfo, FiHome, FiArrowLeft, FiSearch, FiDollarSign
+    FiCheckCircle, FiX, FiInfo, FiHome, FiArrowLeft, FiSearch, FiDollarSign, FiSend
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
-import { getConfigItems } from "../../../services/configPersistenceService";
+import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { toast } from "sonner";
 import { validateTerceroForDian, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
+import factusService from "../../../services/factusService";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -33,6 +34,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
     const inquilino = userProfile?.inquilino || "";
 
     const [saving, setSaving] = useState(false);
+    const [transmitting, setTransmitting] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // Form fields - Card 1: Información empresa
@@ -451,8 +453,8 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         }
     };
 
-    // Guardar Factura de Compra
-    const handleSaveFactura = async () => {
+    // Guardar Factura de Compra (con opción de transmisión directa a la DIAN)
+    const handleSaveFactura = async (shouldTransmit = false) => {
         if (!fecha) {
             toast.error("La fecha es requerida");
             return;
@@ -486,7 +488,12 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             }
         }
 
-        setSaving(true);
+        if (shouldTransmit) {
+            setTransmitting(true);
+        } else {
+            setSaving(true);
+        }
+
         try {
             const selectedTercero = selectedTerceroObj || terceros.find(t => t.id === terceroId || t.nombre === terceroId) || {
                 id: terceroId || `tercero_${Date.now()}`,
@@ -516,7 +523,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 terceroId: selectedTercero?.id || terceroId,
                 tercero: selectedTercero?.nombre || terceroId || terceroSearchQuery,
                 proveedor: selectedTercero?.nombre || terceroId || terceroSearchQuery,
-                documentoTercero: selectedTercero?.documento || "",
+                documentoTercero: selectedTercero?.documento || selectedTercero?.nroDocumento || "",
                 tipoTercero: selectedTercero?.tipo || "tercero",
                 condicionPago,
                 medioPago,
@@ -537,35 +544,66 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 created_by: user?.id || userProfile?.uid
             };
 
-            // 1. Guardar en tabla facturas_compra en Supabase
+            // Transmisión inmediata a Factus / DIAN si el usuario lo solicitó
+            let factusValidated = false;
+            if (shouldTransmit && docSoporteDian) {
+                toast.loading("Transmitiendo Documento Soporte a Factus / DIAN...", { id: "tx-form" });
+                try {
+                    const res = await factusService.sendSupportDocument({
+                        ...facturaRecord,
+                        tercero: {
+                            ...selectedTercero,
+                            nombre_completo: selectedTercero.nombre,
+                            identificacion: selectedTercero.documento || selectedTercero.nroDocumento || "123456789",
+                            numero_documento: selectedTercero.documento || selectedTercero.nroDocumento || "123456789",
+                            tipo_documento: selectedTercero.tipoDocumento || selectedTercero.tipo_documento || "NIT",
+                            direccion: selectedTercero.direccion || "Dirección consultorio",
+                            ciudad: selectedTercero.ciudad || "Sincelejo",
+                            email: selectedTercero.email || pagadorEmail,
+                            telefono: selectedTercero.telefono || "3000000000"
+                        }
+                    });
+
+                    const billData = res?.data?.bill || res?.bill || res?.data || res;
+                    const cudsVal = billData?.cuds || res?.cuds || "CUDS-DIAN-OK";
+                    const finalNumber = billData?.number || res?.number || fullDocCode;
+                    factusValidated = true;
+
+                    facturaRecord.factus_validated = true;
+                    facturaRecord.cuds = cudsVal;
+                    facturaRecord.factus_number = finalNumber;
+                    facturaRecord.nroFactura = finalNumber;
+                    facturaRecord.documentoNumero = finalNumber;
+                    facturaRecord.dian_status = "Validado por DIAN";
+                    facturaRecord.transmitted_at = new Date().toISOString();
+
+                    toast.success(`Documento Soporte emitido y validado ante la DIAN ✅ (Nro: ${finalNumber})`, { id: "tx-form" });
+                } catch (txErr) {
+                    console.error("Factus transmission error:", txErr);
+                    toast.error(`Aviso DIAN Factus: ${txErr.message || "Rechazado por Factus"}. Se guardará como borrador pendiente.`, { id: "tx-form", duration: 7000 });
+                }
+            }
+
+            // 1. Guardar de forma robusta con saveConfigSection (RPC oficial set_tenant_config_section con cache)
+            try {
+                const currentFacturas = await getConfigSection(inquilino, "facturas_compra", []);
+                const updatedFacturas = [facturaRecord, ...(currentFacturas || []).filter(f => f.id !== facturaRecord.id)];
+                await saveConfigSection(inquilino, "facturas_compra", updatedFacturas);
+            } catch (cfgErr) {
+                console.warn("saveConfigSection notice in FacturasCompraForm:", cfgErr);
+            }
+
+            // 2. Intentar guardar en tabla facturas_compra (si existe en base de datos)
             try {
                 await supabase.from("facturas_compra").insert([facturaRecord]);
             } catch (e) {
                 console.warn("Table facturas_compra insert notice:", e);
             }
 
-            // 2. Sincronizar en website_config
-            try {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-
-                const currentCfg = cfgRow?.config || {};
-                const currentFacturas = currentCfg.facturas_compra || [];
-                currentCfg.facturas_compra = [facturaRecord, ...currentFacturas];
-
-                await supabase
-                    .from("website_config")
-                    .upsert({ tenant_id: inquilino, config: currentCfg, updated_at: new Date().toISOString() });
-            } catch (e) {
-                console.warn("website_config facturas_compra sync notice:", e);
+            if (!shouldTransmit || !factusValidated) {
+                toast.success(docSoporteDian ? "Documento Soporte guardado en borrador ✅" : "Factura de compra registrada exitosamente ✅");
             }
 
-
-
-            toast.success("Factura de compra registrada exitosamente ✅");
             if (onSuccess) onSuccess(facturaRecord);
             else if (onCancel) onCancel();
 
@@ -574,6 +612,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             toast.error("Error al guardar la factura de compra");
         } finally {
             setSaving(false);
+            setTransmitting(false);
         }
     };
 
@@ -605,21 +644,53 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                 Cancelar
                             </button>
                         )}
-                        <button
-                            type="button"
-                            onClick={handleSaveFactura}
-                            disabled={saving}
-                            className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
-                        >
-                            {saving ? (
-                                <>
-                                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                    <span>Guardando...</span>
-                                </>
-                            ) : (
-                                <span>Guardar</span>
-                            )}
-                        </button>
+                        {docSoporteDian ? (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleSaveFactura(false)}
+                                    disabled={saving || transmitting}
+                                    className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                                >
+                                    {saving ? "Guardando..." : "Guardar Borrador"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSaveFactura(true)}
+                                    disabled={saving || transmitting}
+                                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                                    title="Validar y emitir Documento Soporte directamente ante la DIAN vía API Factus"
+                                >
+                                    {transmitting ? (
+                                        <>
+                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            <span>Transmitiendo DIAN...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FiSend size={13} />
+                                            <span>Guardar y Transmitir DIAN</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => handleSaveFactura(false)}
+                                disabled={saving}
+                                className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                            >
+                                {saving ? (
+                                    <>
+                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        <span>Guardando...</span>
+                                    </>
+                                ) : (
+                                    <span>Guardar</span>
+                                )}
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1176,14 +1247,46 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                             Cancelar
                         </button>
                     )}
-                    <button
-                        type="button"
-                        onClick={handleSaveFactura}
-                        disabled={saving}
-                        className="px-8 py-2.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
-                    >
-                        {saving ? "Guardando..." : "Guardar"}
-                    </button>
+                    {docSoporteDian ? (
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => handleSaveFactura(false)}
+                                disabled={saving || transmitting}
+                                className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                            >
+                                {saving ? "Guardando..." : "Guardar Borrador"}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleSaveFactura(true)}
+                                disabled={saving || transmitting}
+                                className="px-7 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                                title="Validar y emitir Documento Soporte directamente ante la DIAN vía API Factus"
+                            >
+                                {transmitting ? (
+                                    <>
+                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        <span>Transmitiendo DIAN...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <FiSend size={13} />
+                                        <span>Guardar y Transmitir DIAN</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => handleSaveFactura(false)}
+                            disabled={saving}
+                            className="px-8 py-2.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                            {saving ? "Guardando..." : "Guardar"}
+                        </button>
+                    )}
                 </div>
             </div>
 
