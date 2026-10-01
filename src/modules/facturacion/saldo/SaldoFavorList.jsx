@@ -300,17 +300,19 @@ export default function SaldoFavorList({ onNew }) {
                     .from("pagos")
                     .select("*")
                     .eq("tenant_id", inquilino);
-                if (data && data.length > 0) pList = data;
+                if (data && data.length > 0) pList = [...data];
             } catch (e) {}
 
-            if (pList.length === 0) {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-                pList = cfgRow?.config?.pagos || [];
-            }
+            try {
+                const cfgPagos = await getConfigSection(inquilino, "pagos", []);
+                if (Array.isArray(cfgPagos)) {
+                    cfgPagos.forEach(cp => {
+                        if (!pList.some(p => p.id === cp.id)) {
+                            pList.push(cp);
+                        }
+                    });
+                }
+            } catch (e) {}
             setPagos(pList);
 
             const { data: pacList } = await supabase
@@ -327,15 +329,19 @@ export default function SaldoFavorList({ onNew }) {
                     .from("pagos_proveedor")
                     .select("*")
                     .eq("tenant_id", inquilino);
-                if (provDb && provDb.length > 0) provList = provDb;
+                if (provDb && provDb.length > 0) provList = [...provDb];
             } catch (_) {}
 
-            if (provList.length === 0) {
-                try {
-                    const cfgProv = await getConfigSection(inquilino, "pagos_proveedor", []);
-                    if (Array.isArray(cfgProv)) provList = cfgProv;
-                } catch (_) {}
-            }
+            try {
+                const cfgProv = await getConfigSection(inquilino, "pagos_proveedor", []);
+                if (Array.isArray(cfgProv)) {
+                    cfgProv.forEach(cp => {
+                        if (!provList.some(p => p.id === cp.id)) {
+                            provList.push(cp);
+                        }
+                    });
+                }
+            } catch (_) {}
 
             const devolucionesAsPagos = [];
             (provList || []).forEach(prov => {
@@ -343,13 +349,14 @@ export default function SaldoFavorList({ onNew }) {
                 if (c.includes("DEVOLUCI") && c.includes("SALDO")) {
                     const egrNum = prov.consecutivo || prov.numero || "1";
                     const egrDocLabel = `EGR-${String(egrNum).padStart(4, '0')}`;
-                    const exists = pList.some(p => p.id === prov.id || (p.referencia && (p.referencia.includes(egrDocLabel) || p.referencia.includes(String(egrNum)))));
+                    const exists = pList.some(p => p.id === prov.id || (p.referencia && p.referencia.toUpperCase().includes("DEVOLUCI") && (p.referencia.includes(egrDocLabel) || p.referencia.includes(`EGR-${egrNum}`))));
                     if (!exists) {
                         const matchPac = loadedPacientes.find(pac => {
-                            const pDoc = pac.documento || pac.nroDocumento || pac.cedula;
+                            const pDoc = String(pac.documento || pac.nroDocumento || pac.cedula || '').trim().toLowerCase();
+                            const provDoc = String(prov.documentoTercero || prov.documento || '').trim().toLowerCase();
                             const pName = (pac.nombreCompleto || `${pac.nombres || ''} ${pac.apellidos || ''}`).trim().toLowerCase();
-                            const provTercero = (prov.tercero || prov.proveedor || '').toLowerCase();
-                            return (prov.documentoTercero && pDoc && prov.documentoTercero === pDoc) || (provTercero && pName && (provTercero.includes(pName) || pName.includes(provTercero)));
+                            const provTercero = (prov.tercero || prov.proveedor || '').trim().toLowerCase();
+                            return (provDoc && pDoc && provDoc === pDoc) || (provTercero && pName && (provTercero.includes(pName) || pName.includes(provTercero)));
                         });
                         if (matchPac) {
                             devolucionesAsPagos.push({
@@ -588,6 +595,7 @@ export default function SaldoFavorList({ onNew }) {
             const ref = (p.referencia || p.concepto || "").toUpperCase();
             const notes = (p.notas || p.notes || "").toUpperCase();
             const m = (p.metodo || p.medio || "").toLowerCase();
+            const tipo = (p.tipo || "").toLowerCase();
             return m === "saldo a favor" || 
                    ref.includes("SALDO A FAVOR") || 
                    notes.includes("SALDO A FAVOR") || 
@@ -596,7 +604,8 @@ export default function SaldoFavorList({ onNew }) {
                    notes.includes("CONSUMO SALDO") || 
                    notes.includes("USO SALDO") ||
                    ref.includes("DEVOLUCI") ||
-                   notes.includes("DEVOLUCI");
+                   notes.includes("DEVOLUCI") ||
+                   (tipo === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
         });
         
         const list = creditPayments.map(p => {
@@ -638,7 +647,16 @@ export default function SaldoFavorList({ onNew }) {
 
             // Número limpio de documento (sin '#' ni prefijos de texto)
             let cleanDoc = "";
-            if (isConsumo) {
+            if (isDevolucion) {
+                const rawNum = p.consecutivo || p.nro_consecutivo || p.nroConsecutivo || parsedN?.consecutivo || parsedN?.nroConsecutivo;
+                if (rawNum) {
+                    cleanDoc = String(rawNum).replace(/^EGR-/i, "");
+                } else if (p.referencia && /\d+/.test(p.referencia)) {
+                    cleanDoc = p.referencia.match(/\d+/)[0];
+                } else {
+                    cleanDoc = "1";
+                }
+            } else if (isConsumo) {
                 cleanDoc = consumoDocMap.get(p.id) || (parsedN?.nroConsecutivo ? String(parsedN.nroConsecutivo) : "1");
             } else if (isTopUp) {
                 cleanDoc = abonoDocMap.get(p.id) || p.nro_consecutivo || p.nroConsecutivo || parsedN?.nroConsecutivo || "";

@@ -55,60 +55,6 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             } catch (e) {}
         }
 
-        // Cargar devoluciones de saldo a favor registradas como egreso para este paciente
-        if (tenantId) {
-            try {
-                let provDevs = [];
-                try {
-                    const { data: provDb } = await supabase
-                        .from("pagos_proveedor")
-                        .select("*")
-                        .eq("tenant_id", tenantId);
-                    if (provDb && provDb.length > 0) provDevs = provDb;
-                } catch (_) {}
-
-                if (provDevs.length === 0) {
-                    const cfgProv = await getConfigSectionCached(tenantId, "pagos_proveedor", []);
-                    if (Array.isArray(cfgProv)) provDevs = cfgProv;
-                }
-
-                const filteredProvDevs = (provDevs || []).filter(prov => {
-                    const c = (prov.concepto || prov.observaciones || "").toUpperCase();
-                    return c.includes("DEVOLUCI") && c.includes("SALDO");
-                });
-
-                filteredProvDevs.forEach(prov => {
-                    const exists = pagos.some(p => p.id === prov.id || (p.referencia && prov.numero && p.referencia.includes(prov.numero)));
-                    if (!exists) {
-                        pagos.push({
-                            id: prov.id || `dev_prov_${Date.now()}`,
-                            paciente_id: patientId,
-                            pacienteId: patientId,
-                            tenant_id: tenantId,
-                            monto: Number(prov.monto || prov.total || 0),
-                            total: Number(prov.monto || prov.total || 0),
-                            fecha: prov.fecha || prov.created_at,
-                            created_at: prov.created_at || prov.fecha,
-                            metodo: prov.medioPago || "Efectivo",
-                            medio: prov.medioPago || "Efectivo",
-                            referencia: `DEVOLUCIÓN SALDO A FAVOR - EGR-${String(prov.consecutivo || prov.numero || "0001").padStart(4, "0")}`,
-                            nro_consecutivo: String(prov.consecutivo || prov.numero || "1"),
-                            consecutivo: prov.consecutivo || prov.numero,
-                            notas: JSON.stringify({
-                                concepto: "Devolución saldo a favor",
-                                tipo: "egreso",
-                                tipoDocumento: "Egreso",
-                                observaciones: prov.observaciones || "Devolución saldo a favor",
-                                nroConsecutivo: `EGR-${String(prov.consecutivo || prov.numero || "0001").padStart(4, "0")}`
-                            }),
-                            estado: "Activo",
-                            tipo: "egreso"
-                        });
-                    }
-                });
-            } catch (e) {}
-        }
-
         // 2. Load Facturas — columnas necesarias
         try {
             const { data } = await supabase
@@ -205,14 +151,16 @@ export const getPatientFinancials = async (patientId, tenantId) => {
 
         // Leer saldo_favor del paciente de forma segura
         let patientSaldoFavor = 0;
+        let pacData = null;
         try {
-            const { data: pacData } = await supabase
+            const { data } = await supabase
                 .from("pacientes")
                 .select("saldo_favor")
                 .eq("id", patientId)
                 .maybeSingle();
-            if (pacData) {
-                patientSaldoFavor = Number(pacData.saldo_favor || 0);
+            if (data) {
+                pacData = data;
+                patientSaldoFavor = Number(data.saldo_favor || 0);
             }
         } catch (e) {
             // ignorar
