@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { formatCurrency, calculateAgeStr } from "../../../utils/formatters";
 import { useAuth } from "../../../context/AuthContext";
+import { hasElectronicInvoicingAccess } from "../../../utils/subscriptionHelper";
 import { useToast } from "../../../context/ToastContext";
 import { useAudit } from "../../../hooks/useAudit";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -1219,6 +1220,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
     const [financials, setFinancials] = useState(null);
     const { userProfile } = useAuth();
+    const hasFE = hasElectronicInvoicingAccess(userProfile);
     const { can } = usePermissions();
     const toast = useToast();
 
@@ -2049,7 +2051,9 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                             </button>
                                         )}
                                         <SidebarButton icon={FiDollarSign} label="Histórico de pagos" active={activeTab === "hist_pago"} onClick={() => handleTabChange("hist_pago")} />
-                                        <SidebarButton icon={FiFileText} label="Facturación" active={activeTab === "hist_fact"} onClick={() => handleTabChange("hist_fact")} />
+                                        {hasFE && (
+                                            <SidebarButton icon={FiFileText} label="Facturación" active={activeTab === "hist_fact"} onClick={() => handleTabChange("hist_fact")} />
+                                        )}
                                     </>
                                 )}
                             </div>

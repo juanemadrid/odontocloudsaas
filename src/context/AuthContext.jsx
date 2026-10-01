@@ -153,12 +153,21 @@ export const AuthProvider = ({ children }) => {
                  pName.includes(rawPlanKey) || rawPlanKey.includes(pName);
         });
 
-        const activePlanObj = matchedMasterPlan || {
+        const isClinicaOrHigher = rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') || rawPlanKey.includes('enterp');
+        const fallbackFacturas = rawPlanKey.includes('enterp') ? 1000 : (rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 400 : 0);
+
+        const activePlanObj = matchedMasterPlan ? {
+          ...matchedMasterPlan,
+          includeFacturacion: matchedMasterPlan.includeFacturacion ?? (matchedMasterPlan.facturasIncluidas > 0),
+          facturasIncluidas: Number(matchedMasterPlan.facturasIncluidas || 0)
+        } : {
           id: rawPlanKey,
           name: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 'Clínica' : rawPlanKey.includes('enterp') ? 'Enterprise' : 'Consultorio',
-          monthlyPrice: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 99900 : rawPlanKey.includes('enterp') ? 165800 : 59900,
-          yearlyPrice: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 1190000 : rawPlanKey.includes('enterp') ? 1990000 : 599000,
-          maxUsers: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 12 : rawPlanKey.includes('enterp') ? 999 : 2
+          monthlyPrice: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 110000 : rawPlanKey.includes('enterp') ? 199000 : 79900,
+          yearlyPrice: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 1100000 : rawPlanKey.includes('enterp') ? 1990000 : 799999,
+          maxUsers: rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 4 : rawPlanKey.includes('enterp') ? 8 : 2,
+          includeFacturacion: isClinicaOrHigher,
+          facturasIncluidas: fallbackFacturas
         };
 
         const createdAtDate = tenantData.created_at ? new Date(tenantData.created_at) : new Date();
@@ -215,6 +224,8 @@ export const AuthProvider = ({ children }) => {
             nit: tenantData.nit || "",
             planId: activePlanObj.id || rawPlanKey,
             plan: activePlanObj,
+            facturacionCuota: Number(tenantData.parametros?.facturacionCuota ?? tenantData.facturacionCuota ?? activePlanObj.facturasIncluidas ?? 0),
+            includeFacturacion: activePlanObj.includeFacturacion === true,
             subscriptionEndDate: subEndDate,
             createdAt: tenantData.created_at
           }

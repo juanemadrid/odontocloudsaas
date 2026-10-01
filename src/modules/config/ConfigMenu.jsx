@@ -1,6 +1,8 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
+import { useAuth } from "../../context/AuthContext";
+import { hasElectronicInvoicingAccess } from "../../utils/subscriptionHelper";
 import {
     FiSettings, FiUsers, FiMapPin, FiAward, FiCreditCard,
     FiList, FiPackage, FiCheckSquare, FiLayout, FiShield, FiFileText, FiServer
@@ -29,12 +31,16 @@ const CONFIG_ITEMS = [
     { label: "Cargas", slug: "cargas", icon: FiSettings },
     { label: "Impuestos", slug: "impuestos", icon: FiCreditCard },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiList },
-    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText },
+    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText, requiresFE: true },
     { label: "Suscripción", slug: "suscripcion", icon: FiAward },
 ];
 
 export default function ConfigMenu() {
     const navigate = useNavigate();
+    const { userProfile } = useAuth();
+    const hasFE = hasElectronicInvoicingAccess(userProfile);
+
+    const visibleItems = CONFIG_ITEMS.filter(it => !it.requiresFE || hasFE);
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 min-h-[600px]">
@@ -43,7 +49,7 @@ export default function ConfigMenu() {
             </h2>
 
             <div className="flex flex-col gap-4 max-w-3xl">
-                {CONFIG_ITEMS.map((item, index) => (
+                {visibleItems.map((item, index) => (
                     <div
                         key={index} // Using index as slug is not unique
                         onClick={() => navigate(buildDashboardPath(`config/${item.slug}`))}
@@ -58,27 +64,27 @@ export default function ConfigMenu() {
                                 : 'from-blue-50/0 via-blue-50/30 to-blue-50/0'} 
                             translate-x-[-100%] group-hover:translate-x-[100%]`} />
 
-                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-all duration-300 shrink-0
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl transition-all duration-300
                             ${item.isPrimary 
-                                ? 'bg-white/20 text-white group-hover:bg-white group-hover:text-blue-600' 
-                                : 'bg-blue-50/50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                            <item.icon size={26} />
+                                ? 'bg-white/10 text-white' 
+                                : 'bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 group-hover:scale-110'}`}
+                        >
+                            <item.icon />
                         </div>
 
                         <div className="flex-1">
-                            <h3 className={`text-[15px] font-black uppercase tracking-tight mb-1 transition-colors
-                                ${item.isPrimary ? 'text-white' : 'text-slate-800 group-hover:text-blue-700'}`}>
+                            <span className={`text-base font-bold transition-colors
+                                ${item.isPrimary ? 'text-white' : 'text-slate-700 group-hover:text-blue-600'}`}>
                                 {item.label}
-                            </h3>
+                            </span>
                         </div>
 
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300
                             ${item.isPrimary 
-                                ? 'border border-white/30 text-white' 
-                                : 'border border-slate-100 text-slate-300 group-hover:border-blue-200 group-hover:text-blue-500'}`}>
-                            <svg className="w-5 h-5 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
+                                ? 'text-white/60' 
+                                : 'text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1'}`}
+                        >
+                            →
                         </div>
                     </div>
                 ))}

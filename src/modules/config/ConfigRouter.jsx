@@ -1,5 +1,8 @@
 import React from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams, useLocation, Link } from "react-router-dom";
+import { buildDashboardPath } from "../../utils/dashboardBasePath";
+import { useAuth } from "../../context/AuthContext";
+import { hasElectronicInvoicingAccess } from "../../utils/subscriptionHelper";
 
 import ConfigMenu from "./ConfigMenu";
 
@@ -57,6 +60,7 @@ class ErrorBoundary extends React.Component {
 import ConfigLayout from "./ConfigLayout";
 
 export default function ConfigRouter() {
+    const { userProfile } = useAuth();
     const params = useParams();
     const location = useLocation();
 
@@ -134,6 +138,25 @@ export default function ConfigRouter() {
             case "catalogo-cuentas":
                 return <ConfigCatalogoCuentas />;
             case "facturacion-electronica":
+                if (!hasElectronicInvoicingAccess(userProfile)) {
+                    return (
+                        <div className="bg-white rounded-3xl p-10 border border-slate-100 shadow-sm text-center max-w-lg mx-auto my-12">
+                            <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
+                                ⚠️
+                            </div>
+                            <h3 className="text-xl font-black text-slate-800 mb-2">Facturación Electrónica no disponible</h3>
+                            <p className="text-slate-500 text-xs leading-relaxed mb-6">
+                                Tu plan contratado no incluye la configuración ni emisión de Facturación Electrónica DIAN oficial. Para habilitar este módulo, actualiza tu suscripción al <strong>Plan Clínica</strong>.
+                            </p>
+                            <Link
+                                to={buildDashboardPath("config/suscripcion")}
+                                className="inline-flex px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer"
+                            >
+                                Ver Planes y Suscripción
+                            </Link>
+                        </div>
+                    );
+                }
                 return <ConfigFacturacionElectronica />;
             case "suscripcion":
                 return <ConfigSuscripcion />;

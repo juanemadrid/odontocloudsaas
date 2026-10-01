@@ -46,8 +46,15 @@ const NEW_BUTTON_LABELS = {
 };
 
 import { useSearchParams } from "react-router-dom";
+import { useAuth } from "../../../context/AuthContext";
+import { hasElectronicInvoicingAccess } from "../../../utils/subscriptionHelper";
+import { FiAlertCircle } from "react-icons/fi";
 
 export default function FacturacionHub() {
+  const { userProfile } = useAuth();
+  const hasFE = hasElectronicInvoicingAccess(userProfile);
+  const visibleOptions = FACT_OPTIONS.filter(opt => opt.id !== "fv" || hasFE);
+
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSub = searchParams.get("sub");
 
@@ -87,8 +94,29 @@ export default function FacturacionHub() {
     let title = "";
 
     if (activeSubView === "fv") {
-      content = <FacturaElectronicaModule />;
-      title = "Facturación de Venta";
+      if (hasFE) {
+        content = <FacturaElectronicaModule />;
+        title = "Facturación de Venta";
+      } else {
+        content = (
+          <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm text-center max-w-lg mx-auto my-12">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3 text-2xl">
+              <FiAlertCircle />
+            </div>
+            <h3 className="text-base font-black text-slate-800 mb-2">Facturación Electrónica no disponible</h3>
+            <p className="text-slate-500 text-xs leading-relaxed mb-6">
+              El plan actual de tu clínica no incluye Facturación Electrónica oficial ante la DIAN. Puedes registrar tus pagos y recibos con total normalidad desde <strong>Recibo de Caja</strong>.
+            </p>
+            <button
+              onClick={() => setActiveSubView("recibo")}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer border-0"
+            >
+              Ir a Recibos de Caja
+            </button>
+          </div>
+        );
+        title = "Facturación de Venta";
+      }
     } else if (activeSubView === "recibo") {
       content = <ReciboCajaList onNew={() => setActiveSubView("recibo_form")} />;
       title = "Recibo de Caja";
@@ -224,13 +252,13 @@ export default function FacturacionHub() {
           </div>
         </div>
         <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-          {FACT_OPTIONS.length} Opciones
+          {visibleOptions.length} Opciones
         </span>
       </div>
 
       {/* Grid Compacto Slender Pro */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-        {FACT_OPTIONS.map((opt) => (
+        {visibleOptions.map((opt) => (
           <div
             key={opt.id}
             onClick={() => setActiveSubView(opt.id)}

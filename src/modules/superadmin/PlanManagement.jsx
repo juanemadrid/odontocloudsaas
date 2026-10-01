@@ -49,9 +49,9 @@ export default function PlanManagement({ hideTitle }) {
     const [newPlan, setNewPlan] = useState({
         name: "",
         description: "",
-        maxUsers: 5,
-        includeFacturacion: true,
-        facturasIncluidas: 300,
+        maxUsers: 4,
+        includeFacturacion: false,
+        facturasIncluidas: 0,
         monthlyPrice: 0,
         yearlyPrice: 0,
         includeCms: false,
@@ -92,13 +92,13 @@ export default function PlanManagement({ hideTitle }) {
                 finalFeatures.push("CMS");
             }
 
-            const isFacturacionActive = newPlan.includeFacturacion;
+            const isFacturacionActive = Boolean(newPlan.includeFacturacion);
             const planData = {
                 name: newPlan.name,
                 description: newPlan.description,
                 maxUsers: Number(newPlan.maxUsers),
                 includeFacturacion: isFacturacionActive,
-                facturasIncluidas: isFacturacionActive ? (Number(newPlan.facturasIncluidas) || 300) : 0,
+                facturasIncluidas: isFacturacionActive ? (Number(newPlan.facturasIncluidas) || 400) : 0,
                 monthlyPrice: Number(newPlan.monthlyPrice),
                 yearlyPrice: Number(newPlan.yearlyPrice),
                 recommended: newPlan.recommended,
@@ -117,7 +117,7 @@ export default function PlanManagement({ hideTitle }) {
             }
 
             setShowModal(false);
-            setNewPlan({ name: "", description: "", maxUsers: 5, includeFacturacion: true, facturasIncluidas: 300, monthlyPrice: 0, yearlyPrice: 0, includeCms: false, recommended: false, features: [] });
+            setNewPlan({ name: "", description: "", maxUsers: 4, includeFacturacion: false, facturasIncluidas: 0, monthlyPrice: 0, yearlyPrice: 0, includeCms: false, recommended: false, features: [] });
             setEditingId(null);
             setCustomFeature("");
             loadPlans();
@@ -129,13 +129,13 @@ export default function PlanManagement({ hideTitle }) {
 
     const handleEdit = (plan) => {
         setEditingId(plan.id);
-        const hasFactus = plan.includeFacturacion !== false; // Default to true for all existing plans
+        const hasFactus = Boolean(plan.includeFacturacion ?? (plan.facturasIncluidas > 0));
         setNewPlan({
             name: plan.name || "",
             description: plan.description || "",
             maxUsers: plan.maxUsers || 1,
             includeFacturacion: hasFactus,
-            facturasIncluidas: (plan.facturasIncluidas !== undefined && plan.facturasIncluidas !== null) ? plan.facturasIncluidas : 300,
+            facturasIncluidas: hasFactus ? (Number(plan.facturasIncluidas) || 400) : 0,
             monthlyPrice: plan.monthlyPrice || 0,
             yearlyPrice: plan.yearlyPrice || 0,
             recommended: plan.recommended || false,
@@ -491,7 +491,11 @@ export default function PlanManagement({ hideTitle }) {
                                         
                                         {/* Toggle Facturación Electrónica */}
                                         <div className={`p-3 rounded-xl border transition-all cursor-pointer ${newPlan.includeFacturacion ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}
-                                            onClick={() => setNewPlan(prev => ({ ...prev, includeFacturacion: !prev.includeFacturacion }))}>
+                                            onClick={() => setNewPlan(prev => ({
+                                                ...prev,
+                                                includeFacturacion: !prev.includeFacturacion,
+                                                facturasIncluidas: !prev.includeFacturacion ? (prev.facturasIncluidas > 0 ? prev.facturasIncluidas : 400) : 0
+                                            }))}>
                                             <div className="flex flex-col gap-2">
                                                 <div className={`w-8 h-5 flex items-center bg-gray-300 rounded-full p-0.5 duration-300 ease-in-out ${newPlan.includeFacturacion ? 'bg-emerald-600' : ''}`}>
                                                     <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ease-in-out ${newPlan.includeFacturacion ? 'translate-x-3' : ''}`}></div>

@@ -4,9 +4,11 @@ import ReciboCaja from "./recibo/ReciboCaja";
 import Pagos from "./pagos/Pagos";
 import NotaCredito from "./nota/NotaCredito";
 import Liquidaciones from "./liquidacion/Liquidaciones";
+import { useAuth } from "../../context/AuthContext";
+import { hasElectronicInvoicingAccess } from "../../utils/subscriptionHelper";
 
-const TABS = [
-  { id: "electronica", label: "Facturas Electrónicas" },
+const ALL_TABS = [
+  { id: "electronica", label: "Facturas Electrónicas", requiresFE: true },
   { id: "recibos", label: "Recibos de Caja" },
   { id: "pagos", label: "Pagos" },
   { id: "notas", label: "Notas de Crédito" },
@@ -14,13 +16,17 @@ const TABS = [
 ];
 
 export default function Facturacion() {
-  const [activeTab, setActiveTab] = useState("electronica");
+  const { userProfile } = useAuth();
+  const hasFE = hasElectronicInvoicingAccess(userProfile);
+
+  const tabs = ALL_TABS.filter(tab => !tab.requiresFE || hasFE);
+  const [activeTab, setActiveTab] = useState(hasFE ? "electronica" : "recibos");
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Tab bar */}
       <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm p-2 flex gap-1 overflow-x-auto">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -37,7 +43,7 @@ export default function Facturacion() {
 
       {/* Tab content */}
       <div>
-        {activeTab === "electronica" && <FacturaElectronicaModule />}
+        {activeTab === "electronica" && hasFE && <FacturaElectronicaModule />}
         {activeTab === "recibos" && <ReciboCaja />}
         {activeTab === "pagos" && <Pagos />}
         {activeTab === "notas" && <NotaCredito />}

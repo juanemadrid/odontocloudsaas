@@ -35,14 +35,20 @@ const MENU_ITEMS = [
     { label: "Suscripción", slug: "suscripcion", icon: FiStar },
 ];
 
+import { useAuth } from "../../context/AuthContext";
+import { hasElectronicInvoicingAccess } from "../../utils/subscriptionHelper";
+
 export default function ConfigLayout({ children }) {
     const location = useLocation();
+    const { userProfile } = useAuth();
+    const hasFE = hasElectronicInvoicingAccess(userProfile);
     const hasWebsiteAccess = true;
     const [manejaCopagos, setManejaCopagos] = React.useState(false);
 
     const activeMenuItems = React.useMemo(() => {
-        if (!manejaCopagos) return MENU_ITEMS;
-        const items = [...MENU_ITEMS];
+        const filtered = MENU_ITEMS.filter(it => it.slug !== "facturacion-electronica" || hasFE);
+        if (!manejaCopagos) return filtered;
+        const items = [...filtered];
         const impIndex = items.findIndex(i => i.slug === "impuestos");
         if (impIndex !== -1) {
             items.splice(impIndex + 1, 0, {
@@ -52,7 +58,7 @@ export default function ConfigLayout({ children }) {
             });
         }
         return items;
-    }, [manejaCopagos]);
+    }, [manejaCopagos, hasFE]);
 
     React.useEffect(() => {
         let isMounted = true;

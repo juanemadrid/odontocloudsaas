@@ -71,18 +71,20 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
   ]),
   guide('evoluciones', 'Clínica', 'Registrar evolución odontológica y diagnósticos CIE-10', 'evolucion evoluciones remision nota aclaratoria cie10 rips copilot', 'src/modules/pacientes/components/EvolucionesTab.jsx', [
     'Abre la ficha del paciente y entra a la pestaña [Evoluciones & Remis].',
-    'Haz clic en el botón [+ Nueva Evolución] (recuerda que debes estar asignado como doctor tratante en la pestaña Profesionales).',
+    'Haz clic en el botón verde [Evolución] para registrar la consulta clínica o en [Remitir] para una interconsulta médica.',
+    'Recuerda que debes estar asignado como doctor tratante en la pestaña [Profesionales] para poder registrar notas a tu nombre.',
     'En el formulario, selecciona el procedimiento realizado y busca el diagnóstico en [Diagnóstico CIE-10].',
-    'Redacta la nota de evolución o utiliza el [Copiloto IA] para redactar y estructurar la nota clínica.',
+    'Redacta la nota de evolución o utiliza el [Copiloto IA] para redactar y estructurar la nota clínica con lenguaje profesional.',
     'Si aplicaste anestésicos, selecciona el producto (ej: Lidocaína 2%) y la vía de administración (Infiltrativa, Troncular).',
-    'Pulsa [Guardar Evolución]. Si necesitas corregir un detalle posterior, utiliza la pestaña [Nota Aclaratoria].',
+    'Pulsa [Guardar Evolución]. Si necesitas corregir un detalle posterior, utiliza la pestaña [Nota Aclaratoria] para mantener la inmutabilidad legal.',
   ], 'El sistema valida que solo el profesional tratante asignado pueda registrar evoluciones, y que las correcciones queden como notas aclaratorias para cumplir la normatividad de historia clínica.'),
-  guide('presupuestos', 'Clínica', 'Crear presupuesto y cotizaciones', 'presupuesto plan tratamiento cotizacion procedimientos', 'src/modules/pacientes/components/PlanEditor.jsx', [
+  guide('presupuestos', 'Clínica', 'Crear presupuesto y planes de tratamiento', 'presupuesto plan tratamiento cotizacion procedimientos', 'src/modules/pacientes/components/PlanEditor.jsx', [
     'Abre la ficha del paciente y entra a [Presupuestos & planes].',
     'Pulsa [+ Nuevo Plan] para crear una cotización.',
-    'Usa [Importar de Odontograma] para cargar los tratamientos diagnosticados en el odontograma, o [Añadir Procedimiento] para buscar del tarifario de la clínica.',
+    'Usa [Odonto. Actual] para cargar los tratamientos diagnosticados en el odontograma, o [Agregar items] para buscar del tarifario de la clínica.',
     'Ajusta cantidades, coberturas/copagos, descuentos y profesional responsable.',
-    'Pulsa [Guardar Plan]. Puedes imprimir la cotización en PDF con logo de la clínica o evolucionar tratamientos realizados directamente desde la lista.',
+    'Para ejecutar tratamientos en la cita, marca la casilla (✓) y pulsa el botón azul [Realizar] para mandarlos directo a evolución clínica.',
+    'Puedes imprimir la cotización en PDF formal con el logo de la clínica o convertirla en plan activo con [Convertir a Plan].',
   ]),
   guide('archivos', 'Clínica', 'Radiografías, imágenes y documentos', 'radiografia imagen adjunto archivo rx documento subir', 'src/modules/pacientes/components/PatientRxTab.jsx', [
     'Abre la ficha del paciente y selecciona [Rx / Imágenes / Doc].',
@@ -97,11 +99,12 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
   ], 'El sistema no permite abrir una segunda caja si el usuario ya tiene una caja abierta activa sin cerrar.'),
   guide('pagos-paciente', 'Caja', 'Registrar pago o abono de un paciente', 'cobrar abonar pago paciente recaudo abono', 'src/modules/pacientes/components/PagoTab.jsx', [
     'Abre la ficha del paciente y entra a la pestaña [Realizar pago].',
-    'Selecciona el plan o procedimiento al que se le aplicará el abono.',
+    'En el listado de planes con saldo pendiente, pulsa el botón verde [Pagar / Abonar] (o usa [Adicionar saldo a favor] para un anticipo).',
+    'En la pantalla de Checkout (Prestaciones), selecciona los procedimientos a cancelar o abonar.',
     'Ingresa el monto del abono en pesos (COP).',
     'Selecciona el [Método de Pago]: Efectivo, Tarjeta, Transferencia, Nequi, Daviplata o PSE.',
-    'Si seleccionas Transferencia, Nequi o Daviplata, el campo [Número de Referencia] es obligatorio.',
-    'Selecciona el profesional y haz clic en [Registrar Pago]. El sistema actualizará el saldo y registrará el ingreso en la caja abierta.',
+    'Si seleccionas Transferencia, Nequi, Daviplata o PSE, el campo [Número de Referencia] es obligatorio.',
+    'Selecciona el profesional acreditado y haz clic en [Registrar Pago]. El sistema actualizará el saldo y registrará el ingreso en la caja abierta.',
   ], 'Para registrar un pago, la sede debe tener una caja abierta activa en el turno.'),
   guide('cerrar-caja', 'Caja', 'Cerrar y cuadrar la caja (Arqueo diario)', 'cerrar cierre arqueo cuadrar caja efectivo contado diferencia', 'src/modules/caja/components/CerrarCajaModal.jsx', [
     'En [Caja], localiza tu caja abierta y haz clic en [Cerrar Caja].',
@@ -117,7 +120,7 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Revisa los datos del cliente, los conceptos y los valores en el módulo de facturación.',
     'Para facturación electrónica, comprueba primero Configuración > Facturación electrónica y los consecutivos.',
     'Después de emitir, revisa el estado y los mensajes de respuesta. Si falla, consulta Reportes > Log de errores de facturación.',
-  ], 'No se debe asumir aceptación DIAN, CUFE o envío por correo hasta que el sistema confirme el resultado.'),
+  ], 'La Facturación Electrónica DIAN está disponible para clínicas con planes que incluyen emisión oficial DIAN.'),
   guide('recibos', 'Facturación', 'Recibos de caja y saldos a favor', 'recibo caja saldo favor anticipo', 'src/modules/administracion/views/FacturacionHub.jsx', [
     'Entra a Administración > Facturación.',
     'Selecciona Recibo de caja para los comprobantes de ingreso o Saldo a favor para revisar los abonos correspondientes.',
@@ -139,16 +142,9 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Revisa los movimientos registrados y utiliza el formulario disponible para un nuevo traslado.',
     'Verifica cuenta de origen, destino e importe antes de confirmar.',
   ]),
-  guide('inventario', 'Inventario', 'Consultar productos y existencias', 'inventario stock producto existencias almacen', 'src/modules/inventario/Inventario.jsx', [
-    'Entra a Inventario.',
-    'Consulta Listado de inventario para revisar existencias y Listado de movimientos para revisar entradas y salidas.',
-    'Comprueba el almacén y los filtros disponibles antes de comparar cantidades.',
-  ]),
-  guide('movimientos-inventario', 'Inventario', 'Recepción, salida y ajustes de inventario', 'recepcion entrada salida ajuste inventario insumo', 'src/modules/inventario/Inventario.jsx', [
-    'Entra a Inventario y elige Recepción producto, Salida producto o Ajustes de inventario según la operación.',
-    'Selecciona el producto, almacén y cantidad en el formulario correspondiente.',
-    'Revisa los datos y registra el movimiento.',
-    'Comprueba el resultado en Listado de inventario y Listado de movimientos.',
+  guide('almacenes-inventario', 'Configuración', 'Almacenes y categorías de insumos', 'inventario insumos producto existencias almacen', 'src/modules/config/ConfigRouter.jsx', [
+    'Entra a Configuración > Almacenes para gestionar las bodegas de la clínica.',
+    'En Configuración > Categorías inventario puedes clasificar los insumos odontológicos y materiales clínicos.',
   ]),
   guide('reportes', 'Reportes', 'Encontrar reportes e indicadores', 'reporte informe indicador estadistica ventas morbilidad cumpleanos', 'src/modules/reportes/Reportes.jsx', [
     'Entra a Reportes y selecciona Indicadores o el reporte específico.',

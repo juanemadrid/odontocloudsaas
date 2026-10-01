@@ -442,7 +442,7 @@ export const OFFICIAL_DEFAULT_PLANS = [
         monthlyPrice: 110000,
         yearlyPrice: 1100000,
         includeFacturacion: true,
-        facturasIncluidas: 300,
+        facturasIncluidas: 400,
         recommended: true,
         status: "active",
         features: [
