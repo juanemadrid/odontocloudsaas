@@ -279,10 +279,25 @@ Deno.serve(async (request) => {
     }
 
     if (action === "send_support_document") {
-      const payload = body?.payload;
-      const serialized = JSON.stringify(payload || {});
-      if (!payload || serialized.length > 500000) {
-        throw new HttpError(400, "El documento soporte es invalido o demasiado grande.");
+      let payload = body?.payload;
+      if (!payload || typeof payload !== "object") {
+        throw new HttpError(400, "El documento soporte es invalido.");
+      }
+
+      // Auto-completar numbering_range_id si no fue enviado desde el cliente
+      if (!payload.numbering_range_id) {
+        if (config.factusNumberingRangeIdDocSoporte) {
+          payload.numbering_range_id = Number(config.factusNumberingRangeIdDocSoporte);
+        } else if (config.factusNumberingRangeId) {
+          payload.numbering_range_id = Number(config.factusNumberingRangeId);
+        } else if (config.factusTestMode !== false) {
+          payload.numbering_range_id = 8;
+        }
+      }
+
+      const serialized = JSON.stringify(payload);
+      if (serialized.length > 500000) {
+        throw new HttpError(400, "El documento soporte es demasiado grande.");
       }
 
       const quota = Number(config.facturacionCuota || 0);

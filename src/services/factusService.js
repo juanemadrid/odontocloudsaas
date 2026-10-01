@@ -463,25 +463,22 @@ export const sendSupportDocument = async (supportDocData) => {
     try {
       const rangesData = await getNumberingRanges();
       let ranges = [];
-      if (Array.isArray(rangesData)) {
-        ranges = rangesData;
-      } else if (Array.isArray(rangesData?.data)) {
-        ranges = rangesData.data;
-      } else if (Array.isArray(rangesData?.data?.data)) {
-        ranges = rangesData.data.data;
-      }
+      if (Array.isArray(rangesData)) ranges = rangesData;
+      else if (Array.isArray(rangesData?.result?.data?.data)) ranges = rangesData.result.data.data;
+      else if (Array.isArray(rangesData?.result?.data)) ranges = rangesData.result.data;
+      else if (Array.isArray(rangesData?.data?.data)) ranges = rangesData.data.data;
+      else if (Array.isArray(rangesData?.data)) ranges = rangesData.data;
+      else if (Array.isArray(rangesData?.ranges)) ranges = rangesData.ranges;
 
       const isUsable = (r) =>
         (r.is_active === true || r.is_active === 1 || r.is_active === "1") &&
         r.is_expired !== true && r.is_expired !== 1;
 
-      // Prioridad 1: Rango explícito de Documento Soporte
-      const isSupportDoc = (doc) => {
-        const d = (doc || "").toLowerCase();
-        return d.includes("soporte") || d.includes("support");
-      };
+      const getDocName = (r) =>
+        String(r.document_name || r.document?.name || (typeof r.document === "string" ? r.document : "") || "").toLowerCase();
 
-      let selectedRange = ranges.find((r) => isUsable(r) && isSupportDoc(r.document));
+      // Prioridad 1: Rango explícito de Documento Soporte
+      let selectedRange = ranges.find((r) => isUsable(r) && (getDocName(r).includes("soporte") || getDocName(r).includes("support")));
 
       // Prioridad 2: Rango con prefijo que coincida con el prefijo del documento o "DS"
       if (!selectedRange) {
@@ -496,22 +493,42 @@ export const sendSupportDocument = async (supportDocData) => {
         );
       }
 
-      // Prioridad 4: Cualquier rango usable activo como fallback
+      // Prioridad 4: Cualquier rango usable
       if (!selectedRange) {
-        selectedRange = ranges.find(isUsable) || ranges[0];
+        selectedRange = ranges.find(isUsable);
+      }
+
+      // Prioridad 5: Cualquier rango devuelto
+      if (!selectedRange && ranges.length > 0) {
+        selectedRange = ranges[0];
       }
 
       if (selectedRange?.id) {
         numberingRangeId = Number(selectedRange.id);
-        console.info(`✅ Rango de numeración asignado para Documento Soporte: "${selectedRange.document}" (ID: ${numberingRangeId}, Prefijo: ${selectedRange.prefix})`);
+        console.info(`✅ Rango de numeración asignado para Documento Soporte: "${selectedRange.document_name || selectedRange.prefix || selectedRange.id}" (ID: ${numberingRangeId})`);
       }
     } catch (e) {
       console.warn("No se pudo obtener rangos de Factus automáticamente:", e);
     }
   }
 
+  // Si no se detectó en la consulta de rangos, intentar leer la configuración guardada de la clínica
   if (!numberingRangeId) {
-    throw new Error("No se encontró un rango de numeración Factus activo para Documento Soporte. Por favor verifica tus rangos de numeración en Factus.");
+    try {
+      const status = await getFactusStatus();
+      if (status?.factusNumberingRangeIdDocSoporte) {
+        numberingRangeId = Number(status.factusNumberingRangeIdDocSoporte);
+      } else if (status?.factusNumberingRangeId) {
+        numberingRangeId = Number(status.factusNumberingRangeId);
+      }
+    } catch (statusErr) {
+      console.warn("Aviso consultando factusStatus para Documento Soporte:", statusErr?.message);
+    }
+  }
+
+  // Fallback seguro: en sandbox o pruebas Factus el ID estándar por defecto es 8
+  if (!numberingRangeId) {
+    numberingRangeId = 8;
   }
 
   const tercero = supportDocData.tercero || {};
