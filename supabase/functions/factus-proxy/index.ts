@@ -290,8 +290,13 @@ Deno.serve(async (request) => {
           payload.numbering_range_id = Number(config.factusNumberingRangeIdDocSoporte);
         } else if (config.factusNumberingRangeId) {
           payload.numbering_range_id = Number(config.factusNumberingRangeId);
-        } else if (config.factusTestMode !== false) {
-          payload.numbering_range_id = 8;
+        }
+      }
+
+      // Asegurar due_date en payment_details (obligatorio en Factus V2)
+      if (Array.isArray(payload.payment_details) && payload.payment_details[0]) {
+        if (!payload.payment_details[0].due_date) {
+          payload.payment_details[0].due_date = new Date().toISOString().split("T")[0];
         }
       }
 

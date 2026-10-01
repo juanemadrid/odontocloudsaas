@@ -458,11 +458,11 @@ export const downloadAttachedDocumentXml = async (billNumber) => {
 export const sendSupportDocument = async (supportDocData) => {
   let numberingRangeId = supportDocData.numberingRangeId || supportDocData.rangoId || supportDocData.numbering_range_id;
 
+  let ranges = [];
   // Si no viene en los datos, buscar el rango activo de Factus automáticamente
   if (!numberingRangeId) {
     try {
       const rangesData = await getNumberingRanges();
-      let ranges = [];
       if (Array.isArray(rangesData)) ranges = rangesData;
       else if (Array.isArray(rangesData?.result?.data?.data)) ranges = rangesData.result.data.data;
       else if (Array.isArray(rangesData?.result?.data)) ranges = rangesData.result.data;
@@ -470,42 +470,36 @@ export const sendSupportDocument = async (supportDocData) => {
       else if (Array.isArray(rangesData?.data)) ranges = rangesData.data;
       else if (Array.isArray(rangesData?.ranges)) ranges = rangesData.ranges;
 
+      console.warn("[FACTUS] Rangos devueltos por la cuenta Factus:", ranges);
+
       const isUsable = (r) =>
         (r.is_active === true || r.is_active === 1 || r.is_active === "1") &&
         r.is_expired !== true && r.is_expired !== 1;
 
-      const getDocName = (r) =>
-        String(r.document_name || r.document?.name || (typeof r.document === "string" ? r.document : "") || "").toLowerCase();
+      const isSupportDocRange = (r) => {
+        const docName = String(r.document_name || r.document?.name || (typeof r.document === "string" ? r.document : "") || "").toLowerCase();
+        const docCode = String(r.document?.code || r.document_code || r.document_id || "");
+        const pref = String(r.prefix || "").toUpperCase();
+        return docName.includes("soporte") || docName.includes("support") || docCode === "11" || pref === "DS" || pref.startsWith("DS") || pref.startsWith("SD");
+      };
 
-      // Prioridad 1: Rango explícito de Documento Soporte
-      let selectedRange = ranges.find((r) => isUsable(r) && (getDocName(r).includes("soporte") || getDocName(r).includes("support")));
+      // Prioridad 1: Rango explícito de Documento Soporte activo y no expirado
+      let selectedRange = ranges.find((r) => isUsable(r) && isSupportDocRange(r));
 
-      // Prioridad 2: Rango con prefijo que coincida con el prefijo del documento o "DS"
+      // Prioridad 2: Rango de Documento Soporte aunque tenga marca de expirado en sandbox
       if (!selectedRange) {
-        const pref = String(supportDocData.prefijo || "DS").toUpperCase();
-        selectedRange = ranges.find((r) => isUsable(r) && String(r.prefix || "").toUpperCase() === pref);
+        selectedRange = ranges.find(isSupportDocRange);
       }
 
-      // Prioridad 3: Rango con prefijo iniciado en DS o SD
-      if (!selectedRange) {
-        selectedRange = ranges.find(
-          (r) => isUsable(r) && (String(r.prefix || "").toUpperCase().startsWith("DS") || String(r.prefix || "").toUpperCase().startsWith("SD"))
-        );
-      }
-
-      // Prioridad 4: Cualquier rango usable
-      if (!selectedRange) {
-        selectedRange = ranges.find(isUsable);
-      }
-
-      // Prioridad 5: Cualquier rango devuelto
-      if (!selectedRange && ranges.length > 0) {
-        selectedRange = ranges[0];
+      // Prioridad 3: Rango cuyo prefijo coincida con el de la factura de compra
+      if (!selectedRange && supportDocData.prefijo) {
+        const pref = String(supportDocData.prefijo).toUpperCase();
+        selectedRange = ranges.find((r) => String(r.prefix || "").toUpperCase() === pref);
       }
 
       if (selectedRange?.id) {
         numberingRangeId = Number(selectedRange.id);
-        console.info(`✅ Rango de numeración asignado para Documento Soporte: "${selectedRange.document_name || selectedRange.prefix || selectedRange.id}" (ID: ${numberingRangeId})`);
+        console.info(`✅ Rango de numeración asignado para Documento Soporte: ID ${numberingRangeId} (${selectedRange.document_name || selectedRange.prefix || ""})`);
       }
     } catch (e) {
       console.warn("No se pudo obtener rangos de Factus automáticamente:", e);
@@ -518,17 +512,19 @@ export const sendSupportDocument = async (supportDocData) => {
       const status = await getFactusStatus();
       if (status?.factusNumberingRangeIdDocSoporte) {
         numberingRangeId = Number(status.factusNumberingRangeIdDocSoporte);
-      } else if (status?.factusNumberingRangeId) {
-        numberingRangeId = Number(status.factusNumberingRangeId);
       }
     } catch (statusErr) {
       console.warn("Aviso consultando factusStatus para Documento Soporte:", statusErr?.message);
     }
   }
 
-  // Fallback seguro: en sandbox o pruebas Factus el ID estándar por defecto es 8
+  // Si no hay rango de Documento Soporte en la cuenta de Factus
   if (!numberingRangeId) {
-    numberingRangeId = 8;
+    if (ranges.length > 0) {
+      const summary = ranges.map(r => `• ID ${r.id}: ${r.document_name || r.document?.name || (typeof r.document === "string" ? r.document : "Rango")} (Prefijo: ${r.prefix || "N/A"})`).join(" | ");
+      throw new Error(`Tu cuenta Factus no tiene registrado un rango de Documento Soporte. Rangos disponibles: [${summary}]. Para emitir Documento Soporte debes asociar la resolución con prefijo DS en Factus.`);
+    }
+    throw new Error("No se encontró un rango de numeración Factus activo para Documento Soporte. Por favor verifica tus rangos de numeración en Factus.");
   }
 
   const tercero = supportDocData.tercero || {};
@@ -601,6 +597,9 @@ export const sendSupportDocument = async (supportDocData) => {
   };
   const paymentMethodCode = mapPaymentMethodCode(supportDocData.medioPago || supportDocData.medio_pago || supportDocData.metodoPago);
 
+  // ── Due Date (Obligatorio en Factus V2 payment_details) ──
+  const dueDate = supportDocData.fechaVencimiento || supportDocData.fecha_vencimiento || supportDocData.fecha || new Date().toISOString().split("T")[0];
+
   const itemsTotal = factusItems.reduce((sum, item) => {
     const lineTotal = item.price * item.quantity * (1 - (item.discount_rate || 0) / 100);
     return sum + lineTotal;
@@ -617,7 +616,7 @@ export const sendSupportDocument = async (supportDocData) => {
         payment_form: paymentForm,
         payment_method_code: paymentMethodCode,
         amount: totalAmount,
-        ...(paymentForm === "2" && supportDocData.fechaVencimiento ? { due_date: supportDocData.fechaVencimiento } : {}),
+        due_date: dueDate,
       },
     ],
     provider: {
