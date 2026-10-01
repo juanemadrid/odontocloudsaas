@@ -176,3 +176,42 @@ export function validateTerceroForDian(tercero) {
     warnings
   };
 }
+
+/**
+ * Obtiene el nombre completo o razón social de un tercero sin perder apellidos.
+ * Soporta Personas Naturales (nombre + apellidos) y Personas Jurídicas (razón social).
+ * @param {object|string} tercero
+ * @returns {string}
+ */
+export function formatTerceroNombre(tercero) {
+  if (!tercero) return "Tercero";
+  if (typeof tercero === "string") return tercero.trim();
+
+  // 1. Si es Persona Jurídica y tiene razón social explícita
+  const rs = (tercero.razonSocial || tercero.razon_social || "").trim();
+  const tipo = (tercero.tipoPersona || tercero.tipo_persona || "").trim().toLowerCase();
+  
+  if (tipo === "juridica" && rs) {
+    return rs;
+  }
+
+  // 2. Si es Persona Natural o tiene nombres y/o apellidos
+  const nombre = (tercero.nombre || tercero.nombres || "").trim();
+  const apellidos = (tercero.apellidos || tercero.apellido || "").trim();
+  const naturalParts = [nombre, apellidos].filter(Boolean);
+
+  if (naturalParts.length > 1) {
+    return naturalParts.join(" ");
+  }
+
+  // 3. Fallback a campos unificados
+  return (
+    rs ||
+    tercero.nombreCompleto ||
+    tercero.nombre_completo ||
+    tercero.full_name ||
+    (naturalParts.length === 1 ? naturalParts[0] : "") ||
+    nombre ||
+    "Tercero"
+  ).trim();
+}

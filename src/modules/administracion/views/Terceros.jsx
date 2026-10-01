@@ -12,7 +12,8 @@ import {
   calculateNIT_DV,
   isValidNIT_DV,
   formatNITWithDV,
-  validateTerceroForDian
+  validateTerceroForDian,
+  formatTerceroNombre
 } from "../../../utils/dian/dianHelpers";
 import { CIUDADES_COLOMBIA } from "../../pacientes/constants/colombianCities";
 import { PAISES } from "../../pacientes/constants/patientConstants";
@@ -238,8 +239,7 @@ export default function Terceros() {
   };
 
   const handleDelete = async (tercero) => {
-    const isNatural = tercero.tipoPersona === "Natural";
-    const name = isNatural ? `${tercero.nombre} ${tercero.apellidos || ""}`.trim() : tercero.razonSocial || tercero.nombre;
+    const name = formatTerceroNombre(tercero);
     if (!window.confirm(`¿Está seguro de que desea eliminar permanentemente al tercero "${name}"?`)) return;
     
     try {
@@ -468,15 +468,14 @@ export default function Terceros() {
                 ) : (
                   filteredTerceros.map((tercero) => {
                     const isNatural = tercero.tipoPersona === "Natural";
-                    const dispName = isNatural 
-                      ? `${tercero.nombre} ${tercero.apellidos}`.trim()
-                      : tercero.razonSocial || tercero.nombre;
+                    const dispName = formatTerceroNombre(tercero);
+                    const repLegal = isNatural ? "" : [tercero.nombre, tercero.apellidos].filter(Boolean).join(" ").trim();
                     return (
                       <tr key={tercero.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold text-slate-800 text-[13px]">{dispName}</div>
-                          {!isNatural && (
-                            <div className="text-[10px] text-slate-400 font-medium">Rep: {`${tercero.nombre} ${tercero.apellidos}`.trim()}</div>
+                          {repLegal && (
+                            <div className="text-[10px] text-slate-400 font-medium">Rep: {repLegal}</div>
                           )}
                         </td>
                         <td className="px-6 py-4">

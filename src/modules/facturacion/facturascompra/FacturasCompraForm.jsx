@@ -9,7 +9,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { getConfigItems } from "../../../services/configPersistenceService";
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { toast } from "sonner";
-import { validateTerceroForDian } from "../../../utils/dian/dianHelpers";
+import { validateTerceroForDian, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -87,6 +87,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
     const [savingTercero, setSavingTercero] = useState(false);
     const [newTerceroData, setNewTerceroData] = useState({
         nombre: "",
+        apellidos: "",
         tipoDocumento: "NIT",
         nroDocumento: "",
         telefono: "",
@@ -132,7 +133,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                         tercerosList = tDb.map(t => ({
                             ...t,
                             id: t.id,
-                            nombre: t.nombre || t.razon_social || t.nombre_completo || "Tercero",
+                            nombre: formatTerceroNombre(t),
                             documento: t.numero_documento || t.documento || t.nit || t.nroDocumento || "",
                             tipoDocumento: t.tipo_documento || t.tipoDocumento || "NIT",
                             telefono: t.telefono || "",
@@ -146,7 +147,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                     tercerosList = rawT.map(t => ({
                         ...t,
                         id: t.id || t.documento || t.nombre,
-                        nombre: t.nombre || t.razonSocial || "Tercero",
+                        nombre: formatTerceroNombre(t),
                         documento: t.documento || t.nit || t.nroDocumento || "",
                         tipoDocumento: t.tipoDocumento || "NIT",
                         telefono: t.telefono || "",
@@ -388,6 +389,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 id: `tercero_${Date.now()}`,
                 tenant_id: inquilino,
                 nombre: newTerceroData.nombre.trim(),
+                apellidos: (newTerceroData.apellidos || "").trim(),
                 tipoDocumento: newTerceroData.tipoDocumento,
                 nroDocumento: newTerceroData.nroDocumento.trim(),
                 telefono: newTerceroData.telefono.trim(),
@@ -417,7 +419,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
 
             const formattedNew = {
                 id: nuevoTerceroObj.id,
-                nombre: nuevoTerceroObj.nombre,
+                nombre: formatTerceroNombre(nuevoTerceroObj),
                 documento: nuevoTerceroObj.nroDocumento,
                 tipoDocumento: nuevoTerceroObj.tipoDocumento,
                 telefono: nuevoTerceroObj.telefono,
@@ -432,6 +434,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             setShowNewTerceroModal(false);
             setNewTerceroData({
                 nombre: "",
+                apellidos: "",
                 tipoDocumento: "NIT",
                 nroDocumento: "",
                 telefono: "",

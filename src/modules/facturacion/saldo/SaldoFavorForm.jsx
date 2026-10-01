@@ -10,6 +10,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { getDoctorsList, getActiveCaja, ensureActiveCaja } from "../../../services/supabaseServices";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/consecutivosService";
+import { formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 
 const CIUDADES_COLOMBIA = [
     "Abejorral", "Acacías", "Aguachica", "Agustín Codazzi", "Anapoima", "Andes", "Apartadó", "Aracataca", "Arauca", "Armenia",
@@ -126,7 +127,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
 
             setPacientes(pacsList.map(d => ({ 
                 id: d.id, 
-                nombre: d.nombreCompleto || d.full_name || d.nombre || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim(),
+                nombre: formatTerceroNombre(d) || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim() || d.nombreCompleto || "Paciente / Tercero",
                 cedula: d.documento || d.nroDocumento || d.nro_documento || d.cedula || d.identificacion || ""
             })));
 
@@ -200,7 +201,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
         setSavingModal(true);
         setModalError("");
         try {
-            const name = `${newTercero.nombre.trim()} ${newTercero.apellidos.trim()}`;
+            const name = formatTerceroNombre(newTercero) || `${newTercero.nombre.trim()} ${newTercero.apellidos.trim()}`.trim();
             const { data: createdPatient, error: pacErr } = await supabase
                 .from("pacientes")
                 .insert([{

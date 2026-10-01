@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
 import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { useAuth } from "../../../context/AuthContext";
+import { formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -105,7 +106,7 @@ export default function NotaDebitoForm({ onCancel, onSuccess }) {
 
             setPacientes(pacsList.map(d => ({ 
                 id: d.id, 
-                nombre: d.nombreCompleto || d.full_name || d.nombre || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim(),
+                nombre: formatTerceroNombre(d) || `${d.nombres || d.nombre || ""} ${d.apellidos || d.apellido || ""}`.trim() || d.nombreCompleto || d.full_name || d.nombre || "Tercero",
                 cedula: d.nroDocumento || d.cedula || d.documento || ""
             })));
         } catch (e) {

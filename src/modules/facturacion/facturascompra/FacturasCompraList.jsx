@@ -9,7 +9,7 @@ import {
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
-import { MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE } from "../../../utils/dian/dianHelpers";
+import { MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 import factusService from "../../../services/factusService";
 
 const fmt = (n) =>
@@ -457,7 +457,14 @@ export default function FacturasCompraList({ onNew }) {
           .maybeSingle();
         terceroObj = tRow;
       }
-      if (!terceroObj) {
+      if (terceroObj) {
+        terceroObj = {
+          ...terceroObj,
+          nombre_completo: formatTerceroNombre(terceroObj) || terceroObj.nombre || factura.tercero || factura.proveedor,
+          identificacion: terceroObj.documento || terceroObj.numero_documento || terceroObj.nroDocumento || factura.documentoTercero || "123456789",
+          numero_documento: terceroObj.documento || terceroObj.numero_documento || terceroObj.nroDocumento || factura.documentoTercero || "123456789",
+        };
+      } else {
         terceroObj = {
           identificacion: factura.documentoTercero || "123456789",
           numero_documento: factura.documentoTercero || "123456789",
