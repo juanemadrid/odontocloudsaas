@@ -9,11 +9,11 @@ export async function askHelp(question, previousIds = [], options = {}) {
       signal: AbortSignal.timeout(18000),
     });
     if (error || !data?.success || typeof data.answer !== 'string' || !Array.isArray(data.sources)) {
-      return guideResponse(question, previousIds, 'unavailable');
+      return guideResponse(question, previousIds, 'unavailable', mode);
     }
     return data;
   } catch {
-    return guideResponse(question, previousIds, 'unavailable');
+    return guideResponse(question, previousIds, 'unavailable', mode);
   }
 }
 

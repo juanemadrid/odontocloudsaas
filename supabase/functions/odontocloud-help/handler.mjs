@@ -93,10 +93,20 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
       const fallback = reason => {
         trace('manual_fallback', { reason });
         const publicReason = ['timeout', 'provider_error', 'incomplete_response'].includes(reason) ? 'unavailable' : reason;
-        return json({ success: true, ...guideResponse(question, previousIds, publicReason) });
+        return json({ success: true, ...guideResponse(question, previousIds, publicReason, isPublic ? 'public' : 'app') });
       };
+
+      // En la landing pública, saludos y agradecimientos responden con inmediatez absoluta
+      if (isPublic) {
+        const qNorm = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        if (/^(hola|hola buenas|buenas|buenos dias|buenas tardes|buenas noches|hey|hola como estas|como estas|que tal|saludos|inicio|empezar)$/.test(qNorm) ||
+            /^(gracias|muchas gracias|mil gracias|ok gracias|listo gracias|perfecto gracias|vale gracias)$/.test(qNorm)) {
+          return fallback('conversational');
+        }
+      }
+
       // A single relevant guide bounds prompt evaluation on the shared CPU server.
-      const guides = searchGuides(question, previousIds).slice(0, 1);
+      const guides = searchGuides(question, previousIds, isPublic ? 'public' : 'app').slice(0, 1);
       if (!guides.length) return fallback('no_match');
       const base = env('ODONTO_HELP_OLLAMA_URL');
       const model = env('ODONTO_HELP_OLLAMA_MODEL');

@@ -136,9 +136,26 @@ const pubHandler = makeHandler();
 const pubResponse = await (await pubHandler(new Request('https://example.test/help', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ question: '¿Cuáles son los planes de suscripción y precios de OdontoCloud?', mode: 'public' }),
+  body: JSON.stringify({ question: 'que planes tienes', mode: 'public' }),
 }))).json();
 assert.equal(pubResponse.success, true);
 assert.equal(pubResponse.sources[0]?.id, 'planes-suscripcion');
+
+const greetingResponse = await (await pubHandler(new Request('https://example.test/help', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ question: 'hola', mode: 'public' }),
+}))).json();
+assert.equal(greetingResponse.success, true);
+assert.equal(greetingResponse.reason, 'greeting');
+assert.ok(greetingResponse.answer.includes('OdontoCloud Colombia'));
+
+const thanksResponse = await (await pubHandler(new Request('https://example.test/help', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ question: 'muchas gracias', mode: 'public' }),
+}))).json();
+assert.equal(thanksResponse.success, true);
+assert.equal(thanksResponse.reason, 'thanks');
 
 console.log(`Help assistant: ${HELP_GUIDES.length} guide sources verified; retrieval, authentication boundary, application isolation and local fallback checks passed.`);

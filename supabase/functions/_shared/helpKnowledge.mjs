@@ -237,66 +237,162 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Consulta las guías de referencia que aparecen debajo de la respuesta.',
     'Si la IA local no está disponible, puedes seguir consultando las guías del sistema.',
   ], 'Esta ayuda no ejecuta operaciones, no accede a expedientes y no utiliza documentación de Edunexus. Las otras funciones de IA clínica tienen su propia configuración.'),
-  guide('planes-suscripcion', 'Suscripción', 'Planes y Precios Oficiales de OdontoCloud', 'planes precios suscripcion plan mensual anual tarifas software consultorio clinica enterprise valor cuanto cuesta suscripcion odontocloud', 'src/pages/landing/PricingPage.jsx', [
-    'Plan Consultorio ($79.900 COP/mes): Para 1 a 3 usuarios. Incluye agenda inteligente con recordatorios por WhatsApp, historia clínica digital completa, odontograma interactivo, consentimientos informados, control de caja y pacientes ilimitados.',
-    'Plan Clínica ($110.000 COP/mes — Más Popular): Para hasta 5 usuarios. Incluye Facturación Electrónica DIAN oficial (300 docs/año), RIPS JSON (Resolución 2275), sitio web corporativo (CMS), múltiples sedes y soporte prioritario. ¡Tiene 30 días de prueba gratis!',
+  guide('planes-suscripcion', 'Suscripción', 'Planes y Precios Oficiales de OdontoCloud', 'planes precios suscripcion plan mensual anual tarifas software consultorio clinica enterprise valor cuanto cuesta suscripcion odontocloud que planes tienes que planes hay que planes manejan costo costos', 'src/pages/landing/PricingPage.jsx', [
+    'Plan Consultorio ($79.900 COP/mes): Para 1 a 3 usuarios. Incluye agenda médica con recordatorios por WhatsApp, historia clínica digital completa, odontograma interactivo, consentimientos informados, control de caja y pacientes ilimitados.',
+    'Plan Clínica ($110.000 COP/mes — Más Popular): Para hasta 5 usuarios. Incluye todo lo anterior más Facturación Electrónica DIAN oficial (300 documentos/año), RIPS JSON (Resolución 2275), sitio web corporativo (CMS), múltiples sedes y soporte prioritario. ¡Incluye 30 días de prueba gratis!',
     'Plan Enterprise ($199.000 COP/mes): Para redes multi-sede, cadenas e IPS odontológicas. Hasta 11 doctores, 1.000 facturas DIAN/año, roles avanzados de auditoría, comisiones médicas y migración asistida de datos.',
-    'Todos los planes incluyen almacenamiento en la nube, copias de seguridad continuas y acceso seguro desde cualquier dispositivo.',
+    'Todos los planes son 100% en la nube, sin contratos de permanencia e incluyen copias de seguridad automáticas diarias y soporte técnico incluido.',
   ]),
-  guide('prueba-gratis', 'Prueba Gratuita', 'Iniciar Prueba Gratuita de 30 Días', 'prueba gratis demostracion demo probar 30 dias sin costo cuenta registro registrarme empezar comenzar activar', 'src/components/landing/TrialModal.jsx', [
-    'Haz clic en el botón [Solicitar demostración gratuita] o [Comenzar Prueba Gratis] en la página principal.',
-    'Completa tus datos básicos: Tu nombre, nombre de la clínica, correo electrónico y contraseña deseada.',
-    'Selecciona el [Plan Clínica] recomendado para experimentar todas las funciones (incluyendo facturación y RIPS) por 30 días sin costo ni tarjeta de crédito.',
-    'Al enviar el formulario, el equipo activará tu acceso y recibirás un correo oficial de bienvenida para empezar de inmediato.',
+  guide('prueba-gratis', 'Prueba Gratuita', 'Iniciar Prueba Gratuita de 30 Días', 'prueba gratis demostracion demo probar 30 dias sin costo cuenta registro registrarme empezar comenzar activar como probar', 'src/components/landing/TrialModal.jsx', [
+    'Sin tarjeta de crédito ni compromisos: Puedes probar el Plan Clínica completo durante 30 días calendario de manera 100% gratuita.',
+    'Todas las funciones activas: Disfruta de agenda multi-doctor, odontograma interactivo, historia clínica con consentimientos digitales, facturación electrónica y generación de RIPS.',
+    'Activación inmediata: Haz clic en el botón [Comenzar Prueba Gratis] o [Solicitar demostración gratuita] en la página principal, completa los datos básicos de tu clínica y te daremos acceso al instante.',
+    'Acompañamiento inicial: Nuestro equipo te enviará credenciales y tutoriales paso a paso para que tu equipo empiece a atender pacientes desde el primer día.',
   ]),
   guide('facturacion-dian-rips', 'Normativa y Facturación', 'Facturación Electrónica DIAN y RIPS JSON en Colombia', 'facturacion electronica dian rips json resolucion 2275 minsalud sispro muv factus colombia norma ley', 'src/constants/MasterConfig.js', [
-    'OdontoCloud está integrado nativamente con Factus, proveedor tecnológico avalado por la DIAN, permitiendo emitir facturas electrónicas, notas crédito y documentos soporte con validación previa en segundos.',
-    'Genera y exporta automáticamente los archivos RIPS en formato JSON cumpliendo estrictamente con la Resolución 2275 de 2023 del Ministerio de Salud, listos para radicar en el MUV / SISPRO.',
-    'Mantiene trazabilidad total: asocia cada cita y procedimiento CUPS con los diagnósticos CIE-10 del paciente y la factura generada.',
-    'Disponible desde el Plan Clínica en adelante.',
+    'Facturación Electrónica Oficial: Integración nativa con Factus (proveedor tecnológico avalado por la DIAN). Emite facturas electrónicas, notas crédito y notas débito con CUFE y código QR en segundos.',
+    'RIPS JSON Automático (Resolución 2275 de 2023): OdontoCloud genera automáticamente los archivos de RIPS en formato JSON listos para radicar en el MUV / SISPRO del Ministerio de Salud, sin reprocesos ni hojas de cálculo.',
+    'Trazabilidad Total: Asocia cada procedimiento CUPS con los diagnósticos CIE-10 del paciente, el profesional tratante y la factura generada.',
+    'Disponible a partir del Plan Clínica ($110.000 COP/mes).',
   ]),
-  guide('contacto-soporte', 'Atención y Ventas', 'Contacto Comercial y Asesoría Humana por WhatsApp', 'contacto whatsapp asesor soporte humano telefono numero hablar ventas comprar ayuda llamada', 'src/pages/landing/FAQPage.jsx', [
-    'Si deseas una demostración guiada, resolver dudas específicas o solicitar una cotización especial, nuestro equipo humano te atiende directamente.',
-    'Escríbenos a nuestra línea oficial de WhatsApp: +57 301 576 8935 (o haz clic en el botón de WhatsApp dentro del chat).',
-    'También puedes escribirnos al correo oficial: bienvenido@odontocloudcolombia.com.',
-    'Horario de atención: Lunes a Sábado con soporte técnico permanente para clínicas activas.',
+  guide('historia-odontograma-public', 'Clínica', 'Historia Clínica Digital y Odontograma Interactivo', 'historia clinica odontograma periodontograma consentimientos odontologico dientes diente expediente digital ficha anamnesis', 'src/modules/odontograma/Odontograma.jsx', [
+    'Historia Clínica Integral: 17 secciones clínicas especializadas, anamnesis, antecedentes médicos, evoluciones con diagnósticos CIE-10 y notas aclaratorias bajo estricta normativa colombiana.',
+    'Odontograma Interactivo 3D: Gráfico visual ágil por piezas y superficies dentales (caries, obturaciones, endodoncias, implantes). Al finalizar el odontograma, se genera automáticamente el presupuesto de tratamiento para el paciente.',
+    'Consentimientos Informados Digitales: Firma electrónica del paciente directamente en tablet, celular o pantalla, con almacenamiento seguro en PDF inviolable.',
+    'Periodontograma y Galería Radiográfica: Registro de profundidades de sondaje, margen gingival y sangrado, junto con visualización de radiografías en la nube.',
   ]),
-  guide('seguridad-migracion', 'Tecnología', 'Seguridad en la Nube y Migración de Datos', 'seguridad nube copias backup privacidad datos migrar migracion pasar datos excel importar instalar requisitos', 'src/constants/MasterConfig.js', [
-    'Plataforma 100% en la nube: no requiere instalar nada ni servidores locales. Puedes ingresar desde cualquier computadora, tablet o teléfono con conexión a Internet.',
-    'Seguridad de nivel hospitalario: copias de seguridad automáticas diarias, cifrado de información y aislamiento absoluto entre clínicas.',
-    'Migración asistida: puedes importar tus pacientes existentes desde archivos de Excel en minutos con nuestro importador automático.',
-    'Disponibilidad 24/7 y actualizaciones automáticas sin costo adicional.',
+  guide('agenda-whatsapp-public', 'Agenda', 'Agenda Inteligente y Recordatorios por WhatsApp', 'agenda citas recordatorios whatsapp turnos horario cancelar agendar reservar citas whatsapp ausentismo', 'src/modules/agenda/Agenda.jsx', [
+    'Agenda Médica Inteligente: Vista diaria, semanal y mensual con código de colores por estado de cita (confirmada, en espera, atendida, cancelada).',
+    'Recordatorios por WhatsApp: Envío de recordatorios y confirmaciones con un solo clic con los datos del paciente, doctor, fecha y hora para reducir el ausentismo hasta en un 40%.',
+    'Control Multi-doctor y Multi-sillón: Validación en tiempo real para evitar cruces de horarios entre especialistas o consultorios.',
+  ]),
+  guide('contacto-soporte', 'Atención y Ventas', 'Contacto Comercial y Asesoría Humana por WhatsApp', 'contacto whatsapp asesor soporte humano telefono numero hablar ventas comprar ayuda llamada asesor comercial asesor humano', 'src/pages/landing/FAQPage.jsx', [
+    'Asesoría Personalizada: Si deseas una demostración guiada, resolver dudas específicas o solicitar una cotización especial, nuestro equipo humano te atiende directamente.',
+    'Línea Oficial de WhatsApp: +57 301 576 8935 (o haz clic en el botón de WhatsApp dentro del chat).',
+    'Correo Oficial de Contacto: bienvenido@odontocloudcolombia.com.',
+    'Atención Inmediata: Lunes a Sábado con soporte permanente para clínicas activas.',
+  ]),
+  guide('seguridad-migracion', 'Tecnología', 'Seguridad en la Nube y Migración de Datos', 'seguridad nube copias backup privacidad datos migrar migracion pasar datos excel importar instalar requisitos servidor mac windows', 'src/constants/MasterConfig.js', [
+    'Plataforma 100% en la Nube: No requiere instalar programas ni comprar servidores locales. Funciona en Windows, Mac, iPads, tablets y smartphones con conexión a Internet.',
+    'Seguridad y Privacidad: Copias de seguridad automáticas diarias, cifrado de datos y aislamiento absoluto entre clínicas bajo ley de Habeas Data.',
+    'Migración Asistida de Pacientes: Importa tu base de datos de pacientes existente desde archivos de Excel en minutos mediante nuestro importador automatizado.',
+    'Disponibilidad Continua: Acceso 24/7 y actualizaciones automáticas sin costos ocultos de mantenimiento.',
   ]),
 ];
+
+export const PUBLIC_GUIDE_IDS = new Set([
+  'planes-suscripcion',
+  'prueba-gratis',
+  'facturacion-dian-rips',
+  'historia-odontograma-public',
+  'agenda-whatsapp-public',
+  'contacto-soporte',
+  'seguridad-migracion',
+]);
 
 export const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const stop = new Set('como hago para una uno unos unas los las del que con por puedo quiero necesito donde este esta esto eso cual cuando sistema paso pasos consultar utilizar usar revisar'.split(' '));
 const aliases = { cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar', registro: 'registrar', guardo: 'guardar', cobro: 'cobrar', abro: 'abrir', cierro: 'cerrar', costo: 'precio', costos: 'precios', valor: 'precio', valores: 'precios', cotizacion: 'precio' };
 const tokens = text => [...new Set(normalize(text).split(' ').filter(t => t.length > 2 && !stop.has(t)).map(t => aliases[t] || (t.length > 4 && t.endsWith('s') ? t.slice(0, -1) : t)))];
-export function searchGuides(question, previousIds = []) {
+
+export function searchGuides(question, previousIds = [], mode = 'app') {
   if (/\bedunexus\b/.test(normalize(question))) return [];
   const words = tokens(question);
-  const ranked = HELP_GUIDES.map(item => {
+  const isPublic = mode === 'public';
+  
+  // En modo público se filtran exclusivamente las guías comerciales y de producto para visitantes
+  const candidateGuides = isPublic
+    ? HELP_GUIDES.filter(g => PUBLIC_GUIDE_IDS.has(g.id))
+    : HELP_GUIDES;
+
+  const ranked = candidateGuides.map(item => {
     const titleWords = tokens(item.title);
     const keyWords = tokens(item.keywords);
     const score = words.reduce((n, word) => n + (titleWords.includes(word) ? 5 : keyWords.includes(word) ? 3 : 0), 0);
     return { item, score };
   }).filter(hit => hit.score > 0).sort((a, b) => b.score - a.score);
+
   if (ranked.length) return ranked.filter(hit => hit.score >= Math.max(3, ranked[0].score * 0.45)).slice(0, 3).map(hit => hit.item);
+  
   // Only carry topic context for explicit short follow-ups, not unrelated new questions.
   if (/^(y |entonces |despues|luego|como lo |donde lo |no aparece|no encuentro)/.test(normalize(question))) {
-    return previousIds.slice(0, 3).map(id => HELP_GUIDES.find(item => item.id === id)).filter(Boolean);
+    return previousIds.slice(0, 3).map(id => candidateGuides.find(item => item.id === id)).filter(Boolean);
   }
   return [];
 }
-export function formatGuide(item) {
+
+export function formatGuide(item, isPublic = false) {
+  if (isPublic || PUBLIC_GUIDE_IDS.has(item.id)) {
+    return `**${item.title}**\n\n${item.steps.map(step => `• ${step}`).join('\n\n')}${item.note ? `\n\n${item.note}` : ''}`;
+  }
   return `**${item.title}**\n${item.steps.map((step, index) => `${index + 1}. ${step}`).join('\n')}${item.note ? `\n\n${item.note}` : ''}`;
 }
-export function guideResponse(question, previousIds = [], reason = 'manual') {
-  const guides = searchGuides(question, previousIds);
+
+export function guideResponse(question, previousIds = [], reason = 'manual', mode = 'app') {
+  const isPublic = mode === 'public';
+  const qClean = normalize(question);
+
+  if (isPublic) {
+    // 1. Saludos en landing pública
+    if (/^(hola|hola buenas|buenas|buenos dias|buenas tardes|buenas noches|hey|hola como estas|como estas|que tal|saludos|inicio|empezar)$/.test(qClean)) {
+      return {
+        provider: 'assistant',
+        reason: 'greeting',
+        version: KNOWLEDGE_VERSION,
+        answer: '¡Hola! 👋 Bienvenido a **OdontoCloud Colombia**. Soy tu Asesor Virtual.\n\nEstoy aquí para orientarte sobre todo lo que nuestro software en la nube puede hacer por tu clínica o consultorio dental:\n\n• 💳 **Planes y Precios:** Conoce nuestros planes desde $79.900 COP/mes.\n• 🚀 **Prueba Gratuita 30 Días:** Activa tu demo completa sin costo ni tarjeta de crédito.\n• 🧾 **Facturación DIAN y RIPS JSON:** Cumplimiento oficial de la Resolución 2275.\n• 🦷 **Historia Clínica y Odontograma:** Expedientes digitales y presupuestos automáticos.\n• 💬 **Asesor Humano:** Chatea con nuestro equipo comercial por WhatsApp al +57 301 576 8935.\n\n¿En qué te gustaría profundizar hoy?',
+        sources: [
+          { id: 'planes-suscripcion', title: 'Planes y Precios Oficiales', category: 'Suscripción' },
+          { id: 'prueba-gratis', title: 'Prueba Gratis 30 Días', category: 'Prueba Gratuita' },
+        ],
+      };
+    }
+
+    // 2. Agradecimientos en landing pública
+    if (/^(gracias|muchas gracias|mil gracias|ok gracias|listo gracias|perfecto gracias|vale gracias)$/.test(qClean)) {
+      return {
+        provider: 'assistant',
+        reason: 'thanks',
+        version: KNOWLEDGE_VERSION,
+        answer: '¡Con el mayor de los gustos! 😊 Si tienes más preguntas sobre los planes, la facturación DIAN, los RIPS o quieres comenzar tu **prueba gratis de 30 días**, aquí estoy para ayudarte.\n\nTambién puedes hacer clic en el botón de abajo para chatear directamente con nuestro equipo por **WhatsApp** (+57 301 576 8935). ¡Que tengas un excelente día!',
+        sources: [
+          { id: 'contacto-soporte', title: 'Contacto Comercial WhatsApp', category: 'Atención y Ventas' },
+        ],
+      };
+    }
+
+    // 3. Búsqueda de guías públicas
+    const guides = searchGuides(question, previousIds, 'public');
+    if (guides.length) {
+      return {
+        provider: 'manual',
+        reason,
+        version: KNOWLEDGE_VERSION,
+        answer: formatGuide(guides[0], true),
+        sources: guides.map(({ id, title, category }) => ({ id, title, category })),
+      };
+    }
+
+    // 4. Fallback comercial elegante para visitantes
+    return {
+      provider: 'assistant',
+      reason: 'public_overview',
+      version: KNOWLEDGE_VERSION,
+      answer: '**OdontoCloud Colombia** es la plataforma en la nube líder para la administración y crecimiento de consultorios y clínicas odontológicas.\n\nTe permite gestionar en un solo lugar:\n• **Agenda Médica Inteligente:** Control de citas y recordatorios por WhatsApp para evitar pacientes ausentes.\n• **Historia Clínica y Odontograma:** 17 secciones clínicas normativas, consentimientos informados digitales y odontograma interactivo.\n• **Facturación Electrónica DIAN y RIPS:** Emisión oficial con CUFE y generación automática de RIPS JSON (Resolución 2275 de Minsalud).\n• **100% en la Nube:** Seguro, con copias de respaldo continuas y accesible desde cualquier computador, tablet o celular.\n\n¿Te gustaría iniciar una **prueba gratuita de 30 días sin costo**, conocer los **planes y precios**, o comunicarte con un **asesor comercial por WhatsApp** (+57 301 576 8935)?',
+      sources: [
+        { id: 'planes-suscripcion', title: 'Planes y Precios Oficiales', category: 'Suscripción' },
+        { id: 'prueba-gratis', title: 'Prueba Gratis 30 Días', category: 'Prueba Gratuita' },
+        { id: 'contacto-soporte', title: 'Contacto Comercial WhatsApp', category: 'Atención y Ventas' },
+      ],
+    };
+  }
+
+  // Comportamiento dentro de la app (médicos / recepcionistas logueados)
+  const guides = searchGuides(question, previousIds, 'app');
   return {
-    provider: 'manual', reason, version: KNOWLEDGE_VERSION,
-    answer: guides.length ? formatGuide(guides[0]) : 'No tengo una guía verificada para esa pregunta. Indica el módulo y la acción que intentas realizar, o busca un tema en la biblioteca. No puedo consultar datos particulares ni realizar operaciones desde este chat.',
+    provider: 'manual',
+    reason,
+    version: KNOWLEDGE_VERSION,
+    answer: guides.length ? formatGuide(guides[0], false) : 'No tengo una guía verificada para esa pregunta. Indica el módulo y la acción que intentas realizar, o busca un tema en la biblioteca. No puedo consultar datos particulares ni realizar operaciones desde este chat.',
     sources: guides.map(({ id, title, category }) => ({ id, title, category })),
   };
 }

@@ -57,6 +57,17 @@ function MessageContent({ text, onOpenTrial, whatsappNumber }) {
                     );
                 }
 
+                // Viñetas con viñeta (• o -)
+                if (trimmed.startsWith("•") || (trimmed.startsWith("- ") && !trimmed.startsWith("---"))) {
+                    const bulletContent = trimmed.replace(/^[•\-]\s*/, "");
+                    return (
+                        <div key={idx} className="flex items-start gap-2 pt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
+                            <span className="flex-1 text-slate-700">{formatInlineBold(bulletContent)}</span>
+                        </div>
+                    );
+                }
+
                 return (
                     <p key={idx} className="text-slate-700 m-0">
                         {formatInlineBold(trimmed)}
@@ -114,7 +125,7 @@ export default function LandingAiAssistant({ config }) {
         {
             id: 'welcome',
             sender: 'bot',
-            text: `¡Hola! 👋 Soy tu **Asistente Inteligente OdontoCloud**.\n\nPuedo orientarte sobre nuestros planes, precios, facturación electrónica DIAN, RIPS oficiales o cómo iniciar tu prueba gratuita de 30 días sin costo.\n\n¿En qué te puedo asesorar hoy?`,
+            text: `¡Hola! 👋 Bienvenido a **OdontoCloud Colombia**. Soy tu Asesor Virtual.\n\nPuedo orientarte sobre nuestros planes, precios, facturación electrónica DIAN, RIPS oficiales o cómo iniciar tu prueba gratuita de 30 días sin costo.\n\n¿En qué te puedo asesorar hoy?`,
             sources: []
         }
     ]);
@@ -214,7 +225,7 @@ export default function LandingAiAssistant({ config }) {
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-1.5">
-                                        <h3 className="font-extrabold text-sm tracking-tight text-white m-0">OdontoCloud AI</h3>
+                                        <h3 className="font-extrabold text-sm tracking-tight text-white m-0">OdontoCloud IA</h3>
                                         <span className="px-1.5 py-0.2 bg-cyan-400/20 text-cyan-200 font-bold text-[9px] rounded uppercase tracking-wider border border-cyan-300/30">Oficial</span>
                                     </div>
                                     <p className="text-[11px] text-cyan-100/90 font-medium m-0 flex items-center gap-1">
@@ -398,7 +409,7 @@ export default function LandingAiAssistant({ config }) {
                         className="hidden md:flex items-center gap-2 bg-slate-900/95 backdrop-blur-md text-white text-xs font-semibold py-2 px-3.5 rounded-full shadow-lg border border-white/10 cursor-pointer hover:bg-slate-900 transition-all"
                     >
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        <span>¿Dudas sobre planes? Chatea con la IA</span>
+                        <span>OdontoCloud IA • Chatea con nuestro asesor</span>
                     </motion.div>
                 )}
 
@@ -418,7 +429,7 @@ export default function LandingAiAssistant({ config }) {
                             ? 'bg-slate-900 text-white'
                             : 'bg-gradient-to-r from-[#0284c7] via-[#022a63] to-[#0284c7] bg-[length:200%_auto] text-white hover:shadow-[0_12px_30px_rgba(2,132,199,0.5)]'
                     }`}
-                    title={isOpen ? "Cerrar asistente" : "Abrir asistente de IA"}
+                    title={isOpen ? "Cerrar asistente" : "OdontoCloud IA • Abrir asesor virtual"}
                 >
                     {isOpen && !isMinimized ? (
                         <FiX size={26} />
