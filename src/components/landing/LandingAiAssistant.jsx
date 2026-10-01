@@ -125,7 +125,7 @@ export default function LandingAiAssistant({ config }) {
         {
             id: 'welcome',
             sender: 'bot',
-            text: `¡Hola! 👋 Bienvenido a **OdontoCloud Colombia**. Soy tu Asesor Virtual.\n\nPuedo orientarte sobre nuestros planes, precios, facturación electrónica DIAN, RIPS oficiales o cómo iniciar tu prueba gratuita de 30 días sin costo.\n\n¿En qué te puedo asesorar hoy?`,
+            text: `¡Hola! 👋 Soy **OdontoIA**, tu asistente inteligente de **OdontoCloud Colombia**.\n\nPuedo orientarte sobre planes, precios, facturación electrónica DIAN, RIPS oficiales o cómo iniciar tu prueba gratuita de 30 días sin costo.\n\n¿En qué te puedo asesorar hoy?`,
             sources: []
         }
     ]);
@@ -203,64 +203,83 @@ export default function LandingAiAssistant({ config }) {
     };
 
     return (
-        <div className="fixed bottom-6 right-6 z-[95] font-sans">
-            {/* Ventana de Chat Expandida */}
+        <div
+            className={`fixed z-[95] font-sans transition-all duration-300 ${
+                isOpen && !isMinimized
+                    ? "inset-2 sm:inset-auto sm:bottom-6 sm:right-6 flex flex-col justify-end items-end"
+                    : "bottom-4 right-4 sm:bottom-6 sm:right-6"
+            }`}
+        >
+            {/* Backdrop en móviles para enfocar 100% la atención en el chat */}
             <AnimatePresence>
                 {isOpen && !isMinimized && (
                     <motion.div
-                        initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setIsOpen(false)}
+                        className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] sm:hidden -z-10"
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* Ventana de Chat Expandida (En móviles ocupa casi toda la pantalla) */}
+            <AnimatePresence>
+                {isOpen && !isMinimized && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20, scale: 0.97 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 25, scale: 0.95 }}
+                        exit={{ opacity: 0, y: 20, scale: 0.97 }}
                         transition={{ duration: 0.22, ease: "easeOut" }}
-                        className="w-[370px] sm:w-[420px] max-w-[calc(100vw-1.5rem)] h-[580px] max-h-[calc(100vh-6rem)] bg-white rounded-3xl shadow-[0_20px_50px_rgba(2,42,99,0.25)] border border-slate-200/90 flex flex-col overflow-hidden mb-3"
+                        className="w-full h-full max-h-[100dvh] sm:w-[430px] sm:h-[620px] sm:max-h-[calc(100vh-5.5rem)] bg-white rounded-2xl sm:rounded-3xl shadow-[0_25px_60px_rgba(2,42,99,0.35)] border border-slate-200/90 flex flex-col overflow-hidden sm:mb-3"
                     >
                         {/* Header Premium */}
-                        <div className="bg-gradient-to-r from-[#022a63] via-[#034199] to-[#0284c7] px-5 py-4 text-white flex items-center justify-between shadow-md shrink-0">
-                            <div className="flex items-center gap-3">
+                        <div className="bg-gradient-to-r from-[#022a63] via-[#034199] to-[#0284c7] px-4 py-3 sm:px-5 sm:py-4 text-white flex items-center justify-between shadow-md shrink-0">
+                            <div className="flex items-center gap-2.5 sm:gap-3">
                                 <div className="relative">
-                                    <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
+                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-inner">
                                         <HiSparkles size={20} className="text-cyan-300 animate-pulse" />
                                     </div>
                                     <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-[#022a63] rounded-full"></span>
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-1.5">
-                                        <h3 className="font-extrabold text-sm tracking-tight text-white m-0">OdontoCloud IA</h3>
-                                        <span className="px-1.5 py-0.2 bg-cyan-400/20 text-cyan-200 font-bold text-[9px] rounded uppercase tracking-wider border border-cyan-300/30">Oficial</span>
+                                        <h3 className="font-extrabold text-sm sm:text-base tracking-tight text-white m-0">OdontoIA</h3>
+                                        <span className="px-1.5 py-0.5 bg-cyan-400/20 text-cyan-200 font-bold text-[9px] rounded uppercase tracking-wider border border-cyan-300/30">Oficial</span>
                                     </div>
                                     <p className="text-[11px] text-cyan-100/90 font-medium m-0 flex items-center gap-1">
-                                        <span>Asesor comercial y soporte en vivo</span>
+                                        <span>Asesor inteligente y soporte en vivo</span>
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-1 text-white/80">
+                            <div className="flex items-center gap-0.5 sm:gap-1 text-white/80">
                                 <button
                                     onClick={handleReset}
                                     title="Reiniciar chat"
-                                    className="p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                                    className="p-2 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
                                 >
-                                    <FiRefreshCw size={14} />
+                                    <FiRefreshCw size={15} />
                                 </button>
                                 <button
                                     onClick={() => setIsMinimized(true)}
                                     title="Minimizar"
-                                    className="p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                                    className="p-2 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
                                 >
-                                    <FiMinimize2 size={15} />
+                                    <FiMinimize2 size={16} />
                                 </button>
                                 <button
                                     onClick={() => setIsOpen(false)}
-                                    title="Cerrar"
-                                    className="p-1.5 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                                    title="Cerrar asistente"
+                                    className="p-2 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
                                 >
-                                    <FiX size={17} />
+                                    <FiX size={19} />
                                 </button>
                             </div>
                         </div>
 
                         {/* Banner con enlace rápido de WhatsApp */}
-                        <div className="bg-slate-50 border-b border-slate-100 px-4 py-2 flex items-center justify-between text-[11px] text-slate-600">
+                        <div className="bg-slate-50 border-b border-slate-100 px-3.5 py-2 sm:px-4 flex items-center justify-between text-[11px] text-slate-600 shrink-0">
                             <span className="flex items-center gap-1 font-medium">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                                 ¿Prefieres hablar con un humano?
@@ -277,14 +296,14 @@ export default function LandingAiAssistant({ config }) {
                         </div>
 
                         {/* Cuerpo de Mensajes */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-gradient-to-b from-slate-50/50 via-white to-white scrollbar-thin scrollbar-thumb-slate-200">
+                        <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-3.5 bg-gradient-to-b from-slate-50/50 via-white to-white scrollbar-thin scrollbar-thumb-slate-200">
                             {messages.map(msg => (
                                 <div
                                     key={msg.id}
                                     className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
                                 >
                                     <div
-                                        className={`max-w-[88%] rounded-2xl p-3.5 ${
+                                        className={`max-w-[92%] sm:max-w-[85%] rounded-2xl p-3 sm:p-3.5 ${
                                             msg.sender === 'user'
                                                 ? 'bg-blue-600 text-white rounded-br-xs shadow-sm font-medium text-xs sm:text-[13px]'
                                                 : 'bg-white border border-slate-200/90 text-slate-800 rounded-tl-xs shadow-[0_2px_8px_rgba(0,0,0,0.04)]'
@@ -357,7 +376,7 @@ export default function LandingAiAssistant({ config }) {
                         </div>
 
                         {/* Input Footer */}
-                        <div className="p-3 bg-white border-t border-slate-200/80">
+                        <div className="p-2.5 sm:p-3 bg-white border-t border-slate-200/80 shrink-0">
                             <form
                                 onSubmit={(e) => {
                                     e.preventDefault();
@@ -376,14 +395,14 @@ export default function LandingAiAssistant({ config }) {
                                 <button
                                     type="submit"
                                     disabled={!inputText.trim() || loading}
-                                    className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center justify-center shrink-0 shadow-sm transition-all cursor-pointer"
+                                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed text-white flex items-center justify-center shrink-0 shadow-sm transition-all cursor-pointer"
                                     title="Enviar pregunta"
                                 >
                                     <FiSend size={15} />
                                 </button>
                             </form>
                             <div className="mt-1.5 flex items-center justify-between px-1">
-                                <span className="text-[10px] text-slate-400 font-medium">OdontoCloud IA • Certificado para Odontología</span>
+                                <span className="text-[10px] text-slate-400 font-medium">OdontoIA • Certificado para Odontología</span>
                                 <button
                                     type="button"
                                     onClick={handleOpenTrial}
@@ -398,7 +417,7 @@ export default function LandingAiAssistant({ config }) {
             </AnimatePresence>
 
             {/* Botón Flotante Principal (Trigger) */}
-            <div className="flex items-center gap-2">
+            <div className={`items-center gap-2 ${isOpen && !isMinimized ? 'hidden sm:flex' : 'flex'}`}>
                 {/* Tooltip de sugerencia cuando está cerrado */}
                 {!isOpen && (
                     <motion.div
@@ -409,7 +428,7 @@ export default function LandingAiAssistant({ config }) {
                         className="hidden md:flex items-center gap-2 bg-slate-900/95 backdrop-blur-md text-white text-xs font-semibold py-2 px-3.5 rounded-full shadow-lg border border-white/10 cursor-pointer hover:bg-slate-900 transition-all"
                     >
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        <span>OdontoCloud IA • Chatea con nuestro asesor</span>
+                        <span>OdontoIA • Chatea con nuestro asesor</span>
                     </motion.div>
                 )}
 
@@ -424,18 +443,18 @@ export default function LandingAiAssistant({ config }) {
                             setIsMinimized(false);
                         }
                     }}
-                    className={`relative p-4 rounded-full shadow-[0_10px_25px_rgba(2,132,199,0.35)] transition-all duration-300 flex items-center justify-center cursor-pointer ${
+                    className={`relative p-3.5 sm:p-4 rounded-full shadow-[0_10px_25px_rgba(2,132,199,0.35)] transition-all duration-300 flex items-center justify-center cursor-pointer ${
                         isOpen && !isMinimized
                             ? 'bg-slate-900 text-white'
                             : 'bg-gradient-to-r from-[#0284c7] via-[#022a63] to-[#0284c7] bg-[length:200%_auto] text-white hover:shadow-[0_12px_30px_rgba(2,132,199,0.5)]'
                     }`}
-                    title={isOpen ? "Cerrar asistente" : "OdontoCloud IA • Abrir asesor virtual"}
+                    title={isOpen ? "Cerrar asistente" : "OdontoIA • Abrir asesor virtual"}
                 >
                     {isOpen && !isMinimized ? (
-                        <FiX size={26} />
+                        <FiX size={24} />
                     ) : (
                         <>
-                            <HiSparkles size={26} className="text-cyan-300 animate-pulse" />
+                            <HiSparkles size={24} className="text-cyan-300 animate-pulse" />
                             <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full"></span>
                         </>
                     )}
