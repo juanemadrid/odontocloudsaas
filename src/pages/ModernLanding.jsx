@@ -67,6 +67,8 @@ export default function ModernLanding({ previewConfig, isMaster = false, section
                 }
             }, 300);
         }
+    }, [location]);
+
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         if (params.get('openTrial') === 'true') {
@@ -85,6 +87,7 @@ export default function ModernLanding({ previewConfig, isMaster = false, section
         return () => window.removeEventListener('open-trial-modal', handleOpenTrialEvent);
     }, []);
 
+    useEffect(() => {
         if (previewConfig) {
             setConfig({ ...previewConfig });
             setLoading(false);
