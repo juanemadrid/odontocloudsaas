@@ -533,7 +533,6 @@ export const dispatchWelcomeEmail = async (
 
 
 const GLOBAL_CONFIG_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
-const ODONTOCLOUD_RESET_URL = "https://odontocloudcolombia.com/reset-password";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

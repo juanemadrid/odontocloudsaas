@@ -1109,10 +1109,25 @@ const invokeRegisterClinic = async (action, payload = {}) => {
     if (error) {
         let message = error.message || "No fue posible completar la operacion de clinicas.";
         try {
-            const details = await error.context?.json();
-            message = details?.error || message;
+            if (error.context) {
+                const cloned = typeof error.context.clone === "function" ? error.context.clone() : error.context;
+                if (typeof cloned.json === "function") {
+                    const details = await cloned.json();
+                    if (details?.error) message = details.error;
+                    else if (details?.msg) message = details.msg;
+                } else if (typeof cloned.text === "function") {
+                    const text = await cloned.text();
+                    try {
+                        const parsed = JSON.parse(text);
+                        if (parsed?.error) message = parsed.error;
+                        else if (parsed?.msg) message = parsed.msg;
+                    } catch {
+                        if (text) message = text;
+                    }
+                }
+            }
         } catch {
-            // La respuesta de Functions puede no incluir JSON.
+            // Ignorar fallos al parsear el cuerpo del error
         }
         throw new Error(message);
     }
