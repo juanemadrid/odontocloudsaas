@@ -254,11 +254,15 @@ export default function ConfigEmpresa() {
             setFormData(prev => ({ ...prev, logoUrl: finalUrl }));
 
             if (userProfile?.inquilino) {
-                const { error: tenantError } = await supabase
-                    .from("tenants")
-                    .update({ logo_url: finalUrl })
-                    .eq("id", userProfile.inquilino);
-                if (tenantError) throw tenantError;
+                try {
+                    const { error: tenantError } = await supabase
+                        .from("tenants")
+                        .update({ logo_url: finalUrl })
+                        .eq("id", userProfile.inquilino);
+                    if (tenantError) console.warn("Aviso al actualizar logo_url en tenants:", tenantError.message);
+                } catch (tErr) {
+                    console.warn("Excepción al actualizar tenants:", tErr);
+                }
 
                 const companyConfig = await getConfigSection(
                     userProfile.inquilino,
