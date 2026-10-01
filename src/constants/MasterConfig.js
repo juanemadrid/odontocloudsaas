@@ -254,7 +254,7 @@ export const MASTER_CONFIG = {
                 "🌐 Sitio Web Corporativo GRATIS incluido (CMS)",
                 "Hasta 4 usuarios incluidos",
                 "Todo lo incluido en el Plan Consultorio",
-                "Facturación Electrónica DIAN oficial (300 documentos/año)",
+                "Facturación Electrónica DIAN oficial (400 documentos/año)",
                 "Generación de RIPS JSON oficial (Resolución 2275 de 2023)",
                 "Múltiples sedes y sucursales incluidas GRATIS",
                 "Notas crédito y Documento Soporte electrónico DIAN",

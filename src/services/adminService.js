@@ -172,9 +172,9 @@ export const updateTenantDetails = async (tenantId, updates) => {
                 const updatedPlanId = updates.planId || updates.plan || t.planId || t.plan;
                 let cuotaFacturas = updates.facturacionCuota !== undefined ? updates.facturacionCuota : t.facturacionCuota;
                 if (updates.facturacionCuota === undefined && (updates.planId || updates.plan)) {
-                    if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico") || updatedPlanId.includes("consultorio")) cuotaFacturas = 100;
-                    else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 2000;
-                    else cuotaFacturas = 500;
+                    if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico") || updatedPlanId.includes("consultorio") || updatedPlanId.includes("trial") || updatedPlanId.includes("demo") || updatedPlanId.includes("free")) cuotaFacturas = 0;
+                    else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 1000;
+                    else cuotaFacturas = 400;
                 }
 
                 return {
@@ -202,9 +202,9 @@ export const updateTenantDetails = async (tenantId, updates) => {
         if (!foundInConfig) {
             let { data: dbT } = await supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle();
             const updatedPlanId = updates.planId || updates.plan || dbT?.plan || "free";
-            let cuotaFacturas = 500;
-            if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico") || updatedPlanId.includes("consultorio")) cuotaFacturas = 100;
-            else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 2000;
+            let cuotaFacturas = 400;
+            if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico") || updatedPlanId.includes("consultorio") || updatedPlanId.includes("trial") || updatedPlanId.includes("demo") || updatedPlanId.includes("free")) cuotaFacturas = 0;
+            else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 1000;
 
             updatedTenants.push({
                 id: String(tenantId),
@@ -449,7 +449,7 @@ export const OFFICIAL_DEFAULT_PLANS = [
             "🌐 Sitio Web Corporativo GRATIS incluido (CMS)",
             "Hasta 4 usuarios incluidos (Tarifa Plana Fija)",
             "Todo lo incluido en el Plan Consultorio",
-            "Facturación Electrónica DIAN oficial (300 documentos/año)",
+            "Facturación Electrónica DIAN oficial (400 documentos/año)",
             "Generación de RIPS JSON oficial (Resolución 2275 de 2023)",
             "Múltiples sedes y sucursales incluidas GRATIS",
             "Notas crédito y Documento Soporte electrónico DIAN",
@@ -888,11 +888,11 @@ export const updateTenantPlan = async (tenantId, planId, planDuration = "monthly
         }
 
         const pLower = (planId || "").toLowerCase();
-        let cuotaFacturas = 500;
-        if (pLower.includes("basic") || pLower.includes("basico") || pLower.includes("consultorio")) {
-            cuotaFacturas = 100;
+        let cuotaFacturas = 400;
+        if (pLower.includes("basic") || pLower.includes("basico") || pLower.includes("consultorio") || pLower.includes("trial") || pLower.includes("demo") || pLower.includes("free")) {
+            cuotaFacturas = 0;
         } else if (pLower.includes("enterprise") || pLower.includes("ips") || pLower.includes("349")) {
-            cuotaFacturas = 2000;
+            cuotaFacturas = 1000;
         }
 
         // 1. Actualizar o agregar en website_config (registered_tenants)
@@ -1048,7 +1048,7 @@ export const grantFreeMonth = async (tenantId) => {
                 activo: true,
                 status: "active",
                 subscriptionStatus: "active",
-                facturacionCuota: 100,
+                facturacionCuota: 0,
                 facturacionUsadas: 0,
                 createdAt: dbTenant?.created_at || now.toISOString()
             });

@@ -1075,7 +1075,9 @@ Deno.serve(async (request) => {
     const subscriptionEndDate = new Date(
       createdAt.getTime() + subscriptionDays * 24 * 60 * 60 * 1000,
     );
-    const invoiceQuota = plan === "enterprise" ? 2000 : plan === "pro" ? 500 : 100;
+    const cleanPlan = String(plan || "").toLowerCase();
+    const isNoInvoicePlan = !cleanPlan || cleanPlan.includes("trial") || cleanPlan.includes("demo") || cleanPlan.includes("consultorio") || cleanPlan.includes("free") || cleanPlan.includes("standard");
+    const invoiceQuota = isNoInvoicePlan ? 0 : (cleanPlan.includes("enterprise") ? 1000 : 400);
     const tenantEntry = {
       id: tenant.id,
       nombre: clinicName,

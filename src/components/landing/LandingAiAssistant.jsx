@@ -204,13 +204,13 @@ export default function LandingAiAssistant({ config }) {
 
     return (
         <div
-            className={`fixed z-[95] font-sans transition-all duration-300 ${
+            className={`font-sans transition-all duration-300 ${
                 isOpen && !isMinimized
-                    ? "inset-2 sm:inset-auto sm:bottom-6 sm:right-6 flex flex-col justify-end items-end"
-                    : "bottom-4 right-4 sm:bottom-6 sm:right-6"
+                    ? "fixed inset-0 sm:inset-auto sm:bottom-6 sm:right-6 z-[99999] flex flex-col justify-end items-end"
+                    : "fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[99999]"
             }`}
         >
-            {/* Backdrop en móviles para enfocar 100% la atención en el chat */}
+            {/* Backdrop en móviles para oscurecer la web y enfocar 100% el chat */}
             <AnimatePresence>
                 {isOpen && !isMinimized && (
                     <motion.div
@@ -218,22 +218,22 @@ export default function LandingAiAssistant({ config }) {
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => setIsOpen(false)}
-                        className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] sm:hidden -z-10"
+                        className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs sm:hidden -z-10"
                     />
                 )}
             </AnimatePresence>
 
-            {/* Ventana de Chat Expandida (En móviles ocupa casi toda la pantalla) */}
+            {/* Ventana de Chat Expandida: Pantalla Completa Fija en Móvil (sin saltos ni zoom) */}
             <AnimatePresence>
                 {isOpen && !isMinimized && (
                     <motion.div
-                        initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 20, scale: 0.97 }}
-                        transition={{ duration: 0.22, ease: "easeOut" }}
-                        className="w-full h-full max-h-[100dvh] sm:w-[430px] sm:h-[620px] sm:max-h-[calc(100vh-5.5rem)] bg-white rounded-2xl sm:rounded-3xl shadow-[0_25px_60px_rgba(2,42,99,0.35)] border border-slate-200/90 flex flex-col overflow-hidden sm:mb-3"
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 15 }}
+                        transition={{ duration: 0.2 }}
+                        className="w-full h-full max-h-[100dvh] sm:w-[430px] sm:h-[620px] sm:max-h-[calc(100vh-5.5rem)] bg-white rounded-none sm:rounded-3xl shadow-[0_25px_60px_rgba(2,42,99,0.35)] border-0 sm:border sm:border-slate-200/90 flex flex-col overflow-hidden sm:mb-3"
                     >
-                        {/* Header Premium */}
+                        {/* Header Premium con Botón Cerrar Ultra Visible */}
                         <div className="bg-gradient-to-r from-[#022a63] via-[#034199] to-[#0284c7] px-4 py-3 sm:px-5 sm:py-4 text-white flex items-center justify-between shadow-md shrink-0">
                             <div className="flex items-center gap-2.5 sm:gap-3">
                                 <div className="relative">
@@ -248,32 +248,35 @@ export default function LandingAiAssistant({ config }) {
                                         <span className="px-1.5 py-0.5 bg-cyan-400/20 text-cyan-200 font-bold text-[9px] rounded uppercase tracking-wider border border-cyan-300/30">Oficial</span>
                                     </div>
                                     <p className="text-[11px] text-cyan-100/90 font-medium m-0 flex items-center gap-1">
-                                        <span>Asesor inteligente y soporte en vivo</span>
+                                        <span>Asesor inteligente OdontoCloud</span>
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-0.5 sm:gap-1 text-white/80">
+                            <div className="flex items-center gap-1.5 text-white/90">
                                 <button
                                     onClick={handleReset}
                                     title="Reiniciar chat"
-                                    className="p-2 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+                                    className="p-2 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
                                 >
                                     <FiRefreshCw size={15} />
                                 </button>
                                 <button
                                     onClick={() => setIsMinimized(true)}
                                     title="Minimizar"
-                                    className="p-2 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+                                    className="hidden sm:inline-flex p-2 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
                                 >
                                     <FiMinimize2 size={16} />
                                 </button>
+                                {/* Botón Cerrar Destacado y Fácil de Tocar */}
                                 <button
+                                    type="button"
                                     onClick={() => setIsOpen(false)}
-                                    title="Cerrar asistente"
-                                    className="p-2 sm:p-1.5 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+                                    title="Cerrar chat"
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer"
                                 >
-                                    <FiX size={19} />
+                                    <FiX size={17} />
+                                    <span className="font-bold uppercase text-[10px] tracking-wider">Cerrar</span>
                                 </button>
                             </div>
                         </div>
@@ -375,7 +378,7 @@ export default function LandingAiAssistant({ config }) {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Input Footer */}
+                        {/* Input Footer: Tamaño de fuente a 16px para evitar auto-zoom del navegador en móvil */}
                         <div className="p-2.5 sm:p-3 bg-white border-t border-slate-200/80 shrink-0">
                             <form
                                 onSubmit={(e) => {
@@ -389,7 +392,8 @@ export default function LandingAiAssistant({ config }) {
                                     value={inputText}
                                     onChange={(e) => setInputText(e.target.value)}
                                     placeholder="Pregunta sobre planes, DIAN, RIPS o funciones..."
-                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 focus:border-blue-600 transition-all font-medium"
+                                    style={{ fontSize: "16px" }}
+                                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 focus:border-blue-600 transition-all font-medium"
                                     disabled={loading}
                                 />
                                 <button
