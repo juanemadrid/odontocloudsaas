@@ -42,7 +42,7 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             } catch (e) {}
         }
 
-        // Fallback 2: website_config — usando caché compartida
+        // Fallback 2: website_config — usando cache compartida
         if (pagos.length === 0 && tenantId) {
             try {
                 const cfgPagos = await getConfigSectionCached(tenantId, "pagos", []);
@@ -52,6 +52,60 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                     p.patient_id === patientId || 
                     p.patientId === patientId
                 );
+            } catch (e) {}
+        }
+
+        // Cargar devoluciones de saldo a favor registradas como egreso para este paciente
+        if (tenantId) {
+            try {
+                let provDevs = [];
+                try {
+                    const { data: provDb } = await supabase
+                        .from("pagos_proveedor")
+                        .select("*")
+                        .eq("tenant_id", tenantId);
+                    if (provDb && provDb.length > 0) provDevs = provDb;
+                } catch (_) {}
+
+                if (provDevs.length === 0) {
+                    const cfgProv = await getConfigSectionCached(tenantId, "pagos_proveedor", []);
+                    if (Array.isArray(cfgProv)) provDevs = cfgProv;
+                }
+
+                const filteredProvDevs = (provDevs || []).filter(prov => {
+                    const c = (prov.concepto || prov.observaciones || "").toUpperCase();
+                    return c.includes("DEVOLUCI") && c.includes("SALDO");
+                });
+
+                filteredProvDevs.forEach(prov => {
+                    const exists = pagos.some(p => p.id === prov.id || (p.referencia && prov.numero && p.referencia.includes(prov.numero)));
+                    if (!exists) {
+                        pagos.push({
+                            id: prov.id || `dev_prov_${Date.now()}`,
+                            paciente_id: patientId,
+                            pacienteId: patientId,
+                            tenant_id: tenantId,
+                            monto: Number(prov.monto || prov.total || 0),
+                            total: Number(prov.monto || prov.total || 0),
+                            fecha: prov.fecha || prov.created_at,
+                            created_at: prov.created_at || prov.fecha,
+                            metodo: prov.medioPago || "Efectivo",
+                            medio: prov.medioPago || "Efectivo",
+                            referencia: `DEVOLUCIÓN SALDO A FAVOR - EGR-${String(prov.consecutivo || prov.numero || "0001").padStart(4, "0")}`,
+                            nro_consecutivo: String(prov.consecutivo || prov.numero || "1"),
+                            consecutivo: prov.consecutivo || prov.numero,
+                            notas: JSON.stringify({
+                                concepto: "Devolución saldo a favor",
+                                tipo: "egreso",
+                                tipoDocumento: "Egreso",
+                                observaciones: prov.observaciones || "Devolución saldo a favor",
+                                nroConsecutivo: `EGR-${String(prov.consecutivo || prov.numero || "0001").padStart(4, "0")}`
+                            }),
+                            estado: "Activo",
+                            tipo: "egreso"
+                        });
+                    }
+                });
             } catch (e) {}
         }
 
@@ -175,12 +229,16 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             const ref = (p.referencia || p.concepto || "").toUpperCase();
             const notes = (p.notas || p.notes || "").toUpperCase();
             const method = (p.metodo || p.medio || "").toLowerCase();
-            return method !== "saldo a favor" && (ref === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR")) && isNotAnulado(p);
+            const tipo = (p.tipo || "").toLowerCase();
+            return method !== "saldo a favor" && tipo !== "egreso" && !ref.includes("DEVOLUCI") && !notes.includes("DEVOLUCI") && (ref === "SALDO A FAVOR" || notes.includes("SALDO A FAVOR")) && isNotAnulado(p);
         };
 
         const isCreditUsed = (p) => {
             const m = (p.metodo || p.medio || "").toLowerCase();
-            return m === "saldo a favor" && isNotAnulado(p);
+            const ref = (p.referencia || p.concepto || "").toUpperCase();
+            const notes = (p.notas || p.notes || "").toUpperCase();
+            const isDevolucion = ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (p.tipo === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
+            return (m === "saldo a favor" || isDevolucion) && isNotAnulado(p);
         };
 
         const totalDebito = notasDebito
@@ -200,7 +258,9 @@ export const getPatientFinancials = async (patientId, tenantId) => {
             .filter(p => isCreditUsed(p))
             .reduce((acc, p) => acc + p.monto, 0);
 
-        const totalSaldosAFavor = Math.max(0, Math.max(patientSaldoFavor, totalCredits) - usedCredits);
+        const totalSaldosAFavor = (pacData && pacData.saldo_favor != null)
+            ? Number(pacData.saldo_favor)
+            : Math.max(0, Math.max(patientSaldoFavor, totalCredits) - usedCredits);
         const totalAbonosTratamiento = pagos
             .filter(p => !isCreditTopUp(p) && !isCreditUsed(p) && isNotAnulado(p))
             .reduce((acc, p) => acc + p.monto, 0);

@@ -207,8 +207,9 @@ export default function SaldoTab({ patient }) {
     const creditPayments = pagos.filter(p => {
         const ref = (p.referencia || p.concepto || "").toUpperCase();
         const notes = (p.notas || p.notes || "").toUpperCase();
+        const tipo = (p.tipo || "").toLowerCase();
         const isAnulado = (p.estado || "").toLowerCase() === "anulado" || ref.includes("ANULADO") || notes.includes("ANULADO");
-        return isAnulado || ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR");
+        return isAnulado || ref.includes("SALDO A FAVOR") || notes.includes("SALDO A FAVOR") || ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipo === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
     });
 
     const filteredCredits = creditPayments.filter(p => 
@@ -263,7 +264,12 @@ export default function SaldoTab({ patient }) {
                                     filteredCredits.map(pago => {
                                         const dateStr = pago.fechaISO ? new Date(pago.fechaISO).toLocaleDateString('es-CO') : "—";
                                         const isVoided = pago.estado === "Anulado";
+                                        const ref = (pago.referencia || pago.concepto || "").toUpperCase();
+                                        const notes = (pago.notas || pago.notes || "").toUpperCase();
+                                        const tipo = (pago.tipo || "").toLowerCase();
+                                        const isDevolucion = ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipo === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
                                         const isUsage = (pago.medio || pago.metodo || "").toLowerCase() === "saldo a favor";
+                                        const isSalida = isUsage || isDevolucion;
                                         const displayNotes = getDisplayNotes(pago);
                                         return (
                                             <tr key={pago.id} className={`transition-colors group ${isVoided ? 'bg-rose-50/10 hover:bg-rose-50/20' : 'hover:bg-slate-50/50'}`}>
@@ -285,11 +291,10 @@ export default function SaldoTab({ patient }) {
                                                     <span className={`inline-block whitespace-nowrap px-3 py-1 rounded-full ${
                                                         isVoided 
                                                             ? 'bg-rose-50 text-rose-600 border border-rose-100/50' 
-                                                            : isUsage 
-                                                                ? 'bg-amber-50 text-amber-700 border border-amber-200/60'
+                                                            : isDevolucion ? 'bg-rose-50 text-rose-700 border border-rose-200/60' : isUsage ? 'bg-amber-50 text-amber-700 border border-amber-200/60'
                                                                 : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
                                                     }`}>
-                                                        {isUsage ? "USO DE SALDO" : (pago.medio || pago.metodo || "EFECTIVO")}
+                                                        {isDevolucion ? "EGRESO" : isUsage ? "USO DE SALDO" : (pago.medio || pago.metodo || "EFECTIVO")}
                                                     </span>
                                                 </td>
                                                 <td className="py-5 px-6 uppercase">
@@ -308,11 +313,10 @@ export default function SaldoTab({ patient }) {
                                                 <td className={`py-5 px-6 text-right font-black font-mono ${
                                                     isVoided 
                                                         ? 'text-rose-400/80 line-through' 
-                                                        : isUsage 
-                                                            ? 'text-amber-600' 
+                                                        : isSalida ? 'text-rose-600' 
                                                             : 'text-emerald-600'
                                                 }`}>
-                                                    {isUsage ? `- $ ${formatCurrency(pago.monto || 0)}` : `+ $ ${formatCurrency(pago.monto || 0)}`}
+                                                    {isSalida ? `- $ ${formatCurrency(pago.monto || 0)}` : `+ $ ${formatCurrency(pago.monto || 0)}`}
                                                 </td>
                                                 <td className="py-5 px-8 text-center">
                                                     {isVoided ? (

@@ -220,7 +220,7 @@ export default function SaldoFavorList({ onNew }) {
         const m = (p.metodo || p.medio || "").toLowerCase();
         const c = (p.concepto || p.referencia || p.notas || "").toUpperCase();
         const tipoStr = (p.tipo || "").toLowerCase();
-        return m === "saldo a favor" || c.includes("DEVOLUCIÓN SALDO A FAVOR") || c.includes("DEVOLUCION SALDO A FAVOR") || (tipoStr === "egreso" && c.includes("SALDO A FAVOR"));
+        return m === "saldo a favor" || c.includes("DEVOLUCI") || (tipoStr === "egreso" && (c.includes("SALDO") || c.includes("A FAVOR")));
     };
 
     const filteredTerceros = useMemo(() => {
@@ -317,7 +317,74 @@ export default function SaldoFavorList({ onNew }) {
                 .from("pacientes")
                 .select("*")
                 .eq("tenant_id", inquilino);
-            setPacientes(pacList || []);
+            const loadedPacientes = pacList || [];
+            setPacientes(loadedPacientes);
+
+            // Cargar devoluciones desde pagos_proveedor para sincronizar egresos históricos
+            let provList = [];
+            try {
+                const { data: provDb } = await supabase
+                    .from("pagos_proveedor")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                if (provDb && provDb.length > 0) provList = provDb;
+            } catch (_) {}
+
+            if (provList.length === 0) {
+                try {
+                    const cfgProv = await getConfigSection(inquilino, "pagos_proveedor", []);
+                    if (Array.isArray(cfgProv)) provList = cfgProv;
+                } catch (_) {}
+            }
+
+            const devolucionesAsPagos = [];
+            (provList || []).forEach(prov => {
+                const c = (prov.concepto || prov.observaciones || "").toUpperCase();
+                if (c.includes("DEVOLUCI") && c.includes("SALDO")) {
+                    const egrNum = prov.consecutivo || prov.numero || "1";
+                    const egrDocLabel = `EGR-${String(egrNum).padStart(4, '0')}`;
+                    const exists = pList.some(p => p.id === prov.id || (p.referencia && (p.referencia.includes(egrDocLabel) || p.referencia.includes(String(egrNum)))));
+                    if (!exists) {
+                        const matchPac = loadedPacientes.find(pac => {
+                            const pDoc = pac.documento || pac.nroDocumento || pac.cedula;
+                            const pName = (pac.nombreCompleto || `${pac.nombres || ''} ${pac.apellidos || ''}`).trim().toLowerCase();
+                            const provTercero = (prov.tercero || prov.proveedor || '').toLowerCase();
+                            return (prov.documentoTercero && pDoc && prov.documentoTercero === pDoc) || (provTercero && pName && (provTercero.includes(pName) || pName.includes(provTercero)));
+                        });
+                        if (matchPac) {
+                            devolucionesAsPagos.push({
+                                id: prov.id || `dev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                tenant_id: inquilino,
+                                paciente_id: matchPac.id,
+                                pacienteId: matchPac.id,
+                                paciente_nombre: matchPac.nombreCompleto || `${matchPac.nombres || ''} ${matchPac.apellidos || ''}`.trim(),
+                                pacienteNombre: matchPac.nombreCompleto || `${matchPac.nombres || ''} ${matchPac.apellidos || ''}`.trim(),
+                                monto: Number(prov.monto || prov.total || 0),
+                                total: Number(prov.monto || prov.total || 0),
+                                tipo: "egreso",
+                                metodo: prov.medioPago || "Efectivo",
+                                medio: prov.medioPago || "Efectivo",
+                                referencia: `DEVOLUCIÓN SALDO A FAVOR - ${egrDocLabel}`,
+                                nro_consecutivo: String(egrNum),
+                                consecutivo: egrNum,
+                                notas: JSON.stringify({
+                                    concepto: "Devolución saldo a favor",
+                                    tipo: "egreso",
+                                    tipoDocumento: "Egreso",
+                                    observaciones: prov.observaciones || "Devolución saldo a favor",
+                                    bancoCaja: prov.bancoCaja || "Caja Principal",
+                                    nroConsecutivo: egrDocLabel
+                                }),
+                                estado: "Activo",
+                                fecha: prov.fecha || prov.created_at
+                            });
+                        }
+                    }
+                }
+            });
+            if (devolucionesAsPagos.length > 0) {
+                pList = [...pList, ...devolucionesAsPagos];
+            }
 
             await loadCajasBancos();
         } catch (e) {
@@ -344,17 +411,20 @@ export default function SaldoFavorList({ onNew }) {
                 .filter(p => isCreditTopUp(p))
                 .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
-            // Total credit used
-            const usedCredits = pacPayments
+            // Total credit used (consumos + devoluciones)
+            const usedCreditsCalculated = pacPayments
                 .filter(p => isCreditUsed(p))
                 .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
             // Available credit (prioritizes active patient profile saldo_favor, verified with ledger)
             const patientSaldoFavor = Number(pac.saldo_favor ?? pac.saldoFavor ?? 0);
-            const ledgerAvailable = Math.max(0, totalCredits - usedCredits);
+            const ledgerAvailable = Math.max(0, totalCredits - usedCreditsCalculated);
             const availableCredit = (pac.saldo_favor !== undefined && pac.saldo_favor !== null)
                 ? patientSaldoFavor
                 : ledgerAvailable;
+
+            // El valor usado refleja todos los consumos y devoluciones aplicadas
+            const usedCredits = Math.max(usedCreditsCalculated, Math.max(0, totalCredits - availableCredit));
 
             // Get date of the latest credit top-up
             const creditDates = pacPayments
@@ -426,15 +496,16 @@ export default function SaldoFavorList({ onNew }) {
             .filter(p => isCreditTopUp(p))
             .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
-        const usado = pacPayments
+        const usedCalculated = pacPayments
             .filter(p => isCreditUsed(p))
             .reduce((sum, p) => sum + Number(p.monto || 0), 0);
             
         const patientSaldoFavor = Number(selectedPaciente.saldo_favor ?? selectedPaciente.saldoFavor ?? 0);
-        const ledgerAvailable = Math.max(0, total - usado);
+        const ledgerAvailable = Math.max(0, total - usedCalculated);
         const disponible = (selectedPaciente.saldo_favor !== undefined && selectedPaciente.saldo_favor !== null)
             ? patientSaldoFavor
             : ledgerAvailable;
+        const usado = Math.max(usedCalculated, Math.max(0, total - disponible));
         return { disponible, usado, total };
     }, [selectedPaciente, pagos]);
 
@@ -532,8 +603,9 @@ export default function SaldoFavorList({ onNew }) {
             const m = (p.metodo || p.medio || "").toLowerCase();
             const ref = (p.referencia || p.concepto || "").toUpperCase();
             const notes = (p.notas || p.notes || "").toUpperCase();
-            const isDevolucion = ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI");
-            const isConsumo = m === "saldo a favor" || ref.includes("USO SALDO") || ref.includes("CONSUMO SALDO") || notes.includes("CONSUMO SALDO") || notes.includes("USO SALDO");
+            const tipoStr = (p.tipo || "").toLowerCase();
+            const isDevolucion = ref.includes("DEVOLUCI") || notes.includes("DEVOLUCI") || (tipoStr === "egreso" && (ref.includes("SALDO") || notes.includes("SALDO")));
+            const isConsumo = !isDevolucion && (m === "saldo a favor" || ref.includes("USO SALDO") || ref.includes("CONSUMO SALDO") || notes.includes("CONSUMO SALDO") || notes.includes("USO SALDO"));
             const isTopUp = !isConsumo && !isDevolucion;
             const isVoid = !isNotAnulado(p);
             const motivo = p.motivoAnulacion || p.motivo_anulacion || (p.notas && p.notas.includes("ANULADO") ? p.notas.replace(/^ANULADO\s*-\s*/i, "") : "");
@@ -624,6 +696,28 @@ export default function SaldoFavorList({ onNew }) {
                 .single();
             if (!patientData) {
                 toast.error("No se pudo cargar la información del paciente");
+                return;
+            }
+
+            const refStr = (pago.referencia || pago.concepto || "").toUpperCase();
+            const notesStr = (pago.notas || pago.notes || "").toUpperCase();
+            const tipoStr = (pago.tipo || "").toLowerCase();
+            const isDevolucion = refStr.includes("DEVOLUCI") || notesStr.includes("DEVOLUCI") || (tipoStr === "egreso" && (refStr.includes("SALDO") || notesStr.includes("SALDO")));
+
+            if (isDevolucion) {
+                let parsedN = null;
+                if (pago.notas && typeof pago.notas === "string" && pago.notas.trim().startsWith("{")) {
+                    try { parsedN = JSON.parse(pago.notas); } catch (_) {}
+                }
+                const consVal = pago.nroConsecutivo || pago.nro_consecutivo || pago.consecutivo || parsedN?.nroConsecutivo || "1";
+                printComprobanteEgreso({
+                    consecutivo: String(consVal).replace(/^EGR-/i, ""),
+                    bancoCaja: pago.bancoCaja || parsedN?.bancoCaja || "Caja Principal",
+                    medioPago: pago.metodo || pago.medio || parsedN?.medio || "Efectivo",
+                    concepto: "Devolución saldo a favor",
+                    monto: Number(pago.monto || pago.total || 0),
+                    observaciones: parsedN?.observaciones || pago.notas || "Devolución saldo a favor"
+                }, patientData);
                 return;
             }
             
@@ -1135,37 +1229,64 @@ export default function SaldoFavorList({ onNew }) {
                 console.warn("Error actualizando saldo_favor en paciente:", errP);
             }
 
-            // 3. Insertar pago tipo egreso en pagos (para auditoría y reflejo en saldos a favor)
-            const pagoEgreso = {
-                tenant_id: inquilino,
-                inquilino: inquilino,
-                paciente_id: patientObj.id,
-                pacienteId: patientObj.id,
-                paciente_nombre: pacName,
-                pacienteNombre: pacName,
-                monto: montoNum,
-                total: montoNum,
-                tipo: "egreso",
-                metodo: selectedMedioPago,
-                medio: selectedMedioPago,
-                medioPago: selectedMedioPago,
-                bancoCaja: selectedCajaBanco,
+            // 3. Insertar pago tipo egreso en pagos (con columnas válidas en PostgreSQL Supabase)
+            const nowIso = new Date().toISOString();
+            const pagoId = `pago_dev_${Date.now()}`;
+            const metadataNotas = {
                 concepto: "Devolución saldo a favor",
+                tipo: "egreso",
+                tipoDocumento: "Egreso",
+                observaciones: observacionesDevolucion || "Devolución saldo a favor",
+                bancoCaja: selectedCajaBanco,
+                medio: selectedMedioPago,
                 referencia: egrDocLabel,
                 nroConsecutivo: egrDocLabel,
                 consecutivo: consecutivoNum,
-                notas: `${observacionesDevolucion || 'Devolución saldo a favor'} | ${selectedCajaBanco} | ${selectedMedioPago}`,
+                pacienteId: patientObj.id,
+                pacienteNombre: pacName,
+                registradoPor: userProfile?.nombreCompleto || userProfile?.email || "Usuario"
+            };
+
+            const dbPagoEgreso = {
+                id: pagoId,
+                tenant_id: inquilino,
+                fecha: nowIso,
+                paciente_id: patientObj.id,
+                monto: montoNum,
+                metodo: selectedMedioPago,
+                referencia: `DEVOLUCIÓN SALDO A FAVOR - ${egrDocLabel}`,
+                nro_consecutivo: String(consecutivoNum),
+                notas: JSON.stringify(metadataNotas),
                 estado: "Activo",
-                fecha: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-                creadoPor: userProfile?.nombreCompleto || userProfile?.email || "Usuario"
+                created_at: nowIso
             };
 
             try {
-                await supabase.from("pagos").insert([pagoEgreso]);
+                await supabase.from("pagos").insert([dbPagoEgreso]);
             } catch (errPag) {
                 console.warn("Error insertando en pagos:", errPag);
             }
+
+            const fullPagoObj = {
+                ...dbPagoEgreso,
+                ...metadataNotas,
+                total: montoNum,
+                medio: selectedMedioPago,
+                medioPago: selectedMedioPago,
+                bancoCaja: selectedCajaBanco,
+                tipo: "egreso"
+            };
+
+            try {
+                const currentPagos = await getConfigSection(inquilino, "pagos", []);
+                await saveConfigSection(inquilino, "pagos", [
+                    fullPagoObj,
+                    ...(Array.isArray(currentPagos) ? currentPagos : [])
+                ]);
+            } catch (errCfgPag) {
+                console.warn("Error sincronizando pagos en config:", errCfgPag);
+            }
+            setPagos(prev => [fullPagoObj, ...prev]);
 
             // 4. Insertar en pagos_proveedor y sincronizar en config (para Facturación -> Pagos / Egresos)
             const pagoProveedorRecord = {
