@@ -29,6 +29,7 @@ export function sanitizeActionLink(actionLink?: string): string {
   try {
     const raw = new URL(actionLink);
     if (
+      raw.hostname.includes("github.io") ||
       raw.hostname === "supabase-kong" ||
       raw.hostname === "kong" ||
       raw.hostname === "localhost" ||
@@ -39,14 +40,21 @@ export function sanitizeActionLink(actionLink?: string): string {
       raw.protocol = pub.protocol;
       raw.hostname = pub.hostname;
       raw.port = pub.port;
-      return raw.toString();
     }
-    return actionLink;
+    // Forzar que el destino de redirección sea siempre la página oficial de restablecer contraseña
+    raw.searchParams.set("redirect_to", ODONTOCLOUD_RESET_URL);
+    return raw.toString();
   } catch (_e) {
-    return actionLink.replace(
+    let link = actionLink.replace(
       /^https?:\/\/(supabase-kong|kong|localhost|127\.0\.0\.1)(:\d+)?/i,
       publicBase.replace(/\/$/, "")
     );
+    if (link.includes("redirect_to=")) {
+      link = link.replace(/redirect_to=[^&]+/i, `redirect_to=${encodeURIComponent(ODONTOCLOUD_RESET_URL)}`);
+    } else {
+      link += (link.includes("?") ? "&" : "?") + `redirect_to=${encodeURIComponent(ODONTOCLOUD_RESET_URL)}`;
+    }
+    return link;
   }
 }
 

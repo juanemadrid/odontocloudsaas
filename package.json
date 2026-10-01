@@ -2,7 +2,7 @@
   "name": "odontocloud-react",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://juanemadrid.github.io/odontocloudsaas",
+  "homepage": "https://odontocloudcolombia.com",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
