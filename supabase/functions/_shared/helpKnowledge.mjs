@@ -237,11 +237,41 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Consulta las guías de referencia que aparecen debajo de la respuesta.',
     'Si la IA local no está disponible, puedes seguir consultando las guías del sistema.',
   ], 'Esta ayuda no ejecuta operaciones, no accede a expedientes y no utiliza documentación de Edunexus. Las otras funciones de IA clínica tienen su propia configuración.'),
+  guide('planes-suscripcion', 'Suscripción', 'Planes y Precios Oficiales de OdontoCloud', 'planes precios suscripcion plan mensual anual tarifas software consultorio clinica enterprise valor cuanto cuesta suscripcion odontocloud', 'src/pages/landing/PricingPage.jsx', [
+    'Plan Consultorio ($79.900 COP/mes): Para 1 a 3 usuarios. Incluye agenda inteligente con recordatorios por WhatsApp, historia clínica digital completa, odontograma interactivo, consentimientos informados, control de caja y pacientes ilimitados.',
+    'Plan Clínica ($110.000 COP/mes — Más Popular): Para hasta 5 usuarios. Incluye Facturación Electrónica DIAN oficial (300 docs/año), RIPS JSON (Resolución 2275), sitio web corporativo (CMS), múltiples sedes y soporte prioritario. ¡Tiene 30 días de prueba gratis!',
+    'Plan Enterprise ($199.000 COP/mes): Para redes multi-sede, cadenas e IPS odontológicas. Hasta 11 doctores, 1.000 facturas DIAN/año, roles avanzados de auditoría, comisiones médicas y migración asistida de datos.',
+    'Todos los planes incluyen almacenamiento en la nube, copias de seguridad continuas y acceso seguro desde cualquier dispositivo.',
+  ]),
+  guide('prueba-gratis', 'Prueba Gratuita', 'Iniciar Prueba Gratuita de 30 Días', 'prueba gratis demostracion demo probar 30 dias sin costo cuenta registro registrarme empezar comenzar activar', 'src/components/landing/TrialModal.jsx', [
+    'Haz clic en el botón [Solicitar demostración gratuita] o [Comenzar Prueba Gratis] en la página principal.',
+    'Completa tus datos básicos: Tu nombre, nombre de la clínica, correo electrónico y contraseña deseada.',
+    'Selecciona el [Plan Clínica] recomendado para experimentar todas las funciones (incluyendo facturación y RIPS) por 30 días sin costo ni tarjeta de crédito.',
+    'Al enviar el formulario, el equipo activará tu acceso y recibirás un correo oficial de bienvenida para empezar de inmediato.',
+  ]),
+  guide('facturacion-dian-rips', 'Normativa y Facturación', 'Facturación Electrónica DIAN y RIPS JSON en Colombia', 'facturacion electronica dian rips json resolucion 2275 minsalud sispro muv factus colombia norma ley', 'src/constants/MasterConfig.js', [
+    'OdontoCloud está integrado nativamente con Factus, proveedor tecnológico avalado por la DIAN, permitiendo emitir facturas electrónicas, notas crédito y documentos soporte con validación previa en segundos.',
+    'Genera y exporta automáticamente los archivos RIPS en formato JSON cumpliendo estrictamente con la Resolución 2275 de 2023 del Ministerio de Salud, listos para radicar en el MUV / SISPRO.',
+    'Mantiene trazabilidad total: asocia cada cita y procedimiento CUPS con los diagnósticos CIE-10 del paciente y la factura generada.',
+    'Disponible desde el Plan Clínica en adelante.',
+  ]),
+  guide('contacto-soporte', 'Atención y Ventas', 'Contacto Comercial y Asesoría Humana por WhatsApp', 'contacto whatsapp asesor soporte humano telefono numero hablar ventas comprar ayuda llamada', 'src/pages/landing/FAQPage.jsx', [
+    'Si deseas una demostración guiada, resolver dudas específicas o solicitar una cotización especial, nuestro equipo humano te atiende directamente.',
+    'Escríbenos a nuestra línea oficial de WhatsApp: +57 301 576 8935 (o haz clic en el botón de WhatsApp dentro del chat).',
+    'También puedes escribirnos al correo oficial: bienvenido@odontocloudcolombia.com.',
+    'Horario de atención: Lunes a Sábado con soporte técnico permanente para clínicas activas.',
+  ]),
+  guide('seguridad-migracion', 'Tecnología', 'Seguridad en la Nube y Migración de Datos', 'seguridad nube copias backup privacidad datos migrar migracion pasar datos excel importar instalar requisitos', 'src/constants/MasterConfig.js', [
+    'Plataforma 100% en la nube: no requiere instalar nada ni servidores locales. Puedes ingresar desde cualquier computadora, tablet o teléfono con conexión a Internet.',
+    'Seguridad de nivel hospitalario: copias de seguridad automáticas diarias, cifrado de información y aislamiento absoluto entre clínicas.',
+    'Migración asistida: puedes importar tus pacientes existentes desde archivos de Excel en minutos con nuestro importador automático.',
+    'Disponibilidad 24/7 y actualizaciones automáticas sin costo adicional.',
+  ]),
 ];
 
 export const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const stop = new Set('como hago para una uno unos unas los las del que con por puedo quiero necesito donde este esta esto eso cual cuando sistema paso pasos consultar utilizar usar revisar'.split(' '));
-const aliases = { cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar', registro: 'registrar', guardo: 'guardar', cobro: 'cobrar', abro: 'abrir', cierro: 'cerrar' };
+const aliases = { cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar', registro: 'registrar', guardo: 'guardar', cobro: 'cobrar', abro: 'abrir', cierro: 'cerrar', costo: 'precio', costos: 'precios', valor: 'precio', valores: 'precios', cotizacion: 'precio' };
 const tokens = text => [...new Set(normalize(text).split(' ').filter(t => t.length > 2 && !stop.has(t)).map(t => aliases[t] || (t.length > 4 && t.endsWith('s') ? t.slice(0, -1) : t)))];
 export function searchGuides(question, previousIds = []) {
   if (/\bedunexus\b/.test(normalize(question))) return [];

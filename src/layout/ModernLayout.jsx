@@ -7,6 +7,7 @@ import { MASTER_CONFIG } from "../constants/MasterConfig";
 import { DEFAULT_CONFIG } from "../constants/DefaultConfig";
 import { useAuth } from "../context/AuthContext";
 import { FaWhatsapp } from "react-icons/fa";
+import LandingAiAssistant from "../components/landing/LandingAiAssistant";
 import "../styles/modern.css";
 
 
@@ -60,19 +61,8 @@ export default function ModernLayout() {
 
             <VivaFooter config={displayConfig} />
 
-            {/* Floating WhatsApp Support */}
-            <a
-                href={`https://wa.me/57${(displayConfig?.contactPhone || "3001234567").replace(/\D/g, '')}?text=Hola,%20quisiera%20más%20información%20sobre%20sus%20servicios%20en%20${displayConfig?.name || 'la clínica'}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="fixed bottom-8 right-8 z-[90] bg-[#25D366] text-white p-4 rounded-full shadow-[0_10px_20px_rgba(37,211,102,0.3)] hover:bg-[#20bd5a] hover:scale-110 transition-all duration-300 group"
-                title="Habla con soporte"
-            >
-                <FaWhatsapp size={28} />
-                <span className="absolute right-full mr-4 bg-slate-900 text-white text-xs py-2 px-4 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-white/10">
-                    ¿Necesitas ayuda?
-                </span>
-            </a>
+            {/* Floating Intelligent AI Assistant & WhatsApp Support */}
+            <LandingAiAssistant config={displayConfig} />
         </div>
     );
 }

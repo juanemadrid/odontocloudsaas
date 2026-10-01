@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { HELP_GUIDES, searchGuides } from '../supabase/functions/_shared/helpKnowledge.mjs';
-import { createHelpHandler, HelpError } from '../supabase/functions/odontocloud-help/handler.mjs';
+import { createHelpHandler, HelpError, helpPrompt } from '../supabase/functions/odontocloud-help/handler.mjs';
 import { authenticateHelp } from '../supabase/functions/odontocloud-help/auth.mjs';
 
 function mockAdmin({ authError = null, profile = { tenant_id: 'clinic-a', activo: true }, tenant = { id: 'clinic-a', activo: true } } = {}) {
@@ -40,6 +40,10 @@ for (const [question, expected] of [
   ['Registrar una evolución', 'evoluciones'],
   ['No veo el botón por permisos', 'usuarios'],
   ['Validar RIPS al MUV', 'rips'],
+  ['¿Cuáles son los planes de suscripción y precios de OdontoCloud?', 'planes-suscripcion'],
+  ['¿Cómo funciona la prueba gratis?', 'prueba-gratis'],
+  ['Facturación electrónica DIAN y RIPS', 'facturacion-dian-rips'],
+  ['Hablar con asesor por WhatsApp', 'contacto-soporte'],
 ]) assert.equal(searchGuides(question)[0]?.id, expected, question);
 assert.deepEqual(searchGuides('Receta de una torta', ['citas']), []);
 assert.deepEqual(searchGuides('Ver pacientes de Edunexus', ['citas']), []);
@@ -80,6 +84,12 @@ assert.equal(calls.length, 1);
 assert.equal(calls[0].url, 'http://ollama:11434/api/chat');
 assert.equal(calls[0].body.messages.length, 2);
 assert.equal(calls[0].body.model, 'local-test');
+const compactPrompt = calls[0].body.messages[0].content;
+assert.ok(compactPrompt.length < 800, 'General appointment prompt must stay compact');
+assert.ok(compactPrompt.includes('CONFIRMAR REGISTRO'));
+assert.ok(compactPrompt.includes('Sin Confirmar'));
+const detailedPrompt = helpPrompt(HELP_GUIDES.find(g => g.id === 'citas'), '¿Qué campos son obligatorios al crear un paciente para la cita?');
+assert.ok(detailedPrompt.includes('fecha de nacimiento y sexo'), 'Detailed questions retain full guide information');
 assert.equal(calls[0].redirect, 'error');
 assert.ok(!JSON.stringify(calls[0].body).includes('clinic-a'));
 assert.ok(!JSON.stringify(calls[0].body).includes('user-a'));
@@ -102,4 +112,33 @@ for (const fetchImpl of [
 }
 assert.equal((await handler(new Request('https://example.test/help'))).status, 405);
 assert.equal((await handler(new Request('https://example.test/help', { method: 'OPTIONS' }))).status, 204);
+const events = [];
+const slowAuth = makeHandler({ authenticate: () => new Promise(() => {}), authTimeoutMs: 5, log: event => events.push(event) });
+assert.equal((await slowAuth(req())).status, 503);
+assert.deepEqual(events.map(e => e.stage), ['auth_started', 'request_rejected']);
+assert.equal(events.at(-1).status, 503);
+events.length = 0;
+const slowModel = makeHandler({ ollamaTimeoutMs: 5, log: event => events.push(event), fetchImpl: (_url, { signal }) => new Promise((_, reject) => {
+  signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+}) });
+const timedOut = await (await slowModel(req())).json();
+assert.equal(timedOut.provider, 'manual');
+assert.equal(timedOut.reason, 'unavailable');
+assert.equal(events.at(-1).reason, 'timeout');
+assert.ok(!JSON.stringify(events).includes('valid'));
+assert.ok(!JSON.stringify(events).includes('clinic-a'));
+assert.ok(!JSON.stringify(events).includes('apartar'));
+const truncated = await (await makeHandler({fetchImpl: async () => Response.json({ done: true, done_reason: 'length', message: { content: 'Incomplete instructions' } })})(req())).json();
+assert.equal(truncated.provider, 'manual');
+assert.ok(!truncated.answer.includes('Incomplete instructions'));
+
+const pubHandler = makeHandler();
+const pubResponse = await (await pubHandler(new Request('https://example.test/help', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ question: '¿Cuáles son los planes de suscripción y precios de OdontoCloud?', mode: 'public' }),
+}))).json();
+assert.equal(pubResponse.success, true);
+assert.equal(pubResponse.sources[0]?.id, 'planes-suscripcion');
+
 console.log(`Help assistant: ${HELP_GUIDES.length} guide sources verified; retrieval, authentication boundary, application isolation and local fallback checks passed.`);

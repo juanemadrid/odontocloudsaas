@@ -1,13 +1,14 @@
 import supabase from '../lib/supabaseClient';
 import { guideResponse } from '../../supabase/functions/_shared/helpKnowledge.mjs';
 
-export async function askHelp(question, previousIds = []) {
+export async function askHelp(question, previousIds = [], options = {}) {
+  const { mode = 'app' } = typeof options === 'string' ? { mode: options } : (options || {});
   try {
     const { data, error } = await supabase.functions.invoke('odontocloud-help', {
-      body: { question, previousIds },
-      signal: AbortSignal.timeout(40000),
+      body: { question, previousIds, mode },
+      signal: AbortSignal.timeout(18000),
     });
-    if (error || !data?.success || typeof data.answer !== 'string' || !Array.isArray(data.sources) || !['manual', 'ollama'].includes(data.provider)) {
+    if (error || !data?.success || typeof data.answer !== 'string' || !Array.isArray(data.sources)) {
       return guideResponse(question, previousIds, 'unavailable');
     }
     return data;
@@ -15,3 +16,5 @@ export async function askHelp(question, previousIds = []) {
     return guideResponse(question, previousIds, 'unavailable');
   }
 }
+
+export default askHelp;
