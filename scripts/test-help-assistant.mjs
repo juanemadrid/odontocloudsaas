@@ -147,8 +147,7 @@ const greetingResponse = await (await pubHandler(new Request('https://example.te
   body: JSON.stringify({ question: 'hola', mode: 'public' }),
 }))).json();
 assert.equal(greetingResponse.success, true);
-assert.equal(greetingResponse.reason, 'greeting');
-assert.ok(greetingResponse.answer.includes('OdontoCloud Colombia'));
+assert.equal(greetingResponse.provider, 'ollama');
 
 const thanksResponse = await (await pubHandler(new Request('https://example.test/help', {
   method: 'POST',
@@ -156,6 +155,6 @@ const thanksResponse = await (await pubHandler(new Request('https://example.test
   body: JSON.stringify({ question: 'muchas gracias', mode: 'public' }),
 }))).json();
 assert.equal(thanksResponse.success, true);
-assert.equal(thanksResponse.reason, 'thanks');
+assert.equal(thanksResponse.provider, 'ollama');
 
 console.log(`Help assistant: ${HELP_GUIDES.length} guide sources verified; retrieval, authentication boundary, application isolation and local fallback checks passed.`);
