@@ -27,17 +27,24 @@ export default function ResetPassword() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // 1. Detectar token_hash en query params (por si GoTrue redirige con parámetros de búsqueda)
+    // 1. Detectar token_hash o token en query params
     const searchParams = new URLSearchParams(window.location.search);
-    const tokenHash = searchParams.get("token_hash");
-    const type = searchParams.get("type");
+    const tokenHash = searchParams.get("token_hash") || searchParams.get("token");
+    const type = searchParams.get("type") || "recovery";
 
-    if (tokenHash && type === "recovery") {
-      supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" }).then(({ data, error }) => {
+    if (tokenHash) {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type }).then(({ data, error }) => {
         if (error) {
-          setStatusMsg({
-            type: "error",
-            text: "El enlace de activación ha expirado o ya fue utilizado. Solicita uno nuevo si es necesario."
+          console.warn("verifyOtp error:", error);
+          supabase.auth.getSession().then(({ data: sessData }) => {
+            if (!sessData?.session?.user) {
+              setStatusMsg({
+                type: "error",
+                text: "El enlace de activación ha expirado o ya fue utilizado. Solicita uno nuevo si es necesario."
+              });
+            } else if (sessData.session.user.email) {
+              setUserEmail(sessData.session.user.email);
+            }
           });
         } else if (data?.user?.email) {
           setUserEmail(data.user.email);
@@ -45,7 +52,20 @@ export default function ResetPassword() {
       });
     }
 
-    // 2. Obtener el usuario actual si la sesión ya fue creada por el hash de GoTrue
+    // 2. Si viene con hash fragment de sesión (#access_token=...&refresh_token=...)
+    if (window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          .then(({ data }) => {
+            if (data?.user?.email) setUserEmail(data.user.email);
+          });
+      }
+    }
+
+    // 3. Obtener el usuario actual si la sesión ya fue creada
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
       if (data?.user?.email) {
@@ -54,7 +74,7 @@ export default function ResetPassword() {
     };
     fetchUser();
 
-    // 3. Escuchar evento PASSWORD_RECOVERY o cambio de sesión
+    // 4. Escuchar evento PASSWORD_RECOVERY o cambio de sesión
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user?.email) {
         setUserEmail(session.user.email);

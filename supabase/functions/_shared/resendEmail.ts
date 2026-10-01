@@ -25,36 +25,21 @@ const PUBLIC_KONG_URL = "https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.2
 
 export function sanitizeActionLink(actionLink?: string): string {
   if (!actionLink) return ODONTOCLOUD_RESET_URL;
-  const publicBase = Deno.env.get("SUPABASE_PUBLIC_URL") || Deno.env.get("API_EXTERNAL_URL") || PUBLIC_KONG_URL;
   try {
     const raw = new URL(actionLink);
-    if (
-      raw.hostname.includes("github.io") ||
-      raw.hostname === "supabase-kong" ||
-      raw.hostname === "kong" ||
-      raw.hostname === "localhost" ||
-      raw.hostname === "127.0.0.1" ||
-      raw.port === "8000"
-    ) {
-      const pub = new URL(publicBase);
-      raw.protocol = pub.protocol;
-      raw.hostname = pub.hostname;
-      raw.port = pub.port;
+    const token = raw.searchParams.get("token") || raw.searchParams.get("token_hash");
+    const type = raw.searchParams.get("type") || "recovery";
+    if (token) {
+      // Retorna DIRECTAMENTE el enlace a la app sin pasar por el 302 de GoTrue
+      return `${ODONTOCLOUD_RESET_URL}?token_hash=${encodeURIComponent(token)}&type=${encodeURIComponent(type)}`;
     }
-    // Forzar que el destino de redirección sea siempre la página oficial de restablecer contraseña
-    raw.searchParams.set("redirect_to", ODONTOCLOUD_RESET_URL);
-    return raw.toString();
+    return ODONTOCLOUD_RESET_URL;
   } catch (_e) {
-    let link = actionLink.replace(
-      /^https?:\/\/(supabase-kong|kong|localhost|127\.0\.0\.1)(:\d+)?/i,
-      publicBase.replace(/\/$/, "")
-    );
-    if (link.includes("redirect_to=")) {
-      link = link.replace(/redirect_to=[^&]+/i, `redirect_to=${encodeURIComponent(ODONTOCLOUD_RESET_URL)}`);
-    } else {
-      link += (link.includes("?") ? "&" : "?") + `redirect_to=${encodeURIComponent(ODONTOCLOUD_RESET_URL)}`;
+    const match = actionLink.match(/[?&](?:token|token_hash)=([^&]+)/);
+    if (match) {
+      return `${ODONTOCLOUD_RESET_URL}?token_hash=${match[1]}&type=recovery`;
     }
-    return link;
+    return ODONTOCLOUD_RESET_URL;
   }
 }
 
