@@ -92,7 +92,7 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                 }
                             `}
                         </style>
-                        <form onSubmit={handleSubmit} className="p-8 md:p-12">
+                        <form onSubmit={handleSubmit} className="p-8 md:p-12" autoComplete="off">
                             <div className="text-center mb-8">
                                 <h3 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">Inicia tu Prueba Gratuita</h3>
                                 <div className="mb-4">
@@ -103,9 +103,9 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                         onChange={(e) => setFormData({ ...formData, requestedPlan: e.target.value })}
                                     >
                                         {OFFICIAL_PLANS_TRIAL.map(plan => (
-                                            <option key={plan.id} value={plan.id}>
-                                                {plan.name}
-                                            </option>
+                                             <option key={plan.id} value={plan.id}>
+                                                 {plan.name}
+                                             </option>
                                         ))}
                                     </select>
                                 </div>
@@ -139,6 +139,7 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                     <input
                                         required
                                         type="email"
+                                        autoComplete="off"
                                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium"
                                         placeholder="correo@ejemplo.com"
                                         value={formData.adminEmail}
@@ -151,6 +152,7 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                         <input
                                             required
                                             type={showPassword ? "text" : "password"}
+                                            autoComplete="new-password"
                                             className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium pr-11"
                                             placeholder="Mínimo 6 caracteres"
                                             minLength={6}
