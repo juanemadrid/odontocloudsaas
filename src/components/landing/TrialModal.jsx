@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiX, FiShield, FiActivity, FiCheckCircle, FiArrowRight, FiEye, FiEyeOff } from 'react-icons/fi';
+import { FiX, FiShield, FiActivity, FiCheckCircle, FiArrowRight, FiPhone, FiMail } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { registerTrialClinic } from '../../services/registrationService';
 
@@ -13,12 +13,11 @@ const OFFICIAL_PLANS_TRIAL = [
 export default function TrialModal({ isOpen, onClose, initialPlan }) {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
         clinicName: '',
         adminName: '',
         adminEmail: '',
-        adminPassword: '',
+        phone: '',
         requestedPlan: 'clinica',
         features: []
     });
@@ -47,7 +46,7 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                 requestedPlanFeatures: formData.features
             });
             onClose();
-            alert(`¡Solicitud enviada exitosamente!\n\nTu solicitud para "${formData.clinicName || 'tu clínica'}" ha sido registrada. Nuestro equipo revisará la información y te notificará cuando tu cuenta sea activada.`);
+            alert(`¡Solicitud enviada exitosamente!\n\nTu solicitud para "${formData.clinicName || 'tu clínica'}" ha sido registrada. Recibirás un correo oficial en ${formData.adminEmail} con el enlace para activar tu cuenta y definir tu contraseña.`);
         } catch (error) {
             console.error(error);
             alert("Error al registrar: " + (error.message || "Intenta con otro correo."));
@@ -109,7 +108,7 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                         ))}
                                     </select>
                                 </div>
-                                <p className="text-slate-600 font-medium text-sm">Experimenta la gestión dental moderna por 30 días sin costo.</p>
+                                <p className="text-slate-600 font-medium text-sm">Prueba sin costo durante 30 días. No requiere tarjeta de crédito.</p>
                             </div>
                             <div className="space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -147,38 +146,32 @@ export default function TrialModal({ isOpen, onClose, initialPlan }) {
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña</label>
-                                    <div className="relative">
-                                        <input
-                                            required
-                                            type={showPassword ? "text" : "password"}
-                                            autoComplete="new-password"
-                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium pr-11"
-                                            placeholder="Mínimo 6 caracteres"
-                                            minLength={6}
-                                            value={formData.adminPassword}
-                                            onChange={e => setFormData({ ...formData, adminPassword: e.target.value })}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
-                                            title={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
-                                        >
-                                            {showPassword ? <FiEyeOff size={18}/> : <FiEye size={18}/>}
-                                        </button>
-                                    </div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Teléfono / WhatsApp</label>
+                                    <input
+                                        type="tel"
+                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 transition-all outline-none text-slate-700 font-medium"
+                                        placeholder="Ej: +57 300 123 4567"
+                                        value={formData.phone}
+                                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                    />
+                                </div>
+
+                                <div className="p-3.5 bg-blue-50/70 border border-blue-100 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900 leading-relaxed font-medium">
+                                    <FiShield className="text-blue-600 mt-0.5 shrink-0" size={16} />
+                                    <span>
+                                        <strong>Activación segura:</strong> Al aprobarse tu solicitud, recibirás un correo oficial con el botón para crear tu contraseña e ingresar directamente a OdontoCloud.
+                                    </span>
                                 </div>
                             </div>
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full mt-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-3 uppercase tracking-widest text-sm"
+                                className="w-full mt-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-3 uppercase tracking-widest text-sm"
                             >
                                 {loading ? (
                                     <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
                                 ) : (
-                                    <>Activar Mi Prueba <FiArrowRight /></>
+                                    <>Solicitar Prueba Gratuita <FiArrowRight /></>
                                 )}
                             </button>
                             <div className="mt-6 flex items-center justify-center gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">

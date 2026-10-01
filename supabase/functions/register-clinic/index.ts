@@ -21,6 +21,35 @@ export interface SendEmailResult {
 
 const DEFAULT_SENDER = "OdontoCloud <bienvenido@odontocloudcolombia.com>";
 const ODONTOCLOUD_APP_URL = "https://odontocloudcolombia.com";
+const ODONTOCLOUD_RESET_URL = "https://odontocloudcolombia.com/reset-password";
+const PUBLIC_KONG_URL = "https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io";
+
+export function sanitizeActionLink(actionLink?: string): string {
+  if (!actionLink) return ODONTOCLOUD_RESET_URL;
+  const publicBase = Deno.env.get("SUPABASE_PUBLIC_URL") || Deno.env.get("API_EXTERNAL_URL") || PUBLIC_KONG_URL;
+  try {
+    const raw = new URL(actionLink);
+    if (
+      raw.hostname === "supabase-kong" ||
+      raw.hostname === "kong" ||
+      raw.hostname === "localhost" ||
+      raw.hostname === "127.0.0.1" ||
+      raw.port === "8000"
+    ) {
+      const pub = new URL(publicBase);
+      raw.protocol = pub.protocol;
+      raw.hostname = pub.hostname;
+      raw.port = pub.port;
+      return raw.toString();
+    }
+    return actionLink;
+  } catch (_e) {
+    return actionLink.replace(
+      /^https?:\/\/(supabase-kong|kong|localhost|127\.0\.0\.1)(:\d+)?/i,
+      publicBase.replace(/\/$/, "")
+    );
+  }
+}
 
 const formatPlanLabel = (plan?: string): string => {
   const p = String(plan || "").toLowerCase();
@@ -132,18 +161,22 @@ export const generateWelcomeEmailHtml = ({
             </td>
           </tr>
 
-          <!-- Banner de Bienvenida compatible con Outlook Word Engine -->
+          <!-- Banner de Bienvenida: Alto Contraste y 100% Legible en Móvil -->
           <tr>
-            <td bgcolor="#0284C7" style="background-color: #0284C7; background: linear-gradient(135deg, #0284C7 0%, #0369A1 50%, #0F172A 100%); padding: 36px 32px; text-align: center;">
-              <div style="display: inline-block; background-color: rgba(255, 255, 255, 0.2); padding: 4px 14px; border-radius: 20px; margin-bottom: 12px;">
-                <span style="color: #FFFFFF; font-size: 12px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">
-                  ✨ ¡Tu clínica ahora está en la nube!
-                </span>
-              </div>
-              <h1 style="margin: 0; color: #FFFFFF !important; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.3;">
+            <td bgcolor="#0A2540" style="background-color: #0A2540; padding: 36px 24px; text-align: center;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto 12px auto;">
+                <tr>
+                  <td style="background-color: #1E3A8A; border: 1px solid #3B82F6; padding: 5px 14px; border-radius: 20px; text-align: center;">
+                    <span style="color: #93C5FD; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase;">
+                      ✨ ¡Tu clínica ahora está en la nube!
+                    </span>
+                  </td>
+                </tr>
+              </table>
+              <h1 style="margin: 0; color: #FFFFFF !important; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.35; text-shadow: 0 1px 2px rgba(0,0,0,0.2);">
                 ¡Bienvenido a OdontoCloud!
               </h1>
-              <p style="margin: 8px 0 0 0; color: #E0F2FE !important; font-size: 15px; line-height: 1.5; font-weight: 500;">
+              <p style="margin: 10px 0 0 0; color: #F1F5F9 !important; font-size: 15px; line-height: 1.5; font-weight: 500;">
                 La plataforma odontológica integral diseñada para hacer crecer tu consultorio.
               </p>
             </td>
@@ -225,7 +258,7 @@ export const generateWelcomeEmailHtml = ({
                     </p>
                     <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                       <tr>
-                        <td align="center" bgcolor="#0284C7" style="border-radius: 12px; background-color: #0284C7; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%); box-shadow: 0 6px 20px -2px rgba(2, 132, 199, 0.45);">
+                        <td align="center" bgcolor="#0284C7" style="border-radius: 12px; background-color: #0284C7; box-shadow: 0 6px 20px -2px rgba(2, 132, 199, 0.45);">
                           <a href="${setupPasswordUrl}" target="_blank" style="display: inline-block; background-color: #0284C7; padding: 16px 36px; font-size: 16px; font-weight: 800; color: #FFFFFF !important; text-decoration: none; border-radius: 12px; letter-spacing: 0.2px;">
                             🚀 Activar mi Cuenta y Crear Contraseña
                           </a>
@@ -545,7 +578,7 @@ const validateRegistration = ({
   clinicName,
 }: {
   adminEmail: string;
-  adminPassword: string;
+  adminPassword?: string;
   adminName: string;
   clinicName: string;
 }) => {
@@ -558,7 +591,7 @@ const validateRegistration = ({
   if (!adminEmail || !adminEmail.includes("@") || adminEmail.length > 254) {
     throw new HttpError(400, "El correo no es valido.");
   }
-  if (adminPassword.length < 8 || adminPassword.length > 72) {
+  if (adminPassword && (adminPassword.length < 8 || adminPassword.length > 72)) {
     throw new HttpError(400, "La contrasena debe tener entre 8 y 72 caracteres.");
   }
 };
@@ -634,7 +667,12 @@ Deno.serve(async (request) => {
     // ──────────────────────────────────────────────────────────────────────────
     if (action === "submit_request") {
       const adminEmail = String(body?.adminEmail || "").trim().toLowerCase();
-      const adminPassword = String(body?.adminPassword || "");
+      let adminPassword = String(body?.adminPassword || "").trim();
+      if (!adminPassword) {
+        // Clave temporal robusta para la solicitud; el usuario creará su propia clave definitiva
+        // mediante el enlace oficial que recibirá al ser aprobada su cuenta.
+        adminPassword = "Oc!" + crypto.randomUUID().replace(/-/g, "").slice(0, 12) + "9A#";
+      }
       const adminName = String(body?.adminName || "").trim();
       const clinicName = String(body?.clinicName || "").trim();
       const requestedPlanId = typeof body?.requestedPlan === "object"
@@ -764,7 +802,7 @@ Deno.serve(async (request) => {
           options: { redirectTo: ODONTOCLOUD_RESET_URL },
         });
         if (!linkErr && linkData?.properties?.action_link) {
-          setupPasswordUrl = linkData.properties.action_link;
+          setupPasswordUrl = sanitizeActionLink(linkData.properties.action_link);
         } else if (linkErr) {
           console.warn("generateLink error:", linkErr.message);
         }
@@ -925,9 +963,12 @@ Deno.serve(async (request) => {
         { p_request_id: requestId },
       );
       if (passwordError || !storedPassword) {
-        throw passwordError || new Error("La solicitud no conserva una contrasena valida.");
+        adminPassword = "Oc!" + crypto.randomUUID().replace(/-/g, "").slice(0, 12) + "9A#";
+      } else {
+        adminPassword = String(storedPassword);
       }
-      adminPassword = String(storedPassword);
+    } else if (!adminPassword) {
+      adminPassword = "Oc!" + crypto.randomUUID().replace(/-/g, "").slice(0, 12) + "9A#";
     }
 
     validateRegistration({ adminEmail, adminPassword, adminName, clinicName });
@@ -1110,7 +1151,7 @@ Deno.serve(async (request) => {
         options: { redirectTo: ODONTOCLOUD_RESET_URL },
       });
       if (!linkErr && linkData?.properties?.action_link) {
-        setupPasswordUrl = linkData.properties.action_link;
+        setupPasswordUrl = sanitizeActionLink(linkData.properties.action_link);
       } else if (linkErr) {
         console.warn("generateLink error:", linkErr.message);
       }

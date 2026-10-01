@@ -2,9 +2,10 @@ import { createSubscriptionRequest } from "./adminService";
 
 export const registerTrialClinic = async ({
     adminEmail,
-    adminPassword,
+    adminPassword = '',
     adminName,
     clinicName,
+    phone = '',
     requestedPlan
 }) => {
     // Guarda la solicitud de la clínica en estado PENDIENTE para revisión en el panel de SuperAdmin
@@ -13,6 +14,7 @@ export const registerTrialClinic = async ({
         adminPassword,
         adminName,
         clinicName,
+        phone,
         requestedPlan
     });
 

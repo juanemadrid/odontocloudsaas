@@ -1176,6 +1176,7 @@ export const createSubscriptionRequest = async ({
     adminPassword,
     adminName,
     clinicName,
+    phone = "",
     requestedPlan
 }) => {
     const response = await invokeRegisterClinic("submit_request", {
@@ -1183,6 +1184,7 @@ export const createSubscriptionRequest = async ({
         adminPassword,
         adminName,
         clinicName,
+        phone,
         requestedPlan
     });
     return response.request;

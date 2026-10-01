@@ -12,9 +12,12 @@ RAW_URL="https://raw.githubusercontent.com/juanemadrid/odontocloudsaas/main/supa
 
 echo "=== 1. Creando directorio de la función si no existe ==="
 mkdir -p "$TARGET_DIR"
+SHARED_DIR="/data/coolify/services/ueh7xuehxl9thmhre7fpk4xx/volumes/functions/_shared"
+mkdir -p "$SHARED_DIR"
 
 echo "=== 2. Descargando la versión actualizada de register-clinic desde GitHub ==="
 curl -sSL "$RAW_URL" -o "$TARGET_DIR/index.ts"
+curl -sSL "https://raw.githubusercontent.com/juanemadrid/odontocloudsaas/main/supabase/functions/_shared/resendEmail.ts" -o "$SHARED_DIR/resendEmail.ts"
 
 if [[ -s "$TARGET_DIR/index.ts" ]]; then
     FILE_SIZE=$(wc -c < "$TARGET_DIR/index.ts")
