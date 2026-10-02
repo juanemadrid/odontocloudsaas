@@ -15,6 +15,8 @@ const MENU_ITEMS = [
     { label: "Lista de precios", slug: "listas-precios", icon: FiList },
     { label: "Planes", slug: "planes", icon: FiLayout },
     { label: "Consecutivos", slug: "consecutivos", icon: FiHash },
+    { label: "Almacenes", slug: "almacenes", icon: FiPackage },
+    { label: "Categorías inventario", slug: "categorias-inventario", icon: FiTag },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin },
     { label: "Bancos", slug: "bancos", icon: FiDollarSign },
     { label: "Métodos de pago", slug: "metodos-pago", icon: FiCreditCard },

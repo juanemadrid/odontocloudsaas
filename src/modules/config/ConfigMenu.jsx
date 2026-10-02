@@ -15,6 +15,8 @@ const CONFIG_ITEMS = [
     { label: "Lista de precios", slug: "listas-precios", icon: FiList },
     { label: "Planes", slug: "planes", icon: FiLayout },
     { label: "Consecutivos", slug: "consecutivos", icon: FiList },
+    { label: "Almacenes", slug: "almacenes", icon: FiPackage },
+    { label: "Categorías inventario", slug: "categorias-inventario", icon: FiPackage },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin },
     { label: "Bancos", slug: "bancos", icon: FiCreditCard },
     { label: "Métodos de pago", slug: "metodos-pago", icon: FiCreditCard },

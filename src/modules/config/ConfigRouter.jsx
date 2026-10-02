@@ -17,9 +17,11 @@ import EmpresaSucursales from "./EmpresaSucursales";
 import EmpresaEspecialidades from "./EmpresaEspecialidades";
 import EmpresaListaPrecios from "./EmpresaListaPrecios";
 import EmpresaMetodosPago from "./EmpresaMetodosPago";
+import EmpresaAlmacenes from "./EmpresaAlmacenes";
 import ConfigConsecutivos from "./ConfigConsecutivos";
 import EmpresaPlanes from "./EmpresaPlanes";
 import EmpresaUsuarios from "./EmpresaUsuarios";
+import EmpresaCategorias from "./EmpresaCategorias"; // NEW COMPONENT
 import WebsiteEditor from "../cms/WebsiteEditor";
 import ConfigCondicionesPago from "./ConfigCondicionesPago";
 import ConfigPlantillas from "./ConfigPlantillas";
@@ -96,6 +98,10 @@ export default function ConfigRouter() {
                 return <ConfigConsecutivos />;
             case "editor-web": // New Route
                 return <WebsiteEditor />;
+            case "almacenes":
+                return <EmpresaAlmacenes />;
+            case "categorias-inventario":
+                return <EmpresaCategorias />;
             case "sucursales":
                 return <EmpresaSucursales />;
             case "metodos-pago":
