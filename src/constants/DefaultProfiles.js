@@ -2,7 +2,7 @@
 
 export const PERMISSION_MAP = {
     "Agenda": [
-        "Exportar a excell",
+        "Exportar a excel",
         "Agenda",
         "Imprimir agenda",
         "Gestion agenda"
@@ -14,20 +14,16 @@ export const PERMISSION_MAP = {
         "eps",
         "Beneficiarios",
         "Rx/imágenes/Doc",
+        "Profesionales",
         "Citas",
         "Documentos clinicos",
         "Historia clinica",
         "Odontograma",
         "Periodontograma",
-        "Plan tratamiento",
-        "Deshacer Realizado Plan",
+        "Presupuestos y planes",
         "Evoluciones",
-        "Realizar prestaciones",
-        "Plantillas Evolución",
-        "Facturacion plan de tratamiento",
-        "Notificacion Whatsapp",
-        "Teléfonos y correos",
-        "CRM"
+        "Copiloto IA Insights",
+        "Notificacion Whatsapp"
     ],
     "Caja": [
         "Caja",
@@ -35,9 +31,8 @@ export const PERMISSION_MAP = {
         "Cajas Abiertas",
         "Cajas cerradas",
         "Mi caja",
-        "Cierre Simulado",
-        "Cajas tipo Banco",
-        "Saldo y Detalle Caja"
+        "Cierres Simulados",
+        "Bancos"
     ],
     "Administración": [
         "Gestion Administración",
@@ -45,19 +40,11 @@ export const PERMISSION_MAP = {
         "Recibo de caja",
         "Factura de venta",
         "Facturas de compra",
-        "Recaudo Manual",
-        "Nota credito",
-        "Nota debito",
         "Saldos a favor",
         "Liquidaciones",
-        "Traslados",
-        "Egresos",
-        "Orden de compra",
-        "Gestion Facturas",
         "Pagos a proveedores",
         "Convenios",
         "Gestion Agenda",
-        "Recursos",
         "Terceros",
         "Residuos",
         "Rips",
@@ -75,13 +62,14 @@ export const PERMISSION_MAP = {
         "Reporte Cumpleaños",
         "Reporte Consultas",
         "Reporte evoluciones",
-        "Log de errores de facturacion",
-        "Log Interoperabilidad (IHCE)",
+        "Reporte Clínico",
         "Reporte de oportunidad de citas",
-        "Asistencia de clientes",
-        "Indicadores de uso de la plataforma",
+        "Reporte Morbilidad",
+        "Log de errores de facturacion",
         "Log WhatsApp Business API",
-        "Reporte Morbilidad"
+        "Indicadores de uso de la plataforma",
+        "Asistencia de clientes",
+        "Log Interoperabilidad (IHCE)"
     ],
     "Configuración": [
         "Gestion Configuración",
@@ -100,12 +88,7 @@ export const PERMISSION_MAP = {
         "Recursos físicos",
         "Plantillas",
         "Cargas",
-        "Auditoria",
         "Impuesto",
-        "Notificaciones",
-        "Cuenta",
-        "Buscador Global",
-        "Tarifas Copago",
         "Catálogo de cuentas",
         "Campañas",
         "Facturación electrónica",
@@ -145,7 +128,7 @@ PERMISSION_MAP.Pacientes.forEach(f => {
     doctorPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 // Selección de Reportes
-["Gestion Reportes", "Reporte Dashboard", "Reporte Pacientes", "Reporte Planes de tratamiento", "Reporte evoluciones", "Reporte Consultas", "Reporte Morbilidad"].forEach(f => {
+["Gestion Reportes", "Reporte Dashboard", "Reporte Pacientes", "Reporte Planes de tratamiento", "Reporte evoluciones", "Reporte Consultas", "Reporte Clínico", "Reporte Morbilidad"].forEach(f => {
     doctorPerms[f] = { consultar: true, crear: false, editar: false, eliminar: false };
 });
 
@@ -155,8 +138,8 @@ const recepcionPerms = {};
 PERMISSION_MAP.Agenda.forEach(f => {
     recepcionPerms[f] = { consultar: true, crear: true, editar: true, eliminar: true };
 });
-// Pacientes (Citas, Paciente, Datos personales, Documentos, WhatsApp, CRM)
-["Paciente", "Datos Personales", "Citas", "Documentos clinicos", "Notificacion Whatsapp", "Teléfonos y correos", "CRM", "Marketing", "eps", "Beneficiarios"].forEach(f => {
+// Pacientes (Citas, Paciente, Datos personales, Documentos, WhatsApp, Marketing, EPS, Beneficiarios)
+["Paciente", "Datos Personales", "Citas", "Documentos clinicos", "Notificacion Whatsapp", "Marketing", "eps", "Beneficiarios"].forEach(f => {
     recepcionPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 // Caja completa
@@ -164,7 +147,7 @@ PERMISSION_MAP.Caja.forEach(f => {
     recepcionPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 // Selección de Administración
-["Recaudo Manual", "Recibo de caja", "Convenios", "Terceros", "Saldos a favor", "Factura de venta"].forEach(f => {
+["Recibo de caja", "Convenios", "Terceros", "Saldos a favor", "Factura de venta"].forEach(f => {
     recepcionPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 // Selección de Reportes
@@ -195,7 +178,7 @@ export const DEFAULT_PERFILES = [
     {
         id: "doctor",
         nombre: "Odontólogo / Doctor",
-        descripcion: "Acceso completo a Agenda, Historia Clínica, Odontograma, Periodontograma, Evoluciones, RX, Presupuestos y Formulaciones.",
+        descripcion: "Acceso completo a Agenda, Historia Clínica, Odontograma, Periodontograma, Evoluciones, RX, Presupuestos y Copiloto IA.",
         baseRole: "doctor",
         permisos: doctorPerms
     },

@@ -19,7 +19,6 @@ import ReportePlanesTratamiento from "./views/ReportePlanesTratamiento";
 import ReporteFinanciero from "./views/ReporteFinanciero";
 import ReporteConvenios from "./views/ReporteConvenios";
 import ReporteVentasEfectividad from "./views/ReporteVentasEfectividad";
-import ReporteMedicamentos from "./views/ReporteMedicamentos";
 import ReporteCumpleanos from "./views/ReporteCumpleanos";
 import ReporteOportunidadCitas from "./views/ReporteOportunidadCitas";
 import ReporteMorbilidad from "./views/ReporteMorbilidad";
@@ -41,7 +40,7 @@ const ALL_REPORTS = [
   { id: "facturacion", label: "Reporte de facturación", icon: <FiDollarSign />, category: "Finanzas" },
   { id: "convenios", label: "Reporte de convenios", icon: <FiAward />, category: "Finanzas" },
   { id: "ventas_efectividad", label: "Reporte de ventas y efectividad", icon: <FiTrendingUp />, category: "Finanzas" },
-  { id: "medicamentos", label: "Reporte medicamentos", icon: <FiBox />, category: "Clínico" },
+  { id: "clinico", label: "Reporte clínico", icon: <FiActivity />, category: "Clínico" },
   { id: "cumpleanos", label: "Reporte cumpleaños", icon: <FiGift />, category: "General" },
   { id: "oportunidad_citas", label: "Reporte de oportunidad de citas", icon: <FiClock />, category: "Clínico" },
   { id: "morbilidad", label: "Reporte de morbilidad", icon: <FiActivity />, category: "Clínico" },
@@ -110,7 +109,6 @@ export default function Reportes() {
             {selectedReport === "facturacion" && <ReporteFinanciero />}
             {selectedReport === "convenios" && <ReporteConvenios />}
             {selectedReport === "ventas_efectividad" && <ReporteVentasEfectividad />}
-            {selectedReport === "medicamentos" && <ReporteMedicamentos />}
             {selectedReport === "cumpleanos" && <ReporteCumpleanos />}
             {selectedReport === "oportunidad_citas" && <ReporteOportunidadCitas />}
             {selectedReport === "morbilidad" && <ReporteMorbilidad />}

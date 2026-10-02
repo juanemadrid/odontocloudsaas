@@ -7,7 +7,7 @@ import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiShield, FiArrowLeft, FiSave, FiC
 
 const PERMISSION_MAP = {
     "Agenda": [
-        "Exportar a excell",
+        "Exportar a excel",
         "Agenda",
         "Imprimir agenda",
         "Gestion agenda"
@@ -19,20 +19,16 @@ const PERMISSION_MAP = {
         "eps",
         "Beneficiarios",
         "Rx/imágenes/Doc",
+        "Profesionales",
         "Citas",
         "Documentos clinicos",
         "Historia clinica",
         "Odontograma",
         "Periodontograma",
-        "Plan tratamiento",
-        "Deshacer Realizado Plan",
+        "Presupuestos y planes",
         "Evoluciones",
-        "Realizar prestaciones",
-        "Plantillas Evolución",
-        "Facturacion plan de tratamiento",
-        "Notificacion Whatsapp",
-        "Teléfonos y correos",
-        "CRM"
+        "Copiloto IA Insights",
+        "Notificacion Whatsapp"
     ],
     "Caja": [
         "Caja",
@@ -40,9 +36,8 @@ const PERMISSION_MAP = {
         "Cajas Abiertas",
         "Cajas cerradas",
         "Mi caja",
-        "Cierre Simulado",
-        "Cajas tipo Banco",
-        "Saldo y Detalle Caja"
+        "Cierres Simulados",
+        "Bancos"
     ],
     "Administración": [
         "Gestion Administración",
@@ -50,19 +45,11 @@ const PERMISSION_MAP = {
         "Recibo de caja",
         "Factura de venta",
         "Facturas de compra",
-        "Recaudo Manual",
-        "Nota credito",
-        "Nota debito",
         "Saldos a favor",
         "Liquidaciones",
-        "Traslados",
-        "Egresos",
-        "Orden de compra",
-        "Gestion Facturas",
         "Pagos a proveedores",
         "Convenios",
         "Gestion Agenda",
-        "Recursos",
         "Terceros",
         "Residuos",
         "Rips",
@@ -80,13 +67,14 @@ const PERMISSION_MAP = {
         "Reporte Cumpleaños",
         "Reporte Consultas",
         "Reporte evoluciones",
-        "Log de errores de facturacion",
-        "Log Interoperabilidad (IHCE)",
+        "Reporte Clínico",
         "Reporte de oportunidad de citas",
-        "Asistencia de clientes",
-        "Indicadores de uso de la plataforma",
+        "Reporte Morbilidad",
+        "Log de errores de facturacion",
         "Log WhatsApp Business API",
-        "Reporte Morbilidad"
+        "Indicadores de uso de la plataforma",
+        "Asistencia de clientes",
+        "Log Interoperabilidad (IHCE)"
     ],
     "Configuración": [
         "Gestion Configuración",
@@ -105,12 +93,7 @@ const PERMISSION_MAP = {
         "Recursos físicos",
         "Plantillas",
         "Cargas",
-        "Auditoria",
         "Impuesto",
-        "Notificaciones",
-        "Cuenta",
-        "Buscador Global",
-        "Tarifas Copago",
         "Catálogo de cuentas",
         "Campañas",
         "Facturación electrónica",

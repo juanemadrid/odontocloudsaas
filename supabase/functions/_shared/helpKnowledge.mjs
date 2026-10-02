@@ -126,30 +126,20 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Selecciona Recibo de caja para los comprobantes de ingreso o Saldo a favor para revisar los abonos correspondientes.',
     'Abre el registro o el formulario de creación y verifica tercero, valor y referencias antes de confirmar.',
   ]),
-  guide('notas', 'Facturación', 'Notas crédito, débito y liquidaciones', 'nota credito debito liquidacion anulacion descuento', 'src/modules/administracion/views/FacturacionHub.jsx', [
-    'Entra a Administración > Facturación y selecciona Nota crédito, Nota débito o Liquidaciones.',
-    'Identifica el documento o tratamiento relacionado y revisa el motivo y los importes.',
-    'Comprueba el resultado y el estado del documento después de registrar la operación.',
-  ], 'La ayuda no anula ni modifica documentos por sí sola.'),
-  guide('proveedores', 'Facturación', 'Pagos a proveedores y compras', 'proveedor egreso compra orden factura compra pagar proveedor', 'src/modules/administracion/views/FacturacionHub.jsx', [
+  guide('liquidaciones', 'Facturación', 'Liquidación de comisiones y tratamientos', 'liquidacion comisiones tratamiento honorarios doctor pago', 'src/modules/administracion/views/FacturacionHub.jsx', [
+    'Entra a Administración > Facturación y selecciona Liquidaciones.',
+    'Identifica el profesional o tratamiento a liquidar y revisa las comisiones o importes correspondientes.',
+    'Genera y valida la liquidación para cerrar el ciclo administrativo.',
+  ]),
+  guide('proveedores', 'Facturación', 'Pagos a proveedores y facturas de compra', 'proveedor egreso compra factura compra pagar proveedor', 'src/modules/administracion/views/FacturacionHub.jsx', [
     'Revisa el proveedor en Administración > Terceros.',
-    'En Administración > Facturación, usa Órdenes de compra para solicitudes o Facturas de compra para documentos recibidos.',
-    'En Pagos, registra el egreso con el tercero, los conceptos o facturas y la cuenta correspondientes.',
+    'En Administración > Facturación, usa Facturas de compra para registrar las compras y documentos recibidos.',
+    'En Pagos, registra el egreso con el tercero, las facturas a pagar y la cuenta correspondiente.',
     'Revisa los importes antes de guardar y verifica el comprobante resultante.',
   ]),
-  guide('traslados', 'Facturación', 'Trasladar dinero entre cuentas', 'traslado transferir cuentas banco movimiento', 'src/modules/facturacion/traslados/TrasladosList.jsx', [
-    'Entra a Administración > Facturación > Traslados.',
-    'Revisa los movimientos registrados y utiliza el formulario disponible para un nuevo traslado.',
-    'Verifica cuenta de origen, destino e importe antes de confirmar.',
-  ]),
-  guide('almacenes-inventario', 'Configuración', 'Almacenes y categorías de insumos', 'inventario insumos producto existencias almacen', 'src/modules/config/ConfigRouter.jsx', [
-    'Entra a Configuración > Almacenes para gestionar las bodegas de la clínica.',
-    'En Configuración > Categorías inventario puedes clasificar los insumos odontológicos y materiales clínicos.',
-    'Guarda los cambios para mantener organizadas las bodegas y grupos de artículos.',
-  ]),
-  guide('reportes', 'Reportes', 'Encontrar reportes e indicadores', 'reporte informe indicador estadistica ventas morbilidad cumpleanos', 'src/modules/reportes/Reportes.jsx', [
+  guide('reportes', 'Reportes', 'Encontrar reportes e indicadores', 'reporte informe indicador estadistica ventas morbilidad cumpleanos clinico', 'src/modules/reportes/Reportes.jsx', [
     'Entra a Reportes y selecciona Indicadores o el reporte específico.',
-    'Hay reportes de pacientes, planes de tratamiento, facturación, convenios, ventas, medicamentos, cumpleaños, citas, morbilidad, consultas y evoluciones.',
+    'Hay reportes de pacientes, planes de tratamiento, facturación, convenios, ventas, clínico, cumpleaños, citas, morbilidad, consultas y evoluciones.',
     'Ajusta los filtros que ofrezca el reporte y revisa el período antes de interpretar o exportar sus resultados.',
   ]),
   guide('rips', 'Administración', 'Generar y revisar RIPS', 'rips muv json fev validacion cuv', 'src/modules/rips/RipsGenerator.jsx', [
@@ -193,9 +183,8 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Revisa los conceptos y valores aplicables antes de guardar cambios.',
     'Para copagos, utiliza la sección Tarifas copago si tu perfil tiene acceso.',
   ]),
-  guide('catalogos', 'Configuración', 'Catálogos financieros y de inventario', 'banco metodo pago condicion pago impuesto consecutivo catalogo cuenta categoria almacen', 'src/modules/config/ConfigMenu.jsx', [
+  guide('catalogos', 'Configuración', 'Catálogos financieros y contables', 'banco metodo pago condicion pago impuesto consecutivo catalogo cuenta', 'src/modules/config/ConfigMenu.jsx', [
     'Abre Configuración y selecciona el catálogo correspondiente: Bancos, Métodos de pago, Condiciones de pago, Impuestos, Consecutivos o Catálogo de cuentas.',
-    'Para inventario, revisa Almacenes y Categorías inventario.',
     'Consulta los registros existentes y revisa los campos antes de guardar modificaciones.',
   ]),
   guide('formularios', 'Configuración', 'Formularios y plantillas clínicas', 'formulario campo plantilla consentimiento especialidad parametro carga', 'src/modules/config/ConfigRouter.jsx', [
