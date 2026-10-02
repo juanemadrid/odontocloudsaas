@@ -41,7 +41,7 @@ export const CODIGO_CONCEPTOS = {
 // ==========================================
 
 export const DENTAL_CODES_MAP = [
-    { keywords: ["consulta", "valoracion", "primera vez", "diagnostico"], cups: "890201", cie10: "Z012", label: "Consulta Valoración General" },
+    { keywords: ["consulta", "valoracion", "primera vez", "diagnostico"], cups: "890203", cie10: "Z012", label: "Consulta Valoración General" },
     { keywords: ["limpieza", "higiene", "detartraje", "profilaxis"], cups: "997300", cie10: "K051", label: "Limpieza Profunda" },
     { keywords: ["caries", "resina", "calza", "obturacion"], cups: "230101", cie10: "K021", label: "Tratamiento Caries / Resina" },
     { keywords: ["dolor", "pulpa", "endo", "conducto"], cups: "237101", cie10: "K040", label: "Endodoncia" },
@@ -60,7 +60,7 @@ export const suggestClinicalCodes = (description = "") => {
         item.keywords.some(k => d.includes(k))
     );
 
-    return match || { cups: "890201", cie10: "Z012", label: "Consulta General Odontológica" };
+    return match || { cups: "890203", cie10: "Z012", label: "Consulta General Odontológica" };
 };
 
 // ==========================================
@@ -171,7 +171,7 @@ export const buildConsultaJSON = (datos = {}, consecutivo = 1) => {
         codPrestador: String(datos.codPrestador || "000000000001").trim(),
         fechaInicioAtencion: String(datos.fechaInicio || new Date().toISOString().substring(0, 10)).substring(0, 16),
         numAutorizacion: datos.numAutorizacion || null,
-        codConsulta: String(datos.codConsulta || "890201").toUpperCase(),
+        codConsulta: String(datos.codConsulta || "890203").toUpperCase(),
         modalidadGrupoServicio: "01", // Intramural
         grupoServicios: "01", // Consulta Externa
         codServicio: Number(datos.codServicio || 345), // 345: Odontología General

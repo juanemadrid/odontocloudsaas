@@ -2344,7 +2344,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                 </span>
                             </div>
                             <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white text-sky-700 border border-sky-200 shadow-xs shrink-0">
-                                CUPS: {targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201'}
+                                CUPS: {targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203'}
                             </span>
                         </div>
 
@@ -2372,8 +2372,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                         type="button"
                                         onClick={() => {
                                             setNewConsultaInitialData({
-                                                cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
-                                                codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                                cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203',
+                                                codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203',
                                                 motivoConsulta: targetConsultaItem.desc || ''
                                             });
                                             setShowNewConsultaModal(true);
@@ -2393,8 +2393,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                             type="button"
                                             onClick={() => {
                                                 setNewConsultaInitialData({
-                                                    cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
-                                                    codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                                    cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203',
+                                                    codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203',
                                                     motivoConsulta: targetConsultaItem.desc || ''
                                                 });
                                                 setShowNewConsultaModal(true);
@@ -2418,8 +2418,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {consultasList.map(c => {
-                                                    const targetCups = String(targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201').trim();
-                                                    const consultaCupsVal = String(c.cups || c.codigo_cups || c.codigoCups || c.metadata?.cups || c.metadata?.codigo_cups || '890201').trim();
+                                                    const targetCups = String(targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203').trim();
+                                                    const consultaCupsVal = String(c.cups || c.codigo_cups || c.codigoCups || c.metadata?.cups || c.metadata?.codigo_cups || '890203').trim();
                                                     const cupsMatch = targetCups === consultaCupsVal;
                                                     const dateStr = c.fechaIso || c.created_at || c.date;
                                                     let displayDate = '-';
@@ -2479,8 +2479,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                 type="button"
                                 onClick={() => {
                                     setNewConsultaInitialData({
-                                        cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
-                                        codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890201',
+                                        cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203',
+                                        codigo_cups: targetConsultaItem.codigo_cups || targetConsultaItem.code || '890203',
                                         motivoConsulta: targetConsultaItem.desc || ''
                                     });
                                     setShowNewConsultaModal(true);

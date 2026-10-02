@@ -80,7 +80,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         initialData?.codigoCups || 
         initialData?.metadata?.cups || 
         initialData?.metadata?.codigo_cups || 
-        '890201'
+        ''
     );
     const [consultaTab, setConsultaTab] = useState('motivo');
     // 1. Motivo de Consulta
@@ -535,7 +535,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             setAsocConsultaId(null);
             setAssociatedConsulta(null);
             // Reset Consulta Odontológica states
-            setConsultaCups('890201');
+            setConsultaCups('');
             setConsultaTab('motivo');
             setMotivoConsulta('');
             setEnfermedadActual('');
@@ -585,7 +585,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                 if (isConsulta) {
                     setConsultaTab('motivo');
                     const meta = initialData.metadata || {};
-                    setConsultaCups(initialData.cups || initialData.codigo_cups || initialData.codigoCups || meta.cups || meta.codigo_cups || meta.codigoCups || '890201');
+                    setConsultaCups(initialData.cups || initialData.codigo_cups || initialData.codigoCups || meta.cups || meta.codigo_cups || meta.codigoCups || '');
                     setMotivoConsulta(initialData.motivoConsulta || meta.motivoConsulta || '');
                     setEnfermedadActual(initialData.enfermedadActual || meta.enfermedadActual || '');
                     setAntecedentes(initialData.antecedentes || meta.antecedentes || []);
@@ -1128,6 +1128,11 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
             toast.error("El contenido no puede estar vacío");
             return;
         }
+
+        if (isConsultaDoc && !consultaCups) {
+            toast.error("Por favor seleccione el Procedimiento / Código CUPS de la consulta.");
+            return;
+        }
         
         setSaving(true);
         try {
@@ -1188,9 +1193,9 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                     estado: finalDocEstado,
                     finalizado: isFinalize,
                     firmado: finalDocFirmado,
-                    cups: consultaCups || '890201',
-                    codigo_cups: consultaCups || '890201',
-                    codigoCups: consultaCups || '890201',
+                    cups: consultaCups || '890203',
+                    codigo_cups: consultaCups || '890203',
+                    codigoCups: consultaCups || '890203',
                     motivoConsulta,
                     enfermedadActual,
                     antecedentes: finalAntecedentes,
@@ -1568,12 +1573,34 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                         disabled={isViewOnly}
                                         className="w-full bg-slate-50/80 border border-slate-200/90 rounded-xl px-3 h-9 text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-indigo-500 transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                                     >
-                                        <option value="890201">890201 - Consulta 1.ª vez por odontología general</option>
-                                        <option value="890202">890202 - Consulta 1.ª vez por odontología especializada</option>
-                                        <option value="890301">890301 - Consulta de control / seguimiento odontología general</option>
-                                        <option value="890302">890302 - Consulta de control / seguimiento odontología especializada</option>
-                                        <option value="890701">890701 - Consulta de urgencias por odontología general</option>
-                                        <option value="890702">890702 - Consulta de urgencias por odontología especializada</option>
+                                        <option value="">Seleccione el tipo de consulta odontológica...</option>
+                                        <optgroup label="CONSULTAS DE PRIMERA VEZ (ODONTOLOGÍA)">
+                                            <option value="890203">890203 - Consulta 1.ª vez por odontología general</option>
+                                            <option value="890224">890224 - Consulta 1.ª vez por especialista en rehabilitación oral</option>
+                                            <option value="890222">890222 - Consulta 1.ª vez por especialista en ortodoncia</option>
+                                            <option value="890218">890218 - Consulta 1.ª vez por especialista en endodoncia</option>
+                                            <option value="890221">890221 - Consulta 1.ª vez por especialista en periodoncia</option>
+                                            <option value="890217">890217 - Consulta 1.ª vez por especialista en cirugía oral</option>
+                                            <option value="890220">890220 - Consulta 1.ª vez por especialista en odontopediatría</option>
+                                            <option value="890236">890236 - Consulta 1.ª vez por especialista en cirugía maxilofacial</option>
+                                            <option value="890223">890223 - Consulta 1.ª vez por especialista en radiología oral y maxilofacial</option>
+                                            <option value="890204">890204 - Consulta 1.ª vez por otras especialidades en odontología</option>
+                                        </optgroup>
+                                        <optgroup label="CONSULTAS DE CONTROL O SEGUIMIENTO">
+                                            <option value="890303">890303 - Consulta de control / seguimiento por odontología general</option>
+                                            <option value="890324">890324 - Consulta de control / seguimiento por especialista en rehabilitación oral</option>
+                                            <option value="890322">890322 - Consulta de control / seguimiento por especialista en ortodoncia</option>
+                                            <option value="890318">890318 - Consulta de control / seguimiento por especialista en endodoncia</option>
+                                            <option value="890321">890321 - Consulta de control / seguimiento por especialista en periodoncia</option>
+                                            <option value="890317">890317 - Consulta de control / seguimiento por especialista en cirugía oral</option>
+                                            <option value="890320">890320 - Consulta de control / seguimiento por especialista en odontopediatría</option>
+                                            <option value="890336">890336 - Consulta de control / seguimiento por especialista en cirugía maxilofacial</option>
+                                            <option value="890304">890304 - Consulta de control / seguimiento por otras especialidades en odontología</option>
+                                        </optgroup>
+                                        <optgroup label="CONSULTAS DE URGENCIAS">
+                                            <option value="890703">890703 - Consulta de urgencias por odontología general</option>
+                                            <option value="890704">890704 - Consulta de urgencias por odontología especializada</option>
+                                        </optgroup>
                                     </select>
                                 </div>
                             )}
@@ -3852,7 +3879,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                                 <CUPSSearch 
                                     value={selectedCups}
                                     onSelect={(item) => setSelectedCups(item)}
-                                    placeholder="Buscar código o nombre del procedimiento (ej: 890201, 870112, hemograma...)"
+                                    placeholder="Buscar código o nombre del procedimiento (ej: 890203, 870112, hemograma...)"
                                     className="w-full"
                                 />
                             </div>
