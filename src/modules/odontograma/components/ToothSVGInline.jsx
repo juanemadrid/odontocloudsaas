@@ -520,15 +520,15 @@ export default function ToothSVGInline({ numero, data = {}, onZoneClick, isReadO
     return (
         // Contenedor principal — DEBE tener width y height explícitos del padre
         <div 
-            className={`relative w-full h-full overflow-hidden select-none ${isReadOnly ? '' : 'cursor-pointer'}`}
+            className={`relative w-full h-full overflow-hidden select-none cursor-pointer`}
             style={{
                 transform: needsFlip ? 'scaleY(-1)' : 'none',
             }}
             data-tooth-number={String(numero)}
-            role={isReadOnly ? undefined : 'button'}
-            tabIndex={isReadOnly ? undefined : 0}
-            aria-label={isReadOnly ? undefined : `Marcar superficie del diente ${numero}`}
-            onClick={isReadOnly ? undefined : handleDirectClick}
+            role="button"
+            tabIndex={0}
+            aria-label={`Diente ${numero}`}
+            onClick={isReadOnly ? (e) => { e.stopPropagation(); onZoneClick?.(numero, 'center'); } : handleDirectClick}
             onKeyDown={isReadOnly ? undefined : handleKeyDown}
         >
 

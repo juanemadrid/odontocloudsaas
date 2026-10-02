@@ -3,6 +3,7 @@ import html2canvas from "html2canvas";
 import DOMPurify from "dompurify";
 import { toast } from "sonner";
 import supabase from "../lib/supabaseClient";
+import { getReceiptPlanFinancials } from "./billingService";
 
 export const ReceiptPrintService = {
     generatePDF: async (pago, patient, clinic, userProfile) => {
@@ -57,48 +58,22 @@ export const ReceiptPrintService = {
             let saldoPlan = null;
             let planTitle = pago.planTitle || parsedMetadata?.planTitle;
 
-            const targetPlanId = pago.planId || pago.plan_id || parsedMetadata?.planId;
-            const targetPatientId = patient.id || pago.pacienteId || pago.paciente_id;
-
-            if (targetPlanId) {
-                try {
-                    const { data: planData } = await supabase
-                        .from("treatment_plans")
-                        .select("*")
-                        .eq("id", targetPlanId)
-                        .maybeSingle();
-                    if (planData) {
-                        planTitle = planData.title || planData.nombre || planTitle || "Tratamiento Odontológico";
-                        totalPlan = Number(planData.total || 0);
-                        
-                        const { data: allPayments } = await supabase
-                            .from("pagos")
-                            .select("*")
-                            .eq("planId", targetPlanId);
-                        totalPagadoPlan = (allPayments || []).reduce((sum, p) => sum + Number(p.monto || 0), 0);
-                        saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
-                    }
-                } catch (e) {}
-            } else if (targetPatientId && !isEgreso) {
-                try {
-                    const { data: pPlans } = await supabase
-                        .from("treatment_plans")
-                        .select("*")
-                        .eq("paciente_id", targetPatientId)
-                        .order("created_at", { ascending: false })
-                        .limit(1);
-                    if (pPlans && pPlans.length > 0) {
-                        const planData = pPlans[0];
-                        planTitle = planData.title || planData.nombre || "Tratamiento Odontológico";
-                        totalPlan = Number(planData.total || 0);
-                        const { data: allPayments } = await supabase
-                            .from("pagos")
-                            .select("*")
-                            .eq("pacienteId", targetPatientId);
-                        totalPagadoPlan = (allPayments || []).reduce((sum, p) => sum + Number(p.monto || 0), 0);
-                        saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
-                    }
-                } catch (e) {}
+            if (!isEgreso) {
+                const targetPlanId = pago.planId || pago.plan_id || parsedMetadata?.planId;
+                const targetPatientId = patient.id || pago.pacienteId || pago.paciente_id;
+                const planFinancials = await getReceiptPlanFinancials({
+                    planId: targetPlanId,
+                    patientId: targetPatientId,
+                    tenantId: clinic?.inquilino || userProfile?.inquilino || "",
+                    receiptAmount: Number(pago.monto || 0),
+                    planTitle: pago.planTitle || parsedMetadata?.planTitle || ""
+                });
+                if (planFinancials) {
+                    planTitle = planFinancials.planTitle;
+                    totalPlan = planFinancials.totalPlan;
+                    totalPagadoPlan = planFinancials.totalPagado;
+                    saldoPlan = planFinancials.saldo;
+                }
             }
 
             // Extract pure user observation (never dump JSON or generic boilerplate)

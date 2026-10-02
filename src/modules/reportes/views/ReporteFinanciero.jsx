@@ -392,8 +392,36 @@ export default function ReporteFinanciero() {
           })
           .filter(p => !isConsumoSaldo(p._raw, p._meta));
 
+        // Normalizar y evitar duplicados entre la tabla recibos_caja y la tabla pagos
+        const normalizeReceiptNum = (val) => {
+          if (val === null || val === undefined || val === "") return "";
+          const str = String(val).trim();
+          const clean = str.replace(/^[^\d]+/, "");
+          return /^\d+$/.test(clean) ? String(parseInt(clean, 10)) : str.toLowerCase();
+        };
+
+        const existingReceiptNums = new Set(
+          mappedRecibosCaja.map(r => normalizeReceiptNum(r.nroConsecutivo || r.consecutivo || r.numero)).filter(Boolean)
+        );
+        const existingPagoIds = new Set(
+          mappedRecibosCaja.flatMap(r => [r._raw?.pago_id, r._raw?.pagoId, r.pago_id, r.pagoId]).filter(Boolean).map(String)
+        );
+        const existingRecKeys = new Set(
+          mappedRecibosCaja.map(r => `${r.pacienteId}_${Math.round(r.total || 0)}_${normalizeReceiptNum(r.nroConsecutivo || r.consecutivo)}`).filter(Boolean)
+        );
+
+        const uniquePagosRecaudos = mappedPagosRecaudos.filter(p => {
+          const rawId = String(p._raw?.id || p.rawId || p.id || "").replace(/^pago_/, "");
+          const num = normalizeReceiptNum(p.nroConsecutivo || p._raw?.nro_consecutivo || p._meta?.nroConsecutivo);
+          const key = `${p.pacienteId}_${Math.round(p.total || 0)}_${num}`;
+          if (rawId && existingPagoIds.has(rawId)) return false;
+          if (num && existingReceiptNums.has(num)) return false;
+          if (key && existingRecKeys.has(key)) return false;
+          return true;
+        });
+
         // Combinar todos los recibos de caja y asignar consecutivo cronológico unificado
-        let combinedRecibos = [...mappedRecibosCaja, ...mappedPagosRecaudos];
+        let combinedRecibos = [...mappedRecibosCaja, ...uniquePagosRecaudos];
         combinedRecibos.sort((a, b) => new Date(a.fechaCreacion || 0) - new Date(b.fechaCreacion || 0));
 
         const baseConsecutivoRecibos = 1999;

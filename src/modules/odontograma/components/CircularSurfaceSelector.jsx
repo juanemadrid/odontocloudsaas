@@ -40,8 +40,8 @@ export default function CircularSurfaceSelector({ activeToothId, toothData, onZo
         stroke: '#1e293b',
         strokeWidth: '2.5',
         opacity: hasMark(zoneId) && toothData?.[zoneId]?.id?.includes('malo') ? 0.7 : 1,
-        className: `transition-all duration-300 ${isReadOnly ? '' : 'cursor-pointer hover:fill-slate-200'} origin-center`,
-        onClick: () => !isReadOnly && onZoneClick(activeToothId, zoneId),
+        className: `transition-all duration-300 ${isReadOnly ? 'cursor-pointer' : 'cursor-pointer hover:fill-slate-200'} origin-center`,
+        onClick: () => onZoneClick?.(activeToothId, zoneId),
     });
 
     const CX = 50, CY = 50, RADIUS_INNER = 18, RADIUS_OUTER = 44;

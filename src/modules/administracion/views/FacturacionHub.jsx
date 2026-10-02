@@ -40,14 +40,12 @@ const NEW_BUTTON_LABELS = {
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import { hasElectronicInvoicingAccess } from "../../../utils/subscriptionHelper";
-import { FiAlertCircle, FiTrash2 } from "react-icons/fi";
-import ResetContabilidadModal from "../components/ResetContabilidadModal";
+import { FiAlertCircle } from "react-icons/fi";
 
 export default function FacturacionHub() {
   const { userProfile } = useAuth();
   const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
   const clinicName = userProfile?.tenant?.nombre || userProfile?.tenant_nombre || userProfile?.clinica || "Clínica Dental Sincelejo";
-  const [showResetModal, setShowResetModal] = useState(false);
   const hasFE = hasElectronicInvoicingAccess(userProfile);
   const visibleOptions = FACT_OPTIONS.filter(opt => opt.id !== "fv" || hasFE);
 
@@ -173,15 +171,6 @@ export default function FacturacionHub() {
 
             {/* Header Action Buttons */}
             <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setShowResetModal(true)}
-                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                title="Limpiar movimientos contables de prueba"
-              >
-                <FiTrash2 size={13} className="text-rose-500" />
-                <span>Reiniciar contabilidad</span>
-              </button>
-
               {NEW_BUTTON_LABELS[activeSubView] && (
                 <button 
                   onClick={() => setActiveSubView(`${activeSubView}_form`)}
@@ -197,13 +186,6 @@ export default function FacturacionHub() {
           <div key={activeSubView} className="flex-1 overflow-y-auto bg-slate-50/30">
             {content}
           </div>
-
-          <ResetContabilidadModal 
-            isOpen={showResetModal}
-            onClose={() => setShowResetModal(false)}
-            tenantId={inquilino}
-            clinicName={clinicName}
-          />
         </div>
       );
     }
@@ -223,14 +205,6 @@ export default function FacturacionHub() {
           </div>
         </div>
         <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setShowResetModal(true)}
-            className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-            title="Limpiar movimientos contables de prueba"
-          >
-            <FiTrash2 size={13} className="text-rose-500" />
-            <span>Reiniciar contabilidad</span>
-          </button>
           <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
             {visibleOptions.length} Opciones
           </span>
@@ -262,13 +236,6 @@ export default function FacturacionHub() {
           </div>
         ))}
       </div>
-
-      <ResetContabilidadModal 
-        isOpen={showResetModal}
-        onClose={() => setShowResetModal(false)}
-        tenantId={inquilino}
-        clinicName={clinicName}
-      />
     </div>
   );
 }

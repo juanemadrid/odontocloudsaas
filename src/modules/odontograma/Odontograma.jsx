@@ -17,10 +17,14 @@ import {
     FiPrinter,
     FiCalendar,
     FiFeather,
+    FiAward,
+    FiAlertTriangle,
     FiX
 } from "react-icons/fi";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
+import FirmaHuellaModal from "./components/FirmaHuellaModal";
+import { generateOralDriveOdontogramaPrintHTML } from "./utils/odontogramaPrintService";
 const printHTMLInHiddenIframe = (htmlContent) => {
     let iframe = document.getElementById("oc-print-iframe");
     if (!iframe) {
@@ -75,231 +79,31 @@ export default function Odontograma({ embeddedPatient }) {
     const [saving, setSaving] = useState(false);
     const [search, setSearch] = useState("");
     const [firmaModal, setFirmaModal] = useState(null);
-
-    const [printingSesion, setPrintingSesion] = useState(null);
-    const printTargetRef = useRef(null);
+    const [isReadOnlyMode, setIsReadOnlyMode] = useState(false);
+    const [readOnlyAlert, setReadOnlyAlert] = useState(false);
 
     useEffect(() => {
-        if (!printingSesion) return;
+        if (readOnlyAlert) {
+            const timer = setTimeout(() => setReadOnlyAlert(false), 4000);
+            return () => clearTimeout(timer);
+        }
+    }, [readOnlyAlert]);
 
-        const executePrint = async () => {
-            const toastId = toast?.loading ? toast.loading("Generando vista de impresión...") : null;
-            try {
-                await new Promise(r => setTimeout(r, 150));
-                const { default: html2canvas } = await import("html2canvas");
-                const el = printTargetRef.current;
-                if (!el) {
-                    if (toastId && toast?.dismiss) toast.dismiss(toastId);
-                    setPrintingSesion(null);
-                    return;
-                }
-
-                const canvas = await html2canvas(el, {
-                    backgroundColor: "#ffffff",
-                    scale: 2,
-                    logging: false,
-                    useCORS: true
-                });
-
-                const imgData = canvas.toDataURL("image/png");
-
-                const logoUrl = userProfile?.tenant?.logo || "";
-                const clinicName = userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.tenant?.name || "Clínica Dental";
-                const clinicNit = userProfile?.tenant?.nit || "—";
-                const clinicAddress = userProfile?.tenant?.direccion || "—";
-                const clinicPhone = userProfile?.tenant?.telefono || "—";
-                const clinicEmail = userProfile?.tenant?.email || "";
-
-                const rawDate = printingSesion.creado?.seconds ? new Date(printingSesion.creado.seconds * 1000) : new Date();
-                const dateStr = rawDate.toLocaleDateString("es-CO");
-
-            const htmlContent = `
-                <html>
-                <head>
-                    <title>Odontograma Clínico - ${embeddedPatient?.nombreCompleto}</title>
-                    <style>
-                        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-                        body {
-                            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                            margin: 0;
-                            padding: 40px;
-                            color: #334155;
-                            background-color: #ffffff;
-                        }
-                        .header {
-                            display: flex;
-                            justify-content: space-between;
-                            align-items: flex-start;
-                            border-bottom: 4px solid #2563eb;
-                            padding-bottom: 25px;
-                            margin-bottom: 30px;
-                            gap: 20px;
-                        }
-                        .logo-container {
-                            display: flex;
-                            gap: 25px;
-                            align-items: center;
-                        }
-                        .logo-text-placeholder {
-                            width: 80px;
-                            height: 80px;
-                            background: #2563eb;
-                            border-radius: 16px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            color: white;
-                            font-size: 36px;
-                            font-weight: 900;
-                            text-transform: uppercase;
-                        }
-                        .clinic-title {
-                            margin: 0;
-                            font-size: 24px;
-                            font-weight: 900;
-                            color: #0f172a;
-                            text-transform: uppercase;
-                            letter-spacing: -1px;
-                        }
-                        .clinic-meta {
-                            margin: 2px 0;
-                            font-size: 12px;
-                            color: #64748b;
-                            font-weight: 500;
-                        }
-                        .doc-info {
-                            text-align: right;
-                        }
-                        .doc-badge {
-                            background: #eff6ff;
-                            padding: 12px 20px;
-                            border-radius: 16px;
-                            border: 2px solid #dbeafe;
-                            margin-bottom: 8px;
-                            display: inline-block;
-                        }
-                        .doc-badge span {
-                            font-size: 16px;
-                            font-weight: 900;
-                            color: #1d4ed8;
-                            text-transform: uppercase;
-                            letter-spacing: 0.5px;
-                        }
-                        .doc-meta {
-                            margin: 0;
-                            font-size: 11px;
-                            color: #94a3b8;
-                            font-weight: 900;
-                            text-transform: uppercase;
-                        }
-                        .patient-info {
-                            font-size: 13px;
-                            margin-bottom: 24px;
-                            background: #f8fafc;
-                            border: 1px solid #e2e8f0;
-                            border-radius: 12px;
-                            padding: 16px;
-                            display: grid;
-                            grid-template-columns: 1fr 1fr;
-                            gap: 8px;
-                        }
-                        .patient-info div span {
-                            font-weight: bold;
-                            color: #475569;
-                            margin-right: 4px;
-                        }
-                        .odontogram-image-container {
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            margin-top: 10px;
-                        }
-                        .odontogram-image {
-                            max-width: 100%;
-                            height: auto;
-                            border: 1px solid #cbd5e1;
-                            border-radius: 16px;
-                            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
-                        }
-                        @media print {
-                            body {
-                                padding: 20px;
-                            }
-                            .odontogram-image {
-                                border: none;
-                                box-shadow: none;
-                            }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div class="logo-container">
-                            ${logoUrl 
-                                ? `<img src="${logoUrl}" style="max-height: 75px; max-width: 150px; object-fit: contain;" />`
-                                : `<div class="logo-text-placeholder">${clinicName.substring(0, 1) || "O"}</div>`
-                            }
-                            <div>
-                                <h1 class="clinic-title">${clinicName}</h1>
-                                <p class="clinic-meta" style="font-weight: 800;">NIT: ${clinicNit}</p>
-                                <p class="clinic-meta">${clinicAddress}</p>
-                                <p class="clinic-meta">TEL: ${clinicPhone} | ${clinicEmail}</p>
-                            </div>
-                        </div>
-                        <div class="doc-info">
-                            <div class="doc-badge">
-                                <span>Odontograma Clínico</span>
-                            </div>
-                            <p class="doc-meta">FECHA SESIÓN: ${dateStr}</p>
-                        </div>
-                    </div>
-                    <div class="patient-info">
-                        <div><span>Paciente:</span> ${embeddedPatient?.nombreCompleto}</div>
-                        <div><span>Doc. Identidad:</span> ${embeddedPatient?.nroDocumento || "—"}</div>
-                        <div><span>Historia Clínica:</span> ${embeddedPatient?.nroHistoria || "—"}</div>
-                        <div><span>Edad:</span> ${embeddedPatient?.edad || "—"}</div>
-                    </div>
-                    <div class="odontogram-image-container">
-                        <img src="${imgData}" class="odontogram-image" />
-                    </div>
-                    <div style="margin-top: 50px; display: flex; justify-content: space-between; gap: 60px; padding: 0 20px;">
-                        <div style="flex: 1; text-align: center;">
-                            <div style="height: 85px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
-                                ${(userProfile?.firmaElectronica || userProfile?.firma) ? `<img src="${userProfile.firmaElectronica || userProfile.firma}" style="max-height: 80px; max-width: 280px; object-fit: contain;" />` : ''}
-                            </div>
-                            <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">
-                                <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase;">Firma del Especialista / Odontólogo</p>
-                                <p style="margin: 3px 0 0 0; font-size: 9.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Sello y Registro Médico'}</p>
-                            </div>
-                        </div>
-                        <div style="flex: 1; text-align: center;">
-                            <div style="height: 85px;"></div>
-                            <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">
-                                <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase;">Responsable de Registro</p>
-                                <p style="margin: 3px 0 0 0; font-size: 9.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Generado por: ${(userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrador").toUpperCase()}</p>
-                            </div>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-
-            printHTMLInHiddenIframe(htmlContent);
-
-            if (toastId && toast?.dismiss) toast.dismiss(toastId);
-            if (toast?.success) toast.success("Vista previa de impresión generada");
-
+    const handlePrintSesion = (sesionToPrint) => {
+        try {
+            const html = generateOralDriveOdontogramaPrintHTML({
+                sesion: sesionToPrint,
+                paciente: embeddedPatient,
+                userProfile,
+                baseUrl: window.location.origin + "/"
+            });
+            printHTMLInHiddenIframe(html);
+            toast?.success("Impresión iniciada");
         } catch (err) {
-            console.error(err);
-            if (toastId && toast?.dismiss) toast.dismiss(toastId);
-            if (toast?.error) toast.error("Error al generar vista de impresión");
-        } finally {
-            setPrintingSesion(null);
+            console.error("Error al imprimir odontograma:", err);
+            toast?.error("Error al generar vista de impresión");
         }
     };
-
-    executePrint();
-}, [printingSesion]);
 
     useEffect(() => {
         if (embeddedPatient?.id) loadSesiones();
@@ -325,7 +129,11 @@ export default function Odontograma({ embeddedPatient }) {
                     creado: d.created_at,
                     creadoPor: h.creadoPor || d.creado_por || "usuario@sistema.com",
                     tipoDenticion: h.tipoDenticion || d.tipo_denticion || "completo",
-                    profesional: h.profesional || d.profesional || "Profesional de Planta"
+                    profesional: h.profesional || d.profesional || "Profesional de Planta",
+                    firmaDoctor: h.firmaDoctor || d.firma_doctor,
+                    firmaPaciente: h.firmaPaciente || d.firma_paciente || d.firmaUrl,
+                    huellaPaciente: h.huellaPaciente || d.huella_paciente || d.huellaUrl,
+                    rawHallazgos: h
                 };
             }));
         } catch (err) { 
@@ -369,8 +177,9 @@ export default function Odontograma({ embeddedPatient }) {
                 estado: h.estado || "Abierto",
                 tipoDenticion: h.tipoDenticion || "completo",
                 creadoPor: h.creadoPor || creador,
-                profesional: h.profesional || prof
-            });
+                profesional: h.profesional || prof,
+                rawHallazgos: h
+            }, false);
         } catch (err) { 
             console.error("Error creating session:", err);
             toast?.error("Error al crear sesión: " + (err.message || "")); 
@@ -378,12 +187,14 @@ export default function Odontograma({ embeddedPatient }) {
         finally { setLoading(false); }
     };
 
-    const abrirEditor = (s) => {
+    const abrirEditor = (s, readOnly = false) => {
         setCurrentSesion(s);
         setOdontogramaData(s.data || {});
         setPlanTratamiento(s.plan || []);
         setObservaciones(s.observaciones || "");
         setTipoDenticion(s.tipoDenticion || "completo");
+        setIsReadOnlyMode(readOnly);
+        setReadOnlyAlert(false);
         setViewMode("EDITOR");
     };
 
@@ -426,233 +237,24 @@ export default function Odontograma({ embeddedPatient }) {
     const [surfaceFilter, setSurfaceFilter] = useState("todas");
     const odontogramaRef = useRef(null);
 
-    const handleImpFoto = async () => {
-        try {
-            const { default: html2canvas } = await import("html2canvas");
-            const el = odontogramaRef.current;
-            if (!el) return;
-            const canvas = await html2canvas(el, { backgroundColor: "#ffffff", scale: 2 });
-            const link = document.createElement("a");
-            link.download = `odontograma_${embeddedPatient?.nombreCompleto || "paciente"}_${new Date().toLocaleDateString("es-ES").replace(/\//g, "-")}.png`;
-            link.href = canvas.toDataURL("image/png");
-            link.click();
-            toast?.success("📸 Imagen guardada");
-        } catch { toast?.error("Error al capturar imagen"); }
-    };
-
-    const handleImprimir = async () => {
-        setLoading(true);
-        try {
-            const { default: html2canvas } = await import("html2canvas");
-            const el = odontogramaRef.current;
-            if (!el) return;
-
-            // Desactivamos temporalmente el anillo de selección activo para la impresión
-            const prevActiveTooth = activeToothId;
-            setActiveToothId(null);
-
-            // Breve espera para asegurar que React actualizó el DOM
-            await new Promise(r => setTimeout(r, 100));
-
-            const canvas = await html2canvas(el, { 
-                backgroundColor: "#ffffff", 
-                scale: 2,
-                logging: false,
-                useCORS: true
-            });
-
-            // Restauramos la selección
-            setActiveToothId(prevActiveTooth);
-
-            const imgData = canvas.toDataURL("image/png");
-
-            const logoUrl = userProfile?.tenant?.logo || "";
-            const clinicName = userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.tenant?.name || "Clínica Dental";
-            const clinicNit = userProfile?.tenant?.nit || "—";
-            const clinicAddress = userProfile?.tenant?.direccion || "—";
-            const clinicPhone = userProfile?.tenant?.telefono || "—";
-            const clinicEmail = userProfile?.tenant?.email || "";
-
-            const htmlContent = `
-                <html>
-                <head>
-                    <title>Odontograma Clínico - ${embeddedPatient?.nombreCompleto}</title>
-                    <style>
-                        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-                        body {
-                            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                            margin: 0;
-                            padding: 40px;
-                            color: #334155;
-                            background-color: #ffffff;
-                        }
-                        .header {
-                            display: flex;
-                            justify-content: space-between;
-                            align-items: flex-start;
-                            border-bottom: 4px solid #2563eb;
-                            padding-bottom: 25px;
-                            margin-bottom: 30px;
-                            gap: 20px;
-                        }
-                        .logo-container {
-                            display: flex;
-                            gap: 25px;
-                            align-items: center;
-                        }
-                        .logo-text-placeholder {
-                            width: 80px;
-                            height: 80px;
-                            background: #2563eb;
-                            border-radius: 16px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            color: white;
-                            font-size: 36px;
-                            font-weight: 900;
-                            text-transform: uppercase;
-                        }
-                        .clinic-title {
-                            margin: 0;
-                            font-size: 24px;
-                            font-weight: 900;
-                            color: #0f172a;
-                            text-transform: uppercase;
-                            letter-spacing: -1px;
-                        }
-                        .clinic-meta {
-                            margin: 2px 0;
-                            font-size: 12px;
-                            color: #64748b;
-                            font-weight: 500;
-                        }
-                        .doc-info {
-                            text-align: right;
-                        }
-                        .doc-badge {
-                            background: #eff6ff;
-                            padding: 12px 20px;
-                            border-radius: 16px;
-                            border: 2px solid #dbeafe;
-                            margin-bottom: 8px;
-                            display: inline-block;
-                        }
-                        .doc-badge span {
-                            font-size: 16px;
-                            font-weight: 900;
-                            color: #1d4ed8;
-                            text-transform: uppercase;
-                            letter-spacing: 0.5px;
-                        }
-                        .doc-meta {
-                            margin: 0;
-                            font-size: 11px;
-                            color: #94a3b8;
-                            font-weight: 900;
-                            text-transform: uppercase;
-                        }
-                        .patient-info {
-                            font-size: 13px;
-                            margin-bottom: 24px;
-                            background: #f8fafc;
-                            border: 1px solid #e2e8f0;
-                            border-radius: 12px;
-                            padding: 16px;
-                            display: grid;
-                            grid-template-columns: 1fr 1fr;
-                            gap: 8px;
-                        }
-                        .patient-info div span {
-                            font-weight: bold;
-                            color: #475569;
-                            margin-right: 4px;
-                        }
-                        .odontogram-image-container {
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            margin-top: 10px;
-                        }
-                        .odontogram-image {
-                            max-width: 100%;
-                            height: auto;
-                            border: 1px solid #cbd5e1;
-                            border-radius: 16px;
-                            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
-                        }
-                        @media print {
-                            body {
-                                padding: 20px;
-                            }
-                            .odontogram-image {
-                                border: none;
-                                box-shadow: none;
-                            }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div class="logo-container">
-                            ${logoUrl 
-                                ? `<img src="${logoUrl}" style="max-height: 75px; max-width: 150px; object-fit: contain;" />`
-                                : `<div class="logo-text-placeholder">${clinicName.substring(0, 1) || "O"}</div>`
-                            }
-                            <div>
-                                <h1 class="clinic-title">${clinicName}</h1>
-                                <p class="clinic-meta" style="font-weight: 800;">NIT: ${clinicNit}</p>
-                                <p class="clinic-meta">${clinicAddress}</p>
-                                <p class="clinic-meta">TEL: ${clinicPhone} | ${clinicEmail}</p>
-                            </div>
-                        </div>
-                        <div class="doc-info">
-                            <div class="doc-badge">
-                                <span>Odontograma Clínico</span>
-                            </div>
-                            <p class="doc-meta">FECHA IMPRESIÓN: ${new Date().toLocaleDateString("es-ES")}</p>
-                        </div>
-                    </div>
-                    <div class="patient-info">
-                        <div><span>Paciente:</span> ${embeddedPatient?.nombreCompleto}</div>
-                        <div><span>Doc. Identidad:</span> ${embeddedPatient?.nroDocumento || "—"}</div>
-                        <div><span>Historia Clínica:</span> ${embeddedPatient?.nroHistoria || "—"}</div>
-                        <div><span>Edad:</span> ${embeddedPatient?.edad || "—"}</div>
-                    </div>
-                    <div class="odontogram-image-container">
-                        <img src="${imgData}" class="odontogram-image" />
-                    </div>
-                    <div style="margin-top: 50px; display: flex; justify-content: space-between; gap: 60px; padding: 0 20px;">
-                        <div style="flex: 1; text-align: center;">
-                            <div style="height: 85px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 6px;">
-                                ${(userProfile?.firmaElectronica || userProfile?.firma) ? `<img src="${userProfile.firmaElectronica || userProfile.firma}" style="max-height: 80px; max-width: 280px; object-fit: contain;" />` : ''}
-                            </div>
-                            <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">
-                                <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase;">Firma del Especialista / Odontólogo</p>
-                                <p style="margin: 3px 0 0 0; font-size: 9.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Sello y Registro Médico'}</p>
-                            </div>
-                        </div>
-                        <div style="flex: 1; text-align: center;">
-                            <div style="height: 85px;"></div>
-                            <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">
-                                <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase;">Responsable de Registro</p>
-                                <p style="margin: 3px 0 0 0; font-size: 9.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Generado por: ${(userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrador").toUpperCase()}</p>
-                            </div>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-
-            printHTMLInHiddenIframe(htmlContent);
-        } catch { 
-            toast?.error("Error al generar impresión del odontograma"); 
-        } finally {
-            setLoading(false);
-        }
+    const handleImprimir = () => {
+        handlePrintSesion({
+            ...currentSesion,
+            data: odontogramaData,
+            plan: planTratamiento,
+            observaciones,
+            tipoDenticion,
+            creado: currentSesion?.creado || new Date().toISOString(),
+            profesional: currentSesion?.profesional || userProfile?.nombreCompleto || "Odontólogo Tratante"
+        });
     };
 
     const handleToothClick = (dienteId, zona) => {
+        if (isReadOnly) {
+            setReadOnlyAlert(true);
+            return;
+        }
+
         setActiveToothId(dienteId);
         
         if (!surfaceFilter) return;
@@ -746,8 +348,20 @@ export default function Odontograma({ embeddedPatient }) {
     };
 
     const handleSurfaceFilterChange = (newSurfaceId) => {
+        if (isReadOnly) {
+            setReadOnlyAlert(true);
+            return;
+        }
         setSurfaceFilter(newSurfaceId);
         setActiveToothId(null);
+    };
+
+    const handleToolSelect = (toolId) => {
+        if (isReadOnly) {
+            setReadOnlyAlert(true);
+            return;
+        }
+        setSelectedToolId(prev => prev === toolId ? null : toolId);
     };
 
     const handleSave = async (finalizar = false) => {
@@ -800,6 +414,10 @@ export default function Odontograma({ embeddedPatient }) {
     };
 
     const handleDeleteItem = (idx) => {
+        if (isReadOnly) {
+            setReadOnlyAlert(true);
+            return;
+        }
         const item = planTratamiento[idx];
         setPlanTratamiento(prev => prev.filter((_, i) => i !== idx));
         setOdontogramaData(prev => {
@@ -819,7 +437,7 @@ export default function Odontograma({ embeddedPatient }) {
         });
     };
 
-    const isReadOnly = currentSesion?.estado === "Finalizado";
+    const isReadOnly = isReadOnlyMode || currentSesion?.estado === "Finalizado";
     const filtered = sesiones.filter(s =>
         !search || (s.creadoPor || "").toLowerCase().includes(search.toLowerCase()) ||
         (s.profesional || "").toLowerCase().includes(search.toLowerCase())
@@ -928,35 +546,59 @@ export default function Odontograma({ embeddedPatient }) {
                                     </span>
                                 </div>
 
-                                <div className="col-span-2 flex justify-end gap-2">
+                                <div className="col-span-2 flex justify-end items-center gap-1.5">
+                                    {/* 1. Firma del paciente */}
                                     <button
-                                        onClick={() => setFirmaModal(s)}
-                                        title="Firma y huella paciente"
-                                        className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center hover:bg-cyan-100 transition-all"
+                                        onClick={() => setFirmaModal({ ...s, tipoFirma: "paciente" })}
+                                        title="Firma del paciente"
+                                        className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center hover:bg-cyan-100 transition-all shadow-sm"
                                     >
                                         <FiFeather size={14} />
                                     </button>
+
+                                    {/* 2. Firma del doctor */}
                                     <button
-                                        onClick={() => abrirEditor(s)}
-                                        title={finalizado ? "Ver" : "Editar"}
-                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${finalizado
-                                            ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                                            : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
-                                        }`}
+                                        onClick={() => setFirmaModal({ ...s, tipoFirma: "doctor" })}
+                                        title="Firma del doctor"
+                                        className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-all shadow-sm"
                                     >
-                                        {finalizado ? <FiEye size={14} /> : <FiEdit3 size={14} />}
+                                        <FiAward size={14} />
                                     </button>
-                                     <button
-                                         onClick={() => setPrintingSesion(s)}
-                                         title="Imprimir / PDF"
-                                         className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-100 transition-all"
-                                     >
-                                         <FiPrinter size={14} />
-                                     </button>
+
+                                    {/* 3. Ver (Modo solo lectura) */}
+                                    <button
+                                        onClick={() => abrirEditor(s, true)}
+                                        title="Ver odontograma"
+                                        className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-100 transition-all shadow-sm"
+                                    >
+                                        <FiEye size={14} />
+                                    </button>
+
+                                    {/* 4. Editar (SOLO si no está finalizado) */}
+                                    {!finalizado && (
+                                        <button
+                                            onClick={() => abrirEditor(s, false)}
+                                            title="Editar odontograma"
+                                            className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 transition-all shadow-sm"
+                                        >
+                                            <FiEdit3 size={14} />
+                                        </button>
+                                    )}
+
+                                    {/* 5. Imprimir */}
+                                    <button
+                                        onClick={() => handlePrintSesion(s)}
+                                        title="Imprimir / PDF"
+                                        className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-100 transition-all shadow-sm"
+                                    >
+                                        <FiPrinter size={14} />
+                                    </button>
+
+                                    {/* 6. Borrar */}
                                     <button
                                         onClick={() => handleEliminar(s.id)}
-                                        title="Eliminar"
-                                        className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-100 transition-all"
+                                        title="Borrar odontograma"
+                                        className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-100 transition-all shadow-sm"
                                     >
                                         <FiTrash2 size={14} />
                                     </button>
@@ -979,33 +621,44 @@ export default function Odontograma({ embeddedPatient }) {
                     <FirmaHuellaModal
                         sesion={firmaModal}
                         paciente={embeddedPatient}
+                        tipo={firmaModal.tipoFirma || "paciente"}
                         planTratamiento={firmaModal.plan || []}
                         onClose={() => setFirmaModal(null)}
-                        onGuardar={async ({ firmaDataUrl, huellaImg }) => {
+                        onGuardar={async ({ firmaDataUrl, huellaImg, tipo }) => {
                             try {
-                                const ref = doc(db, "pacientes", embeddedPatient.id, "odontogramas", firmaModal.id);
-                                await setDoc(ref, {
-                                    firmaUrl: firmaDataUrl || null,
-                                    huellaUrl: huellaImg || null,
-                                    firmadoEn: serverTimestamp(),
-                                }, { merge: true });
-                                toast?.success("✅ Firma y huella guardadas");
+                                const isDoc = tipo === "doctor";
+                                const currentHallazgos = firmaModal.rawHallazgos || {};
+                                const updatePayload = {
+                                    ...currentHallazgos,
+                                    data: firmaModal.data || currentHallazgos.data || {},
+                                    plan: firmaModal.plan || currentHallazgos.plan || [],
+                                    estado: firmaModal.estado || currentHallazgos.estado || "Abierto",
+                                    tipoDenticion: firmaModal.tipoDenticion || currentHallazgos.tipoDenticion || "completo",
+                                    creadoPor: firmaModal.creadoPor || currentHallazgos.creadoPor,
+                                    profesional: firmaModal.profesional || currentHallazgos.profesional,
+                                    firmaDoctor: isDoc ? (firmaDataUrl || null) : (firmaModal.firmaDoctor || currentHallazgos.firmaDoctor || null),
+                                    firmaPaciente: !isDoc ? (firmaDataUrl || null) : (firmaModal.firmaPaciente || currentHallazgos.firmaPaciente || null),
+                                    huellaPaciente: !isDoc ? (huellaImg || null) : (firmaModal.huellaPaciente || currentHallazgos.huellaPaciente || null),
+                                    firmadoEn: new Date().toISOString()
+                                };
+
+                                const { error } = await supabase
+                                    .from("odontogramas")
+                                    .update({
+                                        hallazgos: updatePayload
+                                    })
+                                    .eq("id", firmaModal.id);
+
+                                if (error) throw error;
+                                toast?.success(isDoc ? "✅ Firma del doctor guardada con éxito" : "✅ Firma y huella del paciente guardadas con éxito");
                                 setFirmaModal(null);
                                 loadSesiones();
-                            } catch {
+                            } catch (err) {
+                                console.error("Error al guardar firma:", err);
                                 toast?.error("Error al guardar firma");
                             }
                         }}
                     />
-                )}
-
-                {printingSesion && (
-                    <div style={{ position: "absolute", left: "-9999px", top: "-9999px", width: "900px" }} ref={printTargetRef}>
-                        <OdontogramaVisual
-                            odontogramaData={printingSesion.data || {}}
-                            tipoDenticion={printingSesion.tipoDenticion || "completo"}
-                        />
-                    </div>
                 )}
             </div>
         );
@@ -1022,10 +675,16 @@ export default function Odontograma({ embeddedPatient }) {
                 </button>
 
                 <div>
-                    <div className="text-[12px] font-black text-slate-800 uppercase tracking-tight leading-none">
-                        Odontograma <span className="text-indigo-600">Clínico</span>
-                        {isReadOnly && (
-                            <span className="ml-2 text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-0.5 rounded-full">FINALIZADO</span>
+                    <div className="text-[12px] font-black text-slate-800 uppercase tracking-tight leading-none flex items-center gap-2">
+                        <span>Odontograma <span className="text-indigo-600">Clínico</span></span>
+                        {isReadOnly ? (
+                            <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
+                                {currentSesion?.estado === "Finalizado" ? "FINALIZADO" : "MODO VISUALIZACIÓN"}
+                            </span>
+                        ) : (
+                            <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                                MODO EDICIÓN
+                            </span>
                         )}
                     </div>
                     <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
@@ -1056,6 +715,18 @@ export default function Odontograma({ embeddedPatient }) {
                     ))}
                 </div>
 
+                {isReadOnly && currentSesion?.estado !== "Finalizado" && (
+                    <button
+                        onClick={() => {
+                            setIsReadOnlyMode(false);
+                            setReadOnlyAlert(false);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-[14px] bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all shadow-sm"
+                    >
+                        <FiEdit3 size={14} /> Modo edición
+                    </button>
+                )}
+
                 {!isReadOnly && (
                     <>
                         <button onClick={() => handleSave(false)} disabled={saving} className={`flex items-center gap-2 px-5 py-2 rounded-[14px] text-[11px] font-black uppercase tracking-widest transition-all ${saving ? "bg-slate-100 text-slate-400" : "bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700"}`}>
@@ -1066,10 +737,7 @@ export default function Odontograma({ embeddedPatient }) {
                         </button>
                     </>
                 )}
-                <button onClick={handleImpFoto} title="Guardar como imagen" className="flex items-center gap-2 px-4 py-2 rounded-[14px] bg-cyan-50 text-cyan-700 border border-cyan-200 text-[11px] font-black uppercase tracking-widest hover:bg-cyan-100 transition-all">
-                    <FiFileText size={14} /> Imp. Foto
-                </button>
-                <button onClick={handleImprimir} title="Imprimir" className="flex items-center gap-2 px-4 py-2 rounded-[14px] bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
+                <button onClick={handleImprimir} title="Imprimir como PDF" className="flex items-center gap-2 px-4 py-2 rounded-[14px] bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all shadow-sm">
                     <FiPrinter size={14} /> Imprimir
                 </button>
             </header>
@@ -1080,7 +748,7 @@ export default function Odontograma({ embeddedPatient }) {
                     <div className="w-full flex-shrink-0" ref={odontogramaRef}>
                         <OdontogramaVisual
                             odontogramaData={odontogramaData}
-                            onToothClick={isReadOnly ? undefined : handleToothClick}
+                            onToothClick={handleToothClick}
                             tipoDenticion={tipoDenticion}
                             activeToothId={activeToothId}
                             surfaceFilter={surfaceFilter}
@@ -1119,12 +787,11 @@ export default function Odontograma({ embeddedPatient }) {
                                 {TOOLS.filter(t => t.id !== "borrador").map(t => (
                                     <button
                                         key={t.id}
-                                        onClick={() => !isReadOnly && setSelectedToolId(selectedToolId === t.id ? null : t.id)}
-                                        disabled={isReadOnly}
+                                        onClick={() => handleToolSelect(t.id)}
                                         className={`flex items-center gap-2 py-1.5 px-2.5 rounded-xl transition-all text-left ${
                                             selectedToolId === t.id
                                                 ? "bg-white shadow-sm ring-1 ring-indigo-200"
-                                                : "hover:bg-white/70 disabled:hover:bg-transparent"
+                                                : "hover:bg-white/70"
                                         }`}
                                     >
                                         <div className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 shrink-0 shadow-sm overflow-hidden" style={{ color: t.color }}>
@@ -1137,8 +804,7 @@ export default function Odontograma({ embeddedPatient }) {
                                 ))}
                                 {/* Borrador */}
                                 <button
-                                    onClick={() => !isReadOnly && setSelectedToolId(selectedToolId === "borrador" ? null : "borrador")}
-                                    disabled={isReadOnly}
+                                    onClick={() => handleToolSelect("borrador")}
                                     className={`flex items-center gap-2 py-1.5 px-2.5 rounded-xl transition-all text-left col-span-full mt-2 border-t border-slate-100 pt-3 ${
                                         selectedToolId === "borrador" ? "bg-white shadow-sm ring-1 ring-slate-300" : "hover:bg-white/70"
                                     }`}
@@ -1155,9 +821,78 @@ export default function Odontograma({ embeddedPatient }) {
                                     value={observaciones}
                                     onChange={e => setObservaciones(e.target.value)}
                                     disabled={isReadOnly}
-                                    className="w-full rounded-[14px] border-2 border-slate-200 px-4 py-3 text-[12px] text-slate-700 resize-y min-h-[140px] outline-none focus:border-indigo-400 transition-colors bg-white shadow-inner"
+                                    className="w-full rounded-[14px] border-2 border-slate-200 px-4 py-3 text-[12px] text-slate-700 resize-y min-h-[140px] outline-none focus:border-indigo-400 transition-colors bg-white shadow-inner disabled:bg-slate-50 disabled:text-slate-500"
                                     placeholder="Detalles sobre los hallazgos..."
                                 />
+                            </div>
+                        </div>
+
+                        {/* TABLA DE HALLAZGOS INLINE (MATCHING ORALDRIVE SCREENSHOT 1) */}
+                        <div className="mt-8 border-t border-slate-200 pt-6">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="text-[12px] font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                                    <span>Hallazgos del Odontograma</span>
+                                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full font-bold">
+                                        {planTratamiento.length} registros
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                                <table className="w-full border-collapse text-[11px]">
+                                    <thead>
+                                        <tr className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider text-[9.5px] border-b border-slate-200">
+                                            <th className="py-2.5 px-4 text-left">Fecha de creación</th>
+                                            <th className="py-2.5 px-4 text-left">Creado por</th>
+                                            <th className="py-2.5 px-4 text-center">Pieza</th>
+                                            <th className="py-2.5 px-4 text-left">Situación</th>
+                                            <th className="py-2.5 px-4 text-left">Cara afectada</th>
+                                            {!isReadOnly && <th className="py-2.5 px-3 text-center">Acción</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                        {planTratamiento.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={isReadOnly ? 5 : 6} className="py-8 text-center text-slate-400 text-[11px]">
+                                                    Sin hallazgos clínicos registrados en esta sesión.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            planTratamiento.map((item, idx) => {
+                                                const dateStr = item.fechaISO ? new Date(item.fechaISO).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : "—";
+                                                return (
+                                                    <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                                                        <td className="py-2.5 px-4 text-slate-500 font-semibold">{dateStr}</td>
+                                                        <td className="py-2.5 px-4 text-slate-700 font-semibold">{currentSesion?.profesional || userProfile?.nombreCompleto || "Doctor"}</td>
+                                                        <td className="py-2.5 px-4 text-center">
+                                                            <span className="inline-block bg-indigo-50 text-indigo-700 border border-indigo-100 font-black px-2 py-0.5 rounded-md text-[10px]">
+                                                                #{item.diente}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-2.5 px-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: item.color || "#94a3b8" }} />
+                                                                <span className="font-bold text-slate-800">{item.tratamiento}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-2.5 px-4 text-slate-600">{item.zonaLabel || item.zona}</td>
+                                                        {!isReadOnly && (
+                                                            <td className="py-2.5 px-3 text-center">
+                                                                <button
+                                                                    onClick={() => handleDeleteItem(idx)}
+                                                                    className="text-rose-400 hover:text-rose-600 hover:scale-110 p-1 transition-all"
+                                                                    title="Eliminar hallazgo"
+                                                                >
+                                                                    <FiTrash2 size={13} />
+                                                                </button>
+                                                            </td>
+                                                        )}
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -1210,6 +945,42 @@ export default function Odontograma({ embeddedPatient }) {
                     </div>
                 </div>
             </div>
+
+            {/* AVISO FLOTANTE DE MODO VISUALIZACIÓN (MATCHING ORALDRIVE SCREENSHOT 1) */}
+            {readOnlyAlert && (
+                <div 
+                    className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 shadow-2xl rounded-2xl bg-rose-500 text-white px-6 py-3.5 flex items-center gap-3 border border-rose-400 max-w-lg animate-bounce-short"
+                    style={{ boxShadow: "0 20px 45px rgba(244, 63, 94, 0.45)" }}
+                >
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                        <FiAlertTriangle className="text-xl text-white" />
+                    </div>
+                    <div className="text-left flex-1">
+                        <div className="font-extrabold text-[13px] tracking-wide leading-tight">Oops!</div>
+                        <div className="text-[11.5px] font-medium text-rose-100 leading-snug mt-0.5">
+                            Se encuentra en modo visualización, si desea editar el odontograma, debe ir a modo edición.
+                        </div>
+                    </div>
+                    {currentSesion?.estado !== "Finalizado" && (
+                        <button
+                            onClick={() => {
+                                setIsReadOnlyMode(false);
+                                setReadOnlyAlert(false);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-white text-rose-600 hover:bg-rose-50 text-[10px] font-black uppercase tracking-wider shrink-0 transition-all shadow-sm"
+                        >
+                            Modo edición
+                        </button>
+                    )}
+                    <button 
+                        onClick={() => setReadOnlyAlert(false)} 
+                        className="text-rose-200 hover:text-white p-1 ml-1"
+                        title="Cerrar"
+                    >
+                        <FiX size={18} />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

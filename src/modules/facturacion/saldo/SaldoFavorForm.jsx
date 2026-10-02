@@ -48,8 +48,15 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
 
+    // Helper for local date (YYYY-MM-DD) avoiding UTC boundary issues
+    const getTodayLocalDateStr = () => {
+        const d = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    };
+
     // Form State
-    const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+    const [fecha, setFecha] = useState(getTodayLocalDateStr);
     const [profesional, setProfesional] = useState({ id: "", nombre: "" });
     const [paciente, setPaciente] = useState(null);
     const [valor, setValor] = useState("");
@@ -275,8 +282,19 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
 
         try {
             const creditId = crypto.randomUUID ? crypto.randomUUID() : `pago_${Date.now()}`;
-            const fechaIso = new Date(fecha + "T00:00:00").toISOString();
-            const nowIso = new Date().toISOString();
+            const now = new Date();
+            const nowIso = now.toISOString();
+            const todayStr = getTodayLocalDateStr();
+
+            // Combinar fecha local sin desfases de huso horario a medianoche
+            let fechaIso;
+            if (!fecha || fecha === todayStr) {
+                fechaIso = nowIso;
+            } else {
+                const [y, m, d] = fecha.split("-").map(Number);
+                const localDt = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+                fechaIso = localDt.toISOString();
+            }
 
             // Consumir el siguiente consecutivo oficial de Recibo de Caja (misma numeración correlativa)
             let nextConsecutivoNum = null;
@@ -286,13 +304,20 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                 console.warn("Aviso consumiendo consecutivo para saldo a favor:", consErr);
             }
 
+            const profNom = profesional?.nombre || userProfile?.nombreCompleto || userProfile?.nombre || "Doctor";
+            const profId = profesional?.id || null;
+
             const metadataNotas = {
                 concepto: "SALDO A FAVOR",
                 tipoDoc: "Recibo de caja",
                 nroConsecutivo: nextConsecutivoNum || null,
                 consecutivo: nextConsecutivoNum || null,
                 observaciones: observaciones || "",
-                registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrativo"
+                registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrativo",
+                profesionalNombre: profNom,
+                profesionalId: profId,
+                doctor: profNom,
+                cajaId: currentActiveCaja?.id || null
             };
 
             // Datos a guardar en tabla pagos (solo columnas válidas en PostgreSQL Supabase)
@@ -336,7 +361,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                 );
             } catch (e) {}
 
-            // Registrar también formalmente en recibos_caja como Recibo de Caja
+            // Registrar también formalmente en recibos_caja como Recibo de Caja (vinculado con pago_id)
             const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(str || ""));
             const validCajaId = currentActiveCaja?.id && isUUID(currentActiveCaja.id) ? currentActiveCaja.id : null;
             const finalConsStr = nextConsecutivoNum ? String(nextConsecutivoNum).padStart(4, "0") : null;
@@ -346,14 +371,21 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                     id: crypto.randomUUID ? crypto.randomUUID() : null,
                     tenant_id: inquilino,
                     inquilino,
+                    pago_id: creditId,
+                    pagoId: creditId,
                     numero: finalConsStr,
                     nro_consecutivo: finalConsStr,
                     nroConsecutivo: finalConsStr,
+                    consecutivo: nextConsecutivoNum,
                     fecha: fechaIso,
                     paciente_id: isUUID(paciente.id) ? paciente.id : null,
                     pacienteId: isUUID(paciente.id) ? paciente.id : null,
                     paciente_nombre: paciente.nombre,
                     pacienteNombre: paciente.nombre,
+                    profesional_nombre: profNom,
+                    profesionalNombre: profNom,
+                    profesional_id: profId,
+                    doctor: profNom,
                     condicion_pago: "Contado",
                     condicionPago: "Contado",
                     medio_pago: medioPago,

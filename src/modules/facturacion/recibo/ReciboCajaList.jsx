@@ -10,6 +10,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 
 import { printReciboCaja } from "../../../utils/electronicInvoiceTemplate";
+import { getReceiptPlanFinancials } from "../../../services/billingService";
 import { getConfigSection, getConfigItems } from "../../../services/configPersistenceService";
 
 const fmt = (n) =>
@@ -94,96 +95,88 @@ export default function ReciboCajaList({ onNew }) {
     };
 
     // --- PRINT ENGINE (OralDrive Formato Exacto Recibo de Caja) ---
-    const handlePrint = (recibo) => {
-        const tenantData = companyInfo || {
-            nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenantNombre || "Clínica Dental",
-            nit: userProfile?.tenant?.nit || "",
-            direccion: userProfile?.tenant?.direccion || "",
-            ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
-            telefono: userProfile?.tenant?.telefono || "",
-            email: userProfile?.tenant?.email || "",
-            logoUrl: userProfile?.tenant?.logo_url || userProfile?.tenant?.logoUrl || ""
-        };
+    const handlePrint = async (recibo) => {
+        try {
+            const inq = userProfile?.inquilino || userProfile?.tenantId || inquilino || "";
+            const tenantData = companyInfo || {
+                nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenantNombre || "Clínica Dental",
+                nit: userProfile?.tenant?.nit || "",
+                direccion: userProfile?.tenant?.direccion || "",
+                ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
+                telefono: userProfile?.tenant?.telefono || "",
+                email: userProfile?.tenant?.email || "",
+                logoUrl: userProfile?.tenant?.logo_url || userProfile?.tenant?.logoUrl || ""
+            };
 
-        let conceptosList = [];
-        if (Array.isArray(recibo.conceptos) && recibo.conceptos.length > 0) {
-            conceptosList = recibo.conceptos;
-        } else if (recibo.concepto) {
-            conceptosList = [{
-                concepto: recibo.concepto,
-                precioUnitario: Number(recibo.total || 0),
-                cantidad: 1,
-                total: Number(recibo.total || 0)
-            }];
-        } else {
-            conceptosList = [{
-                concepto: "Abono a tratamiento",
-                precioUnitario: Number(recibo.total || 0),
-                cantidad: 1,
-                total: Number(recibo.total || 0)
-            }];
-        }
+            let conceptosList = [];
+            if (Array.isArray(recibo.conceptos) && recibo.conceptos.length > 0) {
+                conceptosList = recibo.conceptos;
+            } else if (recibo.concepto) {
+                conceptosList = [{
+                    concepto: recibo.concepto,
+                    precioUnitario: Number(recibo.total || 0),
+                    cantidad: 1,
+                    total: Number(recibo.total || 0)
+                }];
+            } else {
+                conceptosList = [{
+                    concepto: "Abono a tratamiento",
+                    precioUnitario: Number(recibo.total || 0),
+                    cantidad: 1,
+                    total: Number(recibo.total || 0)
+                }];
+            }
 
-        // Buscar plan de tratamiento real asociado
-        const targetPlanId = recibo.planId || recibo._meta?.planId || recibo._raw?.planId;
-        const matchedPlan = targetPlanId ? plansMap[targetPlanId] : null;
+            // Buscar plan de tratamiento real asociado de manera centralizada y precisa
+            const targetPlanId = recibo.planId || recibo._meta?.planId || recibo._raw?.planId;
+            const targetPatientId = recibo.paciente_id || recibo.pacienteId || recibo._raw?.paciente_id || recibo.paciente;
+            const dynamicPlanTitle = recibo.planTitle || recibo._meta?.planTitle || "";
 
-        let dynamicPlanTitle = recibo.planTitle || recibo._meta?.planTitle || matchedPlan?.nombre || matchedPlan?.title || "";
-        let dynamicTotalPlan = matchedPlan ? Number(matchedPlan.total || matchedPlan.detalles?.total || 0) : Number(recibo.total || 0);
-
-        // Sumar pagos que pertenecen a este mismo plan
-        let dynamicTotalPagado = 0;
-        if (targetPlanId) {
-            recibos.forEach(r => {
-                const rPlanId = r.planId || r._meta?.planId || r._raw?.planId;
-                if (String(rPlanId) === String(targetPlanId) && !r.anulado && r.estado !== "Anulado") {
-                    dynamicTotalPagado += Number(r.total || 0);
-                }
+            const planFinancials = await getReceiptPlanFinancials({
+                planId: targetPlanId,
+                patientId: targetPatientId,
+                tenantId: inq,
+                receiptAmount: Number(recibo.total || recibo.monto || 0),
+                planTitle: dynamicPlanTitle
             });
-        }
-        if (dynamicTotalPagado < Number(recibo.total || 0)) {
-            dynamicTotalPagado = Number(recibo.total || 0);
-        }
-        let dynamicSaldo = Math.max(0, dynamicTotalPlan - dynamicTotalPagado);
 
-        const profName = recibo.profesionalNombre || recibo._meta?.profesional || recibo.profesional || userProfile?.nombreCompleto || "Doctor";
-        const consNum = recibo.consecutivoNumero || recibo.nroConsecutivo || recibo._meta?.nroConsecutivo || "1";
+            const profName = recibo.profesionalNombre || recibo._meta?.profesional || recibo.profesional || userProfile?.nombreCompleto || "Doctor";
+            const consNum = recibo.consecutivoNumero || recibo.nroConsecutivo || recibo._meta?.nroConsecutivo || "1";
 
-        printReciboCaja({
-            recibo: {
-                ...recibo,
-                nroConsecutivo: consNum,
-                fecha: recibo.rawDate || recibo.fecha || new Date(),
-                pacienteNombre: recibo.pacienteNombre,
-                pacienteDocumento: recibo.pacienteDocumento,
-                pacienteDireccion: recibo.pacienteDireccion,
-                pacienteCiudad: recibo.pacienteCiudad,
-                profesionalNombre: profName,
-                medioPago: recibo.medioPago || "Efectivo",
-                conceptos: conceptosList,
-                total: Number(recibo.total || 0),
-                observaciones: recibo.observaciones || recibo.notas || "",
-                estado: recibo.estado,
-                anulado: recibo.anulado,
-                motivoAnulacion: recibo.motivoAnulacion,
-                anuladoPor: recibo.anuladoPor,
-                fechaAnulacion: recibo.fechaAnulacion
-            },
-            patient: {
-                nombreCompleto: recibo.pacienteNombre,
-                documento: recibo.pacienteDocumento,
-                direccion: recibo.pacienteDireccion,
-                ciudad: recibo.pacienteCiudad,
-                telefono: recibo.pacienteTelefono
-            },
-            tenant: tenantData,
-            planInfo: dynamicPlanTitle ? {
-                planTitle: dynamicPlanTitle,
-                totalPlan: dynamicTotalPlan,
-                totalPagado: dynamicTotalPagado,
-                saldo: dynamicSaldo
-            } : null
-        });
+            printReciboCaja({
+                recibo: {
+                    ...recibo,
+                    nroConsecutivo: consNum,
+                    fecha: recibo.rawDate || recibo.fecha || new Date(),
+                    pacienteNombre: recibo.pacienteNombre,
+                    pacienteDocumento: recibo.pacienteDocumento,
+                    pacienteDireccion: recibo.pacienteDireccion,
+                    pacienteCiudad: recibo.pacienteCiudad,
+                    profesionalNombre: profName,
+                    medioPago: recibo.medioPago || "Efectivo",
+                    conceptos: conceptosList,
+                    total: Number(recibo.total || 0),
+                    observaciones: recibo.observaciones || recibo.notas || "",
+                    estado: recibo.estado,
+                    anulado: recibo.anulado,
+                    motivoAnulacion: recibo.motivoAnulacion,
+                    anuladoPor: recibo.anuladoPor,
+                    fechaAnulacion: recibo.fechaAnulacion
+                },
+                patient: {
+                    nombreCompleto: recibo.pacienteNombre,
+                    documento: recibo.pacienteDocumento,
+                    direccion: recibo.pacienteDireccion,
+                    ciudad: recibo.pacienteCiudad,
+                    telefono: recibo.pacienteTelefono
+                },
+                tenant: tenantData,
+                planInfo: planFinancials
+            });
+        } catch (printErr) {
+            console.error("Error al imprimir recibo de caja:", printErr);
+            toast && toast.error("Error al preparar la impresión del recibo");
+        }
     };
 
     // --- ANULACIÓN ---
@@ -518,6 +511,14 @@ export default function ReciboCajaList({ onNew }) {
                         try { det = JSON.parse(det); } catch {}
                     }
                     const numFact = f.numero || (f.prefix && f.number ? `${f.prefix}${f.number}` : null) || (f.id ? `FE-${f.id.slice(0, 6)}` : "");
+                    const isFev = Boolean(f.prefix || f.number || f.cufe || f.track_id);
+                    const invObj = {
+                        id: f.id,
+                        numero: numFact,
+                        tipo: isFev ? "Factura Electrónica" : "Factura de venta",
+                        total: Number(f.total || det?.total || 0)
+                    };
+
                     const linked = Array.isArray(det?.recibos_asociados)
                         ? det.recibos_asociados
                         : det?.recibo_asociado
@@ -526,14 +527,14 @@ export default function ReciboCajaList({ onNew }) {
                     linked.forEach((lr) => {
                         const lrId = lr.id || lr.recibo_id;
                         if (lrId) {
-                            invoiceMap[lrId] = numFact;
+                            invoiceMap[lrId] = invObj;
                         }
                     });
                     if (f.recibo_id) {
-                        invoiceMap[f.recibo_id] = numFact;
+                        invoiceMap[f.recibo_id] = invObj;
                     }
                     if (f.id) {
-                        invoiceMap[f.id] = numFact;
+                        invoiceMap[f.id] = invObj;
                     }
                 });
             } catch (e) {
@@ -571,6 +572,17 @@ export default function ReciboCajaList({ onNew }) {
                         if (mMatch) motivoRecibo = mMatch[1].replace(/por\s+.*$/i, "").trim();
                     }
 
+                    let rawDate = d.fecha || d.created_at;
+                    if (d.created_at && d.fecha && ((d.referencia || "").toUpperCase().includes("SALDO A FAVOR") || (d.concepto || "").toUpperCase().includes("SALDO A FAVOR"))) {
+                        const fDate = new Date(d.fecha);
+                        const cDate = new Date(d.created_at);
+                        if (cDate.getTime() - fDate.getTime() > 0 && cDate.getTime() - fDate.getTime() < 36 * 3600 * 1000) {
+                            if (fDate.toLocaleDateString('es-CO') !== cDate.toLocaleDateString('es-CO')) {
+                                rawDate = d.created_at;
+                            }
+                        }
+                    }
+
                     return { 
                         ...d, 
                         pacienteNombre: pName,
@@ -591,7 +603,12 @@ export default function ReciboCajaList({ onNew }) {
                         anuladoPor: d.anuladoPor || d.anulado_por || "",
                         fechaAnulacion: d.fechaAnulacion || d.fecha_anulacion || "",
                         fevNumero: invoiceMap[d.id] || d.factura_id || null,
-                        rawDate: d.fecha || d.created_at
+                        fecha: rawDate,
+                        rawDate: rawDate,
+                        planId: d.planId || d.plan_id || null,
+                        planTitle: d.planTitle || d.plan_title || null,
+                        _raw: d,
+                        _meta: d._meta || d.metadata || {}
                     };
                 });
 
@@ -647,12 +664,23 @@ export default function ReciboCajaList({ onNew }) {
                     const targetPlan = targetPlanId ? pMap[targetPlanId] : null;
                     const dynamicPlanTitle = metadata.planTitle || pData.planTitle || targetPlan?.nombre || targetPlan?.title || "";
 
-                    const effectiveProf = metadata.profesional || pData.profesional || metadata.doctor || pData.doctor || userProfile?.nombreCompleto || "Doctor";
+                    const effectiveProf = metadata.profesionalNombre || metadata.profesional || pData.profesional || metadata.doctor || pData.doctor || userProfile?.nombreCompleto || "Doctor";
+
+                    let rawDate = pData.fechaISO || pData.created_at || pData.fecha;
+                    if (pData.created_at && (pData.fecha || pData.fechaISO) && ((pData.referencia || "").toUpperCase().includes("SALDO A FAVOR") || (metadata.concepto || "").toUpperCase().includes("SALDO A FAVOR"))) {
+                        const fDate = new Date(pData.fecha || pData.fechaISO);
+                        const cDate = new Date(pData.created_at);
+                        if (cDate.getTime() - fDate.getTime() > 0 && cDate.getTime() - fDate.getTime() < 36 * 3600 * 1000) {
+                            if (fDate.toLocaleDateString('es-CO') !== cDate.toLocaleDateString('es-CO')) {
+                                rawDate = pData.created_at;
+                            }
+                        }
+                    }
 
                     return {
                         id: pData.id,
-                        fecha: pData.fechaISO || pData.created_at || pData.fecha,
-                        rawDate: pData.fechaISO || pData.created_at || pData.fecha,
+                        fecha: rawDate,
+                        rawDate: rawDate,
                         pacienteNombre: pName,
                         pacienteDocumento: pacInfo.documento || "",
                         pacienteTelefono: pacInfo.telefono || "",
@@ -683,19 +711,70 @@ export default function ReciboCajaList({ onNew }) {
                 })
                 .filter(p => !isConsumoSaldo(p._raw, p._meta));
 
+            // Helper de normalización numérica de consecutivos
+            const normalizeReceiptNum = (val) => {
+                if (val === null || val === undefined || val === "") return "";
+                const str = String(val).trim();
+                const clean = str.replace(/^[^\d]+/, "");
+                if (/^\d+$/.test(clean)) {
+                    return String(parseInt(clean, 10));
+                }
+                return str.toLowerCase();
+            };
+
             // Evitar duplicados entre la tabla recibos_caja y la tabla pagos
             const existingReceiptIds = new Set(
                 mappedRecibos.map(r => String(r.id || "")).filter(Boolean)
             );
+            const existingPagoIds = new Set(
+                mappedRecibos.flatMap(r => [
+                    r.pago_id, 
+                    r.pagoId, 
+                    r._raw?.pago_id, 
+                    r._meta?.pago_id
+                ]).map(id => String(id || "")).filter(Boolean)
+            );
             const existingReceiptNumbers = new Set(
-                mappedRecibos.map(r => String(r.nroConsecutivo || r.numero || r.nro_consecutivo || "")).filter(Boolean)
+                mappedRecibos.map(r => normalizeReceiptNum(r.nroConsecutivo || r.numero || r.nro_consecutivo || r.consecutivo)).filter(Boolean)
+            );
+            const existingKeys = new Set(
+                mappedRecibos.map(r => {
+                    const pId = String(r.paciente_id || r.pacienteId || "");
+                    const monto = Math.round(Number(r.total || r.monto || 0));
+                    const num = normalizeReceiptNum(r.nroConsecutivo || r.numero || r.nro_consecutivo || r.consecutivo);
+                    return `${pId}_${monto}_${num}`;
+                }).filter(Boolean)
+            );
+            const existingSaldoFavorPatients = new Set(
+                mappedRecibos.filter(r => {
+                    const c = (r.concepto || r.observaciones || r.referencia || "").toUpperCase();
+                    return c.includes("SALDO A FAVOR");
+                }).map(r => {
+                    const pId = String(r.paciente_id || r.pacienteId || "");
+                    const monto = Math.round(Number(r.total || r.monto || 0));
+                    return `${pId}_${monto}`;
+                }).filter(Boolean)
             );
 
             const uniquePagos = mappedPagos.filter(p => {
                 const pId = String(p.id || "");
-                const pNum = String(p.nroConsecutivo || p._raw?.nro_consecutivo || p._meta?.nroConsecutivo || "");
+                const pNum = normalizeReceiptNum(p.nroConsecutivo || p._raw?.nro_consecutivo || p._meta?.nroConsecutivo || "");
+                const pPatientId = String(p.paciente_id || p.pacienteId || p._raw?.paciente_id || p._meta?.paciente_id || "");
+                const pMonto = Math.round(Number(p.monto || p._raw?.monto || 0));
+                const pKey = `${pPatientId}_${pMonto}_${pNum}`;
+
                 if (pId && existingReceiptIds.has(pId)) return false;
+                if (pId && existingPagoIds.has(pId)) return false;
                 if (pNum && existingReceiptNumbers.has(pNum)) return false;
+                if (pKey && existingKeys.has(pKey)) return false;
+
+                const isSaldo = (p.referencia || "").toUpperCase().includes("SALDO A FAVOR") ||
+                                (p.concepto || "").toUpperCase().includes("SALDO A FAVOR") ||
+                                (p._meta?.concepto || "").toUpperCase().includes("SALDO A FAVOR");
+                if (isSaldo && existingSaldoFavorPatients.has(`${pPatientId}_${pMonto}`)) {
+                    return false;
+                }
+
                 return true;
             });
 
@@ -717,11 +796,15 @@ export default function ReciboCajaList({ onNew }) {
                 const rawC = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
                 const n = (!isNaN(Number(rawC)) && Number(rawC) > 0) ? Number(rawC) : (rawC || "—");
 
+                const rawInv = invoiceMap[item.id] || (item.fevNumero ? { numero: item.fevNumero, tipo: "Factura Electrónica" } : null);
+                const docRefNum = typeof rawInv === "object" ? rawInv?.numero : (rawInv || item.fevNumero || null);
+
                 return {
                     ...item,
                     nroConsecutivo: n,
                     consecutivoNumero: n,
-                    docRefNumber: item.fevNumero || invoiceMap[item.id] || null
+                    docRefNumber: docRefNum,
+                    associatedDoc: typeof rawInv === "object" ? rawInv : (docRefNum ? { numero: docRefNum, tipo: "Factura de venta", total: item.total } : null)
                 };
             });
 
@@ -948,19 +1031,21 @@ export default function ReciboCajaList({ onNew }) {
                                                     </div>
                                                 </td>
 
-                                                {/* Doc. Ref. (Blue Eye Button only if real linked invoice exists) */}
+                                                {/* Doc. Ref. (Eye Button like OralDrive) */}
                                                 <td className="py-3 px-3 text-center" onClick={e => e.stopPropagation()}>
-                                                    {r.docRefNumber ? (
-                                                        <button 
-                                                            onClick={() => setAssociatedDocsModal({ open: true, recibo: r })}
-                                                            className="w-7 h-6 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
-                                                            title={`Ver factura asociada (${r.docRefNumber})`}
-                                                        >
-                                                            <FiEye size={13} />
-                                                        </button>
-                                                    ) : (
-                                                        <span className="text-slate-300 font-semibold select-none">—</span>
-                                                    )}
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setAssociatedDocsModal({ open: true, recibo: r })}
+                                                        className="inline-flex items-center justify-center gap-1 h-6 px-1.5 bg-[#0090d9] hover:bg-[#007bbd] text-white rounded text-[11px] font-bold transition-all shadow-xs cursor-pointer border-0 active:scale-95"
+                                                        title={r.docRefNumber ? `Ver documento asociado (${r.docRefNumber})` : "Ver documentos asociados"}
+                                                    >
+                                                        <FiEye size={13} />
+                                                        {r.docRefNumber && (
+                                                            <span className="bg-[#1f2937] text-white text-[9px] px-1 py-0.2 rounded font-extrabold tracking-wider leading-tight">
+                                                                Ver
+                                                            </span>
+                                                        )}
+                                                    </button>
                                                 </td>
 
                                                 {/* Pac./Ter. */}
@@ -1139,30 +1224,31 @@ export default function ReciboCajaList({ onNew }) {
 
                         {/* Body / Table */}
                         <div className="p-6">
-                            {associatedDocsModal.recibo?.docRefNumber ? (
-                                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] font-bold">
-                                            <tr>
-                                                <th className="py-2.5 px-4">Número documento</th>
-                                                <th className="py-2.5 px-4">Tipo documento</th>
-                                                <th className="py-2.5 px-4">Valor</th>
-                                                <th className="py-2.5 px-4 text-center">Acciones</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                                            <tr>
+                            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                                <table className="w-full text-left border-collapse text-xs">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
+                                        <tr>
+                                            <th className="py-2.5 px-4 font-semibold">Número documento</th>
+                                            <th className="py-2.5 px-4 font-semibold">Tipo documento</th>
+                                            <th className="py-2.5 px-4 font-semibold">Valor</th>
+                                            <th className="py-2.5 px-4 text-center font-semibold">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                                        {associatedDocsModal.recibo?.docRefNumber ? (
+                                            <tr className="hover:bg-slate-50/60">
                                                 <td className="py-3 px-4 font-bold font-mono text-slate-800">
-                                                    {associatedDocsModal.recibo.docRefNumber}
+                                                    {associatedDocsModal.recibo.associatedDoc?.numero || associatedDocsModal.recibo.docRefNumber}
                                                 </td>
-                                                <td className="py-3 px-4 font-medium text-slate-600">
-                                                    Factura de venta
+                                                <td className="py-3 px-4 text-slate-600 font-medium">
+                                                    {associatedDocsModal.recibo.associatedDoc?.tipo || "Factura de venta"}
                                                 </td>
                                                 <td className="py-3 px-4 font-bold font-mono text-slate-800">
-                                                    {fmt(associatedDocsModal.recibo.total)}
+                                                    {fmt(associatedDocsModal.recibo.associatedDoc?.total || associatedDocsModal.recibo.total)}
                                                 </td>
                                                 <td className="py-3 px-4 text-center">
                                                     <button 
+                                                        type="button"
                                                         onClick={() => handlePrint(associatedDocsModal.recibo)}
                                                         className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
                                                         title="Imprimir documento asociado"
@@ -1171,27 +1257,24 @@ export default function ReciboCajaList({ onNew }) {
                                                     </button>
                                                 </td>
                                             </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <div className="py-8 px-4 text-center">
-                                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
-                                        <FiFileText size={22} />
-                                    </div>
-                                    <h4 className="text-sm font-bold text-slate-800 mb-1">Sin factura de venta asociada</h4>
-                                    <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                                        Los recibos de caja son independientes de las facturas de venta. Este recibo no tiene ninguna factura vinculada automáticamente.
-                                    </p>
-                                </div>
-                            )}
+                                        ) : (
+                                            <tr>
+                                                <td colSpan="4" className="py-12 text-center text-slate-400 text-xs font-normal">
+                                                    No se encontraron documentos asociados
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
 
                         {/* Footer */}
-                        <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                        <div className="px-6 py-3 border-t border-slate-100 flex justify-end">
                             <button 
+                                type="button"
                                 onClick={() => setAssociatedDocsModal({ open: false, recibo: null })}
-                                className="px-5 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-xs transition-all cursor-pointer"
+                                className="px-5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md font-medium text-xs transition-colors cursor-pointer"
                             >
                                 Cerrar
                             </button>

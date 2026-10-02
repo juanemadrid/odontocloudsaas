@@ -141,9 +141,12 @@ function HuellaUploader({ imagen, onImagen, onBorrar }) {
 // ══════════════════════════════════════════════════════════
 //  MODAL PRINCIPAL — Firma Paciente
 // ══════════════════════════════════════════════════════════
-export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [], onClose, onGuardar }) {
+export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [], tipo = "paciente", onClose, onGuardar }) {
     const firmaRef = useRef(null);
-    const [huellaImg, setHuellaImg] = useState(sesion?.huellaUrl || null);
+    const isDoctor = tipo === "doctor";
+    const [huellaImg, setHuellaImg] = useState(
+        isDoctor ? null : (sesion?.huellaUrl || sesion?.hallazgos?.huellaPaciente || null)
+    );
     const [saving, setSaving] = useState(false);
 
     const handleGuardar = async () => {
@@ -152,7 +155,7 @@ export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [
             const firmaDataUrl = firmaRef.current
                 ? firmaRef.current.toDataURL("image/png")
                 : null;
-            await onGuardar?.({ firmaDataUrl, huellaImg });
+            await onGuardar?.({ firmaDataUrl, huellaImg, tipo });
         } finally {
             setSaving(false);
         }
@@ -171,7 +174,9 @@ export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [
             }}>
                 {/* ── HEADER ── */}
                 <div style={{ padding: "16px 24px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <h2 style={{ fontSize: "15px", fontWeight: 700, color: "#1e293b", margin: 0 }}>Firma paciente</h2>
+                    <h2 style={{ fontSize: "15px", fontWeight: 700, color: "#1e293b", margin: 0 }}>
+                        {isDoctor ? "Firma del Profesional / Doctor" : "Firma del Paciente"}
+                    </h2>
                     <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: "4px" }}>
                         <FiX size={20} />
                     </button>
@@ -203,7 +208,7 @@ export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [
                                 <td style={{ padding: "6px 10px", fontWeight: 700, color: "#475569", borderRight: "1px solid #f1f5f9", borderBottom: "1px solid #f1f5f9" }}>Tipo documento</td>
                                 <td style={{ padding: "6px 10px", color: "#1e293b", borderRight: "1px solid #f1f5f9", borderBottom: "1px solid #f1f5f9" }}>{paciente?.tipoDocumento || "Cédula"}</td>
                                 <td style={{ padding: "6px 10px", fontWeight: 700, color: "#475569", borderRight: "1px solid #f1f5f9", borderBottom: "1px solid #f1f5f9" }}>No. Documento</td>
-                                <td style={{ padding: "6px 10px", color: "#1e293b", borderBottom: "1px solid #f1f5f9" }}>{paciente?.numeroDocumento || "—"}</td>
+                                <td style={{ padding: "6px 10px", color: "#1e293b", borderBottom: "1px solid #f1f5f9" }}>{paciente?.numeroDocumento || paciente?.nroDocumento || "—"}</td>
                             </tr>
                             <tr style={{ background: "#f8fafc" }}>
                                 <td style={{ padding: "6px 10px", fontWeight: 700, color: "#475569", borderRight: "1px solid #f1f5f9", borderBottom: "1px solid #f1f5f9" }}>Correo</td>
@@ -217,7 +222,7 @@ export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [
                     {/* Odontograma section */}
                     <div style={{ padding: "10px 16px 0", borderTop: "2px solid #f1f5f9" }}>
                         <div style={{ textAlign: "center", fontWeight: 700, fontSize: "13px", color: "#1e293b", padding: "8px 0", borderBottom: "1px solid #f1f5f9", marginBottom: "0" }}>
-                            Odontograma
+                            Hallazgos del Odontograma
                         </div>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px" }}>
                             <thead>
@@ -229,14 +234,14 @@ export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [
                             </thead>
                             <tbody>
                                 {planTratamiento.length === 0 ? (
-                                    <tr><td colSpan={5} style={{ padding: "12px 8px", color: "#94a3b8", fontSize: "10px", textAlign: "center" }}>Sin registros de tratamiento</td></tr>
-                                ) : planTratamiento.slice(0, 8).map((item, i) => (
+                                    <tr><td colSpan={5} style={{ padding: "12px 8px", color: "#94a3b8", fontSize: "10px", textAlign: "center" }}>Sin registros de hallazgos</td></tr>
+                                ) : planTratamiento.slice(0, 10).map((item, i) => (
                                     <tr key={i} style={{ background: i % 2 === 0 ? "white" : "#f8fafc" }}>
                                         <td style={{ padding: "5px 8px", color: "#334155" }}>
                                             {item.fechaISO ? new Date(item.fechaISO).toLocaleDateString('es-ES') : "—"}
                                         </td>
                                         <td style={{ padding: "5px 8px", color: "#334155" }}>{sesion?.profesional || "—"}</td>
-                                        <td style={{ padding: "5px 8px", color: "#334155" }}>{item.diente}</td>
+                                        <td style={{ padding: "5px 8px", color: "#334155" }}>#{item.diente}</td>
                                         <td style={{ padding: "5px 8px", color: "#334155" }}>{item.tratamiento}</td>
                                         <td style={{ padding: "5px 8px", color: "#334155" }}>{item.zonaLabel || item.zona}</td>
                                     </tr>
@@ -246,21 +251,30 @@ export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [
                     </div>
                 </div>
 
-                {/* ── FIRMA + HUELLA ── */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", padding: "0 24px 16px" }}>
-                    <div>
-                        <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>Firma paciente</div>
+                {/* ── FIRMA (+ HUELLA SI ES PACIENTE) ── */}
+                {isDoctor ? (
+                    <div style={{ padding: "0 24px 16px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>
+                            Firma del Especialista / Odontólogo ({sesion?.profesional || "Doctor"})
+                        </div>
                         <SignatureCanvas canvasRef={firmaRef} />
                     </div>
-                    <div>
-                        <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>Huella digital</div>
-                        <HuellaUploader
-                            imagen={huellaImg}
-                            onImagen={setHuellaImg}
-                            onBorrar={() => setHuellaImg(null)}
-                        />
+                ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", padding: "0 24px 16px" }}>
+                        <div>
+                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>Firma paciente</div>
+                            <SignatureCanvas canvasRef={firmaRef} />
+                        </div>
+                        <div>
+                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "8px" }}>Huella digital</div>
+                            <HuellaUploader
+                                imagen={huellaImg}
+                                onImagen={setHuellaImg}
+                                onBorrar={() => setHuellaImg(null)}
+                            />
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* ── FOOTER BOTONES ── */}
                 <div style={{ padding: "12px 24px 20px", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
@@ -269,16 +283,10 @@ export default function FirmaHuellaModal({ sesion, paciente, planTratamiento = [
                     </button>
                     <button
                         onClick={handleGuardar}
-                        style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#3b82f6", color: "white", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
-                    >
-                        <FiSend size={13} /> Enviar
-                    </button>
-                    <button
-                        onClick={handleGuardar}
                         disabled={saving}
                         style={{ padding: "8px 18px", borderRadius: "8px", border: "none", background: "#22c55e", color: "white", fontSize: "11px", fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: "6px" }}
                     >
-                        <FiCheckCircle size={13} /> {saving ? "Guardando..." : "Guardar"}
+                        <FiCheckCircle size={13} /> {saving ? "Guardando..." : "Guardar Firma"}
                     </button>
                 </div>
             </div>

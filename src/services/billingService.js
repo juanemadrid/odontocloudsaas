@@ -110,11 +110,31 @@ export const getPatientFinancials = async (patientId, tenantId) => {
 
             const validUser = notasParsed.registradoPor || notasParsed.usuarioNombre || p.registrado_por || p.usuario_nombre || p.creado_por || "";
 
+            // Si la fecha fue guardada con el desfase de medianoche UTC (ej: T19:00 o T05:00) y created_at es del día siguiente
+            let resolvedFecha = p.fecha || p.created_at;
+            if (p.created_at && p.fecha) {
+                const fDate = new Date(p.fecha);
+                const cDate = new Date(p.created_at);
+                if (cDate.getTime() - fDate.getTime() > 0 && cDate.getTime() - fDate.getTime() < 36 * 3600 * 1000) {
+                    const fLocalDay = fDate.toLocaleDateString('es-CO');
+                    const cLocalDay = cDate.toLocaleDateString('es-CO');
+                    if (fLocalDay !== cLocalDay && (p.referencia === "SALDO A FAVOR" || rawConcepto === "SALDO A FAVOR")) {
+                        resolvedFecha = p.created_at;
+                        // Auto-sanar en segundo plano para que quede corregido en BD permanentemente
+                        try {
+                            supabase.from("pagos").update({ fecha: p.created_at }).eq("id", p.id).then();
+                            supabase.from("recibos_caja").update({ fecha: p.created_at }).eq("pago_id", p.id).then();
+                        } catch (_) {}
+                    }
+                }
+            }
+
             return {
                 id: p.id,
                 ...p,
                 monto: s(p.monto),
-                fechaISO: p.fecha || p.created_at,
+                fechaISO: resolvedFecha,
+                fecha: resolvedFecha,
                 medio: p.metodo || p.medio || "—",
                 concepto: rawConcepto,
                 referencia: notasParsed.referencia || p.referencia || "",
@@ -136,7 +156,17 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                 usuarioNombre: validUser,
                 tipoDoc: notasParsed.tipoDoc || p.tipoDoc || (rawConcepto === "SALDO A FAVOR" ? "Recibo de caja" : "")
             };
-        }).sort((a, b) => (b.fechaISO || "").localeCompare(a.fechaISO || ""));
+        }).sort((a, b) => {
+            const numA = Number(a.nroConsecutivo || a.consecutivo || a.numero || a.nro_consecutivo || 0);
+            const numB = Number(b.nroConsecutivo || b.consecutivo || b.numero || b.nro_consecutivo || 0);
+            if (numA > 0 && numB > 0 && numA !== numB) {
+                return numB - numA;
+            }
+            const timeA = new Date(a.fechaISO || a.fecha || a.created_at || 0).getTime();
+            const timeB = new Date(b.fechaISO || b.fecha || b.created_at || 0).getTime();
+            if (timeB !== timeA) return timeB - timeA;
+            return (b.id || "").localeCompare(a.id || "");
+        });
 
         // Format plans
         plans = (plans || []).map(p => ({
@@ -253,5 +283,192 @@ export const getPatientFinancials = async (patientId, tenantId) => {
         return { facturas: [], pagos: [], plans: [], totals: {} };
     }
 };
+
+/**
+ * Obtiene el resumen financiero sincronizado de un plan de tratamiento asociado a un recibo de caja / pago.
+ * Calcula de manera acumulada y precisa:
+ * - totalPlan: Valor total del presupuesto del plan de tratamiento.
+ * - totalPagado: Suma acumulada de todos los pagos realizados a ese plan de tratamiento (sin mezclar otros planes).
+ * - saldo: Saldo restante del plan (totalPlan - totalPagado).
+ */
+export const getReceiptPlanFinancials = async ({
+    planId,
+    patientId,
+    tenantId,
+    receiptAmount = 0,
+    planTitle = ""
+}) => {
+    try {
+        let targetPlanId = planId || null;
+        let effectivePlanTitle = planTitle || "";
+        let totalPlan = 0;
+        let planData = null;
+
+        // 1. Si tenemos planId, consultar directamente en treatment_plans
+        if (targetPlanId) {
+            try {
+                const { data } = await supabase
+                    .from("treatment_plans")
+                    .select("*")
+                    .eq("id", targetPlanId)
+                    .maybeSingle();
+                if (data) planData = data;
+            } catch (_) {}
+        }
+
+        // 2. Si no se encontró por ID o no venía planId, buscar en los planes del paciente
+        if (!planData && patientId) {
+            try {
+                const { data: pPlans } = await supabase
+                    .from("treatment_plans")
+                    .select("*")
+                    .eq("paciente_id", patientId)
+                    .order("created_at", { ascending: false });
+
+                if (Array.isArray(pPlans) && pPlans.length > 0) {
+                    if (effectivePlanTitle) {
+                        const cleanSearch = effectivePlanTitle.trim().toLowerCase();
+                        planData = pPlans.find(p => 
+                            (p.nombre && p.nombre.trim().toLowerCase() === cleanSearch) ||
+                            (p.title && p.title.trim().toLowerCase() === cleanSearch)
+                        );
+                    }
+                    if (!planData && pPlans.length === 1) {
+                        planData = pPlans[0];
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // Si no se encontró ningún plan de tratamiento asociado
+        if (!planData) {
+            if (effectivePlanTitle && receiptAmount > 0) {
+                return {
+                    planTitle: effectivePlanTitle,
+                    totalPlan: Number(receiptAmount || 0),
+                    totalPagado: Number(receiptAmount || 0),
+                    saldo: 0
+                };
+            }
+            return null;
+        }
+
+        targetPlanId = planData.id;
+        effectivePlanTitle = planData.nombre || planData.title || effectivePlanTitle || "Tratamiento Odontológico";
+        totalPlan = Number(planData.total || planData.detalles?.total || 0);
+
+        const effectivePatientId = patientId || planData.paciente_id;
+
+        // 3. Sumar todos los pagos acumulados para ESTE plan de tratamiento (sin mezclar con otros)
+        let accumulatedPaid = 0;
+        const seenPaymentIds = new Set();
+
+        // 3.1. Consultar tabla pagos
+        try {
+            let pQuery = supabase
+                .from("pagos")
+                .select("id, monto, notas, estado, referencia, fecha, created_at, paciente_id, tenant_id");
+
+            if (effectivePatientId) {
+                pQuery = pQuery.eq("paciente_id", effectivePatientId);
+            } else if (tenantId) {
+                pQuery = pQuery.eq("tenant_id", tenantId);
+            }
+
+            const { data: payRows } = await pQuery;
+
+            (payRows || []).forEach(p => {
+                const estado = String(p.estado || "").toLowerCase();
+                const ref = String(p.referencia || "").toUpperCase();
+                if (estado === "anulado" || ref.includes("ANULADO")) return;
+
+                let meta = {};
+                if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+                    try { meta = JSON.parse(p.notas); } catch (_) {}
+                } else if (typeof p.notas === "object" && p.notas) {
+                    meta = p.notas;
+                }
+
+                if (meta.estado === "Anulado" || meta.anulado) return;
+
+                const pPlanId = meta.planId || meta.plan_id || p.planId || p.plan_id;
+                const pTitle = meta.planTitle || p.planTitle || "";
+
+                const matchesPlan = 
+                    (pPlanId && String(pPlanId) === String(targetPlanId)) ||
+                    (!pPlanId && pTitle && effectivePlanTitle && pTitle.trim().toLowerCase() === effectivePlanTitle.trim().toLowerCase());
+
+                if (matchesPlan) {
+                    accumulatedPaid += Number(p.monto || 0);
+                    if (p.id) seenPaymentIds.add(String(p.id));
+                }
+            });
+        } catch (errPagos) {
+            console.warn("Error consultando pagos para plan:", errPagos);
+        }
+
+        // 3.2. Consultar tabla recibos_caja
+        try {
+            let rQuery = supabase
+                .from("recibos_caja")
+                .select("id, monto, total, observaciones, notas, estado, fecha, created_at, paciente_id, tenant_id");
+
+            if (effectivePatientId) {
+                rQuery = rQuery.eq("paciente_id", effectivePatientId);
+            } else if (tenantId) {
+                rQuery = rQuery.eq("tenant_id", tenantId);
+            }
+
+            const { data: recRows } = await rQuery;
+
+            (recRows || []).forEach(r => {
+                if (r.id && seenPaymentIds.has(String(r.id))) return;
+                const estado = String(r.estado || "").toLowerCase();
+                const obs = String(r.observaciones || "").toUpperCase();
+                if (estado === "anulado" || obs.includes("ANULADO")) return;
+
+                let rMeta = {};
+                const rawN = r.notas || r.observaciones;
+                if (typeof rawN === "string" && rawN.trim().startsWith("{")) {
+                    try { rMeta = JSON.parse(rawN); } catch (_) {}
+                } else if (typeof rawN === "object" && rawN) {
+                    rMeta = rawN;
+                }
+
+                const rPlanId = r.plan_id || r.planId || rMeta.planId || rMeta.plan_id;
+                const rTitle = r.planTitle || rMeta.planTitle || "";
+
+                const matchesPlan = 
+                    (rPlanId && String(rPlanId) === String(targetPlanId)) ||
+                    (!rPlanId && rTitle && effectivePlanTitle && rTitle.trim().toLowerCase() === effectivePlanTitle.trim().toLowerCase());
+
+                if (matchesPlan) {
+                    accumulatedPaid += Number(r.total || r.monto || 0);
+                    if (r.id) seenPaymentIds.add(String(r.id));
+                }
+            });
+        } catch (errRecibos) {
+            console.warn("Error consultando recibos_caja para plan:", errRecibos);
+        }
+
+        // Asegurar que al menos incluya el monto del recibo actual si es mayor a lo acumulado encontrado
+        if (accumulatedPaid < Number(receiptAmount || 0)) {
+            accumulatedPaid = Number(receiptAmount || 0);
+        }
+
+        const saldo = Math.max(0, totalPlan - accumulatedPaid);
+
+        return {
+            planTitle: effectivePlanTitle,
+            totalPlan: totalPlan,
+            totalPagado: accumulatedPaid,
+            saldo: saldo
+        };
+    } catch (e) {
+        console.error("Error en getReceiptPlanFinancials:", e);
+        return null;
+    }
+};
+
 
 

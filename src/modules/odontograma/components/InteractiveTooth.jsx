@@ -38,7 +38,7 @@ export default function InteractiveTooth({
             <ToothSVGInline
                 numero={numero}
                 data={data}
-                onZoneClick={isReadOnly ? () => {} : onZoneClick}
+                onZoneClick={onZoneClick}
                 isReadOnly={isReadOnly}
             />
             <GeneralToothMark

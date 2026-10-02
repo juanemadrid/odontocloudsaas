@@ -6,7 +6,7 @@ import { useAudit } from '../../../hooks/useAudit';
 import { printReciboCaja } from '../../../utils/electronicInvoiceTemplate';
 import { getConfigSection } from '../../../services/configPersistenceService';
 import { formatCurrency } from '../../../utils/formatters';
-import { getPatientFinancials } from '../../../services/billingService';
+import { getPatientFinancials, getReceiptPlanFinancials } from '../../../services/billingService';
 import {
     FiDollarSign, FiCalendar, FiCreditCard, FiTrash2,
     FiPrinter, FiX, FiSearch, FiCopy, FiInbox, FiLoader,
@@ -114,6 +114,19 @@ export default function HistoricoPagosTab({ patientId }) {
                     return !isConsumo;
                 });
 
+                // Ordenar del más reciente / consecutivo más alto al más bajo
+                validPagos.sort((a, b) => {
+                    const numA = Number(a.nroConsecutivo || a.consecutivo || a.numero || a.nro_consecutivo || 0);
+                    const numB = Number(b.nroConsecutivo || b.consecutivo || b.numero || b.nro_consecutivo || 0);
+                    if (numA > 0 && numB > 0 && numA !== numB) {
+                        return numB - numA;
+                    }
+                    const timeA = new Date(a.fechaISO || a.fecha || a.created_at || 0).getTime();
+                    const timeB = new Date(b.fechaISO || b.fecha || b.created_at || 0).getTime();
+                    if (timeB !== timeA) return timeB - timeA;
+                    return (b.id || "").localeCompare(a.id || "");
+                });
+
                 setPagos(validPagos);
             } catch (err) {
                 console.error("Error fetching payments:", err);
@@ -182,45 +195,15 @@ export default function HistoricoPagosTab({ patientId }) {
                 } catch (_) {}
             }
 
-            // 3. Obtener información del plan de tratamiento
+            // 3. Obtener información del plan de tratamiento de manera centralizada y acumulada
             const targetPlanId = pago.planId || meta.planId;
-            let planTitle = meta.planTitle || pago.planTitle || "";
-            let totalPlan = meta.totalPlan || pago.totalPlan;
-            let totalPagadoPlan = meta.totalPagado || pago.totalPagado;
-            let saldoPlan = meta.saldo;
-
-            if (targetPlanId) {
-                try {
-                    const { data: planData } = await supabase
-                        .from("treatment_plans")
-                        .select("*")
-                        .eq("id", targetPlanId)
-                        .maybeSingle();
-
-                    if (planData) {
-                        planTitle = planData.nombre || planData.title || planTitle || "Plan de Tratamiento";
-                        totalPlan = Number(planData.total || planData.detalles?.total || totalPlan || 0);
-
-                        // Sumar pagos aplicados a este plan
-                        const { data: allPayRows } = await supabase
-                            .from("pagos")
-                            .select("monto, notas, estado, planId")
-                            .eq("tenant_id", inq);
-
-                        let sum = 0;
-                        (allPayRows || []).forEach(pr => {
-                            if (pr.estado === "Anulado") return;
-                            let prMeta = {};
-                            try { prMeta = typeof pr.notas === "string" ? JSON.parse(pr.notas) : (pr.notas || {}); } catch (_) {}
-                            if (String(prMeta.planId || pr.planId) === String(targetPlanId)) {
-                                sum += Number(pr.monto || 0);
-                            }
-                        });
-                        totalPagadoPlan = sum > 0 ? sum : Number(pago.monto || 0);
-                        saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
-                    }
-                } catch (_) {}
-            }
+            const planFinancials = await getReceiptPlanFinancials({
+                planId: targetPlanId,
+                patientId: patientId || targetPatient.id,
+                tenantId: inq,
+                receiptAmount: Number(pago.monto || pago.valor || 0),
+                planTitle: meta.planTitle || pago.planTitle || ""
+            });
 
             // 4. Construir conceptos reales a partir de los ítems pagados
             let conceptosList = [];
@@ -279,12 +262,7 @@ export default function HistoricoPagosTab({ patientId }) {
                 },
                 patient: targetPatient,
                 tenant: tenantData,
-                planInfo: planTitle ? {
-                    planTitle: planTitle,
-                    totalPlan: totalPlan,
-                    totalPagado: totalPagadoPlan,
-                    saldo: saldoPlan
-                } : null
+                planInfo: planFinancials
             });
         } catch (e) {
             console.error("Error launching print:", e);
