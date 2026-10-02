@@ -922,8 +922,146 @@ export const generateReciboCajaHtml = ({
       line-height: 1.25;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+    }
+
+    /* HEADER */
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    .header-logo {
+      width: 25%;
+      vertical-align: top;
+    }
+    .header-company {
+      width: 45%;
+      vertical-align: top;
+      padding-left: 8px;
+      font-size: 10px;
+      line-height: 1.25;
+      color: #222;
+    }
+    .company-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: #000;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+    .header-meta {
+      width: 30%;
+      vertical-align: top;
+      text-align: right;
+    }
+
+    /* INFO GRID */
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin-bottom: 12px;
+    }
+    .info-table td {
+      border: 1px solid #111;
+      padding: 4px 6px;
+      font-size: 10px;
+      vertical-align: middle;
+      word-wrap: break-word;
+    }
+    .info-table td.lbl {
+      background: #ffffff;
+      font-weight: bold;
+      font-size: 9px;
+      text-transform: uppercase;
+      color: #000;
+    }
+
+    /* ITEMS TABLE */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    .items-table th {
+      border: 1px solid #111;
+      background: #ffffff;
+      font-weight: bold;
+      font-size: 10px;
+      padding: 5px 8px;
+      text-transform: none;
+    }
+    .items-table td {
+      border: 1px solid #111;
+      padding: 5px 8px;
+      font-size: 10.5px;
+      vertical-align: middle;
+    }
+
+    /* SUMMARY / TOTALS SECTION */
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+    .obs-cell {
+      width: 58%;
+      vertical-align: top;
+      padding-right: 12px;
+      font-size: 10px;
+    }
+    .totals-cell {
+      width: 42%;
+      vertical-align: top;
+    }
+    .totals-inner-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .totals-inner-table td {
+      padding: 3.5px 6px;
+      font-size: 10.5px;
+    }
+    .totals-inner-table td.tot-label {
+      font-weight: bold;
+      text-align: right;
+      width: 45%;
+    }
+    .totals-inner-table td.tot-val {
+      font-weight: bold;
+      text-align: right;
+      width: 55%;
+      white-space: nowrap;
+    }
+
+    /* SIGNATURES SECTION */
+    .signatures-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 40px;
+      margin-bottom: 15px;
+    }
+    .sig-block {
+      width: 50%;
+      text-align: center;
+      vertical-align: bottom;
+      padding: 0 35px;
+    }
+    .sig-line {
+      border-top: 1.5px solid #000;
+      width: 85%;
+      margin: 0 auto 6px auto;
+    }
+    .sig-title {
+      font-size: 9.5px;
+      font-weight: bold;
+      text-transform: uppercase;
+      color: #000;
+    }
+
     @media print { 
       body { padding: 0; } 
+      .no-print { display: none !important; }
     }
   </style>
 </head>
@@ -973,21 +1111,19 @@ export const generateReciboCajaHtml = ({
     <tr>
       <td class="lbl">TELÉFONO</td>
       <td>${patient?.telefono || patient?.celular || "—"}</td>
-      <td class="lbl"></td>
-      <td></td>
+      <td class="lbl">MEDIO DE PAGO</td>
+      <td style="text-align: center; font-weight: 500;">${paymentMethodLabel}</td>
     </tr>
     <tr>
       <td class="lbl">ELABORADO POR</td>
-      <td>${elaboradoPor}</td>
-      <td class="lbl">MEDIO DE PAGO</td>
-      <td style="text-align: center;">${paymentMethodLabel}</td>
+      <td colspan="3" style="font-weight: 500;">${elaboradoPor}</td>
     </tr>
   </table>
 
   <table class="items-table">
     <thead>
       <tr>
-        <th style="width: 60%;">Concepto</th>
+        <th style="width: 60%; text-align: left;">Concepto</th>
         <th style="width: 15%; text-align: right;">Precio</th>
         <th style="width: 10%; text-align: center;">Cantidad</th>
         <th style="width: 15%; text-align: right;">Total</th>
@@ -1051,10 +1187,12 @@ export const generateReciboCajaHtml = ({
       <td class="sig-block">
         <div class="sig-line"></div>
         <div class="sig-title">ELABORADO POR</div>
+        <div style="font-size: 8.5px; color: #555; margin-top: 3px;">${elaboradoPor || ""}</div>
       </td>
       <td class="sig-block">
         <div class="sig-line"></div>
         <div class="sig-title">ACEPTADA, FIRMA Y/O SELLO Y FECHA</div>
+        <div style="font-size: 8.5px; color: #555; margin-top: 3px;">C.C. / NIT Paciente</div>
       </td>
     </tr>
   </table>

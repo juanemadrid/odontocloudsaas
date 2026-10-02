@@ -151,12 +151,35 @@ export default function HistoricoPagosTab({ patientId }) {
                 ciudad: pDb?.ciudadDomicilio || pDb?.ciudad || "Sincelejo"
             };
 
-            // 2. Extraer metadata del pago (notas JSON)
-            let meta = {};
-            if (pago.notas && typeof pago.notas === "string" && pago.notas.trim().startsWith("{")) {
-                try { meta = JSON.parse(pago.notas); } catch (_) {}
-            } else if (pago.notas && typeof pago.notas === "object") {
-                meta = pago.notas;
+            // 2. Extraer metadata del pago (notas JSON o desde BD)
+            let meta = pago.metadata || pago._meta || {};
+            if (!meta || Object.keys(meta).length === 0 || !meta.itemPayments) {
+                const rawN = pago.rawNotas || pago.notas;
+                if (rawN && typeof rawN === "string" && rawN.trim().startsWith("{")) {
+                    try { meta = JSON.parse(rawN); } catch (_) {}
+                } else if (rawN && typeof rawN === "object") {
+                    meta = rawN;
+                }
+            }
+
+            // Si aún no tenemos itemPayments o planId, consultar directamente la tabla pagos
+            if ((!meta.itemPayments || !meta.planId) && pago.id) {
+                try {
+                    const { data: dbPago } = await supabase
+                        .from("pagos")
+                        .select("*")
+                        .eq("id", pago.id)
+                        .maybeSingle();
+                    if (dbPago?.notas) {
+                        let parsedDbMeta = {};
+                        if (typeof dbPago.notas === "string" && dbPago.notas.trim().startsWith("{")) {
+                            try { parsedDbMeta = JSON.parse(dbPago.notas); } catch (_) {}
+                        } else if (typeof dbPago.notas === "object") {
+                            parsedDbMeta = dbPago.notas;
+                        }
+                        meta = { ...parsedDbMeta, ...meta };
+                    }
+                } catch (_) {}
             }
 
             // 3. Obtener información del plan de tratamiento
@@ -201,13 +224,19 @@ export default function HistoricoPagosTab({ patientId }) {
 
             // 4. Construir conceptos reales a partir de los ítems pagados
             let conceptosList = [];
-            if (Array.isArray(meta.itemPayments) && meta.itemPayments.length > 0) {
-                conceptosList = meta.itemPayments.map(it => ({
-                    concepto: it.desc || it.concepto || meta.concepto || "Procedimiento Odontológico",
-                    precioUnitario: Number(it.monto || 0),
-                    cantidad: 1,
-                    total: Number(it.monto || 0)
-                }));
+            const rawItems = meta.itemPayments || pago.itemPayments;
+            if (Array.isArray(rawItems) && rawItems.length > 0) {
+                conceptosList = rawItems.map(it => {
+                    const itemName = it.desc || it.nombre || it.prestacion || it.concepto || meta.concepto || "Procedimiento Odontológico";
+                    const itemPrice = Number(it.monto || it.precio || it.valor || it.total || pago.monto || 0);
+                    const itemQty = Number(it.cantidad || 1);
+                    return {
+                        concepto: itemName,
+                        precioUnitario: itemPrice,
+                        cantidad: itemQty,
+                        total: Number(it.monto || it.total || (itemPrice * itemQty))
+                    };
+                });
             } else {
                 conceptosList = [{
                     concepto: meta.concepto || pago.concepto || "Abono a tratamiento",
