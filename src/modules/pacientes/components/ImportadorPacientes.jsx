@@ -452,7 +452,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
         XLSX.utils.book_append_sheet(wb, ws, "Reporte de pacientes");
-        XLSX.writeFile(wb, "Plantilla_Pacientes_ATM.xlsx");
+        XLSX.writeFile(wb, "Plantilla_Pacientes_OdontoCloud.xlsx");
 
         toast.success("Plantilla descargada");
         setLoading(false);
@@ -665,8 +665,8 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
                                     <FiZap size={18} />
                                 </div>
                                 <div>
-                                    <span className="block font-black text-[13px]">⚡ Cargar Pacientes ATM.xlsx</span>
-                                    <span className="text-[10px] font-normal text-blue-100">Archivo detectado en Descargas (110 pacientes)</span>
+                                    <span className="block font-black text-[13px]">⚡ Cargar Pacientes Ejemplo.xlsx</span>
+                                    <span className="text-[10px] font-normal text-blue-100">Archivo de demostración (110 pacientes)</span>
                                 </div>
                             </div>
                             <span className="text-xs bg-white/20 px-3 py-1 rounded-lg font-bold">Cargar</span>
@@ -959,7 +959,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
                             disabled={loading}
                             className="text-blue-600 hover:text-blue-700 font-bold flex items-center gap-1.5 border-0 bg-transparent cursor-pointer p-0"
                         >
-                            <FiDownload size={14} /> Descargar Plantilla ATM
+                            <FiDownload size={14} /> Descargar Plantilla Excel
                         </button>
                     </div>
 
@@ -1056,7 +1056,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
                             {/* 5. Historial y Datos del Software Anterior */}
                             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                                 <span className="font-black text-[10px] uppercase text-amber-700 tracking-wider block mb-2">
-                                    5. Historial Migrado (ATM / Software Anterior)
+                                    5. Historial Migrado (Software Anterior)
                                 </span>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                     <div><span className="text-[9px] text-slate-400 uppercase block">Presupuestos</span><span className="font-black">{selectedPatientDetail.historial_medico?.resumen_migracion?.presupuestos || 0}</span></div>

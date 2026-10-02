@@ -46,34 +46,28 @@ const PERMISSION_MAP = {
     ],
     "Administración": [
         "Gestion Administración",
+        "Menú Facturación",
+        "Recibo de caja",
+        "Factura de venta",
+        "Facturas de compra",
         "Recaudo Manual",
         "Nota credito",
         "Nota debito",
+        "Saldos a favor",
         "Liquidaciones",
         "Traslados",
         "Egresos",
         "Orden de compra",
         "Gestion Facturas",
-        "Ajuste Inventario",
-        "Medicamentos y Planes de formulacion",
-        "Menú Facturación",
+        "Pagos a proveedores",
         "Convenios",
+        "Gestion Agenda",
         "Recursos",
         "Terceros",
-        "Temperatura Y Humedad",
-        "Ubicaciones",
         "Residuos",
-        "Inventario",
         "Rips",
-        "Medicamentos",
-        "Planes de formulacion",
         "Esterilizacion",
-        "Saldos a favor",
-        "Facturas de compra",
         "Editor Web"
-    ],
-    "Pagos y Facturacion": [
-        "Pago a proveedores"
     ],
     "Reportes": [
         "Gestion Reportes",
@@ -83,11 +77,11 @@ const PERMISSION_MAP = {
         "Reporte Facturacion",
         "Reporte Convenios",
         "Reporte ventas y efectividad",
-        "Reporte Medicamentos",
         "Reporte Cumpleaños",
         "Reporte Consultas",
         "Reporte evoluciones",
         "Log de errores de facturacion",
+        "Log Interoperabilidad (IHCE)",
         "Reporte de oportunidad de citas",
         "Asistencia de clientes",
         "Indicadores de uso de la plataforma",
@@ -99,7 +93,6 @@ const PERMISSION_MAP = {
         "Lista precios",
         "Planes",
         "Consecutivos",
-        "Categorias Conceptos",
         "Sucursales",
         "Medios pago",
         "Bancos",
@@ -109,6 +102,7 @@ const PERMISSION_MAP = {
         "Usuarios",
         "Condiciones de pago",
         "Parametros",
+        "Recursos físicos",
         "Plantillas",
         "Cargas",
         "Auditoria",
@@ -119,6 +113,7 @@ const PERMISSION_MAP = {
         "Tarifas Copago",
         "Catálogo de cuentas",
         "Campañas",
+        "Facturación electrónica",
         "Suscripcion"
     ]
 };
@@ -151,7 +146,15 @@ const normalizePermisos = (permisos) => {
         const keys = Object.keys(permisos);
         if (keys.length === 0) return {};
         const hasFeatureKeys = keys.some(k => ALL_FEATURES.includes(k));
-        if (hasFeatureKeys) return permisos;
+        if (hasFeatureKeys) {
+            const clean = {};
+            keys.forEach(k => {
+                if (ALL_FEATURES.includes(k)) {
+                    clean[k] = permisos[k];
+                }
+            });
+            return clean;
+        }
 
         // Puede ser objeto keyed por módulo { "Agenda": true } → convertir
         const result = {};

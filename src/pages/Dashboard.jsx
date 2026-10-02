@@ -553,40 +553,35 @@ function AdminMegaMenu({
               </button>
             )}
 
-            {hasAccess?.("Inventario") && (
-              <button type="button" style={item} onClick={() => onNavigatePath?.("inventario")} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-                📦 Inventario
-              </button>
-            )}
-
             {hasAccess?.("Editor Web") && (
               <button type="button" style={item} onClick={() => onNavigatePath?.("config/site")} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
                 🎨 Editor Web
               </button>
             )}
 
-            {/* Placeholders */}
-            <button type="button" style={item} onClick={() => onSoon?.()} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-              🤝 Convenios
-            </button>
-            <button type="button" style={item} onClick={() => onSoon?.()} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-              👥 Terceros
-            </button>
-            <button type="button" style={item} onClick={() => onSoon?.()} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-              📣 Campañas
-            </button>
-            <button type="button" style={item} onClick={() => onSoon?.()} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-              🌡️ Temperatura y humedad
-            </button>
-            <button type="button" style={item} onClick={() => onSoon?.()} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-              ♻️ Residuos
-            </button>
-            <button type="button" style={item} onClick={() => onSoon?.()} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-              💊 Medicamentos y planes
-            </button>
-            <button type="button" style={item} onClick={() => onSoon?.()} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
-              🧪 Esterilización
-            </button>
+            {hasAccess?.("Convenios") && (
+              <button type="button" style={item} onClick={() => onNavigatePath?.("administracion?tab=convenios")} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
+                🤝 Convenios
+              </button>
+            )}
+
+            {hasAccess?.("Terceros") && (
+              <button type="button" style={item} onClick={() => onNavigatePath?.("administracion?tab=terceros")} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
+                👥 Terceros
+              </button>
+            )}
+
+            {hasAccess?.("Residuos") && (
+              <button type="button" style={item} onClick={() => onNavigatePath?.("administracion?tab=residuos")} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
+                ♻️ Residuos
+              </button>
+            )}
+
+            {hasAccess?.("Esterilizacion") && (
+              <button type="button" style={item} onClick={() => onNavigatePath?.("administracion?tab=esterilizacion")} onMouseOver={(e) => hoverize(e, true)} onMouseOut={(e) => hoverize(e, false)}>
+                🧪 Esterilización
+              </button>
+            )}
           </div>
 
           <div style={col}>

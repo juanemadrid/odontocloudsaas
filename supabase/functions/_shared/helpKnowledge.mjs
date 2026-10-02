@@ -38,8 +38,8 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Opcionalmente añade correo, dirección, EPS y ocupación.',
     'Pulsa [Guardar]. El paciente quedará registrado y listo para agendar citas o abrir su expediente clínico.',
   ]),
-  guide('importar-pacientes', 'Pacientes', 'Importar pacientes (Excel / ATM)', 'importar pacientes excel csv atm carga masiva', 'src/modules/pacientes/components/ImportadorPacientes.jsx', [
-    'En [Pacientes], haz clic en el botón [Importar Pacientes (Excel / ATM)].',
+  guide('importar-pacientes', 'Pacientes', 'Importar pacientes (Excel)', 'importar pacientes excel csv carga masiva', 'src/modules/pacientes/components/ImportadorPacientes.jsx', [
+    'En [Pacientes], haz clic en el botón [Importar Pacientes (Excel)].',
     'Selecciona o arrastra el archivo de Excel / CSV siguiendo las columnas requeridas.',
     'Revisa la previsualización y validaciones del importador antes de confirmar.',
     'Pulsa importar y comprueba los registros importados en el listado de pacientes.',

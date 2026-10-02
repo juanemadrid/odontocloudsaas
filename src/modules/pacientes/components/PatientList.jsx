@@ -184,10 +184,10 @@ export default function PatientList({
                             <button
                                 onClick={onImportClick}
                                 className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                                title="Importar Pacientes ATM o archivo Excel/CSV"
+                                title="Importar Pacientes desde archivo Excel o CSV"
                             >
                                 <FiUpload size={14} className="text-blue-600" />
-                                <span>Importar Pacientes (Excel / ATM)</span>
+                                <span>Importar Pacientes (Excel)</span>
                             </button>
 
                             <button

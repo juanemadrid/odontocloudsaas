@@ -41,34 +41,28 @@ export const PERMISSION_MAP = {
     ],
     "Administración": [
         "Gestion Administración",
+        "Menú Facturación",
+        "Recibo de caja",
+        "Factura de venta",
+        "Facturas de compra",
         "Recaudo Manual",
         "Nota credito",
         "Nota debito",
+        "Saldos a favor",
         "Liquidaciones",
         "Traslados",
         "Egresos",
         "Orden de compra",
         "Gestion Facturas",
-        "Ajuste Inventario",
-        "Medicamentos y Planes de formulacion",
-        "Menú Facturación",
+        "Pagos a proveedores",
         "Convenios",
+        "Gestion Agenda",
         "Recursos",
         "Terceros",
-        "Temperatura Y Humedad",
-        "Ubicaciones",
         "Residuos",
-        "Inventario",
         "Rips",
-        "Medicamentos",
-        "Planes de formulacion",
         "Esterilizacion",
-        "Saldos a favor",
-        "Facturas de compra",
         "Editor Web"
-    ],
-    "Pagos y Facturacion": [
-        "Pago a proveedores"
     ],
     "Reportes": [
         "Gestion Reportes",
@@ -78,11 +72,11 @@ export const PERMISSION_MAP = {
         "Reporte Facturacion",
         "Reporte Convenios",
         "Reporte ventas y efectividad",
-        "Reporte Medicamentos",
         "Reporte Cumpleaños",
         "Reporte Consultas",
         "Reporte evoluciones",
         "Log de errores de facturacion",
+        "Log Interoperabilidad (IHCE)",
         "Reporte de oportunidad de citas",
         "Asistencia de clientes",
         "Indicadores de uso de la plataforma",
@@ -94,8 +88,6 @@ export const PERMISSION_MAP = {
         "Lista precios",
         "Planes",
         "Consecutivos",
-        "Almacenes",
-        "Categorias Conceptos",
         "Sucursales",
         "Medios pago",
         "Bancos",
@@ -105,6 +97,7 @@ export const PERMISSION_MAP = {
         "Usuarios",
         "Condiciones de pago",
         "Parametros",
+        "Recursos físicos",
         "Plantillas",
         "Cargas",
         "Auditoria",
@@ -115,6 +108,7 @@ export const PERMISSION_MAP = {
         "Tarifas Copago",
         "Catálogo de cuentas",
         "Campañas",
+        "Facturación electrónica",
         "Suscripcion"
     ]
 };
@@ -146,8 +140,8 @@ PERMISSION_MAP.Agenda.forEach(f => {
 PERMISSION_MAP.Pacientes.forEach(f => {
     doctorPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
-// Selección de Administración (Medicamentos, Planes de formulación, Residuos, Esterilización)
-["Medicamentos", "Planes de formulacion", "Medicamentos y Planes de formulacion", "Residuos", "Esterilizacion", "Gestion Administración"].forEach(f => {
+// Selección de Administración (Residuos, Esterilización, Gestión Administración)
+["Residuos", "Esterilizacion", "Gestion Administración", "Gestion Agenda"].forEach(f => {
     doctorPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 // Selección de Reportes
@@ -170,7 +164,7 @@ PERMISSION_MAP.Caja.forEach(f => {
     recepcionPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 // Selección de Administración
-["Recaudo Manual", "Convenios", "Terceros", "Saldos a favor"].forEach(f => {
+["Recaudo Manual", "Recibo de caja", "Convenios", "Terceros", "Saldos a favor", "Factura de venta"].forEach(f => {
     recepcionPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 // Selección de Reportes
@@ -186,7 +180,7 @@ const auxiliarPerms = {};
 ["Paciente", "Citas"].forEach(f => {
     auxiliarPerms[f] = { consultar: true, crear: false, editar: false, eliminar: false };
 });
-["Esterilizacion", "Residuos", "Inventario", "Ajuste Inventario", "Medicamentos", "Temperatura Y Humedad"].forEach(f => {
+["Esterilizacion", "Residuos"].forEach(f => {
     auxiliarPerms[f] = { consultar: true, crear: true, editar: true, eliminar: false };
 });
 
@@ -215,7 +209,7 @@ export const DEFAULT_PERFILES = [
     {
         id: "auxiliar",
         nombre: "Auxiliar de Odontología",
-        descripcion: "Gestión de Esterilización de instrumental, Registro de Residuos, Control de Inventario y Apoyo en Agenda.",
+        descripcion: "Gestión de Esterilización de instrumental, Registro de Residuos y Apoyo en Agenda.",
         baseRole: "auxiliar",
         permisos: auxiliarPerms
     }
