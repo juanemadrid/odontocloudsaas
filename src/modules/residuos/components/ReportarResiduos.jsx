@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { FiSearch, FiCalendar, FiPlusCircle, FiTrash2, FiX, FiDownload, FiChevronDown } from "react-icons/fi";
-import * as XLSX from "xlsx";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 import {
@@ -178,28 +177,109 @@ export default function ReportarResiduos() {
         }
     };
 
-    const handleExportExcel = () => {
+    const handleExportExcel = async () => {
         if (!filteredLogs || filteredLogs.length === 0) {
             toast.error("No hay registros de residuos para exportar en este periodo.");
             return;
         }
 
         try {
-            const exportRows = filteredLogs.map((log) => ({
-                "Fecha y Hora": log.fechaHora || "",
-                "Fecha": log.fecha || "",
-                "Tipo de Residuo": log.residuoNombre || "",
-                "Color": log.color || "",
-                "Peso (kg)": Number(Number(log.cantidad || 0).toFixed(2))
-            }));
+            const XLSX = await import("xlsx-js-style");
 
-            const ws = XLSX.utils.json_to_sheet(exportRows);
+            const headers = ["Fecha", "Hora", "Tipo de Residuo", "Color / Caneca", "Peso (kg)"];
+
+            const rows = filteredLogs.map((log) => {
+                let fecha = log.fecha || "";
+                let hora = "";
+                if (log.fechaHora) {
+                    const normalized = log.fechaHora.replace("T", " ");
+                    const parts = normalized.split(" ");
+                    if (!fecha && parts[0]) fecha = parts[0];
+                    hora = parts[1]?.slice(0, 5) || "";
+                }
+                const pesoNum = Number(Number(log.cantidad || 0).toFixed(2));
+                return [fecha, hora, log.residuoNombre || "", log.color || "", pesoNum];
+            });
+
+            // Summary Total
+            const totalKg = rows.reduce((acc, r) => acc + (Number(r[4]) || 0), 0);
+            const totalRow = ["TOTAL PERIODO", "", "", "", Number(totalKg.toFixed(2))];
+
+            const aoa = [headers, ...rows, totalRow];
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+            // Styling definitions
+            const borderThin = {
+                top: { style: "thin", color: { rgb: "D1D5DB" } },
+                bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+                left: { style: "thin", color: { rgb: "D1D5DB" } },
+                right: { style: "thin", color: { rgb: "D1D5DB" } }
+            };
+
+            const borderTotal = {
+                top: { style: "thin", color: { rgb: "64748B" } },
+                bottom: { style: "double", color: { rgb: "0F172A" } },
+                left: { style: "thin", color: { rgb: "D1D5DB" } },
+                right: { style: "thin", color: { rgb: "D1D5DB" } }
+            };
+
+            // 1. Style Header Row
+            headers.forEach((_, cIdx) => {
+                const ref = XLSX.utils.encode_cell({ r: 0, c: cIdx });
+                if (ws[ref]) {
+                    ws[ref].s = {
+                        font: { bold: true, name: "Calibri", sz: 11, color: { rgb: "0F172A" } },
+                        fill: { fgColor: { rgb: "E2E8F0" } },
+                        alignment: {
+                            vertical: "center",
+                            horizontal: cIdx === 4 ? "right" : (cIdx === 0 || cIdx === 1 ? "center" : "left")
+                        },
+                        border: borderThin
+                    };
+                }
+            });
+
+            // 2. Style Data Rows
+            rows.forEach((_, rIdx) => {
+                const r = rIdx + 1;
+                headers.forEach((_, cIdx) => {
+                    const ref = XLSX.utils.encode_cell({ r, c: cIdx });
+                    if (ws[ref]) {
+                        ws[ref].s = {
+                            font: { name: "Calibri", sz: 11, color: { rgb: "334155" } },
+                            alignment: {
+                                vertical: "center",
+                                horizontal: cIdx === 4 ? "right" : (cIdx === 0 || cIdx === 1 ? "center" : "left")
+                            },
+                            border: borderThin
+                        };
+                    }
+                });
+            });
+
+            // 3. Style Total Row
+            const totalR = rows.length + 1;
+            headers.forEach((_, cIdx) => {
+                const ref = XLSX.utils.encode_cell({ r: totalR, c: cIdx });
+                if (ws[ref]) {
+                    ws[ref].s = {
+                        font: { bold: true, name: "Calibri", sz: 11, color: { rgb: "0F172A" } },
+                        fill: { fgColor: { rgb: "F1F5F9" } },
+                        alignment: {
+                            vertical: "center",
+                            horizontal: cIdx === 4 ? "right" : (cIdx === 0 ? "left" : "center")
+                        },
+                        border: borderTotal
+                    };
+                }
+            });
+
             ws["!cols"] = [
-                { wch: 22 }, // Fecha y Hora
-                { wch: 14 }, // Fecha
+                { wch: 15 }, // Fecha
+                { wch: 12 }, // Hora
                 { wch: 28 }, // Tipo de Residuo
-                { wch: 18 }, // Color
-                { wch: 14 }  // Peso (kg)
+                { wch: 18 }, // Color / Caneca
+                { wch: 16 }  // Peso (kg)
             ];
 
             const wb = XLSX.utils.book_new();

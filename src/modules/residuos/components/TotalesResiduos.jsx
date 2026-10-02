@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiCalendar, FiSearch, FiDownload } from "react-icons/fi";
-import * as XLSX from "xlsx";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 import { getTiposResiduos, getRegistroResiduos } from "../../../services/residuosService";
@@ -67,41 +66,115 @@ export default function TotalesResiduos() {
         setAppliedYear(year);
     };
 
-    const handleExportExcel = () => {
+    const handleExportExcel = async () => {
         if (!types || types.length === 0) {
             toast.error("No hay tipos de residuos configurados para exportar.");
             return;
         }
 
         try {
-            const exportRows = matrix.rows.map((r) => {
-                const rowObj = { "Mes": r.mes };
+            const XLSX = await import("xlsx-js-style");
+
+            const headers = [
+                "Mes",
+                ...types.map(t => `${t.nombre} (${t.color})`),
+                "Total Mensual (kg)"
+            ];
+
+            const rows = matrix.rows.map((r) => {
+                const rowValues = [r.mes];
                 let monthTotal = 0;
                 types.forEach((t) => {
                     const val = Number(r[t.nombre] || 0);
-                    rowObj[`${t.nombre} (${t.color})`] = Number(val.toFixed(2));
+                    rowValues.push(Number(val.toFixed(2)));
                     monthTotal += val;
                 });
-                rowObj["Total Mensual (kg)"] = Number(monthTotal.toFixed(2));
-                return rowObj;
+                rowValues.push(Number(monthTotal.toFixed(2)));
+                return rowValues;
             });
 
             // Fila de Total Anual
-            const totalRow = { "Mes": "TOTAL ANUAL" };
+            const totalRow = ["TOTAL ANUAL"];
             let grandTotal = 0;
             types.forEach((t) => {
                 const val = Number(matrix.colTotals[t.nombre] || 0);
-                totalRow[`${t.nombre} (${t.color})`] = Number(val.toFixed(2));
+                totalRow.push(Number(val.toFixed(2)));
                 grandTotal += val;
             });
-            totalRow["Total Mensual (kg)"] = Number(grandTotal.toFixed(2));
-            exportRows.push(totalRow);
+            totalRow.push(Number(grandTotal.toFixed(2)));
 
-            const ws = XLSX.utils.json_to_sheet(exportRows);
+            const aoa = [headers, ...rows, totalRow];
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+            const borderThin = {
+                top: { style: "thin", color: { rgb: "D1D5DB" } },
+                bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+                left: { style: "thin", color: { rgb: "D1D5DB" } },
+                right: { style: "thin", color: { rgb: "D1D5DB" } }
+            };
+
+            const borderTotal = {
+                top: { style: "thin", color: { rgb: "64748B" } },
+                bottom: { style: "double", color: { rgb: "0F172A" } },
+                left: { style: "thin", color: { rgb: "D1D5DB" } },
+                right: { style: "thin", color: { rgb: "D1D5DB" } }
+            };
+
+            // 1. Style Header Row
+            headers.forEach((_, cIdx) => {
+                const ref = XLSX.utils.encode_cell({ r: 0, c: cIdx });
+                if (ws[ref]) {
+                    ws[ref].s = {
+                        font: { bold: true, name: "Calibri", sz: 11, color: { rgb: "0F172A" } },
+                        fill: { fgColor: { rgb: "E2E8F0" } },
+                        alignment: {
+                            vertical: "center",
+                            horizontal: cIdx === 0 ? "left" : "right"
+                        },
+                        border: borderThin
+                    };
+                }
+            });
+
+            // 2. Style Data Rows (Meses)
+            rows.forEach((_, rIdx) => {
+                const r = rIdx + 1;
+                headers.forEach((_, cIdx) => {
+                    const ref = XLSX.utils.encode_cell({ r, c: cIdx });
+                    if (ws[ref]) {
+                        ws[ref].s = {
+                            font: { name: "Calibri", sz: 11, color: { rgb: "334155" } },
+                            alignment: {
+                                vertical: "center",
+                                horizontal: cIdx === 0 ? "left" : "right"
+                            },
+                            border: borderThin
+                        };
+                    }
+                });
+            });
+
+            // 3. Style Total Anual Row
+            const totalR = rows.length + 1;
+            headers.forEach((_, cIdx) => {
+                const ref = XLSX.utils.encode_cell({ r: totalR, c: cIdx });
+                if (ws[ref]) {
+                    ws[ref].s = {
+                        font: { bold: true, name: "Calibri", sz: 11, color: { rgb: "0F172A" } },
+                        fill: { fgColor: { rgb: "F1F5F9" } },
+                        alignment: {
+                            vertical: "center",
+                            horizontal: cIdx === 0 ? "left" : "right"
+                        },
+                        border: borderTotal
+                    };
+                }
+            });
+
             ws["!cols"] = [
-                { wch: 16 }, // Mes
-                ...types.map(() => ({ wch: 20 })),
-                { wch: 20 }  // Total Mensual
+                { wch: 18 }, // Mes
+                ...types.map(() => ({ wch: 22 })),
+                { wch: 22 }  // Total Mensual
             ];
 
             const wb = XLSX.utils.book_new();
