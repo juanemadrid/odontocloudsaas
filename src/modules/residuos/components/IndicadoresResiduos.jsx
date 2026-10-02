@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiCalendar } from "react-icons/fi";
-import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
+import { getTiposResiduos, getRegistroResiduos } from "../../../services/residuosService";
 
 const MONTHS_SPANISH = [
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -20,57 +20,44 @@ export default function IndicadoresResiduos() {
     const [year, setYear] = useState(new Date().getFullYear());
     const [appliedYear, setAppliedYear] = useState(new Date().getFullYear());
 
-    useEffect(() => {
+    const loadData = async (force = false) => {
         if (!inquilino) return;
-        const loadData = async () => {
-            setLoading(true);
-            try {
-                // Load types
-                let tList = [];
-                try {
-                    const { data: tSnap } = await supabase
-                        .from("tipos_residuos")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    if (tSnap && tSnap.length > 0) tList = tSnap;
-                } catch (e) {}
+        setLoading(true);
+        try {
+            const [tList, lList] = await Promise.all([
+                getTiposResiduos(inquilino, force),
+                getRegistroResiduos(inquilino, force)
+            ]);
+            setTypes(tList);
+            setLogs(lList);
+        } catch (e) {
+            console.error("Error loading data for indicators:", e);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-                if (tList.length === 0) {
-                    const { data: cfgRow } = await supabase
-                        .from("website_config")
-                        .select("config")
-                        .eq("tenant_id", inquilino)
-                        .maybeSingle();
-                    tList = cfgRow?.config?.tipos_residuos || [];
-                }
-                setTypes(tList);
+    useEffect(() => {
+        loadData();
 
-                // Load logs
-                let lList = [];
-                try {
-                    const { data: snap } = await supabase
-                        .from("registro_residuos")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
-                    if (snap && snap.length > 0) lList = snap;
-                } catch (e) {}
-
-                if (lList.length === 0) {
-                    const { data: cfgRow } = await supabase
-                        .from("website_config")
-                        .select("config")
-                        .eq("tenant_id", inquilino)
-                        .maybeSingle();
-                    lList = cfgRow?.config?.registro_residuos || [];
-                }
-                setLogs(lList);
-            } catch (e) {
-                console.error("Error loading data for indicators:", e);
-            } finally {
-                setLoading(false);
+        const handleTypesChanged = (e) => {
+            if (e?.detail?.tenantId === inquilino && Array.isArray(e?.detail?.types)) {
+                setTypes(e.detail.types);
             }
         };
-        loadData();
+
+        const handleLogsChanged = (e) => {
+            if (e?.detail?.tenantId === inquilino && Array.isArray(e?.detail?.logs)) {
+                setLogs(e.detail.logs);
+            }
+        };
+
+        window.addEventListener("residuos_types_changed", handleTypesChanged);
+        window.addEventListener("residuos_logs_changed", handleLogsChanged);
+        return () => {
+            window.removeEventListener("residuos_types_changed", handleTypesChanged);
+            window.removeEventListener("residuos_logs_changed", handleLogsChanged);
+        };
     }, [inquilino]);
 
     const handleSearch = (e) => {

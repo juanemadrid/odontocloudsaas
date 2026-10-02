@@ -1,27 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { FiSearch, FiEdit2, FiTrash2, FiPlus, FiX } from "react-icons/fi";
-import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
+import {
+    getTiposResiduos,
+    addOrUpdateTipoResiduo,
+    deleteTipoResiduo
+} from "../../../services/residuosService";
 
 const COLORS = [
     "Amarillo", "Azul", "Beige", "Blanco", "Gris", "Negro", "Púrpura", "Rojo", "Verde"
-];
-
-const DEFAULT_RESIDUES = [
-    { nombre: "Anatomopatológicos", color: "Rojo" },
-    { nombre: "Animales", color: "Rojo" },
-    { nombre: "Aprovechables", color: "Blanco" },
-    { nombre: "Biosanitarios", color: "Rojo" },
-    { nombre: "Corrosivos", color: "Rojo" },
-    { nombre: "Cortopunzantes", color: "Rojo" },
-    { nombre: "Explosivos", color: "Rojo" },
-    { nombre: "Inflamables", color: "Rojo" },
-    { nombre: "No aprovechables", color: "Negro" },
-    { nombre: "Ordinarios", color: "Verde" },
-    { nombre: "Radiactivos", color: "Rojo" },
-    { nombre: "Reactivos", color: "Rojo" },
-    { nombre: "Tóxicos", color: "Rojo" }
 ];
 
 export default function ConfigurarResiduos() {
@@ -40,40 +28,12 @@ export default function ConfigurarResiduos() {
     const [color, setColor] = useState("Rojo");
     const [saving, setSaving] = useState(false);
 
-    const loadResidues = async () => {
+    const loadResidues = async (force = false) => {
         if (!inquilino) return;
         setLoading(true);
         try {
-            let list = [];
-            try {
-                const { data: snap } = await supabase
-                    .from("tipos_residuos")
-                    .select("*")
-                    .eq("tenant_id", inquilino);
-                if (snap && snap.length > 0) list = snap;
-            } catch (e) {}
-
-            if (list.length === 0) {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-                list = cfgRow?.config?.tipos_residuos || [];
-            }
-
-            // If still empty, pre-populate default Colombian waste types
-            if (list.length === 0) {
-                list = DEFAULT_RESIDUES.map((item, idx) => ({
-                    id: `tr_${idx}_${Date.now()}`,
-                    nombre: item.nombre,
-                    color: item.color,
-                    tenant_id: inquilino,
-                    created_at: new Date().toISOString()
-                }));
-            }
-
-            setResidues(list.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
+            const list = await getTiposResiduos(inquilino, force);
+            setResidues(list);
         } catch (e) {
             console.error("Error loading residues types:", e);
             toast.error("Error al cargar los tipos de residuos");
@@ -84,6 +44,15 @@ export default function ConfigurarResiduos() {
 
     useEffect(() => {
         loadResidues();
+
+        const handleTypesChanged = (e) => {
+            if (e?.detail?.tenantId === inquilino && Array.isArray(e?.detail?.types)) {
+                setResidues(e.detail.types);
+            }
+        };
+
+        window.addEventListener("residuos_types_changed", handleTypesChanged);
+        return () => window.removeEventListener("residuos_types_changed", handleTypesChanged);
     }, [inquilino]);
 
     const handleOpenAdd = () => {
@@ -103,27 +72,9 @@ export default function ConfigurarResiduos() {
     const handleDelete = async (item) => {
         if (!window.confirm(`¿Seguro que desea eliminar el tipo de residuo "${item.nombre}"?`)) return;
         try {
-            try {
-                await supabase.from("tipos_residuos").delete().eq("id", item.id);
-            } catch (e) {}
-
-            const { data: cfgRow } = await supabase
-                .from("website_config")
-                .select("config")
-                .eq("tenant_id", inquilino)
-                .maybeSingle();
-
-            const currentConfig = cfgRow?.config || {};
-            const currentList = Array.isArray(currentConfig.tipos_residuos) ? currentConfig.tipos_residuos : residues;
-            const filteredList = currentList.filter(r => r.id !== item.id);
-
-            await supabase.from("website_config").upsert(
-                { tenant_id: inquilino, config: { ...currentConfig, tipos_residuos: filteredList } },
-                { onConflict: "tenant_id" }
-            );
-
+            await deleteTipoResiduo(inquilino, item.id);
             toast.success("Tipo de residuo eliminado");
-            loadResidues();
+            await loadResidues(true);
         } catch (e) {
             console.error("Error deleting residue:", e);
             toast.error("Error al eliminar");
@@ -139,51 +90,18 @@ export default function ConfigurarResiduos() {
 
         setSaving(true);
         try {
-            const trId = editId || (crypto.randomUUID ? crypto.randomUUID() : `tr_${Date.now()}`);
-            const payload = {
-                id: trId,
+            await addOrUpdateTipoResiduo(inquilino, {
+                id: editId,
                 nombre: nombre.trim(),
-                color,
-                tenant_id: inquilino,
-                updated_at: new Date().toISOString()
-            };
-
-            try {
-                if (editId) {
-                    await supabase.from("tipos_residuos").update(payload).eq("id", editId);
-                } else {
-                    payload.created_at = new Date().toISOString();
-                    await supabase.from("tipos_residuos").insert([payload]);
-                }
-            } catch (err) {}
-
-            // Sincronizar en website_config
-            const { data: cfgRow } = await supabase
-                .from("website_config")
-                .select("config")
-                .eq("tenant_id", inquilino)
-                .maybeSingle();
-
-            const currentConfig = cfgRow?.config || {};
-            const currentList = Array.isArray(currentConfig.tipos_residuos) ? currentConfig.tipos_residuos : residues;
-            let updatedList;
-            if (editId) {
-                updatedList = currentList.map(i => i.id === editId ? { ...i, ...payload } : i);
-            } else {
-                updatedList = [payload, ...currentList];
-            }
-
-            await supabase.from("website_config").upsert(
-                { tenant_id: inquilino, config: { ...currentConfig, tipos_residuos: updatedList } },
-                { onConflict: "tenant_id" }
-            );
+                color
+            });
 
             toast.success(editId ? "Tipo de residuo actualizado" : "Tipo de residuo creado con éxito");
             setShowModal(false);
-            loadResidues();
+            await loadResidues(true);
         } catch (err) {
             console.error("Error saving residue:", err);
-            toast.error("Error al guardar el tipo de residuo");
+            toast.error(err?.message || "Error al guardar el tipo de residuo");
         } finally {
             setSaving(false);
         }

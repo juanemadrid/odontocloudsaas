@@ -1,8 +1,14 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { FiSearch, FiCalendar, FiPlusCircle, FiTrash2, FiX } from "react-icons/fi";
-import supabase from "../../../lib/supabaseClient";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { FiSearch, FiCalendar, FiPlusCircle, FiTrash2, FiX, FiDownload, FiChevronDown } from "react-icons/fi";
+import * as XLSX from "xlsx";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
+import {
+    getTiposResiduos,
+    getRegistroResiduos,
+    saveReporteResiduo,
+    deleteReporteResiduo
+} from "../../../services/residuosService";
 
 export default function ReportarResiduos() {
     const { userProfile } = useAuth();
@@ -25,55 +31,26 @@ export default function ReportarResiduos() {
     const [selectedTypeId, setSelectedTypeId] = useState("");
     const [peso, setPeso] = useState(0);
     const [saving, setSaving] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
 
-    // Search state
+    // Search state in reports table
     const [searchTerm, setSearchTerm] = useState("");
 
-    const loadData = async () => {
+    const loadData = async (force = false) => {
         if (!inquilino) return;
         setLoading(true);
         try {
-            // Load types
-            let tList = [];
-            try {
-                const { data: tSnap } = await supabase
-                    .from("tipos_residuos")
-                    .select("*")
-                    .eq("tenant_id", inquilino);
-                if (tSnap && tSnap.length > 0) tList = tSnap;
-            } catch (e) {}
+            const [tList, lList] = await Promise.all([
+                getTiposResiduos(inquilino, force),
+                getRegistroResiduos(inquilino, force)
+            ]);
 
-            if (tList.length === 0) {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-                tList = cfgRow?.config?.tipos_residuos || [];
+            setTypes(tList);
+            if (tList.length > 0 && !selectedTypeId) {
+                setSelectedTypeId(tList[0].id);
             }
-
-            setTypes(tList.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")));
-            if (tList.length > 0) setSelectedTypeId(tList[0].id);
-
-            // Load logs
-            let lList = [];
-            try {
-                const { data: lSnap } = await supabase
-                    .from("registro_residuos")
-                    .select("*")
-                    .eq("tenant_id", inquilino);
-                if (lSnap && lSnap.length > 0) lList = lSnap;
-            } catch (e) {}
-
-            if (lList.length === 0) {
-                const { data: cfgRow } = await supabase
-                    .from("website_config")
-                    .select("config")
-                    .eq("tenant_id", inquilino)
-                    .maybeSingle();
-                lList = cfgRow?.config?.registro_residuos || [];
-            }
-
             setLogs(lList);
         } catch (e) {
             console.error("Error loading reporting logs:", e);
@@ -85,17 +62,62 @@ export default function ReportarResiduos() {
 
     useEffect(() => {
         loadData();
+
+        const handleTypesChanged = (e) => {
+            if (e?.detail?.tenantId === inquilino && Array.isArray(e?.detail?.types)) {
+                setTypes(e.detail.types);
+            }
+        };
+
+        const handleLogsChanged = (e) => {
+            if (e?.detail?.tenantId === inquilino && Array.isArray(e?.detail?.logs)) {
+                setLogs(e.detail.logs);
+            }
+        };
+
+        window.addEventListener("residuos_types_changed", handleTypesChanged);
+        window.addEventListener("residuos_logs_changed", handleLogsChanged);
+        return () => {
+            window.removeEventListener("residuos_types_changed", handleTypesChanged);
+            window.removeEventListener("residuos_logs_changed", handleLogsChanged);
+        };
     }, [inquilino]);
+
+    // Handle click outside combobox dropdown
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const handleSearch = (e) => {
         if (e) e.preventDefault();
         setAppliedRange({ ...dateRange });
     };
 
-    const handleOpenAdd = () => {
+    const handleOpenAdd = async () => {
         setFechaHora(new Date().toISOString().slice(0, 16).replace("T", " "));
         setPeso(0);
-        if (types.length > 0) setSelectedTypeId(types[0].id);
+        setSearchQuery("");
+        setIsDropdownOpen(false);
+
+        let currentTypes = types;
+        if (currentTypes.length === 0 && inquilino) {
+            try {
+                currentTypes = await getTiposResiduos(inquilino, true);
+                setTypes(currentTypes);
+            } catch (_) {}
+        }
+
+        if (currentTypes.length > 0) {
+            setSelectedTypeId(currentTypes[0].id);
+        } else {
+            setSelectedTypeId("");
+        }
         setShowModal(true);
     };
 
@@ -111,7 +133,10 @@ export default function ReportarResiduos() {
         }
 
         const selectedType = types.find(t => t.id === selectedTypeId);
-        if (!selectedType) return;
+        if (!selectedType) {
+            toast.error("Tipo de residuo no encontrado.");
+            return;
+        }
 
         setSaving(true);
         try {
@@ -128,27 +153,10 @@ export default function ReportarResiduos() {
                 created_at: new Date().toISOString()
             };
 
-            try {
-                await supabase.from("registro_residuos").insert([reportItem]);
-            } catch (e) {}
-
-            const { data: cfgRow } = await supabase
-                .from("website_config")
-                .select("config")
-                .eq("tenant_id", inquilino)
-                .maybeSingle();
-
-            const currentConfig = cfgRow?.config || {};
-            const currentList = Array.isArray(currentConfig.registro_residuos) ? currentConfig.registro_residuos : logs;
-            const updatedList = [reportItem, ...currentList];
-
-            await supabase.from("website_config").upsert(
-                { tenant_id: inquilino, config: { ...currentConfig, registro_residuos: updatedList } },
-                { onConflict: "tenant_id" }
-            );
+            await saveReporteResiduo(inquilino, reportItem);
 
             toast.success("Reporte de residuo guardado con éxito");
-            setLogs(prev => [reportItem, ...prev]);
+            setLogs(prev => [reportItem, ...prev.filter(l => l.id !== reportId)]);
             setShowModal(false);
         } catch (err) {
             console.error("Error saving residue report:", err);
@@ -161,30 +169,47 @@ export default function ReportarResiduos() {
     const handleDelete = async (id) => {
         if (!window.confirm("¿Está seguro de eliminar este reporte de residuo?")) return;
         try {
-            try {
-                await supabase.from("registro_residuos").delete().eq("id", id);
-            } catch (e) {}
-
-            const { data: cfgRow } = await supabase
-                .from("website_config")
-                .select("config")
-                .eq("tenant_id", inquilino)
-                .maybeSingle();
-
-            const currentConfig = cfgRow?.config || {};
-            const currentList = Array.isArray(currentConfig.registro_residuos) ? currentConfig.registro_residuos : logs;
-            const updatedList = currentList.filter(l => l.id !== id);
-
-            await supabase.from("website_config").upsert(
-                { tenant_id: inquilino, config: { ...currentConfig, registro_residuos: updatedList } },
-                { onConflict: "tenant_id" }
-            );
-
+            await deleteReporteResiduo(inquilino, id);
             toast.success("Reporte de residuo eliminado");
             setLogs(prev => prev.filter(l => l.id !== id));
         } catch (e) {
             console.error("Error deleting residue report:", e);
             toast.error("Error al eliminar el reporte");
+        }
+    };
+
+    const handleExportExcel = () => {
+        if (!filteredLogs || filteredLogs.length === 0) {
+            toast.error("No hay registros de residuos para exportar en este periodo.");
+            return;
+        }
+
+        try {
+            const exportRows = filteredLogs.map((log) => ({
+                "Fecha y Hora": log.fechaHora || "",
+                "Fecha": log.fecha || "",
+                "Tipo de Residuo": log.residuoNombre || "",
+                "Color": log.color || "",
+                "Peso (kg)": Number(Number(log.cantidad || 0).toFixed(2))
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(exportRows);
+            ws["!cols"] = [
+                { wch: 22 }, // Fecha y Hora
+                { wch: 14 }, // Fecha
+                { wch: 28 }, // Tipo de Residuo
+                { wch: 18 }, // Color
+                { wch: 14 }  // Peso (kg)
+            ];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Residuos");
+            const fileName = `Reporte_Residuos_${appliedRange.start}_al_${appliedRange.end}.xlsx`;
+            XLSX.writeFile(wb, fileName);
+            toast.success("Reporte de residuos exportado a Excel con éxito");
+        } catch (err) {
+            console.error("Error exporting residuos to Excel:", err);
+            toast.error("Error al exportar a Excel");
         }
     };
 
@@ -200,6 +225,20 @@ export default function ReportarResiduos() {
             return name.includes(term);
         }).sort((a, b) => (b.fechaHora || "").localeCompare(a.fechaHora || ""));
     }, [logs, appliedRange, searchTerm]);
+
+    // Filter residue types in modal dropdown
+    const filteredModalTypes = useMemo(() => {
+        if (!searchQuery.trim()) return types;
+        const term = searchQuery.toLowerCase().trim();
+        return types.filter(t => 
+            (t.nombre || "").toLowerCase().includes(term) || 
+            (t.color || "").toLowerCase().includes(term)
+        );
+    }, [types, searchQuery]);
+
+    const selectedType = useMemo(() => {
+        return types.find(t => t.id === selectedTypeId) || null;
+    }, [types, selectedTypeId]);
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300 font-sans text-slate-800">
@@ -254,13 +293,24 @@ export default function ReportarResiduos() {
                             onChange={e => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <button
-                        onClick={handleOpenAdd}
-                        className="h-8 px-3.5 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer gap-1.5"
-                    >
-                        <FiPlusCircle size={13} />
-                        Reportar
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            type="button"
+                            onClick={handleExportExcel}
+                            className="h-8 px-3 flex items-center justify-center bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-emerald-700 rounded-lg text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer gap-1.5"
+                            title="Exportar a Excel"
+                        >
+                            <FiDownload size={13} className="text-emerald-600" />
+                            Exportar Excel
+                        </button>
+                        <button
+                            onClick={handleOpenAdd}
+                            className="h-8 px-3.5 flex items-center justify-center bg-[#7cb342] text-white rounded-lg text-xs font-semibold hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 shrink-0 cursor-pointer gap-1.5"
+                        >
+                            <FiPlusCircle size={13} />
+                            Reportar
+                        </button>
+                    </div>
                 </div>
 
                 <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -314,9 +364,9 @@ export default function ReportarResiduos() {
             {/* Modal Dialog */}
             {showModal && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[1000] animate-in fade-in duration-200 p-4">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-sm overflow-visible animate-in zoom-in-95 duration-200">
                         {/* Header */}
-                        <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
+                        <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between rounded-t-xl">
                             <h3 className="text-xs font-bold text-slate-800">
                                 Nuevo reporte
                             </h3>
@@ -342,20 +392,94 @@ export default function ReportarResiduos() {
                                 />
                             </div>
 
-                            {/* Tipo de residuo */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[11px] font-semibold text-slate-600">Tipo de residuo *</label>
-                                <select
-                                    value={selectedTypeId}
-                                    onChange={e => setSelectedTypeId(e.target.value)}
-                                    className="w-full h-8 px-3 border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors cursor-pointer"
-                                    required
-                                >
-                                    <option value="">Seleccione...</option>
-                                    {types.map(t => (
-                                        <option key={t.id} value={t.id}>{t.nombre}</option>
-                                    ))}
-                                </select>
+                            {/* Tipo de residuo (Buscador desplegable unificado en un solo campo) */}
+                            <div className="flex flex-col gap-1 relative" ref={dropdownRef}>
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[11px] font-semibold text-slate-600">Tipo de residuo *</label>
+                                    {isDropdownOpen && searchQuery && (
+                                        <span className="text-[10px] text-slate-400 font-medium">
+                                            {filteredModalTypes.length} encontrados
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Escriba o seleccione un tipo de residuo..."
+                                        value={isDropdownOpen ? searchQuery : (selectedType ? `${selectedType.nombre} (${selectedType.color})` : searchQuery)}
+                                        onFocus={() => {
+                                            setIsDropdownOpen(true);
+                                            setSearchQuery("");
+                                        }}
+                                        onClick={() => {
+                                            setIsDropdownOpen(true);
+                                        }}
+                                        onChange={(e) => {
+                                            setSearchQuery(e.target.value);
+                                            if (!isDropdownOpen) setIsDropdownOpen(true);
+                                        }}
+                                        className="w-full h-8 px-3 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-normal text-slate-700 outline-none focus:border-emerald-500 transition-colors cursor-pointer"
+                                        autoComplete="off"
+                                        required={!selectedTypeId}
+                                    />
+                                    <div 
+                                        onClick={() => setIsDropdownOpen(prev => !prev)}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer p-0.5 hover:text-slate-600"
+                                    >
+                                        <FiChevronDown size={14} className={`transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`} />
+                                    </div>
+                                </div>
+
+                                {/* Menú desplegable flotante con las opciones filtradas al instante */}
+                                {isDropdownOpen && (
+                                    <div className="absolute top-full left-0 right-0 mt-1 max-h-52 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-[1100] py-1 divide-y divide-slate-50 animate-in fade-in zoom-in-95 duration-150">
+                                        {filteredModalTypes.length === 0 ? (
+                                            <div className="px-3 py-2 text-xs text-slate-400 italic text-center">
+                                                No hay residuos que coincidan con "{searchQuery}"
+                                            </div>
+                                        ) : (
+                                            filteredModalTypes.map(t => {
+                                                const isSelected = t.id === selectedTypeId;
+                                                return (
+                                                    <div
+                                                        key={t.id}
+                                                        onClick={() => {
+                                                            setSelectedTypeId(t.id);
+                                                            setSearchQuery("");
+                                                            setIsDropdownOpen(false);
+                                                        }}
+                                                        className={`px-3 py-2 text-xs flex items-center justify-between cursor-pointer transition-colors ${
+                                                            isSelected 
+                                                                ? "bg-emerald-50 text-emerald-800 font-semibold" 
+                                                                : "text-slate-700 hover:bg-slate-50"
+                                                        }`}
+                                                    >
+                                                        <span className="flex items-center gap-2">
+                                                            <span 
+                                                                className="w-2.5 h-2.5 rounded-full shrink-0" 
+                                                                style={{
+                                                                    backgroundColor: t.color === "Rojo" ? "#ef4444" :
+                                                                                     t.color === "Verde" ? "#22c55e" :
+                                                                                     t.color === "Blanco" ? "#e2e8f0" :
+                                                                                     t.color === "Negro" ? "#0f172a" :
+                                                                                     t.color === "Amarillo" ? "#eab308" :
+                                                                                     t.color === "Azul" ? "#3b82f6" :
+                                                                                     t.color === "Gris" ? "#94a3b8" :
+                                                                                     t.color === "Púrpura" ? "#a855f7" : "#cbd5e1"
+                                                                }} 
+                                                            />
+                                                            <span>{t.nombre}</span>
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-medium px-1.5 py-0.5 rounded bg-slate-100">
+                                                            {t.color}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Peso */}
@@ -382,7 +506,7 @@ export default function ReportarResiduos() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={saving || types.length === 0}
+                                    disabled={saving || !selectedTypeId}
                                     className="h-8 px-4 rounded-lg text-xs font-semibold text-white bg-[#7cb342] hover:bg-[#689f38] shadow-2xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                                 >
                                     {saving ? "Guardando..." : "Guardar"}
