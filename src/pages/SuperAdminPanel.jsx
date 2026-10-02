@@ -192,7 +192,7 @@ export default function SuperAdminPanel() {
 
             {/* Main Content Area - Constrained for standard views, expanded for CMS */}
             <div className="flex-1 ml-64 min-h-screen flex flex-col bg-slate-50">
-                <main className={`flex-1 w-full ${activeTab === 'site' ? 'max-w-none p-0 space-y-0' : 'max-w-[1200px] mx-auto py-10 px-8 lg:px-12 space-y-8'} animate-safe-fade-in`} key={user?.uid}>
+                <main className={`flex-1 w-full ${activeTab === 'site' ? 'max-w-none p-0 space-y-0' : 'max-w-[1550px] mx-auto py-8 px-6 lg:px-10 space-y-8'} animate-safe-fade-in`} key={user?.uid}>
 
                     {/* Component Header Area - Hidden for CMS to maximize space */}
                     {activeTab !== 'site' && (

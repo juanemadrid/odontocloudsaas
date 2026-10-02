@@ -21,6 +21,52 @@ const fmt = (ts) => {
     return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
+const fmtDateTime = (ts) => {
+    if (!ts) return "Nunca";
+    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("es-CO", { 
+        day: "2-digit", 
+        month: "short", 
+        year: "numeric", 
+        hour: "2-digit", 
+        minute: "2-digit", 
+        hour12: true 
+    });
+};
+
+const formatRelativeLogin = (ts) => {
+    if (!ts) return { text: "Sin actividad", sub: "Sin ingresos registrados", badge: "never" };
+    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    if (isNaN(d.getTime())) return { text: "—", sub: "", badge: "never" };
+    
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    const timeStr = d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const dateStr = d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+    if (diffMins < 5) {
+        return { text: "En línea", sub: `Hoy a las ${timeStr}`, badge: "online" };
+    }
+    if (diffMins < 60) {
+        return { text: `Hace ${diffMins} min`, sub: `Hoy a las ${timeStr}`, badge: "today" };
+    }
+    if (diffDays === 0) {
+        return { text: `Hoy ${timeStr}`, sub: `Hace ${diffHours} h`, badge: "today" };
+    }
+    if (diffDays === 1) {
+        return { text: `Ayer ${timeStr}`, sub: `${dateStr}`, badge: "recent" };
+    }
+    if (diffDays < 7) {
+        return { text: `Hace ${diffDays} días`, sub: `${dateStr} · ${timeStr}`, badge: "recent" };
+    }
+    return { text: dateStr, sub: timeStr, badge: "older" };
+};
+
 const inp = "w-full h-10 px-3 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all";
 
 export default function TenantsPanelV2() {
@@ -413,7 +459,7 @@ export default function TenantsPanelV2() {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-slate-100 bg-slate-50/70">
-                                    {["Clínica","Plan","Vencimiento","Estado","Facturas","Acciones"].map((h,i)=>(
+                                    {["Clínica","Plan","Vencimiento","Estado","Último Acceso","Facturas","Acciones"].map((h,i)=>(
                                         <th key={i} className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                                     ))}
                                 </tr>
@@ -469,6 +515,38 @@ export default function TenantsPanelV2() {
                                                     <span className="group-hover:hidden">{isActive ? "Activo" : "Inactivo"}</span>
                                                     <span className="hidden group-hover:inline">{isActive ? "Suspender" : "Activar"}</span>
                                                 </button>
+                                            </td>
+                                            <td className="px-5 py-4 whitespace-nowrap">
+                                                {(() => {
+                                                    const login = formatRelativeLogin(t.lastSignInAt);
+                                                    const isOnline = login.badge === "online";
+                                                    const isToday = login.badge === "today";
+                                                    return (
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                                                    isOnline ? "bg-emerald-500 animate-pulse" :
+                                                                    isToday ? "bg-emerald-500" :
+                                                                    login.badge === "recent" ? "bg-sky-500" :
+                                                                    login.badge === "older" ? "bg-slate-400" :
+                                                                    "bg-slate-300"
+                                                                }`} />
+                                                                <span className={`text-xs font-bold leading-tight ${
+                                                                    isOnline || isToday ? "text-emerald-700" :
+                                                                    login.badge === "recent" ? "text-slate-700" :
+                                                                    "text-slate-400"
+                                                                }`}>
+                                                                    {login.text}
+                                                                </span>
+                                                            </div>
+                                                            {login.sub && (
+                                                                <span className="text-[10px] text-slate-400 font-medium pl-3.5 mt-0.5">
+                                                                    {login.sub}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </td>
                                             <td className="px-5 py-4">
                                                 {cuota === 0 ? (
@@ -589,6 +667,7 @@ export default function TenantsPanelV2() {
                                     { label:"Ciclo",         val: showDetail.planDuration === "yearly" ? "Anual" : "Mensual" },
                                     { label:"Estado",        val: showDetail.status === "active" ? "✅ Activo" : "🔴 Inactivo" },
                                     { label:"Vencimiento",   val: fmt(showDetail.subscriptionEndDate) },
+                                    { label:"Último Acceso", val: showDetail.lastSignInAt ? fmtDateTime(showDetail.lastSignInAt) : "Sin ingresos" },
                                     { label:"Cuota facturas",val: `${showDetail.facturacionUsadas||0} / ${showDetail.facturacionCuota||0}` },
                                     { label:"Plan fact.",    val: showDetail.facturacionPlan || "—" },
                                 ].map((item,i)=>(

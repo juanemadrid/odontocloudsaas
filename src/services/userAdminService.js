@@ -42,9 +42,13 @@ export const setManagedUserActive = (userId, active) =>
 export const deleteManagedUser = (userId) =>
   invokeAdminUsers("delete_user", { userId });
 
+export const getUsersActivity = () =>
+  invokeAdminUsers("get_users_activity");
+
 export default {
   upsertManagedUser,
   changeManagedUserPassword,
   setManagedUserActive,
   deleteManagedUser,
+  getUsersActivity,
 };

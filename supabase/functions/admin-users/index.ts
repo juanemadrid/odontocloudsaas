@@ -115,6 +115,21 @@ Deno.serve(async (request) => {
       return null;
     };
 
+    if (action === "get_users_activity" || action === "list_logins") {
+      if (!isSuperadmin) {
+        throw new HttpError(403, "Solo el superadministrador puede ver la actividad global.");
+      }
+      const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      if (error) throw error;
+      const activity = (data.users || []).map((u) => ({
+        id: u.id,
+        email: u.email,
+        last_sign_in_at: u.last_sign_in_at,
+        created_at: u.created_at,
+      }));
+      return json({ success: true, users: activity });
+    }
+
     if (action === "upsert_user") {
       const input = body?.user || {};
       const userId = input.id ? String(input.id) : null;

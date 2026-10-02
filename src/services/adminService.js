@@ -11,15 +11,51 @@ const isUUID = (str) => typeof str === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-
  */
 export const getTenants = async () => {
     try {
-        const [{ data: dbTenants, error: tErr }, { data: row }, { data: dbProfiles }] = await Promise.all([
+        const [{ data: dbTenants, error: tErr }, { data: row }, { data: dbProfiles }, authActivityRes] = await Promise.all([
             supabase.from("tenants").select("*").order("created_at", { ascending: false }),
             supabase.from("website_config").select("config").eq("tenant_id", GLOBAL_CONFIG_TENANT_ID).maybeSingle(),
-            supabase.from("profiles").select("id, email, full_name, role, tenant_id")
+            supabase.from("profiles").select("id, email, full_name, role, tenant_id"),
+            (async () => {
+                try {
+                    const { getUsersActivity } = await import("./userAdminService.js");
+                    const res = await getUsersActivity();
+                    return res?.users || [];
+                } catch {
+                    return [];
+                }
+            })()
         ]);
 
         if (tErr) {
             console.warn("Advertencia al consultar tabla tenants:", tErr.message);
         }
+
+        // Crear mapa de actividad de usuarios (last_sign_in_at)
+        const authUsers = Array.isArray(authActivityRes) ? authActivityRes : [];
+        const userActivityMap = new Map();
+        authUsers.forEach(u => {
+            if (u.id) userActivityMap.set(String(u.id), u);
+            if (u.email) userActivityMap.set(String(u.email).toLowerCase(), u);
+        });
+
+        // Para cada tenant, encontrar la última sesión entre todos sus perfiles
+        const tenantLastLoginMap = new Map();
+        (dbProfiles || []).forEach(p => {
+            if (!p.tenant_id) return;
+            const tId = String(p.tenant_id);
+            const act = userActivityMap.get(String(p.id)) || (p.email ? userActivityMap.get(String(p.email).toLowerCase()) : null);
+            if (act?.last_sign_in_at) {
+                const existing = tenantLastLoginMap.get(tId);
+                const currentTs = new Date(act.last_sign_in_at).getTime();
+                if (!existing || currentTs > existing.ts) {
+                    tenantLastLoginMap.set(tId, {
+                        ts: currentTs,
+                        lastSignInAt: act.last_sign_in_at,
+                        lastSignInUser: p.full_name || p.email || act.email
+                    });
+                }
+            }
+        });
 
         // Crear mapa de perfiles administradores por tenant_id
         const profileMap = new Map();
@@ -49,6 +85,7 @@ export const getTenants = async () => {
             const idKey = String(t.id);
             const prof = profileMap.get(idKey);
             const initialEmail = prof?.adminEmail || (t.email && t.email.toLowerCase() !== "madridsystem@outlook.es" ? t.email : "");
+            const loginInfo = tenantLastLoginMap.get(idKey);
 
             tenantsMap.set(idKey, {
                 id: idKey,
@@ -68,6 +105,8 @@ export const getTenants = async () => {
                 hasFactusCreds: false,
                 facturacionCuota: 0,
                 facturacionUsadas: 0,
+                lastSignInAt: loginInfo?.lastSignInAt || null,
+                lastSignInUser: loginInfo?.lastSignInUser || null,
                 createdAt: createdDate.toISOString(),
                 subscriptionEndDate: endDate.toISOString()
             });
@@ -90,6 +129,7 @@ export const getTenants = async () => {
             const candidateEmail = prof?.adminEmail || t.adminEmail || t.contactEmail || t.email || existing.adminEmail || "";
             const resolvedAdminEmail = candidateEmail.toLowerCase() === "madridsystem@outlook.es" ? (prof?.adminEmail || existing.adminEmail || "") : candidateEmail;
             const resolvedAdminName = prof?.adminName || t.adminName || existing.adminName || "";
+            const loginInfo = tenantLastLoginMap.get(idKey);
 
             tenantsMap.set(idKey, {
                 ...existing,
@@ -112,10 +152,13 @@ export const getTenants = async () => {
                 factusTestMode: t.factusTestMode ?? existing.factusTestMode ?? true,
                 facturacionCuota: t.facturacionCuota ?? existing.facturacionCuota ?? 0,
                 facturacionUsadas: t.facturacionUsadas ?? existing.facturacionUsadas ?? 0,
+                lastSignInAt: loginInfo?.lastSignInAt || existing.lastSignInAt || null,
+                lastSignInUser: loginInfo?.lastSignInUser || existing.lastSignInUser || null,
                 createdAt: createdDate.toISOString(),
                 subscriptionEndDate: endDate.toISOString()
             });
         });
+
 
         const baseTenants = Array.from(tenantsMap.values());
 
