@@ -75,7 +75,8 @@ export default function PagosList({ onNew }) {
   const filtered = pagos.filter(p =>
     (p.proveedor || p.tercero || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.concepto || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.medioPago || p.bancoCaja || "").toLowerCase().includes(searchTerm.toLowerCase())
+    (p.medioPago || p.bancoCaja || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    String(p.consecutivo || p.numero || p.nroConsecutivo || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleDeletePago = async (pagoId) => {
@@ -236,7 +237,8 @@ export default function PagosList({ onNew }) {
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr className="text-slate-600 font-semibold">
-                  <th className="py-3 px-4">Fecha</th>
+                  <th className="py-3 px-4 w-28">Fecha</th>
+                  <th className="py-3 px-4 w-20">Doc.</th>
                   <th className="py-3 px-4">Proveedor / Tercero</th>
                   <th className="py-3 px-4">Concepto / Detalle</th>
                   <th className="py-3 px-4">Medio de Pago / Caja</th>
@@ -247,13 +249,13 @@ export default function PagosList({ onNew }) {
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="py-12 text-center text-slate-400 font-medium">
+                    <td colSpan="7" className="py-12 text-center text-slate-400 font-medium">
                       Cargando pagos...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="py-12 text-center text-slate-400">
+                    <td colSpan="7" className="py-12 text-center text-slate-400">
                       <div className="flex flex-col items-center gap-2">
                         <FiCreditCard size={32} className="text-slate-300" />
                         <p className="font-semibold text-slate-500">No hay pagos registrados en este periodo</p>
@@ -265,6 +267,9 @@ export default function PagosList({ onNew }) {
                   filtered.map(p => (
                     <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-3 px-4 font-medium text-slate-500">{fmtDate(p.fecha)}</td>
+                      <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                        {p.consecutivo || p.numero || p.nroConsecutivo || (p.id && String(p.id).replace(/\D/g, "").slice(-4)) || "—"}
+                      </td>
                       <td className="py-3 px-4 font-bold text-slate-800 uppercase">{p.proveedor || p.tercero || "—"}</td>
                       <td className="py-3 px-4 text-slate-600">
                         {p.items && p.items.length > 0 ? p.items[0]?.concepto : (p.concepto || "Egreso / Pago")}

@@ -23,12 +23,8 @@ import FacturasCompraForm from "../../facturacion/facturascompra/FacturasCompraF
 const FACT_OPTIONS = [
   { id: "recibo",  label: "Recibo de caja",      icon: <FiFileText />,    color: "text-emerald-600", bg: "bg-emerald-50",   desc: "Comprobantes de ingreso de dinero" },
   { id: "saldo",   label: "Saldo a favor",        icon: <FiDollarSign />,  color: "text-teal-600",    bg: "bg-teal-50",      desc: "Gestión y abonos de saldos a favor" },
-  { id: "nc",      label: "Nota crédito",         icon: <FiMinusCircle />, color: "text-rose-600",    bg: "bg-rose-50",      desc: "Anulaciones y descuentos" },
-  { id: "nd",      label: "Nota débito",          icon: <FiPlusCircle />,  color: "text-orange-600",  bg: "bg-orange-50",    desc: "Incrementos de deuda" },
   { id: "liq",     label: "Liquidaciones",        icon: <FiLayers />,      color: "text-purple-600",  bg: "bg-purple-50",    desc: "Cierre de tratamientos y presupuestos" },
-  { id: "tras",    label: "Traslados",            icon: <FiRepeat />,      color: "text-slate-600",   bg: "bg-slate-50",     desc: "Movimiento entre cuentas" },
   { id: "pagos",   label: "Pagos",                icon: <FiCreditCard />,  color: "text-indigo-600",  bg: "bg-indigo-50",    desc: "Gestión de egresos y proveedores" },
-  { id: "oc",      label: "Ordenes de compra",    icon: <FiShoppingBag />, color: "text-cyan-600",    bg: "bg-cyan-50",      desc: "Solicitudes de insumos" },
   { id: "fv",      label: "Factura de venta",     icon: <FiDollarSign />,  color: "text-emerald-700", bg: "bg-emerald-100",  desc: "Facturación principal y electrónica" },
   { id: "fc",      label: "Facturas de compra",   icon: <FiTruck />,       color: "text-amber-600",   bg: "bg-amber-50",     desc: "Registro de facturas recibidas" },
 ];
@@ -37,21 +33,21 @@ const FACT_OPTIONS = [
 const NEW_BUTTON_LABELS = {
   recibo:  "Nuevo Recibo de Caja",
   saldo:   "Nuevo Saldo a Favor",
-  nc:      "Nueva Nota Crédito",
-  nd:      "Nueva Nota Débito",
-  tras:    "Nuevo Traslado",
   pagos:   "Nuevo Pago",
-  oc:      "Nueva Orden de Compra",
   fc:      "Nueva Factura de Compra",
 };
 
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import { hasElectronicInvoicingAccess } from "../../../utils/subscriptionHelper";
-import { FiAlertCircle } from "react-icons/fi";
+import { FiAlertCircle, FiTrash2 } from "react-icons/fi";
+import ResetContabilidadModal from "../components/ResetContabilidadModal";
 
 export default function FacturacionHub() {
   const { userProfile } = useAuth();
+  const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
+  const clinicName = userProfile?.tenant?.nombre || userProfile?.tenant_nombre || userProfile?.clinica || "Clínica Dental Sincelejo";
+  const [showResetModal, setShowResetModal] = useState(false);
   const hasFE = hasElectronicInvoicingAccess(userProfile);
   const visibleOptions = FACT_OPTIONS.filter(opt => opt.id !== "fv" || hasFE);
 
@@ -129,64 +125,21 @@ export default function FacturacionHub() {
     } else if (activeSubView === "saldo_form") {
       content = <SaldoFavorForm onCancel={() => setActiveSubView("saldo")} onSuccess={() => setActiveSubView("saldo")} />;
       title = "Nuevo Saldo a Favor";
-    } else if (activeSubView === "nc") {
-      content = <NotaCreditoList onNew={() => setActiveSubView("nc_form")} />;
-      title = "Nota de Crédito";
-    } else if (activeSubView === "nc_form") {
-      content = <NotaCreditoForm onCancel={() => setActiveSubView("nc")} onSuccess={() => setActiveSubView("nc")} />;
-      title = "Nueva Nota de Crédito";
-    } else if (activeSubView === "nd") {
-      content = <NotaDebitoList onNew={() => setActiveSubView("nd_form")} />;
-      title = "Nota de Débito";
-    } else if (activeSubView === "nd_form") {
-      content = <NotaDebitoForm onCancel={() => setActiveSubView("nd")} onSuccess={() => setActiveSubView("nd")} />;
-      title = "Nueva Nota de Débito";
     } else if (activeSubView === "liq") {
       content = <Liquidaciones onBack={() => setActiveSubView(null)} />;
       title = "Liquidación de Comisiones";
-    } else if (activeSubView === "tras") {
-      content = <TrasladosList onNew={() => setActiveSubView("tras_form")} />;
-      title = "Traslados";
     } else if (activeSubView === "pagos") {
       content = <PagosList onNew={() => setActiveSubView("pagos_form")} />;
       title = "Pagos a Proveedores";
     } else if (activeSubView === "pagos_form") {
       content = <PagosForm onCancel={() => setActiveSubView("pagos")} onSuccess={() => setActiveSubView("pagos")} />;
       title = "Nuevo Pago";
-    } else if (activeSubView === "oc") {
-      content = <OrdenesCompraList onNew={() => setActiveSubView("oc_form")} />;
-      title = "Órdenes de Compra";
     } else if (activeSubView === "fc") {
       content = <FacturasCompraList onNew={() => setActiveSubView("fc_form")} />;
       title = "Facturas de Compra";
     } else if (activeSubView === "fc_form") {
       content = <FacturasCompraForm onCancel={() => setActiveSubView("fc")} onSuccess={() => setActiveSubView("fc")} />;
       title = "Nueva Factura de Compra";
-    }
-
-    // For form sub-views that are not yet built, show a coming-soon state
-    const formViews = ["tras_form", "oc_form"];
-    if (!content && formViews.includes(activeSubView)) {
-      const parentKey = activeSubView.replace("_form", "");
-      const opt = FACT_OPTIONS.find(o => o.id === parentKey);
-      content = (
-        <div className="flex flex-col items-center justify-center h-80 gap-4">
-          <div className={`w-16 h-16 rounded-2xl ${opt?.bg} ${opt?.color} flex items-center justify-center text-2xl`}>
-            {opt?.icon}
-          </div>
-          <h3 className="text-base font-black text-slate-800 uppercase">Formulario en construcción</h3>
-          <p className="text-sm text-slate-400 font-medium text-center max-w-xs">
-            El formulario de registro de {opt?.label} estará disponible próximamente.
-          </p>
-          <button
-            onClick={() => setActiveSubView(parentKey)}
-            className="mt-2 h-10 px-6 bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-700 transition-all"
-          >
-            Volver al listado
-          </button>
-        </div>
-      );
-      title = `Nuevo – ${opt?.label || ""}`;
     }
 
     if (content) {
@@ -218,21 +171,39 @@ export default function FacturacionHub() {
               </div>
             </div>
 
-            {/* Header Action Buttons – only for list views */}
-            {NEW_BUTTON_LABELS[activeSubView] && (
+            {/* Header Action Buttons */}
+            <div className="flex items-center gap-2">
               <button 
-                onClick={() => setActiveSubView(`${activeSubView}_form`)}
-                className="bg-[#8dc63f] hover:bg-[#7cb035] text-white px-4 py-2 rounded-full text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
+                onClick={() => setShowResetModal(true)}
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                title="Limpiar movimientos contables de prueba"
               >
-                <FiPlus size={15} />
-                <span>{NEW_BUTTON_LABELS[activeSubView]}</span>
+                <FiTrash2 size={13} className="text-rose-500" />
+                <span>Reiniciar contabilidad</span>
               </button>
-            )}
+
+              {NEW_BUTTON_LABELS[activeSubView] && (
+                <button 
+                  onClick={() => setActiveSubView(`${activeSubView}_form`)}
+                  className="bg-[#8dc63f] hover:bg-[#7cb035] text-white px-4 py-2 rounded-full text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
+                >
+                  <FiPlus size={15} />
+                  <span>{NEW_BUTTON_LABELS[activeSubView]}</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div key={activeSubView} className="flex-1 overflow-y-auto bg-slate-50/30">
             {content}
           </div>
+
+          <ResetContabilidadModal 
+            isOpen={showResetModal}
+            onClose={() => setShowResetModal(false)}
+            tenantId={inquilino}
+            clinicName={clinicName}
+          />
         </div>
       );
     }
@@ -251,9 +222,19 @@ export default function FacturacionHub() {
             <p className="text-[11px] text-slate-500 font-medium">Seleccione el tipo de documento contable que desea gestionar</p>
           </div>
         </div>
-        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-          {visibleOptions.length} Opciones
-        </span>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setShowResetModal(true)}
+            className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+            title="Limpiar movimientos contables de prueba"
+          >
+            <FiTrash2 size={13} className="text-rose-500" />
+            <span>Reiniciar contabilidad</span>
+          </button>
+          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
+            {visibleOptions.length} Opciones
+          </span>
+        </div>
       </div>
 
       {/* Grid Compacto Slender Pro */}
@@ -281,6 +262,13 @@ export default function FacturacionHub() {
           </div>
         ))}
       </div>
+
+      <ResetContabilidadModal 
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        tenantId={inquilino}
+        clinicName={clinicName}
+      />
     </div>
   );
 }

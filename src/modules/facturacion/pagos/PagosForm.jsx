@@ -696,11 +696,21 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 nombre: terceroSearchQuery || terceroId || "Tercero",
                 documento: ""
             };
-            const selectedProf = profesionales.find(p => p.id === profesionalId || p.nombre === profesionalId);
+            let nextEgresoNum = 1;
+            try {
+                const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import("../../../services/consecutivosService");
+                nextEgresoNum = await consumeNextConsecutivo(inquilino, CONSECUTIVO_TYPES.EGRESOS);
+            } catch (e) {
+                console.warn("Aviso al obtener consecutivo de egreso:", e);
+            }
+            const consStr = String(nextEgresoNum);
 
             const pagoRecord = {
                 id: `pago_${Date.now()}`,
                 tenant_id: inquilino,
+                numero: consStr,
+                consecutivo: consStr,
+                nroConsecutivo: consStr,
                 pagadorEmail,
                 fecha,
                 profesionalId: selectedProf?.id || profesionalId,

@@ -138,21 +138,20 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
     setError("");
     setConfirmEgresoDescubierto(false);
     try {
-      // 1. Obtener consecutivo desde configuración
-      // 1. Obtener consecutivo desde configuración
+      // 1. Obtener y consumir consecutivo oficial y atómico desde consecutivosService
       let nroConsecutivo = 1;
-      let consDoc = null;
       try {
-        const { getConfigItems } = await import("../../../services/configPersistenceService");
-        const consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
-        consDoc = consList.find(c => c.activo !== false) || consList[0] || {};
-        const fieldKey = tipo === "egreso" ? "contEgresos" : "contReciboCaja";
-        const currentCount = parseInt(String(consDoc[fieldKey] || 0), 10) || 0;
-        nroConsecutivo = currentCount + 1;
-      } catch (e) {}
+        const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import("../../../services/consecutivosService");
+        const tipoField = tipo === "egreso" ? CONSECUTIVO_TYPES.EGRESOS : CONSECUTIVO_TYPES.RECIBO_CAJA;
+        nroConsecutivo = await consumeNextConsecutivo(inquilino, tipoField);
+      } catch (e) {
+        console.warn("Aviso al obtener consecutivo atómico:", e);
+      }
+      const finalConsStr = String(nroConsecutivo);
+      const docLabel = tipo === "egreso" 
+        ? `[EGR-${finalConsStr.padStart(4, "0")}] ` 
+        : `[RC-${finalConsStr.padStart(4, "0")}] `;
 
-      const egresoLabel = tipo === "egreso" ? `[EGR-${String(nroConsecutivo).padStart(4, "0")}] ` : "";
-      
       let refText = "";
       if (selectedPatient?.nombre) {
         refText += `Paciente: ${selectedPatient.nombre}`;
@@ -164,12 +163,13 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         refText += (refText ? " | " : "") + `Factura: ${selectedFactura.numero || selectedFactura.numeroFactura}`;
       }
 
+      // 2. Registrar en movimientos_caja (gaveta interna de la caja)
       const movData = {
         tenant_id: inquilino,
         caja_id: caja.id,
         usuario_id: userProfile?.uid || userProfile?.id || null,
         tipo,
-        concepto: `${egresoLabel}${form.concepto}`,
+        concepto: `${docLabel}${form.concepto}`,
         monto: montoNum,
         metodo_pago: form.metodoPago || "Efectivo",
         referencia: refText || null,
@@ -179,19 +179,7 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
       const { error: insertErr } = await supabase.from("movimientos_caja").insert([movData]);
       if (insertErr) throw insertErr;
 
-      // Incrementar consecutivo en configuración
-      if (consDoc) {
-        try {
-          const fieldKey = tipo === "egreso" ? "contEgresos" : "contReciboCaja";
-          const { saveConfigItem } = await import("../../../services/configPersistenceService");
-          await saveConfigItem(inquilino, "consecutivos", "consecutivos", {
-            ...consDoc,
-            [fieldKey]: nroConsecutivo
-          });
-        } catch (e) {}
-      }
-
-      // Actualizar saldo_actual, ingresos/egresos y updated_at en caja
+      // 3. Actualizar saldo_actual, ingresos/egresos y updated_at en caja
       try {
         const curSaldo = Number(caja.saldoActual ?? caja.saldo_actual ?? 0);
         const curIng = Number(caja.totalIngresos ?? caja.total_ingresos ?? 0);
@@ -212,20 +200,160 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         }).eq("id", caja.id);
       } catch (e) {}
 
-      // Si tiene factura vinculada, actualizar estado/saldo de la factura
-      if (selectedFactura?.id && tipo === "ingreso") {
+      // 4. SINCRONIZACIÓN AUTOMÁTICA SEGÚN TIPO:
+      const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(str || ""));
+      const currentUserName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Cajero";
+
+      if (tipo === "ingreso") {
+        // A. Sincronizar en Facturación -> Recibos de Caja (recibos_caja)
+        const pacNombreFinal = selectedPatient?.nombre || "Cliente Particular / Venta Mostrador";
+        const newRecId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : null;
+        const reciboPayload = {
+          id: newRecId,
+          tenant_id: inquilino,
+          inquilino: inquilino,
+          numero: finalConsStr,
+          nro_consecutivo: finalConsStr,
+          nroConsecutivo: finalConsStr,
+          fecha: new Date().toISOString(),
+          paciente_id: isUUID(selectedPatient?.id) ? selectedPatient.id : null,
+          pacienteId: isUUID(selectedPatient?.id) ? selectedPatient.id : null,
+          paciente_nombre: pacNombreFinal,
+          pacienteNombre: pacNombreFinal,
+          pacienteDocumento: selectedPatient?.cedula || "",
+          pacienteTelefono: selectedPatient?.celular || "",
+          condicion_pago: "Contado",
+          condicionPago: "Contado",
+          medio_pago: form.metodoPago || "Efectivo",
+          medioPago: form.metodoPago || "Efectivo",
+          concepto: form.concepto || "Ingreso de caja",
+          conceptos: [{
+            concepto: form.concepto || "Ingreso de caja",
+            precioUnitario: montoNum,
+            cantidad: 1,
+            descuento: 0,
+            total: montoNum
+          }],
+          monto: montoNum,
+          subtotal: montoNum,
+          total: montoNum,
+          observaciones: form.descripcion ? `${form.concepto}: ${form.descripcion}` : form.concepto,
+          caja_id: isUUID(caja.id) ? caja.id : null,
+          cajaId: isUUID(caja.id) ? caja.id : null,
+          creado_por: currentUserName,
+          creadoPor: currentUserName,
+          created_at: new Date().toISOString()
+        };
+        if (!reciboPayload.id) delete reciboPayload.id;
+
         try {
-          const pagado = (selectedFactura.montoPagado || 0) + montoNum;
-          const total = selectedFactura.monto || selectedFactura.total || 0;
-          const nuevoEstado = pagado >= total ? "Pagada" : "Parcial";
-          await supabase.from("facturas").update({
-            montoPagado: pagado,
-            saldoPendiente: Math.max(0, total - pagado),
-            estado: nuevoEstado,
-            ultimoPagoFecha: new Date().toISOString(),
-            ultimoPagoCaja: caja.id,
-            updated_at: new Date().toISOString()
-          }).eq("id", selectedFactura.id);
+          await supabase.from("recibos_caja").insert([reciboPayload]);
+        } catch (rErr) {
+          console.warn("Aviso insertando en recibos_caja:", rErr);
+        }
+
+        // Respaldo en website_config (recibos_caja)
+        try {
+          const { getConfigSection, saveConfigSection } = await import("../../../services/configPersistenceService");
+          const cfgRecibos = await getConfigSection(inquilino, "recibos_caja", []);
+          const safeReciboId = reciboPayload.id || `rc_${Date.now()}`;
+          await saveConfigSection(inquilino, "recibos_caja", [
+            { ...reciboPayload, id: safeReciboId },
+            ...(Array.isArray(cfgRecibos) ? cfgRecibos.filter(r => r.id !== safeReciboId) : [])
+          ]);
+        } catch (e) {}
+
+        // B. Si hay paciente seleccionado, sincronizar en ficha del paciente -> Histórico de Pagos (pagos)
+        if (selectedPatient?.id) {
+          try {
+            const pagoPacientePayload = {
+              tenant_id: inquilino,
+              fecha: new Date().toISOString(),
+              paciente_id: selectedPatient.id,
+              monto: montoNum,
+              metodo: form.metodoPago || "Efectivo",
+              referencia: form.descripcion 
+                ? `[RC-${finalConsStr.padStart(4, "0")}] ${form.concepto} - ${form.descripcion}`
+                : `[RC-${finalConsStr.padStart(4, "0")}] ${form.concepto}`,
+              nro_consecutivo: finalConsStr,
+              notas: JSON.stringify({
+                concepto: form.concepto,
+                referencia: form.descripcion || "",
+                nroConsecutivo: finalConsStr,
+                registradoPor: currentUserName,
+                usuarioNombre: currentUserName,
+                medio: form.metodoPago || "Efectivo",
+                cajaId: caja.id,
+                facturaId: selectedFactura?.id || null
+              }),
+              created_at: new Date().toISOString()
+            };
+            await supabase.from("pagos").insert([pagoPacientePayload]);
+          } catch (pErr) {
+            console.warn("Aviso insertando en pagos del paciente:", pErr);
+          }
+        }
+
+        // C. Si tiene factura vinculada, actualizar saldo de la factura
+        if (selectedFactura?.id) {
+          try {
+            const pagado = (selectedFactura.montoPagado || 0) + montoNum;
+            const total = selectedFactura.monto || selectedFactura.total || 0;
+            const nuevoEstado = pagado >= total ? "Pagada" : "Parcial";
+            await supabase.from("facturas").update({
+              montoPagado: pagado,
+              saldoPendiente: Math.max(0, total - pagado),
+              estado: nuevoEstado,
+              ultimoPagoFecha: new Date().toISOString(),
+              ultimoPagoCaja: caja.id,
+              updated_at: new Date().toISOString()
+            }).eq("id", selectedFactura.id);
+          } catch (e) {}
+        }
+      } else {
+        // EGRESO: Sincronizar en Administración -> Facturación -> Pagos (pagos_proveedor)
+        const egresoRecord = {
+          id: `pago_${Date.now()}`,
+          tenant_id: inquilino,
+          fecha: new Date().toISOString().split("T")[0],
+          numero: finalConsStr,
+          consecutivo: finalConsStr,
+          nroConsecutivo: finalConsStr,
+          bancoCaja: caja.nombre || "Caja Principal",
+          medioPago: form.metodoPago || "Efectivo",
+          terceroId: "caja_menor",
+          tercero: "Caja Menor / Gastos Varios",
+          proveedor: "Caja Menor / Gastos Varios",
+          documentoTercero: "",
+          tipoTercero: "tercero",
+          items: [{
+            concepto: form.concepto || "Gasto de caja",
+            descripcion: form.descripcion || "",
+            total: montoNum,
+            precioUnitario: montoNum
+          }],
+          concepto: form.concepto || "Gasto de caja",
+          monto: montoNum,
+          total: montoNum,
+          observaciones: form.descripcion ? `Egreso caja menor: ${form.descripcion}` : `Egreso de caja ${caja.nombre || ""}`,
+          created_at: new Date().toISOString(),
+          created_by: userProfile?.uid || userProfile?.id || null
+        };
+
+        try {
+          await supabase.from("pagos_proveedor").insert([egresoRecord]);
+        } catch (e) {
+          console.warn("Aviso insertando en pagos_proveedor:", e);
+        }
+
+        // Respaldo en website_config (pagos_proveedor)
+        try {
+          const { getConfigSection, saveConfigSection } = await import("../../../services/configPersistenceService");
+          const currPagos = await getConfigSection(inquilino, "pagos_proveedor", []);
+          await saveConfigSection(inquilino, "pagos_proveedor", [
+            egresoRecord,
+            ...(Array.isArray(currPagos) ? currPagos : [])
+          ]);
         } catch (e) {}
       }
 

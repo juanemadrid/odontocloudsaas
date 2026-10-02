@@ -142,10 +142,6 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Revisa los movimientos registrados y utiliza el formulario disponible para un nuevo traslado.',
     'Verifica cuenta de origen, destino e importe antes de confirmar.',
   ]),
-  guide('almacenes-inventario', 'Configuración', 'Almacenes y categorías de insumos', 'inventario insumos producto existencias almacen', 'src/modules/config/ConfigRouter.jsx', [
-    'Entra a Configuración > Almacenes para gestionar las bodegas de la clínica.',
-    'En Configuración > Categorías inventario puedes clasificar los insumos odontológicos y materiales clínicos.',
-  ]),
   guide('reportes', 'Reportes', 'Encontrar reportes e indicadores', 'reporte informe indicador estadistica ventas morbilidad cumpleanos', 'src/modules/reportes/Reportes.jsx', [
     'Entra a Reportes y selecciona Indicadores o el reporte específico.',
     'Hay reportes de pacientes, planes de tratamiento, facturación, convenios, ventas, medicamentos, cumpleaños, citas, morbilidad, consultas y evoluciones.',
@@ -192,10 +188,19 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Revisa los conceptos y valores aplicables antes de guardar cambios.',
     'Para copagos, utiliza la sección Tarifas copago si tu perfil tiene acceso.',
   ]),
-  guide('catalogos', 'Configuración', 'Catálogos financieros y de inventario', 'banco metodo pago condicion pago impuesto consecutivo catalogo cuenta categoria almacen', 'src/modules/config/ConfigMenu.jsx', [
-    'Abre Configuración y selecciona el catálogo correspondiente: Bancos, Métodos de pago, Condiciones de pago, Impuestos, Consecutivos o Catálogo de cuentas.',
-    'Para inventario, revisa Almacenes y Categorías inventario.',
+  guide('consecutivos', 'Configuración', 'Consecutivos y numeración de documentos', 'consecutivos numeracion correlativo recibo caja egreso presupuesto contador siguiente factura', 'src/modules/config/ConfigConsecutivos.jsx', [
+    'Entra a Configuración > Consecutivos en el menú lateral.',
+    'En esta pantalla puedes consultar y ajustar el número actual de tus documentos internos: Recibos de Caja, Egresos, Presupuestos, Planes de Tratamiento y Notas de ajuste.',
+    'El sistema te indicará automáticamente el próximo número correlativo que se emitirá (valor actual + 1) al cobrar en caja o generar presupuestos.',
+    'Haz clic en [Guardar Cambios] para actualizar la numeración correlativa de tu clínica.',
+  ], 'Importante: Las resoluciones, prefijos y rangos oficiales autorizados por la DIAN para Factura Electrónica se administran directamente en el módulo especializado [Facturación electrónica] en conexión con la API de Factus.'),
+  guide('catalogos', 'Configuración', 'Catálogos financieros y administrativos', 'banco metodo pago condicion pago impuesto catalogo cuenta', 'src/modules/config/ConfigMenu.jsx', [
+    'Abre Configuración y selecciona el catálogo correspondiente: Bancos, Métodos de pago, Condiciones de pago, Impuestos o Catálogo de cuentas.',
     'Consulta los registros existentes y revisa los campos antes de guardar modificaciones.',
+  ]),
+  guide('inventario-no-disponible', 'Configuración', 'Módulo de inventario y almacenes', 'inventario insumos producto existencias almacen stock materiales bodega', 'src/modules/config/ConfigMenu.jsx', [
+    'OdontoCloud Colombia no maneja actualmente módulo de inventario, almacenes ni control de stock.',
+    'La plataforma está enfocada en la gestión de citas (Agenda), historia clínica odontológica, odontograma interactivo, facturación electrónica DIAN, RIPS JSON y caja.',
   ]),
   guide('formularios', 'Configuración', 'Formularios y plantillas clínicas', 'formulario campo plantilla consentimiento especialidad parametro carga', 'src/modules/config/ConfigRouter.jsx', [
     'En Configuración, abre Formulario de pacientes para revisar los campos de registro.',

@@ -761,7 +761,14 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                             const itId = it.id || `item_${idx}`;
                             const detail = plantillaDetails[itId];
                             if (detail && (detail.realizado || detail.checked)) {
-                                return { ...it, status: 'completed', realizado: true, fechaRealizado: new Date().toISOString() };
+                                return { 
+                                    ...it, 
+                                    status: 'completed', 
+                                    realizado: true, 
+                                    fechaRealizado: finalDate ? finalDate.toISOString() : (data.fecha || new Date().toISOString()),
+                                    profesionalId: effectiveDocId || it.profesionalId || null,
+                                    profesional: docName || it.profesional || ""
+                                };
                             }
                             return it;
                         });

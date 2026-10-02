@@ -1028,290 +1028,296 @@ export default function EmpresaUsuarios() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div className="space-y-3">
-                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                                <div className="space-y-0.5">
-                                                    <span className="text-[12px] font-semibold text-slate-700">Es doctor</span>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-600">Tipo de perfil *</label>
+                                            {(() => {
+                                                const isEditingAdmin = editId && users.find(u => u.id === editId)?.rol === "administrador";
+                                                if (isEditingAdmin) {
+                                                    return (
+                                                        <input 
+                                                            type="text" 
+                                                            readOnly 
+                                                            value="Administrador (Propietario)" 
+                                                            className="w-full h-9 bg-slate-100 border border-slate-200 rounded-xl px-4 font-black text-[12px] text-slate-500 cursor-not-allowed outline-none"
+                                                        />
+                                                    );
+                                                }
+                                                return (
+                                                    <>
+                                                        <select 
+                                                            value={formData.profileId} 
+                                                            onChange={e => handleFieldChange("profileId", e.target.value)} 
+                                                            className={`w-full h-9 bg-slate-50 border ${errors.profileId ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-500'} rounded-lg px-3 font-black text-[12px] text-slate-700 transition-all`}
+                                                        >
+                                                            <option value="">Seleccione perfil...</option>
+                                                            {rolesDisponibles.map(p => (
+                                                                <option key={p.id} value={p.id}>{p.nombre}</option>
+                                                            ))}
+                                                        </select>
+                                                        {errors.profileId && <span className="text-[10px] font-semibold text-red-500">{errors.profileId}</span>}
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+
+                                        <div className="flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100/70 rounded-xl border border-slate-200 transition-all self-end h-9">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[12px] font-bold text-slate-700">¿Es doctor / profesional clínico?</span>
+                                            </div>
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setFormData({ ...formData, esDoctor: !formData.esDoctor })} 
+                                                className={`w-11 h-6 rounded-full transition-all duration-300 relative flex-shrink-0 ${formData.esDoctor ? "bg-emerald-500" : "bg-slate-300"}`}
+                                            >
+                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 shadow-sm ${formData.esDoctor ? "left-6" : "left-1"}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {formData.esDoctor && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            {/* Columna Izquierda: Prestaciones y Documentación Clínica */}
+                                            <div className="space-y-3">
+                                                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
+                                                    <span className="text-[12px] font-medium text-slate-700">Puede ver todo lo de otros doctores</span>
+                                                    <button type="button" onClick={() => setFormData({ ...formData, seeOtherDoctorsData: !formData.seeOtherDoctorsData })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.seeOtherDoctorsData ? "bg-blue-600" : "bg-slate-300"}`}>
+                                                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.seeOtherDoctorsData ? "left-6" : "left-1"}`} />
+                                                    </button>
                                                 </div>
-                                                <button type="button" onClick={() => setFormData({ ...formData, esDoctor: !formData.esDoctor })} className={`w-12 h-6 rounded-full transition-all duration-500 relative ${formData.esDoctor ? "bg-emerald-500" : "bg-slate-200"}`}>
-                                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-500 shadow-sm ${formData.esDoctor ? "left-7" : "left-1"}`} />
-                                                </button>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 transition-all">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[11px] font-medium text-slate-500">Porcentaje comisión (%)</label>
+                                                        <input type="number" value={formData.comisionPorcentaje} onChange={e => handleFieldChange("comisionPorcentaje", e.target.value)} placeholder="0" className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 font-black text-blue-600 text-[15px] shadow-sm outline-none focus:border-blue-500" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[11px] font-medium text-slate-500">Forma de liquidación</label>
+                                                        <select 
+                                                            value={formData.formaPago || "Realizadas y pagadas"} 
+                                                            onChange={e => handleFieldChange("formaPago", e.target.value)}
+                                                            className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 font-bold text-slate-700 text-xs shadow-sm outline-none focus:border-blue-500 cursor-pointer"
+                                                        >
+                                                            <option value="Realizadas y pagadas">Realizado y Pagado (Por paciente)</option>
+                                                            <option value="Realizadas">Realizado (Al evolucionar)</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
+                                                    <span className="text-[12px] font-medium text-slate-700">¿Documentos clínicos se imprimen con logo?</span>
+                                                    <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsWithLogo: !formData.clinicalDocsWithLogo })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.clinicalDocsWithLogo ? "bg-blue-600" : "bg-slate-300"}`}>
+                                                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.clinicalDocsWithLogo ? "left-6" : "left-1"}`} />
+                                                    </button>
+                                                </div>
+
+                                                <div className="space-y-1 transition-all">
+                                                    <label className="text-[11px] font-medium text-slate-500">Cabecera documentos clínicos</label>
+                                                    <div className="flex bg-slate-100 p-1 rounded-lg">
+                                                        <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsHeader: "sucursal" })} className={`flex-1 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${formData.clinicalDocsHeader === "sucursal" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>Sucursal</button>
+                                                        <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsHeader: "personalizado" })} className={`flex-1 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${formData.clinicalDocsHeader === "personalizado" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>Personalizado</button>
+                                                    </div>
+                                                </div>
+
+                                                {formData.clinicalDocsHeader === 'personalizado' && (
+                                                    <div className="space-y-1.5 animate-in slide-in-from-top-2 transition-all">
+                                                        <div className="flex items-center gap-2 ml-1">
+                                                            <label className="text-[11px] font-medium text-slate-400">Encabezado personalizado</label>
+                                                            <FiHelpCircle size={12} className="text-slate-300 cursor-help" title="Este encabezado se usará en impresiones clínicas" />
+                                                        </div>
+                                                        <textarea 
+                                                            value={formData.encabezadoPersonalizado}
+                                                            onChange={e => handleFieldChange("encabezadoPersonalizado", e.target.value)}
+                                                            placeholder="Escriba el encabezado que aparecerá en los documentos..."
+                                                            className="w-full h-24 p-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 text-[12px] shadow-sm focus:border-blue-500 focus:bg-white outline-none transition-all caret-black custom-scrollbar resize-none"
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
 
-                                            {formData.esDoctor && (
-                                                <div className="space-y-4 animate-in slide-in-from-left-2 transition-all">
-                                                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                        <span className="text-[12px] font-medium text-slate-700">Puede ver todo lo de otros doctores</span>
-                                                        <button type="button" onClick={() => setFormData({ ...formData, seeOtherDoctorsData: !formData.seeOtherDoctorsData })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.seeOtherDoctorsData ? "bg-blue-600" : "bg-slate-300"}`}>
-                                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.seeOtherDoctorsData ? "left-6" : "left-1"}`} />
-                                                        </button>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 transition-all">
-                                                        <div className="space-y-1">
-                                                            <label className="text-[11px] font-medium text-slate-500">Porcentaje comisión (%)</label>
-                                                            <input type="number" value={formData.comisionPorcentaje} onChange={e => handleFieldChange("comisionPorcentaje", e.target.value)} placeholder="0" className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 font-black text-blue-600 text-[15px] shadow-sm outline-none focus:border-blue-500" />
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            <label className="text-[11px] font-medium text-slate-500">Forma de liquidación</label>
-                                                            <select 
-                                                                value={formData.formaPago || "Realizadas y pagadas"} 
-                                                                onChange={e => handleFieldChange("formaPago", e.target.value)}
-                                                                className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 font-bold text-slate-700 text-xs shadow-sm outline-none focus:border-blue-500 cursor-pointer"
-                                                            >
-                                                                <option value="Realizadas y pagadas">Realizado y Pagado (Por paciente)</option>
-                                                                <option value="Realizadas">Realizado (Al evolucionar)</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                        <span className="text-[12px] font-medium text-slate-700">¿Documentos clínicos se imprimen con logo?</span>
-                                                        <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsWithLogo: !formData.clinicalDocsWithLogo })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.clinicalDocsWithLogo ? "bg-blue-600" : "bg-slate-300"}`}>
-                                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.clinicalDocsWithLogo ? "left-6" : "left-1"}`} />
-                                                        </button>
-                                                    </div>
-
-                                                    <div className="space-y-1 transition-all">
-                                                        <label className="text-[11px] font-medium text-slate-500">Cabecera documentos clínicos</label>
-                                                        <div className="flex bg-slate-100 p-1 rounded-lg">
-                                                            <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsHeader: "sucursal" })} className={`flex-1 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${formData.clinicalDocsHeader === "sucursal" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>Sucursal</button>
-                                                            <button type="button" onClick={() => setFormData({ ...formData, clinicalDocsHeader: "personalizado" })} className={`flex-1 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${formData.clinicalDocsHeader === "personalizado" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>Personalizado</button>
-                                                        </div>
-                                                    </div>
-
-                                                    {formData.clinicalDocsHeader === 'personalizado' && (
-                                                        <div className="space-y-1.5 animate-in slide-in-from-top-2 transition-all">
-                                                            <div className="flex items-center gap-2 ml-1">
-                                                                <label className="text-[11px] font-medium text-slate-400">Encabezado personalizado</label>
-                                                                <FiHelpCircle size={12} className="text-slate-300 cursor-help" title="Este encabezado se usará en impresiones clínicas" />
+                                            {/* Columna Derecha: Habilitación en Salud & RIPS / SISPRO */}
+                                            <div className="space-y-3">
+                                                {(tenantProviderType !== PROVIDER_TYPES.IPS) ? (
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
+                                                            <div className="flex items-center gap-2.5">
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    id="checkbox-genera-rips"
+                                                                    checked={Boolean(formData.generaRips)}
+                                                                    onChange={e => handleFieldChange("generaRips", e.target.checked)}
+                                                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                                                                />
+                                                                <label htmlFor="checkbox-genera-rips" className="text-[12px] font-semibold text-slate-700 cursor-pointer">
+                                                                    ¿Genera RIPS?
+                                                                </label>
                                                             </div>
-                                                            <textarea 
-                                                                value={formData.encabezadoPersonalizado}
-                                                                onChange={e => handleFieldChange("encabezadoPersonalizado", e.target.value)}
-                                                                placeholder="Escriba el encabezado que aparecerá en los documentos..."
-                                                                className="w-full h-24 p-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 text-[12px] shadow-sm focus:border-blue-500 focus:bg-white outline-none transition-all caret-black custom-scrollbar resize-none"
-                                                            />
+                                                            <span className="text-[11px] text-slate-400">
+                                                                {formData.generaRips ? "Habilitado para RIPS independiente" : "No genera RIPS"}
+                                                            </span>
                                                         </div>
-                                                    )}
 
-                                                    {/* Configuración Prestador & SISPRO Doctor (Modalidad Profesional Independiente) */}
-                                                    {(tenantProviderType !== PROVIDER_TYPES.IPS) && (
-                                                        <div className="space-y-3">
-                                                            {/* ¿Genera RIPS? Checkbox (1:1 OralDrive para Profesional Independiente) */}
-                                                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                                <div className="flex items-center gap-2.5">
-                                                                    <input 
-                                                                        type="checkbox"
-                                                                        id="checkbox-genera-rips"
-                                                                        checked={Boolean(formData.generaRips)}
-                                                                        onChange={e => handleFieldChange("generaRips", e.target.checked)}
-                                                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
-                                                                    />
-                                                                    <label htmlFor="checkbox-genera-rips" className="text-[12px] font-semibold text-slate-700 cursor-pointer">
-                                                                        ¿Genera RIPS?
-                                                                    </label>
-                                                                </div>
-                                                                <span className="text-[11px] text-slate-400">
-                                                                    {formData.generaRips ? "Habilitado para RIPS independiente" : "No genera RIPS"}
-                                                                </span>
-                                                            </div>
-
-                                                            {/* Al estar palomeado "¿Genera RIPS?", se activa el recuadro con Código REPS y SISPRO */}
-                                                            {formData.generaRips && (
-                                                                <div className="space-y-3 bg-blue-50/40 p-3.5 rounded-xl border border-blue-100 animate-in fade-in duration-300">
-                                                            {/* Selector de Código Prestador: Código Único vs Configurar por sede */}
-                                                            <div className="space-y-1.5">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <label className="text-[11px] font-bold text-slate-700">Código de Prestador (REPS)</label>
-                                                                    <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Seleccione si el profesional maneja un código de habilitación único o uno configurado por sede" />
-                                                                </div>
-                                                                <div className="flex items-center gap-4 text-xs text-slate-700">
-                                                                    <label className="flex items-center gap-1.5 cursor-pointer">
-                                                                        <input 
-                                                                            type="radio" 
-                                                                            name="ripsTipoPrestador"
-                                                                            value="unico"
-                                                                            checked={formData.ripsTipoPrestador !== 'sucursal'}
-                                                                            onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'unico' })}
-                                                                            className="text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                                        />
-                                                                        <span className="font-semibold">Código Único</span>
-                                                                    </label>
-                                                                    <label className="flex items-center gap-1.5 cursor-pointer">
-                                                                        <input 
-                                                                            type="radio" 
-                                                                            name="ripsTipoPrestador"
-                                                                            value="sucursal"
-                                                                            checked={formData.ripsTipoPrestador === 'sucursal'}
-                                                                            onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'sucursal' })}
-                                                                            className="text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                                        />
-                                                                        <span className="font-semibold">Configurar por sede</span>
-                                                                    </label>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Caso 1: Código Único */}
-                                                            {formData.ripsTipoPrestador !== 'sucursal' ? (
-                                                                <div className="space-y-1">
-                                                                    <input 
-                                                                        type="text" 
-                                                                        value={formData.ripsCodigoUnico || ''} 
-                                                                        onChange={e => handleFieldChange("ripsCodigoUnico", e.target.value)} 
-                                                                        placeholder="Ej. 700010165701 (10 o 12 dígitos)" 
-                                                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                                                    />
-                                                                </div>
-                                                            ) : (
-                                                                /* Caso 2: Configurar por sede */
-                                                                <div className="space-y-2">
-                                                                    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                                                                        <table className="w-full text-left text-xs">
-                                                                            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
-                                                                                <tr>
-                                                                                    <th className="px-3 py-2">Sede</th>
-                                                                                    <th className="px-3 py-2">Código REPS sede</th>
-                                                                                </tr>
-                                                                            </thead>
-                                                                            <tbody className="divide-y divide-slate-100">
-                                                                                {(sucursales.length > 0 ? sucursales : [{ id: 'sede_principal', nombre: userProfile?.tenant?.nombre || 'Sede Principal' }]).map(suc => {
-                                                                                    const rawVal = formData.ripsSucursales?.[suc.id];
-                                                                                    const codeVal = typeof rawVal === 'object' ? (rawVal?.codigo || '') : (rawVal || '');
-                                                                                    return (
-                                                                                        <tr key={suc.id} className="hover:bg-slate-50/50">
-                                                                                            <td className="px-3 py-2 font-bold text-slate-700 whitespace-nowrap text-[11px]">
-                                                                                                {suc.nombre || 'Sede Principal'}
-                                                                                            </td>
-                                                                                            <td className="px-3 py-1.5">
-                                                                                                <input 
-                                                                                                    type="text" 
-                                                                                                    placeholder="Código REPS sede"
-                                                                                                    value={codeVal}
-                                                                                                    onChange={e => {
-                                                                                                        const val = e.target.value;
-                                                                                                        setFormData(prev => ({
-                                                                                                            ...prev,
-                                                                                                            ripsSucursales: {
-                                                                                                                ...(prev.ripsSucursales || {}),
-                                                                                                                [suc.id]: {
-                                                                                                                    ...(typeof prev.ripsSucursales?.[suc.id] === 'object' ? prev.ripsSucursales[suc.id] : {}),
-                                                                                                                    codigo: val
-                                                                                                                }
-                                                                                                            }
-                                                                                                        }));
-                                                                                                    }}
-                                                                                                    className="w-full h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
-                                                                                                />
-                                                                                            </td>
-                                                                                        </tr>
-                                                                                    );
-                                                                                })}
-                                                                            </tbody>
-                                                                        </table>
+                                                        {formData.generaRips ? (
+                                                            <div className="space-y-3 bg-blue-50/40 p-3.5 rounded-xl border border-blue-100 animate-in fade-in duration-300">
+                                                                <div className="space-y-1.5">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <label className="text-[11px] font-bold text-slate-700">Código de Prestador (REPS)</label>
+                                                                        <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Seleccione si el profesional maneja un código de habilitación único o uno configurado por sede" />
+                                                                    </div>
+                                                                    <div className="flex items-center gap-4 text-xs text-slate-700">
+                                                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                            <input 
+                                                                                type="radio" 
+                                                                                name="ripsTipoPrestador"
+                                                                                value="unico"
+                                                                                checked={formData.ripsTipoPrestador !== 'sucursal'}
+                                                                                onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'unico' })}
+                                                                                className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                            />
+                                                                            <span className="font-semibold">Código Único</span>
+                                                                        </label>
+                                                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                                                            <input 
+                                                                                type="radio" 
+                                                                                name="ripsTipoPrestador"
+                                                                                value="sucursal"
+                                                                                checked={formData.ripsTipoPrestador === 'sucursal'}
+                                                                                onChange={() => setFormData({ ...formData, ripsTipoPrestador: 'sucursal' })}
+                                                                                className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                            />
+                                                                            <span className="font-semibold">Configurar por sede</span>
+                                                                        </label>
                                                                     </div>
                                                                 </div>
-                                                            )}
 
-                                                            {/* SISPRO del Doctor */}
-                                                            <div className="pt-2 border-t border-blue-100/80 space-y-2">
-                                                                <div className="flex items-center justify-between">
-                                                                    <label className="text-[11px] font-bold text-slate-700">Integración SISPRO institucional</label>
-                                                                    {sisproConfigured ? (
-                                                                        <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                                                                            <FiCheckCircle size={10} /> Configurada
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                                                                            No configurada
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="grid grid-cols-2 gap-2">
+                                                                {formData.ripsTipoPrestador !== 'sucursal' ? (
                                                                     <div className="space-y-1">
                                                                         <input 
                                                                             type="text" 
-                                                                            value={formData.sisproUsuario || ''} 
-                                                                            onChange={e => handleFieldChange("sisproUsuario", e.target.value)} 
-                                                                            placeholder="Cédula del prestador" 
+                                                                            value={formData.ripsCodigoUnico || ''} 
+                                                                            onChange={e => handleFieldChange("ripsCodigoUnico", e.target.value)} 
+                                                                            placeholder="Ej. 700010165701 (10 o 12 dígitos)" 
+                                                                            className="w-full h-8 bg-white border border-slate-200 rounded-lg px-3 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                                                        />
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="space-y-2">
+                                                                        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                                                            <table className="w-full text-left text-xs">
+                                                                                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
+                                                                                    <tr>
+                                                                                        <th className="px-3 py-2">Sede</th>
+                                                                                        <th className="px-3 py-2">Código REPS sede</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody className="divide-y divide-slate-100">
+                                                                                    {(sucursales.length > 0 ? sucursales : [{ id: 'sede_principal', nombre: userProfile?.tenant?.nombre || 'Sede Principal' }]).map(suc => {
+                                                                                        const rawVal = formData.ripsSucursales?.[suc.id];
+                                                                                        const codeVal = typeof rawVal === 'object' ? (rawVal?.codigo || '') : (rawVal || '');
+                                                                                        return (
+                                                                                            <tr key={suc.id} className="hover:bg-slate-50/50">
+                                                                                                <td className="px-3 py-2 font-bold text-slate-700 whitespace-nowrap text-[11px]">
+                                                                                                    {suc.nombre || 'Sede Principal'}
+                                                                                                </td>
+                                                                                                <td className="px-3 py-1.5">
+                                                                                                    <input 
+                                                                                                        type="text" 
+                                                                                                        placeholder="Código REPS sede"
+                                                                                                        value={codeVal}
+                                                                                                        onChange={e => {
+                                                                                                            const val = e.target.value;
+                                                                                                            setFormData(prev => ({
+                                                                                                                ...prev,
+                                                                                                                ripsSucursales: {
+                                                                                                                    ...(prev.ripsSucursales || {}),
+                                                                                                                    [suc.id]: {
+                                                                                                                        ...(typeof prev.ripsSucursales?.[suc.id] === 'object' ? prev.ripsSucursales[suc.id] : {}),
+                                                                                                                        codigo: val
+                                                                                                                    }
+                                                                                                                }
+                                                                                                            }));
+                                                                                                        }}
+                                                                                                        className="w-full h-7 px-2 bg-white border border-slate-200 rounded text-xs text-slate-800 outline-none focus:border-blue-500"
+                                                                                                    />
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                        );
+                                                                                    })}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="pt-2 border-t border-blue-100/80 space-y-2">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <label className="text-[11px] font-bold text-slate-700">Integración SISPRO institucional</label>
+                                                                        {sisproConfigured ? (
+                                                                            <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                                                                <FiCheckCircle size={10} /> Configurada
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                                                                                No configurada
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <div className="space-y-1">
+                                                                            <input 
+                                                                                type="text" 
+                                                                                value={formData.sisproUsuario || ''} 
+                                                                                onChange={e => handleFieldChange("sisproUsuario", e.target.value)} 
+                                                                                placeholder="Cédula del prestador" 
+                                                                                className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
+                                                                            />
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <select 
+                                                                                value={formData.sisproTipoDoc || 'CC'} 
+                                                                                onChange={e => handleFieldChange("sisproTipoDoc", e.target.value)}
+                                                                                className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-[11px] text-slate-700 outline-none focus:border-blue-500"
+                                                                            >
+                                                                                <option value="CC">Cédula (CC)</option>
+                                                                                <option value="NIT">NIT</option>
+                                                                                <option value="CE">Cédula Ext. (CE)</option>
+                                                                                <option value="PA">Pasaporte (PA)</option>
+                                                                            </select>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <input 
+                                                                            type="password" 
+                                                                            value={formData.newSisproPassword || ''} 
+                                                                            onChange={e => handleFieldChange("newSisproPassword", e.target.value)} 
+                                                                            placeholder={sisproConfigured ? "•••••••• (Contraseña guardada - cambiar solo si desea actualizar)" : "Contraseña SISPRO"} 
+                                                                            autoComplete="new-password"
                                                                             className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                                                         />
                                                                     </div>
-                                                                    <div className="space-y-1">
-                                                                        <select 
-                                                                            value={formData.sisproTipoDoc || 'CC'} 
-                                                                            onChange={e => handleFieldChange("sisproTipoDoc", e.target.value)}
-                                                                            className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-[11px] text-slate-700 outline-none focus:border-blue-500"
-                                                                        >
-                                                                            <option value="CC">Cédula (CC)</option>
-                                                                            <option value="NIT">NIT</option>
-                                                                            <option value="CE">Cédula Ext. (CE)</option>
-                                                                            <option value="PA">Pasaporte (PA)</option>
-                                                                        </select>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="space-y-1">
-                                                                    <input 
-                                                                        type="password" 
-                                                                        value={formData.newSisproPassword || ''} 
-                                                                        onChange={e => handleFieldChange("newSisproPassword", e.target.value)} 
-                                                                        placeholder={sisproConfigured ? "•••••••• (Contraseña guardada - cambiar solo si desea actualizar)" : "Contraseña SISPRO"} 
-                                                                        autoComplete="new-password"
-                                                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2.5 text-[12px] text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                                                    />
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
+                                                        ) : (
+                                                            <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl text-[11px] text-slate-500 flex items-center gap-2">
+                                                                <FiInfo size={14} className="text-slate-400 flex-shrink-0" />
+                                                                <span>Si este doctor factura o atiende con su propio código REPS de habilitación y firma RIPS de forma individual, marque la casilla superior para configurar sus credenciales.</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-3.5 bg-blue-50/50 border border-blue-100 rounded-xl text-[11px] text-slate-600 space-y-1">
+                                                        <p className="font-semibold text-blue-900 flex items-center gap-1.5">
+                                                            <FiCheckCircle className="text-blue-600" size={13} />
+                                                            Prestador Institucional (IPS)
+                                                        </p>
+                                                        <p className="text-slate-500 text-[10px] leading-relaxed">
+                                                            En modalidad IPS, los códigos de habilitación y credenciales de facturación electrónica / RIPS aplican de forma unificada desde la configuración general de la clínica.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
-                                </div>
-
-                                        <div className="space-y-3">
-                                            <div className="space-y-1">
-                                                <label className="text-[11px] font-semibold text-slate-500">Forma de pago</label>
-                                                <select value={formData.formaPago} onChange={e => handleFieldChange("formaPago", e.target.value)} className="w-full h-8 bg-slate-50 border border-slate-200 rounded-lg px-3 text-[13px] text-slate-800 outline-none focus:border-blue-400 transition-all">
-                                                    <option value="Realizadas y pagadas">Realizadas y pagadas</option>
-                                                    <option value="Solo realizadas">Solo realizadas</option>
-                                                </select>
-                                            </div>
-
-                                            <div className="space-y-1">
-                                                <label className="text-[11px] font-semibold text-slate-500">Tipo de perfil *</label>
-                                                {(() => {
-                                                    const isEditingAdmin = editId && users.find(u => u.id === editId)?.rol === "administrador";
-                                                    if (isEditingAdmin) {
-                                                        return (
-                                                            <input 
-                                                                type="text" 
-                                                                readOnly 
-                                                                value="Administrador (Propietario)" 
-                                                                className="w-full h-8 bg-slate-100 border border-slate-200 rounded-xl px-4 font-black text-[11px] text-slate-500 cursor-not-allowed outline-none"
-                                                            />
-                                                        );
-                                                    }
-                                                    return (
-                                                        <>
-                                                            <select 
-                                                                value={formData.profileId} 
-                                                                onChange={e => handleFieldChange("profileId", e.target.value)} 
-                                                                className={`w-full h-8 bg-slate-50 border ${errors.profileId ? 'border-red-500 bg-red-50/30 ring-1 ring-red-400' : 'border-slate-200 focus:border-blue-500'} rounded-lg px-3 font-black text-[11px] text-slate-700 transition-all`}
-                                                            >
-                                                                <option value="">Seleccione perfil...</option>
-                                                                {rolesDisponibles.map(p => (
-                                                                    <option key={p.id} value={p.id}>{p.nombre}</option>
-                                                                ))}
-                                                            </select>
-                                                            {errors.profileId && <span className="text-[10px] font-semibold text-red-500">{errors.profileId}</span>}
-                                                        </>
-                                                    );
-                                                })()}
-                                            </div>
-                                        </div>
-                                    </div>
 
                                     {formData.esDoctor && (
                                         <div className="space-y-3 animate-in fade-in transition-all">

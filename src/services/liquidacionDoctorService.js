@@ -2,6 +2,7 @@
 import supabase from "../lib/supabaseClient";
 import { isDoctorUser } from "../utils/doctorHelpers";
 import { getConfigSection, saveConfigSection } from "./configPersistenceService";
+import { getDoctorsList } from "./supabaseServices";
 
 const parseLocalDate = (dateStr) => {
     if (!dateStr) return new Date();
@@ -25,6 +26,12 @@ const safeNumber = (val) => {
 export const getDoctoresParaLiquidacion = async (tenantId) => {
     if (!tenantId) return [];
     try {
+        const [sysDocs, userDetails, doctoresLiquidaciones] = await Promise.all([
+            getDoctorsList(tenantId, null).catch(() => []),
+            getConfigSection(tenantId, "user_details", {}),
+            getConfigSection(tenantId, "doctores_liquidaciones", {})
+        ]);
+
         let profilesList = [];
         try {
             const { data } = await supabase
@@ -44,12 +51,40 @@ export const getDoctoresParaLiquidacion = async (tenantId) => {
             } catch (e) {}
         }
 
-        const userDetails = await getConfigSection(tenantId, "user_details", {});
+        const doctorsMap = new Map();
 
-        const doctors = profilesList
+        // 1. Agregar desde el directorio central de doctores de la clínica (getDoctorsList)
+        (sysDocs || []).forEach(doc => {
+            const docId = String(doc.id || doc.uid || "").trim();
+            if (!docId) return;
+            const name = doc.nombreCompleto || doc.nombre || doc.displayName || "Doctor";
+            const detail = userDetails[docId] || doctoresLiquidaciones[docId] || {};
+            const pct = safeNumber(
+                detail.comisionPorcentaje ?? 
+                detail.comision ?? 
+                doc.raw?.comisionPorcentaje ?? 
+                doc.raw?.comisionGeneral ?? 
+                35
+            );
+            const formaPago = detail.formaPago || doc.raw?.formaPago || "Realizadas y pagadas";
+
+            doctorsMap.set(docId, {
+                id: docId,
+                nombre: name,
+                cedula: doc.identificacion || doc.raw?.cedula || doc.raw?.documento || detail.numeroDocumento || "",
+                email: doc.email || detail.email || "",
+                comisionPorcentaje: pct,
+                formaPago: formaPago,
+                esDoctor: true
+            });
+        });
+
+        // 2. Enriquecer o registrar con profiles/profesionales
+        profilesList
             .filter(p => isDoctorUser(p, userDetails[p.id]))
-            .map(p => {
-                const detail = userDetails[p.id] || {};
+            .forEach(p => {
+                const docId = String(p.id).trim();
+                const detail = userDetails[docId] || doctoresLiquidaciones[docId] || {};
                 const name = p.full_name || p.nombreCompleto || p.nombre_completo || 
                     [p.nombre, p.apellido].filter(Boolean).join(" ") || detail.nombre || "Doctor";
                 
@@ -61,20 +96,32 @@ export const getDoctoresParaLiquidacion = async (tenantId) => {
                     detail.comision ?? 
                     35
                 );
-
                 const formaPago = detail.formaPago || p.formaPago || "Realizadas y pagadas";
 
-                return {
-                    id: p.id,
-                    nombre: name,
-                    cedula: p.cedula || p.documento || detail.numeroDocumento || "",
-                    email: p.email || detail.email || "",
-                    comisionPorcentaje: pct,
-                    formaPago: formaPago, // "Realizadas" o "Realizadas y pagadas"
-                    esDoctor: true
-                };
+                if (doctorsMap.has(docId)) {
+                    const existing = doctorsMap.get(docId);
+                    doctorsMap.set(docId, {
+                        ...existing,
+                        nombre: existing.nombre || name,
+                        cedula: existing.cedula || p.cedula || p.documento || detail.numeroDocumento || "",
+                        email: existing.email || p.email || detail.email || "",
+                        comisionPorcentaje: existing.comisionPorcentaje || pct,
+                        formaPago: existing.formaPago || formaPago
+                    });
+                } else {
+                    doctorsMap.set(docId, {
+                        id: docId,
+                        nombre: name,
+                        cedula: p.cedula || p.documento || detail.numeroDocumento || "",
+                        email: p.email || detail.email || "",
+                        comisionPorcentaje: pct,
+                        formaPago: formaPago,
+                        esDoctor: true
+                    });
+                }
             });
 
+        const doctors = Array.from(doctorsMap.values());
         doctors.sort((a, b) => a.nombre.localeCompare(b.nombre));
         return doctors;
     } catch (e) {
@@ -110,10 +157,12 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
             formaPago: "Realizadas y pagadas"
         };
 
+        const currentDocNorm = (currentDoctor.nombre || "").toLowerCase().trim();
         const doctorNamesSet = new Set([
-            currentDoctor.nombre.toLowerCase().trim(),
-            ...currentDoctor.nombre.toLowerCase().trim().split(" ").filter(w => w.length > 2)
+            currentDocNorm,
+            ...currentDocNorm.split(" ").filter(w => w.length > 2)
         ]);
+        const currentDocIdStr = String(currentDoctor.id || doctorId).toLowerCase().trim();
 
         // 2. Cargar Planes de Tratamiento
         let plansList = [];
@@ -196,17 +245,55 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
             pagosList = await getConfigSection(tenantId, "pagos", []);
         }
 
-        // Mapear pagos activos por planId
+        // Mapear pagos activos por planId, por paciente y por ítem específico
         const pagosPorPlan = {};
         const pagosPorPaciente = {};
+        const paidItemsSet = new Set();
+        const paidItemsDoctorMap = {};
+
         pagosList.forEach(p => {
             if (p.estado === "Anulado" || p.concepto === "SALDO A FAVOR") return;
             const monto = safeNumber(p.monto || p.valor);
-            if (p.planId) {
-                pagosPorPlan[p.planId] = (pagosPorPlan[p.planId] || 0) + monto;
+
+            let meta = {};
+            if (p.notas && typeof p.notas === "object") {
+                meta = p.notas;
+            } else if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+                try { meta = JSON.parse(p.notas); } catch (_) {}
+            } else if (p.detalles && typeof p.detalles === "object") {
+                meta = p.detalles;
+            } else if (p.metadata && typeof p.metadata === "object") {
+                meta = p.metadata;
             }
-            if (p.pacienteId) {
-                pagosPorPaciente[p.pacienteId] = (pagosPorPaciente[p.pacienteId] || 0) + monto;
+
+            const effectivePlanId = p.planId || meta.planId || meta.treatmentPlanId;
+            const effectivePacienteId = p.pacienteId || p.paciente_id || meta.pacienteId;
+
+            if (effectivePlanId) {
+                pagosPorPlan[effectivePlanId] = (pagosPorPlan[effectivePlanId] || 0) + monto;
+            }
+            if (effectivePacienteId) {
+                pagosPorPaciente[effectivePacienteId] = (pagosPorPaciente[effectivePacienteId] || 0) + monto;
+            }
+
+            // Registrar ítems pagados individualmente y profesional asignado al pago
+            const itemPayments = meta.itemPayments || p.itemPayments || [];
+            if (Array.isArray(itemPayments)) {
+                itemPayments.forEach(itPay => {
+                    const itId = itPay.id || itPay.itemId;
+                    if (itId) {
+                        paidItemsSet.add(String(itId));
+                        if (effectivePlanId) {
+                            paidItemsSet.add(`${effectivePlanId}_${itId}`);
+                        }
+                        if (itPay.profesionalId || itPay.profesional || meta.profesionalId || meta.profesional) {
+                            paidItemsDoctorMap[String(itId)] = {
+                                doctorId: itPay.profesionalId || meta.profesionalId || null,
+                                doctorName: itPay.profesional || meta.profesional || ""
+                            };
+                        }
+                    }
+                });
             }
         });
 
@@ -324,16 +411,19 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 if (!isRealizado) return;
 
                 // Regla C: Identificar profesional que realizó el ítem
+                // Prioridad: profesional asignado en el ítem, en la evolución, en el pago, o en el plan
+                const paidDocInfo = paidItemsDoctorMap[String(itemId)] || {};
                 const itemDoctorId = item.profesionalId || item.doctorId || item.profesional_id || 
-                    matchedEvolution?.doctorId || planDoctorId;
-                const itemDoctorName = item.profesional || item.doctor || matchedEvolution?.doctorName || planDoctorName;
+                    matchedEvolution?.doctorId || paidDocInfo.doctorId || planDoctorId;
+                const itemDoctorName = item.profesional || item.doctor || matchedEvolution?.doctorName || 
+                    paidDocInfo.doctorName || planDoctorName;
 
                 let matchesDoctor = false;
-                if (itemDoctorId && String(itemDoctorId) === String(doctorId)) {
+                if (itemDoctorId && (String(itemDoctorId) === String(doctorId) || String(itemDoctorId).toLowerCase() === currentDocIdStr)) {
                     matchesDoctor = true;
-                } else if (!itemDoctorId && itemDoctorName) {
+                } else if (itemDoctorName) {
                     const normDoc = itemDoctorName.toLowerCase().trim();
-                    if (doctorNamesSet.has(normDoc) || normDoc.includes(currentDoctor.nombre.toLowerCase().trim())) {
+                    if (doctorNamesSet.has(normDoc) || normDoc.includes(currentDocNorm) || currentDocNorm.includes(normDoc)) {
                         matchesDoctor = true;
                     }
                 }
@@ -373,9 +463,12 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 const isPaid = (
                     item.pagado === true || 
                     item.pagada === true || 
+                    paidItemsSet.has(String(itemId)) ||
+                    paidItemsSet.has(itemKey) ||
                     safeNumber(item.pagado) >= safeNumber(item.precio || item.valor) ||
                     planTotalmentePagado || 
-                    planAbonado >= safeNumber(item.precio || item.valor)
+                    planAbonado >= safeNumber(item.precio || item.valor) ||
+                    (planAbonado > 0 && Math.abs(planTotal - planAbonado) < 1)
                 );
 
                 const formaPagoDoctor = String(currentDoctor.formaPago || "").toLowerCase();

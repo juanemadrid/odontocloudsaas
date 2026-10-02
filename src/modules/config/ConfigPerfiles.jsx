@@ -99,7 +99,6 @@ const PERMISSION_MAP = {
         "Lista precios",
         "Planes",
         "Consecutivos",
-        "Almacenes",
         "Categorias Conceptos",
         "Sucursales",
         "Medios pago",

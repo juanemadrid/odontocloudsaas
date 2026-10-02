@@ -41,6 +41,7 @@ export default function ReciboCajaList({ onNew }) {
     const [recibos, setRecibos] = useState([]);
     const [expandedRowId, setExpandedRowId] = useState(null);
     const [companyInfo, setCompanyInfo] = useState(null);
+    const [plansMap, setPlansMap] = useState({});
 
     // Modal: Documentos Asociados (Doc. Ref.)
     const [associatedDocsModal, setAssociatedDocsModal] = useState({ open: false, recibo: null });
@@ -74,12 +75,12 @@ export default function ReciboCajaList({ onNew }) {
                 ]);
                 const t = tenantRes?.data || {};
                 setCompanyInfo({
-                    nombreComercial: empConfig.nombreComercial || t.nombre || "ATM Centro del Dolor Orofacial",
-                    nit: empConfig.nit || t.nit || "64576359-3",
-                    direccion: empConfig.direccion || t.direccion || "Calle 16#17-68",
+                    nombreComercial: empConfig.nombreComercial || t.nombre || "Clínica Dental",
+                    nit: empConfig.nit || t.nit || "",
+                    direccion: empConfig.direccion || t.direccion || "",
                     ciudad: empConfig.ciudad || t.ciudad || "Sincelejo",
-                    telefono: empConfig.telefono || t.telefono || "2769030",
-                    email: empConfig.email || t.email || "atmcentrodel dolor@gmail.com",
+                    telefono: empConfig.telefono || t.telefono || "",
+                    email: empConfig.email || t.email || "",
                     logoUrl: empConfig.logoUrl || t.logo_url || ""
                 });
             } catch (e) {
@@ -95,37 +96,72 @@ export default function ReciboCajaList({ onNew }) {
     // --- PRINT ENGINE (OralDrive Formato Exacto Recibo de Caja) ---
     const handlePrint = (recibo) => {
         const tenantData = companyInfo || {
-            nombreComercial: userProfile?.tenant?.nombreComercial || "ATM Centro del Dolor Orofacial",
-            nit: userProfile?.tenant?.nit || "64576359-3",
-            direccion: userProfile?.tenant?.direccion || "Calle 16#17-68",
+            nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenantNombre || "Clínica Dental",
+            nit: userProfile?.tenant?.nit || "",
+            direccion: userProfile?.tenant?.direccion || "",
             ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
-            telefono: userProfile?.tenant?.telefono || "2769030",
-            email: userProfile?.tenant?.email || "atmcentrodel dolor@gmail.com",
-            logoUrl: userProfile?.tenant?.logo_url || ""
+            telefono: userProfile?.tenant?.telefono || "",
+            email: userProfile?.tenant?.email || "",
+            logoUrl: userProfile?.tenant?.logo_url || userProfile?.tenant?.logoUrl || ""
         };
 
-        const conceptosList = (recibo.conceptos && recibo.conceptos.length > 0)
-            ? recibo.conceptos
-            : [{
-                concepto: recibo.concepto || "Consulta de primera vez con especialista en ATM",
-                precioUnitario: recibo.total,
+        let conceptosList = [];
+        if (Array.isArray(recibo.conceptos) && recibo.conceptos.length > 0) {
+            conceptosList = recibo.conceptos;
+        } else if (recibo.concepto) {
+            conceptosList = [{
+                concepto: recibo.concepto,
+                precioUnitario: Number(recibo.total || 0),
                 cantidad: 1,
-                total: recibo.total
+                total: Number(recibo.total || 0)
             }];
+        } else {
+            conceptosList = [{
+                concepto: "Abono a tratamiento",
+                precioUnitario: Number(recibo.total || 0),
+                cantidad: 1,
+                total: Number(recibo.total || 0)
+            }];
+        }
+
+        // Buscar plan de tratamiento real asociado
+        const targetPlanId = recibo.planId || recibo._meta?.planId || recibo._raw?.planId;
+        const matchedPlan = targetPlanId ? plansMap[targetPlanId] : null;
+
+        let dynamicPlanTitle = recibo.planTitle || recibo._meta?.planTitle || matchedPlan?.nombre || matchedPlan?.title || "";
+        let dynamicTotalPlan = matchedPlan ? Number(matchedPlan.total || matchedPlan.detalles?.total || 0) : Number(recibo.total || 0);
+
+        // Sumar pagos que pertenecen a este mismo plan
+        let dynamicTotalPagado = 0;
+        if (targetPlanId) {
+            recibos.forEach(r => {
+                const rPlanId = r.planId || r._meta?.planId || r._raw?.planId;
+                if (String(rPlanId) === String(targetPlanId) && !r.anulado && r.estado !== "Anulado") {
+                    dynamicTotalPagado += Number(r.total || 0);
+                }
+            });
+        }
+        if (dynamicTotalPagado < Number(recibo.total || 0)) {
+            dynamicTotalPagado = Number(recibo.total || 0);
+        }
+        let dynamicSaldo = Math.max(0, dynamicTotalPlan - dynamicTotalPagado);
+
+        const profName = recibo.profesionalNombre || recibo._meta?.profesional || recibo.profesional || userProfile?.nombreCompleto || "Doctor";
+        const consNum = recibo.consecutivoNumero || recibo.nroConsecutivo || recibo._meta?.nroConsecutivo || "1";
 
         printReciboCaja({
             recibo: {
                 ...recibo,
-                nroConsecutivo: recibo.consecutivoNumero || recibo.nroConsecutivo || "1993",
+                nroConsecutivo: consNum,
                 fecha: recibo.rawDate || recibo.fecha || new Date(),
                 pacienteNombre: recibo.pacienteNombre,
                 pacienteDocumento: recibo.pacienteDocumento,
                 pacienteDireccion: recibo.pacienteDireccion,
                 pacienteCiudad: recibo.pacienteCiudad,
-                profesionalNombre: recibo.profesionalNombre || "MARIA CAROLINA ARROYO CASTILLO",
+                profesionalNombre: profName,
                 medioPago: recibo.medioPago || "Efectivo",
                 conceptos: conceptosList,
-                total: recibo.total,
+                total: Number(recibo.total || 0),
                 observaciones: recibo.observaciones || recibo.notas || "",
                 estado: recibo.estado,
                 anulado: recibo.anulado,
@@ -141,12 +177,12 @@ export default function ReciboCajaList({ onNew }) {
                 telefono: recibo.pacienteTelefono
             },
             tenant: tenantData,
-            planInfo: {
-                planTitle: "Tratamiento ATM",
-                totalPlan: recibo.total,
-                totalPagado: recibo.total,
-                saldo: 0
-            }
+            planInfo: dynamicPlanTitle ? {
+                planTitle: dynamicPlanTitle,
+                totalPlan: dynamicTotalPlan,
+                totalPagado: dynamicTotalPagado,
+                saldo: dynamicSaldo
+            } : null
         });
     };
 
@@ -420,6 +456,21 @@ export default function ReciboCajaList({ onNew }) {
                 console.warn("Could not fetch pacientes:", e);
             }
 
+            // 1.5. Treatment Plans map
+            let pMap = {};
+            try {
+                const { data: plansData } = await supabase
+                    .from("treatment_plans")
+                    .select("*")
+                    .eq("tenant_id", inquilino);
+                (plansData || []).forEach(pl => {
+                    if (pl.id) pMap[pl.id] = pl;
+                });
+                setPlansMap(pMap);
+            } catch (e) {
+                console.warn("Could not fetch treatment plans:", e);
+            }
+
             // 2. Recibos de caja
             let dataRecibos = [];
             try {
@@ -528,7 +579,7 @@ export default function ReciboCajaList({ onNew }) {
                         pacienteDireccion: d.pacienteDireccion || pacInfo.direccion || "",
                         pacienteCiudad: d.pacienteCiudad || pacInfo.ciudad || companyInfo?.ciudad || "Sincelejo",
                         tipoDoc: d.tipoDoc || "Recibo de caja",
-                        profesionalNombre: d.profesionalNombre || d.doctorNombre || d.doctor || userProfile?.nombreCompleto || "Guillermo Rodriguez",
+                        profesionalNombre: d.profesionalNombre || d.doctorNombre || d.doctor || userProfile?.nombreCompleto || "Doctor",
                         medioPago: d.medioPago || d.condicionPago || d.medio || "Efectivo",
                         referencia: d.referencia || d.comprobante || "",
                         venceEn: 0,
@@ -572,7 +623,31 @@ export default function ReciboCajaList({ onNew }) {
                     const pId = pData.paciente_id || pData.pacienteId || metadata.paciente_id || pData.paciente;
                     const pacInfo = patientMap[pId] || {};
                     const pName = pData.patientNombre || pData.pacienteNombre || metadata.patientNombre || pacInfo.nombre || "Paciente";
-                    const medioRaw = pData.metodo || pData.medio || metadata.metodo || metadata.medio || "Transferencia Débito";
+                    const medioRaw = pData.metodo || pData.medio || metadata.metodo || metadata.medio || "Efectivo";
+
+                    // Extraer conceptos reales de los procedimientos cancelados
+                    let pagoConceptos = [];
+                    if (Array.isArray(metadata.itemPayments) && metadata.itemPayments.length > 0) {
+                        pagoConceptos = metadata.itemPayments.map(it => ({
+                            concepto: it.desc || it.concepto || metadata.concepto || "Procedimiento Odontológico",
+                            precioUnitario: Number(it.monto || 0),
+                            cantidad: 1,
+                            total: Number(it.monto || 0)
+                        }));
+                    } else if (metadata.concepto || pData.concepto) {
+                        pagoConceptos = [{
+                            concepto: metadata.concepto || pData.concepto || "Abono a tratamiento",
+                            precioUnitario: Number(pData.monto || 0),
+                            cantidad: 1,
+                            total: Number(pData.monto || 0)
+                        }];
+                    }
+
+                    const targetPlanId = metadata.planId || pData.planId;
+                    const targetPlan = targetPlanId ? pMap[targetPlanId] : null;
+                    const dynamicPlanTitle = metadata.planTitle || pData.planTitle || targetPlan?.nombre || targetPlan?.title || "";
+
+                    const effectiveProf = metadata.profesional || pData.profesional || metadata.doctor || pData.doctor || userProfile?.nombreCompleto || "Doctor";
 
                     return {
                         id: pData.id,
@@ -584,11 +659,16 @@ export default function ReciboCajaList({ onNew }) {
                         pacienteDireccion: pacInfo.direccion || "",
                         pacienteCiudad: metadata.pacienteCiudad || pacInfo.ciudad || companyInfo?.ciudad || "Sincelejo",
                         tipoDoc: metadata.tipoDoc || "Recibo de caja",
-                        profesionalNombre: metadata.doctor || pData.doctor || userProfile?.nombreCompleto || "Guillermo Rodriguez",
+                        profesionalNombre: effectiveProf,
                         medioPago: medioRaw,
                         referencia: metadata.referencia || pData.referencia || "",
                         venceEn: 0,
-                        total: pData.monto || 0,
+                        total: Number(pData.monto || 0),
+                        concepto: metadata.concepto || pData.concepto || (pagoConceptos[0]?.concepto) || "Abono a tratamiento",
+                        conceptos: pagoConceptos,
+                        planId: targetPlanId,
+                        planTitle: dynamicPlanTitle,
+                        observaciones: metadata.observaciones || pData.observaciones || "",
                         estado: isPagoAnulado ? "Anulado" : (pData.estado || "Activo"),
                         anulado: isPagoAnulado,
                         motivoAnulacion: motivoPago,
@@ -603,8 +683,24 @@ export default function ReciboCajaList({ onNew }) {
                 })
                 .filter(p => !isConsumoSaldo(p._raw, p._meta));
 
-            // Combine and filter by date range if specified
-            let combined = [...mappedRecibos, ...mappedPagos];
+            // Evitar duplicados entre la tabla recibos_caja y la tabla pagos
+            const existingReceiptIds = new Set(
+                mappedRecibos.map(r => String(r.id || "")).filter(Boolean)
+            );
+            const existingReceiptNumbers = new Set(
+                mappedRecibos.map(r => String(r.nroConsecutivo || r.numero || r.nro_consecutivo || "")).filter(Boolean)
+            );
+
+            const uniquePagos = mappedPagos.filter(p => {
+                const pId = String(p.id || "");
+                const pNum = String(p.nroConsecutivo || p._raw?.nro_consecutivo || p._meta?.nroConsecutivo || "");
+                if (pId && existingReceiptIds.has(pId)) return false;
+                if (pNum && existingReceiptNumbers.has(pNum)) return false;
+                return true;
+            });
+
+            // Combinar registros únicos y filtrar por rango de fechas
+            let combined = [...mappedRecibos, ...uniquePagos];
 
             combined = combined.filter(r => {
                 if (!startTime && !endTime) return true;
@@ -616,44 +712,26 @@ export default function ReciboCajaList({ onNew }) {
                 return true;
             });
 
-            // Sort ascending by date to assign sequential consecutive number if missing, then invert for display
-            combined.sort((a, b) => new Date(a.rawDate || 0) - new Date(b.rawDate || 0));
-
-            // Dedup and guarantee strictly unique sequential consecutive numbers (sin números repetidos)
-            const seenNumbers = new Set();
-            let currentHighest = 0;
-
-            // First pass: find the highest explicitly assigned number
-            combined.forEach(item => {
-                const rawC = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
-                const n = Number(rawC);
-                if (!isNaN(n) && n > 0 && n < 100000) {
-                    currentHighest = Math.max(currentHighest, n);
-                }
-            });
-
-            // Second pass: assign ensuring NO DUPLICATES
+            // Respetar estrictamente el número de documento asignado en base de datos (INMUTABLE - Nunca alterar números existentes)
             const withConsecutivos = combined.map((item) => {
                 const rawC = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
-                let n = (!isNaN(Number(rawC)) && Number(rawC) > 0 && Number(rawC) < 100000) ? Number(rawC) : null;
-
-                if (!n || seenNumbers.has(n)) {
-                    // Collision or missing: assign next available unique number
-                    currentHighest += 1;
-                    n = currentHighest;
-                }
-                seenNumbers.add(n);
+                const n = (!isNaN(Number(rawC)) && Number(rawC) > 0) ? Number(rawC) : (rawC || "—");
 
                 return {
                     ...item,
                     nroConsecutivo: n,
                     consecutivoNumero: n,
-                    docRefNumber: item.fevNumero || invoiceMap[item.id] || null // Solo si existe factura asociada real
+                    docRefNumber: item.fevNumero || invoiceMap[item.id] || null
                 };
             });
 
-            // Display descending (latest first)
-            withConsecutivos.reverse();
+            // Ordenar de mayor a menor (consecutivo más alto arriba, más bajo abajo)
+            withConsecutivos.sort((a, b) => {
+                const numA = Number(a.consecutivoNumero || a.nroConsecutivo || 0);
+                const numB = Number(b.consecutivoNumero || b.nroConsecutivo || 0);
+                if (numB !== numA) return numB - numA;
+                return new Date(b.rawDate || 0).getTime() - new Date(a.rawDate || 0).getTime();
+            });
             setRecibos(withConsecutivos);
             setHasSearched(true);
         } catch (e) {
@@ -800,48 +878,16 @@ export default function ReciboCajaList({ onNew }) {
                         {/* Table Header */}
                         <thead>
                             <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-500 text-[11px] font-bold">
-                                <th className="py-2.5 px-3 w-10 text-center text-slate-400">
-                                    <span className="text-xs">❓</span>
-                                </th>
-                                <th className="py-2.5 px-3 w-20">
-                                    <div className="flex items-center gap-1">
-                                        <span>Doc.</span>
-                                    </div>
-                                </th>
-                                <th className="py-2.5 px-4 w-32">
-                                    <span>Tipo doc.</span>
-                                </th>
-                                <th className="py-2.5 px-3 w-24 text-center">
-                                    <div className="flex items-center justify-center gap-1">
-                                        <span className="text-[10px] text-slate-400">❓</span>
-                                        <span>Doc. Ref.</span>
-                                    </div>
-                                </th>
-                                <th className="py-2.5 px-4">
-                                    <span>Pac./Ter.</span>
-                                </th>
-                                <th className="py-2.5 px-4">
-                                    <span>Profesional</span>
-                                </th>
-                                <th className="py-2.5 px-4">
-                                    <span>Medio de pago</span>
-                                </th>
-                                <th className="py-2.5 px-3">
-                                    <span>Referencia</span>
-                                </th>
-                                <th className="py-2.5 px-3 w-24 text-center">
-                                    <div className="flex items-center justify-center gap-1">
-                                        <span className="text-[10px] text-slate-400">❓</span>
-                                        <span>Vence en</span>
-                                    </div>
-                                </th>
-                                <th className="py-2.5 px-4 text-right w-28">
-                                    <div className="flex items-center justify-end gap-1">
-                                        <span className="text-[10px] text-slate-400">❓</span>
-                                        <span>T. Doc.</span>
-                                    </div>
-                                </th>
-                                <th className="py-2.5 px-3 w-12 text-center"></th>
+                                <th className="py-2.5 px-3 w-10 text-center text-slate-400"></th>
+                                <th className="py-2.5 px-3 w-20">Doc.</th>
+                                <th className="py-2.5 px-3 w-24 text-center">Doc. Ref.</th>
+                                <th className="py-2.5 px-4">Paciente / Tercero</th>
+                                <th className="py-2.5 px-4">Profesional</th>
+                                <th className="py-2.5 px-4">Medio de pago</th>
+                                <th className="py-2.5 px-3">Referencia</th>
+                                <th className="py-2.5 px-3 w-24 text-center">Vence en</th>
+                                <th className="py-2.5 px-4 text-right w-28">Valor</th>
+                                <th className="py-2.5 px-3 w-28 text-center">Acciones</th>
                             </tr>
                         </thead>
 
@@ -849,14 +895,14 @@ export default function ReciboCajaList({ onNew }) {
                         <tbody className="divide-y divide-slate-100 text-[12px] text-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="11" className="py-14 text-center text-slate-400 font-medium">
+                                    <td colSpan="10" className="py-14 text-center text-slate-400 font-medium">
                                         <div className="w-6 h-6 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
                                         Cargando recibos de caja...
                                     </td>
                                 </tr>
                             ) : !hasSearched ? (
                                 <tr>
-                                    <td colSpan="11" className="py-16 text-center text-slate-400 font-medium">
+                                    <td colSpan="10" className="py-16 text-center text-slate-400 font-medium">
                                         <FiCalendar size={32} className="mx-auto mb-3 text-slate-300" />
                                         <p className="text-[13px] font-bold text-slate-700">Selecciona el rango de fechas y haz clic en "Buscar"</p>
                                         <p className="text-[11px] text-slate-400 mt-1">Los recibos de caja se consultarán únicamente para el período especificado.</p>
@@ -864,7 +910,7 @@ export default function ReciboCajaList({ onNew }) {
                                 </tr>
                             ) : filteredRecibos.length === 0 ? (
                                 <tr>
-                                    <td colSpan="11" className="py-12 text-center text-slate-400 font-medium italic">
+                                    <td colSpan="10" className="py-12 text-center text-slate-400 font-medium italic">
                                         No se encontraron registros de recibos de caja en este rango de fechas.
                                     </td>
                                 </tr>
@@ -900,11 +946,6 @@ export default function ReciboCajaList({ onNew }) {
                                                             </span>
                                                         )}
                                                     </div>
-                                                </td>
-
-                                                {/* Tipo doc. */}
-                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500 line-through opacity-75' : 'text-slate-600'}`}>
-                                                    {r.tipoDoc || "Recibo de caja"}
                                                 </td>
 
                                                 {/* Doc. Ref. (Blue Eye Button only if real linked invoice exists) */}
@@ -952,16 +993,44 @@ export default function ReciboCajaList({ onNew }) {
                                                     {fmt(r.total)}
                                                 </td>
 
-                                                {/* ... Action Menu Trigger */}
-                                                <td className="py-3 px-3 text-center text-slate-400 hover:text-slate-700 font-black text-sm">
-                                                    ···
+                                                {/* Acciones directas (Imprimir y Anular) */}
+                                                <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePrint(r)}
+                                                            className="w-7 h-7 rounded bg-slate-50 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer border-0"
+                                                            title="Imprimir Recibo de Caja"
+                                                        >
+                                                            <FiPrinter size={13} />
+                                                        </button>
+                                                        {isAnulado ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setViewVoidModal({ open: true, recibo: r })}
+                                                                className="w-7 h-7 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors cursor-pointer border-0"
+                                                                title="Ver motivo de anulación"
+                                                            >
+                                                                <FiEye size={13} />
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleOpenVoid(r)}
+                                                                className="w-7 h-7 rounded bg-slate-50 hover:bg-rose-100 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer border-0"
+                                                                title="Anular Recibo"
+                                                            >
+                                                                <FiTrash2 size={13} />
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
 
                                             {/* EXPANDED ROW ACTIONS (OralDrive Style) */}
                                             {isExpanded && (
                                                 <tr className="bg-slate-50/90 border-b border-slate-200/80 animate-fadeIn">
-                                                    <td colSpan="11" className="py-4 px-8">
+                                                    <td colSpan="10" className="py-4 px-8">
                                                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                                             <div className="space-y-1 text-xs">
                                                                 <div>
@@ -986,61 +1055,35 @@ export default function ReciboCajaList({ onNew }) {
                                                                 </div>
                                                             </div>
 
-                                                            {/* Action buttons (Editar, Recaudar, Imprimir, Anular) */}
+                                                            {/* Action buttons (Imprimir, Anular) */}
                                                             <div className="flex items-center gap-2">
                                                                 <span className="text-xs font-bold text-slate-500 mr-1">Acciones:</span>
-                                                                
-                                                                {/* 1. Editar */}
-                                                                <button 
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        if (r.isPago) {
-                                                                            toast && toast.info("Comprobante registrado desde módulo de paciente");
-                                                                        } else {
-                                                                            navigate(`editar/${r.id}`);
-                                                                        }
-                                                                    }}
-                                                                    className="w-8 h-8 rounded bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer border-0"
-                                                                    title="Editar documento"
-                                                                >
-                                                                    <FiEdit2 size={13} />
-                                                                </button>
 
-                                                                {/* 2. Recaudar / Abonar */}
-                                                                <button 
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        toast && toast.success(`Recaudo vinculado para ${r.pacienteNombre}`);
-                                                                    }}
-                                                                    className="w-8 h-8 rounded bg-slate-700 hover:bg-slate-800 text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer border-0"
-                                                                    title="Recaudar / Gestionar abono"
-                                                                >
-                                                                    <FiCreditCard size={13} />
-                                                                </button>
-
-                                                                {/* 3. Imprimir */}
+                                                                {/* Imprimir */}
                                                                 <button 
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handlePrint(r);
                                                                     }}
-                                                                    className="w-8 h-8 rounded bg-cyan-500 hover:bg-cyan-600 text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer border-0"
+                                                                    className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white flex items-center gap-1.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer border-0"
                                                                     title="Imprimir documento"
                                                                 >
                                                                     <FiPrinter size={13} />
+                                                                    <span>Imprimir</span>
                                                                 </button>
 
-                                                                {/* 4. Anular / Ver Anulación */}
+                                                                {/* Anular / Ver Anulación */}
                                                                 {isAnulado ? (
                                                                     <button 
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             setViewVoidModal({ open: true, recibo: r });
                                                                         }}
-                                                                        className="w-8 h-8 rounded bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer border-0"
+                                                                        className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center gap-1.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer border-0"
                                                                         title="Ver motivo de anulación"
                                                                     >
                                                                         <FiEye size={13} />
+                                                                        <span>Ver Anulación</span>
                                                                     </button>
                                                                 ) : (
                                                                     <button 
@@ -1048,10 +1091,11 @@ export default function ReciboCajaList({ onNew }) {
                                                                             e.stopPropagation();
                                                                             handleOpenVoid(r);
                                                                         }}
-                                                                        className="w-8 h-8 rounded bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer border-0"
+                                                                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 flex items-center gap-1.5 text-xs font-semibold transition-colors cursor-pointer"
                                                                         title="Anular recibo"
                                                                     >
                                                                         <FiTrash2 size={13} />
+                                                                        <span>Anular</span>
                                                                     </button>
                                                                 )}
                                                             </div>

@@ -3,7 +3,8 @@ import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { useAudit } from '../../../hooks/useAudit';
-import { ReceiptPrintService } from '../../../services/ReceiptPrintService';
+import { printReciboCaja } from '../../../utils/electronicInvoiceTemplate';
+import { getConfigSection } from '../../../services/configPersistenceService';
 import { formatCurrency } from '../../../utils/formatters';
 import { getPatientFinancials } from '../../../services/billingService';
 import {
@@ -72,10 +73,25 @@ export default function HistoricoPagosTab({ patientId }) {
     const { userProfile } = useAuth();
     const { logAction } = useAudit();
 
+    // Company info for receipts
+    const [companyInfo, setCompanyInfo] = useState(null);
+
     // Void modal state
     const [voidModal, setVoidModal] = useState({ open: false, pago: null });
     const [voidReason, setVoidReason] = useState("");
     const [voiding, setVoiding] = useState(false);
+
+    useEffect(() => {
+        const loadCompany = async () => {
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || "";
+            if (!inq) return;
+            try {
+                const empConfig = await getConfigSection(inq, "empresa_datos", {});
+                setCompanyInfo(empConfig);
+            } catch (_) {}
+        };
+        loadCompany();
+    }, [userProfile]);
 
     useEffect(() => {
         if (!patientId) return;
@@ -112,32 +128,135 @@ export default function HistoricoPagosTab({ patientId }) {
 
     const handlePrint = async (pago) => {
         try {
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || "";
+
+            // 1. Obtener datos completos del paciente
             const { data: pDb } = await supabase
                 .from("pacientes")
-                .select("id,nombres,apellidos,documento,tipo_documento,telefono,email,direccion,ciudad,ciudad_domicilio,saldo_favor")
+                .select("*")
                 .eq("id", patientId)
                 .maybeSingle();
 
-            const targetPatient = pDb ? {
-                ...pDb,
-                nombreCompleto: `${pDb.nombres || ""} ${pDb.apellidos || ""}`.trim(),
-                nroDocumento: pDb.documento || "",
-                tipoDocumento: pDb.tipo_documento || "CC",
-                celular: pDb.telefono || "",
-            } : null;
+            const pFullName = pDb 
+                ? (pDb.nombreCompleto || `${pDb.nombres || pDb.nombre || ""} ${pDb.apellidos || pDb.apellido || ""}`.trim())
+                : "Paciente";
 
-            if (!targetPatient) {
-                toast?.error?.("No se pudo cargar la información del paciente");
-                return;
-            }
-
-            const clinic = userProfile?.tenant || {
-                nombre: userProfile?.tenantNombre || userProfile?.clinica || "Clínica Dental",
-                inquilino: userProfile?.inquilino || userProfile?.tenantId,
-                ciudad: userProfile?.tenant?.ciudad || userProfile?.ciudad || "Sincelejo"
+            const targetPatient = {
+                nombreCompleto: pFullName || "Paciente",
+                documento: pDb?.documento || pDb?.cedula || pDb?.nroDocumento || "",
+                tipoDocumento: pDb?.tipo_documento || pDb?.tipoDocumento || "CC",
+                celular: pDb?.telefono || pDb?.celular || "",
+                telefono: pDb?.telefono || pDb?.celular || "",
+                direccion: pDb?.direccion || pDb?.direccionDomicilio || "",
+                ciudad: pDb?.ciudadDomicilio || pDb?.ciudad || "Sincelejo"
             };
 
-            await ReceiptPrintService.generatePDF(pago, targetPatient, clinic, userProfile);
+            // 2. Extraer metadata del pago (notas JSON)
+            let meta = {};
+            if (pago.notas && typeof pago.notas === "string" && pago.notas.trim().startsWith("{")) {
+                try { meta = JSON.parse(pago.notas); } catch (_) {}
+            } else if (pago.notas && typeof pago.notas === "object") {
+                meta = pago.notas;
+            }
+
+            // 3. Obtener información del plan de tratamiento
+            const targetPlanId = pago.planId || meta.planId;
+            let planTitle = meta.planTitle || pago.planTitle || "";
+            let totalPlan = meta.totalPlan || pago.totalPlan;
+            let totalPagadoPlan = meta.totalPagado || pago.totalPagado;
+            let saldoPlan = meta.saldo;
+
+            if (targetPlanId) {
+                try {
+                    const { data: planData } = await supabase
+                        .from("treatment_plans")
+                        .select("*")
+                        .eq("id", targetPlanId)
+                        .maybeSingle();
+
+                    if (planData) {
+                        planTitle = planData.nombre || planData.title || planTitle || "Plan de Tratamiento";
+                        totalPlan = Number(planData.total || planData.detalles?.total || totalPlan || 0);
+
+                        // Sumar pagos aplicados a este plan
+                        const { data: allPayRows } = await supabase
+                            .from("pagos")
+                            .select("monto, notas, estado, planId")
+                            .eq("tenant_id", inq);
+
+                        let sum = 0;
+                        (allPayRows || []).forEach(pr => {
+                            if (pr.estado === "Anulado") return;
+                            let prMeta = {};
+                            try { prMeta = typeof pr.notas === "string" ? JSON.parse(pr.notas) : (pr.notas || {}); } catch (_) {}
+                            if (String(prMeta.planId || pr.planId) === String(targetPlanId)) {
+                                sum += Number(pr.monto || 0);
+                            }
+                        });
+                        totalPagadoPlan = sum > 0 ? sum : Number(pago.monto || 0);
+                        saldoPlan = Math.max(0, totalPlan - totalPagadoPlan);
+                    }
+                } catch (_) {}
+            }
+
+            // 4. Construir conceptos reales a partir de los ítems pagados
+            let conceptosList = [];
+            if (Array.isArray(meta.itemPayments) && meta.itemPayments.length > 0) {
+                conceptosList = meta.itemPayments.map(it => ({
+                    concepto: it.desc || it.concepto || meta.concepto || "Procedimiento Odontológico",
+                    precioUnitario: Number(it.monto || 0),
+                    cantidad: 1,
+                    total: Number(it.monto || 0)
+                }));
+            } else {
+                conceptosList = [{
+                    concepto: meta.concepto || pago.concepto || "Abono a tratamiento",
+                    precioUnitario: Number(pago.monto || pago.valor || 0),
+                    cantidad: 1,
+                    total: Number(pago.monto || pago.valor || 0)
+                }];
+            }
+
+            const tenantData = companyInfo || {
+                nombreComercial: userProfile?.tenantNombre || "Clínica Dental",
+                nit: userProfile?.tenant?.nit || "",
+                direccion: userProfile?.tenant?.direccion || "",
+                ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
+                telefono: userProfile?.tenant?.telefono || "",
+                email: userProfile?.tenant?.email || "",
+                logoUrl: userProfile?.tenant?.logoUrl || ""
+            };
+
+            const profName = meta.profesional || pago.profesional || pago.doctor || userProfile?.nombreCompleto || "Doctor";
+            const numConsecutivo = pago.nroConsecutivo || meta.nroConsecutivo || pago.nro_consecutivo || "1";
+
+            printReciboCaja({
+                recibo: {
+                    ...pago,
+                    nroConsecutivo: numConsecutivo,
+                    fecha: pago.fecha || pago.created_at || new Date(),
+                    pacienteNombre: targetPatient.nombreCompleto,
+                    pacienteDocumento: targetPatient.documento,
+                    pacienteDireccion: targetPatient.direccion,
+                    pacienteCiudad: targetPatient.ciudad,
+                    pacienteTelefono: targetPatient.telefono,
+                    profesionalNombre: profName,
+                    medioPago: pago.metodo || pago.medio || meta.medio || "Efectivo",
+                    conceptos: conceptosList,
+                    total: Number(pago.monto || pago.valor || 0),
+                    observaciones: meta.observaciones || pago.observaciones || pago.notas || "",
+                    estado: pago.estado,
+                    anulado: pago.estado === "Anulado" || meta.estado === "Anulado"
+                },
+                patient: targetPatient,
+                tenant: tenantData,
+                planInfo: planTitle ? {
+                    planTitle: planTitle,
+                    totalPlan: totalPlan,
+                    totalPagado: totalPagadoPlan,
+                    saldo: saldoPlan
+                } : null
+            });
         } catch (e) {
             console.error("Error launching print:", e);
             toast?.error?.("Error al preparar el comprobante de impresión");
