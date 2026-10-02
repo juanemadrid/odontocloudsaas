@@ -1,0 +1,1 @@
+import{a as e,c as t}from"./Dashboard-BpZLzrHh.js";export{e as createOrUpdatePatient,t as getPatientById};

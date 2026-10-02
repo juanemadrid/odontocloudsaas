@@ -1,0 +1,1 @@
+function e(e=typeof window<`u`?window.location.pathname:``){let t=String(e||``).split(`/`).filter(Boolean),n=t.findIndex(e=>e===`dashboard`||e===`superadmin`||e.startsWith(`dashboard_`));return n>=0?`/${t.slice(n,n+1).join(`/`)}`:`/dashboard`}function t(t=``,n){let r=e(n),i=String(t||``).replace(/^\/+|\/+$/g,``);return i?`${r}/${i}`:r}export{t};
