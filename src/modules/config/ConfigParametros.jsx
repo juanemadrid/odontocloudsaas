@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { 
-    FiSave, FiSettings, FiFileText, FiActivity, FiBox, FiUser, FiZap, 
+    FiSave, FiSettings, FiFileText, FiActivity, FiUser, FiZap, 
     FiHelpCircle, FiSearch, FiCheck, FiSliders, FiCalendar
 } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
@@ -94,7 +94,6 @@ export default function ConfigParametros() {
             generarReporteOportunidad: false,
             confirmarPacienteContacto: false,
             tiempoEditarPlan: 60,
-            permitirEdicionRecetas: false,
             evaluacionPacInasistentes: "",
             validarEspaciosBlanco: false,
             usarLocalStorageReportes: false,
@@ -114,8 +113,6 @@ export default function ConfigParametros() {
             plantillaPresupuesto: "Cotización carta",
             plantillaFactura: "Factura media carta",
             plantillaFacturaElectronica: "Factura media carta",
-            plantillaOrdenCompra: "Orden de compra",
-            plantillaEgresos: "Egresos",
             plantillaFacturaCompra: "Factura carta",
             permitirPlanesCero: false,
         },
@@ -125,10 +122,6 @@ export default function ConfigParametros() {
             validarCamposAgenda: false,
             noCrearCitasPasado: false,
             duracionAgendaRapida: 30,
-        },
-        inventario: {
-            integrarPagos: false,
-            integrarRecaudos: false,
         },
         historiaClinica: {
             mensajeWhatsappFirma: "[PatientName], te contactamos de la clínica [TenantName]. Para firmar su documento clínico utilice el siguiente link: [Link]",
@@ -172,7 +165,6 @@ export default function ConfigParametros() {
                     general: { ...prev.general, ...(saved.general || {}) },
                     facturacion: { ...prev.facturacion, ...(saved.facturacion || {}) },
                     agenda: { ...prev.agenda, ...(saved.agenda || {}) },
-                    inventario: { ...prev.inventario, ...(saved.inventario || {}) },
                     historiaClinica: { ...prev.historiaClinica, ...(saved.historiaClinica || {}) },
                 }));
             }
@@ -213,7 +205,6 @@ export default function ConfigParametros() {
                 general: data.general,
                 facturacion: data.facturacion,
                 agenda: data.agenda,
-                inventario: data.inventario,
                 historiaClinica: data.historiaClinica,
                 updatedAt: new Date().toISOString()
             };
@@ -322,12 +313,6 @@ export default function ConfigParametros() {
             tooltip: "Ventana de tiempo en minutos permitida para realizar ediciones en un plan de tratamiento después de haberlo guardado.",
             type: "number",
             placeholder: "60"
-        },
-        {
-            key: "permitirEdicionRecetas",
-            label: "Permitir edición de recetas?",
-            tooltip: "Permite la modificación o edición de recetas y fórmulas médicas ya emitidas.",
-            type: "switch"
         },
         {
             key: "evaluacionPacInasistentes",
@@ -454,7 +439,6 @@ export default function ConfigParametros() {
                     { id: "facturacion", label: "Facturación", icon: FiFileText },
                     { id: "agenda", label: "Agenda", icon: FiActivity },
                     { id: "historiaClinica", label: "Historia Clínica", icon: FiUser },
-                    { id: "inventario", label: "Inventario", icon: FiBox },
                 ].map(tab => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;
@@ -591,7 +575,6 @@ export default function ConfigParametros() {
                             { k: "plantillaPresupuesto", label: "Presupuestos / Cotización" },
                             { k: "plantillaFactura", label: "Factura Estándar" },
                             { k: "plantillaFacturaElectronica", label: "Factura Electrónica" },
-                            { k: "plantillaOrdenCompra", label: "Orden de Compra" },
                         ].map(field => (
                             <div key={field.k} className="space-y-1.5">
                                 <label className="text-[11px] font-bold text-slate-600">{field.label}</label>
@@ -605,8 +588,6 @@ export default function ConfigParametros() {
                                     <option value="Factura media carta">Factura media carta</option>
                                     <option value="Factura carta">Factura carta</option>
                                     <option value="Cotización carta">Cotización carta</option>
-                                    <option value="Orden de compra">Orden de compra</option>
-                                    <option value="Egresos">Egresos</option>
                                 </select>
                             </div>
                         ))}
@@ -740,26 +721,6 @@ export default function ConfigParametros() {
                                 onChange={(v) => handleChange("historiaClinica", "noEditarDatosPaciente", v)} 
                             />
                         </div>
-                    </div>
-                </ConfigSection>
-            )}
-
-            {/* === TAB 5: INVENTARIO === */}
-            {activeTab === "inventario" && (
-                <ConfigSection title="Inventarios & Facturación" icon={FiBox}>
-                    <div className="space-y-3">
-                        <CompactSwitch 
-                            label="Integrar Pagos con Inventario" 
-                            subtitle="Descontar insumos odontológicos automáticamente tras registrar un recibo de pago" 
-                            checked={data.inventario.integrarPagos} 
-                            onChange={(v) => handleChange("inventario", "integrarPagos", v)} 
-                        />
-                        <CompactSwitch 
-                            label="Integrar Recaudos" 
-                            subtitle="Sincronizar abonos y saldos de pacientes con el kárdex de existencias" 
-                            checked={data.inventario.integrarRecaudos} 
-                            onChange={(v) => handleChange("inventario", "integrarRecaudos", v)} 
-                        />
                     </div>
                 </ConfigSection>
             )}

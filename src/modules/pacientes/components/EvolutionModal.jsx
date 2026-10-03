@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FiX, FiCheck, FiTrash2, FiPlus, FiActivity, FiLock, FiClock } from 'react-icons/fi';
 import supabase from '../../../lib/supabaseClient';
 import { getDoctorsList } from '../../../services/supabaseServices';
@@ -37,6 +37,80 @@ export const VIAS_ADMINISTRACION = [
     "Intramuscular",
     "Intravenosa"
 ];
+
+// Catálogo oficial de Alambres de Ortodoncia (1:1 OralDrive)
+export const ALAMBRES_ORTODONCIA = [
+    "0.012 NiTi",
+    "0.014 NiTi",
+    "0.016 NiTi",
+    "0.018 NiTi",
+    "0.020 NiTi",
+    "0.016 x 0.016 NiTi",
+    "0.016 x 0.022 NiTi",
+    "0.017 x 0.025 NiTi",
+    "0.019 x 0.025 NiTi",
+    "0.021 x 0.025 NiTi",
+    "0.014 Acero",
+    "0.016 Acero",
+    "0.018 Acero",
+    "0.020 Acero",
+    "0.016 x 0.016 Acero",
+    "0.016 x 0.022 Acero",
+    "0.017 x 0.025 Acero",
+    "0.019 x 0.025 Acero",
+    "0.021 x 0.025 Acero",
+    "0.017 x 0.025 TMA",
+    "0.019 x 0.025 TMA",
+    "Trenzado",
+    "Coaxial",
+    "Multifilamento",
+    "Sin arco"
+];
+
+// Catálogo oficial de Aditamentos y Accesorios de Ortodoncia (1:1 OralDrive)
+export const ACCESORIOS_ORTODONCIA = [
+    { key: "elastides", label: "Elástides" },
+    { key: "elasticos", label: "Elásticos" },
+    { key: "ligaduraMetalica", label: "Ligadura metálica" },
+    { key: "hiloElastico", label: "Hilo elástico" },
+    { key: "cunaRotacion", label: "Cuña de rotación" },
+    { key: "pinQuirurgico", label: "Pin quirúrgico" },
+    { key: "botones", label: "Botones" },
+    { key: "striping", label: "Striping" },
+    { key: "topesMordida", label: "Topes de mordida" },
+    { key: "cadenetas", label: "Cadenetas" },
+    { key: "resortesAbiertos", label: "Resortes abiertos" }
+];
+
+// Cuadrantes dentales para Reparación de Ortodoncia (1:1 OralDrive)
+export const CUADRANTES_ORTODONCIA = {
+    superiorDerecho: [18, 17, 16, 15, 14, 13, 12, 11],
+    superiorIzquierdo: [21, 22, 23, 24, 25, 26, 27, 28],
+    inferiorDerecha: [48, 47, 46, 45, 44, 43, 42, 41],
+    inferiorIzquierda: [31, 32, 33, 34, 35, 36, 37, 38]
+};
+
+// Helper para verificar si un profesional está vinculado a Ortodoncia
+export const isDoctorOrthodontist = (doc, targetParam = "Ortodoncia") => {
+    if (!doc) return false;
+    const target = (targetParam || "Ortodoncia").toLowerCase().trim();
+    const specs = [];
+    if (doc.especialidad) specs.push(String(doc.especialidad).toLowerCase().trim());
+    if (Array.isArray(doc.especialidades)) {
+        doc.especialidades.forEach(s => specs.push(String(s).toLowerCase().trim()));
+    }
+    if (doc.role) specs.push(String(doc.role).toLowerCase().trim());
+    if (doc.raw?.especialidad) specs.push(String(doc.raw.especialidad).toLowerCase().trim());
+    if (Array.isArray(doc.raw?.especialidades)) {
+        doc.raw.especialidades.forEach(s => specs.push(String(s).toLowerCase().trim()));
+    }
+    if (doc.specialty) specs.push(String(doc.specialty).toLowerCase().trim());
+
+    return specs.some(s => 
+        s.includes("ortodon") || 
+        (target && (s === target || s.includes(target) || target.includes(s)))
+    );
+};
 
 // Helper function to automatically infer Scope (Ámbito), Purpose (Finalidad), and Diagnostic Code (CIE-10) based on selected treatments/procedures.
 const inferRIPSFields = (servicesList) => {
@@ -83,7 +157,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const toast = useToast();
     
     const [saving, setSaving] = useState(false);
-    const [activeTab, setActiveTab] = useState('evolucion'); // 'evolucion' | 'nota'
+    const [activeTab, setActiveTab] = useState('evolucion'); // 'evolucion' | 'ortodoncia' | 'nota'
     const [showAIAssistant, setShowAIAssistant] = useState(false);
     const [doctors, setDoctors] = useState([]);
     const [planes, setPlanes] = useState([]);
@@ -95,6 +169,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const [showProcedureSelector, setShowProcedureSelector] = useState(false);
     const [pastEvolutions, setPastEvolutions] = useState([]);
     const [sterilizationCycles, setSterilizationCycles] = useState([]);
+    const [orthoParam, setOrthoParam] = useState('Ortodoncia');
 
     const getLocalISOStrings = () => {
         const d = new Date();
@@ -129,11 +204,45 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             detalleMedicamento: '',
             controlEsterilizacion: false,
             medicamentos: [],
-            esterilizaciones: []
+            esterilizaciones: [],
+            // Campos de Ortodoncia (1:1 OralDrive)
+            higieneOral: '',
+            reparaciones: [],
+            alambreSuperior: '',
+            alambreInferior: '',
+            accesoriosSuperior: {},
+            accesoriosInferior: {}
         }
     });
 
     const watchPlanId = watch("planId");
+    const watchedDoctorId = esDoctor ? currentDoctorId : watch("doctorId");
+
+    const selectedDoctor = useMemo(() => {
+        return doctors.find(d => String(d.id) === String(watchedDoctorId));
+    }, [doctors, watchedDoctorId]);
+
+    const isOrthoDoctor = useMemo(() => {
+        const doc = esDoctor ? userProfile : selectedDoctor;
+        if (!doc) return false;
+        return isDoctorOrthodontist(doc, orthoParam);
+    }, [esDoctor, userProfile, selectedDoctor, orthoParam]);
+
+    // Si el usuario cambia de doctor y el nuevo doctor no es de ortodoncia, volver a 'evolucion'
+    useEffect(() => {
+        if (!isOrthoDoctor && activeTab === 'ortodoncia') {
+            setActiveTab('evolucion');
+        }
+    }, [isOrthoDoctor, activeTab]);
+
+    const toggleReparacion = (tooth) => {
+        const current = watch("reparaciones") || [];
+        if (current.includes(tooth)) {
+            setValue("reparaciones", current.filter(t => t !== tooth));
+        } else {
+            setValue("reparaciones", [...current, tooth]);
+        }
+    };
 
     // Helper function to get formatted time
     const getCurrentTimeFormatted = () => {
@@ -279,6 +388,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         if (initialData) {
             if (initialData.type === 'nota') {
                 setActiveTab('nota');
+            } else if (initialData.type === 'evolucion_ortodoncia' || initialData.type === 'ortodoncia' || initialData.isOrthodontic) {
+                setActiveTab('ortodoncia');
             } else {
                 setActiveTab('evolucion');
             }
@@ -306,7 +417,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 comentario: initialData.comentario || initialData.description || '',
                 estadoEvolucion: initialData.estadoEvolucion || (initialData.isFinalized ? 'finalizado' : 'en_proceso'),
                 medicamentos: initialData.medicamentos || [],
-                esterilizaciones: initialData.esterilizaciones || []
+                esterilizaciones: initialData.esterilizaciones || [],
+                higieneOral: initialData.higieneOral || '',
+                reparaciones: Array.isArray(initialData.reparaciones) ? initialData.reparaciones : [],
+                alambreSuperior: initialData.alambreSuperior || initialData.arcadaSuperior?.alambre || '',
+                alambreInferior: initialData.alambreInferior || initialData.arcadaInferior?.alambre || '',
+                accesoriosSuperior: initialData.accesoriosSuperior || initialData.arcadaSuperior?.accesorios || {},
+                accesoriosInferior: initialData.accesoriosInferior || initialData.arcadaInferior?.accesorios || {}
             });
         } else {
             reset({
@@ -318,7 +435,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 doctorId: esDoctor ? currentDoctorId : '',
                 estadoEvolucion: 'en_proceso',
                 medicamentos: [],
-                esterilizaciones: []
+                esterilizaciones: [],
+                higieneOral: '',
+                reparaciones: [],
+                alambreSuperior: '',
+                alambreInferior: '',
+                accesoriosSuperior: {},
+                accesoriosInferior: {}
             });
         }
     }, [isOpen, initialData, reset, userProfile, esDoctor, currentDoctorId]);
@@ -329,13 +452,33 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
         const fetchData = async () => {
             try {
+                // Cargar parámetro de especialidad ortodoncia del inquilino
+                try {
+                    const inq = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
+                    if (inq) {
+                        const { data: tenantRow } = await supabase
+                            .from("tenants")
+                            .select("parametros")
+                            .eq("id", inq)
+                            .maybeSingle();
+                        const p = typeof tenantRow?.parametros === 'string' ? JSON.parse(tenantRow.parametros) : tenantRow?.parametros;
+                        if (p?.general?.especialidadOrtodoncia) {
+                            setOrthoParam(p.general.especialidadOrtodoncia);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Notice: could not load tenant orthodontic parameter:", e);
+                }
+
                 if (esDoctor) {
                     if (isAssigned) {
                         setDoctors([{
                             id: currentDoctorId,
                             nombre: currentDoctorName,
                             nombreCompleto: currentDoctorName,
-                            email: userProfile?.email || ''
+                            email: userProfile?.email || '',
+                            especialidad: userProfile?.especialidad || userProfile?.role || '',
+                            especialidades: userProfile?.especialidades || (userProfile?.especialidad ? [userProfile.especialidad] : [])
                         }]);
                         setValue('doctorId', currentDoctorId);
                     } else {
@@ -343,26 +486,38 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         setValue('doctorId', '');
                     }
                 } else {
-                    // Cargar doctores asignados a este paciente (contexto administrativo)
-                    let loadedDoctors = await getDoctorsList(userProfile, patient);
+                    // Cargar doctores asignados a este paciente Y catálogo completo de doctores de la clínica
+                    const [assignedDocs, allCatalogDocs] = await Promise.all([
+                        getDoctorsList(userProfile, patient).catch(() => []),
+                        getDoctorsList(userProfile, null).catch(() => [])
+                    ]);
+
+                    const docMap = new Map();
+                    (allCatalogDocs || []).forEach(d => {
+                        if (d?.id) docMap.set(String(d.id), d);
+                    });
+                    (assignedDocs || []).forEach(d => {
+                        if (d?.id) {
+                            const existing = docMap.get(String(d.id));
+                            docMap.set(String(d.id), {
+                                ...d,
+                                ...existing,
+                                especialidad: d.especialidad || existing?.especialidad || d.role || '',
+                                especialidades: d.especialidades?.length ? d.especialidades : (existing?.especialidades || [])
+                            });
+                        }
+                    });
 
                     // Si se está editando una evolución/nota existente y su doctor no está en la lista actual, incluirlo
                     if (initialData?.doctorId || initialData?.profesionalId) {
                         const prevDocId = String(initialData.doctorId || initialData.profesionalId);
                         const prevDocName = initialData.profesional || initialData.doctorName || initialData.profesionalNombre || "Doctor";
-                        if (!loadedDoctors.some(d => String(d.id) === prevDocId)) {
-                            loadedDoctors = [
-                                ...loadedDoctors,
-                                { id: prevDocId, nombre: prevDocName, nombreCompleto: prevDocName, email: '' }
-                            ];
+                        if (!docMap.has(prevDocId)) {
+                            docMap.set(prevDocId, { id: prevDocId, nombre: prevDocName, nombreCompleto: prevDocName, email: '' });
                         }
                     }
 
-                    // Fallback a todos los doctores si el paciente no tiene asignados aún
-                    if (loadedDoctors.length === 0) {
-                        loadedDoctors = await getDoctorsList(userProfile, null);
-                    }
-
+                    const loadedDoctors = Array.from(docMap.values());
                     setDoctors(loadedDoctors);
 
                     // Auto-seleccionar el primer doctor si no hay nada seleccionado aún
@@ -671,7 +826,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
             const selectedPlan = planes.find(p => p.id === data.planId);
             const treatmentName = selectedPlan?.title || selectedPlan?.nombre || '';
-            const recordType = activeTab === 'nota' ? 'nota' : 'evolution';
+            const isOrtho = activeTab === 'ortodoncia';
+            const recordType = activeTab === 'nota' ? 'nota' : isOrtho ? 'evolucion_ortodoncia' : 'evolution';
+            const displayTreatment = recordType === 'nota' 
+                ? 'Nota aclaratoria' 
+                : isOrtho 
+                ? (treatmentName ? `${treatmentName} (Ortodoncia)` : 'Evolución Ortodoncia') 
+                : treatmentName;
 
             // Robust date construction
             let finalDate = new Date(`${data.fecha}T00:00:00`);
@@ -698,15 +859,22 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
             const evolutionData = {
                 type: recordType,
+                isOrthodontic: isOrtho,
                 paciente_id: patient.id,
                 patientId: patient.id,
                 patientName: patient.nombreCompleto || patient.nombre || 'Paciente',
                 profesional: docName,
                 profesionalId: effectiveDocId,
                 doctorId: effectiveDocId,
-                treatment: recordType === 'nota' ? 'Nota aclaratoria' : treatmentName,
+                treatment: displayTreatment,
                 description: data.comentario, 
                 comentario: data.comentario,
+                higieneOral: isOrtho ? (data.higieneOral || '') : undefined,
+                reparaciones: isOrtho ? (data.reparaciones || []) : undefined,
+                alambreSuperior: isOrtho ? (data.alambreSuperior || '') : undefined,
+                alambreInferior: isOrtho ? (data.alambreInferior || '') : undefined,
+                accesoriosSuperior: isOrtho ? (data.accesoriosSuperior || {}) : undefined,
+                accesoriosInferior: isOrtho ? (data.accesoriosInferior || {}) : undefined,
                 isFinalized: hasRealizedItems,
                 transcribe: isTranscribed ? creatorName : null,
                 transcribedBy: isTranscribed ? creatorName : null,
@@ -844,8 +1012,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         <div>
                             <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
                                 {Boolean(initialData?.id) 
-                                    ? (activeTab === 'nota' ? 'Editar Nota Aclaratoria' : 'Editar Evolución') 
-                                    : (activeTab === 'nota' ? 'Nueva Nota Aclaratoria' : 'Nueva Evolución Clínica')
+                                    ? (activeTab === 'nota' ? 'Editar Nota Aclaratoria' : activeTab === 'ortodoncia' ? 'Editar Evolución Ortodoncia' : 'Editar Evolución') 
+                                    : (activeTab === 'nota' ? 'Nueva Nota Aclaratoria' : activeTab === 'ortodoncia' ? 'Nueva Evolución Ortodoncia' : 'Nueva Evolución Clínica')
                                 }
                             </h3>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -854,25 +1022,38 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         </div>
                     </div>
 
-                    {/* Selector de Pestaña: Evolución vs Nota Aclaratoria */}
+                    {/* Selector de Pestaña: Evolución vs Ortodoncia vs Nota Aclaratoria */}
                     <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
                         <button
                             type="button"
                             onClick={() => setActiveTab('evolucion')}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
                                 activeTab === 'evolucion' 
-                                    ? 'bg-white text-slate-800 shadow-sm' 
+                                    ? 'bg-[#8dc63f] text-white shadow-sm' 
                                     : 'text-slate-400 hover:text-slate-600'
                             }`}
                         >
                             Evolución
                         </button>
+                        {isOrthoDoctor && (
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('ortodoncia')}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                    activeTab === 'ortodoncia' 
+                                        ? 'bg-[#8dc63f] text-white shadow-sm' 
+                                        : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                            >
+                                Evolución Ortodoncia
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={() => setActiveTab('nota')}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
                                 activeTab === 'nota' 
-                                    ? 'bg-purple-600 text-white shadow-sm' 
+                                    ? 'bg-[#8dc63f] text-white shadow-sm' 
                                     : 'text-slate-400 hover:text-slate-600'
                             }`}
                         >
@@ -1126,100 +1307,454 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                 <option value="Múltiple">Múltiple</option>
                             </select>
                         </div>
-
-
-
                     </div>
 
                     {/* COLUMNA DERECHA (Siempre visible, pero expandida si es Nota) */}
                     <div className={`flex-1 min-w-0 space-y-5 ${activeTab === 'nota' ? '' : 'border-t lg:border-t-0 lg:border-l border-slate-100 pt-6 lg:pt-0 lg:pl-8'}`}>
                         
-                        {/* Selector de doctor exclusivo para la vista Nota Aclaratoria */}
-                        {activeTab === 'nota' && (
-                            <div>
-                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                    Seleccione doctor <span className="text-rose-500">*</span>
-                                </label>
-                                <select 
-                                    {...register("doctorId")} 
-                                    value={watch("doctorId") || ""}
-                                    disabled={esDoctor}
-                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 disabled:bg-slate-50 disabled:text-slate-400"
+                        {/* Selector de Pestañas estilo OralDrive 1:1 en la parte superior derecha */}
+                        <div className="flex items-center gap-2 mb-4">
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('evolucion')}
+                                className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-center transition-all cursor-pointer ${
+                                    activeTab === 'evolucion'
+                                        ? 'bg-[#8dc63f] text-white shadow-xs'
+                                        : 'bg-white text-[#68942b] border border-[#8dc63f] hover:bg-[#8dc63f]/10'
+                                }`}
+                            >
+                                Evolución
+                            </button>
+
+                            {isOrthoDoctor && (
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('ortodoncia')}
+                                    className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-center transition-all cursor-pointer ${
+                                        activeTab === 'ortodoncia'
+                                            ? 'bg-[#8dc63f] text-white shadow-xs'
+                                            : 'bg-white text-[#68942b] border border-[#8dc63f] hover:bg-[#8dc63f]/10'
+                                    }`}
                                 >
-                                    <option value="">Seleccione...</option>
-                                    {doctors.map(d => (
-                                        <option key={d.id} value={d.id}>
-                                            {`${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto}
-                                        </option>
-                                    ))}
-                                </select>
+                                    Evolución ortodoncia
+                                </button>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('nota')}
+                                className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-center transition-all cursor-pointer ${
+                                    activeTab === 'nota'
+                                        ? 'bg-[#8dc63f] text-white shadow-xs'
+                                        : 'bg-white text-[#68942b] border border-[#8dc63f] hover:bg-[#8dc63f]/10'
+                                }`}
+                            >
+                                Nota aclaratoria
+                            </button>
+                        </div>
+
+                        {/* VISTA 1: NOTA ACLARATORIA */}
+                        {activeTab === 'nota' && (
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                        Seleccione doctor <span className="text-rose-500">*</span>
+                                    </label>
+                                    <select 
+                                        {...register("doctorId")} 
+                                        value={watch("doctorId") || ""}
+                                        disabled={esDoctor}
+                                        className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 disabled:bg-slate-50 disabled:text-slate-400"
+                                    >
+                                        <option value="">Seleccione...</option>
+                                        {doctors.map(d => (
+                                            <option key={d.id} value={d.id}>
+                                                {`${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                            Fecha <span className="text-rose-500">*</span>
+                                        </label>
+                                        <input 
+                                            type="date" 
+                                            {...register("fecha")} 
+                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
+                                            max="9999-12-31" min="1900-01-01" 
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                            Hora inicio
+                                        </label>
+                                        <input 
+                                            type="time" 
+                                            {...register("horaInicio")} 
+                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                            Hora fin
+                                        </label>
+                                        <input 
+                                            type="time" 
+                                            {...register("horaFin")} 
+                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block">
+                                        Comentario <span className="text-rose-500">*</span>
+                                    </label>
+                                    <textarea 
+                                        {...register("comentario")} 
+                                        className="w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none"
+                                        placeholder="Escribe aquí la nota aclaratoria..."
+                                    />
+                                </div>
                             </div>
                         )}
 
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                    Fecha <span className="text-rose-500">*</span>
-                                </label>
-                                <input 
-                                    type="date"
-                                    {...register("fecha")} 
-                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 caret-slate-950"
-                                 max="9999-12-31" min="1900-01-01" />
-                            </div>
-                        </div>
-
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                    Hora inicio
-                                </label>
-                                <input 
-                                    type="time"
-                                    {...register("horaInicio")} 
-                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 caret-slate-950"
-                                />
-                            </div>
-                            <div className="flex-1">
-                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                    Hora fin
-                                </label>
-                                <input 
-                                    type="time"
-                                    {...register("horaFin")} 
-                                    className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 caret-slate-950"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block">
-                                    Comentario <span className="text-rose-500">*</span>
-                                </label>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowAIAssistant(!showAIAssistant)}
-                                    className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all duration-300 shadow-sm border ${
-                                        showAIAssistant 
-                                            ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600 active:scale-95 shadow-rose-100' 
-                                            : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 hover:shadow-md hover:shadow-indigo-100 active:scale-95'
-                                    }`}
-                                >
-                                    🎙️ {showAIAssistant ? "Ocultar Asistente" : "Asistente Nova"}
-                                </button>
-                            </div>
-                            
-
-
-                            <textarea 
-                                {...register("comentario")} 
-                                className="w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none caret-slate-950"
-                                placeholder="Escribe aquí los hallazgos subjetivos, objetivos y plan..."
-                            />
-                        </div>
-
+                        {/* VISTA 2: EVOLUCIÓN CLÍNICA ESTÁNDAR */}
                         {activeTab === 'evolucion' && (
+                            <div className="space-y-4">
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                            Fecha <span className="text-rose-500">*</span>
+                                        </label>
+                                        <input 
+                                            type="date" 
+                                            {...register("fecha")} 
+                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
+                                            max="9999-12-31" min="1900-01-01" 
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                            Hora inicio
+                                        </label>
+                                        <input 
+                                            type="time" 
+                                            {...register("horaInicio")} 
+                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                            Hora fin
+                                        </label>
+                                        <input 
+                                            type="time" 
+                                            {...register("horaFin")} 
+                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block">
+                                            Comentario <span className="text-rose-500">*</span>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowAIAssistant(!showAIAssistant)}
+                                            className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all duration-300 shadow-sm border ${
+                                                showAIAssistant 
+                                                    ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600 active:scale-95 shadow-rose-100' 
+                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 hover:shadow-md hover:shadow-indigo-100 active:scale-95'
+                                            }`}
+                                        >
+                                            🎙️ {showAIAssistant ? "Ocultar Asistente" : "Asistente Nova"}
+                                        </button>
+                                    </div>
+                                    
+                                    <textarea 
+                                        {...register("comentario")} 
+                                        className="w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none"
+                                        placeholder="Escribe aquí los hallazgos subjetivos, objetivos y plan..."
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* VISTA 3: EVOLUCIÓN ORTODONCIA (1:1 ORALDRIVE) */}
+                        {activeTab === 'ortodoncia' && (
+                            <div className="space-y-5 animate-fadeIn">
+                                {/* Información básica */}
+                                <div className="space-y-3">
+                                    <h4 className="text-xs font-bold text-slate-800">Información básica</h4>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[11px] font-bold text-slate-500 block mb-1">Fecha *</label>
+                                            <input 
+                                                type="date"
+                                                {...register("fecha")}
+                                                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f]"
+                                                max="9999-12-31" min="1900-01-01"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] font-bold text-slate-500 block mb-1">Higiene oral</label>
+                                            <select
+                                                {...register("higieneOral")}
+                                                value={watch("higieneOral") || ""}
+                                                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f]"
+                                            >
+                                                <option value="">Seleccione...</option>
+                                                <option value="Buena">Buena</option>
+                                                <option value="Regular">Regular</option>
+                                                <option value="Mala">Mala</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[11px] font-bold text-slate-500 block mb-1">Hora inicio</label>
+                                            <input 
+                                                type="time"
+                                                {...register("horaInicio")}
+                                                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f]"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] font-bold text-slate-500 block mb-1">Hora fin</label>
+                                            <input 
+                                                type="time"
+                                                {...register("horaFin")}
+                                                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f]"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Reparación */}
+                                <div className="space-y-3 pt-2">
+                                    <h4 className="text-xs font-bold text-slate-800">Reparación</h4>
+                                    
+                                    {/* Fila 1: Superior Derecho & Superior Izquierdo */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {/* Superior Derecho */}
+                                        <div className="space-y-1.5">
+                                            <span className="text-[10px] font-bold text-slate-500 block text-center">Superior Derecho</span>
+                                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                {CUADRANTES_ORTODONCIA.superiorDerecho.map(tooth => {
+                                                    const isChecked = (watch("reparaciones") || []).includes(tooth);
+                                                    return (
+                                                        <div key={tooth} className="flex flex-col items-center gap-1">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`tooth-${tooth}`}
+                                                                checked={isChecked}
+                                                                onChange={() => toggleReparacion(tooth)}
+                                                                className="w-4 h-4 rounded text-[#8dc63f] focus:ring-[#8dc63f] border-slate-300 cursor-pointer accent-[#8dc63f]"
+                                                            />
+                                                            <label htmlFor={`tooth-${tooth}`} className="text-[10px] font-mono font-bold text-slate-600 cursor-pointer select-none">
+                                                                {tooth}
+                                                            </label>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Superior Izquierdo */}
+                                        <div className="space-y-1.5">
+                                            <span className="text-[10px] font-bold text-slate-500 block text-center">Superior Izquierdo</span>
+                                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                {CUADRANTES_ORTODONCIA.superiorIzquierdo.map(tooth => {
+                                                    const isChecked = (watch("reparaciones") || []).includes(tooth);
+                                                    return (
+                                                        <div key={tooth} className="flex flex-col items-center gap-1">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`tooth-${tooth}`}
+                                                                checked={isChecked}
+                                                                onChange={() => toggleReparacion(tooth)}
+                                                                className="w-4 h-4 rounded text-[#8dc63f] focus:ring-[#8dc63f] border-slate-300 cursor-pointer accent-[#8dc63f]"
+                                                            />
+                                                            <label htmlFor={`tooth-${tooth}`} className="text-[10px] font-mono font-bold text-slate-600 cursor-pointer select-none">
+                                                                {tooth}
+                                                            </label>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Fila 2: Inferior Derecha & Inferior Izquierda */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                        {/* Inferior Derecha */}
+                                        <div className="space-y-1.5">
+                                            <span className="text-[10px] font-bold text-slate-500 block text-center">Inferior Derecha</span>
+                                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                {CUADRANTES_ORTODONCIA.inferiorDerecha.map(tooth => {
+                                                    const isChecked = (watch("reparaciones") || []).includes(tooth);
+                                                    return (
+                                                        <div key={tooth} className="flex flex-col items-center gap-1">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`tooth-${tooth}`}
+                                                                checked={isChecked}
+                                                                onChange={() => toggleReparacion(tooth)}
+                                                                className="w-4 h-4 rounded text-[#8dc63f] focus:ring-[#8dc63f] border-slate-300 cursor-pointer accent-[#8dc63f]"
+                                                            />
+                                                            <label htmlFor={`tooth-${tooth}`} className="text-[10px] font-mono font-bold text-slate-600 cursor-pointer select-none">
+                                                                {tooth}
+                                                            </label>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Inferior Izquierda */}
+                                        <div className="space-y-1.5">
+                                            <span className="text-[10px] font-bold text-slate-500 block text-center">Inferior Izquierda</span>
+                                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                {CUADRANTES_ORTODONCIA.inferiorIzquierda.map(tooth => {
+                                                    const isChecked = (watch("reparaciones") || []).includes(tooth);
+                                                    return (
+                                                        <div key={tooth} className="flex flex-col items-center gap-1">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`tooth-${tooth}`}
+                                                                checked={isChecked}
+                                                                onChange={() => toggleReparacion(tooth)}
+                                                                className="w-4 h-4 rounded text-[#8dc63f] focus:ring-[#8dc63f] border-slate-300 cursor-pointer accent-[#8dc63f]"
+                                                            />
+                                                            <label htmlFor={`tooth-${tooth}`} className="text-[10px] font-mono font-bold text-slate-600 cursor-pointer select-none">
+                                                                {tooth}
+                                                            </label>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Arcada superior */}
+                                <div className="space-y-3 pt-2">
+                                    <h4 className="text-xs font-bold text-slate-800">Arcada superior</h4>
+                                    
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500 block">Alambres</label>
+                                        <select
+                                            {...register("alambreSuperior")}
+                                            value={watch("alambreSuperior") || ""}
+                                            className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f]"
+                                        >
+                                            <option value="">Seleccione...</option>
+                                            {ALAMBRES_ORTODONCIA.map(opt => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                                        {ACCESORIOS_ORTODONCIA.map(item => (
+                                            <label key={`sup-${item.key}`} className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 hover:text-slate-900 select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    {...register(`accesoriosSuperior.${item.key}`)}
+                                                    className="w-4 h-4 rounded text-[#8dc63f] focus:ring-[#8dc63f] border-slate-300 cursor-pointer accent-[#8dc63f]"
+                                                />
+                                                <span className="text-[11px] font-medium">{item.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Arcada inferior */}
+                                <div className="space-y-3 pt-2">
+                                    <h4 className="text-xs font-bold text-slate-800">Arcada inferior</h4>
+                                    
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-bold text-slate-500 block">Alambres</label>
+                                        <select
+                                            {...register("alambreInferior")}
+                                            value={watch("alambreInferior") || ""}
+                                            className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f]"
+                                        >
+                                            <option value="">Seleccione...</option>
+                                            {ALAMBRES_ORTODONCIA.map(opt => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                                        {ACCESORIOS_ORTODONCIA.map(item => (
+                                            <label key={`inf-${item.key}`} className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 hover:text-slate-900 select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    {...register(`accesoriosInferior.${item.key}`)}
+                                                    className="w-4 h-4 rounded text-[#8dc63f] focus:ring-[#8dc63f] border-slate-300 cursor-pointer accent-[#8dc63f]"
+                                                />
+                                                <span className="text-[11px] font-medium">{item.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Botón + Consentir */}
+                                <div className="pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            toast.success("Consentimiento de ortodoncia vinculado a la atención");
+                                        }}
+                                        className="h-8 px-4 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
+                                    >
+                                        <span>+</span> Consentir
+                                    </button>
+                                </div>
+
+                                {/* Comentario */}
+                                <div className="flex flex-col gap-2 pt-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-xs font-bold text-slate-800">
+                                            Comentario <span className="text-rose-500">*</span>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowAIAssistant(!showAIAssistant)}
+                                            className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs border ${
+                                                showAIAssistant 
+                                                    ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' 
+                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'
+                                            }`}
+                                        >
+                                            🎙️ {showAIAssistant ? "Ocultar Asistente" : "Asistente Nova"}
+                                        </button>
+                                    </div>
+                                    <textarea 
+                                        {...register("comentario")} 
+                                        className="w-full h-32 p-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] custom-scrollbar resize-none"
+                                        placeholder="Escribe aquí los hallazgos de ortodoncia, ajustes y plan..."
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Switches de Medicamento y Esterilización (OralDrive 1:1) */}
+                        {(activeTab === 'evolucion' || activeTab === 'ortodoncia') && (
                             <div className="space-y-4 pt-4 border-t border-slate-100">
                                 <label className="flex items-center gap-3 cursor-pointer group">
                                     <div className="relative">

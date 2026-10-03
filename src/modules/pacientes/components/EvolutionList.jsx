@@ -88,7 +88,8 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
         .map(v => v.desc || v.procedimiento || v.nombre || '')
         .filter(Boolean);
 
-    const docBadgeLabel = evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : 'Evolución';
+    const isOrtho = evo.type === 'evolucion_ortodoncia' || evo.type === 'ortodoncia' || evo.isOrthodontic || (evo.treatment && evo.treatment.toLowerCase().includes('ortodoncia'));
+    const docBadgeLabel = evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : isOrtho ? 'Evolución Ortodoncia' : 'Evolución';
 
     // Resolver datos y firma del doctor (SOLO si la evolución fue firmada por el doctor)
     const isDoctorSigned = Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage);
@@ -354,6 +355,21 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
 
     <div class="evo-desc">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
 
+    ${isOrtho ? `
+      <div style="margin: 8px 0; padding: 8px; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 9px; line-height: 1.5;">
+        <div style="font-weight: bold; margin-bottom: 4px; text-transform: uppercase; color: #1e293b;">Detalles de Ortodoncia</div>
+        ${evo.higieneOral ? `<div><strong>Higiene Oral:</strong> ${evo.higieneOral}</div>` : ''}
+        ${(evo.horaInicio || evo.horaFin) ? `<div><strong>Horario de atención:</strong> ${evo.horaInicio || '—'} a ${evo.horaFin || '—'}</div>` : ''}
+        ${Array.isArray(evo.reparaciones) && evo.reparaciones.length > 0 ? `<div><strong>Dientes Reparados:</strong> ${evo.reparaciones.join(', ')}</div>` : ''}
+        ${(evo.alambreSuperior || (Array.isArray(evo.accesoriosSuperior) && evo.accesoriosSuperior.length > 0)) ? `
+          <div><strong>Arcada Superior:</strong> ${evo.alambreSuperior ? `Alambre: ${evo.alambreSuperior}` : ''} ${Array.isArray(evo.accesoriosSuperior) && evo.accesoriosSuperior.length > 0 ? `· Accesorios: ${evo.accesoriosSuperior.join(', ')}` : ''}</div>
+        ` : ''}
+        ${(evo.alambreInferior || (Array.isArray(evo.accesoriosInferior) && evo.accesoriosInferior.length > 0)) ? `
+          <div><strong>Arcada Inferior:</strong> ${evo.alambreInferior ? `Alambre: ${evo.alambreInferior}` : ''} ${Array.isArray(evo.accesoriosInferior) && evo.accesoriosInferior.length > 0 ? `· Accesorios: ${evo.accesoriosInferior.join(', ')}` : ''}</div>
+        ` : ''}
+      </div>
+    ` : ''}
+
     ${(evo.transcribe || evo.transcribedBy) ? `
       <div style="font-size: 8.5px; font-weight: bold; color: #475569; margin-top: 4px; margin-bottom: 6px; text-transform: uppercase;">
         Transcribe: <span style="color: #0f172a; font-weight: 800;">${evo.transcribe || evo.transcribedBy}</span>
@@ -394,6 +410,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
 function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onPrint, patientName, planItemsLookup }) {
     const isRemission = evo.type === 'remission';
     const isNota = evo.type === 'nota';
+    const isOrtho = evo.type === 'evolucion_ortodoncia' || evo.type === 'ortodoncia' || evo.isOrthodontic || (evo.treatment && evo.treatment.toLowerCase().includes('ortodoncia'));
     const hasRealizedItems = Object.values(evo.plantillaItems || {}).some(
         item => item?.realizado === true
     );
@@ -421,12 +438,16 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
         ? 'text-amber-700 bg-amber-50 border-amber-200'
         : isNota
         ? 'text-purple-700 bg-purple-50 border-purple-200'
+        : isOrtho
+        ? 'text-[#487321] bg-[#f0f9e8] border-[#8dc63f] font-bold'
         : 'text-[#5a8a2e] bg-[#f0f9e8] border-[#c5e4a0]';
 
     const badgeLabel = isRemission 
         ? 'Remisión' 
         : isNota 
         ? 'Nota Aclaratoria' 
+        : isOrtho
+        ? 'Evolución Ortodoncia'
         : 'Evolución';
 
     return (
@@ -545,6 +566,49 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                             {m.medicamento} {m.dosis ? `(${m.dosis})` : ''} {m.via ? `· Vía ${m.via}` : ''} {m.hora ? `(${m.hora})` : ''}
                         </span>
                     ))}
+                </div>
+            )}
+
+            {/* Detalles de Ortodoncia (1:1 OralDrive) */}
+            {isOrtho && (
+                <div className="bg-[#fafff5] border border-[#d9f0b8] rounded-xl p-3 mb-2.5 space-y-1.5 text-[10px]">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {evo.higieneOral && (
+                            <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-[#c5e4a0]">
+                                Higiene Oral: <span className="font-black text-[#487321]">{evo.higieneOral}</span>
+                            </span>
+                        )}
+                        {(evo.horaInicio || evo.horaFin) && (
+                            <span className="font-medium text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                Horario: {evo.horaInicio || '—'} a {evo.horaFin || '—'}
+                            </span>
+                        )}
+                        {Array.isArray(evo.reparaciones) && evo.reparaciones.length > 0 && (
+                            <span className="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                Reparación Dientes: <span className="font-extrabold text-amber-700">{evo.reparaciones.join(', ')}</span>
+                            </span>
+                        )}
+                    </div>
+
+                    {(evo.alambreSuperior || (Array.isArray(evo.accesoriosSuperior) && evo.accesoriosSuperior.length > 0)) && (
+                        <div className="text-slate-700 leading-tight">
+                            <span className="font-extrabold text-slate-900">Arcada Superior:</span>{' '}
+                            {evo.alambreSuperior && <span className="font-semibold text-slate-800">Alambre {evo.alambreSuperior}. </span>}
+                            {Array.isArray(evo.accesoriosSuperior) && evo.accesoriosSuperior.length > 0 && (
+                                <span className="text-slate-600">Accesorios: {evo.accesoriosSuperior.join(', ')}</span>
+                            )}
+                        </div>
+                    )}
+
+                    {(evo.alambreInferior || (Array.isArray(evo.accesoriosInferior) && evo.accesoriosInferior.length > 0)) && (
+                        <div className="text-slate-700 leading-tight">
+                            <span className="font-extrabold text-slate-900">Arcada Inferior:</span>{' '}
+                            {evo.alambreInferior && <span className="font-semibold text-slate-800">Alambre {evo.alambreInferior}. </span>}
+                            {Array.isArray(evo.accesoriosInferior) && evo.accesoriosInferior.length > 0 && (
+                                <span className="text-slate-600">Accesorios: {evo.accesoriosInferior.join(', ')}</span>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1293,14 +1357,29 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
         const q = searchTerm.toLowerCase();
         const lookup = evo.planId ? (planItemsLookup[evo.planId] || {}) : {};
         const procedures = getSelectedProcedures(evo.plantillaItems, lookup).map(p => p.desc).join(' ');
-        const typeLabel = evo.type === 'remission' ? 'remisión' : evo.type === 'nota' ? 'nota aclaratoria' : 'evolución';
+        const typeLabel = evo.type === 'remission' 
+            ? 'remisión' 
+            : evo.type === 'nota' 
+            ? 'nota aclaratoria' 
+            : (evo.type === 'evolucion_ortodoncia' || evo.isOrthodontic) 
+            ? 'evolución ortodoncia' 
+            : 'evolución';
+        const orthoDetails = [
+            evo.higieneOral,
+            evo.alambreSuperior,
+            evo.alambreInferior,
+            ...(Array.isArray(evo.accesoriosSuperior) ? evo.accesoriosSuperior : []),
+            ...(Array.isArray(evo.accesoriosInferior) ? evo.accesoriosInferior : [])
+        ].filter(Boolean).join(' ').toLowerCase();
+
         return (
             (evo.description || evo.comentario || '').toLowerCase().includes(q) ||
             (evo.profesional || '').toLowerCase().includes(q) ||
             (evo.doctorQuienRecibeName || '').toLowerCase().includes(q) ||
             (evo.treatment || '').toLowerCase().includes(q) ||
             typeLabel.includes(q) ||
-            procedures.toLowerCase().includes(q)
+            procedures.toLowerCase().includes(q) ||
+            orthoDetails.includes(q)
         );
     });
 
