@@ -108,8 +108,9 @@ export default function CircularSurfaceSelector({ activeToothId, toothData = {},
                     )}
                     {gen === 'pontico' && (
                         <g>
-                            <circle cx="50" cy="50" r="46" fill="#FACC15" fillOpacity="0.45" stroke="#EAB308" strokeWidth="3.5" />
-                            <rect x="18" y="36" width="64" height="28" rx="5" fill="#FEF08A" fillOpacity="0.8" stroke="#CA8A04" strokeWidth="2.5" />
+                            <circle cx="50" cy="50" r="46" fill="#FACC15" fillOpacity="0.35" stroke="#EAB308" strokeWidth="3.5" />
+                            <line x1="16" y1="42" x2="84" y2="42" stroke="#CA8A04" strokeWidth="3.5" strokeLinecap="round" />
+                            <line x1="16" y1="58" x2="84" y2="58" stroke="#CA8A04" strokeWidth="3.5" strokeLinecap="round" />
                         </g>
                     )}
                     {(gen.includes('corona') || gen.includes('provisional')) && (

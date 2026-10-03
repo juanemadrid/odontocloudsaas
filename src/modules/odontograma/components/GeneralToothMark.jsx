@@ -91,8 +91,8 @@ function GeneralSymbol({ mode, color, alert, kind }) {
     if (mode === 'pontico') {
         return (
             <g data-symbol="pontico">
-                <rect x={left} y="8" width={width} height="40" rx="6" fill="#FDE047" fillOpacity="0.4" stroke="#EAB308" strokeWidth="3" {...common} />
-                <line x1={left - 4} y1="28" x2={right + 4} y2="28" stroke="#CA8A04" strokeWidth="3.5" {...common} />
+                <line x1="6" y1="18" x2="94" y2="18" stroke="#EAB308" strokeWidth="4" strokeLinecap="round" {...common} />
+                <line x1="6" y1="26" x2="94" y2="26" stroke="#EAB308" strokeWidth="4" strokeLinecap="round" {...common} />
             </g>
         );
     }
