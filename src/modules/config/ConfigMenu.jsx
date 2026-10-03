@@ -16,6 +16,7 @@ const CONFIG_ITEMS = [
     { label: "Lista de precios", slug: "listas-precios", icon: FiList, perm: "Lista precios" },
     { label: "Planes", slug: "planes", icon: FiLayout, perm: "Planes" },
     { label: "Consecutivos", slug: "consecutivos", icon: FiList, perm: "Consecutivos" },
+    { label: "Convenios", slug: "convenios", icon: FiCheckSquare, perm: "Convenios" },
     { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText, perm: "Facturación electrónica" },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin, perm: "Sucursales" },
     { label: "Bancos", slug: "bancos", icon: FiCreditCard, perm: "Bancos" },
@@ -41,6 +42,11 @@ export default function ConfigMenu() {
     const hasFE = hasElectronicInvoicingAccess(userProfile);
 
     const visibleItems = CONFIG_ITEMS.filter(it => {
+        if (it.slug === "convenios") {
+            return can("Configuración", "Convenios", "consultar") || 
+                   can("Administración", "Convenios", "consultar") ||
+                   can("Configuración", "Gestion Configuración", "consultar");
+        }
         if (it.slug === "facturacion-electronica") {
             return can("Configuración", "Facturación electrónica", "consultar") || 
                    can("Configuración", "Gestion Configuración", "consultar") ||

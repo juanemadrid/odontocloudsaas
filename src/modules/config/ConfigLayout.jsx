@@ -15,8 +15,7 @@ const MENU_ITEMS = [
     { label: "Lista de precios", slug: "listas-precios", icon: FiList },
     { label: "Planes", slug: "planes", icon: FiLayout },
     { label: "Consecutivos", slug: "consecutivos", icon: FiHash },
-    { label: "Almacenes", slug: "almacenes", icon: FiPackage },
-    { label: "Categorías inventario", slug: "categorias-inventario", icon: FiTag },
+    { label: "Convenios", slug: "convenios", icon: FiCheckSquare },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin },
     { label: "Bancos", slug: "bancos", icon: FiDollarSign },
     { label: "Métodos de pago", slug: "metodos-pago", icon: FiCreditCard },
@@ -45,8 +44,7 @@ const CONFIG_SLUG_PERMISSIONS = {
     "listas-precios": "Lista precios",
     "planes": "Planes",
     "consecutivos": "Consecutivos",
-    "almacenes": "Recursos físicos",
-    "categorias-inventario": "Gestion Configuración",
+    "convenios": "Convenios",
     "sucursales": "Sucursales",
     "bancos": "Bancos",
     "metodos-pago": "Medios pago",
@@ -80,6 +78,11 @@ export default function ConfigLayout({ children }) {
             if (!permKey) return true;
             if (it.slug === "editor-web") {
                 return can("Administración", "Editor Web", "consultar") || can("Configuración", "Gestion Configuración", "consultar");
+            }
+            if (it.slug === "convenios") {
+                return can("Configuración", "Convenios", "consultar") || 
+                       can("Administración", "Convenios", "consultar") ||
+                       can("Configuración", "Gestion Configuración", "consultar");
             }
             if (it.slug === "facturacion-electronica") {
                 return can("Configuración", "Facturación electrónica", "consultar") || 

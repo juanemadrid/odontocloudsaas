@@ -19,6 +19,7 @@ import EmpresaListaPrecios from "./EmpresaListaPrecios";
 import EmpresaMetodosPago from "./EmpresaMetodosPago";
 import EmpresaAlmacenes from "./EmpresaAlmacenes";
 import ConfigConsecutivos from "./ConfigConsecutivos";
+import Convenios from "../administracion/views/Convenios";
 import EmpresaPlanes from "./EmpresaPlanes";
 import EmpresaUsuarios from "./EmpresaUsuarios";
 import EmpresaCategorias from "./EmpresaCategorias"; // NEW COMPONENT
@@ -96,6 +97,8 @@ export default function ConfigRouter() {
                 return <EmpresaPlanes />;
             case "consecutivos":
                 return <ConfigConsecutivos />;
+            case "convenios":
+                return <Convenios />;
             case "editor-web": // New Route
                 return <WebsiteEditor />;
             case "almacenes":
