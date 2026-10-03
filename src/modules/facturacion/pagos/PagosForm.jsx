@@ -18,6 +18,18 @@ const fmt = (n) =>
     maximumFractionDigits: 0,
   });
 
+const formatNumberWithDots = (val) => {
+    if (val === undefined || val === null || val === "") return "";
+    const clean = String(val).replace(/\D/g, "");
+    if (!clean) return "";
+    return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
+const parseRawNumber = (val) => {
+    if (val === undefined || val === null) return "";
+    return String(val).replace(/\D/g, "");
+};
+
 export default function PagosForm({ onCancel, onSuccess }) {
     const { user, userProfile } = useAuth();
     const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id || "";
@@ -103,7 +115,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
         concepto: "",
         descripcion: "",
         cantidad: 1,
-        precioUnitario: 0,
+        precioUnitario: "",
         impuesto: ""
     });
 
@@ -396,7 +408,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
             concepto: "",
             descripcion: "",
             cantidad: 1,
-            precioUnitario: 0,
+            precioUnitario: "",
             impuesto: ""
         });
         setShowNewConceptoModal(true);
@@ -408,7 +420,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
             toast.error("El nombre del concepto es obligatorio");
             return;
         }
-        const pu = parseFloat(newConceptoData.precioUnitario) || 0;
+        const pu = parseFloat(String(newConceptoData.precioUnitario).replace(/\D/g, "")) || 0;
         const cant = parseFloat(newConceptoData.cantidad) || 1;
         const total = pu * cant;
 
@@ -430,7 +442,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
             concepto: "",
             descripcion: "",
             cantidad: 1,
-            precioUnitario: 0,
+            precioUnitario: "",
             impuesto: ""
         });
         toast.success("Concepto agregado");
@@ -608,7 +620,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
     const handleSaveAsociarFacturaModal = (e) => {
         e.preventDefault();
-        const valPagar = parseFloat(asociarFacturaData.valorAPagar) || 0;
+        const valPagar = parseFloat(String(asociarFacturaData.valorAPagar).replace(/\D/g, "")) || 0;
         if (valPagar <= 0) {
             toast.error("El valor a pagar debe ser mayor a 0");
             return;
@@ -1599,16 +1611,18 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                     Precio unitario <span className="text-rose-500">*</span>
                                 </label>
                                 <div className="md:col-span-8">
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="1000"
-                                        required
-                                        value={newConceptoData.precioUnitario || ""}
-                                        onChange={(e) => setNewConceptoData({ ...newConceptoData, precioUnitario: e.target.value })}
-                                        placeholder="$0"
-                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                                    />
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 select-none">$</span>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            required
+                                            value={formatNumberWithDots(newConceptoData.precioUnitario)}
+                                            onChange={(e) => setNewConceptoData({ ...newConceptoData, precioUnitario: parseRawNumber(e.target.value) })}
+                                            placeholder="0"
+                                            className="w-full h-8 pl-7 pr-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -1748,16 +1762,18 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                     Valor a pagar*
                                 </label>
                                 <div className="md:col-span-8">
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="1000"
-                                        required
-                                        value={asociarFacturaData.valorAPagar || ""}
-                                        onChange={(e) => setAsociarFacturaData({ ...asociarFacturaData, valorAPagar: e.target.value })}
-                                        placeholder="$0"
-                                        className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                                    />
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 select-none">$</span>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            required
+                                            value={formatNumberWithDots(asociarFacturaData.valorAPagar)}
+                                            onChange={(e) => setAsociarFacturaData({ ...asociarFacturaData, valorAPagar: parseRawNumber(e.target.value) })}
+                                            placeholder="0"
+                                            className="w-full h-8 pl-7 pr-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
