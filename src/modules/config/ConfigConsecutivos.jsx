@@ -151,9 +151,6 @@ export default function ConfigConsecutivos() {
                 </div>
 
                 <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200/60">
-                    <span className="text-[11px] font-medium text-slate-500">
-                        Próximo a emitir: <strong className="text-slate-800 font-bold">#{val + 1}</strong>
-                    </span>
                     <div className="relative w-32">
                         <FiHash className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs" />
                         <input
@@ -161,9 +158,12 @@ export default function ConfigConsecutivos() {
                             min="0"
                             value={formData[field]}
                             onChange={e => handleNumberChange(field, e)}
-                            className="w-full h-8 pl-7 pr-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 text-right outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all"
+                            className="w-full h-8 pl-7 pr-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 text-left outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all"
                         />
                     </div>
+                    <span className="text-[11px] font-medium text-slate-500 text-right">
+                        Próximo a emitir: <strong className="text-slate-800 font-bold">#{val + 1}</strong>
+                    </span>
                 </div>
             </div>
         );
