@@ -186,6 +186,7 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
   guide('catalogos', 'Configuración', 'Catálogos financieros y contables', 'banco metodo pago condicion pago impuesto consecutivo catalogo cuenta', 'src/modules/config/ConfigMenu.jsx', [
     'Abre Configuración y selecciona el catálogo correspondiente: Bancos, Métodos de pago, Condiciones de pago, Impuestos, Consecutivos o Catálogo de cuentas.',
     'Consulta los registros existentes y revisa los campos antes de guardar modificaciones.',
+    'Guarda los cambios y verifica que los nuevos valores queden disponibles en los módulos de facturación y tesorería.',
   ]),
   guide('formularios', 'Configuración', 'Formularios y plantillas clínicas', 'formulario campo plantilla consentimiento especialidad parametro carga', 'src/modules/config/ConfigRouter.jsx', [
     'En Configuración, abre Formulario de pacientes para revisar los campos de registro.',

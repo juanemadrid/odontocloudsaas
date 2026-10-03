@@ -15,7 +15,6 @@ const MENU_ITEMS = [
     { label: "Lista de precios", slug: "listas-precios", icon: FiList },
     { label: "Planes", slug: "planes", icon: FiLayout },
     { label: "Consecutivos", slug: "consecutivos", icon: FiHash },
-    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText },
     { label: "Almacenes", slug: "almacenes", icon: FiPackage },
     { label: "Categorías inventario", slug: "categorias-inventario", icon: FiTag },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin },
@@ -32,6 +31,7 @@ const MENU_ITEMS = [
     { label: "Cargas", slug: "cargas", icon: FiUploadCloud },
     { label: "Impuestos", slug: "impuestos", icon: FiPercent },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiBook },
+    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText },
     { label: "Suscripción", slug: "suscripcion", icon: FiStar },
 ];
 
