@@ -15,6 +15,7 @@ const MENU_ITEMS = [
     { label: "Lista de precios", slug: "listas-precios", icon: FiList },
     { label: "Planes", slug: "planes", icon: FiLayout },
     { label: "Consecutivos", slug: "consecutivos", icon: FiHash },
+    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText },
     { label: "Almacenes", slug: "almacenes", icon: FiPackage },
     { label: "Categorías inventario", slug: "categorias-inventario", icon: FiTag },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin },
@@ -31,7 +32,6 @@ const MENU_ITEMS = [
     { label: "Cargas", slug: "cargas", icon: FiUploadCloud },
     { label: "Impuestos", slug: "impuestos", icon: FiPercent },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiBook },
-    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText },
     { label: "Suscripción", slug: "suscripcion", icon: FiStar },
 ];
 
@@ -76,11 +76,15 @@ export default function ConfigLayout({ children }) {
 
     const activeMenuItems = React.useMemo(() => {
         const filtered = MENU_ITEMS.filter(it => {
-            if (it.slug === "facturacion-electronica" && !hasFE) return false;
             const permKey = CONFIG_SLUG_PERMISSIONS[it.slug];
             if (!permKey) return true;
             if (it.slug === "editor-web") {
                 return can("Administración", "Editor Web", "consultar") || can("Configuración", "Gestion Configuración", "consultar");
+            }
+            if (it.slug === "facturacion-electronica") {
+                return can("Configuración", "Facturación electrónica", "consultar") || 
+                       can("Configuración", "Gestion Configuración", "consultar") ||
+                       can("Configuración", "Consecutivos", "consultar");
             }
             return can("Configuración", permKey, "consultar");
         });

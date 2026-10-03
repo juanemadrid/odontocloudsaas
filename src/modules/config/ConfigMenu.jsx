@@ -16,6 +16,7 @@ const CONFIG_ITEMS = [
     { label: "Lista de precios", slug: "listas-precios", icon: FiList, perm: "Lista precios" },
     { label: "Planes", slug: "planes", icon: FiLayout, perm: "Planes" },
     { label: "Consecutivos", slug: "consecutivos", icon: FiList, perm: "Consecutivos" },
+    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText, perm: "Facturación electrónica" },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin, perm: "Sucursales" },
     { label: "Bancos", slug: "bancos", icon: FiCreditCard, perm: "Bancos" },
     { label: "Métodos de pago", slug: "metodos-pago", icon: FiCreditCard, perm: "Medios pago" },
@@ -30,7 +31,6 @@ const CONFIG_ITEMS = [
     { label: "Cargas", slug: "cargas", icon: FiSettings, perm: "Cargas" },
     { label: "Impuestos", slug: "impuestos", icon: FiCreditCard, perm: "Impuesto" },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiList, perm: "Catálogo de cuentas" },
-    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText, requiresFE: true, perm: "Facturación electrónica" },
     { label: "Suscripción", slug: "suscripcion", icon: FiAward, perm: "Suscripcion" },
 ];
 
@@ -41,7 +41,11 @@ export default function ConfigMenu() {
     const hasFE = hasElectronicInvoicingAccess(userProfile);
 
     const visibleItems = CONFIG_ITEMS.filter(it => {
-        if (it.requiresFE && !hasFE) return false;
+        if (it.slug === "facturacion-electronica") {
+            return can("Configuración", "Facturación electrónica", "consultar") || 
+                   can("Configuración", "Gestion Configuración", "consultar") ||
+                   can("Configuración", "Consecutivos", "consultar");
+        }
         if (it.perm && !can("Configuración", it.perm, "consultar")) return false;
         return true;
     });

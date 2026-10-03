@@ -49,6 +49,9 @@ const EMPTY_DIAN_DATA = {
     contract_mode: "without_contract",
     contract_number: "",
     without_contract_code: "05",
+    // Modo de generación de facturas electrónicas
+    modo_generacion: "manual", // 'manual' | 'automatico'
+    emitir_inmediatamente_dian: false,
 };
 
 export default function ConfigFacturacionElectronica() {
@@ -86,6 +89,8 @@ export default function ConfigFacturacionElectronica() {
                 ...saved,
                 provider_code: saved.provider_code || repsDefault,
                 numbering_range_id: saved.numbering_range_id || quotaData.factusNumberingRangeId || "",
+                modo_generacion: saved.modo_generacion || "manual",
+                emitir_inmediatamente_dian: Boolean(saved.emitir_inmediatamente_dian),
             };
 
             // Si hay un rango seleccionado en Factus, sincronizar metadatos autoritativos
@@ -639,6 +644,119 @@ export default function ConfigFacturacionElectronica() {
                             </select>
                         )}
                     </div>
+                </div>
+            </div>
+
+            {/* SECCIÓN 3: MODO DE GENERACIÓN DE FACTURAS ELECTRÓNICAS */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                            <FiCheckCircle size={15} />
+                        </div>
+                        <div>
+                            <h2 className="text-[13px] font-bold text-slate-800 uppercase tracking-tight">
+                                Modo de Generación de Facturas Electrónicas — <span className="text-emerald-600">{currentSucName}</span>
+                            </h2>
+                            <p className="text-[11px] text-slate-500 font-medium">
+                                Define si las facturas de venta oficiales se crean bajo demanda manual o se automatizan por atención clínica y pago.
+                            </p>
+                        </div>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                        dianData.modo_generacion === "automatico" 
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                            : "bg-slate-50 text-slate-600 border-slate-200"
+                    }`}>
+                        {dianData.modo_generacion === "automatico" ? "Automático (Realizado + Pagado)" : "Manual (Bajo demanda)"}
+                    </span>
+                </div>
+
+                <div className="space-y-3">
+                    {/* Selector de Modo: Manual vs Automático */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Opción 1: Manual */}
+                        <label 
+                            className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                dianData.modo_generacion !== "automatico"
+                                    ? "bg-blue-50/40 border-blue-300 ring-1 ring-blue-300"
+                                    : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                            }`}
+                        >
+                            <input 
+                                type="radio" 
+                                name="modo_generacion"
+                                value="manual"
+                                checked={dianData.modo_generacion !== "automatico"}
+                                onChange={() => setDianData(p => ({ ...p, modo_generacion: "manual" }))}
+                                className="mt-0.5 w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <div className="space-y-0.5">
+                                <span className="text-[12px] font-bold text-slate-800 block">
+                                    Modo Manual (Bajo demanda)
+                                </span>
+                                <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Recepción o facturación genera y emite cada factura manualmente desde el plan de tratamiento o el módulo de facturación cuando lo considere necesario.
+                                </p>
+                            </div>
+                        </label>
+
+                        {/* Opción 2: Automático */}
+                        <label 
+                            className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                                dianData.modo_generacion === "automatico"
+                                    ? "bg-emerald-50/50 border-emerald-300 ring-1 ring-emerald-300"
+                                    : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                            }`}
+                        >
+                            <input 
+                                type="radio" 
+                                name="modo_generacion"
+                                value="automatico"
+                                checked={dianData.modo_generacion === "automatico"}
+                                onChange={() => setDianData(p => ({ ...p, modo_generacion: "automatico" }))}
+                                className="mt-0.5 w-4 h-4 text-emerald-600 border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <div className="space-y-0.5">
+                                <span className="text-[12px] font-bold text-slate-800 block">
+                                    Modo Automático (Realizado + Pagado)
+                                </span>
+                                <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    El sistema genera la factura automáticamente cuando el doctor marca los procedimientos como <strong>Realizados</strong> y el paciente ha <strong>cancelado el valor en caja</strong>.
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+
+                    {/* Sub-opción condicional: Emitir inmediatamente a la DIAN vs Borrador (0 folios) */}
+                    {dianData.modo_generacion === "automatico" && (
+                        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 animate-in fade-in duration-200">
+                            <label className="flex items-start gap-2.5 cursor-pointer">
+                                <input 
+                                    type="checkbox"
+                                    checked={Boolean(dianData.emitir_inmediatamente_dian)}
+                                    onChange={e => setDianData(p => ({ ...p, emitir_inmediatamente_dian: e.target.checked }))}
+                                    className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                    <span className="text-[12px] font-bold text-slate-800">
+                                        Emitir inmediatamente ante la DIAN
+                                    </span>
+                                    <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
+                                        {dianData.emitir_inmediatamente_dian ? (
+                                            <span className="text-emerald-700 font-semibold">
+                                                ✓ La factura se firmará y transmitirá a la DIAN en tiempo real (consume 1 folio de tu cuota de inmediato).
+                                            </span>
+                                        ) : (
+                                            <span className="text-slate-600">
+                                                (Recomendado) <strong>Desmarcado:</strong> Se genera en estado <strong>Borrador lista para emitir (0 folios consumidos)</strong>. Podrás verificarla visualmente y emitirla formalmente a la DIAN con un solo clic.
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+                    )}
                 </div>
             </div>
 

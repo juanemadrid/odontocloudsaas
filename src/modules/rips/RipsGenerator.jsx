@@ -550,11 +550,9 @@ export default function RipsGenerator() {
                 };
 
                 const colecciones = [
-                    { nombre: "recibos_caja", tipoDoc: "Recibo de Caja" },
-                    { nombre: "facturas", tipoDoc: "Factura" },
                     { nombre: "facturas_electronicas", tipoDoc: "Factura Electrónica" },
                     { nombre: "facturas_venta", tipoDoc: "Factura de Venta" },
-                    { nombre: "pagos", tipoDoc: "Pago" },
+                    { nombre: "facturas", tipoDoc: "Factura" },
                 ];
 
                 const snapshots = await Promise.all(
@@ -785,11 +783,9 @@ export default function RipsGenerator() {
                 };
 
                 const colecciones = [
-                    { nombre: "recibos_caja",         tipoDoc: "Recibo de Caja" },
-                    { nombre: "facturas",              tipoDoc: "Factura" },
                     { nombre: "facturas_electronicas", tipoDoc: "Factura Electrónica" },
                     { nombre: "facturas_venta",        tipoDoc: "Factura de Venta" },
-                    { nombre: "pagos",                 tipoDoc: "Pago" },
+                    { nombre: "facturas",              tipoDoc: "Factura" },
                 ];
 
                 const snapshots = await Promise.all(

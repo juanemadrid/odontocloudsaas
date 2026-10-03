@@ -57,7 +57,7 @@ export const hasElectronicInvoicingAccess = (userProfileOrTenant) => {
     // Check if userProfile is passed or tenant directly
     const role = (userProfileOrTenant.role || userProfileOrTenant.rol || "").toString().toLowerCase();
     const email = (userProfileOrTenant.email || "").toString().toLowerCase();
-    if (email === "madridsystem@outlook.es" || role === "superadmin") {
+    if (email === "madridsystem@outlook.es" || role === "superadmin" || role === "admin" || role === "administrador") {
         return true;
     }
 
