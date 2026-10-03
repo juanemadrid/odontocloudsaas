@@ -274,8 +274,15 @@ function AnatomicalZones({ data, onClick, zoneType, clipId, numero }) {
 
 function CrownSpriteMark({ data, cfg, bgSizeXPct, bgPosXPct, isUpper }) {
     const treatmentId = data?.general?.id;
-    if (treatmentId !== 'corona_buena' && treatmentId !== 'corona_des') return null;
-    const color = treatmentId === 'corona_buena' ? '#2563EB' : '#EF4444';
+    const isCrownLike = treatmentId && (
+        treatmentId.includes('corona') || 
+        treatmentId.includes('carilla') || 
+        treatmentId.includes('provisional') || 
+        treatmentId === 'pontico'
+    );
+    if (!isCrownLike) return null;
+    const isMalo = treatmentId.includes('des') || treatmentId.includes('malo');
+    const color = isMalo ? '#EF4444' : '#2563EB';
     const crownClip = isUpper
         ? 'polygon(0 57%, 100% 57%, 100% 100%, 0 100%)'
         : 'polygon(0 0, 100% 0, 100% 43%, 0 43%)';

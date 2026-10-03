@@ -88,6 +88,32 @@ function GeneralSymbol({ mode, color, alert, kind }) {
         );
     }
 
+    if (mode === 'apical' || mode === 'lesion_apical') {
+        return (
+            <g data-symbol="apical">
+                <circle cx="50" cy="86" r="9" fill={color} fillOpacity="0.85" stroke="white" strokeWidth="2" {...common} />
+            </g>
+        );
+    }
+
+    if (mode === 'root' || mode === 'resto_radicular') {
+        return (
+            <g data-symbol="root">
+                <line x1="25" y1="20" x2="75" y2="80" stroke="white" strokeWidth="7" opacity="0.9" {...common} />
+                <line x1="25" y1="20" x2="75" y2="80" stroke={color} strokeWidth="4" {...common} />
+            </g>
+        );
+    }
+
+    if (mode === 'arrow' || mode === 'outline') {
+        return (
+            <g data-symbol="arrow">
+                <line x1="50" y1="80" x2="50" y2="20" stroke={color} strokeWidth="4" {...common} />
+                <polyline points="38,34 50,18 62,34" fill="none" stroke={color} strokeWidth="4" {...common} />
+            </g>
+        );
+    }
+
     if (mode === 'absent' || mode === 'extraction') {
         return (
             <g data-symbol={mode}>
@@ -106,7 +132,6 @@ export default function GeneralToothMark({ treatmentId, toothNumber, isUpper }) 
     if (!treatmentId) return null;
     const visual = getTreatmentVisual(treatmentId);
     if (visual.scope !== 'general') return null;
-    if (visual.mode === 'crown') return null;
     const kind = getToothKind(toothNumber);
 
     return (

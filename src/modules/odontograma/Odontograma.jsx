@@ -282,7 +282,7 @@ export default function Odontograma({ embeddedPatient }) {
             const cur = { ...(prev[dienteId] || {}) };
             
             if (selectedToolId === "borrador") {
-                if (targetZona === "Completo" || isGeneralTool) {
+                if (targetZona === "Completo" || isGeneralTool || surfaceFilter === "todas") {
                     return { ...prev, [dienteId]: {} };
                 }
                 const newToothData = { ...cur };
@@ -300,6 +300,20 @@ export default function Odontograma({ embeddedPatient }) {
                 };
             }
 
+            if (surfaceFilter === "todas") {
+                return {
+                    ...prev,
+                    [dienteId]: {
+                        ...cur,
+                        top: { id: tool.id, color: tool.color },
+                        center: { id: tool.id, color: tool.color },
+                        bottom: { id: tool.id, color: tool.color },
+                        left: { id: tool.id, color: tool.color },
+                        right: { id: tool.id, color: tool.color },
+                    }
+                };
+            }
+
             return { 
                 ...prev, 
                 [dienteId]: { 
@@ -310,27 +324,33 @@ export default function Odontograma({ embeddedPatient }) {
         });
 
         if (selectedToolId === "borrador") {
+            const isFullClear = targetZona === "Completo" || isGeneralTool || surfaceFilter === "todas";
             setPlanTratamiento(prev => prev.filter(item => {
                 if (String(item.diente) !== String(dienteId)) return true;
-                return targetZona !== "Completo" && item.zona !== targetZona;
+                return !isFullClear && item.zona !== targetZona;
             }));
             return;
         }
 
         const label = tool.label;
-        const zonaLabel = isGeneralTool ? "Pieza Completa" : getClinicalZonaLabel(dienteId, targetZona);
+        const isAllSurfaces = !isGeneralTool && surfaceFilter === "todas";
+        const zonaLabel = isGeneralTool 
+            ? "Pieza Completa" 
+            : isAllSurfaces 
+                ? "Todas las superficies" 
+                : getClinicalZonaLabel(dienteId, targetZona);
         const fullDescription = isGeneralTool ? label : `${label} - ${zonaLabel}`;
-        const planZone = (isGeneralTool || targetZona === "Completo") ? "Completo" : targetZona;
+        const planZone = (isGeneralTool || isAllSurfaces || targetZona === "Completo") ? "Completo" : targetZona;
         const nextItem = {
-                diente: dienteId, 
-                zona: planZone,
-                zonaLabel: zonaLabel, 
-                tratamiento: fullDescription, 
-                color: tool.color, 
-                estado: "Planificado", 
-                fechaISO: new Date().toISOString(),
-                toolId: tool.id
-            };
+            diente: dienteId, 
+            zona: planZone,
+            zonaLabel: zonaLabel, 
+            tratamiento: fullDescription, 
+            color: tool.color, 
+            estado: "Planificado", 
+            fechaISO: new Date().toISOString(),
+            toolId: tool.id
+        };
 
         setPlanTratamiento(prev => {
             const existingIndex = prev.findIndex(item =>
@@ -357,14 +377,11 @@ export default function Odontograma({ embeddedPatient }) {
             setReadOnlyAlert(true);
             return;
         }
-        setSelectedToolId(prev => {
-            const next = prev === toolId ? null : toolId;
-            if (next && GENERAL_TOOLS.includes(next)) {
-                setSurfaceFilter("todas");
-                setActiveToothId(null);
-            }
-            return next;
-        });
+        setSelectedToolId(toolId);
+        if (toolId && GENERAL_TOOLS.includes(toolId)) {
+            setSurfaceFilter("todas");
+            setActiveToothId(null);
+        }
     };
 
     const handleSave = async (finalizar = false) => {
