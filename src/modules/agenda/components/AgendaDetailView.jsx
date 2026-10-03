@@ -15,6 +15,7 @@ import {
     FiX
 } from 'react-icons/fi';
 import { useAuth } from "../../../context/AuthContext";
+import { usePermissions } from "../../../hooks/usePermissions";
 import supabase from "../../../lib/supabaseClient";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -36,6 +37,7 @@ const CANCELLED_STATUSES = new Set(["CANCELADA", "CANCELADO", "CANCELLED", "NO A
 
 export default function AgendaDetailView({ doctors = [], branches = [], chairs = [], specialties = [] }) {
     const { userProfile } = useAuth();
+    const { can } = usePermissions();
     const inquilino = userProfile?.inquilino;
 
     // Calcular inicio y fin de la semana actual por defecto
@@ -532,13 +534,15 @@ export default function AgendaDetailView({ doctors = [], branches = [], chairs =
                     </p>
                 </div>
 
-                <button
-                    onClick={handleExportExcel}
-                    disabled={loading || results.length === 0}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-[#00a3e0] hover:bg-[#008ec4] text-white rounded-[14px] font-black text-[11px] uppercase tracking-wider transition-all shadow-md shadow-[#00a3e0]/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    <FiDownload size={15} /> Generar reporte en excel
-                </button>
+                {can("Agenda", "Exportar a excel", "consultar") && (
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={loading || results.length === 0}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-[#00a3e0] hover:bg-[#008ec4] text-white rounded-[14px] font-black text-[11px] uppercase tracking-wider transition-all shadow-md shadow-[#00a3e0]/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <FiDownload size={15} /> Generar reporte en excel
+                    </button>
+                )}
             </div>
 
             {/* ─── 2. FILTER CARD (OralDrive Design Style) ─── */}

@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
 import { useAuth } from "../../context/AuthContext";
+import { usePermissions } from "../../hooks/usePermissions";
 import { hasElectronicInvoicingAccess } from "../../utils/subscriptionHelper";
 import {
     FiSettings, FiUsers, FiMapPin, FiAward, FiCreditCard,
@@ -9,36 +10,41 @@ import {
 } from "react-icons/fi";
 
 const CONFIG_ITEMS = [
-    { label: "Asistente de Configuración", slug: "asistente", icon: FiCheckSquare, isPrimary: true },
-    { label: "Datos Básicos", slug: "datos-basicos", icon: FiSettings },
-    { label: "Logo", slug: "datos-basicos", icon: FiSettings }, // Mapped to same for now or separate if needed
-    { label: "Lista de precios", slug: "listas-precios", icon: FiList },
-    { label: "Planes", slug: "planes", icon: FiLayout },
-    { label: "Consecutivos", slug: "consecutivos", icon: FiList },
-    { label: "Sucursales", slug: "sucursales", icon: FiMapPin },
-    { label: "Bancos", slug: "bancos", icon: FiCreditCard },
-    { label: "Métodos de pago", slug: "metodos-pago", icon: FiCreditCard },
-    { label: "Formulario de pacientes", slug: "formulario-pacientes", icon: FiFileText },
-    { label: "Especialidades", slug: "especialidades", icon: FiAward },
-    { label: "Perfiles", slug: "perfiles", icon: FiShield },
-    { label: "Usuarios", slug: "usuarios", icon: FiUsers },
-    { label: "Condiciones de pago", slug: "condiciones-pago", icon: FiCreditCard },
-    { label: "Parámetros", slug: "parametros", icon: FiSettings },
-    { label: "Recursos físicos", slug: "recursos-fisicos", icon: FiServer },
-    { label: "Plantillas Doc. Clínicos", slug: "plantillas-clinicas", icon: FiFileText },
-    { label: "Cargas", slug: "cargas", icon: FiSettings },
-    { label: "Impuestos", slug: "impuestos", icon: FiCreditCard },
-    { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiList },
-    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText, requiresFE: true },
-    { label: "Suscripción", slug: "suscripcion", icon: FiAward },
+    { label: "Asistente de Configuración", slug: "asistente", icon: FiCheckSquare, isPrimary: true, perm: "Gestion Configuración" },
+    { label: "Datos Básicos", slug: "datos-basicos", icon: FiSettings, perm: "Gestion Configuración" },
+    { label: "Logo", slug: "datos-basicos", icon: FiSettings, perm: "Gestion Configuración" },
+    { label: "Lista de precios", slug: "listas-precios", icon: FiList, perm: "Lista precios" },
+    { label: "Planes", slug: "planes", icon: FiLayout, perm: "Planes" },
+    { label: "Consecutivos", slug: "consecutivos", icon: FiList, perm: "Consecutivos" },
+    { label: "Sucursales", slug: "sucursales", icon: FiMapPin, perm: "Sucursales" },
+    { label: "Bancos", slug: "bancos", icon: FiCreditCard, perm: "Bancos" },
+    { label: "Métodos de pago", slug: "metodos-pago", icon: FiCreditCard, perm: "Medios pago" },
+    { label: "Formulario de pacientes", slug: "formulario-pacientes", icon: FiFileText, perm: "Formulario paciente" },
+    { label: "Especialidades", slug: "especialidades", icon: FiAward, perm: "Especialidades" },
+    { label: "Perfiles", slug: "perfiles", icon: FiShield, perm: "Perfiles" },
+    { label: "Usuarios", slug: "usuarios", icon: FiUsers, perm: "Usuarios" },
+    { label: "Condiciones de pago", slug: "condiciones-pago", icon: FiCreditCard, perm: "Condiciones de pago" },
+    { label: "Parámetros", slug: "parametros", icon: FiSettings, perm: "Parametros" },
+    { label: "Recursos físicos", slug: "recursos-fisicos", icon: FiServer, perm: "Recursos físicos" },
+    { label: "Plantillas Doc. Clínicos", slug: "plantillas-clinicas", icon: FiFileText, perm: "Plantillas" },
+    { label: "Cargas", slug: "cargas", icon: FiSettings, perm: "Cargas" },
+    { label: "Impuestos", slug: "impuestos", icon: FiCreditCard, perm: "Impuesto" },
+    { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiList, perm: "Catálogo de cuentas" },
+    { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText, requiresFE: true, perm: "Facturación electrónica" },
+    { label: "Suscripción", slug: "suscripcion", icon: FiAward, perm: "Suscripcion" },
 ];
 
 export default function ConfigMenu() {
     const navigate = useNavigate();
     const { userProfile } = useAuth();
+    const { can } = usePermissions();
     const hasFE = hasElectronicInvoicingAccess(userProfile);
 
-    const visibleItems = CONFIG_ITEMS.filter(it => !it.requiresFE || hasFE);
+    const visibleItems = CONFIG_ITEMS.filter(it => {
+        if (it.requiresFE && !hasFE) return false;
+        if (it.perm && !can("Configuración", it.perm, "consultar")) return false;
+        return true;
+    });
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 min-h-[600px]">

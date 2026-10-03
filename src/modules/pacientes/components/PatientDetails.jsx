@@ -1987,20 +1987,32 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                         <aside className="patient-details-sidebar w-full lg:w-60 bg-white border-b lg:border-b-0 lg:border-r border-slate-100 overflow-x-auto lg:overflow-y-auto p-3 flex flex-row lg:flex-col shrink-0 custom-scrollbar-hidden lg:custom-scrollbar scrollbar-hide">
                             <SidebarSectionTitle>Información General</SidebarSectionTitle>
                             <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
-                                <SidebarButton icon={FiUser} label="Datos personales" active={activeTab === "datos"} onClick={() => handleTabChange("datos")} />
-                                <SidebarButton icon={FiTrendingUp} label="Marketing" active={activeTab === "mark"} onClick={() => handleTabChange("mark")} />
-                                <SidebarButton icon={FiShield} label="EPS" active={activeTab === "eps"} onClick={() => handleTabChange("eps")} />
-                                <SidebarButton icon={FiUsers} label="Beneficiarios convenio" active={activeTab === "conv"} onClick={() => handleTabChange("conv")} />
+                                {can("Pacientes", "Datos Personales", "consultar") && (
+                                    <SidebarButton icon={FiUser} label="Datos personales" active={activeTab === "datos"} onClick={() => handleTabChange("datos")} />
+                                )}
+                                {can("Pacientes", "Marketing", "consultar") && (
+                                    <SidebarButton icon={FiTrendingUp} label="Marketing" active={activeTab === "mark"} onClick={() => handleTabChange("mark")} />
+                                )}
+                                {can("Pacientes", "eps", "consultar") && (
+                                    <SidebarButton icon={FiShield} label="EPS" active={activeTab === "eps"} onClick={() => handleTabChange("eps")} />
+                                )}
+                                {can("Pacientes", "Beneficiarios", "consultar") && (
+                                    <SidebarButton icon={FiUsers} label="Beneficiarios convenio" active={activeTab === "conv"} onClick={() => handleTabChange("conv")} />
+                                )}
                                 {can("Pacientes", "Rx/imágenes/Doc", "consultar") && (
                                     <SidebarButton icon={FiCamera} label="Rx / Imágenes / Doc" active={activeTab === "rx"} onClick={() => handleTabChange("rx")} />
                                 )}
-                                <SidebarButton icon={FiBriefcase} label="Profesionales" active={activeTab === "pro"} onClick={() => handleTabChange("pro")} />
-                                <SidebarButton icon={FiCalendar} label="Citas" active={activeTab === "citas"} onClick={() => handleTabChange("citas")} />
+                                {can("Pacientes", "Profesionales", "consultar") && (
+                                    <SidebarButton icon={FiBriefcase} label="Profesionales" active={activeTab === "pro"} onClick={() => handleTabChange("pro")} />
+                                )}
+                                {can("Pacientes", "Citas", "consultar") && (
+                                    <SidebarButton icon={FiCalendar} label="Citas" active={activeTab === "citas"} onClick={() => handleTabChange("citas")} />
+                                )}
                             </div>
 
                             <SidebarSectionTitle>Historia Clínica</SidebarSectionTitle>
                             <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
-                                {can("Pacientes", "Historia clínica", "consultar") && (
+                                {(can("Pacientes", "Historia clínica", "consultar") || can("Pacientes", "Documentos clinicos", "consultar")) && (
                                     <SidebarButton icon={FiClipboard} label="Doc. Clínicos" active={activeTab === "hc"} onClick={() => handleTabChange("hc")} />
                                 )}
                                 {can("Pacientes", "Odontograma", "consultar") && (
@@ -2009,7 +2021,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                 {can("Pacientes", "Periodontograma", "consultar") && (
                                     <SidebarButton icon={FiActivity} label="Periodontogramas" active={activeTab === "perio"} onClick={() => handleTabChange("perio")} />
                                 )}
-                                {can("Pacientes", "Presupuestos", "consultar") && (
+                                {(can("Pacientes", "Presupuestos y planes", "consultar") || can("Pacientes", "Presupuestos", "consultar")) && (
                                     <SidebarButton icon={FiFileText} label="Presupuestos & planes" active={activeTab === "presu"} onClick={() => handleTabChange("presu")} />
                                 )}
                                 {can("Pacientes", "Evoluciones", "consultar") && (
@@ -2017,10 +2029,14 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                 )}
                             </div>
 
-                            <SidebarSectionTitle>Inteligencia Artificial</SidebarSectionTitle>
-                            <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
-                                <SidebarButton icon={FiCpu} label="Copiloto IA Insights" active={activeTab === "ai_insights"} onClick={() => handleTabChange("ai_insights")} />
-                            </div>
+                            {can("Pacientes", "Copiloto IA Insights", "consultar") && (
+                                <>
+                                    <SidebarSectionTitle>Inteligencia Artificial</SidebarSectionTitle>
+                                    <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">
+                                        <SidebarButton icon={FiCpu} label="Copiloto IA Insights" active={activeTab === "ai_insights"} onClick={() => handleTabChange("ai_insights")} />
+                                    </div>
+                                </>
+                            )}
 
                             <SidebarSectionTitle>Facturación</SidebarSectionTitle>
                             <div className="patient-details-sidebar-group flex lg:flex-col gap-1 min-w-max lg:min-w-0">

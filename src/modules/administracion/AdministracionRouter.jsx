@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   FiFileText, FiUsers, FiCalendar, FiBriefcase, 
   FiTrash2, FiActivity, 
   FiShield, FiCheckSquare, FiArrowLeft, FiChevronRight
 } from "react-icons/fi";
+import { usePermissions } from "../../hooks/usePermissions";
 
 // Sub-views
 import FacturacionHub from "./views/FacturacionHub";
@@ -27,8 +28,26 @@ const ADMIN_MODULES = [
 import { useSearchParams } from "react-router-dom";
 
 export default function AdministracionRouter() {
+  const { can } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get("tab");
+
+  const filteredModules = useMemo(() => {
+    return ADMIN_MODULES.filter(item => {
+      if (item.id === "facturacion") {
+        return can("Administración", "Menú Facturación", "consultar") ||
+               can("Administración", "Factura de venta", "consultar") ||
+               can("Administración", "Recibo de caja", "consultar");
+      }
+      if (item.id === "convenios") return can("Administración", "Convenios", "consultar");
+      if (item.id === "agenda") return can("Administración", "Gestion Agenda", "consultar");
+      if (item.id === "terceros") return can("Administración", "Terceros", "consultar");
+      if (item.id === "residuos") return can("Administración", "Residuos", "consultar");
+      if (item.id === "rips") return can("Administración", "Rips", "consultar");
+      if (item.id === "esterilizacion") return can("Administración", "Esterilizacion", "consultar");
+      return true;
+    });
+  }, [can]);
 
   const [selectedModule, setSelectedModuleState] = useState(urlTab || null);
 
@@ -72,12 +91,19 @@ export default function AdministracionRouter() {
     return () => window.removeEventListener("reset-module-administracion", handleReset);
   }, []);
 
-  const activeItem = ADMIN_MODULES.find(m => m.id === selectedModule);
+  // Si el módulo seleccionado no está en los permitidos, resetear
+  useEffect(() => {
+    if (selectedModule && !filteredModules.some(m => m.id === selectedModule)) {
+      setSelectedModule(null);
+    }
+  }, [selectedModule, filteredModules]);
+
+  const activeItem = filteredModules.find(m => m.id === selectedModule);
 
   return (
     <div className="p-4 max-w-6xl mx-auto space-y-4">
       {/* ─── CASO 1: VISTA DE MÓDULO SELECCIONADO ─── */}
-      {selectedModule ? (
+      {selectedModule && activeItem ? (
         <div className="space-y-4 animate-in fade-in duration-200">
           {/* Toolbar Superior de Navegación del Módulo */}
           <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -133,13 +159,13 @@ export default function AdministracionRouter() {
             </div>
 
             <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-              {ADMIN_MODULES.length} Submódulos
+              {filteredModules.length} Submódulos
             </span>
           </div>
 
           {/* Grid Compacto de 4 Columnas */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-            {ADMIN_MODULES.map((item) => {
+            {filteredModules.map((item) => {
               const IconComp = item.icon;
               return (
                 <div

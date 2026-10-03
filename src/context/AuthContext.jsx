@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import supabase from "../lib/supabaseClient";
+import { DEFAULT_PERFILES } from "../constants/DefaultProfiles";
 
 const AuthContext = createContext({
   user: null,          // Supabase Auth User
@@ -115,16 +116,48 @@ export const AuthProvider = ({ children }) => {
           userDetail = bootstrap?.user_detail || {};
 
           const perfiles = bootstrap?.perfiles || [];
-          const userRoleName = (profile.role || "").trim().toLowerCase();
+          const candidateRoleKeys = [
+            userDetail?.profileId,
+            userDetail?.profile_id,
+            userDetail?.perfil,
+            userDetail?.profileName,
+            userDetail?.profile_name,
+            profile.role,
+            profile.role_id,
+            userDetail?.rol,
+            userDetail?.role
+          ].filter(Boolean).map(s => String(s).trim().toLowerCase());
+
           const matchedPerfil = perfiles.find(p => {
-            const pName = (p.nombre || p.id || "").trim().toLowerCase();
-            if (!pName || !userRoleName) return false;
-            return pName === userRoleName ||
-                   userRoleName.includes(pName) ||
-                   pName.includes(userRoleName);
+            const pId = (p.id || "").trim().toLowerCase();
+            const pName = (p.nombre || "").trim().toLowerCase();
+            return candidateRoleKeys.some(key =>
+              key === pId ||
+              key === pName ||
+              (pId && (key.includes(pId) || pId.includes(key))) ||
+              (pName && (key.includes(pName) || pName.includes(key)))
+            );
           });
+
           if (matchedPerfil?.permisos) {
             permisosConfig = matchedPerfil.permisos;
+          } else {
+            // Fallback al perfil por defecto si aún no fue personalizado en la BD
+            const defaultMatch = DEFAULT_PERFILES.find(dp => {
+              const dpId = (dp.id || "").trim().toLowerCase();
+              const dpName = (dp.nombre || "").trim().toLowerCase();
+              const dpRole = (dp.baseRole || "").trim().toLowerCase();
+              return candidateRoleKeys.some(key =>
+                key === dpId ||
+                key === dpName ||
+                key === dpRole ||
+                (dpId && (key.includes(dpId) || dpId.includes(key))) ||
+                (dpName && (key.includes(dpName) || dpName.includes(key)))
+              );
+            });
+            if (defaultMatch?.permisos) {
+              permisosConfig = defaultMatch.permisos;
+            }
           }
 
         } catch (e) {

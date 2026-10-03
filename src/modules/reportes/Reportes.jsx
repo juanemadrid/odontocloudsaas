@@ -5,13 +5,14 @@
 // Al seleccionar un reporte, se oculta el menú y se muestra el reporte
 // a pantalla completa (100% ancho).
 // ============================================================
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   FiPieChart, FiUsers, FiFileText, FiDollarSign, FiAward, 
   FiTrendingUp, FiBox, FiGift, FiActivity, 
   FiList, FiClock, FiAlertTriangle, FiMessageSquare, 
   FiMonitor, FiHelpCircle, FiDatabase, FiArrowLeft, FiGrid, FiChevronRight
 } from "react-icons/fi";
+import { usePermissions } from "../../hooks/usePermissions";
 
 import Indicadores from "./views/Indicadores";
 import ReportePacientes from "./views/ReportePacientes";
@@ -34,27 +35,41 @@ import ReporteSistema from "./views/ReporteSistema";
 import ReporteIA from "./views/ReporteIA";
 
 const ALL_REPORTS = [
-  { id: "indicadores", label: "Indicadores", icon: <FiPieChart />, category: "General" },
-  { id: "pacientes", label: "Reporte pacientes", icon: <FiUsers />, category: "General" },
-  { id: "planes_tratamiento", label: "Reporte planes de tratamiento", icon: <FiFileText />, category: "General" },
-  { id: "facturacion", label: "Reporte de facturación", icon: <FiDollarSign />, category: "Finanzas" },
-  { id: "convenios", label: "Reporte de convenios", icon: <FiAward />, category: "Finanzas" },
-  { id: "ventas_efectividad", label: "Reporte de ventas y efectividad", icon: <FiTrendingUp />, category: "Finanzas" },
-  { id: "clinico", label: "Reporte clínico", icon: <FiActivity />, category: "Clínico" },
-  { id: "cumpleanos", label: "Reporte cumpleaños", icon: <FiGift />, category: "General" },
-  { id: "oportunidad_citas", label: "Reporte de oportunidad de citas", icon: <FiClock />, category: "Clínico" },
-  { id: "morbilidad", label: "Reporte de morbilidad", icon: <FiActivity />, category: "Clínico" },
-  { id: "consultas", label: "Reporte de consultas", icon: <FiList />, category: "Clínico" },
-  { id: "evoluciones", label: "Reporte de evoluciones", icon: <FiClock />, category: "Clínico" },
-  { id: "log_errores_facturacion", label: "Log de errores de facturación", icon: <FiAlertTriangle />, category: "Logs & Sistema" },
-  { id: "log_whatsapp", label: "Log WhatsApp Business API", icon: <FiMessageSquare />, category: "Logs & Sistema" },
-  { id: "uso_plataforma", label: "Uso de la plataforma", icon: <FiMonitor />, category: "Logs & Sistema" },
-  { id: "asistencia_clientes", label: "Asistencia de clientes", icon: <FiHelpCircle />, category: "Logs & Sistema" },
-  { id: "log_ihce", label: "Log interoperabilidad (IHCE)", icon: <FiDatabase />, category: "Logs & Sistema" },
+  { id: "indicadores", label: "Indicadores", icon: <FiPieChart />, category: "General", perm: "Indicadores de uso de la plataforma" },
+  { id: "pacientes", label: "Reporte pacientes", icon: <FiUsers />, category: "General", perm: "Reporte Pacientes" },
+  { id: "planes_tratamiento", label: "Reporte planes de tratamiento", icon: <FiFileText />, category: "General", perm: "Reporte Planes de tratamiento" },
+  { id: "facturacion", label: "Reporte de facturación", icon: <FiDollarSign />, category: "Finanzas", perm: "Reporte Facturacion" },
+  { id: "convenios", label: "Reporte de convenios", icon: <FiAward />, category: "Finanzas", perm: "Reporte Convenios" },
+  { id: "ventas_efectividad", label: "Reporte de ventas y efectividad", icon: <FiTrendingUp />, category: "Finanzas", perm: "Reporte ventas y efectividad" },
+  { id: "clinico", label: "Reporte clínico", icon: <FiActivity />, category: "Clínico", perm: "Reporte Clínico" },
+  { id: "cumpleanos", label: "Reporte cumpleaños", icon: <FiGift />, category: "General", perm: "Reporte Cumpleaños" },
+  { id: "oportunidad_citas", label: "Reporte de oportunidad de citas", icon: <FiClock />, category: "Clínico", perm: "Reporte de oportunidad de citas" },
+  { id: "morbilidad", label: "Reporte de morbilidad", icon: <FiActivity />, category: "Clínico", perm: "Reporte Morbilidad" },
+  { id: "consultas", label: "Reporte de consultas", icon: <FiList />, category: "Clínico", perm: "Reporte Consultas" },
+  { id: "evoluciones", label: "Reporte de evoluciones", icon: <FiClock />, category: "Clínico", perm: "Reporte evoluciones" },
+  { id: "log_errores_facturacion", label: "Log de errores de facturación", icon: <FiAlertTriangle />, category: "Logs & Sistema", perm: "Log de errores de facturacion" },
+  { id: "log_whatsapp", label: "Log WhatsApp Business API", icon: <FiMessageSquare />, category: "Logs & Sistema", perm: "Log WhatsApp Business API" },
+  { id: "uso_plataforma", label: "Uso de la plataforma", icon: <FiMonitor />, category: "Logs & Sistema", perm: "Indicadores de uso de la plataforma" },
+  { id: "asistencia_clientes", label: "Asistencia de clientes", icon: <FiHelpCircle />, category: "Logs & Sistema", perm: "Asistencia de clientes" },
+  { id: "log_ihce", label: "Log interoperabilidad (IHCE)", icon: <FiDatabase />, category: "Logs & Sistema", perm: "Log Interoperabilidad (IHCE)" },
 ];
 
 export default function Reportes() {
+  const { can } = usePermissions();
   const [selectedReport, setSelectedReport] = useState(null);
+
+  const filteredReports = useMemo(() => {
+    return ALL_REPORTS.filter(r => {
+      if (!r.perm) return true;
+      return can("Reportes", r.perm, "consultar");
+    });
+  }, [can]);
+
+  useEffect(() => {
+    if (selectedReport && !filteredReports.some(r => r.id === selectedReport)) {
+      setSelectedReport(null);
+    }
+  }, [selectedReport, filteredReports]);
 
   // Escuchar reset desde el menú lateral principal (al dar clic en REPORTES)
   useEffect(() => {
@@ -142,13 +157,13 @@ export default function Reportes() {
             </div>
 
             <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-              {ALL_REPORTS.length} Reportes disponibles
+              {filteredReports.length} Reportes disponibles
             </span>
           </div>
 
           {/* Grid Compacto de Opciones */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {ALL_REPORTS.map((item) => (
+            {filteredReports.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setSelectedReport(item.id)}

@@ -36,21 +36,58 @@ const MENU_ITEMS = [
 ];
 
 import { useAuth } from "../../context/AuthContext";
+import { usePermissions } from "../../hooks/usePermissions";
 import { hasElectronicInvoicingAccess } from "../../utils/subscriptionHelper";
+
+const CONFIG_SLUG_PERMISSIONS = {
+    "datos-basicos": "Gestion Configuración",
+    "editor-web": "Editor Web",
+    "listas-precios": "Lista precios",
+    "planes": "Planes",
+    "consecutivos": "Consecutivos",
+    "almacenes": "Recursos físicos",
+    "categorias-inventario": "Gestion Configuración",
+    "sucursales": "Sucursales",
+    "bancos": "Bancos",
+    "metodos-pago": "Medios pago",
+    "formulario-pacientes": "Formulario paciente",
+    "especialidades": "Especialidades",
+    "perfiles": "Perfiles",
+    "usuarios": "Usuarios",
+    "condiciones-pago": "Condiciones de pago",
+    "parametros": "Parametros",
+    "recursos-fisicos": "Recursos físicos",
+    "plantillas-clinicas": "Plantillas",
+    "cargas": "Cargas",
+    "impuestos": "Impuesto",
+    "catalogo-cuentas": "Catálogo de cuentas",
+    "facturacion-electronica": "Facturación electrónica",
+    "suscripcion": "Suscripcion",
+    "tarifas-copago": "Lista precios"
+};
 
 export default function ConfigLayout({ children }) {
     const location = useLocation();
     const { userProfile } = useAuth();
+    const { can } = usePermissions();
     const hasFE = hasElectronicInvoicingAccess(userProfile);
     const hasWebsiteAccess = true;
     const [manejaCopagos, setManejaCopagos] = React.useState(false);
 
     const activeMenuItems = React.useMemo(() => {
-        const filtered = MENU_ITEMS.filter(it => it.slug !== "facturacion-electronica" || hasFE);
+        const filtered = MENU_ITEMS.filter(it => {
+            if (it.slug === "facturacion-electronica" && !hasFE) return false;
+            const permKey = CONFIG_SLUG_PERMISSIONS[it.slug];
+            if (!permKey) return true;
+            if (it.slug === "editor-web") {
+                return can("Administración", "Editor Web", "consultar") || can("Configuración", "Gestion Configuración", "consultar");
+            }
+            return can("Configuración", permKey, "consultar");
+        });
         if (!manejaCopagos) return filtered;
         const items = [...filtered];
         const impIndex = items.findIndex(i => i.slug === "impuestos");
-        if (impIndex !== -1) {
+        if (impIndex !== -1 && can("Configuración", "Lista precios", "consultar")) {
             items.splice(impIndex + 1, 0, {
                 label: "Tarifas Copago",
                 subSlug: "tarifas-copago",
@@ -58,7 +95,7 @@ export default function ConfigLayout({ children }) {
             });
         }
         return items;
-    }, [manejaCopagos, hasFE]);
+    }, [manejaCopagos, hasFE, can]);
 
     React.useEffect(() => {
         let isMounted = true;

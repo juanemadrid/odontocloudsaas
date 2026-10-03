@@ -239,9 +239,11 @@ export default function ConfigPerfiles() {
         try {
             const list = await getConfigItems(inquilino, "perfiles", null);
             if (list && Array.isArray(list) && list.length > 0) {
-                // Fusionar con los permisos por defecto para garantizar que todas las funciones médicas y administrativas estén activadas
+                // Respetar las configuraciones guardadas de la clínica.
+                // Solo si el perfil no tiene permisos guardados, se inicializa con los permisos base.
                 const mergedList = list.map(item => {
                     const normExisting = normalizePermisos(item.permisos);
+                    const hasSavedPerms = Boolean(item.permisos && Object.keys(normExisting).length > 0);
                     const defaultMatch = DEFAULT_PERFILES.find(dp =>
                         dp.id === item.id ||
                         dp.nombre.toLowerCase() === (item.nombre || "").toLowerCase() ||
@@ -252,10 +254,13 @@ export default function ConfigPerfiles() {
                         return {
                             ...defaultMatch,
                             ...item,
-                            permisos: { ...defaultMatch.permisos, ...normExisting }
+                            permisos: hasSavedPerms ? normExisting : defaultMatch.permisos
                         };
                     }
-                    return item;
+                    return {
+                        ...item,
+                        permisos: normExisting
+                    };
                 });
 
                 const sortedList = mergedList.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
@@ -494,7 +499,15 @@ function EditorPerfil({ profileId, existingProfile, onBack, permissionMap, inqui
                 permisos: perms
             };
             await saveConfigItem(inquilino, "perfiles", null, itemData);
-            if (toast?.success) toast.success("Perfil guardado correctamente en Supabase");
+            try {
+                Object.keys(sessionStorage).forEach(k => {
+                    if (k.startsWith("oc_user_profile_") || k.startsWith("odc_dash_cache_")) {
+                        sessionStorage.removeItem(k);
+                    }
+                });
+            } catch (_) {}
+            window.dispatchEvent(new CustomEvent("tenant-updated"));
+            if (toast?.success) toast.success("Perfil guardado correctamente");
             onBack();
         } catch (e) {
             console.error("Error al guardar perfil:", e);

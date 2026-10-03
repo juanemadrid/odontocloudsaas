@@ -492,14 +492,16 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                         </button>
 
                         {/* Configuración rápida */}
-                        <button
-                            type="button"
-                            onClick={() => navigate(`${basePath}/config/datos-basicos`)}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
-                            title="Ajustes - Datos Básicos"
-                        >
-                            <FiSettings size={16} />
-                        </button>
+                        {can("Configuración", "Gestion Configuración", "consultar") && (
+                            <button
+                                type="button"
+                                onClick={() => navigate(`${basePath}/config/datos-basicos`)}
+                                className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
+                                title="Ajustes - Datos Básicos"
+                            >
+                                <FiSettings size={16} />
+                            </button>
+                        )}
 
                         <div className="h-4 w-px bg-slate-200 hidden sm:block" />
 

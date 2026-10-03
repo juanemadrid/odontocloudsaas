@@ -596,6 +596,9 @@ export default function EmpresaUsuarios() {
                 clinicalDocsHeader: formData.clinicalDocsHeader || "sucursal",
                 encabezadoPersonalizado: formData.encabezadoPersonalizado || "",
                 formaPago: formData.formaPago || "Realizadas y pagadas",
+                profileId: formData.profileId || roleName,
+                profileName: selectedProfile?.nombre || formData.profileId || roleName,
+                rol: roleName,
                 // Configuración RIPS del Doctor (OralDrive) - Credenciales en backend seguro
                 generaRips: formData.generaRips || false,
                 ripsTipoPrestador: formData.ripsTipoPrestador || "unico",
@@ -625,9 +628,19 @@ export default function EmpresaUsuarios() {
                 nombreCompleto: fullName,
                 email: targetEmail,
                 rol: roleName,
-                profileId: roleName,
+                profileId: formData.profileId || roleName,
+                profileName: selectedProfile?.nombre || formData.profileId || roleName,
                 activo: true
             });
+
+            try {
+                Object.keys(sessionStorage).forEach(k => {
+                    if (k.startsWith("oc_user_profile_") || k.startsWith("odc_dash_cache_")) {
+                        sessionStorage.removeItem(k);
+                    }
+                });
+            } catch (_) {}
+            window.dispatchEvent(new CustomEvent("tenant-updated"));
 
             toast.success(editId ? 'Usuario actualizado correctamente' : 'Usuario creado con éxito');
             setModalOpen(false);

@@ -38,6 +38,9 @@ export function usePermissions() {
                 .toLowerCase()
                 .normalize("NFD")
                 .replace(/[\u0300-\u036f]/g, "")
+                .replace(/&/g, " y ")
+                .replace(/[^a-z0-9]/g, " ")
+                .replace(/\s+/g, " ")
                 .trim();
         };
 
@@ -52,34 +55,52 @@ export function usePermissions() {
             if (Array.isArray(perms)) {
                 const normArray = perms.map(normalizeKey);
                 const hasMatch = normArray.includes(queryFeatureKey) || normArray.includes(queryModuleKey);
-                if (hasMatch) return true;
-                // Si hay un perfil asignado como Array y no coincide, se deniega
-                return false;
+                return hasMatch;
             }
 
             // Compatibilidad 2: Si permisos es un Objeto { "Historia clinica": { consultar: true, ... } }
             if (typeof perms === 'object' && perms !== null) {
-                // Prioridad 1: Coincidencia exacta de la función específica
-                let matchKey = Object.keys(perms).find(k => normalizeKey(k) === queryFeatureKey);
-                
-                // Prioridad 2: Coincidencia del nombre del módulo general
-                if (!matchKey) {
-                    matchKey = Object.keys(perms).find(k => normalizeKey(k) === queryModuleKey);
-                }
+                const permKeys = Object.keys(perms);
 
-                if (matchKey) {
-                    const val = perms[matchKey];
-                    if (typeof val === 'boolean') return val;
-                    if (typeof val === 'object' && val !== null) {
-                        if (typeof val[action] !== 'undefined') return !!val[action];
-                        // Si la acción específica no está definida, verificar si la función tiene alguna acción habilitada
-                        return Object.values(val).some(Boolean);
+                if (permKeys.length > 0) {
+                    // Prioridad 1: Coincidencia exacta de la función específica
+                    let matchKey = permKeys.find(k => normalizeKey(k) === queryFeatureKey);
+
+                    // Prioridad 2: Coincidencia aproximada/parcial de la función
+                    if (!matchKey && queryFeatureKey) {
+                        matchKey = permKeys.find(k => {
+                            const nk = normalizeKey(k);
+                            return nk.includes(queryFeatureKey) || queryFeatureKey.includes(nk);
+                        });
                     }
+
+                    // Prioridad 3: Coincidencia del nombre del módulo general
+                    if (!matchKey && queryModuleKey) {
+                        matchKey = permKeys.find(k => normalizeKey(k) === queryModuleKey);
+                    }
+
+                    if (matchKey) {
+                        const val = perms[matchKey];
+                        if (typeof val === 'boolean') return val;
+                        if (typeof val === 'object' && val !== null) {
+                            if (typeof val[action] !== 'undefined') return !!val[action];
+                            // Si la acción específica no está definida y la acción requerida es consultar,
+                            // verificar si la función tiene alguna acción habilitada
+                            if (action === "consultar") {
+                                return Object.values(val).some(Boolean);
+                            }
+                            return !!val[action];
+                        }
+                    }
+
+                    // Si el perfil tiene matriz de permisos configurada y la función/módulo no fue otorgada
+                    // o fue revocada, el acceso está terminantemente denegado.
+                    return false;
                 }
             }
         }
 
-        // 5. FALLBACK: Si no hay matriz de permisos configurada explícitamente para este perfil
+        // 5. FALLBACK: ÚNICAMENTE si el usuario NO tiene matriz de permisos configurada
         const isAdmin = rawRol.includes("admin");
         if (isAdmin) return true;
 
