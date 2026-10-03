@@ -49,7 +49,10 @@ const printHTMLInHiddenIframe = (htmlContent) => {
     doc.write(htmlContent);
     doc.close();
 
+    let printed = false;
     const triggerPrint = () => {
+        if (printed) return;
+        printed = true;
         setTimeout(() => {
             iframe.contentWindow.focus();
             iframe.contentWindow.print();
@@ -205,7 +208,61 @@ export default function Odontograma({ embeddedPatient }) {
         finally { setLoading(false); }
     };
 
+    const isMatchingDoctor = (doctorField) => {
+        if (!doctorField) return false;
+        const cleanDoctorField = doctorField.trim().toLowerCase().replace(/^dr(a)?\.?\s+/i, "");
+        
+        // Candidatos del usuario actual logueado
+        const candidates = [
+            userProfile?.nombreCompleto,
+            userProfile?.nombre,
+            `${userProfile?.nombres || ''} ${userProfile?.apellidos || ''}`.trim(),
+            userProfile?.displayName,
+            user?.displayName,
+            userProfile?.email,
+            user?.email
+        ].filter(Boolean).map(n => n.trim().toLowerCase().replace(/^dr(a)?\.?\s+/i, ""));
+
+        if (candidates.some(c => c && (cleanDoctorField === c || cleanDoctorField.includes(c) || c.includes(cleanDoctorField)))) {
+            return true;
+        }
+
+        // Si el catálogo de doctores tiene este doctor con el id o email del usuario
+        const matchedInCatalog = catalogProfesionales.find(doc => {
+            const docName = (doc.nombreCompleto || doc.nombre || "").trim().toLowerCase().replace(/^dr(a)?\.?\s+/i, "");
+            return docName === cleanDoctorField || (docName && cleanDoctorField.includes(docName));
+        });
+        if (matchedInCatalog) {
+            const userEmail = (userProfile?.email || user?.email || "").toLowerCase();
+            const userId = userProfile?.id || user?.id;
+            if (matchedInCatalog.email && userEmail && matchedInCatalog.email.toLowerCase() === userEmail) {
+                return true;
+            }
+            if (matchedInCatalog.id && userId && matchedInCatalog.id === userId) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    const handleOpenFirmaDoctor = (s) => {
+        if (!esDoctor) {
+            return toast?.error("Solo los usuarios con rol de odontólogo pueden registrar la firma del especialista.");
+        }
+        if (!isMatchingDoctor(s?.profesional)) {
+            return toast?.error(`Solo el Dr(a). ${s?.profesional || 'asignado'} que realizó este odontograma puede registrar su firma.`);
+        }
+        setFirmaModal({ ...s, tipoFirma: "doctor" });
+    };
+
     const handleNuevo = () => {
+        // Regla: Bloquear si ya existe un odontograma en estado "Abierto"
+        const tieneAbierto = sesiones.some(s => (s.estado || "Abierto").toLowerCase() === "abierto");
+        if (tieneAbierto) {
+            return toast?.warning("Ya existe un odontograma en estado Abierto para este paciente. Debe finalizar el odontograma actual antes de crear uno nuevo.");
+        }
+
         if (!esDoctor) {
             // Usuario administrativo / recepción: abre modal para elegir el profesional odontólogo
             const defaultDoc = (catalogProfesionales.length > 0)
@@ -222,6 +279,10 @@ export default function Odontograma({ embeddedPatient }) {
     };
 
     const handleCreateWithDoctor = async (doctorName, denticion = "adulto") => {
+        const tieneAbierto = sesiones.some(s => (s.estado || "Abierto").toLowerCase() === "abierto");
+        if (tieneAbierto) {
+            return toast?.warning("Ya existe un odontograma en estado Abierto para este paciente. Debe finalizar el odontograma actual antes de crear uno nuevo.");
+        }
         if (!doctorName) {
             return toast?.warning("Debe seleccionar el profesional a cargo del odontograma");
         }
@@ -269,6 +330,12 @@ export default function Odontograma({ embeddedPatient }) {
     };
 
     const abrirEditor = (s, readOnly = false) => {
+        const canDoctorEdit = !esDoctor || isMatchingDoctor(s?.profesional);
+        if (!readOnly && !canDoctorEdit) {
+            toast?.warning(`Solo el Dr(a). ${s?.profesional || 'responsable'} puede editar este odontograma. Accediendo en modo visualización.`);
+            readOnly = true;
+        }
+
         setCurrentSesion(s);
         setOdontogramaData(s.data || {});
         setPlanTratamiento(s.plan || []);
@@ -296,10 +363,18 @@ export default function Odontograma({ embeddedPatient }) {
     };
 
     const handleEliminar = (s) => {
+        if (esDoctor && !isMatchingDoctor(s?.profesional)) {
+            return toast?.error(`Solo el Dr(a). ${s?.profesional || 'responsable'} puede eliminar este odontograma.`);
+        }
         setDeleteConfirmSesion(s);
     };
 
     const executeDelete = async (id) => {
+        if (deleteConfirmSesion && esDoctor && !isMatchingDoctor(deleteConfirmSesion?.profesional)) {
+            toast?.error(`Solo el Dr(a). ${deleteConfirmSesion?.profesional || 'responsable'} puede eliminar este odontograma.`);
+            setDeleteConfirmSesion(null);
+            return;
+        }
         setDeletingId(id);
         try {
             // 1. Limpiar tratamientos pendientes asociados si existen
@@ -371,8 +446,13 @@ export default function Odontograma({ embeddedPatient }) {
     };
 
     const handleToothClick = (dienteId, zona) => {
+        const canCurrentDoctorEdit = !esDoctor || isMatchingDoctor(currentSesion?.profesional);
         if (isReadOnly) {
-            setReadOnlyAlert(true);
+            if (!canCurrentDoctorEdit) {
+                toast?.warning(`Este odontograma pertenece al Dr(a). ${currentSesion?.profesional || 'asignado'}. Solo puede ser editado por el doctor responsable.`);
+            } else {
+                setReadOnlyAlert(true);
+            }
             return;
         }
 
@@ -507,6 +587,9 @@ export default function Odontograma({ embeddedPatient }) {
 
     const handleSave = async (finalizar = false) => {
         if (!currentSesion?.id) return;
+        if (esDoctor && !isMatchingDoctor(currentSesion?.profesional)) {
+            return toast?.error(`Solo el Dr(a). ${currentSesion?.profesional || 'responsable'} puede guardar cambios en este odontograma.`);
+        }
         setSaving(true);
         try {
             const newEstado = finalizar ? "Finalizado" : (currentSesion.estado || "Abierto");
@@ -687,81 +770,87 @@ export default function Odontograma({ embeddedPatient }) {
                                         <FiChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${activeMenuId === s.id ? "rotate-180" : ""}`} />
                                     </button>
 
-                                    {activeMenuId === s.id && (
-                                        <>
-                                            <div 
-                                                className="fixed inset-0 z-30" 
-                                                onClick={() => setActiveMenuId(null)} 
-                                            />
-                                            <div className="absolute right-0 top-full mt-1.5 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-40 text-left animate-fadeIn">
-                                                {/* 1. Ver */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setActiveMenuId(null); abrirEditor(s, true); }}
-                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                                >
-                                                    <FiEye size={15} className="text-slate-400" />
-                                                    <span>Ver odontograma</span>
-                                                </button>
-
-                                                {/* 2. Editar */}
-                                                {!finalizado && (
+                                    {activeMenuId === s.id && (() => {
+                                        const canDoctorEditOrDelete = !esDoctor || isMatchingDoctor(s.profesional);
+                                        return (
+                                            <>
+                                                <div 
+                                                    className="fixed inset-0 z-30" 
+                                                    onClick={() => setActiveMenuId(null)} 
+                                                />
+                                                <div className="absolute right-0 top-full mt-1.5 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-40 text-left animate-fadeIn">
+                                                    {/* 1. Ver */}
                                                     <button
                                                         type="button"
-                                                        onClick={() => { setActiveMenuId(null); abrirEditor(s, false); }}
+                                                        onClick={() => { setActiveMenuId(null); abrirEditor(s, true); }}
                                                         className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
                                                     >
-                                                        <FiEdit3 size={15} className="text-slate-400" />
-                                                        <span>Editar odontograma</span>
+                                                        <FiEye size={15} className="text-slate-400" />
+                                                        <span>Ver odontograma</span>
                                                     </button>
-                                                )}
 
-                                                {/* 3. Imprimir */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setActiveMenuId(null); handlePrintSesion(s); }}
-                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                                >
-                                                    <FiPrinter size={15} className="text-slate-400" />
-                                                    <span>Imprimir / PDF</span>
-                                                </button>
+                                                    {/* 2. Editar */}
+                                                    {!finalizado && canDoctorEditOrDelete && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setActiveMenuId(null); abrirEditor(s, false); }}
+                                                            className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                        >
+                                                            <FiEdit3 size={15} className="text-slate-400" />
+                                                            <span>Editar odontograma</span>
+                                                        </button>
+                                                    )}
 
-                                                <div className="my-1 border-t border-slate-100" />
+                                                    {/* 3. Imprimir */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setActiveMenuId(null); handlePrintSesion(s); }}
+                                                        className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                    >
+                                                        <FiPrinter size={15} className="text-slate-400" />
+                                                        <span>Imprimir / PDF</span>
+                                                    </button>
 
-                                                {/* 4. Firma del doctor */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setActiveMenuId(null); setFirmaModal({ ...s, tipoFirma: "doctor" }); }}
-                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                                >
-                                                    <FiPenTool size={15} className="text-blue-500" />
-                                                    <span>Firma del doctor</span>
-                                                </button>
+                                                    <div className="my-1 border-t border-slate-100" />
 
-                                                {/* 5. Firma del paciente */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setActiveMenuId(null); setFirmaModal({ ...s, tipoFirma: "paciente" }); }}
-                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                                >
-                                                    <FiEdit2 size={15} className="text-emerald-500" />
-                                                    <span>Firma del paciente</span>
-                                                </button>
+                                                    {/* 4. Firma del doctor */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setActiveMenuId(null); handleOpenFirmaDoctor(s); }}
+                                                        className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                    >
+                                                        <FiPenTool size={15} className="text-blue-500" />
+                                                        <span>Firma del doctor</span>
+                                                    </button>
 
-                                                <div className="my-1 border-t border-slate-100" />
+                                                    {/* 5. Firma del paciente */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setActiveMenuId(null); setFirmaModal({ ...s, tipoFirma: "paciente" }); }}
+                                                        className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                    >
+                                                        <FiEdit2 size={15} className="text-emerald-500" />
+                                                        <span>Firma del paciente</span>
+                                                    </button>
 
-                                                {/* 6. Borrar */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setActiveMenuId(null); setDeleteConfirmSesion(s); }}
-                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors cursor-pointer"
-                                                >
-                                                    <FiTrash2 size={15} className="text-rose-500" />
-                                                    <span>Eliminar odontograma</span>
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
+                                                    {canDoctorEditOrDelete && (
+                                                        <>
+                                                            <div className="my-1 border-t border-slate-100" />
+                                                            {/* 6. Borrar */}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { setActiveMenuId(null); setDeleteConfirmSesion(s); }}
+                                                                className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                            >
+                                                                <FiTrash2 size={15} className="text-rose-500" />
+                                                                <span>Eliminar odontograma</span>
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         );
@@ -1038,7 +1127,7 @@ export default function Odontograma({ embeddedPatient }) {
                     ))}
                 </div>
 
-                {isReadOnly && currentSesion?.estado !== "Finalizado" && (
+                {isReadOnly && currentSesion?.estado !== "Finalizado" && (!esDoctor || isMatchingDoctor(currentSesion?.profesional)) && (
                     <button
                         onClick={() => {
                             setIsReadOnlyMode(false);
@@ -1245,7 +1334,7 @@ export default function Odontograma({ embeddedPatient }) {
                             Se encuentra en modo visualización, si desea editar el odontograma, debe ir a modo edición.
                         </div>
                     </div>
-                    {currentSesion?.estado !== "Finalizado" && (
+                    {currentSesion?.estado !== "Finalizado" && (!esDoctor || isMatchingDoctor(currentSesion?.profesional)) && (
                         <button
                             onClick={() => {
                                 setIsReadOnlyMode(false);

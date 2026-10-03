@@ -364,6 +364,28 @@ export const generateOralDriveOdontogramaPrintHTML = ({
     const clinicEmail = tenant.email || "";
     const logoUrl = tenant.logo || "";
 
+    // Calcular edad del paciente si no viene calculada
+    let calculatedAge = paciente.edad;
+    if (calculatedAge === undefined || calculatedAge === null || calculatedAge === "" || calculatedAge === "—") {
+        const rawBirth = paciente.fechaNacimiento || paciente.fecha_nacimiento || paciente.fechaNac || paciente.birthDate;
+        if (rawBirth) {
+            try {
+                const birthDate = new Date(rawBirth);
+                if (!isNaN(birthDate.getTime())) {
+                    const today = new Date();
+                    let age = today.getFullYear() - birthDate.getFullYear();
+                    const m = today.getMonth() - birthDate.getMonth();
+                    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                        age--;
+                    }
+                    if (age >= 0 && !isNaN(age)) {
+                        calculatedAge = age;
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+
     const fechaSesion = sesion?.creado
         ? (sesion.creado.toDate ? sesion.creado.toDate() : new Date(sesion.creado))
         : new Date();
@@ -659,17 +681,17 @@ export const generateOralDriveOdontogramaPrintHTML = ({
     <table class="demographic-table">
         <tr>
             <td class="lbl">Nombre del paciente</td>
-            <td class="val" style="font-weight: 800; color: #0f172a;">${paciente.nombreCompleto || "—"}</td>
+            <td class="val" style="font-weight: 800; color: #0f172a;">${paciente.nombreCompleto || `${paciente.nombres || ''} ${paciente.apellidos || ''}`.trim() || paciente.nombre || "—"}</td>
             <td class="lbl">Edad</td>
-            <td class="val">${paciente.edad ? `${paciente.edad} años` : "—"}</td>
+            <td class="val">${calculatedAge !== undefined && calculatedAge !== null && calculatedAge !== "" ? `${calculatedAge} años` : "—"}</td>
             <td class="lbl">Nro Historia</td>
-            <td class="val">${paciente.nroHistoria || paciente.numeroDocumento || "—"}</td>
+            <td class="val">${paciente.nroHistoria || paciente.numeroDocumento || paciente.nroDocumento || paciente.documento || "—"}</td>
         </tr>
         <tr>
             <td class="lbl">Tipo documento</td>
-            <td class="val">${paciente.tipoDocumento || "Cédula de Ciudadanía"}</td>
+            <td class="val">${paciente.tipoDocumento || paciente.tipo_documento || "Cédula de Ciudadanía"}</td>
             <td class="lbl">Nro de documento</td>
-            <td class="val">${paciente.numeroDocumento || paciente.nroDocumento || "—"}</td>
+            <td class="val">${paciente.numeroDocumento || paciente.nroDocumento || paciente.documento || paciente.cedula || "—"}</td>
             <td class="lbl">Sexo</td>
             <td class="val">${paciente.genero || paciente.sexo || "—"}</td>
         </tr>
@@ -685,17 +707,17 @@ export const generateOralDriveOdontogramaPrintHTML = ({
             <td class="lbl">Teléfono</td>
             <td class="val">${paciente.telefono || paciente.celular || "—"}</td>
             <td class="lbl">EPS / Convenio</td>
-            <td class="val">${paciente.eps || "Particular"}</td>
+            <td class="val">${paciente.eps || paciente.convenio || "Particular"}</td>
             <td class="lbl">Fecha Sesión</td>
             <td class="val">${fechaSesionStr} ${horaSesionStr}</td>
         </tr>
         <tr>
             <td class="lbl">Nombre responsable</td>
-            <td class="val">${paciente.nombreResponsable || paciente.responsableNombre || "—"}</td>
+            <td class="val">${paciente.nombreResponsable || paciente.responsableNombre || paciente.acudiente || "—"}</td>
             <td class="lbl">Tel. Responsable</td>
-            <td class="val">${paciente.telefonoResponsable || "—"}</td>
+            <td class="val">${paciente.telefonoResponsable || paciente.acudienteTelefono || "—"}</td>
             <td class="lbl">Dirección</td>
-            <td class="val">${paciente.direccion || "—"}</td>
+            <td class="val">${paciente.direccion || paciente.lugarResidencia || paciente.lugar_residencia || "—"}</td>
         </tr>
     </table>
 
@@ -797,15 +819,6 @@ export const generateOralDriveOdontogramaPrintHTML = ({
         <div>1 de 1</div>
         <div>${clinicAddress} ${clinicPhone ? `• Tel: ${clinicPhone}` : ''} • OdontoCloud Elite</div>
     </div>
-
-    <script>
-        window.onload = function() {
-            setTimeout(function() {
-                window.focus();
-                window.print();
-            }, 250);
-        };
-    </script>
 </body>
 </html>
     `;
