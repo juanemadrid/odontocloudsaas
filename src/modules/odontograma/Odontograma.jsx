@@ -1,7 +1,7 @@
 // src/modules/odontograma/Odontograma.jsx
 import React, { useState, useEffect, useRef } from "react";
 import OdontogramaVisual from "./components/OdontogramaVisual";
-import TratamientosToolbar, { TOOLS, SURFACES } from "./components/TratamientosToolbar";
+import TratamientosToolbar, { TOOLS, SURFACES, GENERAL_TOOLS } from "./components/TratamientosToolbar";
 import supabase from "../../lib/supabaseClient";
 import {
     FiPlus,
@@ -276,11 +276,6 @@ export default function Odontograma({ embeddedPatient }) {
         const tool = TOOLS.find(t => t.id === selectedToolId);
         if (!tool) return;
 
-        const GENERAL_TOOLS = [
-            "ausente", "extraccion", "implante_bueno", "implante_malo", 
-            "corona_buena", "corona_des", "perno_bueno", "perno_malo", 
-            "diente_sano", "fractura", "endodoncia_buena", "endodoncia_mala"
-        ];
         const isGeneralTool = GENERAL_TOOLS.includes(selectedToolId);
 
         setOdontogramaData(prev => {
@@ -362,11 +357,6 @@ export default function Odontograma({ embeddedPatient }) {
             setReadOnlyAlert(true);
             return;
         }
-        const GENERAL_TOOLS = [
-            "ausente", "extraccion", "implante_bueno", "implante_malo", 
-            "corona_buena", "corona_des", "perno_bueno", "perno_malo", 
-            "diente_sano", "fractura", "endodoncia_buena", "endodoncia_mala"
-        ];
         setSelectedToolId(prev => {
             const next = prev === toolId ? null : toolId;
             if (next && GENERAL_TOOLS.includes(next)) {
@@ -435,11 +425,7 @@ export default function Odontograma({ embeddedPatient }) {
         setPlanTratamiento(prev => prev.filter((_, i) => i !== idx));
         setOdontogramaData(prev => {
             const c = { ...(prev[item.diente] || {}) };
-            const isGeneral = [
-                "ausente", "extraccion", "implante_bueno", "implante_malo", 
-                "corona_buena", "corona_des", "perno_bueno", "perno_malo", 
-                "diente_sano", "fractura", "endodoncia_buena", "endodoncia_mala"
-            ].includes(item.toolId);
+            const isGeneral = GENERAL_TOOLS.includes(item.toolId);
 
             if (item.zona === "Completo" || isGeneral || (c.general && c.general.id === item.toolId)) {
                 delete c.general;
@@ -780,11 +766,6 @@ export default function Odontograma({ embeddedPatient }) {
                                 { id: 'mesial', label: 'Mesial' },
                                 { id: 'distal', label: 'Distal' }
                             ].map(surf => {
-                                const GENERAL_TOOLS = [
-                                    "ausente", "extraccion", "implante_bueno", "implante_malo", 
-                                    "corona_buena", "corona_des", "perno_bueno", "perno_malo", 
-                                    "diente_sano", "fractura", "endodoncia_buena", "endodoncia_mala"
-                                ];
                                 const isBlocked = GENERAL_TOOLS.includes(selectedToolId) && surf.id !== 'todas';
                                 return (
                                     <label
@@ -808,8 +789,8 @@ export default function Odontograma({ embeddedPatient }) {
 
                         {/* Leyenda y Observaciones */}
                         <div className="flex flex-col xl:flex-row gap-6 items-start">
-                            {/* Leyenda: 2-3 columnas responsive */}
-                            <div className="flex-1 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-2 gap-x-8 gap-y-1 bg-slate-50/50 p-4 rounded-[20px] border border-slate-100 shadow-sm w-full">
+                            {/* Leyenda: 4 columnas como OralDrive */}
+                            <div className="flex-1 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 bg-slate-50/50 p-4 rounded-[20px] border border-slate-100 shadow-sm w-full">
                                 {TOOLS.filter(t => t.id !== "borrador").map(t => (
                                     <button
                                         key={t.id}

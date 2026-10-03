@@ -82,6 +82,21 @@ const renderToothCircleSVG = (toothData) => {
                 <line x1="50" y1="18" x2="50" y2="82" stroke="${gen.includes('mala') ? '#ef4444' : '#2563eb'}" stroke-width="4" stroke-linecap="round" />
                 <circle cx="${CX}" cy="${CY}" r="15" fill="none" stroke="${gen.includes('mala') ? '#ef4444' : '#2563eb'}" stroke-width="3" stroke-dasharray="3,2" />
             ` : ''}
+            ${gen && (gen.includes('carilla') || gen === 'carilla_adap' || gen === 'carilla_des') ? `
+                <path d="M 20,20 Q 50,5 80,20 Q 85,50 80,80 Q 50,95 20,80 Z" fill="none" stroke="${gen.includes('des') ? '#ef4444' : '#3b82f6'}" stroke-width="3.5" />
+            ` : ''}
+            ${gen && (gen.includes('pontico') || gen === 'pontico') ? `
+                <rect x="15" y="35" width="70" height="30" rx="6" fill="#2563eb" fill-opacity="0.25" stroke="#2563eb" stroke-width="3" />
+            ` : ''}
+            ${gen && (gen.includes('provisional') || gen === 'provisional_adap' || gen === 'provisional_des') ? `
+                <rect x="18" y="18" width="64" height="64" rx="8" fill="none" stroke="${gen.includes('des') ? '#ef4444' : '#3b82f6'}" stroke-width="3.5" stroke-dasharray="4,2" />
+            ` : ''}
+            ${gen && (gen.includes('lesion_apical') || gen === 'lesion_apical') ? `
+                <circle cx="50" cy="50" r="14" fill="#b91c1c" fill-opacity="0.3" stroke="#b91c1c" stroke-width="3" />
+            ` : ''}
+            ${gen && (gen.includes('resto_radicular') || gen === 'resto_radicular') ? `
+                <line x1="20" y1="20" x2="80" y2="80" stroke="#78716c" stroke-width="5" stroke-linecap="round" />
+            ` : ''}
             ${gen && gen.includes('implante') ? `
                 <rect x="36" y="8" width="28" height="84" rx="6" fill="#3b82f6" fill-opacity="0.3" stroke="#2563eb" stroke-width="4" />
             ` : ''}
@@ -98,7 +113,7 @@ const renderToothSprite = (toothNum, baseUrl, toothData = {}, isUpper = false) =
     const bgPosXPct = cfg.col * (100 / (cfg.numCols - 1));
     const bgSizeXPct = cfg.numCols * 100;
     const gen = toothData?.general?.id;
-    const isAusente = gen === 'ausente';
+    const isAusente = gen === 'ausente' || gen === 'extraccion' || gen === 'resto_radicular';
     const isImplante = gen && gen.includes('implante');
     const opacity = isAusente ? 0.2 : isImplante ? 0.3 : 1;
 
@@ -169,11 +184,59 @@ const renderToothSprite = (toothNum, baseUrl, toothData = {}, isUpper = false) =
                 <circle cx="50" cy="50" r="46" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${gen.includes('des') ? '4,2' : 'none'}" />
             </svg>
         `;
+    } else if (gen && (gen.includes('carilla') || gen === 'carilla_adap' || gen === 'carilla_des')) {
+        const color = gen.includes('des') ? '#ef4444' : '#3b82f6';
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <g ${isUpper ? 'transform="translate(0 100) scale(1 -1)"' : ''}>
+                    <path d="M 30,12 Q 50,2 70,12 Q 74,32 70,42 Q 50,48 30,42 Z" fill="none" stroke="${color}" stroke-width="3" />
+                </g>
+            </svg>
+        `;
+    } else if (gen && gen === 'lesion_apical') {
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <circle cx="50" cy="${isUpper ? 10 : 90}" r="8" fill="#b91c1c" stroke="white" stroke-width="2" />
+            </svg>
+        `;
+    } else if (gen && gen === 'resto_radicular') {
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <line x1="20" y1="15" x2="80" y2="85" stroke="#78716c" stroke-width="4" stroke-linecap="round" />
+            </svg>
+        `;
+    }
+
+    // Reflejo visual de restauraciones y caries superficiales en la corona del diente impreso
+    let surfaceSVG = '';
+    const topCol = getSectorColor(toothData, 'top');
+    const centerCol = getSectorColor(toothData, 'center');
+    const bottomCol = getSectorColor(toothData, 'bottom');
+    const leftCol = getSectorColor(toothData, 'left');
+    const rightCol = getSectorColor(toothData, 'right');
+
+    const hasAnySurface = topCol !== '#ffffff' || centerCol !== '#ffffff' || bottomCol !== '#ffffff' || leftCol !== '#ffffff' || rightCol !== '#ffffff';
+
+    if (hasAnySurface && !gen) {
+        // En arcada superior la corona está en la mitad inferior (baseY ~60), en inferior está arriba (baseY ~10)
+        const baseY = isUpper ? 60 : 8;
+        surfaceSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <g opacity="0.9">
+                    ${topCol !== '#ffffff' ? `<ellipse cx="50" cy="${baseY + 5}" rx="16" ry="6" fill="${topCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+                    ${centerCol !== '#ffffff' ? `<circle cx="50" cy="${baseY + 15}" r="7.5" fill="${centerCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+                    ${bottomCol !== '#ffffff' ? `<ellipse cx="50" cy="${baseY + 25}" rx="16" ry="6" fill="${bottomCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+                    ${leftCol !== '#ffffff' ? `<ellipse cx="30" cy="${baseY + 15}" rx="6" ry="10" fill="${leftCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+                    ${rightCol !== '#ffffff' ? `<ellipse cx="70" cy="${baseY + 15}" rx="6" ry="10" fill="${rightCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+                </g>
+            </svg>
+        `;
     }
 
     return `
         <div style="width: 26px; height: 38px; position: relative; overflow: hidden; margin: 0 auto; opacity: ${opacity};">
             <div style="position: absolute; inset: 0; background-image: url('${cfg.img}'); background-size: ${bgSizeXPct}% auto; background-repeat: no-repeat; background-position: ${bgPosXPct.toFixed(2)}% ${cfg.posY};"></div>
+            ${surfaceSVG}
             ${markSVG}
         </div>
     `;
