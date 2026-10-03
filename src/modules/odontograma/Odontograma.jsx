@@ -11,12 +11,14 @@ import {
     FiTrash2,
     FiSearch,
     FiChevronLeft,
+    FiChevronDown,
     FiCheckCircle,
     FiEye,
+    FiEdit2,
     FiEdit3,
     FiPrinter,
     FiCalendar,
-    FiFeather,
+    FiPenTool,
     FiAward,
     FiAlertTriangle,
     FiX
@@ -99,6 +101,11 @@ export default function Odontograma({ embeddedPatient }) {
     const [showNewModal, setShowNewModal] = useState(false);
     const [newModalDoctor, setNewModalDoctor] = useState("");
     const [newModalDenticion, setNewModalDenticion] = useState("adulto");
+
+    // Estados de Acciones y Eliminación
+    const [activeMenuId, setActiveMenuId] = useState(null);
+    const [deleteConfirmSesion, setDeleteConfirmSesion] = useState(null);
+    const [deletingId, setDeletingId] = useState(null);
 
     useEffect(() => {
         const loadDoctors = async () => {
@@ -288,17 +295,41 @@ export default function Odontograma({ embeddedPatient }) {
         setViewMode("EDITOR");
     };
 
-    const handleEliminar = async (id) => {
-        if (!window.confirm("¿Eliminar este odontograma permanentemente?")) return;
+    const handleEliminar = (s) => {
+        setDeleteConfirmSesion(s);
+    };
+
+    const executeDelete = async (id) => {
+        setDeletingId(id);
         try {
+            // 1. Limpiar tratamientos pendientes asociados si existen
+            try {
+                await supabase
+                    .from("tratamientos_pendientes")
+                    .delete()
+                    .eq("odontograma_id", id);
+            } catch (eTrat) {
+                console.warn("Aviso al limpiar tratamientos pendientes:", eTrat);
+            }
+
+            // 2. Eliminar el odontograma de la base de datos
             const { error } = await supabase
                 .from("odontogramas")
                 .delete()
                 .eq("id", id);
+
             if (error) throw error;
-            toast?.success("Eliminado correctamente");
-            loadSesiones();
-        } catch { toast?.error("Error al eliminar"); }
+
+            // 3. Actualizar la lista en pantalla inmediatamente
+            setSesiones(prev => prev.filter(item => item.id !== id));
+            toast?.success("Odontograma eliminado correctamente");
+            setDeleteConfirmSesion(null);
+        } catch (err) {
+            console.error("Error al eliminar odontograma:", err);
+            toast?.error("Error al eliminar odontograma: " + (err?.message || ""));
+        } finally {
+            setDeletingId(null);
+        }
     };
 
     const getClinicalZonaLabel = (dienteId, zona) => {
@@ -555,10 +586,7 @@ export default function Odontograma({ embeddedPatient }) {
     };
 
     const isReadOnly = isReadOnlyMode || currentSesion?.estado === "Finalizado";
-    const filtered = sesiones.filter(s =>
-        !search || (s.creadoPor || "").toLowerCase().includes(search.toLowerCase()) ||
-        (s.profesional || "").toLowerCase().includes(search.toLowerCase())
-    );
+    const filtered = sesiones;
 
     if (viewMode === "LIST") {
         return (
@@ -570,7 +598,7 @@ export default function Odontograma({ embeddedPatient }) {
                         </h2>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-1">
                             <FiClock size={10} className="text-indigo-400" />
-                            Registro clínico cronológico — {embeddedPatient?.nombreCompleto}
+                            Registro clínico cronológico — {embeddedPatient?.nombreCompleto} • {filtered.length} registro{filtered.length !== 1 ? "s" : ""}
                         </p>
                     </div>
                     <button
@@ -581,21 +609,6 @@ export default function Odontograma({ embeddedPatient }) {
                         Nuevo Odontograma
                     </button>
                 </header>
-
-                <div className="px-8 py-3 border-b border-slate-50 flex items-center gap-3 bg-slate-50/40">
-                    <div className="relative flex-1 max-w-xs">
-                        <FiSearch size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Buscar por profesional o usuario..."
-                            className="w-full pl-8 pr-4 py-2 rounded-xl border border-slate-200 text-[11px] text-slate-700 bg-white outline-none focus:border-indigo-300 transition-colors"
-                        />
-                    </div>
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-auto">
-                        {filtered.length} registro{filtered.length !== 1 ? "s" : ""}
-                    </span>
-                </div>
 
                 <div className="flex-1 overflow-y-auto">
                     <div className="grid grid-cols-12 px-8 py-3 bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
@@ -663,62 +676,92 @@ export default function Odontograma({ embeddedPatient }) {
                                     </span>
                                 </div>
 
-                                <div className="col-span-2 flex justify-end items-center gap-1.5">
-                                    {/* 1. Firma del paciente */}
+                                <div className="col-span-2 flex justify-end items-center relative">
                                     <button
-                                        onClick={() => setFirmaModal({ ...s, tipoFirma: "paciente" })}
-                                        title="Firma del paciente"
-                                        className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center hover:bg-cyan-100 transition-all shadow-sm"
+                                        type="button"
+                                        onClick={() => setActiveMenuId(activeMenuId === s.id ? null : s.id)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-[11px] font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
+                                        title="Opciones del odontograma"
                                     >
-                                        <FiFeather size={14} />
+                                        <span>Acciones</span>
+                                        <FiChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${activeMenuId === s.id ? "rotate-180" : ""}`} />
                                     </button>
 
-                                    {/* 2. Firma del doctor */}
-                                    <button
-                                        onClick={() => setFirmaModal({ ...s, tipoFirma: "doctor" })}
-                                        title="Firma del doctor"
-                                        className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-all shadow-sm"
-                                    >
-                                        <FiAward size={14} />
-                                    </button>
+                                    {activeMenuId === s.id && (
+                                        <>
+                                            <div 
+                                                className="fixed inset-0 z-30" 
+                                                onClick={() => setActiveMenuId(null)} 
+                                            />
+                                            <div className="absolute right-0 top-full mt-1.5 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-40 text-left animate-fadeIn">
+                                                {/* 1. Ver */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setActiveMenuId(null); abrirEditor(s, true); }}
+                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                >
+                                                    <FiEye size={15} className="text-slate-400" />
+                                                    <span>Ver odontograma</span>
+                                                </button>
 
-                                    {/* 3. Ver (Modo solo lectura) */}
-                                    <button
-                                        onClick={() => abrirEditor(s, true)}
-                                        title="Ver odontograma"
-                                        className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-100 transition-all shadow-sm"
-                                    >
-                                        <FiEye size={14} />
-                                    </button>
+                                                {/* 2. Editar */}
+                                                {!finalizado && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setActiveMenuId(null); abrirEditor(s, false); }}
+                                                        className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                    >
+                                                        <FiEdit3 size={15} className="text-slate-400" />
+                                                        <span>Editar odontograma</span>
+                                                    </button>
+                                                )}
 
-                                    {/* 4. Editar (SOLO si no está finalizado) */}
-                                    {!finalizado && (
-                                        <button
-                                            onClick={() => abrirEditor(s, false)}
-                                            title="Editar odontograma"
-                                            className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 transition-all shadow-sm"
-                                        >
-                                            <FiEdit3 size={14} />
-                                        </button>
+                                                {/* 3. Imprimir */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setActiveMenuId(null); handlePrintSesion(s); }}
+                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                >
+                                                    <FiPrinter size={15} className="text-slate-400" />
+                                                    <span>Imprimir / PDF</span>
+                                                </button>
+
+                                                <div className="my-1 border-t border-slate-100" />
+
+                                                {/* 4. Firma del doctor */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setActiveMenuId(null); setFirmaModal({ ...s, tipoFirma: "doctor" }); }}
+                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                >
+                                                    <FiPenTool size={15} className="text-blue-500" />
+                                                    <span>Firma del doctor</span>
+                                                </button>
+
+                                                {/* 5. Firma del paciente */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setActiveMenuId(null); setFirmaModal({ ...s, tipoFirma: "paciente" }); }}
+                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-indigo-50/70 hover:text-indigo-600 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                >
+                                                    <FiEdit2 size={15} className="text-emerald-500" />
+                                                    <span>Firma del paciente</span>
+                                                </button>
+
+                                                <div className="my-1 border-t border-slate-100" />
+
+                                                {/* 6. Borrar */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setActiveMenuId(null); setDeleteConfirmSesion(s); }}
+                                                    className="w-full px-3.5 py-2 text-left text-[11px] font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                                                >
+                                                    <FiTrash2 size={15} className="text-rose-500" />
+                                                    <span>Eliminar odontograma</span>
+                                                </button>
+                                            </div>
+                                        </>
                                     )}
-
-                                    {/* 5. Imprimir */}
-                                    <button
-                                        onClick={() => handlePrintSesion(s)}
-                                        title="Imprimir / PDF"
-                                        className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center hover:bg-amber-100 transition-all shadow-sm"
-                                    >
-                                        <FiPrinter size={14} />
-                                    </button>
-
-                                    {/* 6. Borrar */}
-                                    <button
-                                        onClick={() => handleEliminar(s.id)}
-                                        title="Borrar odontograma"
-                                        className="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-100 transition-all shadow-sm"
-                                    >
-                                        <FiTrash2 size={14} />
-                                    </button>
                                 </div>
                             </div>
                         );
@@ -864,7 +907,7 @@ export default function Odontograma({ embeddedPatient }) {
                                 <button
                                     type="button"
                                     onClick={() => setShowNewModal(false)}
-                                    className="px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-50 text-xs font-bold transition-colors"
+                                    className="px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
                                 >
                                     Cancelar
                                 </button>
@@ -872,9 +915,44 @@ export default function Odontograma({ embeddedPatient }) {
                                     type="button"
                                     onClick={() => handleCreateWithDoctor(newModalDoctor, newModalDenticion)}
                                     disabled={loading || !newModalDoctor}
-                                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-indigo-500/20"
+                                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-indigo-500/20 cursor-pointer"
                                 >
                                     {loading ? "Iniciando..." : "Iniciar Odontograma"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL PARA CONFIRMAR ELIMINACIÓN DE ODONTOGRAMA */}
+                {deleteConfirmSesion && (
+                    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+                        <div className="bg-white rounded-[24px] shadow-2xl border border-slate-100 max-w-sm w-full p-6 text-center animate-scaleUp">
+                            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center mx-auto mb-4 border border-rose-100">
+                                <FiTrash2 size={24} />
+                            </div>
+                            <h3 className="text-base font-black text-slate-800 tracking-tight mb-2">
+                                ¿Eliminar odontograma?
+                            </h3>
+                            <p className="text-xs text-slate-500 font-medium mb-6 leading-relaxed">
+                                Esta acción eliminará permanentemente la sesión clínica y todos sus hallazgos asociados. Esta acción no se puede deshacer.
+                            </p>
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setDeleteConfirmSesion(null)}
+                                    disabled={deletingId !== null}
+                                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => executeDelete(deleteConfirmSesion.id)}
+                                    disabled={deletingId !== null}
+                                    className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-rose-600/20 cursor-pointer"
+                                >
+                                    {deletingId ? "Eliminando..." : "Sí, eliminar"}
                                 </button>
                             </div>
                         </div>
