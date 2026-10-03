@@ -81,7 +81,6 @@ const PERMISSION_MAP = {
         "Lista precios",
         "Planes",
         "Consecutivos",
-        "Convenios",
         "Sucursales",
         "Medios pago",
         "Bancos",

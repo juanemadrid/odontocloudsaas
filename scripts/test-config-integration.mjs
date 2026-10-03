@@ -10,7 +10,6 @@ const expectedSlugs = [
   "listas-precios",
   "planes",
   "consecutivos",
-  "convenios",
   "sucursales",
   "bancos",
   "metodos-pago",
@@ -33,7 +32,7 @@ const layout = read("src/modules/config/ConfigLayout.jsx");
 const router = read("src/modules/config/ConfigRouter.jsx");
 const menuSlugs = [...layout.matchAll(/slug:\s*"([^"]+)"/g)].map((match) => match[1]);
 
-assert.deepEqual(menuSlugs, expectedSlugs, "El menú visible de Configuración debe conservar sus 22 módulos y orden.");
+assert.deepEqual(menuSlugs, expectedSlugs, "El menú visible de Configuración debe conservar sus 21 módulos y orden.");
 for (const slug of expectedSlugs) {
   assert.match(router, new RegExp(`case ["']${slug}["']`), `Falta la ruta de Configuración: ${slug}`);
 }
