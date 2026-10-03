@@ -152,4 +152,24 @@ assert.match(odontograma, /tipoDenticion[\s\S]*hallazgos|hallazgos[\s\S]*tipoDen
 assert.match(odontograma, /existingIndex[\s\S]*next\[existingIndex\]\s*=\s*nextItem/,
     'Los hallazgos repetidos todavía pueden duplicarse en el plan.');
 
-console.log('Odontograma: superficies directas, dentición mixta y sincronización del plan OK.');
+// Validar que generateOralDriveOdontogramaPrintHTML genera el HTML completo sin excepciones
+const { generateOralDriveOdontogramaPrintHTML } = await import('../src/modules/odontograma/utils/odontogramaPrintService.js');
+const sampleHtml = generateOralDriveOdontogramaPrintHTML({
+    sesion: {
+        data: {
+            "16": { center: { id: "caries", color: "#EF4444" } },
+            "22": { general: { id: "lesion_apical" } },
+            "36": { general: { id: "pontico" } },
+            "47": { top: { id: "caries" } }
+        },
+        plan: [],
+        creado: new Date().toISOString()
+    },
+    paciente: { nombreCompleto: "Paciente Demo" },
+    userProfile: {},
+    baseUrl: "http://localhost:3002/"
+});
+assert.ok(sampleHtml.includes("<!DOCTYPE html>"), "La plantilla HTML de impresión debe generar un documento válido.");
+assert.ok(sampleHtml.includes("print-clip-16"), "Debe generar la máscara anatómica del diente 16.");
+
+console.log('Odontograma: superficies directas, dentición mixta, sincronización del plan y generación HTML de impresión OK.');

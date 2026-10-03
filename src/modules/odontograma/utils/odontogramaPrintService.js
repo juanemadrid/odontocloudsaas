@@ -38,6 +38,7 @@ const buildSurfacePaths = (zoneType) => {
 const SURFACE_ORDER = ['top', 'right', 'bottom', 'left', 'center'];
 
 const createSlicePath = (cx, cy, innerRadius, outerRadius, startAngle, endAngle) => {
+    const startRad = (startAngle - 90) * Math.PI / 180.0;
     const endRad = (endAngle - 90) * Math.PI / 180.0;
     const x1 = cx + outerRadius * Math.cos(startRad);
     const y1 = cy + outerRadius * Math.sin(startRad);
