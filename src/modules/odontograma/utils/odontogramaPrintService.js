@@ -327,8 +327,35 @@ export const generateOralDriveOdontogramaPrintHTML = ({
     sesion,
     paciente = {},
     userProfile = {},
+    doctorData = {},
     baseUrl = window.location.origin + "/"
 }) => {
+    const isDoc = (u) => {
+        if (!u) return false;
+        if (u.esDoctor === true || u.es_doctor === true || u.is_doctor === true || u.isDoctor === true) return true;
+        const r = String(u.role || u.rol || u.cargo || '').toLowerCase();
+        return r.includes('doctor') || r.includes('odontolog') || r.includes('odontólog') || r.includes('especialista');
+    };
+
+    const doctorName = doctorData?.nombreCompleto || 
+                       doctorData?.nombre || 
+                       (sesion?.profesional && !sesion.profesional.includes("Planta") ? sesion.profesional : null) || 
+                       paciente?.dentistaResponsable || 
+                       (isDoc(userProfile) ? (userProfile?.nombreCompleto || userProfile?.nombre) : null) || 
+                       "Odontólogo Tratante";
+
+    const doctorRegistro = doctorData?.registroMedico || 
+                           doctorData?.tarjetaProfesional || 
+                           doctorData?.identificacion || 
+                           (isDoc(userProfile) ? (userProfile?.registroMedico || "") : "") || 
+                           "";
+
+    const firmaDoctorImg = sesion?.firmaDoctor || 
+                           sesion?.hallazgos?.firmaDoctor || 
+                           doctorData?.firma || 
+                           (isDoc(userProfile) ? (userProfile?.firmaElectronica || userProfile?.firma || "") : "") || 
+                           "";
+
     const tenant = userProfile?.tenant || {};
     const clinicName = tenant.nombreComercial || tenant.nombre || tenant.name || "CLÍNICA DENTAL";
     const clinicNit = tenant.nit || "—";
@@ -399,7 +426,6 @@ export const generateOralDriveOdontogramaPrintHTML = ({
     const upperTemp = [55, 54, 53, 52, 51, 61, 62, 63, 64, 65];
     const lowerTemp = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75];
 
-    const firmaDoctorImg = sesion?.firmaDoctor || sesion?.hallazgos?.firmaDoctor || userProfile?.firmaElectronica || userProfile?.firma || "";
     const firmaPacienteImg = sesion?.firmaPaciente || sesion?.hallazgos?.firmaPaciente || sesion?.firmaUrl || "";
 
     const renderToothBlock = (num, isUpper) => {
@@ -653,7 +679,7 @@ export const generateOralDriveOdontogramaPrintHTML = ({
             <td class="lbl">Ocupación</td>
             <td class="val">${paciente.ocupacion || "—"}</td>
             <td class="lbl">Doctor/Profesional</td>
-            <td class="val" style="font-weight: 700;">${sesion?.profesional || paciente.dentistaResponsable || userProfile?.nombreCompleto || "Profesional de Planta"}</td>
+            <td class="val" style="font-weight: 700;">${doctorName}</td>
         </tr>
         <tr>
             <td class="lbl">Teléfono</td>
@@ -717,7 +743,7 @@ export const generateOralDriveOdontogramaPrintHTML = ({
                 return `
                     <tr>
                         <td style="font-weight: 600; color: #475569;">${fStr}</td>
-                        <td style="font-weight: 700; color: #0f172a;">${sesion?.profesional || userProfile?.nombreCompleto || "Odontólogo Tratante"}</td>
+                        <td style="font-weight: 700; color: #0f172a;">${doctorName}</td>
                         <td style="text-align: center; font-weight: 900; color: #0284c7;">#${h.diente}</td>
                         <td style="font-weight: 700; color: #334155;">${h.tratamiento || "Tratamiento"}</td>
                         <td style="color: #475569;">${h.zonaLabel || h.zona || "Pieza Completa"}</td>
@@ -743,10 +769,10 @@ export const generateOralDriveOdontogramaPrintHTML = ({
             </div>
             <div class="sig-line">
                 <div style="font-size: 10px; font-weight: 800; color: #0f172a; text-transform: uppercase;">
-                    ${sesion?.profesional || userProfile?.nombreCompleto || "Odontólogo Tratante"}
+                    ${doctorName}
                 </div>
                 <div style="font-size: 8.5px; color: #64748b; font-weight: 700; text-transform: uppercase;">
-                    Firma del Especialista / Odontólogo • ${userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Registro Médico'}
+                    Firma del Especialista / Odontólogo • ${doctorRegistro ? `TP: ${doctorRegistro}` : 'Registro Médico'}
                 </div>
             </div>
         </div>
