@@ -1,32 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-# ====================================================================
-# ACTUALIZADOR EXCLUSIVO DE ODONTOCLOUD-HELP CON OLLAMA (SERVICIO 2)
-# ADVERTENCIA: NO TOCA EDUNEXUS NI NINGÚN OTRO SERVICIO DEL VPS
-# ====================================================================
-
-TARGET_DIR="/data/coolify/services/ueh7xuehxl9thmhre7fpk4xx/volumes/functions"
-CONTAINER_NAME="supabase-edge-functions-ueh7xuehxl9thmhre7fpk4xx"
-BASE_URL="https://raw.githubusercontent.com/juanemadrid/odontocloudsaas/main/supabase/functions"
-
-echo "=== 1. Creando directorios requeridos en OdontoCloud ==="
-mkdir -p "$TARGET_DIR/_shared"
-mkdir -p "$TARGET_DIR/odontocloud-help"
-
-echo "=== 2. Descargando base de conocimiento ampliada (planes, precios, DIAN/RIPS) ==="
-curl -sSL "$BASE_URL/_shared/helpKnowledge.mjs" -o "$TARGET_DIR/_shared/helpKnowledge.mjs"
-
-echo "=== 3. Descargando handler con soporte público y ChatGPT style ==="
-curl -sSL "$BASE_URL/odontocloud-help/handler.mjs" -o "$TARGET_DIR/odontocloud-help/handler.mjs"
-curl -sSL "$BASE_URL/odontocloud-help/index.ts" -o "$TARGET_DIR/odontocloud-help/index.ts"
-
-echo "=== 4. Reiniciando contenedor de Edge Functions de OdontoCloud ==="
-docker restart "$CONTAINER_NAME"
-
-sleep 3
-docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.State}}"
-
-echo ""
-echo "🎉 ¡Completado! odontocloud-help actualizado con conocimiento comercial, público y Ollama."
-echo "Edunexus no fue modificado en lo absoluto."
+# Ejecutar con el SHA completo de un commit publicado, no con una rama mutable.
+REVISION="${1:-}"
+[[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo 'Uso: bash update_edge_function_odontocloud_help.sh <SHA de commit publicado>'; exit 1; }
+TARGET_DIR='/data/coolify/services/ueh7xuehxl9thmhre7fpk4xx/volumes/functions'
+CONTAINER_NAME='supabase-edge-functions-ueh7xuehxl9thmhre7fpk4xx'
+ACTUAL=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/home/deno/functions"}}{{.Source}}{{end}}{{end}}' "$CONTAINER_NAME")
+[[ "$ACTUAL" == "$TARGET_DIR" && -d "$TARGET_DIR" ]] || { echo 'Volumen inesperado. Sin cambios.'; exit 1; }
+TMP=$(mktemp -d /tmp/odontocloud-help.XXXXXX)
+trap 'rm -rf "$TMP"' EXIT
+FILES=(odontocloud-help/index.ts odontocloud-help/handler.mjs odontocloud-help/auth.mjs _shared/helpKnowledge.mjs _shared/helpConversation.mjs)
+BASE_URL="https://raw.githubusercontent.com/juanemadrid/odontocloudsaas/$REVISION/supabase/functions"
+for FILE in "${FILES[@]}"; do
+  [[ ! -L "$TARGET_DIR/$FILE" && ! -L "$TARGET_DIR/$(dirname "$FILE")" ]] || { echo 'Enlace inesperado. Sin cambios.'; exit 1; }
+  mkdir -p "$TMP/$(dirname "$FILE")"
+  curl --fail --silent --show-error --location --max-time 30 "$BASE_URL/$FILE" -o "$TMP/$FILE"
+  [[ -s "$TMP/$FILE" ]] || { echo 'Descarga vacía. Sin cambios.'; exit 1; }
+done
+(cd "$TMP" && sha256sum "${FILES[@]}" > files.sha256)
+BACKUP=$(mktemp -d /root/odontocloud-help-backup.XXXXXX)
+for FILE in "${FILES[@]}"; do
+  mkdir -p "$BACKUP/$(dirname "$FILE")"
+  if [[ -e "$TARGET_DIR/$FILE" ]]; then cp -a "$TARGET_DIR/$FILE" "$BACKUP/$FILE"; else printf '%s\n' "$FILE" >> "$BACKUP/new-files.txt"; fi
+done
+for FILE in "${FILES[@]}"; do
+  mkdir -p "$TARGET_DIR/$(dirname "$FILE")"
+  cp "$TMP/$FILE" "$TARGET_DIR/$FILE"
+  chmod 644 "$TARGET_DIR/$FILE"
+done
+(cd "$TARGET_DIR" && sha256sum -c "$TMP/files.sha256")
+printf 'Archivos instalados desde %s. Respaldo: %s\n' "$REVISION" "$BACKUP"
+printf 'Para activarlos: docker restart %s\n' "$CONTAINER_NAME"
+echo 'No se modificaron redes, Ollama ni Edunexus. Falta comprobar una respuesta real desde la aplicación.'

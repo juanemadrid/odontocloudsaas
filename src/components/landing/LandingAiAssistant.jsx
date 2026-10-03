@@ -132,6 +132,10 @@ export default function LandingAiAssistant({ config }) {
     const [inputText, setInputText] = useState('');
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef(null);
+    const activeRequest = useRef(null);
+    const requestVersion = useRef(0);
+    useEffect(() => () => { requestVersion.current += 1; activeRequest.current?.abort(); }, []);
+    useEffect(() => { if (!isOpen) { requestVersion.current += 1; activeRequest.current?.abort(); setLoading(false); setMessages(prev => prev.filter(m => !m.pending)); } }, [isOpen]);
 
     const whatsappNumber = (config?.contactPhone || "3015768935").replace(/\D/g, '');
 
@@ -153,6 +157,11 @@ export default function LandingAiAssistant({ config }) {
         setMessages(prev => [...prev, userMsg]);
         setInputText('');
         setLoading(true);
+        const version = ++requestVersion.current;
+        const controller = new AbortController();
+        activeRequest.current = controller;
+        const replyId = 'reply-' + version;
+        setMessages(prev => [...prev, { id: replyId, sender: 'bot', text: 'Revisando tu pregunta…', pending: true, sources: [] }]);
 
         try {
             // Previous guide ids for conversation context
@@ -161,17 +170,20 @@ export default function LandingAiAssistant({ config }) {
                 .flatMap(m => m.sources.map(s => s.id))
                 .slice(-3);
 
-            const response = await askHelp(text, previousIds, { mode: 'public' });
+            const response = await askHelp(text, previousIds, { mode: 'public', history: messages.slice(1).filter(m => !m.pending), signal: controller.signal,
+                onUpdate: answer => { if (version === requestVersion.current) setMessages(prev => prev.map(m => m.id === replyId ? { ...m, text: answer } : m)); },
+            });
+            if (version !== requestVersion.current) return;
             
             const botMsg = {
                 id: `bot-${Date.now()}`,
                 sender: 'bot',
                 text: response?.answer || "Disculpa, no pude procesar tu solicitud en este momento. Si deseas atención inmediata, puedes contactarnos por WhatsApp.",
-                sources: response?.sources || []
+                sources: response?.sources || [], provider: response?.provider, reason: response?.reason
             };
-            setMessages(prev => [...prev, botMsg]);
+            setMessages(prev => prev.map(m => m.id === replyId ? botMsg : m));
         } catch (err) {
-            console.error("Error en asistente landing:", err);
+            if (version !== requestVersion.current) return;
             setMessages(prev => [
                 ...prev,
                 {
@@ -182,7 +194,7 @@ export default function LandingAiAssistant({ config }) {
                 }
             ]);
         } finally {
-            setLoading(false);
+            if (version === requestVersion.current) setLoading(false);
         }
     };
 
@@ -192,6 +204,7 @@ export default function LandingAiAssistant({ config }) {
     };
 
     const handleReset = () => {
+        requestVersion.current += 1; activeRequest.current?.abort(); setLoading(false);
         setMessages([
             {
                 id: `welcome-${Date.now()}`,
@@ -315,11 +328,13 @@ export default function LandingAiAssistant({ config }) {
                                         {msg.sender === 'user' ? (
                                             <p className="m-0 leading-relaxed">{msg.text}</p>
                                         ) : (
+                                            <><div className="text-[10px] font-semibold text-slate-400 mb-2">{msg.pending ? 'OdontoIA está escribiendo…' : msg.provider === 'ollama' ? 'OdontoIA · IA local' : msg.provider === 'manual' ? 'Guía de OdontoCloud' : 'OdontoIA'}</div>
+                                            {msg.reason === 'unavailable' && <p className="text-xs text-amber-800 mb-2">La IA no completó la respuesta. Te muestro la información disponible.</p>}
                                             <MessageContent
                                                 text={msg.text}
                                                 onOpenTrial={handleOpenTrial}
                                                 whatsappNumber={whatsappNumber}
-                                            />
+                                            /></>
                                         )}
                                     </div>
 
@@ -349,7 +364,7 @@ export default function LandingAiAssistant({ config }) {
                                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce"></span>
                                             </div>
-                                            <span className="text-[11px] font-medium text-slate-400">Consultando documentación oficial...</span>
+                                            <span className="text-[11px] font-medium text-slate-400">Preparando la respuesta…</span><button type="button" className="text-xs text-blue-700 font-semibold" onClick={() => activeRequest.current?.abort()}>Detener</button>
                                         </div>
                                     </div>
                                 </div>
@@ -406,7 +421,7 @@ export default function LandingAiAssistant({ config }) {
                                 </button>
                             </form>
                             <div className="mt-1.5 flex items-center justify-between px-1">
-                                <span className="text-[10px] text-slate-400 font-medium">OdontoIA • Certificado para Odontología</span>
+                                <span className="text-[10px] text-slate-400 font-medium">OdontoIA • Asistente de OdontoCloud</span>
                                 <button
                                     type="button"
                                     onClick={handleOpenTrial}

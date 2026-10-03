@@ -17,11 +17,14 @@ import UserProfileModal from "../components/UserProfileModal";
 import SedeSelector from "../components/SedeSelector";
 import OdontoHelpAssistantModal from "../components/OdontoHelpAssistantModal";
 import ConnectionStatusBadge from "../components/ui/ConnectionStatusBadge";
+import SubscriptionBanner from "../components/SubscriptionBanner";
+import SubscriptionRenewalModal from "../components/SubscriptionRenewalModal";
 
 export default function DashboardLayout({ children, title, subtitle, basePath = "/dashboard_admin" }) {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [profileModalOpen, setProfileModalOpen] = useState(false);
     const [helpModalOpen, setHelpModalOpen] = useState(false);
+    const [renewalModalOpen, setRenewalModalOpen] = useState(false);
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const userMenuRef = useRef(null);
     const [pendingNavigationPath, setPendingNavigationPath] = useState(null);
@@ -45,8 +48,13 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
 
     useEffect(() => {
         const handleOpenProfile = () => setProfileModalOpen(true);
+        const handleOpenRenewal = () => setRenewalModalOpen(true);
         window.addEventListener("open-user-profile", handleOpenProfile);
-        return () => window.removeEventListener("open-user-profile", handleOpenProfile);
+        window.addEventListener("open-subscription-renewal", handleOpenRenewal);
+        return () => {
+            window.removeEventListener("open-user-profile", handleOpenProfile);
+            window.removeEventListener("open-subscription-renewal", handleOpenRenewal);
+        };
     }, []);
 
     useEffect(() => {
@@ -566,6 +574,20 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                                             <span>Mi Perfil & Firma</span>
                                         </button>
 
+                                        {(userProfile?.rol || "").trim().toLowerCase() !== "superadmin" && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setUserMenuOpen(false);
+                                                    setRenewalModalOpen(true);
+                                                }}
+                                                className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 text-slate-700 hover:bg-blue-50 hover:text-blue-700 font-semibold transition-colors cursor-pointer"
+                                            >
+                                                <FiCreditCard size={13} className="text-emerald-600" />
+                                                <span>Mi Suscripción & Pagos</span>
+                                            </button>
+                                        )}
+
                                         <div className="h-px bg-slate-100 my-1" />
 
                                         <button
@@ -585,6 +607,12 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                         </div>
                     </div>
                 </header>
+
+                {/* Banner de Suscripción / Vencimiento */}
+                <SubscriptionBanner
+                    userProfile={userProfile}
+                    onOpenRenewalModal={() => setRenewalModalOpen(true)}
+                />
 
                 <main className="flex-1 p-4 sm:p-6 lg:p-8">
                     <div className="max-w-[1600px] mx-auto">
@@ -609,6 +637,11 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             <CommandPalette />
             <UserProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
             <OdontoHelpAssistantModal isOpen={helpModalOpen} onClose={() => setHelpModalOpen(false)} />
+            <SubscriptionRenewalModal
+                isOpen={renewalModalOpen}
+                onClose={() => setRenewalModalOpen(false)}
+                userProfile={userProfile}
+            />
 
             {/* Notifications Slide-over Panel */}
             {notificationsOpen && (

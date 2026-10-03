@@ -12,7 +12,7 @@ import {
     FiPlus, FiRefreshCw, FiSearch, FiActivity, FiCheck, FiX,
     FiEdit3, FiTrash2, FiToggleLeft, FiToggleRight, FiGift,
     FiAlertCircle, FiChevronRight, FiUser, FiCalendar,
-    FiFileText, FiMail, FiSliders, FiMessageSquare, FiKey, FiCopy, FiEye, FiEyeOff
+    FiFileText, FiMail, FiSliders, FiMessageSquare, FiKey, FiCopy, FiEye, FiEyeOff, FiRepeat
 } from "react-icons/fi";
 
 const fmt = (ts) => {
@@ -84,6 +84,9 @@ export default function TenantsPanelV2() {
     const [showRequests,   setShowRequests]   = useState(false);
     const [showDetail,     setShowDetail]     = useState(null); // tenant object
     const [showEditTenant, setShowEditTenant] = useState(null);
+    const [showQuickRenew, setShowQuickRenew] = useState(null); // tenant object para renovar
+    const [quickRenewDuration, setQuickRenewDuration] = useState("yearly");
+    const [renewing, setRenewing] = useState(false);
 
     // Forms
     const [selectedTenant, setSelectedTenant] = useState(null);
@@ -370,6 +373,26 @@ export default function TenantsPanelV2() {
         try { await deleteTenant(id); loadData(); } catch { alert("Error al eliminar."); } finally { setProcessing(false); }
     };
 
+    const handleExecuteQuickRenew = async () => {
+        if (!showQuickRenew) return;
+        const durText = quickRenewDuration === "yearly" ? "1 Año (365 días)" : "1 Mes (30 días)";
+        if (!window.confirm(`¿Confirmas la recepción del pago y la extensión por ${durText} para "${showQuickRenew.name}"?`)) return;
+
+        setRenewing(true);
+        try {
+            const res = await updateTenantPlan(showQuickRenew.id, showQuickRenew.planId || "pro", quickRenewDuration);
+            await loadData();
+            setShowQuickRenew(null);
+            const newDateFmt = fmt(res.newEndDate);
+            alert(`✅ Suscripción de "${showQuickRenew.name}" renovada exitosamente.\nNueva fecha de vencimiento: ${newDateFmt}`);
+        } catch (err) {
+            console.error("Error renovando suscripción:", err);
+            alert("❌ Error al renovar: " + (err.message || "Error desconocido"));
+        } finally {
+            setRenewing(false);
+        }
+    };
+
     const handleApprove = async (id) => {
         setProcessing(true);
         try {
@@ -491,17 +514,44 @@ export default function TenantsPanelV2() {
                                             </td>
                                             <td className="px-5 py-4 text-xs whitespace-nowrap">
                                                 {(() => {
-                                                    const isExp = t.subscriptionEndDate && new Date(t.subscriptionEndDate) < new Date();
+                                                    if (!t.subscriptionEndDate) {
+                                                        return <span className="text-slate-400 font-medium">Sin fecha</span>;
+                                                    }
+                                                    const end = new Date(t.subscriptionEndDate);
+                                                    const now = new Date();
+                                                    const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+                                                    const isExp = diffDays < 0;
+                                                    const isToday = diffDays === 0;
+                                                    const isUrgent = diffDays > 0 && diffDays <= 7;
+                                                    const isWarning = diffDays > 7 && diffDays <= 15;
+
                                                     return (
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className={isExp ? "text-rose-600 font-bold" : "text-slate-500 font-medium"}>
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <span className={isExp ? "text-rose-600 font-bold" : "text-slate-700 font-semibold"}>
                                                                 {fmt(t.subscriptionEndDate)}
                                                             </span>
-                                                            {isExp && (
-                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">
-                                                                    Vencido
-                                                                </span>
-                                                            )}
+                                                            <div className="flex items-center gap-1">
+                                                                {isExp && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">
+                                                                        Vencido
+                                                                    </span>
+                                                                )}
+                                                                {isToday && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-300">
+                                                                        Vence hoy
+                                                                    </span>
+                                                                )}
+                                                                {isUrgent && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                                        {diffDays === 1 ? "Vence mañana" : `Vence en ${diffDays} d`}
+                                                                    </span>
+                                                                )}
+                                                                {isWarning && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                                                        Vence en {diffDays} d
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     );
                                                 })()}
@@ -593,6 +643,14 @@ export default function TenantsPanelV2() {
                                                         <FiKey size={13}/>
                                                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                                                             Cambiar Contraseña
+                                                        </span>
+                                                    </button>
+                                                    <button onClick={()=>{ setShowQuickRenew(t); setQuickRenewDuration(t.planDuration || "yearly"); }}
+                                                        title="Validar pago y renovar suscripción (+1 Año o +1 Mes)"
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition-all group relative">
+                                                        <FiRepeat size={13}/>
+                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                                            Validar Pago y Renovar
                                                         </span>
                                                     </button>
                                                     <button onClick={()=>{setSelectedTenant(t);setNewPlanId(t.planId);setNewDuration(t.planDuration||"monthly");setShowPlan(true);}}
@@ -970,6 +1028,115 @@ export default function TenantsPanelV2() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Modal de Renovación Rápida tras Validar Pago ── */}
+            {showQuickRenew && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+                        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-6 py-5 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white">
+                                    <FiRepeat size={18} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-black tracking-tight">Validar Pago & Renovar</h3>
+                                    <p className="text-[11px] text-emerald-100 uppercase tracking-wider font-semibold">OdontoCloud SuperAdmin</p>
+                                </div>
+                            </div>
+                            <button onClick={()=>setShowQuickRenew(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
+                                <FiX size={16}/>
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Información de la clínica */}
+                            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/70 space-y-1.5">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clínica a Renovar</span>
+                                <h4 className="text-base font-black text-slate-800">{showQuickRenew.name}</h4>
+                                <div className="flex items-center gap-2 text-xs text-slate-600 pt-1">
+                                    <span className="bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded text-[10px]">
+                                        Plan: {getPlanName(showQuickRenew.planId)}
+                                    </span>
+                                    <span>Vence: <strong>{fmt(showQuickRenew.subscriptionEndDate)}</strong></span>
+                                </div>
+                            </div>
+
+                            {/* Selector de periodo */}
+                            <div className="space-y-2">
+                                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                                    Selecciona el tiempo pagado a extender:
+                                </label>
+                                <div className="grid grid-cols-2 gap-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={()=>setQuickRenewDuration("yearly")}
+                                        className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                                            quickRenewDuration === "yearly"
+                                                ? "border-emerald-600 bg-emerald-50/50 shadow-xs"
+                                                : "border-slate-200 hover:border-slate-300 bg-white"
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-xs font-black text-slate-800 uppercase">⭐ Anual</span>
+                                            {quickRenewDuration === "yearly" && <FiCheck size={14} className="text-emerald-600" />}
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 font-semibold">+365 días</p>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={()=>setQuickRenewDuration("monthly")}
+                                        className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer ${
+                                            quickRenewDuration === "monthly"
+                                                ? "border-emerald-600 bg-emerald-50/50 shadow-xs"
+                                                : "border-slate-200 hover:border-slate-300 bg-white"
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-xs font-black text-slate-800 uppercase">⚡ Mensual</span>
+                                            {quickRenewDuration === "monthly" && <FiCheck size={14} className="text-emerald-600" />}
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 font-semibold">+30 días</p>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 leading-relaxed">
+                                ℹ️ Al confirmar, el sistema sumará el periodo correspondiente a partir de hoy (si estaba vencida) o extenderá la fecha actual (si renovó anticipadamente), reactivará la clínica y a todos sus usuarios.
+                            </div>
+
+                            <div className="flex gap-2.5 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={()=>setShowQuickRenew(null)}
+                                    disabled={renewing}
+                                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleExecuteQuickRenew}
+                                    disabled={renewing}
+                                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0"
+                                >
+                                    {renewing ? (
+                                        <>
+                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                                            <span>Procesando...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FiCheck size={14} />
+                                            <span>Confirmar y Extender</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

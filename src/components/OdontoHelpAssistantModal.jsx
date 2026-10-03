@@ -120,7 +120,7 @@ const QUICK_TOPICS = [
 function HelpPanel({ onClose }) {
     const welcome = { 
         sender: 'bot', 
-        text: '¡Hola! Soy tu asistente de OdontoCloud. Puedo guiarte paso a paso mientras usas el sistema. Pregúntame una duda o selecciona una guía rápida:', 
+        text: '¡Hola! Soy OdontoIA. Cuéntame qué quieres hacer o dónde te quedaste y lo vemos paso a paso.',
         sources: [] 
     };
     
@@ -134,6 +134,8 @@ function HelpPanel({ onClose }) {
     const [previousIds, setPreviousIds] = useState([]);
     
     const pending = useRef(false);
+    const activeRequest = useRef(null);
+    useEffect(() => () => { generation.current += 1; activeRequest.current?.abort(); }, []);
     const generation = useRef(0);
     const endRef = useRef(null);
     const inputRef = useRef(null);
@@ -160,7 +162,7 @@ function HelpPanel({ onClose }) {
     }, [messages, isTyping, activeTab]);
 
     const reset = () => {
-        generation.current += 1;
+        generation.current += 1; activeRequest.current?.abort();
         pending.current = false;
         setIsTyping(false);
         setMessages([welcome]);
@@ -171,7 +173,7 @@ function HelpPanel({ onClose }) {
     };
 
     const showGuide = guide => {
-        generation.current += 1;
+        generation.current += 1; activeRequest.current?.abort();
         pending.current = false;
         setIsTyping(false);
         setMessages(prev => [
@@ -192,11 +194,18 @@ function HelpPanel({ onClose }) {
         setInput('');
         setActiveTab('chat');
         setIsTyping(true);
-        const result = await askHelp(question, previousIds);
+        const controller = new AbortController();
+        activeRequest.current = controller;
+        const replyId = 'reply-' + requestId;
+        setMessages(prev => [...prev, { id: replyId, sender: 'bot', text: '', provider: 'ollama', pending: true, sources: [] }]);
+        const result = await askHelp(question, previousIds, {
+            history: messages.slice(1).filter(m => !m.pending), signal: controller.signal,
+            onUpdate: text => { if (requestId === generation.current) setMessages(prev => prev.map(m => m.id === replyId ? { ...m, text } : m)); },
+        });
         if (requestId !== generation.current) return;
         const sources = (result.sources || []).filter(s => s && HELP_GUIDES.some(g => g.id === s.id));
-        setMessages(prev => [...prev, { sender: 'bot', text: result.answer, provider: result.provider, reason: result.reason, sources }]);
-        setPreviousIds(sources.map(s => s.id));
+        setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, reason: result.reason, sources } : m));
+        if (result.reason !== 'conversation' && result.reason !== 'cancelled') setPreviousIds(sources.map(s => s.id));
         pending.current = false;
         setIsTyping(false);
         inputRef.current?.focus();
@@ -363,14 +372,14 @@ function HelpPanel({ onClose }) {
                                     <>
                                         <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                             <FiMessageSquare size={11} /> 
-                                            <span>{message.provider === 'ollama' ? 'Respuesta con IA' : 'Guía OdontoCloud'}</span>
+                                            <span>{message.pending ? 'OdontoIA está escribiendo…' : message.provider === 'ollama' ? 'OdontoIA · IA local' : message.provider === 'manual' ? 'Guía verificada' : 'OdontoIA'}</span>
                                         </div>
                                         {['unavailable', 'not_configured'].includes(message.reason) && (
                                             <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 mb-2 border border-amber-200">
-                                                Guía paso a paso relacionada con tu consulta:
+                                                La IA no completó la respuesta. Puedes continuar con esta guía:
                                             </p>
                                         )}
-                                        <FormattedMessage text={message.text} />
+                                        <FormattedMessage text={message.text || (message.pending ? "Revisando tu pregunta…" : "")} />
                                         {message.sources?.length > 0 && (
                                             <div className="mt-3 pt-2 border-t border-slate-200/70">
                                                 <p className="text-[10px] font-bold text-slate-400 mb-1">Guías relacionadas:</p>
@@ -395,7 +404,7 @@ function HelpPanel({ onClose }) {
                         {isTyping && (
                             <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl max-w-[80%] flex items-center gap-2 text-xs text-slate-500 animate-pulse">
                                 <div className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
-                                <span>Buscando la guía paso a paso...</span>
+                                <span>Preparando la respuesta…</span><button type="button" className="ml-auto font-semibold text-blue-700" onClick={() => activeRequest.current?.abort()}>Detener</button>
                             </div>
                         )}
                         <div ref={endRef} />
@@ -423,7 +432,7 @@ function HelpPanel({ onClose }) {
                             </button>
                         </div>
                         <p className="text-[10px] text-slate-400 mt-1.5 flex items-center justify-between">
-                            <span>Sigue el paso a paso en tu pantalla sin cerrar esta ventana.</span>
+                            <span>Puede equivocarse. Consulta las guías y evita incluir datos de pacientes.</span>
                         </p>
                     </form>
                 </div>
