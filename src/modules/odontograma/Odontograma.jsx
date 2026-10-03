@@ -73,7 +73,7 @@ export default function Odontograma({ embeddedPatient }) {
     const [selectedToolId, setSelectedToolId] = useState("caries");
     const [odontogramaData, setOdontogramaData] = useState({});
     const [planTratamiento, setPlanTratamiento] = useState([]);
-    const [tipoDenticion, setTipoDenticion] = useState("completo");
+    const [tipoDenticion, setTipoDenticion] = useState("adulto");
     const [observaciones, setObservaciones] = useState("");
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -128,7 +128,7 @@ export default function Odontograma({ embeddedPatient }) {
                     estado: h.estado || d.estado || "Abierto",
                     creado: d.created_at,
                     creadoPor: h.creadoPor || d.creado_por || "usuario@sistema.com",
-                    tipoDenticion: h.tipoDenticion || d.tipo_denticion || "completo",
+                    tipoDenticion: h.tipoDenticion || d.tipo_denticion || "adulto",
                     profesional: h.profesional || d.profesional || "Profesional de Planta",
                     firmaDoctor: h.firmaDoctor || d.firma_doctor,
                     firmaPaciente: h.firmaPaciente || d.firma_paciente || d.firmaUrl,
@@ -159,7 +159,7 @@ export default function Odontograma({ embeddedPatient }) {
                         data: {},
                         plan: [],
                         estado: "Abierto",
-                        tipoDenticion: "completo",
+                        tipoDenticion: "adulto",
                         creadoPor: creador,
                         profesional: prof
                     },
@@ -175,7 +175,7 @@ export default function Odontograma({ embeddedPatient }) {
                 plan: h.plan || [], 
                 observaciones: data.observaciones || "", 
                 estado: h.estado || "Abierto",
-                tipoDenticion: h.tipoDenticion || "completo",
+                tipoDenticion: h.tipoDenticion || "adulto",
                 creadoPor: h.creadoPor || creador,
                 profesional: h.profesional || prof,
                 rawHallazgos: h
@@ -192,7 +192,7 @@ export default function Odontograma({ embeddedPatient }) {
         setOdontogramaData(s.data || {});
         setPlanTratamiento(s.plan || []);
         setObservaciones(s.observaciones || "");
-        setTipoDenticion(s.tipoDenticion || "completo");
+        setTipoDenticion(s.tipoDenticion || "adulto");
         setIsReadOnlyMode(readOnly);
         setReadOnlyAlert(false);
         setViewMode("EDITOR");
@@ -276,11 +276,12 @@ export default function Odontograma({ embeddedPatient }) {
         const tool = TOOLS.find(t => t.id === selectedToolId);
         if (!tool) return;
 
-        const isGeneralTool = [
+        const GENERAL_TOOLS = [
             "ausente", "extraccion", "implante_bueno", "implante_malo", 
             "corona_buena", "corona_des", "perno_bueno", "perno_malo", 
             "diente_sano", "fractura", "endodoncia_buena", "endodoncia_mala"
-        ].includes(selectedToolId);
+        ];
+        const isGeneralTool = GENERAL_TOOLS.includes(selectedToolId);
 
         setOdontogramaData(prev => {
             const cur = { ...(prev[dienteId] || {}) };
@@ -361,7 +362,19 @@ export default function Odontograma({ embeddedPatient }) {
             setReadOnlyAlert(true);
             return;
         }
-        setSelectedToolId(prev => prev === toolId ? null : toolId);
+        const GENERAL_TOOLS = [
+            "ausente", "extraccion", "implante_bueno", "implante_malo", 
+            "corona_buena", "corona_des", "perno_bueno", "perno_malo", 
+            "diente_sano", "fractura", "endodoncia_buena", "endodoncia_mala"
+        ];
+        setSelectedToolId(prev => {
+            const next = prev === toolId ? null : toolId;
+            if (next && GENERAL_TOOLS.includes(next)) {
+                setSurfaceFilter("todas");
+                setActiveToothId(null);
+            }
+            return next;
+        });
     };
 
     const handleSave = async (finalizar = false) => {
@@ -742,9 +755,9 @@ export default function Odontograma({ embeddedPatient }) {
                 </button>
             </header>
 
-            <div className="flex flex-col xl:flex-row flex-1 overflow-hidden">
-                {/* Columna Izquierda: Odontograma + Leyenda que hacen Scroll juntos */}
-                <div className="flex-1 flex flex-col bg-white min-w-0 overflow-y-auto overflow-x-hidden relative custom-scrollbar">
+            <div className="flex flex-col flex-1 overflow-hidden">
+                {/* Columna Principal: Odontograma + Leyenda y Hallazgos a Ancho Completo */}
+                <div className="w-full flex-1 flex flex-col bg-white min-w-0 overflow-y-auto overflow-x-hidden relative custom-scrollbar">
                     <div className="w-full flex-shrink-0" ref={odontogramaRef}>
                         <OdontogramaVisual
                             odontogramaData={odontogramaData}
@@ -757,8 +770,8 @@ export default function Odontograma({ embeddedPatient }) {
                     
                     {/* Panel Inferior: Checkboxes, Leyenda y Observaciones */}
                     <div className="px-8 py-6 border-t border-slate-200 bg-white shadow-[0_-5px_15px_-10px_rgba(0,0,0,0.1)] z-10">
-                        {/* Checkboxes de Superficies — funcionan como radio buttons */}
-                        <div className="flex flex-wrap gap-x-6 gap-y-3 mb-6">
+                        {/* Checkboxes de Superficies — con bloqueo para herramientas de pieza completa */}
+                        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mb-6">
                             {[
                                 { id: 'todas', label: 'Todas las superficies' },
                                 { id: 'vestibular', label: 'Vestibular' },
@@ -766,18 +779,31 @@ export default function Odontograma({ embeddedPatient }) {
                                 { id: 'lingual', label: 'Lingual/Palatina' },
                                 { id: 'mesial', label: 'Mesial' },
                                 { id: 'distal', label: 'Distal' }
-                            ].map(surf => (
-                                <label key={surf.id} className="flex items-center gap-2 cursor-pointer group">
-                                    <input
-                                        type="radio"
-                                        name="odontograma-superficie"
-                                        checked={surfaceFilter === surf.id}
-                                        onChange={() => handleSurfaceFilterChange(surf.id)}
-                                        className="w-4 h-4 text-indigo-600 bg-slate-50 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
-                                    />
-                                    <span className={`text-[12px] font-bold transition-colors ${surfaceFilter === surf.id ? "text-indigo-700" : "text-slate-700 group-hover:text-slate-900"}`}>{surf.label}</span>
-                                </label>
-                            ))}
+                            ].map(surf => {
+                                const GENERAL_TOOLS = [
+                                    "ausente", "extraccion", "implante_bueno", "implante_malo", 
+                                    "corona_buena", "corona_des", "perno_bueno", "perno_malo", 
+                                    "diente_sano", "fractura", "endodoncia_buena", "endodoncia_mala"
+                                ];
+                                const isBlocked = GENERAL_TOOLS.includes(selectedToolId) && surf.id !== 'todas';
+                                return (
+                                    <label
+                                        key={surf.id}
+                                        className={`flex items-center gap-2 ${isBlocked ? 'opacity-35 cursor-not-allowed' : 'cursor-pointer group'}`}
+                                        title={isBlocked ? "Esta opción aplica a toda la pieza dental" : undefined}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="odontograma-superficie"
+                                            disabled={isBlocked}
+                                            checked={surfaceFilter === surf.id}
+                                            onChange={() => !isBlocked && handleSurfaceFilterChange(surf.id)}
+                                            className="w-4 h-4 text-indigo-600 bg-slate-50 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                                        />
+                                        <span className={`text-[12px] font-bold transition-colors ${surfaceFilter === surf.id ? "text-indigo-700" : "text-slate-700 group-hover:text-slate-900"}`}>{surf.label}</span>
+                                    </label>
+                                );
+                            })}
                         </div>
 
                         {/* Leyenda y Observaciones */}
@@ -895,53 +921,6 @@ export default function Odontograma({ embeddedPatient }) {
                                 </table>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                {/* Plan de tratamiento lateral/inferior */}
-                <div className="w-full xl:w-80 flex-shrink-0 border-t xl:border-t-0 xl:border-l border-slate-100 flex flex-col bg-slate-50/30">
-                    <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white">
-                        <FiFileText size={15} className="text-indigo-500" />
-                        <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight">Plan de Tratamiento</span>
-                        <span className="ml-auto bg-slate-100 rounded-full px-2 py-0.5 text-[10px] font-black text-slate-500">{planTratamiento.length}</span>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                        {planTratamiento.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-48 text-slate-300">
-                                <span className="text-3xl mb-3">🦷</span>
-                                <span className="text-[10px] font-black uppercase tracking-widest">Sin hallazgos</span>
-                            </div>
-                        ) : planTratamiento.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-100 bg-slate-50/50 group hover:border-slate-200 transition-colors">
-                                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: item.color || "#94a3b8", flexShrink: 0 }} />
-                                <span className="w-7 h-7 rounded-lg bg-white border border-slate-100 flex items-center justify-center text-[10px] font-black text-slate-700 flex-shrink-0">
-                                    {item.diente}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[10px] font-bold text-slate-800 truncate">{item.tratamiento}</div>
-                                </div>
-                                {!isReadOnly && (
-                                    <button 
-                                        onClick={() => handleDeleteItem(idx)} 
-                                        className="text-rose-400 hover:text-rose-600 hover:scale-110 active:scale-95 transition-all flex-shrink-0 p-1.5"
-                                        title="Eliminar del plan"
-                                    >
-                                        <FiTrash2 size={13} />
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="p-4 border-t border-slate-100">
-                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Total Presupuesto</div>
-                        <div className="text-[12px] font-black text-slate-800 mb-4">Por definir</div>
-                        {!isReadOnly && (
-                            <button onClick={() => handleSave(false)} disabled={saving} className={`w-full py-3 rounded-[14px] text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${saving ? "bg-slate-100 text-slate-400" : "bg-slate-900 text-white hover:bg-black shadow-lg shadow-slate-200"}`}>
-                                <FiSave size={15} /> {saving ? "Guardando..." : "Guardar"}
-                            </button>
-                        )}
                     </div>
                 </div>
             </div>

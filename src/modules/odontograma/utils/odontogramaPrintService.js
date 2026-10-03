@@ -67,6 +67,21 @@ const renderToothCircleSVG = (toothData) => {
                 <line x1="12" y1="12" x2="88" y2="88" stroke="#ef4444" stroke-width="6" stroke-linecap="round" />
                 <line x1="88" y1="12" x2="12" y2="88" stroke="#ef4444" stroke-width="6" stroke-linecap="round" />
             ` : ''}
+            ${gen === 'fractura' ? `
+                <path d="M 45,8 L 57,28 L 44,48 L 56,68 L 46,92" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M 45,8 L 57,28 L 44,48 L 56,68 L 46,92" fill="none" stroke="#ef4444" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+            ` : ''}
+            ${gen === 'diente_sano' ? `
+                <path d="M 32,48 L 44,62 L 68,32" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M 32,48 L 44,62 L 68,32" fill="none" stroke="#10b981" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+            ` : ''}
+            ${gen && gen.includes('perno') ? `
+                <path d="M 28,50 H 72 M 50,22 V 78" fill="none" stroke="${gen.includes('malo') ? '#e11d48' : '#2563eb'}" stroke-width="4.5" stroke-linecap="round" />
+            ` : ''}
+            ${gen && gen.includes('endodoncia') ? `
+                <line x1="50" y1="18" x2="50" y2="82" stroke="${gen.includes('mala') ? '#ef4444' : '#2563eb'}" stroke-width="4" stroke-linecap="round" />
+                <circle cx="${CX}" cy="${CY}" r="15" fill="none" stroke="${gen.includes('mala') ? '#ef4444' : '#2563eb'}" stroke-width="3" stroke-dasharray="3,2" />
+            ` : ''}
             ${gen && gen.includes('implante') ? `
                 <rect x="36" y="8" width="28" height="84" rx="6" fill="#3b82f6" fill-opacity="0.3" stroke="#2563eb" stroke-width="4" />
             ` : ''}
@@ -77,15 +92,89 @@ const renderToothCircleSVG = (toothData) => {
     `;
 };
 
-const renderToothSprite = (toothNum, baseUrl) => {
+const renderToothSprite = (toothNum, baseUrl, toothData = {}, isUpper = false) => {
     const cfg = getSpriteConfig(toothNum, baseUrl);
     if (!cfg) return `<div style="height: 38px;"></div>`;
     const bgPosXPct = cfg.col * (100 / (cfg.numCols - 1));
     const bgSizeXPct = cfg.numCols * 100;
+    const gen = toothData?.general?.id;
+    const isAusente = gen === 'ausente';
+    const isImplante = gen && gen.includes('implante');
+    const opacity = isAusente ? 0.2 : isImplante ? 0.3 : 1;
+
+    let markSVG = '';
+    if (gen === 'fractura') {
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <g ${isUpper ? 'transform="translate(0 100) scale(1 -1)"' : ''}>
+                    <path d="M 47,4 L 57,14 L 48,22 L 55,30 L 44,42" fill="none" stroke="white" stroke-width="7" opacity="0.95" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M 47,4 L 57,14 L 48,22 L 55,30 L 44,42" fill="none" stroke="#ef4444" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+                </g>
+            </svg>
+        `;
+    } else if (gen === 'extraccion' || gen === 'ausente') {
+        const strokeColor = gen === 'extraccion' ? '#dc2626' : '#94a3b8';
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <line x1="12" y1="10" x2="88" y2="90" stroke="white" stroke-width="7" stroke-linecap="round" />
+                <line x1="88" y1="10" x2="12" y2="90" stroke="white" stroke-width="7" stroke-linecap="round" />
+                <line x1="12" y1="10" x2="88" y2="90" stroke="${strokeColor}" stroke-width="3.8" stroke-linecap="round" />
+                <line x1="88" y1="10" x2="12" y2="90" stroke="${strokeColor}" stroke-width="3.8" stroke-linecap="round" />
+            </svg>
+        `;
+    } else if (gen === 'diente_sano') {
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <g ${isUpper ? 'transform="translate(0 100) scale(1 -1)"' : ''}>
+                    <path d="M 40,20 L 47,28 L 60,11" fill="none" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M 40,20 L 47,28 L 60,11" fill="none" stroke="#10b981" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+                </g>
+            </svg>
+        `;
+    } else if (gen && gen.includes('perno')) {
+        const color = gen.includes('malo') ? '#e11d48' : '#2563eb';
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <g ${isUpper ? 'transform="translate(0 100) scale(1 -1)"' : ''}>
+                    <path d="M 38,24 H 62" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" />
+                    <path d="M 50,24 L 50,88 L 45,80" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" />
+                </g>
+            </svg>
+        `;
+    } else if (gen && gen.includes('endodoncia')) {
+        const color = gen.includes('mala') ? '#ef4444' : '#2563eb';
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <g ${isUpper ? 'transform="translate(0 100) scale(1 -1)"' : ''}>
+                    <path d="M 50,20 Q 50,45 50,88" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" />
+                    <path d="M 42,20 Q 42,45 38,88" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" />
+                    <path d="M 58,20 Q 58,45 62,88" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" />
+                </g>
+            </svg>
+        `;
+    } else if (gen && gen.includes('implante')) {
+        const color = gen.includes('malo') ? '#e11d48' : '#2563eb';
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <g ${isUpper ? 'transform="translate(0 100) scale(1 -1)"' : ''}>
+                    <rect x="38" y="9" width="24" height="18" rx="5" fill="white" fill-opacity="0.9" stroke="${color}" stroke-width="2.8" />
+                    <path d="M 43,28 L 57,28 L 54,86 L 50,93 L 46,86 Z" fill="${color}" fill-opacity="0.2" stroke="${color}" stroke-width="2.8" />
+                </g>
+            </svg>
+        `;
+    } else if (gen && gen.includes('corona')) {
+        const color = gen.includes('des') || gen.includes('malo') ? '#ef4444' : '#2563eb';
+        markSVG = `
+            <svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">
+                <circle cx="50" cy="50" r="46" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${gen.includes('des') ? '4,2' : 'none'}" />
+            </svg>
+        `;
+    }
 
     return `
-        <div style="width: 26px; height: 38px; position: relative; overflow: hidden; margin: 0 auto;">
+        <div style="width: 26px; height: 38px; position: relative; overflow: hidden; margin: 0 auto; opacity: ${opacity};">
             <div style="position: absolute; inset: 0; background-image: url('${cfg.img}'); background-size: ${bgSizeXPct}% auto; background-repeat: no-repeat; background-position: ${bgPosXPct.toFixed(2)}% ${cfg.posY};"></div>
+            ${markSVG}
         </div>
     `;
 };
@@ -125,9 +214,9 @@ export const generateOralDriveOdontogramaPrintHTML = ({
 
     const odontogramaData = sesion?.data || sesion?.hallazgos?.data || {};
     const planItems = sesion?.plan || sesion?.hallazgos?.plan || [];
-    const tipoDenticion = sesion?.tipoDenticion || sesion?.hallazgos?.tipoDenticion || "completo";
-    const showTemporary = tipoDenticion === "temporal" || tipoDenticion === "mixta";
-    const showPermanent = tipoDenticion !== "temporal";
+    const tipoDenticion = sesion?.tipoDenticion || sesion?.hallazgos?.tipoDenticion || "adulto";
+    const showTemporary = tipoDenticion === "temporal" || tipoDenticion === "mixta" || tipoDenticion === "completo" || tipoDenticion === "nino";
+    const showPermanent = tipoDenticion !== "temporal" && tipoDenticion !== "nino";
 
     // Si planItems está vacío pero hay datos en odontogramaData, extraemos los hallazgos
     let hallazgosList = [...planItems];
@@ -174,13 +263,13 @@ export const generateOralDriveOdontogramaPrintHTML = ({
         return `
             <div style="display: flex; flex-direction: column; align-items: center; width: 28px; flex-shrink: 0;">
                 ${isUpper ? `
-                    ${renderToothSprite(num, baseUrl)}
+                    ${renderToothSprite(num, baseUrl, tData, isUpper)}
                     <span style="font-size: 9px; font-weight: 800; color: #334155; margin: 1px 0;">${num}</span>
                     ${renderToothCircleSVG(tData)}
                 ` : `
                     ${renderToothCircleSVG(tData)}
                     <span style="font-size: 9px; font-weight: 800; color: #334155; margin: 1px 0;">${num}</span>
-                    ${renderToothSprite(num, baseUrl)}
+                    ${renderToothSprite(num, baseUrl, tData, isUpper)}
                 `}
             </div>
         `;
