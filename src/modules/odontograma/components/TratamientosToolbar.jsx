@@ -60,7 +60,7 @@ export const TOOLS = [
     { id: "perno_malo",         label: "Ret. intrarradicular des.",  color: "#E11D48", icon: <IconPerno /> },
 
     // ── COLUMNA 4 (OralDrive) ────────────────────────────────────────────────
-    { id: "pontico",            label: "Póntico",                    color: "#2563EB", icon: <IconPontico /> },
+    { id: "pontico",            label: "Póntico",                    color: "#EAB308", icon: <IconPontico /> },
     { id: "provisional_adap",   label: "Provisional adaptado",       color: "#3B82F6", icon: <IconProvisional /> },
     { id: "provisional_des",    label: "Provisional desadaptado",    color: "#EF4444", icon: <IconProvisional /> },
     { id: "rest_adaptado",      label: "Rest. adaptada",             color: "#10B981", icon: <IconAmalgama /> },

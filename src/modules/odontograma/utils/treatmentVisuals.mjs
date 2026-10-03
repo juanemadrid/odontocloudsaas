@@ -34,7 +34,7 @@ export const TREATMENT_VISUALS = Object.freeze({
     implante_bueno:     { scope: 'general', mode: 'implant',    stroke: '#3B82F6' },
     implante_malo:      { scope: 'general', mode: 'implant',    stroke: '#E11D48', alert: '#FDA4AF' },
     lesion_apical:      { scope: 'general', mode: 'apical',     stroke: '#B91C1C', alert: '#FEE2E2' },
-    pontico:            { scope: 'general', mode: 'crown',      stroke: '#2563EB' },
+    pontico:            { scope: 'general', mode: 'pontico',    stroke: '#EAB308', fill: '#FEF08A' },
     provisional_adap:   { scope: 'general', mode: 'crown',      stroke: '#3B82F6' },
     provisional_des:    { scope: 'general', mode: 'crown',      stroke: '#EF4444', alert: '#FCA5A5' },
     resto_radicular:    { scope: 'general', mode: 'root',       stroke: '#78716C' },

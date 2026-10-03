@@ -17,12 +17,18 @@ const createSlicePath = (cx, cy, innerRadius, outerRadius, startAngle, endAngle)
 
 const getSectorColor = (toothData, zoneId) => {
     const zone = toothData?.[zoneId];
-    if (zone?.color) return zone.color;
+    if (zone?.color) {
+        if (zone?.id === 'pontico') return '#FACC15';
+        return zone.color;
+    }
     const findingId = zone?.id;
     if (!findingId) {
         const genId = toothData?.general?.id;
-        if (genId && (genId.includes('pontico') || genId.includes('provisional'))) {
-            return toothData.general.color || '#2563EB';
+        if (genId && genId.includes('pontico')) {
+            return '#FACC15'; // Amarillo vibrante idéntico a OralDrive
+        }
+        if (genId && genId.includes('provisional')) {
+            return genId.includes('des') ? '#FCA5A5' : '#93C5FD';
         }
         return '#ffffff';
     }
@@ -30,6 +36,7 @@ const getSectorColor = (toothData, zoneId) => {
     if (findingId.includes('amalgama')) return '#2563EB';
     if (findingId.includes('resina') || findingId.includes('rest_')) return '#10B981';
     if (findingId.includes('sellante')) return '#10B981';
+    if (findingId.includes('pontico')) return '#FACC15';
     return '#94A3B8';
 };
 
@@ -72,16 +79,16 @@ const renderToothCircleSVG = (toothData) => {
             <path d="${createSlicePath(CX, CY, R_INNER, R_OUTER, 225, 315)}" fill="${leftColor}" stroke="#1e293b" stroke-width="2.5" />
             <circle cx="${CX}" cy="${CY}" r="${R_INNER}" fill="${centerColor}" stroke="#1e293b" stroke-width="2.5" />
             ${gen === 'extraccion' || gen === 'ausente' ? `
-                <line x1="12" y1="12" x2="88" y2="88" stroke="${gen === 'extraccion' ? '#DC2626' : '#94A3B8'}" stroke-width="5" stroke-linecap="round" />
-                <line x1="88" y1="12" x2="12" y2="88" stroke="${gen === 'extraccion' ? '#DC2626' : '#94A3B8'}" stroke-width="5" stroke-linecap="round" />
+                <line x1="12" y1="12" x2="88" y2="88" stroke="${gen === 'extraccion' ? '#DC2626' : '#94A3B8'}" stroke-width="5.5" stroke-linecap="round" />
+                <line x1="88" y1="12" x2="12" y2="88" stroke="${gen === 'extraccion' ? '#DC2626' : '#94A3B8'}" stroke-width="5.5" stroke-linecap="round" />
             ` : ''}
             ${gen === 'fractura' ? `
                 <path d="M 45,8 L 57,28 L 44,48 L 56,68 L 46,92" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M 45,8 L 57,28 L 44,48 L 56,68 L 46,92" fill="none" stroke="#EF4444" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M 45,8 L 57,28 L 44,48 L 56,68 L 46,92" fill="none" stroke="#EF4444" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" />
             ` : ''}
             ${gen === 'diente_sano' ? `
-                <path d="M 32,48 L 44,62 L 68,32" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M 32,48 L 44,62 L 68,32" fill="none" stroke="#10B981" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M 30,48 L 44,64 L 70,30" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M 30,48 L 44,64 L 70,30" fill="none" stroke="#10B981" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" />
             ` : ''}
             ${gen && gen.includes('perno') ? `
                 <path d="M 28,50 H 72 M 50,22 V 78" fill="none" stroke="${gen.includes('malo') ? '#E11D48' : '#2563EB'}" stroke-width="4.5" stroke-linecap="round" />
@@ -93,8 +100,16 @@ const renderToothCircleSVG = (toothData) => {
             ${gen && (gen.includes('carilla') || gen === 'carilla_adap' || gen === 'carilla_des') ? `
                 <path d="M 20,20 Q 50,5 80,20 Q 85,50 80,80 Q 50,95 20,80 Z" fill="none" stroke="${gen.includes('des') ? '#EF4444' : '#3B82F6'}" stroke-width="3.5" />
             ` : ''}
+            ${gen === 'pontico' ? `
+                <circle cx="${CX}" cy="${CY}" r="45" fill="#FACC15" fill-opacity="0.35" stroke="#EAB308" stroke-width="3.5" />
+                <rect x="18" y="36" width="64" height="28" rx="5" fill="#FEF08A" stroke="#CA8A04" stroke-width="2.5" />
+                <line x1="14" y1="50" x2="86" y2="50" stroke="#CA8A04" stroke-width="3.5" stroke-linecap="round" />
+            ` : ''}
+            ${gen && (gen.includes('provisional') || gen === 'provisional_adap' || gen === 'provisional_des') ? `
+                <circle cx="${CX}" cy="${CY}" r="46" fill="none" stroke="${gen.includes('des') ? '#EF4444' : '#3B82F6'}" stroke-width="3.5" stroke-dasharray="4,2" />
+            ` : ''}
             ${gen && (gen.includes('lesion_apical') || gen === 'lesion_apical') ? `
-                <circle cx="50" cy="50" r="14" fill="#B91C1C" fill-opacity="0.25" stroke="#B91C1C" stroke-width="3" />
+                <circle cx="50" cy="50" r="14" fill="#B91C1C" fill-opacity="0.3" stroke="#B91C1C" stroke-width="3" />
             ` : ''}
             ${gen && (gen.includes('resto_radicular') || gen === 'resto_radicular') ? `
                 <line x1="20" y1="20" x2="80" y2="80" stroke="#78716C" stroke-width="5" stroke-linecap="round" />
@@ -103,7 +118,7 @@ const renderToothCircleSVG = (toothData) => {
                 <rect x="36" y="8" width="28" height="84" rx="6" fill="${gen.includes('malo') ? '#E11D48' : '#2563EB'}" fill-opacity="0.3" stroke="${gen.includes('malo') ? '#E11D48' : '#2563EB'}" stroke-width="4" />
             ` : ''}
             ${gen && gen.includes('corona') ? `
-                <circle cx="${CX}" cy="${CY}" r="47" fill="none" stroke="${gen.includes('malo') || gen.includes('des') ? '#EF4444' : '#2563EB'}" stroke-width="4" stroke-dasharray="4,2" />
+                <circle cx="${CX}" cy="${CY}" r="47" fill="none" stroke="${gen.includes('malo') || gen.includes('des') ? '#EF4444' : '#2563EB'}" stroke-width="4" stroke-dasharray="${gen.includes('des') ? '4,2' : 'none'}" />
             ` : ''}
             ${gen && (gen === 'diente_incluido' || gen === 'diente_parcial_erup' || gen === 'diente_sin_erup') ? `
                 <line x1="50" y1="80" x2="50" y2="20" stroke="#8B5CF6" stroke-width="4" stroke-linecap="round" />
@@ -121,14 +136,119 @@ const renderToothSprite = (toothNum, baseUrl, toothData = {}, isUpper = false) =
     const gen = toothData?.general?.id;
     const isAusente = gen === 'ausente' || gen === 'extraccion' || gen === 'resto_radicular';
     const isImplante = gen && gen.includes('implante');
-    const opacity = isAusente ? 0.35 : isImplante ? 0.45 : 1;
+    const opacity = isAusente ? 0.25 : isImplante ? 0.35 : 1;
 
-    // Conforme a la solicitud del usuario y el estándar OralDrive:
-    // El dibujo del diente se mantiene limpio y nítido (sin marcas sobrepuestas desalineadas).
-    // Todo el marcado clínico se concentra en el círculo selector con precisión absoluta.
+    // Centro anatómico de la corona: en arcada superior está abajo (Y=76%), en inferior está arriba (Y=24%)
+    const crownCenterY = isUpper ? 76 : 24;
+    // Ápice de la raíz: en superior está arriba (Y=8%), en inferior está abajo (Y=92%)
+    const rootApexY = isUpper ? 8 : 92;
+
+    let toothOverlaySVG = '';
+
+    // 1. LESIÓN APICAL: Círculo y halo rojo sobre la punta exacta de la raíz (1:1 con OralDrive)
+    if (gen === 'lesion_apical') {
+        toothOverlaySVG += `
+            <circle cx="50" cy="${rootApexY}" r="7" fill="#DC2626" fill-opacity="0.85" stroke="white" stroke-width="1.8" />
+            <circle cx="50" cy="${rootApexY}" r="11" fill="none" stroke="#DC2626" stroke-width="1.8" stroke-dasharray="3,1.5" />
+        `;
+    }
+
+    // 2. PÓNTICO: Envolvente / bracket amarillo sobre la corona del diente (1:1 con OralDrive en amarillo #EAB308)
+    if (gen === 'pontico') {
+        toothOverlaySVG += `
+            <rect x="14" y="${isUpper ? 56 : 6}" width="72" height="38" rx="6" fill="#FEF08A" fill-opacity="0.55" stroke="#EAB308" stroke-width="3" />
+            <line x1="8" y1="${isUpper ? 75 : 25}" x2="92" y2="${isUpper ? 75 : 25}" stroke="#CA8A04" stroke-width="3" />
+        `;
+    }
+
+    // 3. FRACTURA: Trazo zigzag clínico sobre la corona anatómica
+    if (gen === 'fractura') {
+        const fracPath = isUpper 
+            ? "M 44,54 L 58,64 L 46,74 L 56,84 L 42,96" 
+            : "M 44,4 L 58,14 L 46,24 L 56,34 L 42,46";
+        toothOverlaySVG += `
+            <path d="${fracPath}" fill="none" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="${fracPath}" fill="none" stroke="#EF4444" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
+        `;
+    }
+
+    // 4. DIENTE SANO: Checkmark verde
+    if (gen === 'diente_sano') {
+        toothOverlaySVG += `
+            <path d="M 32,${crownCenterY - 4} L 44,${crownCenterY + 8} L 68,${crownCenterY - 14}" fill="none" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M 32,${crownCenterY - 4} L 44,${crownCenterY + 8} L 68,${crownCenterY - 14}" fill="none" stroke="#10B981" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
+        `;
+    }
+
+    // 5. EXTRACTIÓN / AUSENTE: Cruz X clínica sobre toda la silueta
+    if (gen === 'extraccion' || gen === 'ausente') {
+        const strokeColor = gen === 'extraccion' ? '#DC2626' : '#94A3B8';
+        toothOverlaySVG += `
+            <line x1="16" y1="10" x2="84" y2="90" stroke="white" stroke-width="7" stroke-linecap="round" />
+            <line x1="84" y1="10" x2="16" y2="90" stroke="white" stroke-width="7" stroke-linecap="round" />
+            <line x1="16" y1="10" x2="84" y2="90" stroke="${strokeColor}" stroke-width="3.8" stroke-linecap="round" />
+            <line x1="84" y1="10" x2="16" y2="90" stroke="${strokeColor}" stroke-width="3.8" stroke-linecap="round" />
+        `;
+    }
+
+    // 6. PERNO: Línea radicular + cabeza
+    if (gen && gen.includes('perno')) {
+        const color = gen.includes('malo') ? '#E11D48' : '#2563EB';
+        toothOverlaySVG += isUpper ? `
+            <line x1="34" y1="76" x2="66" y2="76" stroke="${color}" stroke-width="4" stroke-linecap="round" />
+            <line x1="50" y1="76" x2="50" y2="18" stroke="${color}" stroke-width="3.8" stroke-linecap="round" />
+        ` : `
+            <line x1="34" y1="24" x2="66" y2="24" stroke="${color}" stroke-width="4" stroke-linecap="round" />
+            <line x1="50" y1="24" x2="50" y2="82" stroke="${color}" stroke-width="3.8" stroke-linecap="round" />
+        `;
+    }
+
+    // 7. ENDODONCIA: Conductos radiculares
+    if (gen && gen.includes('endodoncia')) {
+        const color = gen.includes('mala') ? '#EF4444' : gen.includes('indicada') ? '#F97316' : '#2563EB';
+        toothOverlaySVG += isUpper ? `
+            <line x1="50" y1="76" x2="50" y2="16" stroke="${color}" stroke-width="3.5" stroke-linecap="round" />
+            <line x1="42" y1="74" x2="38" y2="22" stroke="${color}" stroke-width="2.5" stroke-linecap="round" />
+            <line x1="58" y1="74" x2="62" y2="22" stroke="${color}" stroke-width="2.5" stroke-linecap="round" />
+        ` : `
+            <line x1="50" y1="24" x2="50" y2="84" stroke="${color}" stroke-width="3.5" stroke-linecap="round" />
+            <line x1="42" y1="26" x2="38" y2="78" stroke="${color}" stroke-width="2.5" stroke-linecap="round" />
+            <line x1="58" y1="26" x2="62" y2="78" stroke="${color}" stroke-width="2.5" stroke-linecap="round" />
+        `;
+    }
+
+    // 8. CORONA O PROVISIONAL
+    if (gen && (gen.includes('corona') || gen.includes('provisional'))) {
+        const color = gen.includes('des') || gen.includes('malo') ? '#EF4444' : '#2563EB';
+        const isDes = gen.includes('des') || gen.includes('provisional');
+        toothOverlaySVG += `
+            <rect x="14" y="${isUpper ? 56 : 6}" width="72" height="38" rx="6" fill="${color}" fill-opacity="0.22" stroke="${color}" stroke-width="2.8" stroke-dasharray="${isDes ? '4,2' : 'none'}" />
+        `;
+    }
+
+    // 9. CARIES Y SUPERFICIES (Reflejo sobre la corona dental con coordenadas anatómicas exactas)
+    const topCol = getSectorColor(toothData, 'top');
+    const centerCol = getSectorColor(toothData, 'center');
+    const bottomCol = getSectorColor(toothData, 'bottom');
+    const leftCol = getSectorColor(toothData, 'left');
+    const rightCol = getSectorColor(toothData, 'right');
+
+    const hasAnySurface = topCol !== '#ffffff' || centerCol !== '#ffffff' || bottomCol !== '#ffffff' || leftCol !== '#ffffff' || rightCol !== '#ffffff';
+
+    if (hasAnySurface && !gen) {
+        toothOverlaySVG += `
+            ${centerCol !== '#ffffff' ? `<circle cx="50" cy="${crownCenterY}" r="9" fill="${centerCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+            ${topCol !== '#ffffff' ? `<ellipse cx="50" cy="${crownCenterY - 11}" rx="14" ry="4.5" fill="${topCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+            ${bottomCol !== '#ffffff' ? `<ellipse cx="50" cy="${crownCenterY + 11}" rx="14" ry="4.5" fill="${bottomCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+            ${leftCol !== '#ffffff' ? `<ellipse cx="30" cy="${crownCenterY}" rx="4.5" ry="9" fill="${leftCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+            ${rightCol !== '#ffffff' ? `<ellipse cx="70" cy="${crownCenterY}" rx="4.5" ry="9" fill="${rightCol}" stroke="#0f172a" stroke-width="1.2" />` : ''}
+        `;
+    }
+
     return `
         <div style="width: 26px; height: 38px; position: relative; overflow: hidden; margin: 0 auto; opacity: ${opacity};">
             <div style="position: absolute; inset: 0; background-image: url('${cfg.img}'); background-size: ${bgSizeXPct}% auto; background-repeat: no-repeat; background-position: ${bgPosXPct.toFixed(2)}% ${cfg.posY};"></div>
+            ${toothOverlaySVG ? `<svg viewBox="0 0 100 100" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none;">${toothOverlaySVG}</svg>` : ''}
         </div>
     `;
 };

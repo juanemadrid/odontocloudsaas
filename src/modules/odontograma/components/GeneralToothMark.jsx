@@ -88,6 +88,15 @@ function GeneralSymbol({ mode, color, alert, kind }) {
         );
     }
 
+    if (mode === 'pontico') {
+        return (
+            <g data-symbol="pontico">
+                <rect x={left} y="8" width={width} height="40" rx="6" fill="#FDE047" fillOpacity="0.4" stroke="#EAB308" strokeWidth="3" {...common} />
+                <line x1={left - 4} y1="28" x2={right + 4} y2="28" stroke="#CA8A04" strokeWidth="3.5" {...common} />
+            </g>
+        );
+    }
+
     if (mode === 'apical' || mode === 'lesion_apical') {
         return (
             <g data-symbol="apical">

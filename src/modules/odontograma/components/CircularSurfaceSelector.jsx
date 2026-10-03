@@ -106,7 +106,13 @@ export default function CircularSurfaceSelector({ activeToothId, toothData = {},
                             <path d="M 43,28 L 57,28 L 54,86 L 50,93 L 46,86 Z" fill={gen.includes('malo') ? '#E11D48' : '#2563EB'} fillOpacity="0.25" stroke={gen.includes('malo') ? '#E11D48' : '#2563EB'} strokeWidth="2.8" />
                         </g>
                     )}
-                    {(gen.includes('corona') || gen.includes('provisional') || gen === 'pontico') && (
+                    {gen === 'pontico' && (
+                        <g>
+                            <circle cx="50" cy="50" r="46" fill="#FACC15" fillOpacity="0.45" stroke="#EAB308" strokeWidth="3.5" />
+                            <rect x="18" y="36" width="64" height="28" rx="5" fill="#FEF08A" fillOpacity="0.8" stroke="#CA8A04" strokeWidth="2.5" />
+                        </g>
+                    )}
+                    {(gen.includes('corona') || gen.includes('provisional')) && (
                         <circle 
                             cx="50" cy="50" r="46" 
                             fill="none" 
