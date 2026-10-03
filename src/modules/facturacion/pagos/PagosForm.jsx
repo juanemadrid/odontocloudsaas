@@ -705,6 +705,10 @@ export default function PagosForm({ onCancel, onSuccess }) {
             }
             const consStr = String(nextEgresoNum);
 
+            const selectedProf = (profesionales || []).find(
+                p => p.id === profesionalId || p.nombre === profesionalId || p.displayName === profesionalId
+            );
+
             const pagoRecord = {
                 id: `pago_${Date.now()}`,
                 tenant_id: inquilino,
@@ -713,8 +717,8 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 nroConsecutivo: consStr,
                 pagadorEmail,
                 fecha,
-                profesionalId: selectedProf?.id || profesionalId,
-                profesional: selectedProf?.nombre || profesionalId || "",
+                profesionalId: selectedProf?.id || profesionalId || "",
+                profesional: selectedProf?.nombre || selectedProf?.displayName || profesionalId || "",
                 bancoCaja,
                 medioPago: medioPago || "Efectivo",
                 terceroId: selectedTercero?.id || terceroId,
@@ -726,6 +730,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 pagoFacturasCompra,
                 facturasSeleccionadas,
                 items: validItems,
+                concepto: validItems.map(i => i.concepto).filter(Boolean).join(", ") || (pagoFacturasCompra ? "Pago facturas compra" : "Pago a proveedor"),
                 monto: totalGeneral,
                 total: totalGeneral,
                 observaciones,
