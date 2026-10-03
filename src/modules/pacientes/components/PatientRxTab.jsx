@@ -119,7 +119,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
                 if (selectedFile) {
                     const safe = (selectedFile.name || "archivo").replace(/\s+/g, "_");
                     const uploaded = await uploadPrivateFile({
-                        tenantId: userProfile?.inquilino || patient?.tenant_id || patient?.inquilino,
+                        tenantId: userProfile?.tenant_id || userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || patient?.inquilino,
                         relativePath: `pacientes/${patient.id}/rx/${Date.now()}_${safe}`,
                         file: selectedFile,
                         upsert: true,
@@ -132,7 +132,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
             } else {
                 const safe = (selectedFile.name || "archivo").replace(/\s+/g, "_");
                 const uploaded = await uploadPrivateFile({
-                    tenantId: userProfile?.inquilino || patient?.tenant_id || patient?.inquilino,
+                    tenantId: userProfile?.tenant_id || userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || patient?.inquilino,
                     relativePath: `pacientes/${patient.id}/rx/${Date.now()}_${safe}`,
                     file: selectedFile,
                     upsert: true,
