@@ -79,13 +79,15 @@ export default function PatientRxTab({ patient, onUpdate }) {
     }, [patient?.rxImagenes, patient?.historial_medico?.rxImagenes]);
 
     const images = useMemo(() => {
-        let list = rxImagenesList.map(item => ({
-            ...item,
-            // No cargar un enlace firmado persistido: puede estar vencido y
-            // fallar antes de que se genere el enlace actualizado.
-            url: signedUrls[item.path || item.url]
-                || (String(item.url || "").includes("/storage/v1/object/sign/") ? "" : item.url)
-        }));
+        let list = rxImagenesList.map(item => {
+            const rawUrl = item.url || "";
+            const resolved = signedUrls[item.path || item.url];
+            const finalUrl = resolved || (rawUrl.startsWith("data:") || rawUrl.startsWith("http") || rawUrl.startsWith("blob:") ? rawUrl : "");
+            return {
+                ...item,
+                url: finalUrl
+            };
+        });
         if (filter.trim()) {
             const q = filter.toLowerCase();
             list = list.filter(i => (i.title || "").toLowerCase().includes(q) || (i.name || "").toLowerCase().includes(q));
@@ -101,6 +103,54 @@ export default function PatientRxTab({ patient, onUpdate }) {
         }
     };
 
+    const handleDownloadFile = async (item) => {
+        if (!item?.url) {
+            toast.error("No hay archivo disponible para descargar");
+            return;
+        }
+
+        try {
+            const fileName = (item.name || item.title || "archivo").trim();
+            const ext = item.type?.includes("pdf") ? ".pdf" : (item.type?.includes("png") ? ".png" : (item.type?.includes("webp") ? ".webp" : ""));
+            const downloadName = (fileName.includes(".") || !ext) ? fileName : `${fileName}${ext}`;
+
+            // Si es Data URI (base64) o Blob directo
+            if (item.url.startsWith("data:") || item.url.startsWith("blob:")) {
+                const link = document.createElement("a");
+                link.href = item.url;
+                link.download = downloadName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                return;
+            }
+
+            // Si es URL web normal, convertir a blob para forzar descarga directa
+            try {
+                const response = await fetch(item.url);
+                const blob = await response.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = blobUrl;
+                link.download = downloadName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+            } catch {
+                const link = document.createElement("a");
+                link.href = item.url;
+                link.download = downloadName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        } catch (err) {
+            console.error("Error al descargar archivo:", err);
+            toast.error("Error al descargar el archivo");
+        }
+    };
+
     const handleSaveFile = async (e) => {
         e.preventDefault();
         if (!selectedFile && !editingImage) return toast.error("Debe cargar un archivo");
@@ -113,7 +163,8 @@ export default function PatientRxTab({ patient, onUpdate }) {
             let uploadMetadata = null;
             
             if (editingImage) {
-                url = editingImage.path ? privateFileReference(editingImage.path) : editingImage.url;
+                // Conservar URL y PATH existentes si no se seleccionó un nuevo archivo
+                url = editingImage.url;
                 path = editingImage.path;
                 
                 if (selectedFile) {
@@ -145,24 +196,28 @@ export default function PatientRxTab({ patient, onUpdate }) {
 
             const itemData = {
                 url,
-                name: selectedFile ? selectedFile.name : editingImage.name,
+                name: selectedFile ? selectedFile.name : (editingImage?.name || nombreVisible),
                 title: nombreVisible,
                 descripcion,
                 profesional: profesionalResp,
                 creador: currentUserName,
                 fechaAsocISO: fechaAsoc,
                 path,
-                type: uploadMetadata?.contentType || (selectedFile ? selectedFile.type : editingImage.type),
-                size: uploadMetadata?.storedBytes || (selectedFile ? selectedFile.size : editingImage.size),
+                type: uploadMetadata?.contentType || (selectedFile ? selectedFile.type : (editingImage?.type || "image/png")),
+                size: uploadMetadata?.storedBytes || (selectedFile ? selectedFile.size : (editingImage?.size || 0)),
                 uploadedAtMS: editingImage ? editingImage.uploadedAtMS : Date.now(),
                 uploadedAtISO: editingImage ? editingImage.uploadedAtISO : new Date().toISOString()
             };
 
             let updatedList;
             if (editingImage) {
-                updatedList = rxImagenesList.map(img => 
-                    img.path === editingImage.path ? itemData : img
-                );
+                updatedList = rxImagenesList.map(img => {
+                    const isMatch = (img === editingImage) ||
+                                    (editingImage.uploadedAtMS && img.uploadedAtMS === editingImage.uploadedAtMS) ||
+                                    (editingImage.path && img.path === editingImage.path) ||
+                                    (editingImage.name && img.name === editingImage.name && img.uploadedAtISO === editingImage.uploadedAtISO);
+                    return isMatch ? itemData : img;
+                });
             } else {
                 updatedList = [...rxImagenesList, itemData];
             }
@@ -469,9 +524,14 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                                 >
                                                     <FiEdit size={14} />
                                                 </button>
-                                                <a href={img.url} target="_blank" rel="noreferrer" className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-colors" title="Descargar">
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleDownloadFile(img)} 
+                                                    className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-600 hover:text-white transition-colors cursor-pointer" 
+                                                    title="Descargar"
+                                                >
                                                     <FiDownload size={14} />
-                                                </a>
+                                                </button>
                                                 <button 
                                                     className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
                                                     onClick={() => handleDelete(img)}
@@ -509,15 +569,14 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
-                                <a 
-                                    href={previewItem.url} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-md shadow-blue-500/10"
+                                <button 
+                                    type="button"
+                                    onClick={() => handleDownloadFile(previewItem)} 
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-md shadow-blue-500/10 cursor-pointer"
                                     title="Descargar"
                                 >
                                     <FiDownload size={12} /> Descargar
-                                </a>
+                                </button>
                                 <button 
                                     onClick={() => setPreviewItem(null)} 
                                     className="w-9 h-9 bg-white border border-slate-100 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 transition-all shadow-sm"
@@ -529,11 +588,19 @@ export default function PatientRxTab({ patient, onUpdate }) {
                         
                         <div className="flex-1 overflow-auto bg-slate-900 flex items-center justify-center p-6 min-h-[300px] custom-scrollbar">
                             {previewItem.type?.startsWith('image/') ? (
-                                <img 
-                                    src={previewItem.url} 
-                                    alt={previewItem.title} 
-                                    className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-2xl border border-slate-800 bg-slate-950" 
-                                />
+                                previewItem.url && !previewItem.url.startsWith("adjuntos:") ? (
+                                    <img 
+                                        src={previewItem.url} 
+                                        alt={previewItem.title} 
+                                        className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-2xl border border-slate-800 bg-slate-950" 
+                                    />
+                                ) : (
+                                    <div className="text-center p-12 max-w-md bg-slate-950 border border-slate-800 rounded-[24px]">
+                                        <FiFileText size={48} className="text-amber-400 mx-auto mb-4" />
+                                        <h4 className="text-white text-sm font-black uppercase tracking-wider mb-2">Archivo No Disponible</h4>
+                                        <p className="text-slate-400 text-xs font-medium">Esta imagen fue guardada previamente sin archivo binario. Por favor pulsa el botón Editar (icono amarillo de lápiz) y selecciona la imagen para actualizarla.</p>
+                                    </div>
+                                )
                             ) : previewItem.type === 'application/pdf' ? (
                                 <iframe 
                                     src={previewItem.url} 
@@ -545,14 +612,13 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                     <FiFileText size={48} className="text-indigo-400 mx-auto mb-4" />
                                     <h4 className="text-white text-sm font-black uppercase tracking-wider mb-2">Archivo No Previsualizable</h4>
                                     <p className="text-slate-400 text-xs font-medium mb-6">Este tipo de archivo ({previewItem.type || 'documento'}) no se puede previsualizar directamente. Por favor descárguelo para abrirlo.</p>
-                                    <a 
-                                        href={previewItem.url} 
-                                        target="_blank" 
-                                        rel="noreferrer" 
-                                        className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+                                    <button 
+                                        type="button"
+                                        onClick={() => handleDownloadFile(previewItem)} 
+                                        className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer"
                                     >
                                         <FiDownload size={14} /> Descargar Archivo
-                                    </a>
+                                    </button>
                                 </div>
                             )}
                         </div>
