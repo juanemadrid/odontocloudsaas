@@ -102,3 +102,43 @@ export const deleteEvolution = async (id) => {
 
     if (error) throw error;
 };
+
+export const closeEvolution = async (evolutionId) => {
+    if (!evolutionId) throw new Error("ID de evolución requerido para cierre");
+    const { data, error } = await supabase.rpc("close_evolution", {
+        p_evolution_id: evolutionId
+    });
+    if (error) throw error;
+    return data;
+};
+
+export const createEvolutionAddendum = async (evolutionId, comentario) => {
+    if (!evolutionId) throw new Error("ID de evolución requerido");
+    if (!comentario || comentario.trim().length < 5) {
+        throw new Error("La nota aclaratoria debe tener al menos 5 caracteres");
+    }
+    const { data, error } = await supabase.rpc("create_evolution_addendum", {
+        p_evolution_id: evolutionId,
+        p_comentario: comentario.trim()
+    });
+    if (error) throw error;
+    return data;
+};
+
+export const getEvolutionAddendaBatch = async (evolutionIds) => {
+    if (!Array.isArray(evolutionIds) || evolutionIds.length === 0) return [];
+    try {
+        const { data, error } = await supabase.rpc("get_evolution_addenda_batch", {
+            p_evolution_ids: evolutionIds
+        });
+        if (error) {
+            console.warn("Aviso al consultar adendas por lote:", error.message);
+            return [];
+        }
+        return data || [];
+    } catch (err) {
+        console.error("Error en getEvolutionAddendaBatch:", err);
+        return [];
+    }
+};
+

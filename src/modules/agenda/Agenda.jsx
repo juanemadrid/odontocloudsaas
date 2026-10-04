@@ -514,20 +514,24 @@ export default function Agenda() {
                         </div>
 
                         <div className="flex items-center gap-3">
-                            <button 
-                                onClick={() => handleDownload("print")}
-                                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all active:scale-90"
-                                title="Imprimir Agenda"
-                            >
-                                <FiPrinter size={18} />
-                            </button>
-                            <button 
-                                onClick={() => handleDownload("download")}
-                                className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-emerald-600 hover:border-emerald-200 transition-all active:scale-90"
-                                title="Descargar Reporte PDF"
-                            >
-                                <FiDownload size={18} />
-                            </button>
+                            {can("Agenda", "Imprimir agenda", "consultar") && (
+                                <button 
+                                    onClick={() => handleDownload("print")}
+                                    className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all active:scale-90"
+                                    title="Imprimir Agenda"
+                                >
+                                    <FiPrinter size={18} />
+                                </button>
+                            )}
+                            {can("Agenda", "Exportar a excel", "consultar") && (
+                                <button 
+                                    onClick={() => handleDownload("download")}
+                                    className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-emerald-600 hover:border-emerald-200 transition-all active:scale-90"
+                                    title="Descargar Reporte PDF"
+                                >
+                                    <FiDownload size={18} />
+                                </button>
+                            )}
                             {can("Agenda", "Agenda", "crear") && (
                                 <button 
                                     onClick={() => {

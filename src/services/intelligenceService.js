@@ -132,7 +132,7 @@ export async function suggestTreatmentPlan(odontogramaData, anamnesisData, patie
     const prompt = `Eres un odontólogo experto en planificación de tratamientos. Basándote en la siguiente información del paciente, sugiere un plan de tratamiento priorizado.
 
 PACIENTE:
-- Nombre: ${patient?.nombreCompleto || "Paciente"}
+- Sujeto: Paciente en consulta
 
 HALLAZGOS EN ODONTOGRAMA:
 ${dientesConCondicion.length > 0 ? dientesConCondicion.join("\n") : "Sin hallazgos registrados en el odontograma."}

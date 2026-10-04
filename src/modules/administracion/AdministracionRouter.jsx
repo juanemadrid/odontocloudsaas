@@ -37,7 +37,11 @@ export default function AdministracionRouter() {
       if (item.id === "facturacion") {
         return can("Administración", "Menú Facturación", "consultar") ||
                can("Administración", "Factura de venta", "consultar") ||
-               can("Administración", "Recibo de caja", "consultar");
+               can("Administración", "Recibo de caja", "consultar") ||
+               can("Administración", "Liquidaciones", "consultar") ||
+               can("Administración", "Saldos a favor", "consultar") ||
+               can("Administración", "Pagos a proveedores", "consultar") ||
+               can("Administración", "Facturas de compra", "consultar");
       }
       if (item.id === "convenios") return can("Administración", "Convenios", "consultar");
       if (item.id === "agenda") return can("Administración", "Gestion Agenda", "consultar");

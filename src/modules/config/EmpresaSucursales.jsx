@@ -7,7 +7,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { 
     FiSearch, FiEdit2, FiTrash2, FiPlus, FiArrowLeft, FiMapPin, 
-    FiCheckCircle, FiSave, FiPhoneCall, FiCheck, FiHelpCircle, FiUsers, FiBox
+    FiCheckCircle, FiSave, FiPhoneCall, FiCheck, FiHelpCircle, FiUsers
 } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
@@ -94,147 +94,12 @@ function CitySelect({ value, onChange }) {
     );
 }
 
-// Selector Dual de Almacenes (Dual Listbox)
-function AlmacenesDualList({ available = [], selected = [], onChange }) {
-    const [leftSelected, setLeftSelected] = useState([]);
-    const [rightSelected, setRightSelected] = useState([]);
 
-    // Map selected (array of strings or IDs) to items
-    const selectedItems = (selected || []).map(s => {
-        const match = available.find(a => 
-            a.nombre === s || 
-            String(a.id) === String(s) || 
-            a.nombre?.toLowerCase() === String(s)?.toLowerCase()
-        );
-        return {
-            id: match ? (match.id || match.nombre) : s,
-            nombre: match ? match.nombre : s
-        };
-    });
-
-    // Available items are those in `available` that are NOT in `selected`
-    const availableItems = available.filter(a => {
-        const itemVal = a.nombre || a.id;
-        return !(selected || []).some(s => 
-            s === itemVal || 
-            String(s) === String(a.id) || 
-            s === a.nombre || 
-            String(s)?.toLowerCase() === itemVal?.toLowerCase()
-        );
-    });
-
-    const moveRight = () => {
-        if (leftSelected.length === 0) return;
-        const newSelected = [...new Set([...(selected || []), ...leftSelected])];
-        onChange(newSelected);
-        setLeftSelected([]);
-    };
-
-    const moveAllRight = () => {
-        const allAvailable = availableItems.map(a => a.nombre || a.id);
-        const newSelected = [...new Set([...(selected || []), ...allAvailable])];
-        onChange(newSelected);
-        setLeftSelected([]);
-    };
-
-    const moveLeft = () => {
-        if (rightSelected.length === 0) return;
-        const newSelected = (selected || []).filter(s => !rightSelected.includes(s));
-        onChange(newSelected);
-        setRightSelected([]);
-    };
-
-    const moveAllLeft = () => {
-        onChange([]);
-        setRightSelected([]);
-    };
-
-    return (
-        <div className="space-y-1.5 md:col-span-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-200/80">
-            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <FiBox className="text-blue-600" size={14} />
-                <span>Almacenes *</span>
-            </label>
-
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_45px_1fr] gap-3 items-center pt-1">
-                {/* Almacenes disponibles */}
-                <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Almacenes disponibles</span>
-                    <select
-                        multiple
-                        className="w-full h-36 p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 custom-scrollbar shadow-inner"
-                        value={leftSelected}
-                        onChange={(e) => setLeftSelected(Array.from(e.target.selectedOptions, o => o.value))}
-                    >
-                        {availableItems.map(item => (
-                            <option key={item.id || item.nombre} value={item.nombre || item.id} className="p-1.5 rounded hover:bg-blue-50">
-                                {item.nombre}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                {/* Botones de transferencia */}
-                <div className="flex md:flex-col justify-center items-center gap-1.5">
-                    <button
-                        type="button"
-                        onClick={moveRight}
-                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
-                        title="Mover seleccionado a la derecha"
-                    >
-                        &gt;
-                    </button>
-                    <button
-                        type="button"
-                        onClick={moveAllRight}
-                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
-                        title="Mover todos a la derecha"
-                    >
-                        &gt;&gt;
-                    </button>
-                    <button
-                        type="button"
-                        onClick={moveLeft}
-                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
-                        title="Mover seleccionado a la izquierda"
-                    >
-                        &lt;
-                    </button>
-                    <button
-                        type="button"
-                        onClick={moveAllLeft}
-                        className="w-9 h-8 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-lg text-xs font-black transition-all border border-slate-200 flex items-center justify-center cursor-pointer shadow-xs"
-                        title="Mover todos a la izquierda"
-                    >
-                        &lt;&lt;
-                    </button>
-                </div>
-
-                {/* Almacenes seleccionados */}
-                <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Almacenes seleccionados</span>
-                    <select
-                        multiple
-                        className="w-full h-36 p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 custom-scrollbar shadow-inner"
-                        value={rightSelected}
-                        onChange={(e) => setRightSelected(Array.from(e.target.selectedOptions, o => o.value))}
-                    >
-                        {selectedItems.map(item => (
-                            <option key={item.id || item.nombre} value={item.nombre || item.id} className="p-1.5 rounded hover:bg-blue-50">
-                                {item.nombre}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 const isGuid = (val) => typeof val === 'string' && /^[0-9a-f-]{15,}$/i.test(val);
 
 // Editor Component for Sucursal
-function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], initialListasPrecios = [], initialAlmacenes = [] }) {
+function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], initialListasPrecios = [] }) {
     const toast = useToast();
     const [form, setForm] = useState({
         nombre: item?.nombre || "",
@@ -246,7 +111,6 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
         celular: item?.celular || "",
         consecutivoId: item?.consecutivoId || "",
         listaPrecioId: item?.listaPrecioId || "",
-        almacenes: item?.almacenes || ["Principal"],
         mostrarPie: item?.mostrarPie ?? false,
         piePersonalizado: item?.piePersonalizado || "",
         codigoPrestador: item?.codigoPrestador || "",
@@ -260,11 +124,6 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
 
     const [consecutivos, setConsecutivos] = useState(initialConsecutivos);
     const [listasPrecios, setListasPrecios] = useState(initialListasPrecios);
-    const [availableAlmacenes, setAvailableAlmacenes] = useState(
-        initialAlmacenes.length > 0 
-            ? initialAlmacenes 
-            : (item?.almacenes?.length > 0 ? item.almacenes.map(a => ({ id: a, nombre: a })) : [{ id: "principal", nombre: "Principal" }])
-    );
     const [usuarios, setUsuarios] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -310,18 +169,7 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
             })
             .catch(e => console.error("Error cargando listas precios:", e));
 
-        // Fetch Almacenes independently
-        getConfigItems(inquilino, "almacenes", "almacenes")
-            .then(aData => {
-                if (Array.isArray(aData) && aData.length > 0) {
-                    setAvailableAlmacenes(aData);
-                } else if (item?.almacenes?.length > 0) {
-                    setAvailableAlmacenes(item.almacenes.map(a => ({ id: a, nombre: a })));
-                } else {
-                    setAvailableAlmacenes([{ id: "principal", nombre: "Principal" }]);
-                }
-            })
-            .catch(e => console.error("Error cargando almacenes:", e));
+
 
         // Fetch Usuarios in background
         Promise.all([
@@ -517,12 +365,7 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
                         </select>
                     </div>
 
-                    {/* Dual Listbox: Almacenes */}
-                    <AlmacenesDualList
-                        available={availableAlmacenes}
-                        selected={form.almacenes}
-                        onChange={(newSel) => handleChange("almacenes", newSel)}
-                    />
+
 
                     {/* Toggle: Datos de sucursal en pie de página */}
                     <div className="md:col-span-2 py-3 px-4 bg-slate-50/80 rounded-xl border border-slate-200/80 flex items-center justify-between">
@@ -703,23 +546,20 @@ export default function EmpresaSucursales() {
     // Preloaded config dependencies for instant dropdown population
     const [preloadedConsecutivos, setPreloadedConsecutivos] = useState([]);
     const [preloadedListasPrecios, setPreloadedListasPrecios] = useState([]);
-    const [preloadedAlmacenes, setPreloadedAlmacenes] = useState([]);
 
     const fetchData = async () => {
         if (!inquilino) return;
         setLoading(true);
         try {
-            const [data, cData, lData, aData] = await Promise.all([
+            const [data, cData, lData] = await Promise.all([
                 getConfigItems(inquilino, "sucursales", "sucursales"),
                 getConfigItems(inquilino, "consecutivos", "consecutivos"),
-                getConfigItems(inquilino, "listas_precios", "listas_precios"),
-                getConfigItems(inquilino, "almacenes", "almacenes")
+                getConfigItems(inquilino, "listas_precios", "listas_precios")
             ]);
             const sorted = (data || []).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
             setRows(sorted);
             if (Array.isArray(cData)) setPreloadedConsecutivos(cData);
             if (Array.isArray(lData)) setPreloadedListasPrecios(lData);
-            if (Array.isArray(aData)) setPreloadedAlmacenes(aData);
         } catch (error) {
             console.error("Error fetching sucursales:", error);
             setRows([]);
@@ -781,7 +621,6 @@ export default function EmpresaSucursales() {
                 inquilino={inquilino}
                 initialConsecutivos={preloadedConsecutivos}
                 initialListasPrecios={preloadedListasPrecios}
-                initialAlmacenes={preloadedAlmacenes}
             />
         );
     }

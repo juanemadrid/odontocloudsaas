@@ -617,7 +617,7 @@ export default function CitasTab({ patient }) {
                                             <td className="py-3 px-4 text-right">
                                                 <div className="flex items-center justify-end gap-1.5">
                                                     {/* WhatsApp reminder */}
-                                                    {(patient?.telefono || patient?.celular || apt.celular || apt.telefono) ? (
+                                                    {(patient?.telefono || patient?.celular || apt.celular || apt.telefono) && can("Pacientes", "Notificacion Whatsapp", "consultar") ? (
                                                         <button
                                                             onClick={() => {
                                                                 const activeClinic = userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.clinica || userProfile?.tenantNombre || "";
@@ -638,32 +638,36 @@ export default function CitasTab({ patient }) {
                                                     ) : null}
 
                                                     {/* Editar Cita */}
-                                                    <button
-                                                        onClick={() => handleOpenEdit(apt)}
-                                                        disabled={isLocked}
-                                                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shadow-xs border-0 ${
-                                                            isLocked 
-                                                                ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-50' 
-                                                                : 'bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 cursor-pointer'
-                                                        }`}
-                                                        title={isLocked ? "Cita cerrada: No se puede editar (+1 mes de antigüedad)" : "Editar cita"}
-                                                    >
-                                                        <FiEdit2 size={14} />
-                                                    </button>
+                                                    {can("Agenda", "Agenda", "editar") && (
+                                                        <button
+                                                            onClick={() => handleOpenEdit(apt)}
+                                                            disabled={isLocked}
+                                                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shadow-xs border-0 ${
+                                                                isLocked 
+                                                                    ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-50' 
+                                                                    : 'bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 cursor-pointer'
+                                                            }`}
+                                                            title={isLocked ? "Cita cerrada: No se puede editar (+1 mes de antigüedad)" : "Editar cita"}
+                                                        >
+                                                            <FiEdit2 size={14} />
+                                                        </button>
+                                                    )}
 
                                                     {/* Eliminar Cita */}
-                                                    <button
-                                                        onClick={() => handleDeleteApt(apt)}
-                                                        disabled={isLocked}
-                                                        className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shadow-xs border-0 ${
-                                                            isLocked 
-                                                                ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-50' 
-                                                                : 'bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-600 cursor-pointer'
-                                                        }`}
-                                                        title={isLocked ? "Cita cerrada: No se puede eliminar (+1 mes de antigüedad)" : "Eliminar cita"}
-                                                    >
-                                                        <FiTrash2 size={14} />
-                                                    </button>
+                                                    {can("Agenda", "Agenda", "eliminar") && (
+                                                        <button
+                                                            onClick={() => handleDeleteApt(apt)}
+                                                            disabled={isLocked}
+                                                            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all shadow-xs border-0 ${
+                                                                isLocked 
+                                                                    ? 'bg-slate-100 text-slate-300 cursor-not-allowed opacity-50' 
+                                                                    : 'bg-rose-50 hover:bg-rose-500 hover:text-white text-rose-600 cursor-pointer'
+                                                            }`}
+                                                            title={isLocked ? "Cita cerrada: No se puede eliminar (+1 mes de antigüedad)" : "Eliminar cita"}
+                                                        >
+                                                            <FiTrash2 size={14} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

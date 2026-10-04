@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
     FiHome, FiCalendar, FiUsers, FiFileText, FiBox,
     FiActivity, FiSettings, FiLogOut, FiMenu, FiX, FiClock, FiCheckCircle, FiLayout, FiPieChart, FiGrid, FiSearch, FiDollarSign, FiBriefcase, FiBell, FiCheck, FiSlash, FiUser, FiMessageSquare,
-    FiAlertCircle, FiHelpCircle
+    FiAlertCircle, FiHelpCircle, FiCreditCard
 } from "react-icons/fi";
 import logo from "/assets/logo.png"; // Asegúrate de que esta ruta sea correcta
 import { useAuth } from "../context/AuthContext";
@@ -287,7 +287,21 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             if (item.id === 'agenda') return can("Agenda", "Agenda", "consultar");
             if (item.id === 'pacientes') return can("Pacientes", "Paciente", "consultar");
             if (item.id === 'caja') return can("Caja", "Caja", "consultar");
-            if (item.id === 'administracion') return can("Administración", "Gestion Administración", "consultar");
+            if (item.id === 'administracion') {
+                return can("Administración", "Gestion Administración", "consultar") ||
+                       can("Administración", "Menú Facturación", "consultar") ||
+                       can("Administración", "Factura de venta", "consultar") ||
+                       can("Administración", "Recibo de caja", "consultar") ||
+                       can("Administración", "Liquidaciones", "consultar") ||
+                       can("Administración", "Saldos a favor", "consultar") ||
+                       can("Administración", "Pagos a proveedores", "consultar") ||
+                       can("Administración", "Facturas de compra", "consultar") ||
+                       can("Administración", "Convenios", "consultar") ||
+                       can("Administración", "Terceros", "consultar") ||
+                       can("Administración", "Residuos", "consultar") ||
+                       can("Administración", "Rips", "consultar") ||
+                       can("Administración", "Esterilizacion", "consultar");
+            }
             if (item.id === 'reportes') return can("Reportes", "Gestion Reportes", "consultar");
             return true;
         });

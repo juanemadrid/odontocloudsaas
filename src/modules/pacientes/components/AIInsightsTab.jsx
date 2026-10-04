@@ -108,7 +108,7 @@ export default function AIInsightsTab({ patient }) {
             const prompt = `Actúa como un experto analista clínico y odontólogo asesor. Resume el expediente clínico del paciente y genera advertencias críticas para el odontólogo antes de atenderlo.
             
             Datos del Paciente:
-            - Nombre completo: ${patient.nombreCompleto || patient.nombre || 'Paciente'}
+            - Sujeto: Paciente en consulta clínica
             - Edad: ${patient.edad || 'No especificada'}
             - Sexo: ${patient.sexo || 'No especificado'}
             - Alertas del sistema: ${patient.alertas || 'Ninguna'}
@@ -151,7 +151,7 @@ export default function AIInsightsTab({ patient }) {
             const prompt = `Genera una sugerencia de receta médica (medicamentos típicos) y una guía detallada de recomendaciones post-operatorias en español para el paciente tras realizarle el procedimiento odontológico: "${procedure}".
             
             Información del paciente:
-            - Nombre: ${patient.nombreCompleto || 'Paciente'}
+            - Sujeto: Paciente en tratamiento
             - Edad: ${patient.edad || 'No especificada'}
             - Alertas/Alergias conocidas: ${patient.alertas || 'Ninguna'}
 

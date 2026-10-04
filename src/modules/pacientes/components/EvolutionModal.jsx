@@ -809,6 +809,11 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         if (!data.comentario) return toast.error("El comentario es obligatorio");
         if (!data.fecha) return toast.error("La fecha es obligatoria");
 
+        if (initialData?.status === 'cerrada') {
+            toast.error("Esta evolución clínica está cerrada y protegida. No admite modificaciones.");
+            return;
+        }
+
         setSaving(true);
         try {
             if (!patient?.id) throw new Error("Paciente no identificado");
@@ -1068,6 +1073,33 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         <FiX size={16} />
                     </button>
                 </div>
+
+                {initialData?.status === 'cerrada' && (
+                    <div className={`mx-6 mt-4 p-3.5 rounded-2xl text-xs font-bold border flex items-center gap-3 ${
+                        initialData.closure_origin === 'legacy_migration'
+                            ? 'bg-amber-50 border-amber-200 text-amber-900'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    }`}>
+                        <FiLock size={18} className="shrink-0" />
+                        <div>
+                            {initialData.closure_origin === 'legacy_migration' ? (
+                                <>
+                                    <p className="font-extrabold uppercase tracking-wide">Registro Histórico Protegido</p>
+                                    <p className="font-medium text-[11px] mt-0.5 text-amber-800">
+                                        Registro previo a la implementación del sistema de cierre y firma clínica. Su contenido se encuentra protegido contra modificaciones.
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="font-extrabold uppercase tracking-wide">Evolución Clínica Cerrada y Certificada</p>
+                                    <p className="font-medium text-[11px] mt-0.5 text-emerald-800">
+                                        Esta evolución clínica fue cerrada y certificada digitalmente por el profesional tratante. Su contenido es inmutable.
+                                    </p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {esDoctor && !isAssigned && (
                     <div className="mx-6 mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
@@ -2144,18 +2176,20 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         <button type="button" onClick={onClose} disabled={saving} className="flex-1 sm:flex-none py-3 px-4 border-2 border-slate-200 rounded-xl font-black text-[12px] uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-colors text-center">
                             Cerrar
                         </button>
-                        <button 
-                            type="submit"
-                            disabled={saving || (esDoctor && !isAssigned)} 
-                            className={`relative overflow-hidden flex-1 sm:flex-none px-8 sm:px-10 py-3 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md cursor-pointer ${
-                                esDoctor && !isAssigned 
-                                    ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
-                                    : "bg-[#8dc63f] hover:bg-[#7cb035] text-white shadow-lime-500/20"
-                            }`}
-                        >
-                            {saving ? "Guardando..." : "Guardar"}
-                            {saving && <span className="animate-saving-bar" />}
-                        </button>
+                        {initialData?.status !== 'cerrada' && (
+                            <button 
+                                type="submit"
+                                disabled={saving || (esDoctor && !isAssigned)} 
+                                className={`relative overflow-hidden flex-1 sm:flex-none px-8 sm:px-10 py-3 rounded-xl font-black text-[13px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-md cursor-pointer ${
+                                    esDoctor && !isAssigned 
+                                        ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none" 
+                                        : "bg-[#8dc63f] hover:bg-[#7cb035] text-white shadow-lime-500/20"
+                                }`}
+                            >
+                                {saving ? "Guardando..." : "Guardar"}
+                                {saving && <span className="animate-saving-bar" />}
+                            </button>
+                        )}
                     </div>
                 </form>
             </div>

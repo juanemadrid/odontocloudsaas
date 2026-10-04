@@ -21,12 +21,12 @@ import FacturasCompraList from "../../facturacion/facturascompra/FacturasCompraL
 import FacturasCompraForm from "../../facturacion/facturascompra/FacturasCompraForm";
 
 const FACT_OPTIONS = [
-  { id: "recibo",  label: "Recibo de caja",      icon: <FiFileText />,    color: "text-emerald-600", bg: "bg-emerald-50",   desc: "Comprobantes de ingreso de dinero" },
-  { id: "saldo",   label: "Saldo a favor",        icon: <FiDollarSign />,  color: "text-teal-600",    bg: "bg-teal-50",      desc: "Gestión y abonos de saldos a favor" },
-  { id: "liq",     label: "Liquidaciones",        icon: <FiLayers />,      color: "text-purple-600",  bg: "bg-purple-50",    desc: "Cierre de tratamientos y presupuestos" },
-  { id: "pagos",   label: "Pagos",                icon: <FiCreditCard />,  color: "text-indigo-600",  bg: "bg-indigo-50",    desc: "Gestión de egresos y proveedores" },
-  { id: "fv",      label: "Factura de venta",     icon: <FiDollarSign />,  color: "text-emerald-700", bg: "bg-emerald-100",  desc: "Facturación principal y electrónica" },
-  { id: "fc",      label: "Facturas de compra",   icon: <FiTruck />,       color: "text-amber-600",   bg: "bg-amber-50",     desc: "Registro de facturas recibidas" },
+  { id: "recibo",  label: "Recibo de caja",      icon: <FiFileText />,    color: "text-emerald-600", bg: "bg-emerald-50",   desc: "Comprobantes de ingreso de dinero", perm: "Recibo de caja" },
+  { id: "saldo",   label: "Saldo a favor",        icon: <FiDollarSign />,  color: "text-teal-600",    bg: "bg-teal-50",      desc: "Gestión y abonos de saldos a favor", perm: "Saldos a favor" },
+  { id: "liq",     label: "Liquidaciones",        icon: <FiLayers />,      color: "text-purple-600",  bg: "bg-purple-50",    desc: "Cierre de tratamientos y presupuestos", perm: "Liquidaciones" },
+  { id: "pagos",   label: "Pagos",                icon: <FiCreditCard />,  color: "text-indigo-600",  bg: "bg-indigo-50",    desc: "Gestión de egresos y proveedores", perm: "Pagos a proveedores" },
+  { id: "fv",      label: "Factura de venta",     icon: <FiDollarSign />,  color: "text-emerald-700", bg: "bg-emerald-100",  desc: "Facturación principal y electrónica", perm: "Factura de venta" },
+  { id: "fc",      label: "Facturas de compra",   icon: <FiTruck />,       color: "text-amber-600",   bg: "bg-amber-50",     desc: "Registro de facturas recibidas", perm: "Facturas de compra" },
 ];
 
 // Sub-views that have a "+Nuevo" button
@@ -39,15 +39,21 @@ const NEW_BUTTON_LABELS = {
 
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
+import { usePermissions } from "../../../hooks/usePermissions";
 import { hasElectronicInvoicingAccess } from "../../../utils/subscriptionHelper";
 import { FiAlertCircle } from "react-icons/fi";
 
 export default function FacturacionHub() {
   const { userProfile } = useAuth();
+  const { can } = usePermissions();
   const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
   const clinicName = userProfile?.tenant?.nombre || userProfile?.tenant_nombre || userProfile?.clinica || "Clínica Dental Sincelejo";
   const hasFE = hasElectronicInvoicingAccess(userProfile);
-  const visibleOptions = FACT_OPTIONS.filter(opt => opt.id !== "fv" || hasFE);
+  const visibleOptions = FACT_OPTIONS.filter(opt => {
+    if (opt.id === "fv" && !hasFE) return false;
+    if (opt.perm && !can("Administración", opt.perm, "consultar")) return false;
+    return true;
+  });
 
   const [searchParams, setSearchParams] = useSearchParams();
   const urlSub = searchParams.get("sub");
@@ -74,13 +80,21 @@ export default function FacturacionHub() {
   };
 
   useEffect(() => {
+    if (urlSub) {
+      const base = urlSub.replace("_form", "");
+      const targetOpt = FACT_OPTIONS.find(o => o.id === base);
+      if (targetOpt?.perm && !can("Administración", targetOpt.perm, "consultar")) {
+        setActiveSubView(null);
+        return;
+      }
+    }
     setActiveSubViewState(urlSub || null);
     if (!urlSub) {
       sessionStorage.removeItem("fact_sub");
     } else {
       sessionStorage.setItem("fact_sub", urlSub);
     }
-  }, [urlSub]);
+  }, [urlSub, can]);
 
   // ─── RENDERING SUB-VIEWS ───
   if (activeSubView) {
@@ -171,15 +185,21 @@ export default function FacturacionHub() {
 
             {/* Header Action Buttons */}
             <div className="flex items-center gap-2">
-              {NEW_BUTTON_LABELS[activeSubView] && (
-                <button 
-                  onClick={() => setActiveSubView(`${activeSubView}_form`)}
-                  className="bg-[#8dc63f] hover:bg-[#7cb035] text-white px-4 py-2 rounded-full text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
-                >
-                  <FiPlus size={15} />
-                  <span>{NEW_BUTTON_LABELS[activeSubView]}</span>
-                </button>
-              )}
+              {(() => {
+                if (!NEW_BUTTON_LABELS[activeSubView]) return null;
+                const base = activeSubView.replace("_form", "");
+                const opt = FACT_OPTIONS.find(o => o.id === base);
+                if (opt?.perm && !can("Administración", opt.perm, "crear")) return null;
+                return (
+                  <button 
+                    onClick={() => setActiveSubView(`${activeSubView}_form`)}
+                    className="bg-[#8dc63f] hover:bg-[#7cb035] text-white px-4 py-2 rounded-full text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
+                  >
+                    <FiPlus size={15} />
+                    <span>{NEW_BUTTON_LABELS[activeSubView]}</span>
+                  </button>
+                );
+              })()}
             </div>
           </div>
 

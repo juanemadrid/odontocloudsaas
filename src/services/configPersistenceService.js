@@ -11,6 +11,9 @@ import {
  * website_config conserva el modelo completo y las tablas dedicadas reciben
  * únicamente las columnas que realmente existen en PostgreSQL.
  */
+const isUUID = (str) =>
+    typeof str === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
 
 const TABLE_PAYLOAD_BUILDERS = {
     bancos: (item) => ({
@@ -20,15 +23,6 @@ const TABLE_PAYLOAD_BUILDERS = {
         tipo_cuenta: item.tipo_cuenta || item.tipoCuenta || "Ahorros",
         numero_cuenta: item.numero_cuenta || item.numeroCuenta || "",
         activo: item.activo !== false,
-    }),
-    consecutivos: (item) => ({
-        id: item.id,
-        tenant_id: item.tenant_id,
-        tipo: item.tipo || item.nombre || "general",
-        prefijo: item.prefijo || item.fvPrefijo || item.fePrefijoFactura || "",
-        ultimo_numero: Number(
-            item.ultimo_numero ?? item.contReciboCaja ?? item.fvNumActual ?? item.feNumActual ?? 0
-        ) || 0,
     }),
     consultorios: (item) => ({
         id: item.id,
@@ -195,14 +189,22 @@ export const saveConfigItem = async (tenantId, configKey, tableName, itemData) =
     };
 
     if (isPersistedTable(tableName)) {
-        const tablePayload = TABLE_PAYLOAD_BUILDERS[tableName](payload);
-        // Upsert keeps the operational table synchronized even when the item
-        // previously existed only inside website_config JSON.
-        const query = supabase
-            .from(tableName)
-            .upsert([tablePayload], { onConflict: "id" });
-        const { error } = await query;
-        if (error) throw error;
+        try {
+            const tablePayload = TABLE_PAYLOAD_BUILDERS[tableName](payload);
+            if (tablePayload && isUUID(tablePayload.id)) {
+                const query = supabase
+                    .from(tableName)
+                    .upsert([tablePayload], { onConflict: "id" });
+                const { error } = await query;
+                if (error) {
+                    console.warn(`No se pudo sincronizar en tabla ${tableName}:`, error.message);
+                }
+            } else {
+                console.warn(`Omitiendo sincronización en tabla ${tableName}: ID no es un UUID válido (${payload.id})`);
+            }
+        } catch (tableErr) {
+            console.warn(`Error al sincronizar en tabla ${tableName}:`, tableErr.message);
+        }
     }
 
     const currentSection = await getConfigSection(tenantId, configKey, []);
@@ -223,13 +225,19 @@ export const deleteConfigItem = async (tenantId, configKey, tableName, id) => {
         throw new Error("Falta el identificador de la clínica o del ítem.");
     }
 
-    if (isPersistedTable(tableName)) {
-        const { error } = await supabase
-            .from(tableName)
-            .delete()
-            .eq("id", id)
-            .eq("tenant_id", tenantId);
-        if (error) throw error;
+    if (isPersistedTable(tableName) && isUUID(id)) {
+        try {
+            const { error } = await supabase
+                .from(tableName)
+                .delete()
+                .eq("id", id)
+                .eq("tenant_id", tenantId);
+            if (error) {
+                console.warn(`No se pudo eliminar de la tabla ${tableName}:`, error.message);
+            }
+        } catch (delErr) {
+            console.warn(`Error al eliminar de la tabla ${tableName}:`, delErr.message);
+        }
     }
 
     const currentSection = await getConfigSection(tenantId, configKey, []);

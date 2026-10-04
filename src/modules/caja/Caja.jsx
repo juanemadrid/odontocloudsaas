@@ -4,7 +4,7 @@
 // Conectado en tiempo real con Supabase, pacientes y facturas.
 // Sin índices compuestos (sort client-side).
 // ============================================================
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   FiDollarSign, FiPlus, FiCheckCircle, FiLock,
   FiUser, FiBriefcase, FiSearch,
@@ -12,6 +12,7 @@ import {
 } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import { usePermissions } from "../../hooks/usePermissions";
 import { getConfigSection } from "../../services/configPersistenceService";
 
 import AbrirCajaModal from "./components/AbrirCajaModal";
@@ -49,22 +50,43 @@ const fmtDate = (ts) => {
 
 /* ─── Sidebar items ─── */
 const MENU_ITEMS = [
-  { id: "abrir", label: "Abrir caja", isAction: true },
-  { id: "abiertas", label: "Cajas abiertas" },
-  { id: "cerradas", label: "Cajas cerradas" },
-  { id: "mi-caja", label: "Mi caja" },
-  { id: "cierres-simulados", label: "Cierres simulados" },
-  { id: "bancos", label: "Bancos" },
+  { id: "abrir", label: "Abrir caja", isAction: true, perm: "Abrir Caja", action: "crear" },
+  { id: "abiertas", label: "Cajas abiertas", perm: "Cajas Abiertas" },
+  { id: "cerradas", label: "Cajas cerradas", perm: "Cajas cerradas" },
+  { id: "mi-caja", label: "Mi caja", perm: "Mi caja" },
+  { id: "cierres-simulados", label: "Cierres simulados", perm: "Cierres Simulados" },
+  { id: "bancos", label: "Bancos", perm: "Bancos" },
 ];
 
 /* ─── Main Component ─── */
 export default function Caja() {
   const { userProfile } = useAuth();
+  const { can } = usePermissions();
   const inquilino = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || userProfile?.tenant?.inquilino || userProfile?.tenant?.id || "";
   const userId = userProfile?.uid || userProfile?.id || "";
   const userName = userProfile?.nombre || userProfile?.full_name || userProfile?.email || "Usuario";
 
-  const [activeMenu, setActiveMenu] = useState("abiertas");
+  const visibleMenuItems = useMemo(() => {
+    return MENU_ITEMS.filter(item => {
+      if (item.isAction) return can("Caja", item.perm, item.action || "crear");
+      return can("Caja", item.perm, "consultar");
+    });
+  }, [can]);
+
+  const defaultTab = useMemo(() => {
+    const available = MENU_ITEMS.filter(i => !i.isAction && can("Caja", i.perm, "consultar"));
+    if (available.some(i => i.id === "abiertas")) return "abiertas";
+    return available[0]?.id || "abiertas";
+  }, [can]);
+
+  const [activeMenu, setActiveMenu] = useState(defaultTab);
+
+  useEffect(() => {
+    if (!can("Caja", "Cajas Abiertas", "consultar") && defaultTab !== "abiertas") {
+      setActiveMenu(defaultTab);
+    }
+  }, [defaultTab, can]);
+
   const [allCajas, setAllCajas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -229,22 +251,24 @@ export default function Caja() {
         </div>
 
         {/* Abrir caja — acción primaria */}
-        <div className="px-3 pb-3">
-          <button
-            onClick={() => handleMenuClick("abrir")}
-            className="w-full bg-[#8cc33f] hover:bg-[#7db02b] text-white px-3 py-2 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
-          >
-            <FiPlus size={15} />
-            <span>Abrir Caja</span>
-          </button>
-        </div>
+        {can("Caja", "Abrir Caja", "crear") && (
+          <div className="px-3 pb-3">
+            <button
+              onClick={() => handleMenuClick("abrir")}
+              className="w-full bg-[#8cc33f] hover:bg-[#7db02b] text-white px-3 py-2 rounded-lg text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
+            >
+              <FiPlus size={15} />
+              <span>Abrir Caja</span>
+            </button>
+          </div>
+        )}
 
         {/* Divisor */}
         <div className="mx-3 border-t border-slate-100 mb-3" />
 
         {/* Nav items */}
         <nav className="flex flex-col px-3 gap-0.5">
-          {MENU_ITEMS.filter(i => !i.isAction).map((item) => {
+          {visibleMenuItems.filter(i => !i.isAction).map((item) => {
             const isActive = !showDetalle && activeMenu === item.id;
             return (
               <button
@@ -483,36 +507,48 @@ export default function Caja() {
 
                             {/* Acciones */}
                             <td className="px-4 py-3.5 align-middle text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {/* Ver detalle - azul */}
-                                <button
-                                  onClick={() => { setSelectedCaja(caja); setShowDetalle(true); }}
-                                  title="Ver detalle de movimientos"
-                                  className="w-7 h-7 rounded bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                >
-                                  <FiEye size={13} />
-                                </button>
-                                {/* Cerrar caja - rojo */}
-                                {caja.estado === "abierta" && (
-                                  <button
-                                    onClick={() => { setSelectedCaja(caja); setShowCerrar(true); }}
-                                    title="Cerrar caja"
-                                    className="w-7 h-7 rounded bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                  >
-                                    <FiXSquare size={13} />
-                                  </button>
-                                )}
-                                {/* Movimiento - verde */}
-                                {caja.estado === "abierta" && (
-                                  <button
-                                    onClick={() => { setSelectedCaja(caja); setShowMovimiento(true); }}
-                                    title="Registrar movimiento"
-                                    className="w-7 h-7 rounded bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
-                                  >
-                                    <FiDollarSign size={13} />
-                                  </button>
-                                )}
-                              </div>
+                              {(() => {
+                                const rawRole = (userProfile?.rol || userProfile?.role || "").toLowerCase();
+                                const isAdmin = rawRole.includes("admin") || rawRole.includes("superadmin");
+                                const isOwner = caja.usuarioId === userId || caja.usuario_id === userId || (caja.usuarioNombre || "").toLowerCase() === userName.toLowerCase();
+                                const canClose = caja.estado === "abierta" && can("Caja", "Cajas Abiertas", "editar") && (isAdmin || isOwner);
+                                const canMove = caja.estado === "abierta" && can("Caja", "Cajas Abiertas", "crear") && (isAdmin || isOwner);
+
+                                return (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    {/* Ver detalle - azul */}
+                                    {can("Caja", "Cajas Abiertas", "consultar") && (
+                                      <button
+                                        onClick={() => { setSelectedCaja(caja); setShowDetalle(true); }}
+                                        title="Ver detalle de movimientos"
+                                        className="w-7 h-7 rounded bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                      >
+                                        <FiEye size={13} />
+                                      </button>
+                                    )}
+                                    {/* Cerrar caja - rojo */}
+                                    {canClose && (
+                                      <button
+                                        onClick={() => { setSelectedCaja(caja); setShowCerrar(true); }}
+                                        title="Cerrar caja"
+                                        className="w-7 h-7 rounded bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                      >
+                                        <FiXSquare size={13} />
+                                      </button>
+                                    )}
+                                    {/* Movimiento - verde */}
+                                    {canMove && (
+                                      <button
+                                        onClick={() => { setSelectedCaja(caja); setShowMovimiento(true); }}
+                                        title="Registrar movimiento"
+                                        className="w-7 h-7 rounded bg-emerald-50 hover:bg-emerald-600 text-emerald-600 hover:text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer border-0"
+                                      >
+                                        <FiDollarSign size={13} />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
                           </tr>
                         ))

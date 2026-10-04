@@ -35,7 +35,7 @@ import ReporteSistema from "./views/ReporteSistema";
 import ReporteIA from "./views/ReporteIA";
 
 const ALL_REPORTS = [
-  { id: "indicadores", label: "Indicadores", icon: <FiPieChart />, category: "General", perm: "Indicadores de uso de la plataforma" },
+  { id: "indicadores", label: "Indicadores", icon: <FiPieChart />, category: "General", perm: "Reporte Dashboard" },
   { id: "pacientes", label: "Reporte pacientes", icon: <FiUsers />, category: "General", perm: "Reporte Pacientes" },
   { id: "planes_tratamiento", label: "Reporte planes de tratamiento", icon: <FiFileText />, category: "General", perm: "Reporte Planes de tratamiento" },
   { id: "facturacion", label: "Reporte de facturación", icon: <FiDollarSign />, category: "Finanzas", perm: "Reporte Facturacion" },

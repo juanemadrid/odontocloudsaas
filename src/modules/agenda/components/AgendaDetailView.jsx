@@ -745,14 +745,16 @@ export default function AgendaDetailView({ doctors = [], branches = [], chairs =
                         </button>
 
                         {/* Botón Imprimir Reporte */}
-                        <button
-                            onClick={handlePrint}
-                            disabled={!hasSearched || results.length === 0}
-                            title="Imprimir reporte"
-                            className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200"
-                        >
-                            <FiPrinter size={15} />
-                        </button>
+                        {can("Agenda", "Imprimir agenda", "consultar") && (
+                            <button
+                                onClick={handlePrint}
+                                disabled={!hasSearched || results.length === 0}
+                                title="Imprimir reporte"
+                                className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200"
+                            >
+                                <FiPrinter size={15} />
+                            </button>
+                        )}
 
                         {/* Buscador en la tabla */}
                         <div className="relative ml-2">

@@ -1594,9 +1594,24 @@ export default function Dashboard() {
     } else if (path.includes("/caja") && !can("Caja", "Caja", "consultar")) {
       console.warn("Dashboard - Acceso denegado a Caja. Redirigiendo...");
       navigate(basePath || "/dashboard", { replace: true });
-    } else if (path.includes("/administracion") && !can("Administración", "Gestion Administración", "consultar")) {
-      console.warn("Dashboard - Acceso denegado a Administración. Redirigiendo...");
-      navigate(basePath || "/dashboard", { replace: true });
+    } else if (path.includes("/administracion")) {
+      const hasAnyAdmin = can("Administración", "Gestion Administración", "consultar") ||
+        can("Administración", "Menú Facturación", "consultar") ||
+        can("Administración", "Factura de venta", "consultar") ||
+        can("Administración", "Recibo de caja", "consultar") ||
+        can("Administración", "Liquidaciones", "consultar") ||
+        can("Administración", "Saldos a favor", "consultar") ||
+        can("Administración", "Pagos a proveedores", "consultar") ||
+        can("Administración", "Facturas de compra", "consultar") ||
+        can("Administración", "Convenios", "consultar") ||
+        can("Administración", "Terceros", "consultar") ||
+        can("Administración", "Residuos", "consultar") ||
+        can("Administración", "Rips", "consultar") ||
+        can("Administración", "Esterilizacion", "consultar");
+      if (!hasAnyAdmin) {
+        console.warn("Dashboard - Acceso denegado a Administración. Redirigiendo...");
+        navigate(basePath || "/dashboard", { replace: true });
+      }
     } else if (path.includes("/reportes") && !can("Reportes", "Gestion Reportes", "consultar")) {
       console.warn("Dashboard - Acceso denegado a Reportes. Redirigiendo...");
       navigate(basePath || "/dashboard", { replace: true });

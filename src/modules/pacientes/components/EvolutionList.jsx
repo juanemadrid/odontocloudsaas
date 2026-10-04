@@ -2,8 +2,10 @@ import React, { useEffect, useState, useRef } from 'react';
 import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
-import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter, FiLock } from 'react-icons/fi';
+import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter, FiLock, FiEye, FiPlusCircle, FiShield } from 'react-icons/fi';
 import { getDoctorSignatureAndData, validateDoctorCanSign } from '../../../services/doctorSignatureService';
+import { closeEvolution, createEvolutionAddendum, getEvolutionAddendaBatch } from '../../../services/evolutionService';
+import { isDoctorUser } from '../../../utils/doctorHelpers';
 
 
 // SVG de Huella digital codificado para simulador
@@ -63,7 +65,7 @@ const printHTMLInHiddenIframe = (htmlContent) => {
 // ======================================================
 // FUNCIÓN: Imprimir una sola evolución al estilo unificado de Historia Clínica
 // ======================================================
-const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null) => {
+const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null, addendas = []) => {
     const logoUrl = clinicInfo.logo || '';
     const clinicName = clinicInfo.nombre || clinicInfo.name || 'CLÍNICA DENTAL';
     const clinicNit = clinicInfo.nit || '—';
@@ -88,14 +90,29 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
         .map(v => v.desc || v.procedimiento || v.nombre || '')
         .filter(Boolean);
 
-    const isOrtho = evo.type === 'evolucion_ortodoncia' || evo.type === 'ortodoncia' || evo.isOrthodontic || (evo.treatment && evo.treatment.toLowerCase().includes('ortodoncia'));
-    const docBadgeLabel = evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : isOrtho ? 'Evolución Ortodoncia' : 'Evolución';
+    const isHistorical = evo.status === 'cerrada' && evo.closure_origin === 'legacy_migration';
+    const isProfessionalClosed = evo.status === 'cerrada' && evo.closure_origin === 'professional';
 
-    // Resolver datos y firma del doctor (SOLO si la evolución fue firmada por el doctor)
-    const isDoctorSigned = Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage);
-    const docSig = evo.doctorSignature?.signatureImage || null;
-    const docNom = evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante';
-    const docReg = evo.doctorSignature?.registroMedico || '';
+    const isOrtho = evo.type === 'evolucion_ortodoncia' || evo.type === 'ortodoncia' || evo.isOrthodontic || (evo.treatment && evo.treatment.toLowerCase().includes('ortodoncia'));
+    const docBadgeLabel = isHistorical
+        ? 'Registro Histórico Protegido'
+        : isProfessionalClosed
+        ? 'Cerrada y Certificada'
+        : evo.status === 'borrador'
+        ? 'Borrador'
+        : evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : isOrtho ? 'Evolución Ortodoncia' : 'Evolución';
+
+    // Resolver datos y firma del doctor (SOLO si fue cerrada por profesional o firmada por doctor)
+    const isDoctorSigned = isProfessionalClosed || Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage);
+    const docSig = isProfessionalClosed
+        ? (evo.professional_signature_snapshot?.firma_base64 || evo.doctorSignature?.signatureImage || null)
+        : (evo.doctorSignature?.signatureImage || null);
+    const docNom = isProfessionalClosed
+        ? (evo.professional_signature_snapshot?.nombre_completo || evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante')
+        : (evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante');
+    const docReg = isProfessionalClosed
+        ? (evo.professional_signature_snapshot?.registro_medico || evo.doctorSignature?.registroMedico || '')
+        : (evo.doctorSignature?.registroMedico || '');
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -198,7 +215,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
     .evo-badge {
       font-size: 9.5px;
       color: #475569;
-      font-weight: normal;
+      font-weight: bold;
     }
     .evo-date {
       font-size: 9px;
@@ -251,6 +268,30 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
     .sig-role {
       font-size: 8.5px;
       color: #475569;
+    }
+    .notice-box {
+      margin: 8px 0;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 3px solid #64748b;
+      font-size: 9px;
+      line-height: 1.4;
+      color: #334155;
+    }
+    .addendas-box {
+      margin-top: 15px;
+      border-top: 1px dashed #64748b;
+      padding-top: 10px;
+    }
+    .addenda-item {
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 6px;
+      font-size: 9px;
+      line-height: 1.4;
     }
     @media print {
       body { padding: 0; }
@@ -319,7 +360,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
         <td class="td-label">EPS</td>
         <td class="td-val">${patient?.nombreEps || patient?.eps || 'N/A'}</td>
         <td class="td-label">Doctor/Profesional</td>
-        <td class="td-val">${docNom}</td>
+        <td class="td-val">${isHistorical ? (evo.profesional || '---') : docNom}</td>
       </tr>
       <tr>
         <td class="td-label">Parentesco responsable</td>
@@ -347,11 +388,17 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
   <div class="evo-block">
     <div class="evo-header">
       <div class="evo-title">
-        ${patientName} (${docNom})
+        ${patientName} (${isHistorical ? (evo.profesional || '---') : docNom})
       </div>
       <div class="evo-badge">${docBadgeLabel}</div>
     </div>
     <div class="evo-date">${dateStr} ${timeStr}</div>
+
+    ${isHistorical ? `
+      <div class="notice-box">
+        <strong>REGISTRO HISTÓRICO PROTEGIDO:</strong> Registro previo a la implementación del sistema de cierre y firma clínica. Su contenido se encuentra protegido contra modificaciones.
+      </div>
+    ` : ''}
 
     <div class="evo-desc">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
 
@@ -380,8 +427,27 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
       <div class="evo-proc">${evo.treatment ? `${evo.treatment} - ` : 'odontología - '}${idx + 1}. ${p}</div>
     `).join('') : (evo.treatment ? `<div class="evo-proc">${evo.treatment}</div>` : '')}
 
+    <!-- NOTAS ACLARATORIAS (ADENDAS) -->
+    ${Array.isArray(addendas) && addendas.length > 0 ? `
+      <div class="addendas-box">
+        <div style="font-size: 10px; font-weight: bold; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
+          Notas Aclaratorias (${addendas.length})
+        </div>
+        ${addendas.map((ad, idx) => `
+          <div class="addenda-item">
+            <div style="display: flex; justify-content: space-between; font-weight: bold; color: #0f172a; margin-bottom: 4px;">
+              <span>Nota #${idx + 1} · ${ad.author_snapshot?.nombre_completo || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
+              <span style="color: #64748b; font-weight: normal;">${new Date(ad.created_at).toLocaleString('es-CO')}</span>
+            </div>
+            <div style="color: #1e293b; white-space: pre-wrap;">${(ad.contenido || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
     <!-- FIRMAS -->
     <div class="signature-container">
+      ${!isHistorical && isDoctorSigned ? `
       <div class="sig-block">
         <div class="sig-image-holder">
           ${docSig ? `<img src="${docSig}" crossorigin="anonymous" />` : ''}
@@ -389,6 +455,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
         <div class="sig-name">${docNom}</div>
         <div class="sig-role">Doctor/Profesional ${docReg ? `· TP: ${docReg}` : ''}</div>
       </div>
+      ` : ''}
       ${evo.patientSignature ? `
         <div class="sig-block">
           <div class="sig-image-holder">
@@ -407,16 +474,153 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null)
     printHTMLInHiddenIframe(html);
 };
 
-function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onPrint, patientName, planItemsLookup }) {
+function CloseEvolutionModal({ isOpen, onClose, evolution, onConfirm, isClosing }) {
+    if (!isOpen || !evolution) return null;
+    return (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden animate-scaleIn">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50/60">
+                    <div className="flex items-center gap-2">
+                        <FiLock className="text-emerald-700" size={18} />
+                        <h3 className="text-sm font-black text-emerald-950 tracking-tight">
+                            Certificar y Cerrar Evolución Clínica
+                        </h3>
+                    </div>
+                    <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-1 cursor-pointer">
+                        <FiX size={16} />
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-4 text-xs text-slate-700">
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-amber-900 leading-relaxed font-semibold">
+                        ⚠️ Después de cerrar esta evolución clínica no podrá modificarla ni eliminarla. Cualquier corrección posterior deberá realizarse mediante una nota aclaratoria.
+                    </div>
+                    <p className="text-slate-600 font-medium">
+                        Al confirmar el cierre, se generará una estampilla criptográfica inalterable (SHA-256) incorporando su firma médica digital registrada.
+                    </p>
+                </div>
+
+                <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isClosing}
+                        className="px-5 py-2 border border-slate-200 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-slate-100 transition-all cursor-pointer"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onConfirm}
+                        disabled={isClosing}
+                        className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-md disabled:opacity-50 active:scale-95 flex items-center gap-2"
+                    >
+                        <FiCheck size={14} strokeWidth={3} /> {isClosing ? "Cerrando..." : "Confirmar Cierre"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function AddendumModal({ isOpen, onClose, evolution, onSave, isSaving }) {
+    const [note, setNote] = useState("");
+    if (!isOpen || !evolution) return null;
+
+    const handleSave = () => {
+        if (note.trim().length < 5) return;
+        onSave(evolution.id, note);
+    };
+
+    return (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-lg overflow-hidden animate-scaleIn">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-purple-50/60">
+                    <div className="flex items-center gap-2">
+                        <FiFileText className="text-purple-700" size={18} />
+                        <h3 className="text-sm font-black text-purple-950 tracking-tight">
+                            Nueva Nota Aclaratoria (Adenda)
+                        </h3>
+                    </div>
+                    <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-1 cursor-pointer">
+                        <FiX size={16} />
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-4 text-xs">
+                    <p className="text-slate-600 font-medium">
+                        La nota aclaratoria se anexará de forma inalterable a la evolución clínica original. Se registrará su usuario, registro médico y fecha/hora exacta.
+                    </p>
+                    <div>
+                        <textarea
+                            value={note}
+                            onChange={(e) => setNote(e.target.value)}
+                            rows={5}
+                            maxLength={5000}
+                            placeholder="Escriba aquí la nota aclaratoria, corrección o adición clínica (mínimo 5 caracteres)..."
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium outline-none focus:bg-white focus:ring-4 focus:ring-purple-500/10 focus:border-purple-400 transition-all resize-none"
+                        />
+                        <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1 font-bold">
+                            <span>Mínimo 5 caracteres</span>
+                            <span>{note.length} / 5000</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isSaving}
+                        className="px-5 py-2 border border-slate-200 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-slate-100 transition-all cursor-pointer"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSave}
+                        disabled={note.trim().length < 5 || isSaving}
+                        className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-md disabled:opacity-50 active:scale-95 flex items-center gap-2"
+                    >
+                        <FiCheck size={14} strokeWidth={3} /> {isSaving ? "Guardando..." : "Registrar Nota"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function EvolutionCard({
+    evo,
+    addendas = [],
+    onEdit,
+    onDelete,
+    onCloseEvolution,
+    onAddAddendum,
+    onSignDoctor,
+    onSignPatient,
+    onPrint,
+    patientName,
+    planItemsLookup,
+    currentUserId,
+    isDoctor
+}) {
     const isRemission = evo.type === 'remission';
     const isNota = evo.type === 'nota';
     const isOrtho = evo.type === 'evolucion_ortodoncia' || evo.type === 'ortodoncia' || evo.isOrthodontic || (evo.treatment && evo.treatment.toLowerCase().includes('ortodoncia'));
-    const hasRealizedItems = Object.values(evo.plantillaItems || {}).some(
-        item => item?.realizado === true
-    );
-    const isFinalized = evo.isFinalized === true || evo.estadoEvolucion === 'finalizado' || hasRealizedItems;
     const procedures = getSelectedProcedures(evo.plantillaItems, planItemsLookup);
-    const isSignedDoc = !!evo.doctorSignature?.signature;
+
+    const status = evo.status || 'borrador';
+    const isClosed = status === 'cerrada';
+    const isHistorical = isClosed && evo.closure_origin === 'legacy_migration';
+    const isProfessionalClosed = isClosed && evo.closure_origin === 'professional';
+    const isDraft = !isClosed;
+
+    // Solo el profesional tratante asignado puede cerrar
+    const evoDocId = String(evo.profesional_id || evo.profesionalId || evo.doctorId || '').toLowerCase();
+    const currentUid = String(currentUserId || '').toLowerCase();
+    const canClose = isDraft && isDoctor && evoDocId && currentUid && evoDocId === currentUid;
+
     const isSignedPat = !!evo.patientSignature;
     const text = evo.description || evo.comentario || '';
 
@@ -434,7 +638,19 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
     );
     const infoLine = isNota ? '' : [evo.treatment, procedureNames.join(', ')].filter(Boolean).join(' - ');
 
-    const badgeClass = isRemission
+    // Badges
+    let statusBadgeClass = 'text-amber-700 bg-amber-50 border-amber-200';
+    let statusBadgeLabel = 'Borrador';
+
+    if (isHistorical) {
+        statusBadgeClass = 'text-slate-700 bg-slate-100 border-slate-300';
+        statusBadgeLabel = 'Registro histórico protegido';
+    } else if (isProfessionalClosed) {
+        statusBadgeClass = 'text-emerald-700 bg-emerald-50 border-emerald-300';
+        statusBadgeLabel = 'Cerrada y certificada';
+    }
+
+    const typeBadgeClass = isRemission
         ? 'text-amber-700 bg-amber-50 border-amber-200'
         : isNota
         ? 'text-purple-700 bg-purple-50 border-purple-200'
@@ -442,7 +658,7 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
         ? 'text-[#487321] bg-[#f0f9e8] border-[#8dc63f] font-bold'
         : 'text-[#5a8a2e] bg-[#f0f9e8] border-[#c5e4a0]';
 
-    const badgeLabel = isRemission 
+    const typeBadgeLabel = isRemission 
         ? 'Remisión' 
         : isNota 
         ? 'Nota Aclaratoria' 
@@ -453,7 +669,7 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
     return (
         <div className="bg-white rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all p-4">
 
-            {/* FILA 1: Paciente (Doctor) + badge + acciones */}
+            {/* FILA 1: Paciente + badges + acciones */}
             <div className="flex items-start justify-between gap-3 mb-1.5">
                 <div>
                     <p className="text-[12px] font-black text-slate-800 uppercase tracking-tight leading-tight">
@@ -471,50 +687,107 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                     )}
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border whitespace-nowrap ${badgeClass}`}>
-                        {badgeLabel}
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    {/* Badge Estado */}
+                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border whitespace-nowrap ${statusBadgeClass}`}>
+                        {statusBadgeLabel}
                     </span>
 
-                    {/* FIRMA DOCTOR (D) */}
-                    {isSignedDoc ? (
-                        <span
-                            className="h-7 px-2 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center border border-emerald-100 text-[10px] font-black gap-1 cursor-help"
-                            title={`Firmado por Doctor: ${evo.doctorSignature.signature}`}
-                        >
-                            <FiCheck size={11} strokeWidth={3} /> D
-                        </span>
-                    ) : (
-                        <button
-                            onClick={() => onSignDoctor(evo)}
-                            className="h-7 px-2 bg-slate-50 text-slate-500 hover:bg-indigo-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-slate-100 text-[10px] font-black"
-                            title="Firmar como Doctor (D)"
-                        >
-                            <FiPenTool size={11} /> D
-                        </button>
+                    {/* Badge Tipo Documento */}
+                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border whitespace-nowrap ${typeBadgeClass}`}>
+                        {typeBadgeLabel}
+                    </span>
+
+                    {/* ACCIONES: BORRADOR */}
+                    {isDraft && (
+                        <>
+                            {canClose && (
+                                <button
+                                    onClick={() => onCloseEvolution(evo)}
+                                    className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-1 transition-all text-[10px] font-black shadow-xs active:scale-95 cursor-pointer"
+                                    title="Firmar digitalmente y cerrar evolución clínica"
+                                >
+                                    <FiCheck size={12} strokeWidth={3} /> Firmar y Cerrar
+                                </button>
+                            )}
+                            <button
+                                onClick={() => onEdit(evo)}
+                                className="h-7 px-2 bg-slate-50 text-slate-600 hover:bg-amber-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-slate-100 text-[10px] font-black cursor-pointer"
+                                title="Editar borrador"
+                            >
+                                <FiEdit3 size={11} /> Editar
+                            </button>
+                            <button
+                                onClick={() => onDelete(evo.id)}
+                                className="w-7 h-7 bg-slate-50 text-slate-400 hover:bg-rose-600 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-100 cursor-pointer"
+                                title="Eliminar borrador"
+                            >
+                                <FiTrash2 size={12} />
+                            </button>
+                        </>
                     )}
 
-                    {/* FIRMA PACIENTE (P) */}
-                    {isSignedPat ? (
-                        <span
-                            className="h-7 px-2 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center border border-emerald-100 text-[10px] font-black gap-1 cursor-help"
-                            title="Firmado por Paciente"
-                        >
-                            <FiCheck size={11} strokeWidth={3} /> P
-                        </span>
-                    ) : (
-                        <button
-                            onClick={() => onSignPatient(evo)}
-                            className="h-7 px-2 bg-slate-50 text-slate-500 hover:bg-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-slate-100 text-[10px] font-black"
-                            title="Firmar como Paciente (P)"
-                        >
-                            <FiPenTool size={11} /> P
-                        </button>
+                    {/* ACCIONES: HISTÓRICA PROTEGIDA */}
+                    {isHistorical && (
+                        <>
+                            <button
+                                onClick={() => onEdit(evo)}
+                                className="h-7 px-2 bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-slate-200 text-[10px] font-black cursor-pointer"
+                                title="Consultar evolución protegida (Solo Lectura)"
+                            >
+                                <FiEye size={12} /> Ver
+                            </button>
+                            <button
+                                onClick={() => onAddAddendum(evo)}
+                                className="h-7 px-2 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-purple-200 text-[10px] font-black cursor-pointer"
+                                title="Agregar nota aclaratoria"
+                            >
+                                <FiPlusCircle size={11} /> + Nota
+                            </button>
+                        </>
                     )}
 
+                    {/* ACCIONES: CERRADA PROFESIONAL */}
+                    {isProfessionalClosed && (
+                        <>
+                            <button
+                                onClick={() => onEdit(evo)}
+                                className="h-7 px-2 bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-slate-200 text-[10px] font-black cursor-pointer"
+                                title="Consultar evolución certificada (Solo Lectura)"
+                            >
+                                <FiEye size={12} /> Ver
+                            </button>
+                            <button
+                                onClick={() => onAddAddendum(evo)}
+                                className="h-7 px-2 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-purple-200 text-[10px] font-black cursor-pointer"
+                                title="Agregar nota aclaratoria"
+                            >
+                                <FiPlusCircle size={11} /> + Nota
+                            </button>
+                            {/* FIRMA PACIENTE (P) Paso 1.2 — Exclusivamente en cerrada profesional */}
+                            {isSignedPat ? (
+                                <span
+                                    className="h-7 px-2 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center border border-emerald-100 text-[10px] font-black gap-1 cursor-help"
+                                    title="Firmado por Paciente"
+                                >
+                                    <FiCheck size={11} strokeWidth={3} /> P
+                                </span>
+                            ) : (
+                                <button
+                                    onClick={() => onSignPatient(evo)}
+                                    className="h-7 px-2 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-blue-200 text-[10px] font-black cursor-pointer"
+                                    title="Solicitar firma del Paciente (Paso 1.2)"
+                                >
+                                    <FiPenTool size={11} /> P
+                                </button>
+                            )}
+                        </>
+                    )}
+
+                    {/* IMPRIMIR (Permitido en todos los estados) */}
                     <button
                         onClick={() => onPrint(evo)}
-                        className="w-7 h-7 bg-slate-50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-100"
+                        className="w-7 h-7 bg-slate-50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg flex items-center justify-center transition-all border border-slate-100 cursor-pointer"
                         title="Imprimir este registro"
                     >
                         <FiPrinter size={12} />
@@ -527,6 +800,46 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 {dateStr} — {timeStr}
             </p>
 
+            {/* BANNER HISTÓRICO PROTEGIDO */}
+            {isHistorical && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 my-2 text-[10px] text-slate-600 flex items-start gap-2">
+                    <FiLock className="text-slate-400 mt-0.5 shrink-0" size={14} />
+                    <span>Registro previo a la implementación del sistema de cierre y firma clínica. Su contenido se encuentra protegido contra modificaciones.</span>
+                </div>
+            )}
+
+            {/* BLOQUE CERTIFICACIÓN PROFESIONAL */}
+            {isProfessionalClosed && (
+                <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-xl p-3 my-2 flex items-center justify-between text-[10px]">
+                    <div className="flex items-center gap-2.5">
+                        <FiShield className="text-emerald-600 shrink-0" size={16} />
+                        <div>
+                            <span className="font-extrabold text-emerald-950 uppercase">Certificada por: </span>
+                            <span className="font-bold text-emerald-800">
+                                {evo.professional_signature_snapshot?.nombre_completo || evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante'}
+                            </span>
+                            {(evo.professional_signature_snapshot?.registro_medico || evo.doctorSignature?.registroMedico) && (
+                                <span className="text-emerald-700 font-medium"> · TP: {evo.professional_signature_snapshot?.registro_medico || evo.doctorSignature?.registroMedico}</span>
+                            )}
+                            {evo.closed_at && (
+                                <span className="text-emerald-600 block text-[9px] font-semibold mt-0.5">
+                                    Cierre: {new Date(evo.closed_at).toLocaleString('es-CO')}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {(evo.professional_signature_snapshot?.firma_base64 || evo.doctorSignature?.signatureImage) && (
+                        <div className="h-9 max-w-[120px] bg-white border border-emerald-200 rounded-lg p-1 flex items-center justify-center shrink-0">
+                            <img
+                                src={evo.professional_signature_snapshot?.firma_base64 || evo.doctorSignature?.signatureImage}
+                                alt="Firma Profesional"
+                                className="max-h-full max-w-full object-contain"
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* FILA 3: Texto del registro */}
             {text && (
                 <p className="text-[11px] text-slate-600 font-medium leading-relaxed mb-2 line-clamp-3">
@@ -534,7 +847,7 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 </p>
             )}
 
-            {/* Transcribe: Nombre del transcriptor administrativo */}
+            {/* Transcribe */}
             {(evo.transcribe || evo.transcribedBy) && (
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">
                     Transcribe: <span className="text-slate-700 font-black">{evo.transcribe || evo.transcribedBy}</span>
@@ -555,7 +868,7 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 </div>
             )}
 
-            {/* Medicamentos aplicados si aplica (1:1 OralDrive) */}
+            {/* Medicamentos aplicados si aplica */}
             {Array.isArray(evo.medicamentos) && evo.medicamentos.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 mb-2">
                     <span className="text-[9px] font-extrabold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
@@ -569,7 +882,7 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 </div>
             )}
 
-            {/* Detalles de Ortodoncia (1:1 OralDrive) */}
+            {/* Detalles de Ortodoncia */}
             {isOrtho && (
                 <div className="bg-[#fafff5] border border-[#d9f0b8] rounded-xl p-3 mb-2.5 space-y-1.5 text-[10px]">
                     <div className="flex flex-wrap items-center gap-2">
@@ -612,7 +925,27 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                 </div>
             )}
 
-            {/* FILA 4: Plan · Procedimientos + Registro Clínico Permanente (Candado) */}
+            {/* SECCIÓN NOTAS ACLARATORIAS (ADENDAS) */}
+            {Array.isArray(addendas) && addendas.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-purple-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <FiFileText size={12} className="text-purple-600" /> Notas Aclaratorias ({addendas.length})
+                        </span>
+                    </div>
+                    {addendas.map((ad, idx) => (
+                        <div key={ad.id || idx} className="bg-purple-50/50 border border-purple-100 rounded-xl p-3 text-[10px]">
+                            <div className="flex items-center justify-between font-bold text-purple-950 mb-1">
+                                <span>Nota #{idx + 1} · {ad.author_snapshot?.nombre_completo || 'Profesional'} {ad.author_snapshot?.registro_medico ? `· TP: ${ad.author_snapshot.registro_medico}` : ''}</span>
+                                <span className="text-[9px] text-purple-600 font-semibold">{new Date(ad.created_at).toLocaleString('es-CO')}</span>
+                            </div>
+                            <p className="text-slate-700 whitespace-pre-wrap font-medium leading-relaxed">{ad.contenido}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* FILA 4: Plan · Procedimientos + Candado inalterable */}
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
                 {infoLine ? (
                     <p className="text-[11px] font-bold text-slate-500">
@@ -620,8 +953,8 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
                     </p>
                 ) : <span />}
                 
-                <span className="flex items-center gap-1 text-[9px] font-bold text-slate-400 cursor-help" title="Registro clínico inalterable">
-                    <FiLock size={12} className="text-slate-400" />
+                <span className="flex items-center gap-1 text-[9px] font-bold text-slate-400 cursor-help" title={isClosed ? "Registro clínico inalterable protegido" : "Borrador de evolución"}>
+                    <FiLock size={12} className={isClosed ? "text-emerald-500" : "text-slate-400"} />
                 </span>
             </div>
         </div>
@@ -632,35 +965,47 @@ function EvolutionCard({ evo, onEdit, onDelete, onSignDoctor, onSignPatient, onP
 function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
     if (!isOpen) return null;
 
-    const patientName = patient?.nombreCompleto || patient?.nombre || "Paciente";
-    const patientPhone = patient?.celular || patient?.telefono || "";
-    const patientEmail = patient?.email || patient?.correo || "";
-    const clinicName = clinicInfo?.nombre || "ATM Centro del Dolor Orofacial";
+    const [generatingToken, setGeneratingToken] = useState(false);
 
     const handleSendWhatsApp = async () => {
-        const cleanPhone = String(patientPhone).replace(/\D/g, "");
-        const formattedPhone = cleanPhone.startsWith("57") ? cleanPhone : `57${cleanPhone}`;
-        const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
-        const longUrl = `${window.location.origin}${basePath}/portal-paciente/firma-digital?id=${patient?.id || ''}&evoId=${evolution?.id || ''}`;
-        
-        let finalSignUrl = longUrl;
+        if (!evolution?.id) return;
+        setGeneratingToken(true);
         try {
-            const res = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
-            if (res.ok) {
-                const short = await res.text();
-                if (short && short.startsWith("http")) {
-                    finalSignUrl = short.trim();
-                }
-            }
-        } catch (e) {
-            console.warn("Could not shorten URL, using long URL:", e);
-        }
+            const { data: tokenResult, error: tokenError } = await supabase.rpc(
+                "generate_signature_token",
+                { p_evolution_id: evolution.id }
+            );
 
-        const message = `Hola ${patientName}, lo contactamos de la clínica ${clinicName}. Para firmar su documento clínico de forma digital y segura utilice el siguiente enlace: ${finalSignUrl}`;
-        
-        const waUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
-        window.open(waUrl, "_blank");
-        onClose();
+            if (tokenError) {
+                if (tokenError.message?.includes("PATIENT_DOCUMENT_REQUIRED")) {
+                    alert("El paciente debe tener un documento de identidad válido registrado antes de enviar el enlace de firma.");
+                } else {
+                    alert("Error al generar el enlace de firma seguro: " + (tokenError.message || "Error desconocido"));
+                }
+                return;
+            }
+
+            if (!tokenResult?.raw_token) {
+                alert("No se pudo generar el token seguro de firma.");
+                return;
+            }
+
+            const cleanPhone = String(patientPhone).replace(/\D/g, "");
+            const formattedPhone = cleanPhone.startsWith("57") ? cleanPhone : `57${cleanPhone}`;
+            const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+            const secureSignUrl = `${window.location.origin}${basePath}/portal-paciente/firma-digital#token=${tokenResult.raw_token}`;
+
+            const message = `Hola ${patientName}, lo contactamos de la clínica ${clinicName}. Para certificar su evolución clínica de forma digital y segura utilice el siguiente enlace: ${secureSignUrl}`;
+            
+            const waUrl = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(message)}`;
+            window.open(waUrl, "_blank");
+            onClose();
+        } catch (e) {
+            console.error("Error al generar enlace seguro:", e);
+            alert("Ocurrió un error al preparar el enlace seguro.");
+        } finally {
+            setGeneratingToken(false);
+        }
     };
 
     const handleSendEmail = () => {
@@ -1113,8 +1458,15 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     const [evolutions, setEvolutions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [planItemsLookup, setPlanItemsLookup] = useState({});
+    const [addendasByEvoId, setAddendasByEvoId] = useState({});
+
+    // Modales de Paso 1.3
+    const [closeModalEvo, setCloseModalEvo] = useState(null);
+    const [isClosing, setIsClosing] = useState(false);
+    const [addendumModalEvo, setAddendumModalEvo] = useState(null);
+    const [isSavingAddendum, setIsSavingAddendum] = useState(false);
     
-    // Estados para Firma del Paciente
+    // Estados para Firma del Paciente (Paso 1.2)
     const [activeEvoForSignature, setActiveEvoForSignature] = useState(null);
     
     const toast = useToast();
@@ -1152,50 +1504,98 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     };
 
     const handlePrintEvolution = (evo) => {
-        printEvolution(evo, patientObj, clinicInfo, userProfile);
+        printEvolution(evo, patientObj, clinicInfo, userProfile, addendasByEvoId[evo.id] || []);
+    };
+
+    const loadEvolutions = async () => {
+        try {
+            const { data } = await supabase
+                .from("evoluciones")
+                .select("*")
+                .eq("paciente_id", patientId)
+                .order("created_at", { ascending: false });
+
+            const evoIds = (data || []).map(e => e.id);
+            let signaturesByEvoId = {};
+            if (evoIds.length > 0) {
+                try {
+                    const { data: sigs, error: sigError } = await supabase.rpc(
+                        "get_evolution_signatures_batch",
+                        { p_evolution_ids: evoIds.slice(0, 100) }
+                    );
+                    if (!sigError && Array.from(sigs || []).length > 0) {
+                        sigs.forEach(s => {
+                            signaturesByEvoId[s.evolution_id] = s;
+                        });
+                    }
+                } catch (e) {
+                    console.warn("No se pudieron cargar firmas digitales seguras:", e);
+                }
+
+                // Cargar notas aclaratorias (Adendas Paso 1.3)
+                try {
+                    const addendasList = await getEvolutionAddendaBatch(evoIds.slice(0, 100));
+                    let addendasMap = {};
+                    (addendasList || []).forEach(ad => {
+                        if (!addendasMap[ad.evolution_id]) {
+                            addendasMap[ad.evolution_id] = [];
+                        }
+                        addendasMap[ad.evolution_id].push(ad);
+                    });
+                    setAddendasByEvoId(addendasMap);
+                } catch (e) {
+                    console.warn("No se pudieron cargar notas aclaratorias:", e);
+                }
+            }
+
+            const parsedList = (data || []).map(evo => {
+                let parsedTratamiento = {};
+                if (evo.tratamiento && typeof evo.tratamiento === 'string' && evo.tratamiento.startsWith('{')) {
+                    try {
+                        parsedTratamiento = JSON.parse(evo.tratamiento);
+                    } catch (e) {}
+                }
+
+                const secureEvidence = signaturesByEvoId[evo.id] || null;
+
+                return {
+                    ...evo,
+                    ...parsedTratamiento,
+                    id: evo.id,
+                    status: evo.status || parsedTratamiento.status || 'borrador',
+                    closure_origin: evo.closure_origin || parsedTratamiento.closure_origin || null,
+                    closed_at: evo.closed_at || parsedTratamiento.closed_at || null,
+                    closed_by: evo.closed_by || parsedTratamiento.closed_by || null,
+                    professional_signature_snapshot: evo.professional_signature_snapshot || parsedTratamiento.professional_signature_snapshot || null,
+                    content_hash: evo.content_hash || parsedTratamiento.content_hash || null,
+                    closed_snapshot: evo.closed_snapshot || parsedTratamiento.closed_snapshot || null,
+                    description: evo.comentario || parsedTratamiento.description || evo.description || '',
+                    date: evo.created_at || evo.fecha,
+                    profesional: evo.profesional || parsedTratamiento.profesional || 'Odontólogo',
+                    transcribe: parsedTratamiento.transcribe || parsedTratamiento.transcribedBy || evo.transcribe || evo.transcribed_by || '',
+                    doctorSignature: parsedTratamiento.doctorSignature || evo.doctorSignature,
+                    // Soporte simultáneo: Prioriza evidencia digital segura y mantiene fallback legacy
+                    patientSignature: secureEvidence?.signature_data || parsedTratamiento.patientSignature || evo.patientSignature,
+                    patientSignedAt: secureEvidence?.signed_at || parsedTratamiento.patientSignedAt || evo.patientSignedAt,
+                    patientFingerprint: parsedTratamiento.patientFingerprint || evo.patientFingerprint,
+                    digitalEvidence: secureEvidence ? {
+                        signedAt: secureEvidence.signed_at,
+                        documentHash: secureEvidence.document_hash,
+                        documentSnapshot: secureEvidence.document_snapshot
+                    } : null
+                };
+            });
+
+            setEvolutions(parsedList);
+        } catch (err) {
+            console.error("Error cargando evoluciones:", err);
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => {
         if (!patientId) return;
-
-        const loadEvolutions = async () => {
-            try {
-                const { data } = await supabase
-                    .from("evoluciones")
-                    .select("*")
-                    .eq("paciente_id", patientId)
-                    .order("created_at", { ascending: false });
-
-                const parsedList = (data || []).map(evo => {
-                    let parsedTratamiento = {};
-                    if (evo.tratamiento && typeof evo.tratamiento === 'string' && evo.tratamiento.startsWith('{')) {
-                        try {
-                            parsedTratamiento = JSON.parse(evo.tratamiento);
-                        } catch (e) {}
-                    }
-
-                    return {
-                        ...evo,
-                        ...parsedTratamiento,
-                        id: evo.id,
-                        description: evo.comentario || parsedTratamiento.description || evo.description || '',
-                        date: evo.created_at || evo.fecha,
-                        profesional: evo.profesional || parsedTratamiento.profesional || 'Odontólogo',
-                        transcribe: parsedTratamiento.transcribe || parsedTratamiento.transcribedBy || evo.transcribe || evo.transcribed_by || '',
-                        doctorSignature: parsedTratamiento.doctorSignature || evo.doctorSignature,
-                        patientSignature: parsedTratamiento.patientSignature || evo.patientSignature,
-                        patientFingerprint: parsedTratamiento.patientFingerprint || evo.patientFingerprint,
-                    };
-                });
-
-                setEvolutions(parsedList);
-            } catch (err) {
-                console.error("Error cargando evoluciones:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
         loadEvolutions();
     }, [patientId, refreshKey]);
 
@@ -1226,6 +1626,56 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
         };
         fetchPlans();
     }, [evolutions]);
+
+    // Handlers de Cierre y Adendas Paso 1.3
+    const handleCloseEvolution = (evo) => {
+        setCloseModalEvo(evo);
+    };
+
+    const handleConfirmClose = async () => {
+        if (!closeModalEvo?.id) return;
+        setIsClosing(true);
+        try {
+            await closeEvolution(closeModalEvo.id);
+            toast.success("Evolución clínica cerrada y certificada con éxito ✅");
+            setCloseModalEvo(null);
+            await loadEvolutions();
+        } catch (error) {
+            console.error("Error al cerrar evolución:", error);
+            if (error.message?.includes("DOCTOR_SIGNATURE_REQUIRED")) {
+                toast.error("El profesional debe tener registrada su firma digital en su perfil para poder cerrar evoluciones.");
+            } else if (error.message?.includes("ONLY_TREATING_DOCTOR_CAN_CLOSE")) {
+                toast.error("Solo el profesional tratante asignado a esta evolución puede certificarla y cerrarla.");
+            } else {
+                toast.error("Error al cerrar evolución: " + (error.message || "Error desconocido"));
+            }
+        } finally {
+            setIsClosing(false);
+        }
+    };
+
+    const handleOpenAddendum = (evo) => {
+        setAddendumModalEvo(evo);
+    };
+
+    const handleSaveAddendum = async (evoId, noteText) => {
+        setIsSavingAddendum(true);
+        try {
+            await createEvolutionAddendum(evoId, noteText);
+            toast.success("Nota aclaratoria registrada exitosamente ✅");
+            setAddendumModalEvo(null);
+            const updated = await getEvolutionAddendaBatch([evoId]);
+            setAddendasByEvoId(prev => ({
+                ...prev,
+                [evoId]: updated || []
+            }));
+        } catch (error) {
+            console.error("Error al registrar nota aclaratoria:", error);
+            toast.error("Error al registrar nota aclaratoria: " + (error.message || "Error desconocido"));
+        } finally {
+            setIsSavingAddendum(false);
+        }
+    };
 
     // Firma Doctor
     const handleSignEvolutionDoctor = async (evoObj) => {
@@ -1402,13 +1852,18 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                         <EvolutionCard
                             key={evo.id}
                             evo={evo}
+                            addendas={addendasByEvoId[evo.id] || []}
                             patientName={patientName || evo.patientName || 'Paciente'}
                             planItemsLookup={lookup}
                             onEdit={onEdit}
                             onDelete={handleDelete}
+                            onCloseEvolution={handleCloseEvolution}
+                            onAddAddendum={handleOpenAddendum}
                             onSignDoctor={handleSignEvolutionDoctor}
                             onSignPatient={handleOpenPatientSignature}
                             onPrint={handlePrintEvolution}
+                            currentUserId={userProfile?.uid || userProfile?.id}
+                            isDoctor={isDoctorUser(userProfile)}
                         />
                     );
                 })}
@@ -1418,6 +1873,24 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                     </div>
                 )}
             </div>
+
+            {/* MODAL DE CIERRE Y CERTIFICACIÓN CLÍNICA */}
+            <CloseEvolutionModal
+                isOpen={!!closeModalEvo}
+                onClose={() => setCloseModalEvo(null)}
+                evolution={closeModalEvo}
+                onConfirm={handleConfirmClose}
+                isClosing={isClosing}
+            />
+
+            {/* MODAL DE NOTA ACLARATORIA (ADENDA) */}
+            <AddendumModal
+                isOpen={!!addendumModalEvo}
+                onClose={() => setAddendumModalEvo(null)}
+                evolution={addendumModalEvo}
+                onSave={handleSaveAddendum}
+                isSaving={isSavingAddendum}
+            />
 
             {/* MODAL DE FIRMAS INTEGRADAS PARA EL PACIENTE */}
             <SignatureModal

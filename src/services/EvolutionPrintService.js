@@ -68,6 +68,11 @@ export const EvolutionPrintService = {
                 return {
                     ...evo,
                     ...parsedTratamiento,
+                    status: evo.status || parsedTratamiento.status || 'borrador',
+                    closure_origin: evo.closure_origin || parsedTratamiento.closure_origin || null,
+                    closed_at: evo.closed_at || parsedTratamiento.closed_at || null,
+                    professional_signature_snapshot: evo.professional_signature_snapshot || parsedTratamiento.professional_signature_snapshot || null,
+                    addendas: evo.addendas || parsedTratamiento.addendas || [],
                     profesional: parsedTratamiento.profesional || evo.profesional || evo.profesional_nombre || '',
                     profesionalId: parsedTratamiento.profesionalId || evo.profesional_id || evo.profesionalId || '',
                     description: evo.description || evo.comentario || parsedTratamiento.description || parsedTratamiento.comentario || '',
@@ -265,10 +270,62 @@ export const EvolutionPrintService = {
                     }
 
                     const isNota = evo.type === 'nota';
-                    const badgeText = isRemission ? 'Remisión' : isNota ? 'Nota Aclaratoria' : 'Evolución';
-                    const badgeBg = isRemission ? '#fff7ed' : isNota ? '#faf5ff' : '#f0fdf4';
-                    const badgeColor = isRemission ? '#c2410c' : isNota ? '#6b21a8' : '#15803d';
-                    const badgeBorder = isRemission ? '#ffedd5' : isNota ? '#f3e8ff' : '#dcfce7';
+                    const isHistorical = evo.status === 'cerrada' && evo.closure_origin === 'legacy_migration';
+                    const isProfessionalClosed = evo.status === 'cerrada' && evo.closure_origin === 'professional';
+
+                    let badgeText = isRemission ? 'Remisión' : isNota ? 'Nota Aclaratoria' : 'Evolución';
+                    let badgeBg = isRemission ? '#fff7ed' : isNota ? '#faf5ff' : '#f0fdf4';
+                    let badgeColor = isRemission ? '#c2410c' : isNota ? '#6b21a8' : '#15803d';
+                    let badgeBorder = isRemission ? '#ffedd5' : isNota ? '#f3e8ff' : '#dcfce7';
+
+                    let statusBadgeHTML = "";
+                    if (isHistorical) {
+                        statusBadgeHTML = `
+                            <span style="font-size: 8px; font-weight: 900; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
+                                REGISTRO HISTÓRICO PROTEGIDO
+                            </span>
+                        `;
+                    } else if (isProfessionalClosed) {
+                        statusBadgeHTML = `
+                            <span style="font-size: 8px; font-weight: 900; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
+                                CERRADA Y CERTIFICADA
+                            </span>
+                        `;
+                    } else if (evo.status === 'borrador') {
+                        statusBadgeHTML = `
+                            <span style="font-size: 8px; font-weight: 900; background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
+                                BORRADOR
+                            </span>
+                        `;
+                    }
+
+                    const historicalNoticeHTML = isHistorical ? `
+                        <div style="font-size: 9px; font-weight: 600; color: #475569; background: #f8fafc; border: 1px solid #cbd5e1; border-left: 3px solid #64748b; padding: 6px 8px; border-radius: 4px; margin-top: 6px; margin-bottom: 6px;">
+                            <strong>Registro histórico protegido:</strong> Registro previo a la implementación del sistema de cierre y firma clínica. Su contenido se encuentra protegido contra modificaciones.
+                        </div>
+                    ` : '';
+
+                    let addendasHTML = "";
+                    if (Array.isArray(evo.addendas) && evo.addendas.length > 0) {
+                        addendasHTML = `
+                            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+                                <div style="font-size: 9px; font-weight: 900; color: #6b21a8; text-transform: uppercase; margin-bottom: 4px;">
+                                    Notas Aclaratorias (${evo.addendas.length})
+                                </div>
+                                ${evo.addendas.map((ad, idx) => `
+                                    <div style="font-size: 9px; background: #faf5ff; border: 1px solid #f3e8ff; border-radius: 6px; padding: 6px 8px; margin-top: 4px;">
+                                        <div style="display: flex; justify-content: space-between; font-weight: 800; color: #581c87; margin-bottom: 2px;">
+                                            <span>Nota #${idx + 1} · ${ad.author_snapshot?.nombre_completo || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
+                                            <span style="font-weight: 600; color: #7e22ce;">${new Date(ad.created_at).toLocaleDateString('es-CO')} ${new Date(ad.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                                        </div>
+                                        <div style="color: #334155; white-space: pre-wrap; font-weight: 500;">
+                                            ${(ad.contenido || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
 
                     return `
                         <div style="margin-bottom: 18px; padding: 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
@@ -283,7 +340,8 @@ export const EvolutionPrintService = {
                                         </div>
                                     ` : ''}
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    ${statusBadgeHTML}
                                     <span style="font-size: 8px; font-weight: 900; background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder}; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
                                         ${badgeText}
                                     </span>
@@ -293,6 +351,7 @@ export const EvolutionPrintService = {
                                 </div>
                             </div>
 
+                            ${historicalNoticeHTML}
                             ${procTagsHTML ? `<div style="margin-top: 6px; margin-bottom: 6px;">${procTagsHTML}</div>` : ''}
                             ${dxHTML}
 
@@ -317,6 +376,8 @@ export const EvolutionPrintService = {
                                     <strong>MEDICAMENTOS APLICADOS:</strong> ${evo.medicamentos.map(m => `${m.medicamento} (Dosis: ${m.dosis} - Vía: ${m.via}${m.hora ? ` - Hora: ${m.hora}` : ''})`).join('; ')}
                                 </div>
                             ` : ''}
+
+                            ${addendasHTML}
                         </div>
                     `;
                 }).join('');
