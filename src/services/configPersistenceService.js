@@ -247,7 +247,7 @@ export const deleteConfigItem = async (tenantId, configKey, tableName, id) => {
     await saveConfigSection(
         tenantId,
         configKey,
-        currentList.filter(item => item.id !== id)
+        currentList.filter(item => String(item.id) !== String(id))
     );
 
     return { success: true, id };

@@ -1,6 +1,12 @@
 // src/services/resourceService.js
 import supabase from "../lib/supabaseClient";
-import { getConfigItems, saveConfigItem, deleteConfigItem } from "./configPersistenceService";
+import { 
+    getConfigItems, 
+    saveConfigItem, 
+    deleteConfigItem,
+    getConfigSection,
+    saveConfigPatch
+} from "./configPersistenceService";
 
 import { isDoctorUser } from "../utils/doctorHelpers";
 
@@ -63,18 +69,68 @@ export const subscribeToChairs = (tenantId, callback) => {
 };
 
 // ── ESPECIALIDADES ──
+export const DEFAULT_SPECIALTIES = [
+    { nombre: "Ortodoncia", descripcion: "Corrección y alineación de la posición dental y oclusión" },
+    { nombre: "Endodoncia", descripcion: "Tratamiento de conductos radiculares y pulpa dental" },
+    { nombre: "Periodoncia", descripcion: "Tratamiento de encías y tejidos de soporte dental" },
+    { nombre: "Odontopediatría", descripcion: "Atención odontológica integral en niños y adolescentes" },
+    { nombre: "Cirugía Oral", descripcion: "Procedimientos quirúrgicos en cavidad oral y maxilares" },
+    { nombre: "Estética Dental", descripcion: "Diseño de sonrisa, blanqueamiento y cosmética dental" }
+];
+
+export const seedDefaultSpecialties = async (tenantId) => {
+    if (!tenantId) return [];
+    try {
+        const seededList = DEFAULT_SPECIALTIES.map(s => ({
+            id: crypto.randomUUID(),
+            tenant_id: tenantId,
+            nombre: s.nombre,
+            descripcion: s.descripcion,
+            activo: true,
+            actualizado: new Date().toISOString()
+        }));
+
+        await saveConfigPatch(tenantId, {
+            especialidades: seededList,
+            especialidades_initialized: true
+        });
+
+        try {
+            const tablePayloads = seededList.map(item => ({
+                id: item.id,
+                tenant_id: tenantId,
+                nombre: item.nombre,
+                descripcion: item.descripcion,
+                activo: true
+            }));
+            await supabase.from("especialidades").upsert(tablePayloads, { onConflict: "id" });
+        } catch (tableErr) {
+            console.warn("Aviso al sincronizar tabla especialidades:", tableErr);
+        }
+
+        return seededList;
+    } catch (err) {
+        console.error("Error al sembrar especialidades predeterminadas:", err);
+        return DEFAULT_SPECIALTIES.map((s, idx) => ({ id: String(idx + 1), ...s }));
+    }
+};
+
 export const getSpecialties = async (tenantId) => {
     if (!tenantId) return [];
+    
+    // 1. Obtener registros persistidos en la base de datos
     const items = await getConfigItems(tenantId, "especialidades", "especialidades");
     if (items.length > 0) return items;
-    return [
-        { id: "1", nombre: "Ortodoncia" },
-        { id: "2", nombre: "Endodoncia" },
-        { id: "3", nombre: "Periodoncia" },
-        { id: "4", nombre: "Odontopediatría" },
-        { id: "5", nombre: "Cirugía Oral" },
-        { id: "6", nombre: "Estética Dental" }
-    ];
+
+    // 2. Si no hay ítems, verificar si la sección ya fue inicializada explícitamente en la clínica
+    const isInitialized = await getConfigSection(tenantId, "especialidades_initialized", false);
+    if (isInitialized) {
+        // La clínica ya fue inicializada y el usuario eliminó todos los registros intencionalmente
+        return [];
+    }
+
+    // 3. Primera vez: Sembrar automáticamente en la base de datos para que sean reales y persistentes
+    return await seedDefaultSpecialties(tenantId);
 };
 
 export const subscribeToSpecialties = (tenantId, callback) => {
@@ -83,7 +139,9 @@ export const subscribeToSpecialties = (tenantId, callback) => {
 };
 
 export const createSpecialty = async (tenantId, data) => {
-    return await saveConfigItem(tenantId, "especialidades", "especialidades", data);
+    const res = await saveConfigItem(tenantId, "especialidades", "especialidades", data);
+    await saveConfigPatch(tenantId, { especialidades_initialized: true }).catch(() => {});
+    return res;
 };
 
 export const updateSpecialty = async (tenantId, id, data) => {

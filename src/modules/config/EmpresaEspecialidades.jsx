@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { getSpecialties, createSpecialty, updateSpecialty, deleteSpecialty } from '../../services/resourceService';
+import { getSpecialties, createSpecialty, updateSpecialty, deleteSpecialty, seedDefaultSpecialties } from '../../services/resourceService';
 
 const specialtySchema = z.object({
     nombre: z.string().min(1, "El nombre es requerido"),
@@ -37,10 +37,10 @@ function EspecialidadEditor({ item, onBack, inquilino }) {
         try {
             if (item?.id) {
                 await updateSpecialty(inquilino, item.id, data);
-                if (toast?.success) toast.success("Especialidad actualizada en Supabase");
+                if (toast?.success) toast.success("Especialidad actualizada correctamente");
             } else {
                 await createSpecialty(inquilino, data);
-                if (toast?.success) toast.success("Especialidad creada en Supabase");
+                if (toast?.success) toast.success("Especialidad creada correctamente");
             }
             onBack();
         } catch (error) {
@@ -156,13 +156,29 @@ export default function EmpresaEspecialidades() {
         if (window.confirm(`⚠️ ¿Seguro que deseas eliminar la especialidad "${nombre || ''}"?`)) {
             try {
                 await deleteSpecialty(inquilino, id);
-                setSpecialties(prev => prev.filter(s => s.id !== id));
+                setSpecialties(prev => prev.filter(s => String(s.id) !== String(id)));
                 if (toast?.success) toast.success("Especialidad eliminada correctamente");
                 else alert("✅ Especialidad eliminada correctamente");
             } catch (error) {
                 console.error(error);
                 if (toast?.error) toast.error("Error al eliminar especialidad");
             }
+        }
+    };
+
+    const handleSeedDefaults = async () => {
+        if (!inquilino) return;
+        setLoading(true);
+        try {
+            const seeded = await seedDefaultSpecialties(inquilino);
+            setSpecialties(seeded);
+            setFiltered(seeded);
+            if (toast?.success) toast.success("Especialidades predeterminadas cargadas correctamente");
+        } catch (e) {
+            console.error(e);
+            if (toast?.error) toast.error("Error al cargar especialidades predeterminadas");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -225,7 +241,18 @@ export default function EmpresaEspecialidades() {
                         ) : filtered.length === 0 ? (
                             <tr>
                                 <td colSpan={3} className="py-12 text-center text-slate-400 font-medium">
-                                    No hay especialidades registradas
+                                    <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                                        <FiActivity size={32} className="text-slate-300 mb-1" />
+                                        <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">No hay especialidades registradas</p>
+                                        <p className="text-[11px] text-slate-400 text-center mb-2">Puedes crear una nueva especialidad personalizada o cargar el catálogo predeterminado.</p>
+                                        <button
+                                            type="button"
+                                            onClick={handleSeedDefaults}
+                                            className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer border-0 flex items-center gap-2"
+                                        >
+                                            <FiPlus size={14} /> Cargar Especialidades Predeterminadas
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ) : (
