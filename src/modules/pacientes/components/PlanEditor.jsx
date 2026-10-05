@@ -990,42 +990,140 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         triggerAutoSave(nextItems);
     };
 
+    const importSingleOdontoItem = (odontoItem) => {
+        const newItem = {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            desc: `${odontoItem.situacion}${odontoItem.cara && odontoItem.cara !== 'General' && odontoItem.cara !== '---' && odontoItem.cara !== 'Pieza Completa' ? ` (${odontoItem.cara})` : ''}`,
+            amount: 0,
+            qty: 1,
+            code: "",
+            dientes: odontoItem.pieza && odontoItem.pieza !== '---' ? String(odontoItem.pieza) : "",
+            line_obs: odontoItem.cara && odontoItem.cara !== '---' ? `Cara: ${odontoItem.cara}` : "",
+            descuento: 0
+        };
+        const nextItems = [...items, newItem];
+        setItems(nextItems);
+        triggerAutoSave(nextItems);
+        toast.success(`Pieza ${odontoItem.pieza} (${odontoItem.situacion}) agregada al presupuesto`);
+    };
+
+    const importAllOdontoItems = () => {
+        if (!odontoItems.length) return;
+        const newItems = odontoItems.map((odontoItem, idx) => ({
+            id: Date.now() + idx + Math.floor(Math.random() * 1000),
+            desc: `${odontoItem.situacion}${odontoItem.cara && odontoItem.cara !== 'General' && odontoItem.cara !== '---' && odontoItem.cara !== 'Pieza Completa' ? ` (${odontoItem.cara})` : ''}`,
+            amount: 0,
+            qty: 1,
+            code: "",
+            dientes: odontoItem.pieza && odontoItem.pieza !== '---' ? String(odontoItem.pieza) : "",
+            line_obs: odontoItem.cara && odontoItem.cara !== '---' ? `Cara: ${odontoItem.cara}` : "",
+            descuento: 0
+        }));
+        const nextItems = [...items, ...newItems];
+        setItems(nextItems);
+        triggerAutoSave(nextItems);
+        setShowOdontoModal(false);
+        toast.success(`✅ ${newItems.length} tratamientos del odontograma cargados al presupuesto`);
+    };
+
     const handleOpenOdontoModal = async () => {
-        if (!patientId) {
+        const targetPatientId = patientId || patient?.id;
+        if (!targetPatientId) {
             toast.error("Error: ID de paciente no disponible.");
             return;
         }
         setShowOdontoModal(true);
         setOdontoLoading(true);
         try {
-            const { data: odontoData } = await supabase
+            const { data: odontoData, error: odontoErr } = await supabase
                 .from("odontogramas")
                 .select("*")
-                .eq("paciente_id", patientId)
+                .eq("paciente_id", targetPatientId)
                 .order("created_at", { ascending: false });
             
+            if (odontoErr) console.warn("Aviso consultando odontogramas:", odontoErr);
+
             const list = [];
             (odontoData || []).forEach(doc => {
-                const s = doc;
-                const creadoDate = s.created_at ? new Date(s.created_at) : null;
+                const creadoDate = doc.created_at ? new Date(doc.created_at) : null;
                 const formattedDate = creadoDate 
                     ? creadoDate.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) 
                     : "---";
-                const creadoPor = s.creado_por || s.profesional || "---";
+                const hallazgos = doc.hallazgos || {};
+                const creadoPor = hallazgos.profesional || hallazgos.creadoPor || doc.profesional || doc.creado_por || "Odontólogo Tratante";
 
-                if (s.plan && Array.isArray(s.plan)) {
-                    s.plan.forEach(item => {
+                // 1. Extraer del plan de tratamiento guardado (hallazgos.plan o doc.plan)
+                const plan = (Array.isArray(hallazgos.plan) && hallazgos.plan.length > 0)
+                    ? hallazgos.plan
+                    : (Array.isArray(doc.plan) && doc.plan.length > 0 ? doc.plan : []);
+
+                if (plan.length > 0) {
+                    plan.forEach(item => {
                         list.push({
                             id: doc.id,
                             fecha: formattedDate,
                             creadoPor: creadoPor,
-                            pieza: item.diente || item.tooth || "---",
-                            situacion: item.tratamiento || item.label || "---",
-                            cara: item.cara || item.surface || "---"
+                            pieza: item.diente || item.tooth || item.pieza || "---",
+                            situacion: item.tratamiento || item.label || item.situacion || item.diagnostico || "Hallazgo",
+                            cara: item.zonaLabel || item.zona || item.cara || item.surface || "Pieza Completa"
                         });
                     });
                 }
+
+                // 2. Extraer del mapa de hallazgos anatómicos (hallazgos.data o doc.data)
+                const dataObj = hallazgos.data || doc.data;
+                if ((!plan || plan.length === 0) && dataObj && typeof dataObj === 'object') {
+                    const zonaLabelMap = {
+                        center: "Oclusal/Incisal",
+                        top: "Vestibular",
+                        bottom: "Palatina/Lingual",
+                        left: "Mesial/Distal",
+                        right: "Distal/Mesial",
+                        Completo: "Pieza Completa"
+                    };
+                    Object.entries(dataObj).forEach(([dienteNum, zonas]) => {
+                        if (zonas && typeof zonas === 'object') {
+                            Object.entries(zonas).forEach(([zonaKey, val]) => {
+                                if (val && typeof val === 'object' && (val.tool || val.label || val.tratamiento)) {
+                                    list.push({
+                                        id: doc.id,
+                                        fecha: formattedDate,
+                                        creadoPor: creadoPor,
+                                        pieza: dienteNum,
+                                        situacion: val.label || val.tratamiento || val.tool || "Hallazgo",
+                                        cara: val.zonaLabel || zonaLabelMap[zonaKey] || zonaKey || "General"
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
             });
+
+            // 3. Si aún no hay registros, consultar la tabla de sincronización tratamientos_pendientes
+            if (list.length === 0) {
+                const { data: pendData } = await supabase
+                    .from("tratamientos_pendientes")
+                    .select("*")
+                    .eq("paciente_id", targetPatientId)
+                    .order("created_at", { ascending: false });
+
+                (pendData || []).forEach(p => {
+                    const creadoDate = p.created_at ? new Date(p.created_at) : null;
+                    const formattedDate = creadoDate 
+                        ? creadoDate.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) 
+                        : "---";
+                    list.push({
+                        id: p.id,
+                        fecha: formattedDate,
+                        creadoPor: p.creado_por || "Odontólogo Tratante",
+                        pieza: p.diente || "---",
+                        situacion: p.tratamiento || "Tratamiento Pendiente",
+                        cara: p.zona_label || p.zona || "General"
+                    });
+                });
+            }
+
             setOdontoItems(list);
         } catch (e) {
             console.error("Error loading current odontogram data:", e);
@@ -1987,13 +2085,6 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                             <FiPackage size={18} strokeWidth={3} />
                             Cargar Paquete / Combo Completo
                         </button>
-                        <button
-                            onClick={handleOpenOdontoModal}
-                            className="bg-[#8CC63F]/10 border border-[#8CC63F]/20 text-[#8CC63F] hover:bg-[#8CC63F] hover:text-white py-3.5 px-6 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 transition-all hover:shadow-lg active:scale-95 whitespace-nowrap"
-                        >
-                            <FiEye size={18} strokeWidth={3} />
-                            Odonto. Actual
-                        </button>
                     </div>
 
                     {/* Summary Block - estilo OralDrive */}
@@ -2257,6 +2348,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                                 <th className="px-4 py-3.5 text-center">Pieza</th>
                                                 <th className="px-4 py-3.5">Situación</th>
                                                 <th className="px-4 py-3.5">Cara afectada</th>
+                                                <th className="px-4 py-3.5 text-right">Acción</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-[11px] font-bold text-slate-600 uppercase">
@@ -2271,6 +2363,16 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                                     </td>
                                                     <td className="px-4 py-3 text-slate-800 font-black">{item.situacion}</td>
                                                     <td className="px-4 py-3 text-slate-400 font-black text-[10px] tracking-wide">{item.cara || "General"}</td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => importSingleOdontoItem(item)}
+                                                            className="px-3 py-1.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-black text-[10px] uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer inline-flex items-center gap-1"
+                                                            title="Agregar este tratamiento al presupuesto"
+                                                        >
+                                                            <FiPlus size={12} strokeWidth={3} /> Agregar
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -2278,13 +2380,27 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                 </div>
                             )}
                             
-                            <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-6">
-                                <button
-                                    onClick={() => setShowOdontoModal(false)}
-                                    className="px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all active:scale-95"
-                                >
-                                    Cerrar
-                                </button>
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-slate-100 mt-6">
+                                <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                                    {odontoItems.length > 0 && `${odontoItems.length} hallazgo(s) encontrado(s)`}
+                                </div>
+                                <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                                    {odontoItems.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={importAllOdontoItems}
+                                            className="px-5 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                                        >
+                                            <FiPlus size={14} strokeWidth={3} /> Cargar todos al Presupuesto ({odontoItems.length})
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setShowOdontoModal(false)}
+                                        className="px-6 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all active:scale-95 cursor-pointer"
+                                    >
+                                        Cerrar
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
