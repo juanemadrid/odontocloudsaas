@@ -44,6 +44,8 @@ for (const [question, expected] of [
   ['¿Cómo funciona la prueba gratis?', 'prueba-gratis'],
   ['Facturación electrónica DIAN y RIPS', 'facturacion-dian-rips'],
   ['Hablar con asesor por WhatsApp', 'contacto-soporte'],
+  ['quiero hacer un presupuesto', 'presupuestos'],
+  ['hacer una cotizacion', 'presupuestos'],
 ]) assert.equal(searchGuides(question)[0]?.id, expected, question);
 assert.deepEqual(searchGuides('Receta de una torta', ['citas']), []);
 assert.deepEqual(searchGuides('Ver pacientes de Edunexus', ['citas']), []);

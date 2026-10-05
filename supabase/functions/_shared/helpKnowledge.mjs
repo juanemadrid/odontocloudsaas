@@ -292,7 +292,13 @@ export const PUBLIC_GUIDE_IDS = new Set([
 
 export const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const stop = new Set('como hago para una uno unos unas los las del que con por puedo quiero necesito donde este esta esto eso cual cuando sistema paso pasos consultar utilizar usar revisar'.split(' '));
-const aliases = { cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar', registro: 'registrar', guardo: 'guardar', cobro: 'cobrar', abro: 'abrir', cierro: 'cerrar', costo: 'precio', costos: 'precios', valor: 'precio', valores: 'precios', cotizacion: 'precio' };
+const aliases = {
+  hacer: 'crear', hace: 'crear',
+  cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar',
+  registro: 'registrar', guardo: 'guardar', cobro: 'cobrar', abro: 'abrir', cierro: 'cerrar',
+  costo: 'precio', costos: 'precios', valor: 'precio', valores: 'precios',
+  cotizacion: 'presupuesto', cotizaciones: 'presupuesto', cotizar: 'presupuesto'
+};
 const tokens = text => [...new Set(normalize(text).split(' ').filter(t => t.length > 2 && !stop.has(t)).map(t => aliases[t] || (t.length > 4 && t.endsWith('s') ? t.slice(0, -1) : t)))];
 
 export function searchGuides(question, previousIds = [], mode = 'app') {
@@ -308,7 +314,12 @@ export function searchGuides(question, previousIds = [], mode = 'app') {
   const ranked = candidateGuides.map(item => {
     const titleWords = tokens(item.title);
     const keyWords = tokens(item.keywords);
-    const score = words.reduce((n, word) => n + (titleWords.includes(word) ? 5 : keyWords.includes(word) ? 3 : 0), 0);
+    const score = words.reduce((n, word) => {
+      let s = 0;
+      if (titleWords.includes(word)) s += 5;
+      if (keyWords.includes(word)) s += 3;
+      return n + s;
+    }, 0);
     return { item, score };
   }).filter(hit => hit.score > 0).sort((a, b) => b.score - a.score);
 
