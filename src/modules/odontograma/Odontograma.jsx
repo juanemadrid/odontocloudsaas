@@ -101,9 +101,6 @@ export default function Odontograma({ embeddedPatient }) {
     // Estados de Profesional Odontólogo
     const [catalogProfesionales, setCatalogProfesionales] = useState([]);
     const [currentDoctor, setCurrentDoctor] = useState("");
-    const [showNewModal, setShowNewModal] = useState(false);
-    const [newModalDoctor, setNewModalDoctor] = useState("");
-    const [newModalDenticion, setNewModalDenticion] = useState("adulto");
 
     // Estados de Acciones y Eliminación
     const [activeMenuId, setActiveMenuId] = useState(null);
@@ -263,19 +260,21 @@ export default function Odontograma({ embeddedPatient }) {
             return toast?.warning("Ya existe un odontograma en estado Abierto para este paciente. Debe finalizar el odontograma actual antes de crear uno nuevo.");
         }
 
-        if (!esDoctor) {
-            // Usuario administrativo / recepción: abre modal para elegir el profesional odontólogo
-            const defaultDoc = (catalogProfesionales.length > 0)
-                ? (catalogProfesionales[0].nombreCompleto || catalogProfesionales[0].nombre)
-                : "";
-            setNewModalDoctor(defaultDoc);
-            setNewModalDenticion("adulto");
-            setShowNewModal(true);
+        // Determinar doctor inicial a cargo de forma inteligente:
+        let initialDoc = "";
+        if (esDoctor) {
+            initialDoc = currentUserName || "Odontólogo Tratante";
+        } else if (embeddedPatient?.profesionales && embeddedPatient.profesionales.length > 0) {
+            initialDoc = embeddedPatient.profesionales[0].nombreCompleto || embeddedPatient.profesionales[0].nombre || "";
+        } else if (embeddedPatient?.profesional_nombre) {
+            initialDoc = embeddedPatient.profesional_nombre;
+        } else if (catalogProfesionales && catalogProfesionales.length > 0) {
+            initialDoc = catalogProfesionales[0].nombreCompleto || catalogProfesionales[0].nombre || "";
         } else {
-            // Usuario con rol de doctor: creación directa asignándose a sí mismo
-            const myName = currentUserName || "Odontólogo Tratante";
-            handleCreateWithDoctor(myName, "adulto");
+            initialDoc = currentUserName || "Odontólogo Tratante";
         }
+
+        handleCreateWithDoctor(initialDoc, "adulto");
     };
 
     const handleCreateWithDoctor = async (doctorName, denticion = "adulto") => {
@@ -283,9 +282,7 @@ export default function Odontograma({ embeddedPatient }) {
         if (tieneAbierto) {
             return toast?.warning("Ya existe un odontograma en estado Abierto para este paciente. Debe finalizar el odontograma actual antes de crear uno nuevo.");
         }
-        if (!doctorName) {
-            return toast?.warning("Debe seleccionar el profesional a cargo del odontograma");
-        }
+        const resolvedDoctor = doctorName || currentUserName || "Odontólogo Tratante";
         setLoading(true);
         try {
             const tenantId = embeddedPatient?.inquilino || embeddedPatient?.tenant_id || userProfile?.tenant_id || userProfile?.inquilino;
@@ -302,7 +299,7 @@ export default function Odontograma({ embeddedPatient }) {
                         estado: "Abierto",
                         tipoDenticion: denticion,
                         creadoPor: creador,
-                        profesional: doctorName
+                        profesional: resolvedDoctor
                     },
                     observaciones: ""
                 }])
@@ -310,7 +307,6 @@ export default function Odontograma({ embeddedPatient }) {
                 .single();
             if (error) throw error;
             const h = data.hallazgos || {};
-            setShowNewModal(false);
             abrirEditor({ 
                 id: data.id, 
                 data: h.data || {}, 
@@ -319,7 +315,7 @@ export default function Odontograma({ embeddedPatient }) {
                 estado: h.estado || "Abierto",
                 tipoDenticion: h.tipoDenticion || denticion,
                 creadoPor: h.creadoPor || creador,
-                profesional: h.profesional || doctorName,
+                profesional: h.profesional || resolvedDoctor,
                 rawHallazgos: h
             }, false);
         } catch (err) { 
@@ -910,108 +906,7 @@ export default function Odontograma({ embeddedPatient }) {
                     />
                 )}
 
-                {/* MODAL PARA CREAR NUEVO ODONTOGRAMA (SELECCIÓN DE PROFESIONAL) */}
-                {showNewModal && (
-                    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
-                        <div className="bg-white rounded-[24px] shadow-2xl border border-slate-100 max-w-md w-full p-6 animate-scaleUp">
-                            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-                                        <FiAward size={20} />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Nuevo Odontograma Clínico</h3>
-                                        <p className="text-[11px] text-slate-400 font-semibold">Asignar odontólogo responsable</p>
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={() => setShowNewModal(false)}
-                                    className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-                                >
-                                    <FiX size={18} />
-                                </button>
-                            </div>
 
-                            <div className="py-5 space-y-4">
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                                        Profesional Odontólogo a cargo *
-                                    </label>
-                                    <select
-                                        value={newModalDoctor}
-                                        onChange={e => setNewModalDoctor(e.target.value)}
-                                        className="w-full bg-white border border-slate-200 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
-                                    >
-                                        <option value="">
-                                            {catalogProfesionales.length === 0 ? "Sin doctores disponibles" : "Seleccione un profesional..."}
-                                        </option>
-                                        {catalogProfesionales.map(doc => (
-                                            <option key={doc.id} value={doc.nombreCompleto || doc.nombre}>
-                                                {doc.nombreCompleto || doc.nombre}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {catalogProfesionales.length === 0 && (
-                                        <p className="text-[11px] text-amber-600 font-medium mt-1.5">
-                                            ⚠️ No se encontraron odontólogos activos vinculados al paciente o a la clínica.
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1.5">
-                                        Tipo de Dentición Inicial
-                                    </label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {[
-                                            { id: 'adulto', label: 'Permanente', icon: '🦷' },
-                                            { id: 'nino', label: 'Temporal', icon: '👶' },
-                                            { id: 'completo', label: 'Mixta', icon: '🌓' }
-                                        ].map(item => (
-                                            <button
-                                                key={item.id}
-                                                type="button"
-                                                onClick={() => setNewModalDenticion(item.id)}
-                                                className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex flex-col items-center gap-1 transition-all ${
-                                                    newModalDenticion === item.id
-                                                        ? "bg-indigo-50/70 border-indigo-300 text-indigo-700 shadow-sm"
-                                                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                                                }`}
-                                            >
-                                                <span className="text-base">{item.icon}</span>
-                                                <span>{item.label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex items-center gap-2.5">
-                                    <div className="text-[11px] text-slate-500 font-medium">
-                                        <span className="font-bold text-slate-700">Registrado por:</span> {currentUserName}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowNewModal(false)}
-                                    className="px-4 py-2.5 rounded-xl text-slate-500 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleCreateWithDoctor(newModalDoctor, newModalDenticion)}
-                                    disabled={loading || !newModalDoctor}
-                                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-indigo-500/20 cursor-pointer"
-                                >
-                                    {loading ? "Iniciando..." : "Iniciar Odontograma"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
 
                 {/* MODAL PARA CONFIRMAR ELIMINACIÓN DE ODONTOGRAMA */}
                 {deleteConfirmSesion && (

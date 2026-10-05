@@ -94,7 +94,21 @@ export function usePermissions() {
                     }
 
                     // Si el perfil tiene matriz de permisos configurada y la función/módulo no fue otorgada
-                    // o fue revocada, el acceso está terminantemente denegado.
+                    // o fue revocada, verificar si es una nueva función ("profesionales") que hereda de Pacientes / Datos Personales
+                    if (queryFeatureKey === "profesionales") {
+                        const fallbackKey = permKeys.find(k => {
+                            const nk = normalizeKey(k);
+                            return nk === "paciente" || nk === "pacientes" || nk === "datos personales";
+                        });
+                        if (fallbackKey) {
+                            const fVal = perms[fallbackKey];
+                            if (typeof fVal === 'boolean') return fVal;
+                            if (typeof fVal === 'object' && fVal !== null) {
+                                return typeof fVal[action] !== 'undefined' ? !!fVal[action] : Object.values(fVal).some(Boolean);
+                            }
+                        }
+                    }
+
                     return false;
                 }
             }

@@ -2002,7 +2002,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
                                 {can("Pacientes", "Rx/imágenes/Doc", "consultar") && (
                                     <SidebarButton icon={FiCamera} label="Rx / Imágenes / Doc" active={activeTab === "rx"} onClick={() => handleTabChange("rx")} />
                                 )}
-                                {can("Pacientes", "Profesionales", "consultar") && (
+                                {(can("Pacientes", "Profesionales", "consultar") || can("Pacientes", "Paciente", "consultar") || can("Pacientes", "Datos Personales", "consultar")) && (
                                     <SidebarButton icon={FiBriefcase} label="Profesionales" active={activeTab === "pro"} onClick={() => handleTabChange("pro")} />
                                 )}
                                 {can("Pacientes", "Citas", "consultar") && (
