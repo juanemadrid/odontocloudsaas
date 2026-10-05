@@ -60,14 +60,14 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Selecciona el formulario clínico (Anamnesis, Consentimiento Informado o Historia General) y completa la información requerida.',
     'Revisa las firmas del paciente y del profesional antes de guardar.',
   ], '', 'El paciente debe estar registrado previamente y las plantillas clínicas deben estar configuradas en [Configuración] > [Plantillas Doc. Clínicos].'),
-  guide('odontograma', 'Clínica', 'Odontograma digital y sincronización con presupuesto', 'odontograma dientes diente superficies hallazgos caries', 'src/modules/odontograma/Odontograma.jsx', [
+  guide('odontograma', 'Clínica', 'Odontograma digital y registro de hallazgos clínicos', 'odontograma dientes diente superficies hallazgos caries grafico adulto infantil', 'src/modules/odontograma/Odontograma.jsx', [
     'Abre la ficha del paciente y haz clic en la pestaña [Odontogramas].',
     'En el listado inicial, pulsa [+ Nuevo Odontograma] para abrir el editor interactivo.',
     'Selecciona el [Tipo de Dentición] (Completo, Adulto o Infantil) y si deseas, filtra por superficie (Vestibular, Palatina, Mesial, Distal u Oclusal).',
     'En la barra de herramientas, elige el hallazgo (ej: Caries, Obturación, Corona, Endodoncia, Extracción, Implante o Borrador).',
     'Haz clic sobre la cara o pieza dental correspondiente. A la derecha se irá listando el plan de tratamiento con los dientes y superficies marcados.',
     'Para continuar después sin cerrar el caso, pulsa [Guardar Progreso] (estado Abierto). Para finalizar y mandar a cotizar, pulsa [Finalizar Odontograma].',
-  ], 'Al pulsar [Finalizar Odontograma], todos los hallazgos y tratamientos planificados se envían automáticamente al módulo de [Presupuestos & planes] del paciente.',
+  ], 'Al pulsar [Finalizar Odontograma], los hallazgos y tratamientos planificados quedan disponibles en la pestaña [Presupuestos & planes] para cargarse opcionalmente con el botón [Odonto. Actual].',
   'Para que los hallazgos del odontograma se coticen automáticamente al finalizarlo, la clínica debe tener su tarifario activo en [Configuración] > [Lista de precios].'),
   guide('periodontograma', 'Clínica', 'Consultar y registrar el periodontograma', 'periodontograma periodontal sondaje', 'src/modules/odontograma/Periodontograma.jsx', [
     'Abre la ficha del paciente y selecciona la pestaña [Periodontogramas].',
@@ -84,14 +84,15 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Pulsa [Guardar Evolución]. Si necesitas corregir un detalle posterior, utiliza la pestaña [Nota Aclaratoria] para mantener la inmutabilidad legal.',
   ], 'El sistema valida que solo el profesional tratante asignado pueda registrar evoluciones, y que las correcciones queden como notas aclaratorias para cumplir la normatividad de historia clínica.',
   '¡Regla obligatoria de OdontoCloud! El odontólogo que registra la evolución DEBE estar asignado previamente en la pestaña [Profesionales] del paciente. Si no está asignado, el sistema bloqueará el guardado mostrando: «No estás asignado como profesional tratante».'),
-  guide('presupuestos', 'Clínica', 'Crear presupuesto y planes de tratamiento', 'presupuesto plan tratamiento cotizacion procedimientos', 'src/modules/pacientes/components/PlanEditor.jsx', [
-    'Abre la ficha del paciente y entra a [Presupuestos & planes].',
-    'Pulsa [+ Nuevo Plan] para crear una cotización.',
-    'Usa [Odonto. Actual] para cargar los tratamientos diagnosticados en el odontograma, o [Agregar items] para buscar del tarifario de la clínica.',
-    'Ajusta cantidades, coberturas/copagos, descuentos y profesional responsable.',
-    'Para ejecutar tratamientos en la cita, marca la casilla (✓) y pulsa el botón azul [Realizar] para mandarlos directo a evolución clínica.',
-    'Puedes imprimir la cotización en PDF formal con el logo de la clínica o convertirla en plan activo con [Convertir a Plan].',
-  ], '', 'Antes de elaborar un presupuesto, tu clínica debe tener:\n• La **Lista de Precios / Tarifario** configurada en [Configuración] > [Lista de precios] con los procedimientos y valores en pesos (COP).\n• El **Profesional tratante** asignado en la pestaña [Profesionales] del paciente.'),
+  guide('presupuestos', 'Clínica', 'Crear presupuesto y planes de tratamiento', 'presupuesto presupuestos plan planes tratamiento cotizacion cotizaciones cotizar procedimientos tarifario agregar items', 'src/modules/pacientes/components/PlanList.jsx', [
+    'Abre la ficha del paciente y entra a la pestaña [Presupuestos & planes] en el menú lateral izquierdo.',
+    'Encontrarás dos secciones: para una cotización pulsa el botón verde [+ Nuevo Presupuesto], o para un tratamiento activo pulsa [+ Nuevo Plan de Tratamiento].',
+    'En la ventana emergente, escribe el [Nombre] (ej: Ortodoncia, Diseño de sonrisa), selecciona el [Profesional] tratante, confirma la vigencia en días y la modalidad (Particular o EPS/Convenio), y pulsa el botón verde [Crear].',
+    'En el editor, haz clic en [+ Agregar Items / Procedimientos] (o el botón verde [+ Agregar items]) para buscar y seleccionar procedimientos en la lista de precios de la clínica. También puedes usar [Cargar Paquete / Combo Completo].',
+    'Nota opcional: Si el paciente ya tiene hallazgos registrados en su odontograma, puedes pulsar el botón verde [Odonto. Actual] para importarlos sin digitarlos uno a uno.',
+    'Ajusta cantidades, descuentos o copagos. Para cotizaciones, puedes imprimir el PDF formal con el ícono de impresora o pulsar [Convertir a Plan] al ser aprobado. En planes activos, marca (✓) y pulsa el botón azul [Realizar] para mandar el procedimiento a evolución clínica.',
+  ], 'No es obligatorio hacer un odontograma previo para crear un presupuesto: puedes cargar directamente los procedimientos desde el tarifario con [+ Agregar Items / Procedimientos].',
+  'Antes de elaborar un presupuesto, tu clínica debe tener:\n• La **Lista de Precios / Tarifario** configurada en [Configuración] > [Lista de precios] con los procedimientos y valores en pesos (COP).\n• El **Profesional tratante** asignado en la pestaña [Profesionales] del paciente.'),
   guide('archivos', 'Clínica', 'Radiografías, imágenes y documentos', 'radiografia imagen adjunto archivo rx documento subir', 'src/modules/pacientes/components/PatientRxTab.jsx', [
     'Abre la ficha del paciente y selecciona [Rx / Imágenes / Doc].',
     'Haz clic en subir archivo para adjuntar radiografías panorámicas, periapicales, fotos clínicas o documentos PDF.',
@@ -309,7 +310,7 @@ export function searchGuides(question, previousIds = [], mode = 'app') {
   // En modo público se filtran exclusivamente las guías comerciales y de producto para visitantes
   const candidateGuides = isPublic
     ? HELP_GUIDES.filter(g => PUBLIC_GUIDE_IDS.has(g.id))
-    : HELP_GUIDES;
+    : HELP_GUIDES.filter(g => !['historia-odontograma-public', 'agenda-whatsapp-public', 'facturacion-dian-rips', 'seguridad-migracion'].includes(g.id));
 
   const ranked = candidateGuides.map(item => {
     const titleWords = tokens(item.title);

@@ -272,18 +272,28 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 > 3. **Convenios o Descuentos (opcional):** Si el paciente pertenece a un convenio o tiene tarifa de copago, configúralo previamente en **[Administración]** -> **[Convenios]**.
 
 #### Paso a paso exacto en pantalla:
-1. Entra a la pestaña **[Presupuestos & planes]** y pulsa el botón **[+ Nuevo Plan]**.
-2. **Cargar procedimientos:**
-   - **Desde Odontograma:** Pulsa el botón verde **`[Odonto. Actual]`** para cargar los tratamientos diagnosticados en el odontograma del paciente.
-   - **Desde Tarifario:** Pulsa el botón verde **`[Agregar items]`** para buscar procedimientos por nombre o código en la lista de precios de la clínica.
-3. Para cada ítem en la tabla:
-   - Ajusta la cantidad, el profesional asignado, el valor unitario y posibles descuentos.
+1. Abre la ficha del paciente y entra a la pestaña **[Presupuestos & planes]** en el menú lateral izquierdo.
+2. En la pantalla verás dos tablas independientes:
+   - Para crear una cotización económica: haz clic en el botón verde superior **`[+ Nuevo Presupuesto]`**.
+   - Para iniciar un tratamiento activo: haz clic en el botón verde **`[+ Nuevo Plan de Tratamiento]`**.
+3. **Completar la ventana emergente:**
+   - Escribe el **Nombre** del plan (ej. *Tratamiento Integral*, *Ortodoncia*, *Diseño de Sonrisa*).
+   - Selecciona el **Profesional** tratante responsable.
+   - Define la **Vigencia en días** (por defecto 30 días para presupuestos).
+   - Elige la **Modalidad de pago** (*Particular* o *EPS / Convenio*).
+   - Haz clic en el botón verde inferior **`[Crear]`**.
+4. **Cargar procedimientos en el editor:**
+   - **Directo del tarifario (Recomendado):** Haz clic en el botón azul grande **`[+ Agregar Items / Procedimientos]`** (o el botón verde superior `[+ Agregar items]`) para buscar y agregar procedimientos por nombre o código CUPS desde la lista de precios de la clínica.
+   - **Combos predefinidos:** Haz clic en **`[Cargar Paquete / Combo Completo]`** para insertar paquetes completos de una sola vez.
+   - **Desde Odontograma (Opcional):** Si el paciente ya cuenta con un odontograma con hallazgos registrados, puedes pulsar el botón verde **`[Odonto. Actual]`** para importarlos automáticamente sin necesidad de digitarlos manualmente.
+5. Para cada ítem en la tabla:
+   - Ajusta la cantidad, el profesional tratante asignado, el valor unitario y posibles descuentos en porcentaje o valor fijo.
    - Si la clínica maneja convenio o copago con EPS, selecciona la cobertura aplicable.
-4. **Acciones clave en la tabla de procedimientos:**
-   - **Columna `✓` (Realizar):** Marca la casilla de los procedimientos realizados en la cita y pulsa el botón azul superior **`[Realizar]`**. El sistema abrirá la ventana de evolución clínica con los datos prellenados, marcando el procedimiento como ejecutado.
-   - **Columna `?` (Semáforo de estado):** Un punto visual indica si el procedimiento está *Sin realizar* (gris), *Realizado con deuda* (rojo), *Con abono parcial* (amarillo) o *Totalmente pagado* (verde).
-   - **Botón `[Convertir a Plan]`:** Permite transformar una cotización informativa en un plan de tratamiento formal en curso.
-   - **Icono de Impresora:** Genera el presupuesto formal en PDF con el membrete y logo de la clínica para entrega al paciente.
+6. **Opciones y acciones clave:**
+   - **Observaciones:** En la parte inferior puedes redactar condiciones de pago o términos y pulsar **`[Guardar Observaciones]`**.
+   - **Icono de Impresora:** Genera el presupuesto formal en PDF con el membrete y logo de la clínica para entrega impresa o digital al paciente.
+   - **Botón `[Convertir a Plan]`:** Al aprobarse la cotización por parte del paciente, pulsa este botón superior para transformarla en un plan de tratamiento activo.
+   - **Columna `✓` (Realizar en cita):** En planes de tratamiento activos, marca la casilla de los procedimientos ejecutados en la sesión y pulsa el botón azul superior **`[Realizar]`**. El sistema abrirá la evolución clínica con los datos listos para registrar la atención.
 
 ---
 

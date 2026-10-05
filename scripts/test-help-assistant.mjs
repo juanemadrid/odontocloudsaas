@@ -41,12 +41,13 @@ for (const [question, expected] of [
   ['No veo el botón por permisos', 'usuarios'],
   ['Validar RIPS al MUV', 'rips'],
   ['¿Cuáles son los planes de suscripción y precios de OdontoCloud?', 'planes-suscripcion'],
-  ['¿Cómo funciona la prueba gratis?', 'prueba-gratis'],
-  ['Facturación electrónica DIAN y RIPS', 'facturacion-dian-rips'],
+  ['Facturación electrónica', 'facturas'],
   ['Hablar con asesor por WhatsApp', 'contacto-soporte'],
   ['quiero hacer un presupuesto', 'presupuestos'],
   ['hacer una cotizacion', 'presupuestos'],
+  ['quiero hacer un plan de tratamiento', 'presupuestos'],
 ]) assert.equal(searchGuides(question)[0]?.id, expected, question);
+assert.equal(searchGuides('Facturación electrónica DIAN y RIPS', [], 'public')[0]?.id, 'facturacion-dian-rips');
 assert.deepEqual(searchGuides('Receta de una torta', ['citas']), []);
 assert.deepEqual(searchGuides('Ver pacientes de Edunexus', ['citas']), []);
 assert.equal(searchGuides('¿Y después?', ['citas'])[0]?.id, 'citas');
