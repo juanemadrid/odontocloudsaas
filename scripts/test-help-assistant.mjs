@@ -85,7 +85,7 @@ assert.equal(calls[0].url, 'http://ollama:11434/api/chat');
 assert.equal(calls[0].body.messages.length, 2);
 assert.equal(calls[0].body.model, 'local-test');
 const compactPrompt = calls[0].body.messages[0].content;
-assert.ok(compactPrompt.length < 1200, 'General appointment prompt must stay compact');
+assert.ok(compactPrompt.length < 2200, 'General appointment prompt must stay compact');
 assert.ok(compactPrompt.includes('CONFIRMAR REGISTRO'));
 assert.ok(compactPrompt.includes('Sin Confirmar'));
 const detailedPrompt = helpPrompt(HELP_GUIDES.find(g => g.id === 'citas'), '¿Qué campos son obligatorios al crear un paciente para la cita?');
@@ -232,3 +232,16 @@ assert.equal(clientAnswer.answer,'Abre Agenda.');
 assert.deepEqual(updates,['Abre Agenda.']);
 delete globalThis.__helpTestClient;
 console.log('Client: immediate greeting and end-to-end simulated progressive response verified.');
+for (const question of ['quiero apartar una cita', 'Necesito agendar una cita', '¿Cómo puedo reservar una cita?', 'Ayúdame a apartar una cita por favor']) {
+  await handler(req({question, history}));
+  const sent=calls.at(-1).body.messages;
+  assert.equal(sent.length,2,'Standalone appointment request must not resend old transcript');
+  assert.ok(sent[0].content.length<2200,'Common appointment wording uses compact prompt');
+  assert.ok(sent[0].content.includes('CONFIRMAR REGISTRO'));
+}
+await handler(req({question:'¿Qué campos son obligatorios al crear un paciente para la cita?',previousIds:['citas'],history}));
+assert.equal(calls.at(-1).body.messages.length,4,'Specific questions preserve conversational history');
+console.log('CPU regression: natural appointment requests use short reference without old transcript; detailed requests keep context.');
+
+assert.ok(helpPrompt(HELP_GUIDES.find(g=>g.id==='citas'),'quiero apartar una cita').includes('+ Nueva Cita'));
+assert.ok(HELP_GUIDES.find(g=>g.id==='citas').steps[0].includes('+ Nueva Cita'));

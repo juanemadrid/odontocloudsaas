@@ -1,61 +1,65 @@
 // Manual público de uso: nunca incluir datos de pacientes, credenciales ni datos de otra app.
 // Revisar las fuentes de cada guía cuando cambie una pantalla.
 export const KNOWLEDGE_VERSION = '2026-09-29';
-const guide = (id, category, title, keywords, source, steps, note = '') => ({
-  id, category, title, keywords, source, steps, note,
+const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
+  id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
   guide('citas', 'Agenda', 'Apartar una cita nueva', 'agendar reservar apartar cita turno agenda nueva', 'src/modules/agenda/components/AppointmentModal.jsx', [
-    'Entra a [Agenda] en el menú lateral y haz clic sobre el recuadro del calendario correspondiente a la hora y sillón deseados.',
-    'En [Identidad del Paciente], busca por cédula o nombre y selecciona al paciente. Si es nuevo, pulsa la opción de crear paciente y completa los campos obligatorios: nombres, apellidos, documento, celular, fecha de nacimiento y sexo.',
+    'Haz clic en [Agenda] en el menú izquierdo. En la parte superior derecha de Gestión Citas, pulsa el botón azul [+ Nueva Cita]. Se abrirá el formulario de la cita.',
+    'En [Identidad del Paciente], escribe el nombre o la cédula en [BUSCAR POR NOMBRE O CC...] y haz clic en el paciente que aparece en los resultados. Si aún no está registrado, marca la casilla [Nuevo] y completa los campos obligatorios: nombres, apellidos, documento, celular, fecha de nacimiento y sexo.',
     'En [Detalles de la Cita], confirma la [Sede], selecciona el [Profesional] (odontólogo) y el [Espacio Clínico] (sillón o consultorio).',
     'Define la [Fecha de Cita], la [Hora] y la [Duración Estimada] en minutos (por defecto 30 min). Puedes marcar [Valoración] o [Control] si corresponde.',
     'Añade comentarios o el motivo de consulta y verifica que el [Estado de la Cita] esté en [Sin Confirmar].',
     'Pulsa el botón verde inferior [CONFIRMAR REGISTRO]. El sistema validará que no haya cruces de horarios con el doctor o el sillón y guardará la cita.',
-  ], 'Si sales sin guardar habiendo hecho cambios, el sistema mostrará la alerta: ¿Descartar Cambios? con las opciones [Descartar y Cerrar] o [Seguir Editando]. Las citas con más de 30 días de antigüedad están bloqueadas bajo el estado CITA CERRADA (+1 MES).'),
+  ], 'Si sales sin guardar habiendo hecho cambios, el sistema mostrará la alerta: ¿Descartar Cambios? con las opciones [Descartar y Cerrar] o [Seguir Editando]. Las citas con más de 30 días de antigüedad están bloqueadas bajo el estado CITA CERRADA (+1 MES).',
+  'Antes de apartar tu primera cita, recuerda que debes tener configurados previamente en el sistema:\n• La **Sede** activa en [Configuración] > [Sucursales].\n• El **Profesional (Odontólogo)** registrado como usuario en [Configuración] > [Usuarios].\n• El **Espacio Clínico (Sillón / Consultorio)** asignado a la sede en [Configuración] > [Recursos físicos].\n• Los **Horarios y turnos** de atención del profesional en [Administración] > [Gestión Agenda].'),
   guide('editar-cita', 'Agenda', 'Modificar o cancelar una cita', 'reprogramar cambiar cancelar eliminar modificar cita', 'src/modules/agenda/components/AppointmentModal.jsx', [
     'Localiza y haz clic sobre la cita en el calendario de [Agenda].',
     'Para reprogramar: cambia la fecha, hora, duración o profesional y pulsa [CONFIRMAR REGISTRO].',
     'Para cambiar de estado: despliega [Estado de la Cita] y selecciona: Sin Confirmar, Confirmada, En espera (en sala), Atendido o Cancelado.',
     'Pulsa el botón verde [CONFIRMAR REGISTRO] para guardar los cambios y actualizar el color en la agenda.',
     'Para borrar definitivamente la cita: pulsa el botón rojo [ELIMINAR CITA] y confirma en el cuadro rojo con [Sí, Eliminar].',
-  ], 'No elimines una cita para indicar que el paciente no asistió; usa el estado [Cancelado] o [No asiste] para conservar la estadística.'),
+  ], 'No elimines una cita para indicar que el paciente no asistió; usa el estado [Cancelado] o [No asiste] para conservar la estadística.',
+  'Antes de reprogramar, asegúrate de que el odontólogo o sillón al que vas a mover la cita tenga disponibilidad horaria en [Agenda].'),
   guide('whatsapp-cita', 'Agenda', 'Enviar recordatorio por WhatsApp', 'whatsapp recordatorio cita mensaje confirmacion enviar', 'src/modules/agenda/Agenda.jsx', [
     'En la vista de [Agenda], localiza la tarjeta de la cita del paciente.',
     'Haz clic sobre el icono verde de [WhatsApp] en la tarjeta de la cita.',
     'El sistema generará el texto con el nombre del paciente, fecha, hora, doctor y clínica, abriendo WhatsApp Web o tu app de WhatsApp.',
     'Revisa el mensaje y haz clic en enviar en WhatsApp.',
-  ], 'Hacer clic en el icono prepara el mensaje con los datos oficiales de la cita. El envío se finaliza desde WhatsApp.'),
+  ], 'Hacer clic en el icono prepara el mensaje con los datos oficiales de la cita. El envío se finaliza desde WhatsApp.',
+  'Antes de enviar el recordatorio, verifica que el paciente tenga su número de celular completo guardado y que tengas la sesión de WhatsApp Web o tu app abierta.'),
   guide('horarios', 'Agenda', 'Configurar horarios y disponibilidad', 'horarios disponibilidad turnos profesional no aparece espacio clinico sillon', 'src/modules/administracion/views/GestionAgenda.jsx', [
     'Entra a [Administración] > [Gestión Agenda] para configurar los turnos y horarios de atención.',
     'Comprueba el profesional, la sede y el período que estás configurando.',
     'Revisa también [Configuración] > [Recursos físicos] para verificar que los sillones estén activos, y [Configuración] > [Usuarios] para el odontólogo.',
     'Vuelve a [Agenda] y comprueba los espacios disponibles.',
-  ]),
+  ], '', 'Antes de asignar horarios, el profesional debe estar creado en [Configuración] > [Usuarios] y la sede debe estar activa en [Configuración] > [Sucursales].'),
   guide('pacientes', 'Pacientes', 'Crear o buscar un paciente', 'crear registrar nuevo buscar paciente documento celular', 'src/modules/pacientes/components/PatientList.jsx', [
     'Entra a [Pacientes] en el menú lateral. En la barra superior busca primero por documento, nombre o celular para evitar registros duplicados.',
     'Si no existe, haz clic en el botón verde superior [+ Nuevo Paciente].',
     'Completa los campos obligatorios: Tipo de documento, Número de documento, Nombres, Apellidos, Celular, Fecha de nacimiento y Sexo.',
     'Opcionalmente añade correo, dirección, EPS y ocupación.',
     'Pulsa [Guardar]. El paciente quedará registrado y listo para agendar citas o abrir su expediente clínico.',
-  ]),
+  ], '', 'Antes de crear un paciente nuevo, escribe siempre su documento o nombre en el buscador superior para comprobar si ya existe y evitar expedientes duplicados.'),
   guide('importar-pacientes', 'Pacientes', 'Importar pacientes (Excel)', 'importar pacientes excel csv carga masiva', 'src/modules/pacientes/components/ImportadorPacientes.jsx', [
     'En [Pacientes], haz clic en el botón [Importar Pacientes (Excel)].',
     'Selecciona o arrastra el archivo de Excel / CSV siguiendo las columnas requeridas.',
     'Revisa la previsualización y validaciones del importador antes de confirmar.',
     'Pulsa importar y comprueba los registros importados en el listado de pacientes.',
-  ]),
+  ], '', 'Antes de importar, asegúrate de tener tu archivo Excel (.xlsx) o CSV con las columnas mínimas obligatorias (Documento, Nombres, Apellidos y Celular) sin celdas combinadas ni filas vacías.'),
   guide('ficha-paciente', 'Pacientes', 'Ficha clínica y asignación de doctores', 'editar datos personales eps aseguramiento beneficiarios convenio profesionales paciente', 'src/modules/pacientes/components/PatientDetails.jsx', [
     'Busca al paciente en [Pacientes] y haz clic sobre su nombre para abrir su Ficha Integral.',
     'En la barra lateral izquierda encontrarás las 17 pestañas del expediente (Datos personales, EPS, Rx / Imágenes / Doc, Profesionales, Citas, Doc. Clínicos, Odontogramas, Presupuestos, Evoluciones, Pagos, etc.).',
     'Para que un odontólogo pueda registrar evoluciones, ve a la pestaña [Profesionales] y vincúlalo como doctor tratante.',
     'Usa el botón [Guardar] cuando modifiques datos personales o de aseguramiento.',
-  ], 'Regla clínica: Para que un doctor pueda evolucionar a un paciente, debe estar asignado en la pestaña [Profesionales]. De lo contrario, el sistema mostrará: No estás asignado como profesional tratante.'),
+  ], 'Regla clínica: Para que un doctor pueda evolucionar a un paciente, debe estar asignado en la pestaña [Profesionales]. De lo contrario, el sistema mostrará: No estás asignado como profesional tratante.',
+  '¡Regla indispensable! Para que un doctor pueda atender o registrar evoluciones a un paciente, debe estar vinculado previamente en la pestaña [Profesionales] de su expediente.'),
   guide('historia', 'Clínica', 'Consultar documentos e historia clínica', 'historia clinica anamnesis documentos clinicos antecedentes', 'src/modules/pacientes/components/HistoriaClinicaContainer.jsx', [
     'Abre la ficha del paciente desde [Pacientes].',
     'En el menú lateral, selecciona [Doc. Clínicos].',
     'Selecciona el formulario clínico (Anamnesis, Consentimiento Informado o Historia General) y completa la información requerida.',
     'Revisa las firmas del paciente y del profesional antes de guardar.',
-  ]),
+  ], '', 'El paciente debe estar registrado previamente y las plantillas clínicas deben estar configuradas en [Configuración] > [Plantillas Doc. Clínicos].'),
   guide('odontograma', 'Clínica', 'Odontograma digital y sincronización con presupuesto', 'odontograma dientes diente superficies hallazgos caries', 'src/modules/odontograma/Odontograma.jsx', [
     'Abre la ficha del paciente y haz clic en la pestaña [Odontogramas].',
     'En el listado inicial, pulsa [+ Nuevo Odontograma] para abrir el editor interactivo.',
@@ -63,12 +67,13 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'En la barra de herramientas, elige el hallazgo (ej: Caries, Obturación, Corona, Endodoncia, Extracción, Implante o Borrador).',
     'Haz clic sobre la cara o pieza dental correspondiente. A la derecha se irá listando el plan de tratamiento con los dientes y superficies marcados.',
     'Para continuar después sin cerrar el caso, pulsa [Guardar Progreso] (estado Abierto). Para finalizar y mandar a cotizar, pulsa [Finalizar Odontograma].',
-  ], 'Al pulsar [Finalizar Odontograma], todos los hallazgos y tratamientos planificados se envían automáticamente al módulo de [Presupuestos & planes] del paciente.'),
+  ], 'Al pulsar [Finalizar Odontograma], todos los hallazgos y tratamientos planificados se envían automáticamente al módulo de [Presupuestos & planes] del paciente.',
+  'Para que los hallazgos del odontograma se coticen automáticamente al finalizarlo, la clínica debe tener su tarifario activo en [Configuración] > [Lista de precios].'),
   guide('periodontograma', 'Clínica', 'Consultar y registrar el periodontograma', 'periodontograma periodontal sondaje', 'src/modules/odontograma/Periodontograma.jsx', [
     'Abre la ficha del paciente y selecciona la pestaña [Periodontogramas].',
     'Crea un nuevo registro y digita los valores de profundidad de sondaje, margen gingival y sangrado en las piezas correspondientes.',
     'Revisa el gráfico periodontal y pulsa guardar.',
-  ]),
+  ], '', 'El paciente debe tener su expediente clínico abierto y tener asignado un odontólogo o periodoncista tratante.'),
   guide('evoluciones', 'Clínica', 'Registrar evolución odontológica y diagnósticos CIE-10', 'evolucion evoluciones remision nota aclaratoria cie10 rips copilot', 'src/modules/pacientes/components/EvolucionesTab.jsx', [
     'Abre la ficha del paciente y entra a la pestaña [Evoluciones & Remis].',
     'Haz clic en el botón verde [Evolución] para registrar la consulta clínica o en [Remitir] para una interconsulta médica.',
@@ -77,7 +82,8 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Redacta la nota de evolución o utiliza el [Copiloto IA] para redactar y estructurar la nota clínica con lenguaje profesional.',
     'Si aplicaste anestésicos, selecciona el producto (ej: Lidocaína 2%) y la vía de administración (Infiltrativa, Troncular).',
     'Pulsa [Guardar Evolución]. Si necesitas corregir un detalle posterior, utiliza la pestaña [Nota Aclaratoria] para mantener la inmutabilidad legal.',
-  ], 'El sistema valida que solo el profesional tratante asignado pueda registrar evoluciones, y que las correcciones queden como notas aclaratorias para cumplir la normatividad de historia clínica.'),
+  ], 'El sistema valida que solo el profesional tratante asignado pueda registrar evoluciones, y que las correcciones queden como notas aclaratorias para cumplir la normatividad de historia clínica.',
+  '¡Regla obligatoria de OdontoCloud! El odontólogo que registra la evolución DEBE estar asignado previamente en la pestaña [Profesionales] del paciente. Si no está asignado, el sistema bloqueará el guardado mostrando: «No estás asignado como profesional tratante».'),
   guide('presupuestos', 'Clínica', 'Crear presupuesto y planes de tratamiento', 'presupuesto plan tratamiento cotizacion procedimientos', 'src/modules/pacientes/components/PlanEditor.jsx', [
     'Abre la ficha del paciente y entra a [Presupuestos & planes].',
     'Pulsa [+ Nuevo Plan] para crear una cotización.',
@@ -85,18 +91,19 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Ajusta cantidades, coberturas/copagos, descuentos y profesional responsable.',
     'Para ejecutar tratamientos en la cita, marca la casilla (✓) y pulsa el botón azul [Realizar] para mandarlos directo a evolución clínica.',
     'Puedes imprimir la cotización en PDF formal con el logo de la clínica o convertirla en plan activo con [Convertir a Plan].',
-  ]),
+  ], '', 'Antes de elaborar un presupuesto, tu clínica debe tener:\n• La **Lista de Precios / Tarifario** configurada en [Configuración] > [Lista de precios] con los procedimientos y valores en pesos (COP).\n• El **Profesional tratante** asignado en la pestaña [Profesionales] del paciente.'),
   guide('archivos', 'Clínica', 'Radiografías, imágenes y documentos', 'radiografia imagen adjunto archivo rx documento subir', 'src/modules/pacientes/components/PatientRxTab.jsx', [
     'Abre la ficha del paciente y selecciona [Rx / Imágenes / Doc].',
     'Haz clic en subir archivo para adjuntar radiografías panorámicas, periapicales, fotos clínicas o documentos PDF.',
     'Organiza los archivos por fecha y categoría clínica.',
-  ]),
+  ], '', 'Tener creado el expediente del paciente y los archivos en formato compatible (JPG, PNG o PDF con peso menor a 15 MB).'),
   guide('abrir-caja', 'Caja', 'Apertura de caja al inicio del turno', 'abrir apertura caja base inicial', 'src/modules/caja/components/AbrirCajaModal.jsx', [
     'Entra a [Caja] en el menú lateral y haz clic en el botón superior [Abrir Caja].',
     'Confirma el nombre de la caja (ej: Caja Principal).',
     'En el campo obligatorio [Ajustar Base Inicial], digita el monto de efectivo con el que inicias el turno (en pesos COP).',
     'Escribe observaciones si corresponde (ej: Turno mañana) y haz clic en el botón verde [Abrir Caja].',
-  ], 'El sistema no permite abrir una segunda caja si el usuario ya tiene una caja abierta activa sin cerrar.'),
+  ], 'El sistema no permite abrir una segunda caja si el usuario ya tiene una caja abierta activa sin cerrar.',
+  'Antes de abrir caja, verifica no tener otra caja abierta activa a tu nombre en esa sede (el sistema solo permite una caja abierta simultánea por usuario) y ten a la mano el monto exacto de la base de efectivo inicial.'),
   guide('pagos-paciente', 'Caja', 'Registrar pago o abono de un paciente', 'cobrar abonar pago paciente recaudo abono', 'src/modules/pacientes/components/PagoTab.jsx', [
     'Abre la ficha del paciente y entra a la pestaña [Realizar pago].',
     'En el listado de planes con saldo pendiente, pulsa el botón verde [Pagar / Abonar] (o usa [Adicionar saldo a favor] para un anticipo).',
@@ -105,7 +112,8 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Selecciona el [Método de Pago]: Efectivo, Tarjeta, Transferencia, Nequi, Daviplata o PSE.',
     'Si seleccionas Transferencia, Nequi, Daviplata o PSE, el campo [Número de Referencia] es obligatorio.',
     'Selecciona el profesional acreditado y haz clic en [Registrar Pago]. El sistema actualizará el saldo y registrará el ingreso en la caja abierta.',
-  ], 'Para registrar un pago, la sede debe tener una caja abierta activa en el turno.'),
+  ], 'Para registrar un pago, la sede debe tener una caja abierta activa en el turno.',
+  'Para recibir un pago o abono, recuerda que:\n• Debe existir una **Caja Abierta** activa en el turno de la sede actual (en [Caja] > [Abrir Caja]).\n• Si el pago es por transferencia, Nequi, Daviplata o tarjeta, debes tener a la mano el número de comprobante o referencia.'),
   guide('cerrar-caja', 'Caja', 'Cerrar y cuadrar la caja (Arqueo diario)', 'cerrar cierre arqueo cuadrar caja efectivo contado diferencia', 'src/modules/caja/components/CerrarCajaModal.jsx', [
     'En [Caja], localiza tu caja abierta y haz clic en [Cerrar Caja].',
     'Revisa el resumen financiero: Base Inicial + Ingresos - Egresos = [Saldo Teórico].',
@@ -114,29 +122,31 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Revisa la [Diferencia] (sobrante o faltante). Añade observaciones si hubo alguna novedad.',
     'Marca la casilla obligatoria: Declaro que he realizado el conteo físico detallado...',
     'Haz clic en el botón rojo [Cerrar Caja Definitivamente].',
-  ], 'El botón de cierre definitivo solo se habilita tras marcar la confirmación del conteo físico.'),
+  ], 'El botón de cierre definitivo solo se habilita tras marcar la confirmación del conteo físico.',
+  'Antes de cerrar la caja definitivamente, debes realizar el conteo físico de todo el efectivo (billetes y monedas) y tener a la mano el total de comprobantes de datáfono y transferencias del turno.'),
   guide('facturas', 'Facturación', 'Factura de venta y facturación electrónica', 'factura venta electronica dian factus cufe emitir', 'src/modules/administracion/views/FacturacionHub.jsx', [
     'Entra a Administración > Facturación > Factura de venta.',
     'Revisa los datos del cliente, los conceptos y los valores en el módulo de facturación.',
     'Para facturación electrónica, comprueba primero Configuración > Facturación electrónica y los consecutivos.',
     'Después de emitir, revisa el estado y los mensajes de respuesta. Si falla, consulta Reportes > Log de errores de facturación.',
-  ], 'La Facturación Electrónica DIAN está disponible para clínicas con planes que incluyen emisión oficial DIAN.'),
+  ], 'La Facturación Electrónica DIAN está disponible para clínicas con planes que incluyen emisión oficial DIAN.',
+  'Antes de emitir facturas electrónicas oficiales ante la DIAN, recuerda que:\n• Tu clínica debe contar con un plan comercial que incluya facturación DIAN (Plan Clínica o Enterprise).\n• Deben estar configurados la resolución DIAN, prefijo y consecutivos en [Configuración] > [Facturación electrónica].\n• El cliente/paciente debe tener sus datos fiscales completos (cédula o NIT, dirección fiscal, teléfono y correo electrónico).'),
   guide('recibos', 'Facturación', 'Recibos de caja y saldos a favor', 'recibo caja saldo favor anticipo', 'src/modules/administracion/views/FacturacionHub.jsx', [
     'Entra a Administración > Facturación.',
     'Selecciona Recibo de caja para los comprobantes de ingreso o Saldo a favor para revisar los abonos correspondientes.',
     'Abre el registro o el formulario de creación y verifica tercero, valor y referencias antes de confirmar.',
-  ]),
+  ], '', 'Para emitir recibos de caja, debes tener una caja abierta o cuenta de banco configurada en [Configuración] > [Catálogos] > [Bancos].'),
   guide('liquidaciones', 'Facturación', 'Liquidación de comisiones y tratamientos', 'liquidacion comisiones tratamiento honorarios doctor pago', 'src/modules/administracion/views/FacturacionHub.jsx', [
     'Entra a Administración > Facturación y selecciona Liquidaciones.',
     'Identifica el profesional o tratamiento a liquidar y revisa las comisiones o importes correspondientes.',
     'Genera y valida la liquidación para cerrar el ciclo administrativo.',
-  ]),
+  ], '', 'Los tratamientos deben estar marcados como realizados y cobrados, y los porcentajes de comisión deben estar parametrizados.'),
   guide('proveedores', 'Facturación', 'Pagos a proveedores y facturas de compra', 'proveedor egreso compra factura compra pagar proveedor', 'src/modules/administracion/views/FacturacionHub.jsx', [
     'Revisa el proveedor en Administración > Terceros.',
     'En Administración > Facturación, usa Facturas de compra para registrar las compras y documentos recibidos.',
     'En Pagos, registra el egreso con el tercero, las facturas a pagar y la cuenta correspondiente.',
     'Revisa los importes antes de guardar y verifica el comprobante resultante.',
-  ]),
+  ], '', 'El proveedor debe estar registrado en [Administración] > [Terceros] con su NIT y datos de pago.'),
   guide('reportes', 'Reportes', 'Encontrar reportes e indicadores', 'reporte informe indicador estadistica ventas morbilidad cumpleanos clinico', 'src/modules/reportes/Reportes.jsx', [
     'Entra a Reportes y selecciona Indicadores o el reporte específico.',
     'Hay reportes de pacientes, planes de tratamiento, facturación, convenios, ventas, clínico, cumpleaños, citas, morbilidad, consultas y evoluciones.',
@@ -147,7 +157,8 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Revisa la validación previa y corrige los errores que señale el módulo.',
     'Distingue la descarga preliminar local de la opción Validar y enviar al MUV.',
     'Consulta el resultado de validación antes de dar el envío por aceptado.',
-  ], 'Un JSON preliminar no equivale a un envío oficial aceptado.'),
+  ], 'Un JSON preliminar no equivale a un envío oficial aceptado.',
+  'Antes de generar RIPS oficiales (Resolución 2275):\n• Cada procedimiento debe tener su código CUPS y diagnóstico CIE-10 registrado en las evoluciones.\n• El paciente debe tener sus datos demográficos completos (tipo de documento, fecha de nacimiento, sexo, departamento, municipio y zona de residencia).'),
   guide('terceros', 'Administración', 'Gestionar terceros y convenios', 'tercero cliente proveedor convenio descuento', 'src/modules/administracion/AdministracionRouter.jsx', [
     'En Administración, entra a Terceros para proveedores y clientes, o a Convenios para su gestión.',
     'Busca el registro existente antes de crear otro.',
@@ -167,12 +178,13 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Entra a Configuración > Sucursales para revisar las sedes.',
     'En Configuración > Recursos físicos, revisa los espacios de atención.',
     'Comprueba que los recursos correspondan a la sede y luego verifica su disponibilidad en Agenda.',
-  ]),
+  ], '', 'Esta acción requiere rol de Administrador. Ten definidos el nombre de la sede, dirección, teléfono y la cantidad de sillones o consultorios disponibles.'),
   guide('usuarios', 'Configuración', 'Usuarios, perfiles y permisos', 'usuario perfil permiso acceso rol no veo boton', 'src/modules/config/ConfigRouter.jsx', [
     'Con un perfil autorizado, entra a Configuración > Usuarios para gestionar las cuentas.',
     'En Configuración > Perfiles revisa los permisos del perfil asignado.',
     'Si falta una opción o aparece bloqueada, solicita al administrador que revise tu perfil y la acción permitida.',
-  ], 'El asistente explica opciones, pero no concede permisos ni cambia roles.'),
+  ], 'El asistente explica opciones, pero no concede permisos ni cambia roles.',
+  'Solo un Administrador puede crear usuarios. Ten a mano el correo electrónico del profesional, su nombre completo y el rol que tendrá (Odontólogo, Recepción, Administrador).'),
   guide('empresa', 'Configuración', 'Datos de la clínica y configuración inicial', 'empresa clinica logo nit direccion configuracion inicial asistente', 'src/modules/config/ConfigMenu.jsx', [
     'Entra a Configuración > Asistente de Configuración para revisar la preparación inicial.',
     'Utiliza Datos Básicos para revisar la información de la clínica y el logo.',
@@ -182,7 +194,7 @@ const guide = (id, category, title, keywords, source, steps, note = '') => ({
     'Entra a Configuración > Lista de precios o Planes según lo que necesites configurar.',
     'Revisa los conceptos y valores aplicables antes de guardar cambios.',
     'Para copagos, utiliza la sección Tarifas copago si tu perfil tiene acceso.',
-  ]),
+  ], '', 'Solo un Administrador puede configurar tarifas. Ten a la mano la lista de procedimientos clínicos que realiza tu clínica con sus valores base en pesos COP.'),
   guide('catalogos', 'Configuración', 'Catálogos financieros y contables', 'banco metodo pago condicion pago impuesto consecutivo catalogo cuenta', 'src/modules/config/ConfigMenu.jsx', [
     'Abre Configuración y selecciona el catálogo correspondiente: Bancos, Métodos de pago, Condiciones de pago, Impuestos, Consecutivos o Catálogo de cuentas.',
     'Consulta los registros existentes y revisa los campos antes de guardar modificaciones.',
@@ -313,7 +325,8 @@ export function formatGuide(item, isPublic = false) {
   if (isPublic || PUBLIC_GUIDE_IDS.has(item.id)) {
     return `**${item.title}**\n\n${item.steps.map(step => `• ${step}`).join('\n\n')}${item.note ? `\n\n${item.note}` : ''}`;
   }
-  return `**${item.title}**\n${item.steps.map((step, index) => `${index + 1}. ${step}`).join('\n')}${item.note ? `\n\n${item.note}` : ''}`;
+  const prereqBlock = item.prereq ? `📌 **Recuerda antes de empezar:**\n${item.prereq}\n\n` : '';
+  return `**${item.title}**\n\n${prereqBlock}**Pasos a seguir:**\n${item.steps.map((step, index) => `${index + 1}. ${step}`).join('\n')}${item.note ? `\n\n${item.note}` : ''}`;
 }
 
 export function guideResponse(question, previousIds = [], reason = 'manual', mode = 'app') {

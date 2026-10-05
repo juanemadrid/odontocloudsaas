@@ -29,6 +29,28 @@ function FormattedMessage({ text }) {
                     );
                 }
 
+                // 1.5 Recordatorio / Requisitos previos "📌 Recuerda antes de empezar"
+                if (trimmed.startsWith("📌") || trimmed.includes("Recuerda antes de")) {
+                    const parts = trimmed.split(/(\*\*.*?\*\*|\[.*?\]|\`.*?\`)/g);
+                    return (
+                        <div key={idx} className="p-2.5 my-1.5 bg-amber-50/90 border border-amber-200/90 rounded-lg text-amber-900 text-[11.5px] leading-relaxed flex items-start gap-2 shadow-xs">
+                            <span className="text-base shrink-0 leading-none">📌</span>
+                            <div className="flex-1">
+                                {parts.map((p, pIdx) => {
+                                    if (p === "📌" || p === "📌 ") return null;
+                                    if (p.startsWith("**") && p.endsWith("**")) {
+                                        return <strong key={pIdx} className="font-bold text-amber-950">{p.replace(/\*\*/g, "")} </strong>;
+                                    }
+                                    if (p.startsWith("[") && p.endsWith("]")) {
+                                        return <span key={pIdx} className="px-1.5 py-0.5 bg-amber-100 text-amber-900 font-bold rounded-md mx-0.5 border border-amber-200">{p.slice(1, -1)}</span>;
+                                    }
+                                    return <span key={pIdx}>{p}</span>;
+                                })}
+                            </div>
+                        </div>
+                    );
+                }
+
                 // 2. Pasos numerados (ej: 1. **Paso:** detalle)
                 const stepMatch = trimmed.match(/^(\d+)\.\s*(.*)$/);
                 if (stepMatch) {
@@ -372,7 +394,7 @@ function HelpPanel({ onClose }) {
                                     <>
                                         <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                             <FiMessageSquare size={11} /> 
-                                            <span>{message.pending ? 'OdontoIA está escribiendo…' : message.provider === 'ollama' ? 'OdontoIA · IA local' : message.provider === 'manual' ? 'Guía verificada' : 'OdontoIA'}</span>
+                                            <span>{message.pending ? 'OdontoIA está escribiendo…' : message.provider === 'ollama' ? 'OdontoIA' : message.provider === 'manual' ? 'Guía verificada' : 'OdontoIA'}</span>
                                         </div>
                                         {['unavailable', 'not_configured'].includes(message.reason) && (
                                             <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 mb-2 border border-amber-200">

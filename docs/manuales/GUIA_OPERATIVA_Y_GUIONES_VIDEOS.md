@@ -46,6 +46,14 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 * **Objetivo:** Reservar un turno en el calendario asignando paciente, doctor, espacio clínico (sillón) y horario.
 * **Dónde se hace:** Menú lateral izquierdo -> **[AGENDA]**.
 
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> Para poder apartar una cita sin que los selectores te salgan en blanco o bloqueados, tu clínica debe tener configurados previamente estos 4 elementos:  
+> 1. **La Sede / Sucursal:** Debe estar creada y activa en **[Configuración]** -> **[Sucursales]**.  
+> 2. **El Profesional / Odontólogo:** Debe estar registrado como usuario activo en **[Configuración]** -> **[Usuarios]**.  
+> 3. **El Espacio Clínico (Sillón / Consultorio):** Debe estar creado y asignado a esa sede en **[Configuración]** -> **[Recursos físicos]**.  
+> 4. **Los Horarios de Atención y Turnos:** El doctor debe tener configurada su disponibilidad y horario para esa sede en **[Administración]** -> **[Gestión Agenda]**.  
+> *(Si no completas estos 4 pasos previos, no podrás seleccionar doctor ni sillón al crear la cita).*
+
 #### Paso a paso exacto en pantalla:
 1. En el calendario de **Agenda**, haz clic sobre el recuadro de la hora y consultorio donde deseas agendar. Se abrirá la ventana **"Agendar Cita"**.
 2. En la sección **Identidad del Paciente**:
@@ -105,8 +113,8 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 
 ### 🎬 Guion de Video 1: "Cómo agendar y gestionar citas en OdontoCloud" (Duración: 2 min)
 
-* **[0:00 - 0:15] Introducción:**  
-  *Voz:* "¡Hola! En este tutorial aprenderás a agendar citas de forma rápida y sin errores en OdontoCloud. Veamos cómo hacerlo paso a paso."  
+* **[0:00 - 0:20] Introducción y Requisitos Previos:**  
+  *Voz:* "¡Hola! En este tutorial aprenderás a agendar citas de forma rápida y sin errores en OdontoCloud. Recuerda que antes de apartar tu primera cita, tu clínica ya debe tener configurados en el sistema sus sedes, doctores, sillones y horarios de atención. Con estos requisitos listos, ¡veamos cómo agendar paso a paso!"  
   *Acción en pantalla:* Mostrar la pantalla principal y entrar al módulo **AGENDA**.
 * **[0:15 - 0:45] Agendar cita:**  
   *Voz:* "Hacemos clic en el horario deseado. En la sección 'Identidad del Paciente', buscamos al paciente por su cédula o nombre. Si es nuevo, lo creamos en segundos con sus datos básicos. En 'Detalles de la Cita', elegimos la sede, el doctor tratante y el sillón o consultorio. Ajustamos la duración, por ejemplo 30 o 45 minutos, y dejamos el estado en 'Sin Confirmar'. Para finalizar, pulsamos el botón verde 'CONFIRMAR REGISTRO'."  
@@ -124,6 +132,10 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 ### 2.1 Cómo registrar un Paciente y acceder a su Expediente
 * **Objetivo:** Crear el historial del paciente y consultar su expediente clínico integral.
 * **Dónde se hace:** Menú lateral izquierdo -> **[PACIENTES]**.
+
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> • **Buscar siempre antes de crear:** Antes de pulsar en *+ Nuevo Paciente*, escribe el número de documento o nombre en el buscador superior. Esto evita crear expedientes duplicados para una misma persona.  
+> • **Asignación obligatoria de Odontólogo Tratante:** Una vez creado el paciente o al abrir su expediente, ve directamente a la pestaña **[Profesionales]** y vincula al doctor tratante. Si no lo vinculas aquí, el sistema protegerá la historia clínica e impedirá al doctor registrar evoluciones o notas clínicas a su nombre.
 
 #### Paso a paso exacto en pantalla:
 1. Entra a **[PACIENTES]**. Verás el **Directorio de Pacientes**.
@@ -183,6 +195,10 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 * **Objetivo:** Registrar el estado dental del paciente cara por cara y transferir los tratamientos requeridos directamente a cotización.
 * **Dónde se hace:** Ficha del paciente -> Pestaña **[Odontogramas]**.
 
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> • El paciente debe tener su expediente abierto en **[Pacientes]**.  
+> • Para que la función de **[Finalizar Odontograma]** cargue automáticamente los precios y cotizaciones al paciente, la clínica debe tener activa su lista de precios en **[Configuración]** -> **[Lista de precios]** con los procedimientos y sus valores.
+
 #### Paso a paso exacto en pantalla:
 1. Abre la ficha del paciente y haz clic en la pestaña **[Odontogramas]**.
 2. Estarás en el **Modo Lista**. Podrás ver los odontogramas previos con su fecha, doctor y estado (*Abierto* o *Finalizado*), además de opciones para **Imprimir**, **Exportar imagen** o registrar la **Firma de Paciente**.
@@ -222,6 +238,9 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 * **Objetivo:** Cumplir con la norma de historia clínica registrando el procedimiento realizado, insumos, diagnósticos CIE-10 y notas asistidas por IA.
 * **Dónde se hace:** Ficha del paciente -> Pestaña **[Evoluciones & Remis]**.
 
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> • **¡Regla de oro de OdontoCloud!** El odontólogo que registra la evolución **DEBE estar asignado previamente en la pestaña [Profesionales]** de este paciente. Si el doctor no está asignado, el sistema protegerá la historia clínica mostrando: *«Modo de solo consulta: No estás vinculado como profesional tratante a este paciente»* y no permitirá guardar ninguna nota clínica.
+
 #### Paso a paso exacto en pantalla:
 1. Abre la ficha del paciente y entra a **[Evoluciones & Remis]**.
 2. En la barra superior encontrarás los botones de acción:
@@ -246,6 +265,12 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 * **Objetivo:** Presentar al paciente el costo de sus tratamientos, convertir cotizaciones en planes activos y pasar tratamientos a evolución con un solo clic.
 * **Dónde se hace:** Ficha del paciente -> Pestaña **[Presupuestos & planes]**.
 
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> Para poder cotizar tratamientos a un paciente sin contratiempos, tu clínica debe tener:  
+> 1. **La Lista de Precios / Tarifario:** Configurada en **[Configuración]** -> **[Lista de precios]** con los procedimientos y sus valores en pesos (COP).  
+> 2. **El Profesional Tratante:** Asignado en la pestaña **[Profesionales]** del paciente.  
+> 3. **Convenios o Descuentos (opcional):** Si el paciente pertenece a un convenio o tiene tarifa de copago, configúralo previamente en **[Administración]** -> **[Convenios]**.
+
 #### Paso a paso exacto en pantalla:
 1. Entra a la pestaña **[Presupuestos & planes]** y pulsa el botón **[+ Nuevo Plan]**.
 2. **Cargar procedimientos:**
@@ -268,6 +293,10 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 * **Objetivo:** Iniciar la jornada registrando la base de efectivo disponible en recepción.
 * **Dónde se hace:** Menú lateral izquierdo -> **[CAJA]**.
 
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> • Verifica no tener otra caja abierta activa a tu nombre en esa sede (el sistema solo permite una caja abierta por usuario/turno).  
+> • Ten a la mano el monto exacto de dinero en efectivo con el que inicias (base de cambio).
+
 #### Paso a paso exacto en pantalla:
 1. Entra al módulo **[CAJA]** y haz clic en el botón superior **[Abrir Caja]** (o la pestaña `Abrir caja`).
 2. En la ventana emergente:
@@ -283,6 +312,10 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 ### 6.2 Cómo registrar el Pago de un Paciente
 * **Objetivo:** Recibir abonos o cancelaciones totales de tratamientos y emitir comprobante de pago.
 * **Dónde se hace:** Ficha del paciente -> Pestaña **[Realizar pago]**.
+
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> 1. **Caja Abierta Obligatoria:** Para recibir dinero o registrar un abono, la sede debe tener **una Caja Abierta activa** en el turno (desde **[Caja]** -> **[Abrir Caja]**). Si la caja está cerrada, no se pueden asentar cobros.  
+> 2. **Número de Referencia:** Si el paciente paga por Nequi, Daviplata, transferencia bancaria o datáfono, ten listo el comprobante para ingresar el número de aprobación o referencia.
 
 #### Paso a paso exacto en pantalla:
 1. Abre la ficha del paciente y selecciona la pestaña **[Realizar pago]**.
@@ -306,6 +339,9 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 * **Objetivo:** Cuadrar el dinero real contra el sistema al finalizar el turno o día de trabajo.
 * **Dónde se hace:** Menú lateral izquierdo -> **[CAJA]** -> Pestaña **[Mi caja]** o **[Cajas abiertas]**.
 
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> Antes de pulsar Cerrar Caja, realiza con calma el conteo físico de todos los billetes y monedas que hay en la gaveta, y suma los vouchers de datáfono y comprobantes de transferencias recibidos durante el turno.
+
 #### Paso a paso exacto en pantalla:
 1. En el módulo **[CAJA]**, localiza la caja abierta y pulsa el botón **[Cerrar Caja]**.
 2. Se abrirá la ventana de arqueo, donde el sistema te muestra el resumen financiero teórico:
@@ -326,7 +362,7 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 ### 🎬 Guion de Video 4: "Manejo Diario de Caja, Cobros y Arqueo" (Duración: 2:30 min)
 
 * **[0:00 - 0:25] Apertura de Caja:**  
-  *Voz:* "En este video veremos cómo abrir caja, cobrar tratamientos y hacer el arqueo diario en OdontoCloud. Al iniciar el turno, entramos a Caja y pulsamos 'Abrir Caja'. Digitamos la base inicial en efectivo, por ejemplo cincuenta mil pesos, y pulsamos el botón verde 'Abrir Caja'."  
+  *Voz:* "En este video veremos cómo abrir caja, cobrar tratamientos y hacer el arqueo diario en OdontoCloud. Recuerda que para poder recibir cobros durante el turno, es indispensable tener una caja abierta. Al iniciar la jornada, entramos a Caja y pulsamos 'Abrir Caja'. Digitamos la base inicial en efectivo, por ejemplo cincuenta mil pesos, y pulsamos el botón verde 'Abrir Caja'."  
   *Acción en pantalla:* Mostrar apertura de caja y confirmación.
 * **[0:25 - 1:15] Registrar cobro:**  
   *Voz:* "Cuando un paciente paga en recepción, abrimos su ficha y entramos a 'Realizar pago'. En la lista de planes pulsamos 'Pagar / Abonar'. Seleccionamos el procedimiento, escribimos el monto y elegimos el método de pago: efectivo, tarjeta o transferencia. Si es transferencia o Nequi, escribimos el número de comprobante. Pulsamos 'Registrar Pago' y el recibo queda emitido con el saldo actualizado."  
@@ -363,6 +399,10 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 ### 7.2 Cómo emitir Recibos de Caja y Facturas de Venta
 * **Objetivo:** Generar comprobantes contables oficiales de recaudo para pacientes particulares, aseguradoras o convenios institucionales.
 * **Dónde se hace:** Menú lateral izquierdo -> **[ADMINISTRACIÓN]** -> **[Facturación]**.
+
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> • **Facturación Electrónica DIAN:** Disponible a partir del Plan Clínica o Enterprise. Debes tener autorizada la resolución de la DIAN y configurados los consecutivos y prefijos en **[Configuración]** -> **[Facturación electrónica]**. Además, el paciente o cliente adquirente debe tener NIT o cédula, dirección, teléfono y correo electrónico.  
+> • **Recibos de Caja:** Debes tener creada al menos una cuenta bancaria o caja en **[Configuración]** -> **[Catálogos]** -> **[Bancos]**.
 
 #### Paso a paso exacto para Recibo de Caja:
 1. En el panel de **Facturación**, haz clic en la tarjeta **[Recibo de caja]**.
@@ -420,6 +460,11 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 ### 7.4 Cómo generar y validar RIPS JSON bajo Resolución 2275 de 2023 (MUV)
 * **Objetivo:** Cumplir obligatoriamente con el Ministerio de Salud generando el archivo RIPS en formato JSON estructurado, listo para el validador MUV o transmisión directa.
 * **Dónde se hace:** Menú lateral izquierdo -> **[ADMINISTRACIÓN]** -> **[RIPS JSON]**.
+
+> 📌 **Recuerda antes de empezar (Requisitos previos - Explicado con plastilina):**  
+> Para que el validador MUV de Minsalud no rechace el archivo RIPS, verifica previamente:  
+> 1. Cada atención registrada debe tener asignado su procedimiento con código CUPS oficial y diagnóstico CIE-10 en su evolución.  
+> 2. La ficha del paciente debe tener completos los datos sociodemográficos obligatorios: tipo y número de documento, fecha de nacimiento, sexo, zona de residencia (urbana/rural) y municipio de residencia.
 
 #### Paso a paso exacto en pantalla:
 1. En el módulo de **RIPS JSON**, selecciona el tipo de prestador:

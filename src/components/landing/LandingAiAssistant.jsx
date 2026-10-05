@@ -328,7 +328,7 @@ export default function LandingAiAssistant({ config }) {
                                         {msg.sender === 'user' ? (
                                             <p className="m-0 leading-relaxed">{msg.text}</p>
                                         ) : (
-                                            <><div className="text-[10px] font-semibold text-slate-400 mb-2">{msg.pending ? 'OdontoIA está escribiendo…' : msg.provider === 'ollama' ? 'OdontoIA · IA local' : msg.provider === 'manual' ? 'Guía de OdontoCloud' : 'OdontoIA'}</div>
+                                            <><div className="text-[10px] font-semibold text-slate-400 mb-2">{msg.pending ? 'OdontoIA está escribiendo…' : msg.provider === 'ollama' ? 'OdontoIA' : msg.provider === 'manual' ? 'Guía de OdontoCloud' : 'OdontoIA'}</div>
                                             {msg.reason === 'unavailable' && <p className="text-xs text-amber-800 mb-2">La IA no completó la respuesta. Te muestro la información disponible.</p>}
                                             <MessageContent
                                                 text={msg.text}
