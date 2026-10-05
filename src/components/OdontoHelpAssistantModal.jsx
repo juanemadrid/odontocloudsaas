@@ -131,14 +131,6 @@ export default function OdontoHelpAssistantModal({ isOpen, onClose }) {
     return <HelpPanel key={String(user?.id) + ':' + String(userProfile?.tenant_id || userProfile?.inquilino)} onClose={onClose} />;
 }
 
-const QUICK_TOPICS = [
-    { label: "Recibo de caja", q: "Cómo hago un recibo de caja" },
-    { label: "Saldo a favor", q: "Cómo registrar saldo a favor" },
-    { label: "Apartar cita", q: "Cómo apartar una cita" },
-    { label: "Factura venta", q: "Cómo crear una factura de venta" },
-    { label: "Arqueo de caja", q: "Cómo cerrar o cuadrar caja" }
-];
-
 function HelpPanel({ onClose }) {
     const welcome = { 
         sender: 'bot', 
@@ -163,6 +155,7 @@ function HelpPanel({ onClose }) {
     const inputRef = useRef(null);
     const searchRef = useRef(null);
     const dialogRef = useRef(null);
+    const shouldScrollToTop = useRef(null);
     
     const categories = ['Todos', ...new Set(HELP_GUIDES.map(g => g.category))];
     const matches = search.trim() ? searchGuides(search) : HELP_GUIDES;
@@ -179,7 +172,18 @@ function HelpPanel({ onClose }) {
 
     useEffect(() => { 
         if (activeTab === 'chat') {
-            endRef.current?.scrollIntoView({ behavior: 'smooth' }); 
+            if (shouldScrollToTop.current) {
+                const targetId = shouldScrollToTop.current;
+                shouldScrollToTop.current = null;
+                setTimeout(() => {
+                    const el = document.getElementById(targetId);
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 50);
+            } else {
+                endRef.current?.scrollIntoView({ behavior: 'smooth' }); 
+            }
         }
     }, [messages, isTyping, activeTab]);
 
@@ -198,11 +202,13 @@ function HelpPanel({ onClose }) {
         generation.current += 1; activeRequest.current?.abort();
         pending.current = false;
         setIsTyping(false);
+        const guideMsgId = 'guide-' + Date.now();
         setMessages(prev => [
             ...prev, 
-            { sender: 'bot', text: formatGuide(guide), provider: 'manual', sources: [] }
+            { id: guideMsgId, sender: 'bot', text: formatGuide(guide), provider: 'manual', sources: [] }
         ]);
         setPreviousIds([guide.id]);
+        shouldScrollToTop.current = guideMsgId;
         setActiveTab('chat');
         inputRef.current?.focus();
     };
@@ -364,25 +370,12 @@ function HelpPanel({ onClose }) {
             {/* Contenido: Tab Chat Paso a Paso */}
             {activeTab === 'chat' && (
                 <div className="flex flex-col flex-1 min-h-0 bg-white">
-                    {/* Botones de sugerencias rápidas */}
-                    <div className="p-2 border-b border-slate-100 bg-slate-50/70 overflow-x-auto flex gap-1.5 shrink-0 scrollbar-none">
-                        {QUICK_TOPICS.map((item, idx) => (
-                            <button
-                                key={idx}
-                                type="button"
-                                onClick={() => handleSend(item.q)}
-                                className="whitespace-nowrap text-[11px] font-bold px-2.5 py-1 rounded-full bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-600 border border-slate-200 hover:border-blue-200 transition-all shadow-2xs cursor-pointer"
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-
                     {/* Mensajes del chat */}
                     <div role="log" aria-live="polite" className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
                         {messages.map((message, index) => (
                             <div 
-                                key={index} 
+                                key={message.id || index}
+                                id={message.id}
                                 className={message.sender === 'user' 
                                     ? 'ml-auto max-w-[88%] bg-blue-600 text-white rounded-2xl rounded-br-xs p-3 text-xs shadow-xs' 
                                     : 'max-w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs text-slate-700'
@@ -463,35 +456,43 @@ function HelpPanel({ onClose }) {
             {/* Contenido: Tab Biblioteca de Guías */}
             {activeTab === 'library' && (
                 <div className="flex flex-col flex-1 min-h-0 bg-slate-50">
-                    <div className="p-3 border-b border-slate-200 space-y-2 bg-white shrink-0">
-                        <div className="relative">
-                            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-                            <input 
-                                ref={searchRef} 
-                                aria-label="Buscar guía" 
-                                value={search} 
-                                onChange={e => setSearch(e.target.value)} 
-                                placeholder="Buscar en 40 guías (caja, citas, facturas)..." 
-                                className="w-full h-8.5 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:bg-white focus:border-blue-500 transition-all font-medium" 
-                            />
-                        </div>
-
-                        <div className="flex gap-1.5 flex-wrap overflow-x-auto pb-1 max-h-20 scrollbar-none">
-                            {categories.map(c => (
-                                <button 
-                                    type="button" 
-                                    key={c} 
-                                    aria-pressed={category === c} 
-                                    onClick={() => setCategory(c)} 
-                                    className={`text-[10px] font-bold rounded-md px-2 py-0.5 border cursor-pointer transition-all ${
-                                        category === c 
-                                            ? 'bg-blue-600 border-blue-600 text-white shadow-2xs' 
-                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-white'
-                                    }`}
+                    <div className="p-3 border-b border-slate-200 bg-white shrink-0">
+                        <div className="flex gap-2 items-center">
+                            <div className="relative flex-1">
+                                <FiSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                                <input 
+                                    ref={searchRef} 
+                                    aria-label="Buscar guía" 
+                                    value={search} 
+                                    onChange={e => setSearch(e.target.value)} 
+                                    placeholder={`Buscar entre las ${HELP_GUIDES.length} guías...`} 
+                                    className="w-full h-8.5 pl-8 pr-7 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:bg-white focus:border-blue-500 transition-all font-medium placeholder:text-slate-400" 
+                                />
+                                {search && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setSearch('')} 
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                                        title="Limpiar búsqueda"
+                                    >
+                                        <FiX size={12} />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="relative shrink-0">
+                                <select 
+                                    value={category} 
+                                    onChange={e => setCategory(e.target.value)} 
+                                    aria-label="Filtrar por categoría"
+                                    className="h-8.5 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-blue-500 cursor-pointer transition-all shadow-2xs"
                                 >
-                                    {c}
-                                </button>
-                            ))}
+                                    {categories.map(c => (
+                                        <option key={c} value={c}>
+                                            {c === 'Todos' ? `Todas (${HELP_GUIDES.length})` : c}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                     </div>
 
