@@ -3,7 +3,7 @@ import { guideResponse } from '../../supabase/functions/_shared/helpKnowledge.mj
 import { compactHistory, conversationalReply, readHelpEvents } from '../../supabase/functions/_shared/helpConversation.mjs';
 
 export async function askHelp(question, previousIds = [], options = {}) {
-  const { mode = 'app', history = [], signal, onUpdate } = typeof options === 'string' ? { mode: options } : (options || {});
+  const { mode = 'app', history = [], signal, onUpdate, screenContext = '' } = typeof options === 'string' ? { mode: options } : (options || {});
   const local = conversationalReply(question, previousIds, mode);
   if (local) return local;
   const controller = new AbortController();
@@ -11,10 +11,12 @@ export async function askHelp(question, previousIds = [], options = {}) {
   signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) abort();
   const timer = setTimeout(abort, 58000);
-  const valid = data => data?.success && typeof data.answer === 'string' && Array.isArray(data.sources) && ['manual', 'ollama', 'assistant'].includes(data.provider);
+  const valid = data => data?.success && typeof data.answer === 'string' && Array.isArray(data.sources) && ['manual', 'ollama', 'assistant', 'gemini'].includes(data.provider);
   try {
+    const payload = { question, previousIds, mode, history: compactHistory(history), stream: true };
+    if (screenContext) payload.screenContext = screenContext;
     const { data, error } = await supabase.functions.invoke('odontocloud-help', {
-      body: { question, previousIds, mode, history: compactHistory(history), stream: true },
+      body: payload,
       signal: controller.signal,
     });
     if (error) throw error;

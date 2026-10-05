@@ -213,6 +213,40 @@ function HelpPanel({ onClose }) {
         inputRef.current?.focus();
     };
 
+function detectScreenContext() {
+    try {
+        const parts = [];
+        const headings = Array.from(document.querySelectorAll('h1, h2:not(#help-title), h3.font-bold, h4.font-bold'));
+        const mainHeading = headings.find(h => {
+            const txt = h.innerText?.trim();
+            return txt && !txt.includes('Ayuda de OdontoCloud') && !txt.includes('Guía en vivo') && txt.length < 80;
+        });
+        if (mainHeading) {
+            parts.push(`Pantalla: ${mainHeading.innerText.trim()}`);
+        }
+
+        const tabs = Array.from(document.querySelectorAll('button, a, div[role="tab"]'));
+        const activeTab = tabs.find(el => {
+            const cls = el.className || '';
+            const isPurpleOrBlue = typeof cls === 'string' && (cls.includes('bg-purple') || cls.includes('text-purple') || cls.includes('bg-blue-600') || cls.includes('text-blue-600'));
+            const txt = el.innerText?.trim();
+            return isPurpleOrBlue && txt && !txt.includes('Paso a Paso') && !txt.includes('Biblioteca') && txt.length < 40;
+        });
+        if (activeTab) {
+            parts.push(`Pestaña activa: ${activeTab.innerText.trim()}`);
+        }
+
+        const path = window.location.pathname;
+        if (path && path !== '/') {
+            parts.push(`Ruta: ${path}`);
+        }
+
+        return parts.join(' | ').slice(0, 200);
+    } catch {
+        return '';
+    }
+}
+
     const handleSend = async (customQuery = null) => {
         const question = (typeof customQuery === 'string' ? customQuery : input).trim();
         if (!question || pending.current) return;
@@ -226,8 +260,11 @@ function HelpPanel({ onClose }) {
         activeRequest.current = controller;
         const replyId = 'reply-' + requestId;
         setMessages(prev => [...prev, { id: replyId, sender: 'bot', text: '', provider: 'ollama', pending: true, sources: [] }]);
+        const screenContext = detectScreenContext();
         const result = await askHelp(question, previousIds, {
-            history: messages.slice(1).filter(m => !m.pending), signal: controller.signal,
+            history: messages.slice(1).filter(m => !m.pending),
+            signal: controller.signal,
+            screenContext,
             onUpdate: text => { if (requestId === generation.current) setMessages(prev => prev.map(m => m.id === replyId ? { ...m, text } : m)); },
         });
         if (requestId !== generation.current) return;

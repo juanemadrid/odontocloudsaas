@@ -11,7 +11,7 @@ const appointmentSummary = '📌 Recuerda antes de agendar: Para apartar citas, 
 
 const budgetSummary = '📌 Recuerda antes de empezar:\n• Tu clínica debe tener la Lista de Precios configurada en [Configuración] > [Lista de precios] con los procedimientos y valores en pesos (COP).\n• El Odontólogo tratante debe estar asignado en la pestaña [Profesionales] del expediente del paciente.\n\nPasos para crear un presupuesto o plan de tratamiento:\n1. Abre la ficha del paciente y haz clic en la pestaña [Presupuestos & planes] (menú lateral izquierdo del paciente).\n2. Encontrarás dos secciones: para una cotización pulsa el botón verde [+ Nuevo Presupuesto], o para un tratamiento activo pulsa [+ Nuevo Plan de Tratamiento].\n3. En la ventana emergente, escribe el Nombre (ej: Ortodoncia o Tratamiento General), selecciona el Profesional tratante, revisa la Vigencia (días) y la Modalidad (Particular o EPS/Convenio), y pulsa el botón verde [Crear].\n4. En el editor de la propuesta, pulsa el botón azul [+ Agregar Items / Procedimientos] (o [+ Agregar items]) para seleccionar los procedimientos directamente del tarifario de la clínica. (Solo si ya le habías hecho un odontograma al paciente, puedes pulsar opcionalmente el botón verde [Odonto. Actual] para cargar esos tratamientos sin digitarlos).\n5. Ajusta cantidades y descuentos. Puedes imprimir la cotización en PDF con el ícono de impresora, o pulsar el botón superior [Convertir a Plan] cuando el paciente la apruebe.\n6. En planes de tratamiento activos, para ejecutar un procedimiento marca la casilla (✓) y pulsa el botón azul superior [Realizar] para mandarlo directo a evolución clínica.';
 
-const conversationRules = 'Eres OdontoIA. Explica como con plastilina: claro, paso a paso y amable. Si la acción requiere requisitos previos (sedes, doctores, sillones, horarios, lista de precios o caja abierta), incluye al inicio "📌 Recuerda antes de empezar:" explicando qué configurar antes de los pasos numerados. Luego da los pasos numerados indicando con precisión dónde pulsar y el nombre exacto del botón. No supongas acciones ya hechas. Si pide acompañamiento, explica los primeros dos pasos y pregunta si abrió el formulario. En presupuestos y planes se crean en [Presupuestos & planes] con [+ Nuevo Presupuesto] o [+ Nuevo Plan de Tratamiento]; no obligues a usar odontograma. Usa solo la referencia; si falta algo, pregunta. No inventes acciones, datos ni consejos clínicos. Solo OdontoCloud.';
+const conversationRules = 'Eres OdontoIA, el copiloto inteligente de OdontoCloud. Explica con total claridad, calidez y precisión paso a paso, con la fluidez y comprensión de ChatGPT. Si el usuario te indica en qué pantalla está (ej: "estoy en Historial de Odontogramas", "estoy en caja", "estoy en agenda"), reconoce de inmediato la sección, explícale qué acciones clave puede realizar allí (botones importantes entre corchetes, ver tablas o crear registros) y cómo continuar, sin interrogarlo de forma robótica. Si la acción requiere requisitos previos (sedes, doctores, sillones, horarios, lista de precios o caja abierta), incluye al inicio "📌 Recuerda antes de empezar:" explicando qué configurar antes de los pasos numerados. Luego da los pasos numerados indicando con precisión dónde pulsar y el nombre exacto del botón entre corchetes (ej: [+ Nueva Cita], [+ Nuevo Odontograma]). En presupuestos y planes se crean en [Presupuestos & planes] con [+ Nuevo Presupuesto] o [+ Nuevo Plan de Tratamiento]; no obligues a usar odontograma. Sé resolutivo, completo y amable. Solo OdontoCloud.';
 
 export function publicSystemPrompt(relevantGuide) {
   return conversationRules + '\nAtiendes visitantes: explica el producto sin promesas no documentadas. No eres ChatGPT ni una persona.\nREFERENCIA:\n' + (relevantGuide ? formatGuide(relevantGuide, true) : 'OdontoCloud es un software de gestión odontológica. Pregunta qué función o plan le interesa antes de ofrecer detalles.');
@@ -26,7 +26,7 @@ export function isGeneralBudget(question) {
     /^(?:quiero|necesito|deseo) (?:un )?(?:presupuesto|plan de tratamiento|cotizacion)$/.test(normalize(question));
 }
 
-export function helpPrompt(guide, question, isPublic = false) {
+export function helpPrompt(guide, question, isPublic = false, screenContext = '') {
   if (isPublic) return publicSystemPrompt(guide);
   const generalAppointment = isGeneralAppointment(question);
   const generalBudget = isGeneralBudget(question);
@@ -35,7 +35,8 @@ export function helpPrompt(guide, question, isPublic = false) {
     : (guide.id === 'presupuestos' && generalBudget)
       ? budgetSummary
       : formatGuide(guide);
-  return conversationRules + '\nLas opciones dependen de los permisos.\nREFERENCIA:\n' + reference;
+  const contextNote = screenContext ? `\nPANTALLA ACTUAL DEL USUARIO: ${screenContext}\n` : '';
+  return conversationRules + contextNote + '\nLas opciones dependen de los permisos.\nREFERENCIA:\n' + reference;
 }
 
 export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = () => {}, authTimeoutMs = 8000, ollamaTimeoutMs = 45000 }) {
@@ -70,7 +71,7 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
       for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
       let body;
       try { body = JSON.parse(new TextDecoder().decode(buffer)); } catch { throw new HelpError(400, 'Solicitud inválida.'); }
-      if (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => !['question', 'previousIds', 'mode', 'history', 'stream'].includes(key))) {
+      if (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => !['question', 'previousIds', 'mode', 'history', 'stream', 'screenContext'].includes(key))) {
         throw new HelpError(400, 'Solo se admiten preguntas sobre OdontoCloud.');
       }
 
@@ -122,6 +123,82 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
         return json({ success: true, provider: 'manual', reason: publicReason, version: KNOWLEDGE_VERSION, answer: formatGuide(guides[0], isPublic), sources: guides.map(({ id, title, category }) => ({ id, title, category })) });
       };
 
+      const sources = guides.map(({ id, title, category }) => ({ id, title, category }));
+      const isStandalone = (guides[0].id === 'citas' && isGeneralAppointment(question)) ||
+                           (guides[0].id === 'presupuestos' && isGeneralBudget(question));
+      const modelHistory = isStandalone ? [] : history;
+      const screenContext = typeof body.screenContext === 'string' ? body.screenContext.trim().slice(0, 200) : '';
+      const systemPrompt = helpPrompt(guides[0], question, isPublic, screenContext);
+
+      const geminiApiKey = env('GEMINI_API_KEY') || env('ODONTO_HELP_GEMINI_API_KEY');
+      if (geminiApiKey) {
+        try {
+          const geminiModel = env('ODONTO_HELP_GEMINI_MODEL') || 'gemini-2.5-flash';
+          const endpoint = body.stream ? ':streamGenerateContent?alt=sse&key=' : ':generateContent?key=';
+          const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}${endpoint}${geminiApiKey}`;
+          const gContents = [
+            { role: 'user', parts: [{ text: systemPrompt }] },
+            { role: 'model', parts: [{ text: 'Entendido. Soy OdontoIA, copiloto experto de OdontoCloud. Te asistiré paso a paso con máxima claridad y calidez.' }] },
+            ...modelHistory.map(m => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: m.content }]
+            })),
+            { role: 'user', parts: [{ text: question }] }
+          ];
+          const gRes = await fetchImpl(gUrl, {
+            method: 'POST',
+            redirect: 'error',
+            signal: request.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: gContents,
+              generationConfig: { temperature: 0.35, maxOutputTokens: 1200 }
+            })
+          });
+          if (gRes.ok) {
+            let gAnswer = '';
+            if (body.stream) {
+              const encoder = new TextEncoder();
+              let cancelled = false;
+              const stream = new ReadableStream({
+                start(output) {
+                  const emit = event => { if (!cancelled) output.enqueue(encoder.encode('data: ' + JSON.stringify(event) + '\n\n')); };
+                  void (async () => {
+                    try {
+                      emit({ type: 'status', text: 'Preparando la respuesta…' });
+                      for await (const event of readHelpEvents(gRes.body)) {
+                        const chunk = event.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+                        if (chunk) {
+                          gAnswer += chunk;
+                          emit({ type: 'delta', text: chunk });
+                        }
+                      }
+                      if (gAnswer.trim()) {
+                        emit({ type: 'result', result: { success: true, provider: 'gemini', version: KNOWLEDGE_VERSION, answer: gAnswer.trim(), sources } });
+                      }
+                    } catch {
+                      // Abort on stream error
+                    } finally {
+                      if (!cancelled) output.close();
+                    }
+                  })();
+                },
+                cancel() { cancelled = true; }
+              });
+              return new Response(stream, { headers: { ...headers, 'Content-Type': 'text/event-stream', 'X-Accel-Buffering': 'no' } });
+            } else {
+              const gData = await gRes.json();
+              gAnswer = gData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (gAnswer.trim()) {
+                return json({ success: true, provider: 'gemini', version: KNOWLEDGE_VERSION, answer: gAnswer.trim(), sources });
+              }
+            }
+          }
+        } catch {
+          // If Gemini fails or times out, proceed seamlessly to Ollama
+        }
+      }
+
       const base = env('ODONTO_HELP_OLLAMA_URL');
       const model = env('ODONTO_HELP_OLLAMA_MODEL');
       if (!base || !model) return fallback('not_configured');
@@ -136,19 +213,13 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
       request.signal.addEventListener('abort', abort, { once: true });
       if (request.signal.aborted) abort();
       const timer = setTimeout(abort, ollamaTimeoutMs);
-      const sources = guides.map(({ id, title, category }) => ({ id, title, category }));
-      // A standalone appointment or budget request needs no previous transcript. Keep history for follow-ups.
-      const isStandalone = (guides[0].id === 'citas' && isGeneralAppointment(question)) ||
-                           (guides[0].id === 'presupuestos' && isGeneralBudget(question));
-      const modelHistory = isStandalone ? [] : history;
-      const systemPrompt = helpPrompt(guides[0], question, isPublic);
       const run = async emit => {
         try {
           trace('ollama_started', { promptChars: systemPrompt.length + question.length + modelHistory.reduce((n, m) => n + m.content.length, 0), historyMessages: modelHistory.length });
           const response = await fetchImpl(url.toString(), {
             method: 'POST', redirect: 'error', signal: controller.signal,
             headers: { 'Content-Type': 'application/json', ...(env('ODONTO_HELP_OLLAMA_TOKEN') ? { Authorization: 'Bearer ' + env('ODONTO_HELP_OLLAMA_TOKEN') } : {}) },
-            body: JSON.stringify({ model, stream: !!emit, keep_alive: '30m', options: { temperature: 0.3, num_predict: 300, num_ctx: 4096 },
+            body: JSON.stringify({ model, stream: !!emit, keep_alive: '30m', options: { temperature: 0.35, num_predict: 800, num_ctx: 4096 },
               messages: [{ role: 'system', content: systemPrompt }, ...modelHistory, { role: 'user', content: question }] }),
           });
           trace('ollama_headers', { status: response.status });
