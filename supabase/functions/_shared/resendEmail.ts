@@ -333,6 +333,53 @@ export const generateWelcomeEmailHtml = ({
  * Envía el correo de bienvenida usando la API REST de Resend y registra la auditoría en email_logs.
  * Garantiza que NO se expongan tokens ni enlaces en la base de datos (email_logs).
  */
+export const resolveResendApiKey = async (
+  adminClient: SupabaseClient
+): Promise<string | undefined> => {
+  let resendApiKey = Deno.env.get("RESEND_API_KEY");
+  if (!resendApiKey && Deno.env.get("SMTP_PASS")?.startsWith("re_")) {
+    resendApiKey = Deno.env.get("SMTP_PASS");
+  }
+  if (!resendApiKey) {
+    try {
+      const raw = await Deno.readTextFile(new URL("./resend_config.json", import.meta.url)).catch(() =>
+        Deno.readTextFile(new URL("../_shared/resend_config.json", import.meta.url))
+      );
+      const parsed = JSON.parse(raw);
+      if (parsed?.resendApiKey && typeof parsed.resendApiKey === "string" && parsed.resendApiKey.startsWith("re_")) {
+        resendApiKey = parsed.resendApiKey;
+      }
+    } catch {
+      // Ignorar si no existe archivo local
+    }
+  }
+  if (!resendApiKey) {
+    try {
+      const { data: globalCfg } = await adminClient
+        .from("website_config")
+        .select("config")
+        .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+        .maybeSingle();
+      resendApiKey = globalCfg?.config?.resend_api_key || globalCfg?.config?.RESEND_API_KEY;
+    } catch {
+      // Ignorar si website_config no está disponible
+    }
+  }
+  if (!resendApiKey) {
+    try {
+      const { data: sec } = await adminClient
+        .from("tenant_secrets")
+        .select("resend_api_key")
+        .eq("tenant_id", GLOBAL_CONFIG_TENANT_ID)
+        .maybeSingle();
+      resendApiKey = (sec as { resend_api_key?: string } | null)?.resend_api_key;
+    } catch {
+      // Ignorar si tenant_secrets no tiene columna
+    }
+  }
+  return resendApiKey;
+};
+
 export const dispatchWelcomeEmail = async (
   adminClient: SupabaseClient,
   params: WelcomeEmailParams
@@ -347,7 +394,7 @@ export const dispatchWelcomeEmail = async (
     initiatedBy = "system",
   } = params;
 
-  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  const resendApiKey = await resolveResendApiKey(adminClient);
   const subject = `¡Bienvenido a OdontoCloud! - Configura tu acceso a ${clinicName || "tu clínica"}`;
 
   // 1. Crear registro inicial en estado 'pending' (para auditoría e idempotencia)

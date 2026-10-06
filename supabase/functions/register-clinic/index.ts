@@ -334,23 +334,25 @@ export const generateWelcomeEmailHtml = ({
  * Envía el correo de bienvenida usando la API REST de Resend y registra la auditoría en email_logs.
  * Garantiza que NO se expongan tokens ni enlaces en la base de datos (email_logs).
  */
-export const dispatchWelcomeEmail = async (
-  adminClient: SupabaseClient,
-  params: WelcomeEmailParams
-): Promise<SendEmailResult> => {
-  const {
-    tenantId,
-    clinicName,
-    adminName,
-    adminEmail,
-    planName,
-    setupPasswordUrl,
-    initiatedBy = "system",
-  } = params;
-
+export const resolveResendApiKey = async (
+  adminClient: SupabaseClient
+): Promise<string | undefined> => {
   let resendApiKey = Deno.env.get("RESEND_API_KEY");
   if (!resendApiKey && Deno.env.get("SMTP_PASS")?.startsWith("re_")) {
     resendApiKey = Deno.env.get("SMTP_PASS");
+  }
+  if (!resendApiKey) {
+    try {
+      const raw = await Deno.readTextFile(new URL("./resend_config.json", import.meta.url)).catch(() =>
+        Deno.readTextFile(new URL("../_shared/resend_config.json", import.meta.url))
+      );
+      const parsed = JSON.parse(raw);
+      if (parsed?.resendApiKey && typeof parsed.resendApiKey === "string" && parsed.resendApiKey.startsWith("re_")) {
+        resendApiKey = parsed.resendApiKey;
+      }
+    } catch {
+      // Ignorar si no existe archivo local
+    }
   }
   if (!resendApiKey) {
     try {
@@ -376,6 +378,24 @@ export const dispatchWelcomeEmail = async (
       // Ignorar si tenant_secrets no tiene columna
     }
   }
+  return resendApiKey;
+};
+
+export const dispatchWelcomeEmail = async (
+  adminClient: SupabaseClient,
+  params: WelcomeEmailParams
+): Promise<SendEmailResult> => {
+  const {
+    tenantId,
+    clinicName,
+    adminName,
+    adminEmail,
+    planName,
+    setupPasswordUrl,
+    initiatedBy = "system",
+  } = params;
+
+  const resendApiKey = await resolveResendApiKey(adminClient);
   const subject = `¡Bienvenido a OdontoCloud! - Configura tu acceso a ${clinicName || "tu clínica"}`;
 
   // 1. Crear registro inicial en estado 'pending' (para auditoría e idempotencia)
@@ -751,7 +771,7 @@ export const dispatchPasswordResetEmail = async (
     initiatedBy = "system",
   } = params;
 
-  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  const resendApiKey = await resolveResendApiKey(adminClient);
   const subject = `Restablece tu contraseña - OdontoCloud (${clinicName || "Seguridad"})`;
 
   let logId: string | undefined;

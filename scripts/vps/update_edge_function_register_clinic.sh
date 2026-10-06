@@ -27,10 +27,31 @@ else
     exit 1
 fi
 
-echo "=== 3. Reiniciando contenedor de Edge Functions de OdontoCloud ==="
+echo "=== 3. Vinculando clave RESEND_API_KEY desde la configuración de OdontoCloud ==="
+RESEND_KEY=""
+GOTRUE_CONTAINER=$(docker ps --filter "name=supabase-gotrue-ueh7xuehxl9thmhre7fpk4xx" --format "{{.Names}}" | head -n 1)
+if [[ -n "$GOTRUE_CONTAINER" ]]; then
+    RESEND_KEY=$(docker inspect "$GOTRUE_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep -E '^(GOTRUE_SMTP_PASS|SMTP_PASS)=re_' | head -n 1 | cut -d'=' -f2- || true)
+fi
+
+if [[ -z "$RESEND_KEY" && -f /tmp/odontocloud-resend-key.txt ]]; then
+    RESEND_KEY=$(cat /tmp/odontocloud-resend-key.txt | tr -d '\r\n')
+fi
+
+if [[ -n "$RESEND_KEY" && "$RESEND_KEY" =~ ^re_ ]]; then
+    echo "{\"resendApiKey\":\"$RESEND_KEY\"}" > "$TARGET_DIR/resend_config.json"
+    echo "{\"resendApiKey\":\"$RESEND_KEY\"}" > "$SHARED_DIR/resend_config.json"
+    chmod 600 "$TARGET_DIR/resend_config.json" "$SHARED_DIR/resend_config.json"
+    echo "✅ Clave Resend ($RESEND_KEY) detectada y vinculada a la Edge Function."
+else
+    echo "ℹ️ Clave re_ no detectada automáticamente en GoTrue. Puedes configurarla ejecutando:"
+    echo "   echo '{\"resendApiKey\":\"re_tu_clave\"}' > $TARGET_DIR/resend_config.json"
+fi
+
+echo "=== 4. Reiniciando contenedor de Edge Functions de OdontoCloud ==="
 docker restart "$CONTAINER_NAME"
 
-echo "=== 4. Verificando estado del contenedor ==="
+echo "=== 5. Verificando estado del contenedor ==="
 sleep 3
 docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.State}}"
 
