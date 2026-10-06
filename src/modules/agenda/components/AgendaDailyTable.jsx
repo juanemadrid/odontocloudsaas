@@ -157,11 +157,8 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                             <th className="py-3.5 px-4 text-left">Hora</th>
                                             <th className="py-3.5 px-2 text-left">Paciente</th>
                                             <th className="py-3.5 px-2 text-left">Doctor</th>
-                                            <th className="py-3.5 px-2 text-left no-print">Sede</th>
-                                            <th className="py-3.5 px-2 text-left">Espacio</th>
                                             <th className="py-3.5 px-2 text-left">Comentario</th>
                                             <th className="py-3.5 px-2 text-center">Estado</th>
-                                            <th className="py-3.5 px-2 text-center no-print">Actual</th>
                                             <th className="py-3.5 px-6 text-right no-print">ACCIONES</th>
                                         </tr>
                                     </thead>
@@ -197,16 +194,10 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                     </div>
                                                 </td>
                                                 <td className="py-3 px-2">
-                                                    <span className={`font-black text-slate-800 uppercase block truncate transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9.5px] max-w-[100px]' : 'text-[12.5px] max-w-[200px]'}`} title={apt.doctorDisplayName}>{apt.doctorDisplayName}</span>
-                                                </td>
-                                                <td className="py-3 px-2 no-print">
-                                                    <span className={`font-black text-slate-700 uppercase truncate block max-w-[70px] transition-all ${sidebarVisible ? 'text-[9.5px]' : 'text-[12.5px]'}`} title={apt.sucursalDisplayName}>{apt.sucursalDisplayName}</span>
+                                                    <span className={`font-black text-slate-800 uppercase block truncate transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9.5px] max-w-[140px]' : 'text-[12.5px] max-w-[260px]'}`} title={apt.doctorDisplayName}>{apt.doctorDisplayName}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
-                                                    <span className={`font-black text-slate-700 uppercase block bg-slate-100 px-2 py-0.5 rounded border border-slate-200 w-fit transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[80px]' : 'text-[12px] truncate max-w-[120px]'}`} title={apt.chairDisplayName}>{apt.chairDisplayName}</span>
-                                                </td>
-                                                <td className="py-3 px-2">
-                                                    <span className={`text-slate-600 font-bold italic block uppercase transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[100px]' : 'text-[12px] truncate max-w-[200px]'}`} title={apt.comentario}>{apt.comentario || "-"}</span>
+                                                    <span className={`text-slate-600 font-bold italic block uppercase transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[180px]' : 'text-[12px] truncate max-w-[320px]'}`} title={apt.comentario}>{apt.comentario || "-"}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
                                                     {(() => {
@@ -238,11 +229,6 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                             </>
                                                         );
                                                     })()}
-                                                </td>
-                                                <td className="py-3 px-2 text-center no-print">
-                                                    <span className={`px-2 py-0.5 rounded-md font-black tracking-tight border uppercase transition-all ${sidebarVisible ? 'text-[8.5px]' : 'text-[11px]'} ${apt.pagoPendiente > 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                                                        {apt.pagoPendiente > 0 ? `Deuda: $${apt.pagoPendiente.toLocaleString('es-CO')}` : 'Al día'}
-                                                    </span>
                                                 </td>
                                                 <td className="py-3 px-6 text-right whitespace-nowrap no-print">
                                                     {(() => {
