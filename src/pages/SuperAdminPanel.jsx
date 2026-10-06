@@ -1,13 +1,14 @@
-import React, { useState, useLayoutEffect } from "react";
+import React, { useState, useEffect, useLayoutEffect } from "react";
 import TenantsPanelV2 from "../modules/superadmin/TenantsPanelV2";
 import PlanManagement from "../modules/superadmin/PlanManagement";
 import PaymentManagement from "../modules/superadmin/PaymentManagement";
 import FacturasQuotaPanel from "../modules/superadmin/FacturasQuotaPanel";
 import NovedadesAdmin from "../modules/superadmin/NovedadesAdmin";
 import WebCms from "../modules/cms/WebsiteEditor";
+import SuperAdminAiCenter from "../modules/superadmin/ai/SuperAdminAiCenter";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell } from "react-icons/fi";
+import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell, FiCpu } from "react-icons/fi";
 import "../styles/modern.css";
 import superAdminUtilities from "../styles/utilities.css?inline";
 import "../styles/theme.css";
@@ -41,7 +42,14 @@ const IconFolder = ({ className = "w-4 h-4" }) => (
 export default function SuperAdminPanel() {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState("clinics");
+    const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
     const { logout, user } = useAuth();
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
 
     const handleLogout = async () => {
         await logout();
@@ -80,7 +88,13 @@ export default function SuperAdminPanel() {
         <div className="flex min-h-screen bg-white font-sans text-slate-900">
 
             {/* Sidebar Enterprise (Strict Professional - Force White) */}
-            <aside className="w-64 border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-50" style={{ backgroundColor: '#ffffff' }}>
+            <aside
+                className="w-64 border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-50"
+                style={{
+                    backgroundColor: '#ffffff',
+                    display: isMobile && activeTab === 'ai-assistant' ? 'none' : 'flex'
+                }}
+            >
                 {/* Brand Identity Area - Clean White Headers */}
                 <div className="h-16 flex items-center px-6 border-b border-slate-100 shadow-sm z-10 relative" style={{ backgroundColor: '#ffffff' }}>
                     <div className="flex items-center gap-2.5">
@@ -107,6 +121,22 @@ export default function SuperAdminPanel() {
                     >
                         <IconClinic className={`w-4 h-4 ${activeTab === "clinics" ? "text-blue-700" : "text-slate-400"}`} />
                         <span>Gestión de Clínicas</span>
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab("ai-assistant")}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "ai-assistant"
+                            ? "bg-slate-100 text-slate-900 border border-slate-200"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            }`}
+                    >
+                        <div className="flex items-center gap-3">
+                            <FiCpu className={`w-4 h-4 ${activeTab === "ai-assistant" ? "text-blue-700" : "text-slate-400"}`} />
+                            <span>Centro IA</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                            IA MOCK
+                        </span>
                     </button>
 
                     <button
@@ -191,11 +221,11 @@ export default function SuperAdminPanel() {
             </aside>
 
             {/* Main Content Area - Constrained for standard views, expanded for CMS */}
-            <div className="flex-1 ml-64 min-h-screen flex flex-col bg-slate-50">
-                <main className={`flex-1 w-full ${activeTab === 'site' ? 'max-w-none p-0 space-y-0' : 'max-w-[1550px] mx-auto py-8 px-6 lg:px-10 space-y-8'} animate-safe-fade-in`} key={user?.uid}>
+            <div className={`flex-1 ${isMobile && activeTab === 'ai-assistant' ? 'ml-0' : 'ml-64'} min-h-screen flex flex-col bg-slate-50`}>
+                <main className={`flex-1 w-full ${activeTab === 'site' ? 'max-w-none p-0 space-y-0' : activeTab === 'ai-assistant' ? (isMobile ? 'max-w-none p-0 space-y-0' : 'max-w-none p-6 lg:p-8 space-y-0') : 'max-w-[1550px] mx-auto py-8 px-6 lg:px-10 space-y-8'} animate-safe-fade-in`} key={user?.uid}>
 
-                    {/* Component Header Area - Hidden for CMS to maximize space */}
-                    {activeTab !== 'site' && (
+                    {/* Component Header Area - Hidden for CMS and AI Center to maximize dedicated space */}
+                    {activeTab !== 'site' && activeTab !== 'ai-assistant' && (
                         <header className="mb-6 pb-6 border-b border-slate-200">
                             <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
                             {activeTab === "clinics" ? "Control de Clínicas"
@@ -222,8 +252,9 @@ export default function SuperAdminPanel() {
                     )}
 
                     {/* Content Section */}
-                    <section className={activeTab === 'site' ? 'w-full h-full' : ''}>
+                    <section className={activeTab === 'site' || activeTab === 'ai-assistant' ? 'w-full h-full' : ''}>
                         {activeTab === "clinics" && <TenantsPanelV2 />}
+                        {activeTab === "ai-assistant" && <SuperAdminAiCenter onBack={() => setActiveTab("clinics")} />}
                         {activeTab === "plans" && <PlanManagement />}
                         {activeTab === "payments" && <PaymentManagement />}
                         {activeTab === "facturacion" && <FacturasQuotaPanel />}
