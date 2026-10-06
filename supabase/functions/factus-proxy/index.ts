@@ -659,6 +659,88 @@ Deno.serve(async (request) => {
       });
     }
 
+    if (action === "delete_unvalidated_support_document") {
+      const referenceCode = body?.referenceCode ? String(body.referenceCode).trim() : null;
+      const expectedNumber = body?.expectedNumber ? String(body.expectedNumber).trim() : null;
+
+      if (!referenceCode || !expectedNumber) {
+        throw new HttpError(400, "Debe proporcionar obligatoriamente referenceCode y expectedNumber.");
+      }
+
+      // Guardia A: Consultar el estado del documento en FACTUS
+      const checkResponse = await factusRequest(
+        config,
+        "/v2/support-documents/" + encodeURIComponent(expectedNumber)
+      );
+
+      if (checkResponse.status === 404) {
+        throw new HttpError(404, "El documento soporte " + expectedNumber + " no fue encontrado en FACTUS.");
+      }
+
+      const checkData = await checkResponse.json().catch(() => ({}));
+      if (!checkResponse.ok) {
+        throw new HttpError(checkResponse.status, factusError(checkData, checkResponse.status));
+      }
+
+      const doc =
+        checkData?.data?.support_document ||
+        checkData?.data ||
+        checkData?.support_document ||
+        null;
+
+      if (!doc) {
+        throw new HttpError(404, "No se pudo obtener el detalle de " + expectedNumber + " en FACTUS.");
+      }
+
+      // Guardia B, C, D: Verificación estricta de identidad y no-validación
+      if (String(doc.number).trim() !== expectedNumber) {
+        throw new HttpError(
+          409,
+          "El número en FACTUS (" + doc.number + ") no coincide con expectedNumber (" + expectedNumber + "). Abortando."
+        );
+      }
+
+      if (String(doc.reference_code).trim() !== referenceCode) {
+        throw new HttpError(
+          409,
+          "El reference_code en FACTUS (" + doc.reference_code + ") no coincide con " + referenceCode + ". Abortando."
+        );
+      }
+
+      if (doc.is_validated !== false) {
+        throw new HttpError(
+          409,
+          "El documento soporte " + expectedNumber + " tiene is_validated = " + doc.is_validated + ". Solo se permite eliminar documentos NO validados."
+        );
+      }
+
+      if (doc.validated_at !== null && doc.validated_at !== undefined) {
+        throw new HttpError(
+          409,
+          "El documento soporte " + expectedNumber + " tiene validated_at registrado. No se puede eliminar."
+        );
+      }
+
+      // Ejecución controlada de DELETE en FACTUS API v2
+      const deleteResponse = await factusRequest(
+        config,
+        "/v2/support-documents/reference/" + encodeURIComponent(referenceCode),
+        { method: "DELETE" }
+      );
+
+      const deleteData = await deleteResponse.json().catch(() => ({}));
+      if (!deleteResponse.ok) {
+        throw new HttpError(deleteResponse.status, factusError(deleteData, deleteResponse.status));
+      }
+
+      return json({
+        success: true,
+        deleted: true,
+        reference_code: referenceCode,
+        number: expectedNumber,
+      });
+    }
+
     if (action === "check_bill") {
       const billNumber = body?.billNumber ? String(body.billNumber).trim() : null;
       const referenceCode = body?.referenceCode ? String(body.referenceCode).trim() : null;
