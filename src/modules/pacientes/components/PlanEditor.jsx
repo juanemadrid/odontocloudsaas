@@ -64,6 +64,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     const [showOdontoModal, setShowOdontoModal] = useState(false);
     const [odontoLoading, setOdontoLoading] = useState(false);
     const [odontoItems, setOdontoItems] = useState([]);
+    const [odontoFilterMode, setOdontoFilterMode] = useState("pendientes"); // "pendientes" | "todos"
 
     // ── Realizar & Asociar Consulta Workflow (OralDrive) ──
     const [selectedForRealizar, setSelectedForRealizar] = useState(new Set());
@@ -1071,6 +1072,30 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         }
     };
 
+    const isNonPresupuestable = (situacion) => {
+        const s = String(situacion || "").toLowerCase().trim();
+        return (
+            s.includes("sano") ||
+            s.includes("sana") ||
+            s.includes("ausente") ||
+            s.includes("sin erupcionar") ||
+            s.includes("parcial. erup") ||
+            s.includes("adaptada") ||
+            s.includes("adaptado") ||
+            s.includes("buena") ||
+            s.includes("bueno")
+        );
+    };
+
+    const pendingOdontoItems = useMemo(() => {
+        return (odontoItems || []).filter(item => !isNonPresupuestable(item.situacion));
+    }, [odontoItems]);
+
+    const displayedOdontoItems = useMemo(() => {
+        if (odontoFilterMode === "todos") return odontoItems || [];
+        return pendingOdontoItems;
+    }, [odontoFilterMode, odontoItems, pendingOdontoItems]);
+
     const importSingleOdontoItem = (odontoItem) => {
         setShowOdontoModal(false);
         setOdontoImportQueue([odontoItem]);
@@ -1079,9 +1104,10 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     };
 
     const importAllOdontoItems = () => {
-        if (!odontoItems.length) return;
+        const toImport = displayedOdontoItems;
+        if (!toImport.length) return;
         setShowOdontoModal(false);
-        setOdontoImportQueue([...odontoItems]);
+        setOdontoImportQueue([...toImport]);
         setCurrentQueueIndex(0);
         setShowProcedureModal(true);
     };
@@ -1092,6 +1118,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             toast.error("Error: ID de paciente no disponible.");
             return;
         }
+        setOdontoFilterMode("pendientes");
         setShowOdontoModal(true);
         setOdontoLoading(true);
         try {
@@ -2425,21 +2452,51 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             {/* Modal de Odonto. Actual (estilo OralDrive) */}
             {showOdontoModal && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden animate-fadeIn border border-slate-100">
-                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden animate-fadeIn border border-slate-100 flex flex-col max-h-[90vh]">
+                        <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-50">
                             <div>
                                 <h3 className="text-[14px] font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                                      🦷 Odonto. Actual
                                 </h3>
-                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mt-1">
+                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mt-0.5">
                                     Historial de hallazgos del odontograma más reciente para {patient?.nombreCompleto}
                                 </p>
                             </div>
-                            <button onClick={() => setShowOdontoModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
-                                <FiX size={20} />
-                            </button>
+                            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                                {/* Segmented Filter Pills */}
+                                <div className="flex items-center bg-slate-200/70 p-0.5 rounded-xl text-[10px] font-black uppercase tracking-wider">
+                                    <button
+                                        type="button"
+                                        onClick={() => setOdontoFilterMode("pendientes")}
+                                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                                            odontoFilterMode === "pendientes"
+                                                ? "bg-white text-emerald-700 shadow-xs"
+                                                : "text-slate-500 hover:text-slate-800"
+                                        }`}
+                                        title="Mostrar únicamente dientes con patologías o tratamientos a realizar"
+                                    >
+                                        <span className={`w-2 h-2 rounded-full ${pendingOdontoItems.length > 0 ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                        Tratamientos pendientes ({pendingOdontoItems.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setOdontoFilterMode("todos")}
+                                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                                            odontoFilterMode === "todos"
+                                                ? "bg-white text-slate-800 shadow-xs"
+                                                : "text-slate-500 hover:text-slate-800"
+                                        }`}
+                                        title="Ver el odontograma completo incluyendo piezas sanas y ausentes"
+                                    >
+                                        Todos los hallazgos ({odontoItems.length})
+                                    </button>
+                                </div>
+                                <button onClick={() => setShowOdontoModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors p-1">
+                                    <FiX size={20} />
+                                </button>
+                            </div>
                         </div>
-                        <div className="p-6">
+                        <div className="p-6 overflow-y-auto flex-1">
                             {odontoLoading ? (
                                 <div className="p-10 text-center text-slate-400 font-bold animate-pulse uppercase text-xs tracking-widest">
                                     Cargando odontograma...
@@ -2450,11 +2507,28 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                     <p className="text-xs uppercase font-black tracking-widest text-slate-400 mb-1">Sin hallazgos registrados</p>
                                     <p className="text-[10px] text-slate-300">Este paciente aún no tiene tratamientos registrados en su odontograma.</p>
                                 </div>
+                            ) : displayedOdontoItems.length === 0 ? (
+                                <div className="p-10 text-center text-slate-500 font-medium bg-emerald-50/60 rounded-xl border border-emerald-100 my-4">
+                                    <div className="text-3xl mb-2">🦷✨</div>
+                                    <p className="text-xs uppercase font-black tracking-widest text-emerald-800 mb-1">
+                                        Sin tratamientos patológicos pendientes
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 max-w-md mx-auto leading-relaxed">
+                                        Todos los {odontoItems.length} registros del odontograma corresponden a piezas sanas, ausentes o restauraciones ya adaptadas (no requieren cotización en presupuesto).
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setOdontoFilterMode("todos")}
+                                        className="mt-4 px-3.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-xs transition-all cursor-pointer"
+                                    >
+                                        Ver todos los hallazgos anatómicos ({odontoItems.length})
+                                    </button>
+                                </div>
                             ) : (
-                                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-inner max-h-[400px] overflow-y-auto">
+                                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-inner max-h-[380px] overflow-y-auto">
                                     <table className="w-full text-left table-auto">
                                         <thead>
-                                            <tr className="bg-slate-50 border-b border-slate-200 uppercase text-[9px] font-black text-slate-400 tracking-widest">
+                                            <tr className="bg-slate-50 border-b border-slate-200 uppercase text-[9px] font-black text-slate-400 tracking-widest sticky top-0 z-10">
                                                 <th className="px-4 py-3.5">Fecha de creación</th>
                                                 <th className="px-4 py-3.5">Creado por</th>
                                                 <th className="px-4 py-3.5 text-center">Pieza</th>
@@ -2464,29 +2538,41 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-[11px] font-bold text-slate-600 uppercase">
-                                            {odontoItems.map((item, idx) => (
-                                                <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="px-4 py-3 text-slate-500">{item.fecha}</td>
-                                                    <td className="px-4 py-3 text-slate-500 font-semibold">{item.creadoPor}</td>
-                                                    <td className="px-4 py-3 text-center">
-                                                        <span className="inline-flex items-center justify-center w-7 h-7 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg font-black text-[10px]">
-                                                            {item.pieza}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-slate-800 font-black">{item.situacion}</td>
-                                                    <td className="px-4 py-3 text-slate-400 font-black text-[10px] tracking-wide">{item.cara || "General"}</td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => importSingleOdontoItem(item)}
-                                                            className="px-3 py-1.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-black text-[10px] uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer inline-flex items-center gap-1"
-                                                            title="Agregar este tratamiento al presupuesto"
-                                                        >
-                                                            <FiPlus size={12} strokeWidth={3} /> Agregar
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {displayedOdontoItems.map((item, idx) => {
+                                                const isNonPresup = isNonPresupuestable(item.situacion);
+                                                return (
+                                                    <tr key={idx} className={`hover:bg-slate-50 transition-colors ${isNonPresup ? "opacity-75 bg-slate-50/30" : ""}`}>
+                                                        <td className="px-4 py-3 text-slate-500">{item.fecha}</td>
+                                                        <td className="px-4 py-3 text-slate-500 font-semibold">{item.creadoPor}</td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <span className="inline-flex items-center justify-center w-7 h-7 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg font-black text-[10px]">
+                                                                {item.pieza}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-800 font-black">
+                                                            <div className="flex items-center gap-2">
+                                                                <span>{item.situacion}</span>
+                                                                {isNonPresup && (
+                                                                    <span className="px-2 py-0.5 rounded text-[8px] font-extrabold uppercase bg-slate-100 text-slate-400 border border-slate-200">
+                                                                        Anatómico
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-400 font-black text-[10px] tracking-wide">{item.cara || "General"}</td>
+                                                        <td className="px-4 py-3 text-right">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => importSingleOdontoItem(item)}
+                                                                className="px-3 py-1.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-black text-[10px] uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer inline-flex items-center gap-1"
+                                                                title="Agregar este tratamiento al presupuesto"
+                                                            >
+                                                                <FiPlus size={12} strokeWidth={3} /> Agregar
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -2494,16 +2580,25 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                             
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-slate-100 mt-6">
                                 <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                                    {odontoItems.length > 0 && `${odontoItems.length} hallazgo(s) encontrado(s)`}
+                                    {displayedOdontoItems.length > 0 && (
+                                        <span>
+                                            {displayedOdontoItems.length} {odontoFilterMode === "pendientes" ? "tratamiento(s) pendiente(s)" : "hallazgo(s) anatómico(s)"}
+                                            {odontoFilterMode === "pendientes" && odontoItems.length > pendingOdontoItems.length && (
+                                                <span className="text-slate-400 font-normal lowercase ml-1">
+                                                    ({odontoItems.length - pendingOdontoItems.length} sanos/ausentes omitidos)
+                                                </span>
+                                            )}
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                                    {odontoItems.length > 0 && (
+                                    {displayedOdontoItems.length > 0 && (
                                         <button
                                             type="button"
                                             onClick={importAllOdontoItems}
                                             className="px-5 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
                                         >
-                                            <FiPlus size={14} strokeWidth={3} /> Cargar todos al Presupuesto ({odontoItems.length})
+                                            <FiPlus size={14} strokeWidth={3} /> Cargar {odontoFilterMode === "pendientes" ? "tratamientos" : "todos"} ({displayedOdontoItems.length})
                                         </button>
                                     )}
                                     <button
