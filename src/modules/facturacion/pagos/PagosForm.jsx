@@ -582,6 +582,11 @@ export default function PagosForm({ onCancel, onSuccess }) {
         });
     }, [facturasCompraPendientes, selectedTerceroObj, terceroSearchQuery]);
 
+    const getFacturaCode = (fc) => {
+        if (!fc) return "Factura de compra";
+        return fc.factus_number || fc.nroFactura || fc.documentoNumero || fc.numero || (String(fc.id).startsWith("fc_") ? `FC-${String(fc.id).slice(3, 8)}` : `FC-${fc.id}`);
+    };
+
     const handleAddFactura = () => {
         setAsociarFacturaData({
             facturaId: "",
@@ -607,7 +612,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
         }
         const fc = facturasCompraPendientes.find(f => String(f.id) === String(fcId));
         if (fc) {
-            const saldo = parseFloat(fc.saldo_pendiente || fc.total || fc.monto || 0);
+            const saldo = parseFloat(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.total ?? fc.monto ?? 0);
             setAsociarFacturaData(prev => ({
                 ...prev,
                 facturaId: fc.id,
@@ -627,7 +632,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
         }
 
         const fc = asociarFacturaData.facturaObj;
-        const num = fc ? (fc.numero || `FC-${fc.id}`) : "Factura de compra";
+        const num = fc ? getFacturaCode(fc) : "Factura de compra";
         const desc = fc ? (fc.descripcion || fc.proveedor || fc.tercero || "Factura de compra") : (selectedTerceroObj?.nombre ? `Pago factura ${selectedTerceroObj.nombre}` : "Pago de factura");
 
         setItems(prev => [
@@ -830,6 +835,50 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     total_egresos: newEgresos,
                     totalEgresos: newEgresos
                 }) : null);
+            }
+
+            // 4. Actualizar saldo y estado en facturas_compra asociadas
+            const facturasActualizadas = [];
+            for (const item of validItems) {
+                if (item.isFactura && item.facturaId) {
+                    const fcOriginal = facturasCompraPendientes.find(f => String(f.id) === String(item.facturaId));
+                    if (fcOriginal) {
+                        const saldoPrev = parseFloat(fcOriginal.saldo_pendiente ?? fcOriginal.saldoPendiente ?? fcOriginal.total ?? fcOriginal.monto ?? 0);
+                        const abono = parseFloat(item.total || item.precioUnitario || 0);
+                        const nuevoSaldo = Math.max(0, saldoPrev - abono);
+                        const nuevoEstado = nuevoSaldo === 0 ? "Pagada" : "Pendiente";
+
+                        const fcUpdated = {
+                            ...fcOriginal,
+                            saldo_pendiente: nuevoSaldo,
+                            saldoPendiente: nuevoSaldo,
+                            estado: nuevoEstado,
+                            updated_at: new Date().toISOString()
+                        };
+                        facturasActualizadas.push(fcUpdated);
+
+                        try {
+                            await supabase.from("facturas_compra").update({
+                                saldo_pendiente: nuevoSaldo,
+                                estado: nuevoEstado,
+                                updated_at: new Date().toISOString()
+                            }).eq("id", fcOriginal.id);
+                        } catch (e) {}
+                    }
+                }
+            }
+
+            if (facturasActualizadas.length > 0) {
+                try {
+                    const currentFcList = await getConfigSection(inquilino, "facturas_compra", []);
+                    if (Array.isArray(currentFcList) && currentFcList.length > 0) {
+                        const mergedFcList = currentFcList.map(curr => {
+                            const updatedMatch = facturasActualizadas.find(u => String(u.id) === String(curr.id));
+                            return updatedMatch ? { ...curr, ...updatedMatch } : curr;
+                        });
+                        await saveConfigSection(inquilino, "facturas_compra", mergedFcList);
+                    }
+                } catch (e) {}
             }
 
             toast.success("Pago registrado con éxito");
@@ -1713,7 +1762,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                         {availableFacturasCompra.length > 0 ? (
                                             availableFacturasCompra.map((fc) => (
                                                 <option key={fc.id} value={fc.id}>
-                                                    {fc.numero || `FC-${fc.id}`} - {fc.proveedor || fc.tercero || "Proveedor"} ({fmt(fc.saldo_pendiente || fc.total || fc.monto)})
+                                                    {getFacturaCode(fc)} - {fc.proveedor || fc.tercero || "Proveedor"} ({fmt(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.total ?? fc.monto)})
                                                 </option>
                                             ))
                                         ) : (
