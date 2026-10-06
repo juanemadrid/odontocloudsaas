@@ -450,65 +450,97 @@ async function getRecentActivity(admin: ReturnType<typeof createClient>) {
   };
 }
 
-// 4. get_factus_usage_summary (Cero credenciales en memoria)
-async function getFactusUsageSummary(admin: ReturnType<typeof createClient>) {
-  const [clinics, secretsRes] = await Promise.all([
-    getUnifiedTenants(admin),
-    admin
-      .from("tenant_secrets")
-      .select(`
-        tenant_id,
-        cuota:factus_config->>facturacionCuota,
-        usadas:factus_config->>facturacionUsadas,
-        test_mode:factus_config->>factusTestMode,
-        configured:factus_config->>configured
-      `),
-  ]);
+// 4. get_factus_usage_summary (Reutilizando la fuente canónica factus-proxy/status)
+async function getFactusUsageSummary(
+  admin: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  userToken: string
+) {
+  const clinics = await getUnifiedTenants(admin);
 
-  const secretsMap = new Map<
-    string,
-    { cuota: number; usadas: number; configured: boolean }
-  >();
+  const statuses = await Promise.all(
+    clinics.map(async (c) => {
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/factus-proxy`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${userToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "status", tenantId: c.id }),
+        });
 
-  for (const s of (secretsRes.data as any[]) || []) {
-    if (s.tenant_id) {
-      secretsMap.set(String(s.tenant_id), {
-        cuota: Number(s.cuota || 0),
-        usadas: Number(s.usadas || 0),
-        configured: s.configured === "true" || s.configured === true,
-      });
-    }
-  }
+        if (!response.ok) {
+          return {
+            id: c.id,
+            nombre: c.nombre,
+            configured: false,
+            environment: "desconocido",
+            cuota: 0,
+            usadas: 0,
+            disponibles: 0,
+          };
+        }
+
+        const data = await response.json();
+        const configured = data?.configured === true;
+        const testMode = data?.factusTestMode !== false;
+        const cuota = Number(data?.facturacionCuota || 0);
+        const usadas = Number(data?.facturacionUsadas || 0);
+        const disponibles = Math.max(0, cuota - usadas);
+
+        return {
+          id: c.id,
+          nombre: c.nombre,
+          configured,
+          environment: configured ? (testMode ? "sandbox" : "production") : "no_configurado",
+          cuota,
+          usadas,
+          disponibles,
+        };
+      } catch (_e) {
+        return {
+          id: c.id,
+          nombre: c.nombre,
+          configured: false,
+          environment: "error_consulta",
+          cuota: 0,
+          usadas: 0,
+          disponibles: 0,
+        };
+      }
+    })
+  );
 
   let totalCuota = 0;
   let totalUsadas = 0;
   let clinicasConfiguradas = 0;
+  let produccionCount = 0;
+  let sandboxCount = 0;
   const clinicasCercaDelLimiteAdmin: Array<{
-    tenant_id: string;
+    id: string;
     nombre: string;
     cuota: number;
     usadas: number;
     disponibles: number;
   }> = [];
 
-  for (const c of clinics) {
-    const cfg = secretsMap.get(c.id);
-    if (cfg && cfg.configured) {
+  for (const s of statuses) {
+    if (s.configured) {
       clinicasConfiguradas += 1;
-      const cuota = cfg.cuota;
-      const usadas = cfg.usadas;
-      const disponibles = Math.max(0, cuota - usadas);
+      totalCuota += s.cuota;
+      totalUsadas += s.usadas;
 
-      totalCuota += cuota;
-      totalUsadas += usadas;
+      if (s.environment === "production") produccionCount += 1;
+      if (s.environment === "sandbox") sandboxCount += 1;
 
-      if (cuota > 0 && (disponibles <= 20 || disponibles / cuota < 0.15)) {
+      if (s.cuota > 0 && (s.disponibles <= 20 || s.disponibles / s.cuota < 0.15)) {
         clinicasCercaDelLimiteAdmin.push({
-          tenant_id: c.id,
-          nombre: c.nombre,
-          cuota,
-          usadas,
-          disponibles,
+          id: s.id,
+          nombre: s.nombre,
+          cuota: s.cuota,
+          usadas: s.usadas,
+          disponibles: s.disponibles,
         });
       }
     }
@@ -519,7 +551,18 @@ async function getFactusUsageSummary(admin: ReturnType<typeof createClient>) {
     total_folios_asignados: totalCuota,
     total_folios_usados: totalUsadas,
     total_folios_disponibles: Math.max(0, totalCuota - totalUsadas),
+    produccion: produccionCount,
+    sandbox: sandboxCount,
+    cantidad_cerca_del_limite: clinicasCercaDelLimiteAdmin.length,
     clinicas_cerca_del_limite: clinicasCercaDelLimiteAdmin,
+    clinicas: statuses.map((s) => ({
+      nombre: s.nombre,
+      configured: s.configured,
+      ...(s.configured ? { environment: s.environment } : {}),
+      cuota: s.cuota,
+      usadas: s.usadas,
+      disponibles: s.disponibles,
+    })),
   };
 
   const llm_sanitized = {
@@ -527,7 +570,9 @@ async function getFactusUsageSummary(admin: ReturnType<typeof createClient>) {
     total_folios_asignados: totalCuota,
     total_folios_usados: totalUsadas,
     total_folios_disponibles: Math.max(0, totalCuota - totalUsadas),
-    cantidad_clinicas_cerca_del_limite: clinicasCercaDelLimiteAdmin.length,
+    produccion: produccionCount,
+    sandbox: sandboxCount,
+    cantidad_cerca_del_limite: clinicasCercaDelLimiteAdmin.length,
   };
 
   assertNoSecrets(internal_admin);
@@ -892,7 +937,7 @@ Deno.serve(async (request) => {
       }
 
       case "get_factus_usage_summary": {
-        responseData = await getFactusUsageSummary(adminClient);
+        responseData = await getFactusUsageSummary(adminClient, supabaseUrl, token);
         break;
       }
 
@@ -917,7 +962,7 @@ Deno.serve(async (request) => {
             getClinicsSummary(adminClient).catch((e) => ({ error: e.message })),
             getExpiringClinics(adminClient, 30).catch((e) => ({ error: e.message })),
             getRecentActivity(adminClient).catch((e) => ({ error: e.message })),
-            getFactusUsageSummary(adminClient).catch((e) => ({ error: e.message })),
+            getFactusUsageSummary(adminClient, supabaseUrl, token).catch((e) => ({ error: e.message })),
             getSubscriptionRequestsPending(adminClient).catch((e) => ({ error: e.message })),
             getRecentEmailIssues(adminClient).catch((e) => ({ error: e.message })),
             getPaymentSummary(adminClient).catch((e) => ({ error: e.message })),
