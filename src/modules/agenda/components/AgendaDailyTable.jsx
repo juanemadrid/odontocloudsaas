@@ -289,23 +289,6 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                     </div>
                 </div>
             </div>
-
-            {/* Footer Summary Bar */}
-            <div className="bg-slate-100/90 border-t-2 border-slate-200 px-6 py-2.5 flex items-center justify-between shadow-xs">
-                <div className="flex items-center gap-6">
-                    <span className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider">
-                        Registros: <span className="text-blue-700 font-black">{appointments.length}</span>
-                    </span>
-                    <div className="flex items-center gap-4 ml-4">
-                        {APPOINTMENT_STATUSES.slice(0, 4).map(s => (
-                            <div key={s.id} className="flex items-center gap-1.5">
-                                <div className={`w-2.5 h-2.5 rounded-full ${s.color.split(' ')[0]} border border-slate-300`} />
-                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{s.label}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
         </div>
     );
 }
