@@ -390,10 +390,9 @@ export default function NotaDebitoList({ onNew }) {
                             <div style="font-weight: 500; color: #334155; white-space: pre-wrap;">${nota.notas || "Sin observaciones adicionales."}</div>
                         </div>
                         <div class="totals-box">
-                            <div style="height: 2px; background: #f97316; margin: 6px 0;"></div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: #f97316; color: white; padding: 12px 18px; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(249,115,22,0.2);">
-                                <span style="font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px;">VALOR NOTA DÉBITO</span>
-                                <span style="font-size: 18px; font-weight: 900;">${totalStr}</span>
+                            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding-top: 8px; border-top: 2px solid #0f172a;">
+                                <span style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">VALOR NOTA DÉBITO:</span>
+                                <span style="font-size: 16px; font-weight: 900; color: #0f172a;">${totalStr}</span>
                             </div>
                         </div>
                     </div>
@@ -407,10 +406,6 @@ export default function NotaDebitoList({ onNew }) {
                             <p style="margin: 0; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">Recibido por el Paciente</p>
                             <p style="margin: 4px 0; color: #94a3b8; font-weight: 700; text-transform: uppercase; font-size: 9px;">Firma y Cédula</p>
                         </div>
-                    </div>
-
-                    <div class="footer">
-                        Documento oficial generado por OdontoCloud Elite Pro
                     </div>
 
                     <script>

@@ -416,11 +416,6 @@ export const EvolutionPrintService = {
                         </div>
                     </div>
                 </div>
-                <div style="margin-top: 40px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-                    <p style="margin: 0; font-size: 8.5px; color: #cbd5e1; font-weight: 800; text-transform: uppercase; letter-spacing: 3px;">
-                        Documento oficial generado por OdontoCloud Elite Pro
-                    </p>
-                </div>
             `;
 
             // 5. Assemble HTML

@@ -362,11 +362,6 @@ export default function Agenda() {
                         <p style="margin: 4px 0; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Generado por: ${(userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrador").toUpperCase()}</p>
                     </div>
                 </div>
-                <div style="margin-top: 50px; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 20px;">
-                    <p style="margin: 0; font-size: 9px; color: #cbd5e1; font-weight: 800; text-transform: uppercase; letter-spacing: 4px;">
-                        Documento oficial generado por OdontoCloud Elite Pro
-                    </p>
-                </div>
             `;
 
             // Assemble everything
@@ -480,11 +475,6 @@ export default function Agenda() {
                         <p className="text-[9pt] font-black text-slate-800 uppercase">Responsable de Agenda</p>
                         <p className="text-[8pt] text-slate-400 font-bold uppercase mt-1">Generado por: {userProfile?.nombre || userProfile?.email}</p>
                     </div>
-                </div>
-                <div className="mt-16 text-center">
-                    <p className="text-[7pt] text-slate-300 font-bold uppercase tracking-widest">
-                        Este documento es un reporte oficial generado por el sistema OdontoCloud el {new Date().toLocaleString()}
-                    </p>
                 </div>
             </div>
 

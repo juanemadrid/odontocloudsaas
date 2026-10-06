@@ -857,18 +857,14 @@ export default function FacturasCompraList({ onNew }) {
             display: flex;
             flex-direction: column;
             gap: 6px;
-          }
-          .total-row-highlight {
-            margin-top: 8px;
+          .total-row-formal {
+            margin-top: 10px;
             padding-top: 8px;
-            border-top: 2px solid #cbd5e1;
+            border-top: 2px solid #0f172a;
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            background: #8dc63f;
-            color: #ffffff;
-            padding: 10px 14px;
-            border-radius: 8px;
+            align-items: baseline;
+            color: #0f172a;
           }
           .signatures-box {
             display: flex;
@@ -884,15 +880,6 @@ export default function FacturasCompraList({ onNew }) {
             padding-top: 6px;
             font-size: 10.5px;
           }
-          .footer-note {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 9.5px;
-            color: #94a3b8;
-            border-top: 1px solid #f1f5f9;
-            padding-top: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
           }
         </style>
       </head>
@@ -1039,8 +1026,8 @@ export default function FacturasCompraList({ onNew }) {
                 </div>
               ` : ''}
               ${retencionesHtml}
-              <div class="total-row-highlight">
-                <span style="font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">TOTAL A PAGAR</span>
+              <div class="total-row-formal">
+                <span style="font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">TOTAL A PAGAR:</span>
                 <span style="font-size: 15px; font-weight: 900;">${fmt(totalVal)}</span>
               </div>
             </div>
@@ -1056,11 +1043,6 @@ export default function FacturasCompraList({ onNew }) {
               <div style="font-weight: 800; color: #0f172a; text-transform: uppercase;">RECIBIDO / PROVEEDOR</div>
               <div style="color: #64748b; margin-top: 3px;">Firma y Sello</div>
             </div>
-          </div>
-
-          <!-- Footer -->
-          <div class="footer-note">
-            Documento oficial generado por OdontoCloud Colombia • Software Odontológico en la Nube
           </div>
         </div>
       </body>
