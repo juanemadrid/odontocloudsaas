@@ -100,37 +100,51 @@ const Login = () => {
     setForgotMsg({ type: "", text: "" });
 
     try {
-      let sentViaOfficialResend = false;
-      try {
-        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("register-clinic", {
-          body: { action: "request_password_reset", email: targetEmail }
-        });
-        if (!edgeErr && edgeData?.success) {
-          sentViaOfficialResend = true;
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("register-clinic", {
+        body: { action: "request_password_reset", email: targetEmail }
+      });
+
+      if (edgeErr) {
+        let errorMsg = "Error al procesar la solicitud.";
+        try {
+          if (edgeErr.context) {
+            const cloned = typeof edgeErr.context.clone === "function" ? edgeErr.context.clone() : edgeErr.context;
+            if (typeof cloned.json === "function") {
+              const body = await cloned.json();
+              if (body?.error) errorMsg = body.error;
+            } else if (typeof cloned.text === "function") {
+              const text = await cloned.text();
+              const parsed = JSON.parse(text);
+              if (parsed?.error) errorMsg = parsed.error;
+            }
+          }
+        } catch {
+          // ignore
         }
-      } catch (invokeErr) {
-        console.warn("Fallback a resetPasswordForEmail estándar:", invokeErr);
+        if (edgeErr.message && errorMsg === "Error al procesar la solicitud.") {
+          errorMsg = edgeErr.message;
+        }
+        throw new Error(errorMsg);
       }
 
-      if (!sentViaOfficialResend) {
-        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-          redirectTo: `${window.location.origin}/reset-password`
-        });
-        if (resetErr) throw resetErr;
+      if (!edgeData?.success) {
+        throw new Error(edgeData?.error || "No fue posible enviar el enlace de recuperación.");
       }
 
       setForgotMsg({
         type: "success",
-        text: "Si existe una cuenta registrada con ese correo, recibirás un enlace para restablecer tu contraseña. Revisa también la carpeta de spam."
+        text: edgeData.message || "Hemos enviado el enlace oficial de restablecimiento a tu correo. Por favor revisa tu bandeja de entrada o spam."
       });
     } catch (err) {
       console.error("Error enviando recuperación:", err);
       const msg = (err.message || "").toLowerCase();
-      let spanishErr = "Error al enviar el enlace de recuperación. Por favor intente más tarde.";
+      let spanishErr = err.message || "Error al enviar el enlace de recuperación. Por favor intente más tarde.";
 
-      if (msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("exceeded")) {
+      if (msg.includes("rate limit") || msg.includes("too many requests") || msg.includes("demasiados intentos")) {
         spanishErr = "Has realizado demasiados intentos en muy poco tiempo. Por favor, espera 1 o 2 minutos antes de solicitar un nuevo enlace.";
-      } else if (msg.includes("invalid email")) {
+      } else if (msg.includes("no se encuentra vinculado") || msg.includes("no existe") || msg.includes("404") || msg.includes("no encontrada")) {
+        spanishErr = "Este correo electrónico no se encuentra vinculado a ninguna clínica ni usuario en nuestro sistema.";
+      } else if (msg.includes("invalid email") || msg.includes("no es válido")) {
         spanishErr = "El correo electrónico ingresado no es válido.";
       }
 

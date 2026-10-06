@@ -1123,68 +1123,90 @@ Deno.serve(async (request) => {
 
       await admin.from("registration_attempts").insert({ request_hash: requestHash });
 
-      // Buscar si el usuario existe en auth.users
-      let userFound = null;
-      for (let page = 1; page <= 20; page += 1) {
-        const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
-        if (error) break;
-        const u = data.users.find((candidate) => candidate.email?.toLowerCase() === email);
-        if (u) {
-          userFound = u;
-          break;
+      // 1. Buscar en profiles
+      const { data: prof } = await admin
+        .from("profiles")
+        .select("id, full_name, email, tenant_id, role, activo")
+        .ilike("email", email)
+        .maybeSingle();
+
+      // 2. Si no está en profiles, buscar en auth.users
+      let authUser = null;
+      if (prof?.id) {
+        authUser = { id: prof.id, email: prof.email, full_name: prof.full_name };
+      } else {
+        for (let page = 1; page <= 20; page += 1) {
+          const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
+          if (error) break;
+          const u = data.users.find((candidate) => candidate.email?.toLowerCase() === email);
+          if (u) {
+            authUser = { id: u.id, email: u.email, full_name: u.user_metadata?.full_name };
+            break;
+          }
+          if (data.users.length < 100) break;
         }
-        if (data.users.length < 100) break;
       }
 
-      if (userFound) {
-        const { data: prof } = await admin
-          .from("profiles")
-          .select("full_name, tenant_id")
-          .eq("id", userFound.id)
+      // Si no existe usuario ni perfil vinculado al correo, avisar explícitamente
+      if (!prof && !authUser) {
+        throw new HttpError(404, "Este correo electrónico no se encuentra vinculado a ninguna clínica ni usuario en nuestro sistema.");
+      }
+
+      let clinicName = "Tu Clínica";
+      let tenantId = prof?.tenant_id || null;
+
+      if (tenantId) {
+        const { data: tRow } = await admin
+          .from("tenants")
+          .select("nombre, activo")
+          .eq("id", tenantId)
           .maybeSingle();
-
-        let clinicName = "Tu Clínica";
-        if (prof?.tenant_id) {
-          const { data: tRow } = await admin
-            .from("tenants")
-            .select("nombre")
-            .eq("id", prof.tenant_id)
-            .maybeSingle();
-          if (tRow?.nombre) clinicName = tRow.nombre;
-        }
-
-        const userName = prof?.full_name || userFound.user_metadata?.full_name || "Doctor(a)";
-
-        let resetPasswordUrl = ODONTOCLOUD_RESET_URL;
-        const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-          type: "recovery",
-          email,
-          options: { redirectTo: ODONTOCLOUD_RESET_URL },
-        });
-
-        if (!linkErr) {
-          const token = linkData?.properties?.hashed_token || 
-            (linkData?.properties?.action_link ? new URL(linkData.properties.action_link).searchParams.get("token") : null);
-          if (token) {
-            resetPasswordUrl = `${ODONTOCLOUD_RESET_URL}?token_hash=${encodeURIComponent(token)}&type=recovery`;
-          } else if (linkData?.properties?.action_link) {
-            resetPasswordUrl = sanitizeActionLink(linkData.properties.action_link);
+        if (tRow) {
+          if (tRow.activo === false) {
+            throw new HttpError(403, "La clínica asociada a esta cuenta se encuentra temporalmente inactiva. Por favor contacta a soporte técnico.");
           }
+          if (tRow.nombre) clinicName = tRow.nombre;
         }
+      }
 
-        await dispatchPasswordResetEmail(admin, {
-          tenantId: prof?.tenant_id || null,
-          clinicName,
-          userName,
-          userEmail: email,
-          resetPasswordUrl,
-          initiatedBy: "public_login",
-        });
+      const userName = prof?.full_name || authUser?.full_name || "Doctor(a)";
+
+      let resetPasswordUrl = ODONTOCLOUD_RESET_URL;
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type: "recovery",
+        email,
+        options: { redirectTo: ODONTOCLOUD_RESET_URL },
+      });
+
+      if (linkErr) {
+        console.error("generateLink error:", linkErr);
+        throw new HttpError(500, "No fue posible generar el enlace seguro de restablecimiento.");
+      }
+
+      const token = linkData?.properties?.hashed_token || 
+        (linkData?.properties?.action_link ? new URL(linkData.properties.action_link).searchParams.get("token") : null);
+      if (token) {
+        resetPasswordUrl = `${ODONTOCLOUD_RESET_URL}?token_hash=${encodeURIComponent(token)}&type=recovery`;
+      } else if (linkData?.properties?.action_link) {
+        resetPasswordUrl = sanitizeActionLink(linkData.properties.action_link);
+      }
+
+      const sendResult = await dispatchPasswordResetEmail(admin, {
+        tenantId,
+        clinicName,
+        userName,
+        userEmail: email,
+        resetPasswordUrl,
+        initiatedBy: "public_login",
+      });
+
+      if (!sendResult.success) {
+        throw new HttpError(502, `No se pudo enviar el correo de recuperación mediante Resend: ${sendResult.error}`);
       }
 
       return json({
         success: true,
-        message: "Si existe una cuenta registrada con este correo, recibirás un enlace de recuperación.",
+        message: "Hemos enviado el enlace oficial de restablecimiento a tu correo. Por favor revisa tu bandeja de entrada o spam.",
       });
     }
 

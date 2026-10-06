@@ -192,29 +192,22 @@ export default function TenantsPanelV2() {
         setSendingReset(true);
         setResetSent(false);
         try {
-            let sentViaResend = false;
-            try {
-                const res = await sendPasswordResetEmail(showDetail?.id || selectedTenant?.id || "", adminEmail);
-                if (res?.success) {
-                    sentViaResend = true;
-                }
-            } catch (edgeErr) {
-                console.warn("Edge function no disponible, usando fallback GoTrue:", edgeErr);
-            }
-
-            if (!sentViaResend) {
-                const { error } = await supabase.auth.resetPasswordForEmail(adminEmail, {
-                    redirectTo: `${window.location.origin}/reset-password`
-                });
-                if (error) throw error;
+            const res = await sendPasswordResetEmail(showDetail?.id || selectedTenant?.id || "", adminEmail);
+            if (!res?.success) {
+                throw new Error(res?.error || "No fue posible despachar el correo oficial de recuperación.");
             }
 
             setResetSent(true);
             setTimeout(() => setResetSent(false), 6000);
-            alert(`✅ Correo oficial de restablecimiento enviado exitosamente a ${adminEmail}\n\nEl administrador recibirá las instrucciones oficiales de OdontoCloud (revisar bandeja de entrada y spam).`);
+            alert(`✅ Correo oficial de restablecimiento enviado exitosamente a ${adminEmail}\n\nEl destinatario recibirá la plantilla oficial de OdontoCloud vía Resend (revisar bandeja de entrada y spam).`);
         } catch (err) {
             console.error("Error al enviar reset:", err);
-            alert(`❌ Error al enviar el correo de restablecimiento:\n${err.message}\n\nVerifica que el email ${adminEmail} esté registrado en Supabase Auth.`);
+            const msg = err.message || "";
+            if (msg.toLowerCase().includes("desconocida") || msg.toLowerCase().includes("not found")) {
+                alert("⚠️ La función del servidor (Edge Function 'register-clinic') requiere ser actualizada en el servidor.\n\nEjecuta el script de actualización en la terminal de Coolify para activar el envío oficial.");
+            } else {
+                alert(`❌ Error al enviar el correo de restablecimiento:\n${msg}`);
+            }
         } finally {
             setSendingReset(false);
         }
