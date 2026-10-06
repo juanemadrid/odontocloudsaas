@@ -528,7 +528,20 @@ export const sendSupportDocument = async (supportDocData) => {
   }
 
   const tercero = supportDocData.tercero || {};
-  const docNum = String(tercero.numero_documento || tercero.identificacion || "").trim();
+  const rawDoc = String(tercero.numero_documento || tercero.identificacion || "").trim();
+  let cleanDocNum = rawDoc;
+  let parsedDV = tercero.dv ? String(tercero.dv).trim() : null;
+
+  if (rawDoc.includes("-")) {
+    const parts = rawDoc.split("-");
+    cleanDocNum = parts[0].replace(/\D/g, "");
+    if (!parsedDV && parts[1]) {
+      parsedDV = parts[1].replace(/\D/g, "").slice(0, 1);
+    }
+  } else {
+    cleanDocNum = rawDoc.replace(/\D/g, "");
+  }
+
   const rawTipo = String(tercero.tipo_documento || tercero.tipoDocumento || "NIT").toUpperCase();
   const tipoDoc = getDocTypeCode(rawTipo);
   const fullName = String(
@@ -541,7 +554,8 @@ export const sendSupportDocument = async (supportDocData) => {
   const phone = String(tercero.telefono || tercero.celular || "3000000000").replace(/\D/g, "").slice(0, 10);
   const address = (tercero.direccion || "Dirección principal").trim();
   const municipalityCode = tercero.codigo_municipio || getMunicipalityCode(tercero.ciudad) || "11001";
-  const dv = tercero.dv || calculateNIT_DV(docNum) || "0";
+  const computedDV = cleanDocNum ? calculateNIT_DV(cleanDocNum) : null;
+  const dv = parsedDV || (computedDV !== null ? String(computedDV) : "0");
 
   const rawItems = supportDocData.items || supportDocData.detalles || [];
   const factusItems = rawItems.map((item, idx) => {
@@ -621,7 +635,7 @@ export const sendSupportDocument = async (supportDocData) => {
     ],
     provider: {
       identification_document_code: tipoDoc,
-      identification: docNum,
+      identification: cleanDocNum,
       ...(tipoDoc === "31" ? { dv: String(dv) } : {}),
       names: fullName,
       address: address,
