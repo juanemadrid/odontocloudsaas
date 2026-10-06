@@ -402,7 +402,7 @@ En la barra lateral izquierda de OdontoCloud encontrarás los **6 módulos opera
 4. **Terceros:** Directorio unificado de proveedores, aseguradoras y clientes corporativos.
 5. **Residuos Hosp.:** Registro ambiental obligatorio de residuos biológicos y biosanitarios.
 6. **RIPS JSON:** Generador y validador oficial de archivos JSON bajo Resolución 2275 de 2023 de Minsalud.
-7. **Esterilización:** Bitácora digital de cargas de autoclaves, paquetes procesados y firmas de bioseguridad.
+7. **Esterilización:** Bitácora digwAAital de cargas de autoclaves, paquetes procesados y firmas de bioseguridad.
 
 ---
 

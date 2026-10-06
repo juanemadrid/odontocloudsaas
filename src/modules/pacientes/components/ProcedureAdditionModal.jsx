@@ -1,11 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import supabase from '../../../lib/supabaseClient';
-import { FiSearch, FiPlus, FiX, FiInfo, FiTrash2, FiPercent, FiCheckCircle, FiPlusCircle } from 'react-icons/fi';
+import { FiSearch, FiPlus, FiX, FiInfo, FiTrash2, FiPercent, FiCheckCircle, FiPlusCircle, FiAlertTriangle } from 'react-icons/fi';
 import { useToast } from '../../../context/ToastContext';
 import ToothSelectorModal from './ToothSelectorModal';
 import { CUPS_DENTAL_CODES } from '../../../data/cupsCodes';
+import { generateClinicalSuggestions } from '../../odontograma/services/clinicalSuggestionEngine';
 
-export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseListId, inquilino, convenioDescuentos = {} }) {
+export default function ProcedureAdditionModal({ 
+    isOpen, 
+    onClose, 
+    onAdd, 
+    baseListId, 
+    inquilino, 
+    convenioDescuentos = {},
+    findingContext = null,
+    onConfirmFinding = null,
+    onSkipFinding = null
+}) {
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
     const [category, setCategory] = useState('TODAS');
@@ -20,6 +31,12 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
     // Staging table
     const [stagedItems, setStagedItems] = useState([]);
     const [globalDiscount, setGlobalDiscount] = useState('');
+
+    useEffect(() => {
+        setStagedItems([]);
+        setSearchTerm('');
+        setShowDropdown(false);
+    }, [findingContext]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -75,15 +92,23 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
                         try {
                             const parsed = JSON.parse(listRow.descripcion);
                             if (Array.isArray(parsed) && parsed.length > 0) {
-                                list = parsed.map((d, idx) => ({
-                                    id: d.id || `item_${idx}`,
-                                    ...d,
-                                    precio: Number(d.precio || d.valor || d.amount || 0),
-                                    amount: Number(d.precio || d.valor || d.amount || 0),
-                                    nombre: d.nombre || d.descripcion || d.desc || "",
-                                    desc: d.nombre || d.descripcion || d.desc || "",
-                                    categoria: d.categoria || "GENERAL"
-                                }));
+                                list = parsed.map((d, idx) => {
+                                    const rawPrice = d.precio ?? d.valor ?? d.amount ?? d.price ?? 0;
+                                    const rawName = d.nombre || d.descripcion || d.desc || d.name || "";
+                                    const rawCode = d.codigo || d.code || d.codigo_cups || d.cups || "";
+                                    const rawCategory = d.categoria || d.category || "GENERAL";
+                                    return {
+                                        id: d.id || `item_${idx}`,
+                                        ...d,
+                                        precio: Number(rawPrice),
+                                        amount: Number(rawPrice),
+                                        nombre: rawName,
+                                        desc: rawName,
+                                        codigo: rawCode,
+                                        codigo_cups: d.codigo_cups || d.cups || null,
+                                        categoria: rawCategory
+                                    };
+                                });
                             }
                         } catch (_) {}
                     }
@@ -160,39 +185,88 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
         handleSearch();
     }, [searchTerm, category, allItems]);
 
-    const addToList = (proc) => {
+    const buildStagedItem = (proc, targetQty = qty) => {
         const convenioDisc = convenioDescuentos[proc.id] || null;
         let descPorc = 0;
         let descVal = 0;
         if (convenioDisc) {
             descPorc = convenioDisc.desc_porc || 0;
-            descVal = (proc.precio || 0) * (descPorc / 100) * qty;
+            descVal = (proc.precio || 0) * (descPorc / 100) * targetQty;
         }
 
-        const newItem = {
+        return {
             id: Math.random().toString(36).substr(2, 9),
             code: proc.codigo || proc.code || "",
             codigo: proc.codigo || proc.code || "",
             codigo_cups: proc.codigo || proc.code || proc.codigo_cups || "",
-            desc: proc.nombre,
+            desc: proc.nombre || proc.desc,
             amount: proc.precio || 0,
-            qty: qty,
+            qty: targetQty || 1,
             descuento: descVal,
             desc_porc: descPorc,
-            dientes: "",
-            line_obs: "",
+            dientes: findingContext?.diente ? String(findingContext.diente) : "",
+            superficie: findingContext?.superficie || "",
+            hallazgo_origen: findingContext?.hallazgo || "",
+            odontograma_id: findingContext?.odontograma_id || null,
+            tratamiento_pendiente_id: findingContext?.tratamiento_pendiente_id || null,
+            line_obs: findingContext?.superficie && findingContext.superficie !== 'General' && findingContext.superficie !== '---' && findingContext.superficie !== 'Pieza Completa'
+                ? `Cara: ${findingContext.superficie}` 
+                : "",
             categoria: proc.categoria,
             // Reglas de negocio
             es_consulta: Boolean(proc.es_consulta),
             permite_descuento: proc.permite_descuento !== false,
-            max_desc: proc.max_descuento_porcentaje || 100
+            max_desc: proc.max_desc !== undefined ? Number(proc.max_desc) : (proc.max_descuento_porcentaje || 100)
         };
+    };
+
+    const addToList = (proc) => {
+        const newItem = buildStagedItem(proc, qty);
         setStagedItems([...stagedItems, newItem]);
         setShowDropdown(false);
         setSearchResults([]);
         setSearchTerm('');
         setQty(1);
     };
+
+    const handleSelectSuggestion = (proc, immediateConfirm = true) => {
+        const newItem = buildStagedItem(proc, 1);
+        if (immediateConfirm) {
+            if (findingContext && onConfirmFinding) {
+                onConfirmFinding([newItem], findingContext);
+                setStagedItems([]);
+            } else if (onAdd) {
+                onAdd([newItem]);
+                setStagedItems([]);
+                onClose();
+            }
+        } else {
+            setStagedItems([...stagedItems, newItem]);
+            toast.info("Procedimiento cargado en la tabla para revisión");
+        }
+    };
+
+    const clinicalEngineResult = useMemo(() => {
+        if (!findingContext || !allItems || allItems.length === 0) {
+            return { suggestions: [], metadata: { reason: "EMPTY_CATALOG", dentitionValidated: true } };
+        }
+
+        const surfacesList = findingContext.superficies 
+            ? (Array.isArray(findingContext.superficies) ? findingContext.superficies : [findingContext.superficies])
+            : (findingContext.superficie 
+                ? String(findingContext.superficie).split(/[\/,\+]/).map(s => s.trim()).filter(Boolean)
+                : []);
+
+        const context = {
+            hallazgo: findingContext.hallazgo || findingContext.situacionOriginal || "",
+            diente: findingContext.diente || "",
+            superficie: findingContext.superficie || "General",
+            superficies: surfacesList,
+            tipoDenticion: findingContext.tipoDenticion || "adulto"
+        };
+
+        return generateClinicalSuggestions(context, allItems);
+    }, [findingContext, allItems]);
 
     const updateStagedItem = (id, field, val) => {
         setStagedItems(stagedItems.map(item => {
@@ -260,12 +334,17 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
 
     const handleCommit = () => {
         if (stagedItems.length === 0) {
-            toast.error("No has agregado ningún item");
+            toast.error(findingContext ? "Selecciona un procedimiento para atender este hallazgo" : "No has agregado ningún item");
             return;
         }
-        onAdd(stagedItems);
-        setStagedItems([]);
-        onClose();
+        if (findingContext && onConfirmFinding) {
+            onConfirmFinding(stagedItems, findingContext);
+            setStagedItems([]);
+        } else {
+            onAdd(stagedItems);
+            setStagedItems([]);
+            onClose();
+        }
     };
 
     if (!isOpen) return null;
@@ -275,9 +354,12 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl overflow-hidden animate-fadeIn flex flex-col max-h-[90vh]">
                 
                 {/* Header */}
+                <div id="debug-all-items" className="hidden">{JSON.stringify(allItems)}</div>
                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div className="flex items-center gap-2">
-                        <h3 className="text-[14px] font-black text-slate-800 uppercase tracking-tight">Adición de productos</h3>
+                        <h3 className="text-[14px] font-black text-slate-800 uppercase tracking-tight">
+                            {findingContext ? "Vincular Procedimiento a Hallazgo Clínico" : "Adición de productos"}
+                        </h3>
                         <FiInfo size={14} className="text-slate-400" />
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -285,7 +367,197 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
                     </button>
                 </div>
 
-                {/* Search Bar Area */}
+                {/* Banner de Contexto de Hallazgo Odontológico */}
+                {findingContext && (
+                    <div className="bg-gradient-to-r from-amber-50/90 via-indigo-50/50 to-emerald-50/40 border-b border-indigo-100 p-4 px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 animate-fadeIn">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shadow-sm shadow-amber-200 shrink-0">
+                                🦷
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded border border-indigo-200">
+                                        Hallazgo Clínico del Odontograma
+                                    </span>
+                                    {findingContext.totalSteps > 1 && (
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300 animate-pulse">
+                                            Paso {findingContext.step} de {findingContext.totalSteps}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1.5 flex-wrap text-xs">
+                                    <span className="text-slate-600 font-bold uppercase tracking-tight">
+                                        Hallazgo: <strong className="text-amber-800 font-black px-1.5 py-0.5 bg-amber-100/80 rounded border border-amber-200">{findingContext.hallazgo}</strong>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
+                                    <span className="text-slate-600 font-bold uppercase tracking-tight">
+                                        Diente: <strong className="text-indigo-700 font-black px-1.5 py-0.5 bg-indigo-100/80 rounded border border-indigo-200">{findingContext.diente || 'General'}</strong>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
+                                    <span className="text-slate-600 font-bold uppercase tracking-tight">
+                                        Superficie: <strong className="text-emerald-700 font-black px-1.5 py-0.5 bg-emerald-100/80 rounded border border-emerald-200">{findingContext.superficie || 'General'}</strong>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="text-[11px] font-semibold text-slate-500 max-w-sm md:text-right leading-tight">
+                            Seleccione el procedimiento clínico que se realizará para este hallazgo. Se vinculará su código CUPS y tarifa oficial.
+                        </div>
+                    </div>
+                )}
+
+                {/* Contenedor desplazable para Sugerencias, Buscador y Tabla */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+
+                    {/* Advertencia de discrepancia anatómica (DENTITION_MISMATCH) */}
+                    {findingContext && clinicalEngineResult?.metadata?.reason === "DENTITION_MISMATCH" && (
+                        <div className="bg-amber-50/90 border-b border-amber-200 px-6 py-3.5 flex items-center gap-3 animate-fadeIn">
+                            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 shadow-xs">
+                                <FiAlertTriangle size={18} />
+                            </div>
+                            <div>
+                                <p className="text-xs font-bold text-amber-900 leading-tight">
+                                    Se detectó una discrepancia entre el tipo de dentición y la pieza dental. Por seguridad clínica, seleccione el procedimiento manualmente.
+                                </p>
+                                <p className="text-[10px] text-amber-700/90 mt-0.5">
+                                    El buscador general inferior permanece totalmente habilitado para elegir la prestación adecuada.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Sección de Procedimientos Sugeridos */}
+                    {findingContext && clinicalEngineResult?.suggestions?.length > 0 && (
+                        <div className="bg-gradient-to-b from-indigo-50/40 via-white to-slate-50/50 p-6 border-b border-slate-200 animate-fadeIn">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                                        Procedimientos sugeridos
+                                    </h4>
+                                    <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md border border-indigo-200">
+                                        {clinicalEngineResult.suggestions.length} {clinicalEngineResult.suggestions.length === 1 ? 'opción compatible' : 'opciones compatibles'}
+                                    </span>
+                                </div>
+                                <p className="text-[10px] font-medium text-slate-400 italic max-w-xl text-left md:text-right leading-tight">
+                                    Las sugerencias se generan a partir del hallazgo y el contexto odontológico. La selección del procedimiento corresponde al criterio del profesional tratante.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {clinicalEngineResult.suggestions.map((sug, idx) => {
+                                    const proc = sug.procedure;
+                                    const isFirst = idx === 0;
+                                    return (
+                                        <div 
+                                            key={proc.id || idx}
+                                            className={`bg-white rounded-2xl p-4 border transition-all flex flex-col justify-between shadow-sm hover:shadow-md relative ${
+                                                isFirst ? 'border-indigo-300 ring-1 ring-indigo-200/50' : 'border-slate-200 hover:border-indigo-200'
+                                            }`}
+                                        >
+                                            <div>
+                                                {/* Top Row: Sugerencia Badge + Categoría */}
+                                                <div className="flex items-center justify-between gap-2 mb-2">
+                                                    <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                                        isFirst ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                                                    }`}>
+                                                        Sugerencia #{idx + 1}
+                                                    </span>
+                                                    {proc.categoria && (
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[120px]" title={proc.categoria}>
+                                                            {proc.categoria}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Nombre del Procedimiento */}
+                                                <h5 className="text-xs font-black text-slate-800 leading-snug line-clamp-2 uppercase mb-2" title={proc.nombre}>
+                                                    {proc.nombre}
+                                                </h5>
+
+                                                {/* Contexto Anatómico */}
+                                                <div className="flex items-center gap-1.5 flex-wrap text-[10px] mb-3">
+                                                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">
+                                                        Pieza: <strong className="text-slate-800">{findingContext.diente || 'General'}</strong>
+                                                    </span>
+                                                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">
+                                                        Cara: <strong className="text-slate-800">{findingContext.superficie || 'General'}</strong>
+                                                    </span>
+                                                </div>
+
+                                                {/* Tarifa y Código CUPS */}
+                                                <div className="flex items-baseline justify-between gap-2 pt-2 border-t border-slate-100">
+                                                    <div>
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Tarifa</span>
+                                                        <span className="text-sm font-black text-emerald-600 tracking-tight">
+                                                            $ {Number(proc.precio || 0).toLocaleString('es-CO')}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Código</span>
+                                                        {sug.cupsCandidate ? (
+                                                            <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                                                CUPS: {sug.cupsCandidate}
+                                                            </span>
+                                                        ) : sug.internalCode ? (
+                                                            <span className="text-[10px] font-mono font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                                                Interno: {sug.internalCode}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-medium text-slate-400 italic">S/C</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Advertencia CUPS / RIPS (Solo si genera_rips === true y no tiene CUPS utilizable) */}
+                                                {sug.hasCupsWarning && (
+                                                    <div className="mt-2.5 p-2 bg-amber-50 border border-amber-200/90 rounded-xl text-amber-900 text-[10px] leading-tight flex items-start gap-1.5 animate-fadeIn">
+                                                        <FiAlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                                                        <div>
+                                                            <strong className="block font-black text-[10px] text-amber-900">⚠ Requiere código CUPS para RIPS</strong>
+                                                            <span className="text-[9px] text-amber-800/90 block leading-tight mt-0.5">
+                                                                Este procedimiento está configurado para generar RIPS pero no tiene un código CUPS utilizable en la Lista de Precios.
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Acciones de la Tarjeta */}
+                                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSelectSuggestion(proc, false)}
+                                                    className="text-[10px] font-bold text-slate-500 hover:text-indigo-600 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                                                    title="Cargar en tabla de preparación para ajustar descuento o cantidad"
+                                                >
+                                                    Elegir
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSelectSuggestion(proc, true)}
+                                                    className="flex-1 py-2 px-3 bg-[#8CC63F] hover:bg-[#7bb335] active:scale-95 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md shadow-emerald-200/70 flex items-center justify-center gap-1.5 cursor-pointer"
+                                                >
+                                                    <FiCheckCircle size={13} />
+                                                    Elegir y confirmar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Separador hacia el buscador manual si hay sugerencias visibles */}
+                    {findingContext && clinicalEngineResult?.suggestions?.length > 0 && (
+                        <div className="px-6 py-2 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                            <span>O busque cualquier otro procedimiento en el catálogo manual</span>
+                            <span className="text-[9px] font-semibold text-slate-400">Catálogo completo disponible</span>
+                        </div>
+                    )}
+
+                    {/* Search Bar Area */}
                 <div className="p-6 bg-white border-b border-slate-50 grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                     <div className="md:col-span-3">
                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Categoría</label>
@@ -384,7 +656,7 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
                 </div>
 
                 {/* Staging Table */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                <div className="p-6">
                     <table className="w-full text-left table-auto">
                         <thead className="sticky top-0 bg-white z-10">
                             <tr className="border-b border-slate-100 text-[9px] font-black text-slate-300 uppercase tracking-widest">
@@ -478,6 +750,7 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
                         </tbody>
                     </table>
                 </div>
+                </div>
 
                 {/* Footer Section */}
                 <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-6">
@@ -517,12 +790,34 @@ export default function ProcedureAdditionModal({ isOpen, onClose, onAdd, baseLis
 
                     {/* Final Actions */}
                     <div className="flex items-center gap-3">
-                        <button onClick={onClose} className="px-6 py-2.5 text-xs font-black uppercase text-slate-500 hover:text-slate-700 transition-colors">Cerrar</button>
+                        {findingContext && findingContext.totalSteps > 1 && onSkipFinding && (
+                            <button 
+                                type="button"
+                                onClick={() => {
+                                    setStagedItems([]);
+                                    onSkipFinding();
+                                }} 
+                                className="px-4 py-2.5 text-xs font-black uppercase text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl transition-all cursor-pointer"
+                                title="Omitir este hallazgo sin asignarle procedimiento"
+                            >
+                                Omitir este hallazgo
+                            </button>
+                        )}
+                        <button onClick={onClose} className="px-6 py-2.5 text-xs font-black uppercase text-slate-500 hover:text-slate-700 transition-colors">
+                            {findingContext ? "Cancelar importación" : "Cerrar"}
+                        </button>
                         <button 
                             onClick={handleCommit}
-                            className="px-8 py-2.5 bg-[#8CC63F] text-white rounded-xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-[#7bb335] transition-all active:scale-95 flex items-center gap-3"
+                            className="px-8 py-2.5 bg-[#8CC63F] text-white rounded-xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-[#7bb335] transition-all active:scale-95 flex items-center gap-3 cursor-pointer"
                         >
-                            <FiCheckCircle size={16} /> Cargar servicios
+                            <FiCheckCircle size={16} /> 
+                            {findingContext 
+                                ? (findingContext.totalSteps > 1 && findingContext.step < findingContext.totalSteps
+                                    ? `Confirmar y siguiente (${findingContext.step + 1}/${findingContext.totalSteps}) →`
+                                    : "Confirmar procedimiento para este hallazgo"
+                                  )
+                                : "Cargar servicios"
+                            }
                         </button>
                     </div>
                 </div>

@@ -26,13 +26,61 @@ const fmtDate = (ts) => {
   return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
+const printHTMLInHiddenIframe = (html) => {
+  let iframe = document.getElementById("oc-print-factura-iframe");
+  if (!iframe) {
+    iframe = document.createElement("iframe");
+    iframe.id = "oc-print-factura-iframe";
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0px";
+    iframe.style.height = "0px";
+    iframe.style.border = "none";
+    iframe.style.visibility = "hidden";
+    document.body.appendChild(iframe);
+  }
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  setTimeout(() => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (err) {
+      console.warn("Fallback a ventana emergente para impresión:", err);
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => printWindow.print(), 300);
+      }
+    }
+  }, 250);
+};
+
 export default function FacturasCompraList({ onNew }) {
   const { userProfile } = useAuth();
   const inquilino = userProfile?.inquilino || "";
 
+  const [clinicConfig, setClinicConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [facturas, setFacturas] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    if (!inquilino) return;
+    getConfigSection(inquilino, "datos_empresa", null)
+      .then(cfg => {
+        if (cfg) setClinicConfig(cfg);
+      })
+      .catch(() => {});
+  }, [inquilino]);
   
   // Rango de fechas por defecto
   const [fechaInicio, setFechaInicio] = useState(() => {
@@ -533,6 +581,495 @@ export default function FacturasCompraList({ onNew }) {
     }
   };
 
+  // Imprimir Comprobante Oficial de Factura de Compra / Documento Soporte
+  const handlePrintFactura = (factura) => {
+    if (!factura) return;
+    const isDocSoporte = Boolean(factura.docSoporteDian);
+    const isAnulado = factura.estado === "Anulada" || factura.estado === "Anulado";
+    const docNumero = factura.nroFactura || factura.documentoNumero || factura.id?.slice(0, 8)?.toUpperCase();
+    const docTitulo = isDocSoporte ? "DOCUMENTO SOPORTE EN ADQUISICIONES" : "FACTURA DE COMPRA";
+
+    const clinicName = 
+      clinicConfig?.nombreComercial || 
+      clinicConfig?.nombre || 
+      userProfile?.tenant?.nombreComercial || 
+      userProfile?.tenant?.nombre || 
+      "ATM CENTRO DEL DOLOR OROFACIAL";
+    const clinicNit = clinicConfig?.nit || userProfile?.tenant?.nit || "84978390-3";
+    const clinicAddress = clinicConfig?.direccion || userProfile?.tenant?.direccion || "";
+    const clinicPhone = clinicConfig?.telefono || userProfile?.tenant?.telefono || "";
+    const clinicEmail = clinicConfig?.email || userProfile?.tenant?.email || "";
+    const clinicCity = clinicConfig?.ciudad || userProfile?.tenant?.ciudad || "Sincelejo";
+    const logoUrl = clinicConfig?.logo || userProfile?.tenant?.logo || "";
+
+    const fechaDocStr = fmtDate(factura.fecha || factura.created_at);
+    const fechaVenceStr = factura.vencimiento ? fmtDate(factura.vencimiento) : (factura.fecha ? fmtDate(factura.fecha) : "—");
+    const userName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Usuario Administrativo";
+
+    const items = Array.isArray(factura.items) && factura.items.length > 0 
+      ? factura.items 
+      : [{
+          concepto: factura.observaciones || "Adquisición de bienes / servicios",
+          descripcion: "",
+          cantidad: 1,
+          precioUnitario: factura.total || 0,
+          descuento: 0,
+          total: factura.total || 0
+        }];
+
+    const subtotalVal = Number(factura.subtotal || factura.totalConceptos || factura.total || 0);
+    const descVal = Number(factura.totalDescuento || 0);
+    const antVal = Number(factura.totalAnticipos || 0);
+    const retVal = Number(factura.totalRetenciones || 0);
+    const totalVal = Number(factura.totalNeto || factura.total || 0);
+
+    const itemsHtml = items.map((it, idx) => {
+      const cant = Number(it.cantidad || 1);
+      const unit = Number(it.precioUnitario || it.precio || 0);
+      const desc = Number(it.descuento || 0);
+      const tot = Number(it.total || (cant * unit - desc));
+      return `
+        <tr>
+          <td style="padding: 9px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #64748b; font-size: 11px;">${idx + 1}</td>
+          <td style="padding: 9px 12px; border-bottom: 1px solid #e2e8f0;">
+            <div style="font-weight: 700; color: #1e293b; font-size: 12px;">${it.concepto || "—"}</div>
+            ${it.descripcion ? `<div style="color: #64748b; font-size: 11px; margin-top: 2px;">${it.descripcion}</div>` : ""}
+          </td>
+          <td style="padding: 9px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 700; color: #334155;">${cant}</td>
+          <td style="padding: 9px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #334155;">${fmt(unit)}</td>
+          <td style="padding: 9px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; color: ${desc > 0 ? '#e11d48' : '#94a3b8'};">${desc > 0 ? `-${fmt(desc)}` : fmt(0)}</td>
+          <td style="padding: 9px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 800; color: #0f172a;">${fmt(tot)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const retencionesHtml = Array.isArray(factura.retenciones) && factura.retenciones.length > 0
+      ? factura.retenciones.map(r => `
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: #e11d48;">
+            <span>${r.nombre || "Retención"}:</span>
+            <span style="font-weight: 700;">-${fmt(r.valor || 0)}</span>
+          </div>
+        `).join("")
+      : (retVal > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: #e11d48;">
+            <span>Retenciones:</span>
+            <span style="font-weight: 700;">-${fmt(retVal)}</span>
+          </div>
+        ` : "");
+
+    const printHtml = `
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>${docTitulo} #${docNumero}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+          @page {
+            size: letter portrait;
+            margin: 12mm 15mm;
+          }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #1e293b;
+            background: #ffffff;
+            margin: 0;
+            padding: 0;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+          .container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+          }
+          .header-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #8dc63f;
+            padding-bottom: 18px;
+            margin-bottom: 20px;
+            gap: 20px;
+          }
+          .clinic-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 1;
+          }
+          .clinic-logo {
+            max-height: 65px;
+            max-width: 150px;
+            object-fit: contain;
+          }
+          .clinic-placeholder {
+            width: 58px;
+            height: 58px;
+            background: #8dc63f;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 26px;
+            font-weight: 900;
+          }
+          .clinic-info h1 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 900;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: -0.3px;
+          }
+          .clinic-meta {
+            margin: 2px 0 0 0;
+            font-size: 11px;
+            color: #64748b;
+          }
+          .doc-badge-box {
+            text-align: right;
+            min-width: 260px;
+          }
+          .doc-title-badge {
+            background: #f1f5f9;
+            border: 1.5px solid #cbd5e1;
+            padding: 8px 14px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-bottom: 6px;
+            text-align: right;
+          }
+          .doc-title-badge h2 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 900;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          .doc-number {
+            font-size: 16px;
+            font-weight: 900;
+            color: #1e293b;
+            font-family: monospace;
+            margin-top: 2px;
+          }
+          .doc-dates {
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+          }
+          .anulado-watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-35deg);
+            font-size: 85px;
+            font-weight: 900;
+            color: rgba(239, 68, 68, 0.12);
+            text-transform: uppercase;
+            letter-spacing: 8px;
+            pointer-events: none;
+            z-index: 9999;
+            white-space: nowrap;
+          }
+          .anulado-banner {
+            background: #fef2f2;
+            border: 1.5px solid #f87171;
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            color: #991b1b;
+            font-size: 11px;
+          }
+          .cards-grid {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+          }
+          .info-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px 16px;
+          }
+          .card-title {
+            font-size: 9.5px;
+            font-weight: 900;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+            display: block;
+          }
+          .table-box {
+            margin-bottom: 20px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            overflow: hidden;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11.5px;
+          }
+          th {
+            background: #f1f5f9;
+            color: #334155;
+            padding: 9px 12px;
+            text-align: left;
+            font-weight: 800;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            border-bottom: 1.5px solid #cbd5e1;
+          }
+          .bottom-grid {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+            margin-bottom: 25px;
+          }
+          .notes-box {
+            flex: 1;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
+            padding: 12px 14px;
+            background: #fafafa;
+            font-size: 11px;
+          }
+          .totals-box {
+            width: 290px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+          }
+          .total-row-highlight {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 2px solid #cbd5e1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #8dc63f;
+            color: #ffffff;
+            padding: 10px 14px;
+            border-radius: 8px;
+          }
+          .signatures-box {
+            display: flex;
+            justify-content: space-between;
+            gap: 80px;
+            margin-top: 60px;
+            padding: 0 40px;
+          }
+          .sig-line {
+            flex: 1;
+            border-top: 1px solid #94a3b8;
+            text-align: center;
+            padding-top: 6px;
+            font-size: 10.5px;
+          }
+          .footer-note {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 9.5px;
+            color: #94a3b8;
+            border-top: 1px solid #f1f5f9;
+            padding-top: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          ${isAnulado ? '<div class="anulado-watermark">ANULADO</div>' : ''}
+
+          <!-- Header -->
+          <div class="header-box">
+            <div class="clinic-left">
+              ${logoUrl 
+                ? `<img src="${logoUrl}" class="clinic-logo" alt="Logo" />`
+                : `<div class="clinic-placeholder">${clinicName.charAt(0) || 'O'}</div>`
+              }
+              <div class="clinic-info">
+                <h1>${clinicName}</h1>
+                <p class="clinic-meta" style="font-weight: 700;">NIT: ${clinicNit}</p>
+                ${clinicAddress ? `<p class="clinic-meta">${clinicAddress}${clinicCity ? ` • ${clinicCity}` : ''}</p>` : ''}
+                ${(clinicPhone || clinicEmail) ? `<p class="clinic-meta">${clinicPhone ? `Tel: ${clinicPhone}` : ''} ${clinicEmail ? `• ${clinicEmail}` : ''}</p>` : ''}
+              </div>
+            </div>
+
+            <div class="doc-badge-box">
+              <div class="doc-title-badge">
+                <h2>${docTitulo}</h2>
+                <div class="doc-number"># ${docNumero}</div>
+              </div>
+              <div class="doc-dates">
+                <div><strong>FECHA EMISIÓN:</strong> ${fechaDocStr}</div>
+                <div><strong>FECHA VENCE:</strong> ${fechaVenceStr}</div>
+                <div style="margin-top: 3px;">
+                  <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; ${
+                    isAnulado ? 'background:#fee2e2; color:#b91c1c;' : (factura.estado === 'Pagada' ? 'background:#dcfce7; color:#15803d;' : 'background:#fef3c7; color:#b45309;')
+                  }">
+                    ${factura.estado || "REGISTRADA"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Banner Anulado si aplica -->
+          ${isAnulado ? `
+            <div class="anulado-banner">
+              <strong>DOCUMENTO ANULADO:</strong> Este comprobante fue marcado como anulado.
+              ${factura.motivoAnulacion ? `<br><strong>Motivo:</strong> ${factura.motivoAnulacion}` : ''}
+              ${factura.anuladoPor ? ` • <strong>Por:</strong> ${factura.anuladoPor}` : ''}
+              ${factura.notaAjusteConsecutivo ? ` • <strong>Nota de Ajuste:</strong> ${factura.notaAjusteConsecutivo}` : ''}
+            </div>
+          ` : ''}
+
+          <!-- Info Proveedor y Condiciones -->
+          <div class="cards-grid">
+            <div class="info-card">
+              <span class="card-title">Tercero / Proveedor</span>
+              <div style="font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;">
+                ${factura.proveedor || factura.tercero || "—"}
+              </div>
+              <div style="font-size: 11px; color: #475569; margin-top: 4px;">
+                <strong>Identificación:</strong> ${factura.documentoTercero || "—"}
+              </div>
+              ${factura.direccion ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;"><strong>Dirección:</strong> ${factura.direccion}</div>` : ''}
+              ${factura.telefono ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;"><strong>Teléfono:</strong> ${factura.telefono}</div>` : ''}
+            </div>
+
+            <div class="info-card">
+              <span class="card-title">Condición de Pago & Registro</span>
+              <div style="font-size: 11px; color: #334155;">
+                <strong>Condición de Pago:</strong> ${factura.condicionPago || "Contado"}
+              </div>
+              <div style="font-size: 11px; color: #334155; margin-top: 3px;">
+                <strong>Medio de Pago:</strong> ${factura.medioPago || "Efectivo"}
+              </div>
+              ${(factura.referencia || factura.prefijo) ? `
+                <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                  <strong>Ref / Factura Proveedor:</strong> ${factura.referencia || factura.prefijo}
+                </div>
+              ` : ''}
+              ${factura.profesional ? `
+                <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                  <strong>Profesional:</strong> ${factura.profesional}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Tabla de Conceptos -->
+          <div class="table-box">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 40px; text-align: center;">#</th>
+                  <th>Concepto / Descripción</th>
+                  <th style="width: 70px; text-align: center;">Cant.</th>
+                  <th style="width: 120px; text-align: right;">P. Unitario</th>
+                  <th style="width: 100px; text-align: right;">Descuento</th>
+                  <th style="width: 130px; text-align: right;">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHtml}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Bottom: Observaciones y Totales -->
+          <div class="bottom-grid">
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
+              ${factura.observaciones ? `
+                <div class="notes-box">
+                  <span style="font-weight: 800; color: #475569; text-transform: uppercase; font-size: 9.5px; display: block; margin-bottom: 4px;">Observaciones:</span>
+                  <div style="color: #334155; white-space: pre-wrap;">${factura.observaciones}</div>
+                </div>
+              ` : `
+                <div class="notes-box" style="color: #94a3b8; font-style: italic;">
+                  Sin observaciones adicionales registradas.
+                </div>
+              `}
+
+              ${(isDocSoporte && factura.factus_validated) ? `
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; font-size: 10.5px; color: #166534;">
+                  <strong style="text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; display: block; margin-bottom: 3px;">DIAN / Transmisión Electrónica:</strong>
+                  <div><strong>CUDS:</strong> <span style="font-family: monospace; font-size: 10px;">${factura.cuds || "Validado ante la DIAN"}</span></div>
+                  ${factura.factus_number ? `<div><strong>Número Factus:</strong> ${factura.factus_number}</div>` : ''}
+                </div>
+              ` : ''}
+            </div>
+
+            <div class="totals-box">
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b;">
+                <span>Subtotal:</span>
+                <span style="font-weight: 700; color: #1e293b;">${fmt(subtotalVal)}</span>
+              </div>
+              ${descVal > 0 ? `
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #e11d48;">
+                  <span>Descuentos:</span>
+                  <span style="font-weight: 700;">-${fmt(descVal)}</span>
+                </div>
+              ` : ''}
+              ${antVal > 0 ? `
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #d97706;">
+                  <span>Anticipos:</span>
+                  <span style="font-weight: 700;">-${fmt(antVal)}</span>
+                </div>
+              ` : ''}
+              ${retencionesHtml}
+              <div class="total-row-highlight">
+                <span style="font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">TOTAL A PAGAR</span>
+                <span style="font-size: 15px; font-weight: 900;">${fmt(totalVal)}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Signatures -->
+          <div class="signatures-box">
+            <div class="sig-line">
+              <div style="font-weight: 800; color: #0f172a; text-transform: uppercase;">ELABORADO POR</div>
+              <div style="color: #64748b; margin-top: 3px;">${userName}</div>
+            </div>
+            <div class="sig-line">
+              <div style="font-weight: 800; color: #0f172a; text-transform: uppercase;">RECIBIDO / PROVEEDOR</div>
+              <div style="color: #64748b; margin-top: 3px;">Firma y Sello</div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="footer-note">
+            Documento oficial generado por OdontoCloud Colombia • Software Odontológico en la Nube
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printHTMLInHiddenIframe(printHtml);
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-fadeIn font-sans text-slate-700">
       
@@ -766,6 +1303,13 @@ export default function FacturasCompraList({ onNew }) {
                             title="Ver detalle"
                           >
                             <FiEye size={14} />
+                          </button>
+                          <button
+                            onClick={() => handlePrintFactura(f)}
+                            className="w-7 h-7 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+                            title="Imprimir Comprobante"
+                          >
+                            <FiPrinter size={13} />
                           </button>
                           {/* Transmitir a Factus / DIAN si está pendiente */}
                           {f.docSoporteDian && !f.factus_validated && f.estado !== "Anulada" && (
@@ -1066,7 +1610,8 @@ export default function FacturasCompraList({ onNew }) {
 
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
                 <button
-                  onClick={() => window.print()}
+                  type="button"
+                  onClick={() => handlePrintFactura(viewingFactura)}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <FiPrinter size={14} /> Imprimir Comprobante

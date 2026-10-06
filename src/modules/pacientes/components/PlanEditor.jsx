@@ -502,6 +502,9 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     realizado: true,
                     desc: it.desc,
                     dientes: it.dientes || '',
+                    superficie: it.superficie || '',
+                    codigo_cups: it.codigo_cups || it.code || it.codigo || '',
+                    hallazgo_origen: it.hallazgo_origen || '',
                     observation: ''
                 };
             });
@@ -990,40 +993,97 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         triggerAutoSave(nextItems);
     };
 
-    const importSingleOdontoItem = (odontoItem) => {
-        const newItem = {
-            id: Date.now() + Math.floor(Math.random() * 1000),
-            desc: `${odontoItem.situacion}${odontoItem.cara && odontoItem.cara !== 'General' && odontoItem.cara !== '---' && odontoItem.cara !== 'Pieza Completa' ? ` (${odontoItem.cara})` : ''}`,
-            amount: 0,
-            qty: 1,
-            code: "",
-            dientes: odontoItem.pieza && odontoItem.pieza !== '---' ? String(odontoItem.pieza) : "",
-            line_obs: odontoItem.cara && odontoItem.cara !== '---' ? `Cara: ${odontoItem.cara}` : "",
-            descuento: 0
-        };
-        const nextItems = [...items, newItem];
+    // ── Flujo de Importación Asistida Odontograma → Lista de Precios / CUPS (Fase 1) ──
+    const [odontoImportQueue, setOdontoImportQueue] = useState([]);
+    const [currentQueueIndex, setCurrentQueueIndex] = useState(-1);
+
+    const cleanHallazgoName = (situacion) => {
+        if (!situacion) return "Hallazgo Clínico";
+        const parts = String(situacion).split(' - ');
+        return parts[0].trim();
+    };
+
+    const activeFindingContext = React.useMemo(() => {
+        if (currentQueueIndex >= 0 && currentQueueIndex < odontoImportQueue.length) {
+            const item = odontoImportQueue[currentQueueIndex];
+            return {
+                hallazgo: cleanHallazgoName(item.situacion),
+                situacionOriginal: item.situacion,
+                diente: item.pieza && item.pieza !== '---' ? String(item.pieza) : "",
+                superficie: item.cara || "General",
+                tipoDenticion: item.tipoDenticion || "adulto",
+                odontograma_id: item.odontograma_id || null,
+                tratamiento_pendiente_id: item.tratamiento_pendiente_id || null,
+                step: currentQueueIndex + 1,
+                totalSteps: odontoImportQueue.length
+            };
+        }
+        return null;
+    }, [odontoImportQueue, currentQueueIndex]);
+
+    const handleCloseProcedureModal = () => {
+        setShowProcedureModal(false);
+        setOdontoImportQueue([]);
+        setCurrentQueueIndex(-1);
+    };
+
+    const handleSkipFinding = () => {
+        if (currentQueueIndex + 1 < odontoImportQueue.length) {
+            toast.info(`Hallazgo omitido (${currentQueueIndex + 1}/${odontoImportQueue.length})`);
+            setCurrentQueueIndex(prev => prev + 1);
+        } else {
+            toast.info("Importación de hallazgos finalizada.");
+            handleCloseProcedureModal();
+        }
+    };
+
+    const handleConfirmFinding = (stagedItems, ctx) => {
+        const formattedNewItems = stagedItems.map(si => ({
+            ...si,
+            id: si.id || `proc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            status: 'pending',
+            realizado: false,
+            dientes: si.dientes || ctx?.diente || "",
+            superficie: si.superficie || ctx?.superficie || "",
+            line_obs: si.line_obs || ((si.superficie || ctx?.superficie) && (si.superficie || ctx?.superficie) !== 'General' && (si.superficie || ctx?.superficie) !== '---' && (si.superficie || ctx?.superficie) !== 'Pieza Completa' ? `Cara: ${si.superficie || ctx?.superficie}` : ""),
+            hallazgo_origen: si.hallazgo_origen || ctx?.hallazgo || "",
+            odontograma_id: si.odontograma_id || ctx?.odontograma_id || null,
+            tratamiento_pendiente_id: si.tratamiento_pendiente_id || ctx?.tratamiento_pendiente_id || null,
+            code: si.codigo_cups || si.code || si.codigo || "",
+            codigo: si.codigo_cups || si.code || si.codigo || "",
+            codigo_cups: si.codigo_cups || si.code || si.codigo || ""
+        }));
+
+        const nextItems = [...items, ...formattedNewItems];
         setItems(nextItems);
         triggerAutoSave(nextItems);
-        toast.success(`Pieza ${odontoItem.pieza} (${odontoItem.situacion}) agregada al presupuesto`);
+
+        toast.success(`✓ ${formattedNewItems[0]?.desc || 'Procedimiento'} vinculado para Diente ${ctx?.diente || 'General'}`);
+
+        if (currentQueueIndex + 1 < odontoImportQueue.length) {
+            setCurrentQueueIndex(prev => prev + 1);
+        } else {
+            const totalImported = odontoImportQueue.length;
+            handleCloseProcedureModal();
+            if (totalImported > 1) {
+                toast.success(`🎉 Se completó la importación y vinculación de ${totalImported} hallazgos.`);
+            }
+        }
+    };
+
+    const importSingleOdontoItem = (odontoItem) => {
+        setShowOdontoModal(false);
+        setOdontoImportQueue([odontoItem]);
+        setCurrentQueueIndex(0);
+        setShowProcedureModal(true);
     };
 
     const importAllOdontoItems = () => {
         if (!odontoItems.length) return;
-        const newItems = odontoItems.map((odontoItem, idx) => ({
-            id: Date.now() + idx + Math.floor(Math.random() * 1000),
-            desc: `${odontoItem.situacion}${odontoItem.cara && odontoItem.cara !== 'General' && odontoItem.cara !== '---' && odontoItem.cara !== 'Pieza Completa' ? ` (${odontoItem.cara})` : ''}`,
-            amount: 0,
-            qty: 1,
-            code: "",
-            dientes: odontoItem.pieza && odontoItem.pieza !== '---' ? String(odontoItem.pieza) : "",
-            line_obs: odontoItem.cara && odontoItem.cara !== '---' ? `Cara: ${odontoItem.cara}` : "",
-            descuento: 0
-        }));
-        const nextItems = [...items, ...newItems];
-        setItems(nextItems);
-        triggerAutoSave(nextItems);
         setShowOdontoModal(false);
-        toast.success(`✅ ${newItems.length} tratamientos del odontograma cargados al presupuesto`);
+        setOdontoImportQueue([...odontoItems]);
+        setCurrentQueueIndex(0);
+        setShowProcedureModal(true);
     };
 
     const handleOpenOdontoModal = async () => {
@@ -1051,6 +1111,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     : "---";
                 const hallazgos = doc.hallazgos || {};
                 const creadoPor = hallazgos.profesional || hallazgos.creadoPor || doc.profesional || doc.creado_por || "Odontólogo Tratante";
+                const docTipoDenticion = hallazgos.tipoDenticion || doc.tipo_denticion || doc.tipoDenticion || "adulto";
 
                 // 1. Extraer del plan de tratamiento guardado (hallazgos.plan o doc.plan)
                 const plan = (Array.isArray(hallazgos.plan) && hallazgos.plan.length > 0)
@@ -1060,12 +1121,16 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 if (plan.length > 0) {
                     plan.forEach(item => {
                         list.push({
-                            id: doc.id,
+                            id: item.id || `${doc.id}-${item.diente}-${item.zona}`,
+                            odontograma_id: doc.id,
+                            tipoDenticion: item.tipoDenticion || docTipoDenticion,
                             fecha: formattedDate,
                             creadoPor: creadoPor,
                             pieza: item.diente || item.tooth || item.pieza || "---",
                             situacion: item.tratamiento || item.label || item.situacion || item.diagnostico || "Hallazgo",
-                            cara: item.zonaLabel || item.zona || item.cara || item.surface || "Pieza Completa"
+                            cara: item.zonaLabel || item.zona || item.cara || item.surface || "Pieza Completa",
+                            zona: item.zona || "",
+                            zona_label: item.zonaLabel || ""
                         });
                     });
                 }
@@ -1086,12 +1151,16 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                             Object.entries(zonas).forEach(([zonaKey, val]) => {
                                 if (val && typeof val === 'object' && (val.tool || val.label || val.tratamiento)) {
                                     list.push({
-                                        id: doc.id,
+                                        id: `${doc.id}-${dienteNum}-${zonaKey}`,
+                                        odontograma_id: doc.id,
+                                        tipoDenticion: docTipoDenticion,
                                         fecha: formattedDate,
                                         creadoPor: creadoPor,
                                         pieza: dienteNum,
                                         situacion: val.label || val.tratamiento || val.tool || "Hallazgo",
-                                        cara: val.zonaLabel || zonaLabelMap[zonaKey] || zonaKey || "General"
+                                        cara: val.zonaLabel || zonaLabelMap[zonaKey] || zonaKey || "General",
+                                        zona: zonaKey || "",
+                                        zona_label: val.zonaLabel || zonaLabelMap[zonaKey] || zonaKey || ""
                                     });
                                 }
                             });
@@ -1100,28 +1169,50 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 }
             });
 
-            // 3. Si aún no hay registros, consultar la tabla de sincronización tratamientos_pendientes
-            if (list.length === 0) {
+            // 3. Consultar tabla tratamientos_pendientes para sincronizar y enriquecer IDs
+            try {
                 const { data: pendData } = await supabase
                     .from("tratamientos_pendientes")
                     .select("*")
                     .eq("paciente_id", targetPatientId)
                     .order("created_at", { ascending: false });
 
-                (pendData || []).forEach(p => {
-                    const creadoDate = p.created_at ? new Date(p.created_at) : null;
-                    const formattedDate = creadoDate 
-                        ? creadoDate.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) 
-                        : "---";
-                    list.push({
-                        id: p.id,
-                        fecha: formattedDate,
-                        creadoPor: p.creado_por || "Odontólogo Tratante",
-                        pieza: p.diente || "---",
-                        situacion: p.tratamiento || "Tratamiento Pendiente",
-                        cara: p.zona_label || p.zona || "General"
-                    });
-                });
+                if (pendData && pendData.length > 0) {
+                    if (list.length === 0) {
+                        pendData.forEach(p => {
+                            const creadoDate = p.created_at ? new Date(p.created_at) : null;
+                            const formattedDate = creadoDate 
+                                ? creadoDate.toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) 
+                                : "---";
+                            list.push({
+                                id: p.id,
+                                tratamiento_pendiente_id: p.id,
+                                odontograma_id: p.odontograma_id,
+                                fecha: formattedDate,
+                                creadoPor: p.creado_por || "Odontólogo Tratante",
+                                pieza: p.diente || "---",
+                                situacion: p.tratamiento || "Tratamiento Pendiente",
+                                cara: p.zona_label || p.zona || "General",
+                                zona: p.zona || "",
+                                zona_label: p.zona_label || ""
+                            });
+                        });
+                    } else {
+                        // Enlazar id de tratamientos_pendientes con los registros existentes de la lista
+                        list.forEach(item => {
+                            const matched = pendData.find(p => 
+                                (p.odontograma_id === item.odontograma_id || !item.odontograma_id) && 
+                                String(p.diente) === String(item.pieza) &&
+                                (!p.zona || !item.zona || p.zona === item.zona || p.zona === "Completo" || item.zona === "Completo")
+                            );
+                            if (matched) {
+                                item.tratamiento_pendiente_id = matched.id;
+                            }
+                        });
+                    }
+                }
+            } catch (syncErr) {
+                console.warn("Aviso al consultar tratamientos_pendientes:", syncErr);
             }
 
             setOdontoItems(list);
@@ -1224,6 +1315,9 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     .from("listas_precios")
                     .select("*")
                     .eq("tenant_id", currentInquilino);
+                console.log('===BEGIN_ALL_LISTAS_PRECIOS===');
+                console.log(JSON.stringify(lists, null, 2));
+                console.log('===END_ALL_LISTAS_PRECIOS===');
                 if (lists && lists.length > 0) {
                     const activeList = lists.find(l => l.en_uso) || lists[0];
                     setBaseListId(activeList.id);
@@ -1926,6 +2020,21 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                                         {item.desc || item.nombre}
                                                     </span>
                                                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                                        {(item.codigo_cups || item.code || item.codigo) && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200" title={`Código CUPS: ${item.codigo_cups || item.code || item.codigo}`}>
+                                                                CUPS: {item.codigo_cups || item.code || item.codigo}
+                                                            </span>
+                                                        )}
+                                                        {item.hallazgo_origen && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200" title={`Hallazgo clínico en Odontograma: ${item.hallazgo_origen}`}>
+                                                                Hallazgo: {item.hallazgo_origen}
+                                                            </span>
+                                                        )}
+                                                        {item.superficie && item.superficie !== '---' && item.superficie !== 'General' && item.superficie !== 'Pieza Completa' && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200" title={`Superficie: ${item.superficie}`}>
+                                                                Cara: {item.superficie}
+                                                            </span>
+                                                        )}
                                                         {isConsulta && (
                                                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-sky-50 text-sky-700 border border-sky-200">
                                                                 Consulta {item.codigo_cups ? `· ${item.codigo_cups}` : (item.code ? `· ${item.code}` : '')}
@@ -2227,11 +2336,14 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             {/* Modal de Adición de Procedimientos */}
             <ProcedureAdditionModal 
                 isOpen={showProcedureModal}
-                onClose={() => setShowProcedureModal(false)}
+                onClose={handleCloseProcedureModal}
                 onAdd={handleModalAdd}
                 baseListId={baseListId}
                 inquilino={inquilino}
                 convenioDescuentos={convenioDescuentos}
+                findingContext={activeFindingContext}
+                onConfirmFinding={handleConfirmFinding}
+                onSkipFinding={handleSkipFinding}
             />
             <ToothSelectorModal 
                 isOpen={toothModal.isOpen}

@@ -27,3 +27,5 @@ scripts/*.mjs
 .supabase-auth-probe-local/
 .supabase-replay-local/
 supabase/backups/
+backups/
+scripts/vps/
