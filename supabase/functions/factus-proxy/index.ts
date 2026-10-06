@@ -617,6 +617,48 @@ Deno.serve(async (request) => {
       return json({ success: true, base64: btoa(binary), mimeType: "application/pdf" });
     }
 
+    if (action === "get_support_document") {
+      const number = body?.number ? String(body.number).trim() : null;
+      const referenceCode = body?.referenceCode ? String(body.referenceCode).trim() : null;
+
+      if (!number && !referenceCode) {
+        throw new HttpError(400, "Debe proporcionar number o referenceCode del documento soporte.");
+      }
+
+      let path = "";
+      if (number) {
+        path = "/v2/support-documents/" + encodeURIComponent(number);
+      } else {
+        path = "/v2/support-documents?filter[reference_code]=" + encodeURIComponent(referenceCode!);
+      }
+
+      const response = await factusRequest(config, path);
+      if (response.status === 404) {
+        return json({ success: true, exists: false, not_found: true });
+      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new HttpError(response.status, factusError(data, response.status));
+      }
+
+      let docData = null;
+      if (number) {
+        docData = data?.data?.support_document || data?.data || data?.support_document || null;
+      } else if (Array.isArray(data?.data?.data)) {
+        docData = data.data.data[0] || null;
+      } else if (Array.isArray(data?.data)) {
+        docData = data.data[0] || null;
+      }
+
+      const exists = Boolean(docData);
+      return json({
+        success: true,
+        exists,
+        not_found: !exists,
+        result: docData ? { support_document: docData } : null,
+      });
+    }
+
     if (action === "check_bill") {
       const billNumber = body?.billNumber ? String(body.billNumber).trim() : null;
       const referenceCode = body?.referenceCode ? String(body.referenceCode).trim() : null;
