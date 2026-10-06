@@ -284,26 +284,6 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                         ))}
                                     </tbody>
                                 </table>
-
-                                {/* Footer info - Hide in print */}
-                                <div className="mt-auto p-3.5 bg-slate-100/90 border-t-2 border-slate-200 flex items-center justify-between no-print">
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Registros:</span>
-                                            <span className="text-[11px] font-black text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200/80">{hydratedAppointments.length}</span>
-                                        </div>
-                                        <div className="flex items-center gap-4 text-[9px] font-black text-slate-700 uppercase tracking-[0.1em]">
-                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400 border border-slate-500" /> Sin confirmar</div>
-                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-600 border border-blue-700" /> Confirmada</div>
-                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-600 border border-emerald-700" /> Atendido</div>
-                                            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-orange-600 border border-orange-700" /> Urgencia</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[9px] font-black text-blue-700 uppercase tracking-[0.2em] bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
-                                        <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                                        OdontoCloud Live
-                                    </div>
-                                </div>
                             </div>
                         )}
                     </div>
