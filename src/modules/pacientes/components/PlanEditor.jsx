@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useToast } from '../../../context/ToastContext';
 import { createPlan, updatePlan, deletePlan } from '../../../services/planService';
 import supabase from '../../../lib/supabaseClient';
