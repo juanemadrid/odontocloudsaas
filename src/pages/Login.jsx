@@ -100,11 +100,24 @@ const Login = () => {
     setForgotMsg({ type: "", text: "" });
 
     try {
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: `${window.location.origin}/reset-password`
-      });
+      let sentViaOfficialResend = false;
+      try {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("register-clinic", {
+          body: { action: "request_password_reset", email: targetEmail }
+        });
+        if (!edgeErr && edgeData?.success) {
+          sentViaOfficialResend = true;
+        }
+      } catch (invokeErr) {
+        console.warn("Fallback a resetPasswordForEmail estándar:", invokeErr);
+      }
 
-      if (resetErr) throw resetErr;
+      if (!sentViaOfficialResend) {
+        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+          redirectTo: `${window.location.origin}/reset-password`
+        });
+        if (resetErr) throw resetErr;
+      }
 
       setForgotMsg({
         type: "success",

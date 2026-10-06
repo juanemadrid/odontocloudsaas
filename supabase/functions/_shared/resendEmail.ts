@@ -495,3 +495,387 @@ export const dispatchWelcomeEmail = async (
     return { success: false, error: errMsg, logId };
   }
 };
+
+export interface PasswordResetEmailParams {
+  tenantId?: string | null;
+  clinicName?: string;
+  userName: string;
+  userEmail: string;
+  resetPasswordUrl: string;
+  initiatedBy?: string;
+}
+
+export const generatePasswordResetEmailText = ({
+  clinicName,
+  userName,
+  userEmail,
+  resetPasswordUrl,
+}: {
+  clinicName?: string;
+  userName: string;
+  userEmail: string;
+  resetPasswordUrl: string;
+}): string => {
+  const safeName = userName || "Estimado Usuario";
+  const safeClinic = clinicName ? ` (Clínica: ${clinicName})` : "";
+
+  return `Hola, ${safeName}.
+
+Recibimos una solicitud para restablecer la contraseña de tu cuenta en OdontoCloud${safeClinic}.
+
+Para crear una nueva contraseña de acceso de forma segura, haz clic en el siguiente enlace:
+${resetPasswordUrl}
+
+(Por tu seguridad, este enlace es de un solo uso y expirará en las próximas 24 horas).
+
+Si tú no solicitaste este cambio, puedes ignorar este mensaje de forma segura. Tu contraseña actual no sufrirá ninguna modificación y tu cuenta sigue estando protegida.
+
+¿NECESITAS AYUDA?
+Nuestro equipo de soporte está disponible para asistirte:
+- Correo de Soporte: soporte@odontocloudcolombia.com
+- Sitio Oficial: ${ODONTOCLOUD_APP_URL}
+
+OdontoCloud Colombia — Software Odontológico en la Nube`;
+};
+
+export const generatePasswordResetEmailHtml = ({
+  clinicName,
+  userName,
+  userEmail,
+  resetPasswordUrl,
+}: {
+  clinicName?: string;
+  userName: string;
+  userEmail: string;
+  resetPasswordUrl: string;
+}): string => {
+  const safeName = userName || "Estimado Usuario";
+  const safeClinic = clinicName || "OdontoCloud";
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Restablecer contraseña - OdontoCloud</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+  </style>
+  <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; background-color: #F8FAFC; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #0F172A;">
+
+  <!-- Preheader oculto para vista previa -->
+  <div style="display: none; font-size: 1px; color: #F8FAFC; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+    Solicitud de restablecimiento de contraseña para tu cuenta en OdontoCloud. Haz clic aquí para definir tu nueva clave de acceso.
+  </div>
+
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #F8FAFC; padding: 40px 16px;">
+    <tr>
+      <td align="center">
+        
+        <!-- Tarjeta Principal -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #FFFFFF; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 35px -8px rgba(15, 23, 42, 0.1); border: 1px solid #E2E8F0;">
+          
+          <!-- Cabecera con Logo Oficial -->
+          <tr>
+            <td style="background-color: #FFFFFF; padding: 32px 32px 24px 32px; text-align: center; border-bottom: 1px solid #F1F5F9;">
+              <a href="${ODONTOCLOUD_APP_URL}" target="_blank" style="display: inline-block; text-decoration: none;">
+                <img src="https://odontocloudcolombia.com/assets/logo.png" alt="OdontoCloud" width="190" style="display: block; margin: 0 auto; max-width: 190px; height: auto; border: 0;" />
+              </a>
+            </td>
+          </tr>
+
+          <!-- Banner de Seguridad -->
+          <tr>
+            <td bgcolor="#0A2540" style="background-color: #0A2540; padding: 36px 24px; text-align: center;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto 12px auto;">
+                <tr>
+                  <td style="background-color: #1E3A8A; border: 1px solid #3B82F6; padding: 5px 14px; border-radius: 20px; text-align: center;">
+                    <span style="color: #93C5FD; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase;">
+                      🔒 Seguridad de la Cuenta
+                    </span>
+                  </td>
+                </tr>
+              </table>
+              <h1 style="margin: 0; color: #FFFFFF !important; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.35;">
+                Restablecer tu Contraseña
+              </h1>
+              <p style="margin: 10px 0 0 0; color: #F1F5F9 !important; font-size: 15px; line-height: 1.5; font-weight: 500;">
+                Sigue las instrucciones para recuperar el acceso a tu plataforma.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Contenido Central -->
+          <tr>
+            <td style="padding: 36px 36px 28px 36px;">
+              
+              <h2 style="margin: 0 0 16px 0; font-size: 18px; color: #0F172A; font-weight: 700;">
+                Hola, <span style="color: #0284C7;">${safeName}</span> 👋
+              </h2>
+
+              <p style="margin: 0 0 20px 0; font-size: 15px; line-height: 1.6; color: #475569;">
+                Hemos recibido una solicitud para restablecer la contraseña de acceso a tu cuenta en <strong>OdontoCloud</strong> asociada a la clínica <strong>${safeClinic}</strong>.
+              </p>
+
+              <!-- Tarjeta de Información de la Solicitud -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; margin-bottom: 30px;">
+                <tr>
+                  <td style="padding: 20px 24px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">
+                      📋 Detalles de la solicitud
+                    </div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding: 5px 0; font-size: 14px; color: #64748B; width: 40%; font-weight: 600;">
+                          Usuario / Email:
+                        </td>
+                        <td style="padding: 5px 0; font-size: 14px; color: #0284C7; font-weight: 700;">
+                          ${userEmail}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 5px 0; font-size: 14px; color: #64748B; font-weight: 600;">
+                          Clínica vinculada:
+                        </td>
+                        <td style="padding: 5px 0; font-size: 14px; color: #0F172A; font-weight: 700;">
+                          ${safeClinic}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 5px 0; font-size: 14px; color: #64748B; font-weight: 600;">
+                          Validez del enlace:
+                        </td>
+                        <td style="padding: 5px 0; font-size: 14px; color: #D97706; font-weight: 700;">
+                          24 horas (uso único)
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Botón Principal -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom: 30px;">
+                <tr>
+                  <td align="center">
+                    <p style="margin: 0 0 14px 0; font-size: 14px; color: #334155; font-weight: 600;">
+                      Haz clic en el siguiente botón para crear tu nueva contraseña:
+                    </p>
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td align="center" bgcolor="#0284C7" style="border-radius: 12px; background-color: #0284C7; box-shadow: 0 6px 20px -4px rgba(2, 132, 199, 0.45);">
+                          <a href="${resetPasswordUrl}" target="_blank" style="font-size: 16px; font-weight: 800; color: #FFFFFF !important; text-decoration: none; padding: 15px 36px; border-radius: 12px; display: inline-block; letter-spacing: 0.3px; border: 1px solid #0284C7;">
+                            🔐 Restablecer mi Contraseña &rarr;
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Nota de Seguridad -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #FEF3C7; border: 1px solid #FDE68A; border-radius: 12px; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 14px 18px; font-size: 13px; color: #92400E; line-height: 1.5;">
+                    <strong>🛡️ ¿No solicitaste este cambio?</strong><br>
+                    Si no realizaste esta solicitud, puedes ignorar este correo de forma completamente segura. Tu contraseña actual no sufrirá ninguna modificación y tu cuenta continuará protegida.
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; font-size: 12px; color: #94A3B8; line-height: 1.5; word-break: break-all;">
+                Si el botón no funciona en tu dispositivo, copia y pega este enlace directo en tu navegador:<br>
+                <a href="${resetPasswordUrl}" target="_blank" style="color: #0284C7; text-decoration: underline;">
+                  ${resetPasswordUrl}
+                </a>
+              </p>
+
+            </td>
+          </tr>
+
+          <!-- Pie de Página -->
+          <tr>
+            <td style="background-color: #F8FAFC; padding: 24px 36px; border-top: 1px solid #E2E8F0; text-align: center;">
+              <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #475569;">
+                ¿Necesitas asistencia técnica?
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #64748B;">
+                Escríbenos a <a href="mailto:soporte@odontocloudcolombia.com" style="color: #0284C7; font-weight: 600; text-decoration: none;">soporte@odontocloudcolombia.com</a>
+              </p>
+              <p style="margin: 12px 0 0 0; font-size: 11px; color: #94A3B8;">
+                &copy; ${new Date().getFullYear()} OdontoCloud Colombia. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+};
+
+/**
+ * Envía el correo de restablecimiento de contraseña usando Resend y registra la auditoría en email_logs.
+ */
+export const dispatchPasswordResetEmail = async (
+  adminClient: SupabaseClient,
+  params: PasswordResetEmailParams
+): Promise<SendEmailResult> => {
+  const {
+    tenantId,
+    clinicName,
+    userName,
+    userEmail,
+    resetPasswordUrl,
+    initiatedBy = "system",
+  } = params;
+
+  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  const subject = `Restablece tu contraseña - OdontoCloud (${clinicName || "Seguridad"})`;
+
+  let logId: string | undefined;
+  try {
+    const { data: logRow, error: logInsertError } = await adminClient
+      .from("email_logs")
+      .insert({
+        tenant_id: tenantId || null,
+        recipient_email: userEmail,
+        recipient_name: userName,
+        subject,
+        template_type: "password_recovery",
+        status: "pending",
+        initiated_by: initiatedBy,
+        metadata: {
+          clinic_name: clinicName || "OdontoCloud",
+          context: "password_recovery",
+        },
+      })
+      .select("id")
+      .single();
+
+    if (!logInsertError && logRow) {
+      logId = logRow.id;
+    }
+  } catch (logErr) {
+    console.warn("No se pudo insertar log preliminar en email_logs:", logErr);
+  }
+
+  if (!resendApiKey) {
+    const errorMsg = "RESEND_API_KEY no está configurada en los secretos de la Edge Function.";
+    console.error("dispatchPasswordResetEmail error:", errorMsg);
+
+    if (logId) {
+      await adminClient
+        .from("email_logs")
+        .update({
+          status: "failed",
+          error_message: errorMsg,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", logId);
+    }
+    return { success: false, error: errorMsg, logId };
+  }
+
+  const htmlContent = generatePasswordResetEmailHtml({
+    clinicName,
+    userName,
+    userEmail,
+    resetPasswordUrl,
+  });
+
+  const textContent = generatePasswordResetEmailText({
+    clinicName,
+    userName,
+    userEmail,
+    resetPasswordUrl,
+  });
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey.trim()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: DEFAULT_SENDER,
+        reply_to: Deno.env.get("SUPPORT_REPLY_TO_EMAIL") || "soporte@odontocloudcolombia.com",
+        to: [userEmail],
+        subject,
+        html: htmlContent,
+        text: textContent,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const resJson = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const errMsg =
+        resJson?.message ||
+        resJson?.error ||
+        `Error HTTP ${response.status} de Resend`;
+      console.error("Resend API rejected password reset email:", errMsg);
+
+      if (logId) {
+        await adminClient
+          .from("email_logs")
+          .update({
+            status: "failed",
+            error_message: String(errMsg).slice(0, 1000),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", logId);
+      }
+
+      return { success: false, error: errMsg, logId };
+    }
+
+    const resendId = resJson?.id;
+    if (logId) {
+      await adminClient
+        .from("email_logs")
+        .update({
+          status: "sent",
+          resend_id: resendId || null,
+          sent_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", logId);
+    }
+
+    return { success: true, resendId, logId };
+  } catch (networkErr: unknown) {
+    const errMsg =
+      networkErr instanceof Error ? networkErr.message : "Error de red al conectar con Resend";
+    console.error("Exception sending password reset via Resend:", errMsg);
+
+    if (logId) {
+      await adminClient
+        .from("email_logs")
+        .update({
+          status: "failed",
+          error_message: errMsg.slice(0, 1000),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", logId);
+    }
+
+    return { success: false, error: errMsg, logId };
+  }
+};
+

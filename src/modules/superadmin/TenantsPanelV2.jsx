@@ -3,7 +3,7 @@ import {
     getTenants, createTenant, getPlans, toggleTenantStatus, updateTenantPlan,
     getSubscriptionRequests, approveSubscriptionRequest, rejectSubscriptionRequest,
     grantFreeMonth, deleteTenant, updateTenantDetails,
-    resendWelcomeEmail, getEmailLogsByTenant
+    resendWelcomeEmail, sendPasswordResetEmail, getEmailLogsByTenant
 } from "../../services/adminService";
 import supabase from "../../lib/supabaseClient";
 import { adminChangePassword } from "../../lib/supabaseAdmin";
@@ -192,13 +192,26 @@ export default function TenantsPanelV2() {
         setSendingReset(true);
         setResetSent(false);
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(adminEmail, {
-                redirectTo: `${window.location.origin}/reset-password`
-            });
-            if (error) throw error;
+            let sentViaResend = false;
+            try {
+                const res = await sendPasswordResetEmail(showDetail?.id || selectedTenant?.id || "", adminEmail);
+                if (res?.success) {
+                    sentViaResend = true;
+                }
+            } catch (edgeErr) {
+                console.warn("Edge function no disponible, usando fallback GoTrue:", edgeErr);
+            }
+
+            if (!sentViaResend) {
+                const { error } = await supabase.auth.resetPasswordForEmail(adminEmail, {
+                    redirectTo: `${window.location.origin}/reset-password`
+                });
+                if (error) throw error;
+            }
+
             setResetSent(true);
             setTimeout(() => setResetSent(false), 6000);
-            alert(`✅ Link de restablecimiento enviado a ${adminEmail}\n\nEl administrador debe revisar su bandeja de entrada (y la carpeta de spam).`);
+            alert(`✅ Correo oficial de restablecimiento enviado exitosamente a ${adminEmail}\n\nEl administrador recibirá las instrucciones oficiales de OdontoCloud (revisar bandeja de entrada y spam).`);
         } catch (err) {
             console.error("Error al enviar reset:", err);
             alert(`❌ Error al enviar el correo de restablecimiento:\n${err.message}\n\nVerifica que el email ${adminEmail} esté registrado en Supabase Auth.`);

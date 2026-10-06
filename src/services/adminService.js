@@ -1282,6 +1282,10 @@ export const resendWelcomeEmail = async (tenantId, adminEmail = "") => {
     return await invokeRegisterClinic("resend_welcome_email", { tenantId, adminEmail });
 };
 
+export const sendPasswordResetEmail = async (tenantId, adminEmail = "") => {
+    return await invokeRegisterClinic("admin_reset_password_email", { tenantId, adminEmail });
+};
+
 export const getEmailLogsByTenant = async (tenantId) => {
     try {
         const { data, error } = await supabase
