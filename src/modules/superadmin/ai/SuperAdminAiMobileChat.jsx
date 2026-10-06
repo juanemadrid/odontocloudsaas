@@ -1,15 +1,22 @@
 import React, { useState, useRef, useEffect } from "react";
-import { FiSend, FiArrowLeft, FiCpu, FiClock, FiShield, FiRefreshCw } from "react-icons/fi";
-import { MOBILE_CHIPS, getMockAiResponse } from "./mockAiData";
+import { FiSend, FiArrowLeft, FiCpu, FiClock, FiShield, FiRefreshCw, FiAlertTriangle } from "react-icons/fi";
+import { MOBILE_CHIPS } from "./mockAiData";
+import { answerQueryDeterministically } from "./services/superadminAiService";
 
-export default function SuperAdminAiMobileChat({ onBack }) {
+export default function SuperAdminAiMobileChat({
+    onBack,
+    dashboardData,
+    isLoading,
+    errorMessage,
+    onRetry,
+}) {
     const [messages, setMessages] = useState([
         {
             id: "msg-initial",
             sender: "ai",
-            text: "Hola MadridSystem. ¿Qué quieres revisar hoy?",
-            timestamp: "08:30 AM",
-            tags: ["Asistente Superadmin", "MOCK IA-1"],
+            text: "Hola MadridSystem. Conectado a datos operativos reales. Selecciona una consulta o escribe tu mensaje:",
+            timestamp: "En vivo",
+            tags: ["Asistente Operativo", "En Vivo"],
         },
     ]);
     const [inputValue, setInputValue] = useState("");
@@ -30,7 +37,7 @@ export default function SuperAdminAiMobileChat({ onBack }) {
         return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     };
 
-    const handleSendMessage = (textToSend) => {
+    const handleSendMessage = async (textToSend) => {
         const query = (textToSend || inputValue).trim();
         if (!query || isThinking) return;
 
@@ -45,18 +52,28 @@ export default function SuperAdminAiMobileChat({ onBack }) {
         setInputValue("");
         setIsThinking(true);
 
-        setTimeout(() => {
-            const aiResp = getMockAiResponse(query);
+        try {
+            const aiResp = await answerQueryDeterministically(query, dashboardData);
             const aiMsg = {
                 id: `ai-${Date.now()}`,
                 sender: "ai",
                 text: aiResp.text,
-                tags: aiResp.tags,
+                tags: aiResp.tags || ["Datos Reales"],
                 timestamp: getFormattedTime(),
             };
             setMessages((prev) => [...prev, aiMsg]);
+        } catch (err) {
+            const errMsg = {
+                id: `ai-err-${Date.now()}`,
+                sender: "ai",
+                text: `⚠️ ${err.message || "Error al consultar el servicio."}`,
+                tags: ["Error"],
+                timestamp: getFormattedTime(),
+            };
+            setMessages((prev) => [...prev, errMsg]);
+        } finally {
             setIsThinking(false);
-        }, 550);
+        }
     };
 
     const handleKeyDown = (e) => {
@@ -71,16 +88,16 @@ export default function SuperAdminAiMobileChat({ onBack }) {
             {
                 id: `msg-${Date.now()}`,
                 sender: "ai",
-                text: "Hola MadridSystem. ¿Qué quieres revisar hoy?",
+                text: "Chat reiniciado. ¿Qué deseas consultar hoy?",
                 timestamp: getFormattedTime(),
-                tags: ["Asistente Superadmin", "MOCK IA-1"],
+                tags: ["Asistente Operativo", "En Vivo"],
             },
         ]);
     };
 
     const renderFormattedText = (text) => {
         return text.split("\n").map((line, idx) => {
-            const parts = line.split(/(\*\*.*?\*\*)/g);
+            const parts = line.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
             return (
                 <p key={idx} className={line.trim() === "" ? "h-2" : "leading-relaxed text-xs sm:text-sm"}>
                     {parts.map((part, pIdx) => {
@@ -90,6 +107,9 @@ export default function SuperAdminAiMobileChat({ onBack }) {
                         if (part.startsWith("*") && part.endsWith("*")) {
                             return <em key={pIdx} className="text-slate-600">{part.slice(1, -1)}</em>;
                         }
+                        if (part.startsWith("`") && part.endsWith("`")) {
+                            return <code key={pIdx} className="px-1 py-0.5 rounded bg-slate-100 text-rose-600 font-mono text-[11px]">{part.slice(1, -1)}</code>;
+                        }
                         return part;
                     })}
                 </p>
@@ -98,110 +118,110 @@ export default function SuperAdminAiMobileChat({ onBack }) {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col h-full w-full max-w-full bg-slate-100 text-slate-900 overflow-hidden select-none">
-            {/* Header Chat-First Nativo Móvil */}
-            <header className="flex-none bg-white border-b border-slate-200 px-3 py-2.5 shadow-xs z-20">
-                <div className="flex items-center justify-between gap-2 w-full">
-                    <div className="flex items-center gap-2 min-w-0">
-                        {onBack && (
-                            <button
-                                onClick={onBack}
-                                className="p-1.5 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-full transition-colors active:scale-95 shrink-0"
-                                title="Volver al panel"
-                                aria-label="Volver"
-                            >
-                                <FiArrowLeft className="w-5 h-5" />
-                            </button>
-                        )}
-                        <div className="relative shrink-0">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-sm">
-                                <FiCpu className="w-4 h-4" />
-                            </div>
-                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></span>
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                            <h1 className="font-bold text-xs sm:text-sm text-slate-900 tracking-tight leading-none truncate">
-                                OdontoCloud Colombia
-                            </h1>
-                            <span className="text-[11px] font-semibold text-blue-600 mt-0.5 leading-none truncate">
-                                Asistente IA Superadmin
-                            </span>
-                        </div>
+        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col h-screen w-screen overflow-hidden">
+            {/* Header Móvil Compacto */}
+            <div className="flex-none px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={onBack}
+                        className="p-2 -ml-1 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all"
+                        aria-label="Volver"
+                    >
+                        <FiArrowLeft className="w-5 h-5" />
+                    </button>
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                        <FiCpu className="w-4 h-4" />
                     </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-tight whitespace-nowrap">
-                            <FiShield className="w-2.5 h-2.5" />
-                            Solo superadministrador
+                    <div>
+                        <div className="flex items-center gap-1.5">
+                            <h2 className="text-sm font-bold text-slate-900 leading-tight">
+                                Centro IA Superadmin
+                            </h2>
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                            Datos en Vivo • Supervisión Real
                         </span>
-                        <button
-                            onClick={handleClearChat}
-                            className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition-colors"
-                            title="Reiniciar chat"
-                        >
-                            <FiRefreshCw className="w-3.5 h-3.5" />
-                        </button>
                     </div>
                 </div>
 
-                {/* Sub-banner indicador de estado MOCK */}
-                <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                    <span className="flex items-center gap-1 font-bold text-amber-700">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                        Modo MOCK — No conectado a producción
-                    </span>
-                    <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 text-[9px]">Simulado</span>
-                </div>
-            </header>
-
-            {/* Chips Horizontales Fijos de Acceso Rápido */}
-            <div className="flex-none bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/80 px-3 py-2 z-10 overflow-x-auto scrollbar-none">
-                <div className="flex items-center gap-1.5 min-w-max">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">
-                        Atajos:
-                    </span>
-                    {MOBILE_CHIPS.map((chip) => (
-                        <button
-                            key={chip.id}
-                            onClick={() => handleSendMessage(chip.prompt)}
-                            disabled={isThinking}
-                            className="px-3 py-1 bg-white hover:bg-blue-50 active:bg-blue-100 border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 rounded-full text-xs font-medium shadow-xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                        >
-                            <span>{chip.label}</span>
-                        </button>
-                    ))}
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleClearChat}
+                        className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition-all"
+                        title="Limpiar conversación"
+                    >
+                        <FiRefreshCw className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 
-            {/* Área de Mensajes con Scroll */}
-            <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-3">
+            {/* Banner de Carga o Error si aplica */}
+            {isLoading && (
+                <div className="flex-none px-4 py-2 bg-blue-50 border-b border-blue-200 flex items-center gap-2 text-blue-800 text-xs font-medium animate-pulse">
+                    <FiRefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                    <span>Consultando métricas en vivo...</span>
+                </div>
+            )}
+
+            {!isLoading && errorMessage && (
+                <div className="flex-none px-4 py-2.5 bg-rose-50 border-b border-rose-200 flex items-center justify-between text-rose-800 text-xs">
+                    <div className="flex items-center gap-2">
+                        <FiAlertTriangle className="w-4 h-4 text-rose-600 flex-none" />
+                        <span className="truncate max-w-[200px]">{errorMessage}</span>
+                    </div>
+                    {onRetry && (
+                        <button
+                            onClick={onRetry}
+                            className="px-2 py-1 rounded bg-rose-600 text-white font-bold text-[10px]"
+                        >
+                            Reintentar
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Chips de Consultas Rápidas en Carrusel Horizontal */}
+            <div className="flex-none px-3 py-2 bg-white border-b border-slate-100 overflow-x-auto no-scrollbar flex items-center gap-2">
+                {MOBILE_CHIPS.map((chip) => (
+                    <button
+                        key={chip.id}
+                        onClick={() => handleSendMessage(chip.prompt)}
+                        disabled={isThinking}
+                        className="flex-none px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200/80 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                        {chip.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Área de Mensajes con Scroll Independiente */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
                 {messages.map((msg) => (
                     <div
                         key={msg.id}
                         className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
                     >
                         <div
-                            className={`max-w-[92%] sm:max-w-[85%] rounded-2xl px-3.5 py-2.5 shadow-xs ${msg.sender === "user"
+                            className={`max-w-[90%] rounded-2xl px-4 py-3 shadow-xs ${msg.sender === "user"
                                 ? "bg-blue-600 text-white rounded-br-xs"
                                 : "bg-white text-slate-800 border border-slate-200/90 rounded-bl-xs"
                                 }`}
                         >
                             {msg.sender === "ai" && (
-                                <div className="flex items-center gap-1.5 mb-1.5 pb-1 border-b border-slate-100">
-                                    <div className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px]">
+                                <div className="flex items-center gap-1.5 mb-1.5 pb-1 border-b border-slate-100 text-[10px]">
+                                    <div className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[8px]">
                                         <FiCpu className="w-2 h-2" />
                                     </div>
-                                    <span className="text-[10px] font-bold text-blue-700 tracking-tight">
-                                        Asistente IA Superadmin
-                                    </span>
-                                    {msg.tags && msg.tags.length > 0 && (
+                                    <span className="font-bold text-blue-700">Asistente Superadmin</span>
+                                    {msg.tags && (
                                         <div className="flex items-center gap-1 ml-auto">
-                                            {msg.tags.slice(0, 2).map((tag, tIdx) => (
+                                            {msg.tags.map((t, idx) => (
                                                 <span
-                                                    key={tIdx}
-                                                    className="text-[8px] px-1 py-0.2 rounded bg-slate-100 text-slate-600 font-medium"
+                                                    key={idx}
+                                                    className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 font-medium text-[9px]"
                                                 >
-                                                    {tag}
+                                                    {t}
                                                 </span>
                                             ))}
                                         </div>
@@ -210,7 +230,9 @@ export default function SuperAdminAiMobileChat({ onBack }) {
                             )}
 
                             <div className="space-y-1">
-                                {msg.sender === "ai" ? renderFormattedText(msg.text) : (
+                                {msg.sender === "ai" ? (
+                                    renderFormattedText(msg.text)
+                                ) : (
                                     <p className="text-xs sm:text-sm font-normal leading-relaxed text-white">
                                         {msg.text}
                                     </p>
@@ -230,12 +252,12 @@ export default function SuperAdminAiMobileChat({ onBack }) {
 
                 {isThinking && (
                     <div className="flex items-start">
-                        <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-xs px-3.5 py-2 shadow-xs flex items-center gap-2">
-                            <div className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px]">
+                        <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-xs px-3.5 py-2.5 shadow-xs flex items-center gap-2">
+                            <div className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[8px]">
                                 <FiCpu className="w-2 h-2" />
                             </div>
-                            <span className="text-xs text-slate-500 font-medium">Asistente analizando...</span>
-                            <div className="flex gap-1 items-center ml-2">
+                            <span className="text-xs text-slate-500 font-medium">Consultando backend...</span>
+                            <div className="flex gap-1 items-center ml-1">
                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce"></span>
@@ -248,7 +270,7 @@ export default function SuperAdminAiMobileChat({ onBack }) {
             </div>
 
             {/* Input Fijo Inferior */}
-            <div className="flex-none bg-white border-t border-slate-200 p-2.5 shadow-md z-20">
+            <div className="flex-none p-3 bg-white border-t border-slate-200 safe-area-bottom">
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
@@ -262,25 +284,18 @@ export default function SuperAdminAiMobileChat({ onBack }) {
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Consulta clínicas, factus, servidor..."
-                        className="flex-1 bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-slate-900 placeholder:text-slate-400 text-xs sm:text-sm px-3.5 py-2 rounded-full border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-inner"
+                        placeholder="Escribe tu consulta operativa..."
+                        className="flex-1 bg-slate-50 text-slate-900 placeholder:text-slate-400 text-sm px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         disabled={isThinking}
                     />
-
                     <button
                         type="submit"
                         disabled={!inputValue.trim() || isThinking}
-                        className="flex-none w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 active:scale-95 text-white flex items-center justify-center shadow-sm disabled:opacity-40 disabled:hover:bg-blue-600 disabled:active:scale-100 transition-all cursor-pointer"
-                        aria-label="Enviar mensaje"
+                        className="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white flex items-center justify-center shadow-xs disabled:opacity-40 disabled:active:scale-100 transition-all"
                     >
                         <FiSend className="w-4 h-4" />
                     </button>
                 </form>
-                <div className="text-center mt-1">
-                    <span className="text-[9px] text-amber-700 font-semibold block">
-                        Modo MOCK — No conectado a producción • Información demostrativa
-                    </span>
-                </div>
             </div>
         </div>
     );

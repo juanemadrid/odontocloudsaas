@@ -135,7 +135,7 @@ export default function SuperAdminPanel() {
                             <span>Centro IA</span>
                         </div>
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                            IA MOCK
+                            IA
                         </span>
                     </button>
 
