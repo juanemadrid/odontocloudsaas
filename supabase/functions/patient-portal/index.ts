@@ -79,7 +79,7 @@ Deno.serve(async (request) => {
         }
       };
 
-      const [patientResult, appointments, payments, receipts, plans, notifications] =
+      const [patientResult, appointments, payments, receipts, plans, notifications, doctorProfiles, websiteRow] =
         await Promise.all([
           admin
             .from("pacientes")
@@ -95,11 +95,60 @@ Deno.serve(async (request) => {
             query.eq("paciente_id", patientId).eq("target", "patient")
               .order("created_at", { ascending: false }).limit(20)
           ),
+          admin
+            .from("profiles")
+            .select("id, full_name, email, role, activo")
+            .eq("tenant_id", tenantId),
+          admin
+            .from("website_config")
+            .select("config")
+            .eq("tenant_id", tenantId)
+            .maybeSingle(),
         ]);
 
       if (patientResult.error || !patientResult.data) {
         throw new HttpError(404, "No se encontro el paciente.");
       }
+
+      // Mapear doctores por ID desde los perfiles reales de la clinica
+      const doctorsMap = new Map();
+      const doctorsList = [];
+      for (const d of doctorProfiles?.data || []) {
+        if (d.activo === false) continue;
+        const fullName = d.full_name || "Especialista Odontológico";
+        const role = String(d.role || "").toLowerCase();
+        const specialty = role === "admin"
+          ? "Dirección Clínica / Odontología"
+          : role.includes("ciruj")
+          ? "Cirugía Oral y Maxilofacial"
+          : role.includes("orto")
+          ? "Ortodoncia y Ortopedia"
+          : role.includes("endo")
+          ? "Endodoncia"
+          : "Odontología Especializada";
+        const docData = {
+          id: d.id,
+          name: fullName,
+          specialty,
+          role: d.role || "doctor",
+        };
+        doctorsMap.set(String(d.id), docData);
+        doctorsList.push(docData);
+      }
+
+      // Datos de la clínica real
+      const cfg = websiteRow?.data?.config || {};
+      const emp = cfg.empresa_datos || {};
+      const clinic = {
+        tenantId,
+        name: emp.nombreComercial || emp.razonSocial || cfg.name || "ATM Centro del Dolor Orofacial",
+        logo: cfg.logo || emp.logoUrl || "",
+        phone: emp.celular || emp.telefono || cfg.phone || cfg.contactPhone || "",
+        email: emp.email || cfg.email || "",
+        address: emp.direccion || cfg.address || "",
+        city: emp.ciudad || cfg.city || "Sincelejo",
+        primaryColor: cfg.primaryColor || "#1a56db",
+      };
 
       const source = patientResult.data;
       const patient = {
@@ -117,14 +166,36 @@ Deno.serve(async (request) => {
         fechaNacimiento: source.fecha_nacimiento || source.fechaNacimiento || source.nacimiento || "",
         alertas: source.alertas || source.alergias || "",
         nroHistoria: source.nro_historia || source.nroHistoria || source.documento || "",
-        nombreEps: source.eps || source.nombreEps || "",
+        nombreEps: source.eps || source.nombreEps || "Particular",
       };
+
+      // Enriquecer citas con datos reales de doctor
+      const enrichedAppointments = appointments.map((apt: any) => {
+        const doc = apt.profesional_id ? doctorsMap.get(String(apt.profesional_id)) : null;
+        return {
+          ...apt,
+          profesional_nombre: apt.profesional_nombre || doc?.name || apt.dentista || apt.doctorName || "Odontólogo Especialista",
+          profesional_especialidad: doc?.specialty || apt.especialidad || "Odontología",
+        };
+      });
+
+      // Enriquecer planes con datos reales de doctor
+      const enrichedPlans = plans.map((pl: any) => {
+        const doc = pl.doctor_id || pl.profesional_id ? doctorsMap.get(String(pl.doctor_id || pl.profesional_id)) : null;
+        return {
+          ...pl,
+          doctorName: pl.doctorName || pl.profesional_nombre || doc?.name || "Odontólogo Tratante",
+          specialty: doc?.specialty || pl.especialidad || "Odontología General",
+        };
+      });
 
       return {
         patient,
-        appointments,
+        clinic,
+        doctors: doctorsList,
+        appointments: enrichedAppointments,
         payments: [...payments, ...receipts],
-        plans,
+        plans: enrichedPlans,
         notifications,
       };
     };

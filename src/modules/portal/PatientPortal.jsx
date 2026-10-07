@@ -10,7 +10,7 @@ import {
 import { useParams, useNavigate } from "react-router-dom";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
 import { fetchTenantConfigBySlug } from "../../utils/tenantConfigHelper";
-import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell, FiLock, FiKey, FiCheckCircle } from "react-icons/fi";
+import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell, FiLock, FiKey, FiCheckCircle, FiClock, FiMapPin } from "react-icons/fi";
 import { toast } from "sonner";
 import { isAccessBlocked } from "../../utils/subscriptionHelper";
 
@@ -74,6 +74,7 @@ export default function PatientPortal() {
     const [todasCitas, setTodasCitas] = useState([]);
     const [loadingData, setLoadingData] = useState(false);
     const [notificaciones, setNotificaciones] = useState([]);
+    const [clinicDoctors, setClinicDoctors] = useState([]);
     const unsubRef = useRef(null);
 
     // Nueva cita form
@@ -86,12 +87,15 @@ export default function PatientPortal() {
         const set = new Set();
         const docs = [];
 
-        // 1. Add doctor from upcoming appointments
+        // 1. Add doctor from appointments
         todasCitas.forEach(c => {
-            const name = c.dentista || c.doctorName;
+            const name = c.dentista || c.profesional_nombre || c.doctorName;
             if (name && name !== "—" && !set.has(name)) {
                 set.add(name);
-                docs.push({ name, specialty: c.especialidad || "Odontólogo Especialista" });
+                docs.push({
+                    name,
+                    specialty: c.profesional_especialidad || c.especialidad || "Odontólogo Especialista"
+                });
             }
         });
 
@@ -100,17 +104,30 @@ export default function PatientPortal() {
             const name = p.doctorName || p.dentista || p.doctor;
             if (name && typeof name === 'string' && name !== "—" && !set.has(name)) {
                 set.add(name);
-                docs.push({ name, specialty: p.especialidad || "Odontólogo Especialista" });
+                docs.push({
+                    name,
+                    specialty: p.specialty || p.especialidad || "Odontólogo Especialista"
+                });
             }
         });
 
-        // Fallback: If no specialists found, add a default clinic doctor
+        // 3. Add doctor from clinic profiles if none yet
+        if (docs.length === 0 && clinicDoctors.length > 0) {
+            clinicDoctors.forEach(cd => {
+                if (cd.name && !set.has(cd.name)) {
+                    set.add(cd.name);
+                    docs.push({ name: cd.name, specialty: cd.specialty || "Especialista Odontológico" });
+                }
+            });
+        }
+
+        // 4. Default fallback: only professional title, never company name as person
         if (docs.length === 0) {
-            docs.push({ name: config.name || "Tu Odontólogo", specialty: "Odontología General" });
+            docs.push({ name: "Equipo de Especialistas", specialty: "Odontología Integral y Especializada" });
         }
 
         return docs;
-    }, [todasCitas, planes, config]);
+    }, [todasCitas, planes, clinicDoctors]);
 
     useEffect(() => {
         const checkActiveSession = async () => {
@@ -279,6 +296,27 @@ export default function PatientPortal() {
         const patientData = portalData?.patient;
         if (!patientData) throw new Error("El portal no devolvió los datos del paciente.");
 
+        // 1. Actualizar configuración con la clínica REAL del paciente
+        if (portalData.clinic && portalData.clinic.name) {
+            setConfig(prev => ({
+                ...prev,
+                ...portalData.clinic,
+                name: portalData.clinic.name || prev.name,
+                logo: portalData.clinic.logo || prev.logo,
+                primaryColor: portalData.clinic.primaryColor || prev.primaryColor,
+                phone: portalData.clinic.phone || prev.phone,
+                email: portalData.clinic.email || prev.email,
+                address: portalData.clinic.address || prev.address,
+                city: portalData.clinic.city || prev.city
+            }));
+        }
+
+        // 2. Guardar lista de doctores reales de la clínica
+        const returnedDoctors = Array.isArray(portalData.doctors) ? portalData.doctors : [];
+        if (returnedDoctors.length > 0) {
+            setClinicDoctors(returnedDoctors);
+        }
+
         setUser(patientData);
         setNuevaCitaForm(form => ({
             ...form,
@@ -286,19 +324,29 @@ export default function PatientPortal() {
             celular: patientData.celular || ""
         }));
 
-        const citasArr = (portalData.appointments || []).map(appointment => ({
-            id: appointment.id,
-            fecha: appointment.fecha_inicio
-                ? appointment.fecha_inicio.split("T")[0]
-                : (appointment.fecha || ""),
-            horaInicio: appointment.fecha_inicio
-                ? new Date(appointment.fecha_inicio).toTimeString().substring(0, 5)
-                : (appointment.horaInicio || ""),
-            estado: appointment.estado || "confirmada",
-            motivo: appointment.motivo || "",
-            dentista: appointment.profesional_nombre || "—",
-            ...appointment
-        })).sort((first, second) =>
+        // 3. Normalizar citas con doctor real
+        const citasArr = (portalData.appointments || []).map(appointment => {
+            const matchedDoc = returnedDoctors.find(d => String(d.id) === String(appointment.profesional_id));
+            const doctorName = appointment.profesional_nombre && appointment.profesional_nombre !== "—"
+                ? appointment.profesional_nombre
+                : matchedDoc?.name || (returnedDoctors[0]?.name) || "Odontólogo Especialista";
+            const doctorSpecialty = matchedDoc?.specialty || appointment.profesional_especialidad || "Odontología";
+
+            return {
+                id: appointment.id,
+                fecha: appointment.fecha_inicio
+                    ? appointment.fecha_inicio.split("T")[0]
+                    : (appointment.fecha || ""),
+                horaInicio: appointment.fecha_inicio
+                    ? new Date(appointment.fecha_inicio).toTimeString().substring(0, 5)
+                    : (appointment.horaInicio || ""),
+                estado: appointment.estado || "confirmada",
+                motivo: appointment.motivo || "Consulta Odontológica",
+                dentista: doctorName,
+                especialidad: doctorSpecialty,
+                ...appointment
+            };
+        }).sort((first, second) =>
             new Date((second.fecha || "") + "T" + (second.horaInicio || "00:00")) -
             new Date((first.fecha || "") + "T" + (first.horaInicio || "00:00"))
         );
@@ -777,182 +825,580 @@ export default function PatientPortal() {
 
 
     return (
-        <div className="min-h-screen bg-slate-50 pb-24">
-            {/* Header */}
-            <div className="bg-indigo-600 text-white p-8 pb-28 rounded-b-[4rem] shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-12 opacity-10 text-9xl">
-                    {config?.logo ? <img src={config.logo} alt="" className="w-64 h-64 object-contain brightness-0 invert" /> : "🦷"}
-                </div>
-                <div className="relative z-10 flex justify-between items-start">
-                    <div className="flex items-center gap-4">
-                        <button onClick={() => navigate(clinicSlug ? `/c/${clinicSlug}` : "/")} className="bg-white/10 p-3 rounded-2xl hover:bg-white/20 transition-all border border-white/10"><FiArrowLeft size={20} /></button>
-                        <div>
-                            <p className="text-indigo-100/60 font-bold text-xs uppercase tracking-widest mb-1">Bienvenido/a</p>
-                            <h1 className="text-2xl font-black tracking-tight leading-tight">{user.nombreCompleto || user.nombres}</h1>
-                            <p className="text-indigo-200 text-xs mt-1">{config.name}</p>
+        <div className="min-h-screen bg-slate-100/70 text-slate-800 font-sans flex flex-col">
+            {/* ── Top Header / Navbar ── */}
+            <header className="bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-900 text-white shadow-xl relative overflow-hidden">
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent pointer-events-none" />
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 relative z-10 flex flex-wrap items-center justify-between gap-4">
+                    {/* Brand info */}
+                    <div className="flex items-center gap-3 sm:gap-4">
+                        <button
+                            onClick={() => navigate(clinicSlug ? `/c/${clinicSlug}` : "/")}
+                            className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition-all border border-white/15 text-white"
+                            title="Volver a la página principal"
+                        >
+                            <FiArrowLeft size={18} />
+                        </button>
+                        <div className="flex items-center gap-3">
+                            {config?.logo && config.logo !== "/assets/logo.png" ? (
+                                <img
+                                    src={config.logo}
+                                    alt={config.name}
+                                    className="h-10 w-auto max-w-[120px] object-contain rounded-xl bg-white/10 p-1 border border-white/20"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                            ) : (
+                                <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-xl">
+                                    🦷
+                                </div>
+                            )}
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-blue-200 bg-white/10 px-2 py-0.5 rounded-md">
+                                        Portal Oficial del Paciente
+                                    </span>
+                                    <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                        Conexión Segura
+                                    </span>
+                                </div>
+                                <h1 className="text-base sm:text-lg font-black tracking-tight text-white leading-tight">
+                                    {config.name || "OdontoCloud"}
+                                </h1>
+                            </div>
                         </div>
                     </div>
-                    <div className="flex gap-3">
-                        <button onClick={() => {
-                            notificaciones.forEach(n => {
-                                if (!n.read) updateDoc(doc(db, "notificaciones", n.id), { read: true });
-                            });
-                            setActiveModal("notificaciones");
-                        }} className="flex flex-col items-center gap-1 group relative">
-                            <div className="bg-white/10 p-3 rounded-2xl group-hover:bg-indigo-500/85 transition-all border border-white/10 relative">
-                                <FiBell size={20} />
-                                {notificaciones.some(n => !n.read) && (
-                                    <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full border border-indigo-600 animate-pulse" />
+
+                    {/* Patient & Quick Actions */}
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        <div className="hidden md:flex flex-col text-right pr-2">
+                            <span className="text-[10px] font-bold text-blue-200 uppercase tracking-wider">
+                                Paciente Autenticado
+                            </span>
+                            <span className="text-xs sm:text-sm font-extrabold text-white truncate max-w-[220px]">
+                                {user.nombreCompleto || user.nombres}
+                            </span>
+                        </div>
+
+                        <button
+                            onClick={() => {
+                                setNotificaciones(prev => prev.map(n => ({ ...n, read: true })));
+                                setActiveModal("notificaciones");
+                            }}
+                            className="relative p-2.5 rounded-xl bg-white/10 hover:bg-white/20 transition-all border border-white/15 text-white flex items-center gap-1.5 text-xs font-bold"
+                            title="Alertas y Notificaciones"
+                        >
+                            <FiBell size={18} />
+                            {notificaciones.some(n => !n.read) && (
+                                <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full border-2 border-indigo-700 animate-pulse" />
+                            )}
+                            <span className="hidden sm:inline">Alertas</span>
+                        </button>
+
+                        <button
+                            onClick={() => { setCitaEnviada(false); setActiveModal("cita"); }}
+                            className="px-3.5 py-2.5 rounded-xl bg-white text-indigo-700 hover:bg-blue-50 font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center gap-1.5"
+                        >
+                            <FiCalendar size={15} />
+                            <span className="hidden sm:inline">Nueva Cita</span>
+                            <span className="sm:hidden">Cita</span>
+                        </button>
+
+                        <button
+                            onClick={handleLogout}
+                            className="p-2.5 rounded-xl bg-white/10 hover:bg-rose-500/80 transition-all border border-white/15 text-white"
+                            title="Cerrar sesión"
+                        >
+                            <FiLogOut size={18} />
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            {/* ── Main Dashboard ── */}
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                    
+                    {/* ══ COLUMNA IZQUIERDA (lg:col-span-4) ══ */}
+                    <div className="lg:col-span-4 space-y-6">
+                        
+                        {/* 1. Tarjeta de Identidad del Paciente */}
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-5">
+                            <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-xl flex items-center justify-center shadow-md shrink-0">
+                                    {(user.nombreCompleto || user.nombres || "P")
+                                        .split(" ")
+                                        .filter(Boolean)
+                                        .slice(0, 2)
+                                        .map(n => n[0])
+                                        .join("")
+                                        .toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                                        Expediente Clínico
+                                    </span>
+                                    <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight truncate">
+                                        {user.nombreCompleto || user.nombres}
+                                    </h2>
+                                    <p className="text-xs font-semibold text-slate-500 truncate">
+                                        Doc: {user.documento || user.nro_documento || "—"}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Datos médicos / administrativos */}
+                            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                                        Nro. Historia
+                                    </span>
+                                    <span className="font-extrabold text-slate-800 text-xs truncate block">
+                                        {user.nroHistoria || `HC-${(user.id || "").slice(-6).toUpperCase()}`}
+                                    </span>
+                                </div>
+                                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                                        Entidad (EPS)
+                                    </span>
+                                    <span className="font-extrabold text-slate-800 text-xs truncate block">
+                                        {user.nombreEps || "Particular"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Alertas Médicas o Alergias */}
+                            {user.alertas ? (
+                                <div className="bg-rose-50 border border-rose-200/80 rounded-2xl p-4 flex gap-3 items-start">
+                                    <FiAlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={18} />
+                                    <div>
+                                        <h4 className="font-black text-rose-900 text-[10px] uppercase tracking-wider mb-0.5">
+                                            Alertas Médicas / Alergias
+                                        </h4>
+                                        <p className="text-rose-700 text-xs font-semibold leading-relaxed">
+                                            {user.alertas}
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-emerald-50 border border-emerald-200/70 rounded-2xl p-3.5 flex gap-3 items-center">
+                                    <FiShield className="text-emerald-500 shrink-0" size={18} />
+                                    <div>
+                                        <p className="text-emerald-800 text-xs font-bold leading-tight">
+                                            Sin alertas alérgicas o críticas registradas
+                                        </p>
+                                        <p className="text-[10px] text-emerald-600 font-medium mt-0.5">
+                                            Ficha médica al día
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 2. Próxima Cita Destacada */}
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-xs font-black uppercase tracking-wider text-indigo-600 flex items-center gap-1.5">
+                                    <FiClock size={15} /> Próxima Visita
+                                </h3>
+                                {nextAppt && (
+                                    <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                        {nextAppt.estado || "Confirmada"}
+                                    </span>
                                 )}
                             </div>
-                            <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Alertas</span>
-                        </button>
 
-                        <button onClick={handleLogout} className="flex flex-col items-center gap-1 group">
-                            <div className="bg-white/10 p-3 rounded-2xl group-hover:bg-rose-500/80 transition-all border border-white/10"><FiLogOut size={20} /></div>
-                            <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Salir</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div className="px-4 -mt-12 relative z-20 space-y-4 max-w-lg mx-auto">
-                {/* Próxima Cita */}
-                <div className="bg-white p-5 rounded-2xl shadow-lg border-l-8 border-indigo-500">
-                    <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-3">Próxima Visita</h3>
-                    {loadingData ? <div className="h-12 bg-slate-100 rounded-xl animate-pulse" /> :
-                    nextAppt ? (
-                        <div className="flex items-center gap-4">
-                            <div className="bg-indigo-50 px-4 py-3 rounded-xl text-center min-w-[64px]">
-                                <div className="text-xs font-bold text-indigo-700 uppercase">{new Date(`${nextAppt.fecha}T12:00:00`).toLocaleString('es-CO', { month: 'short' })}</div>
-                                <div className="text-2xl font-black text-indigo-600">{new Date(`${nextAppt.fecha}T12:00:00`).getDate()}</div>
-                            </div>
-                            <div>
-                                <div className="font-black text-slate-800">{nextAppt.horaInicio || nextAppt.hora || "—"}</div>
-                                <div className="text-slate-500 text-sm">{nextAppt.dentista || nextAppt.doctorName || "Odontología General"}</div>
-                                <div className="text-xs text-slate-400">{nextAppt.motivo || nextAppt.title || "Control"}</div>
-                            </div>
-                        </div>
-                    ) : <p className="text-slate-400 text-sm italic">No tienes citas próximas programadas.</p>}
-                </div>
-
-                {/* Tus Especialistas */}
-                <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-100/80">
-                    <h3 className="text-xs font-black text-indigo-500 uppercase tracking-widest mb-3">Tus Especialistas</h3>
-                    <div className="divide-y divide-slate-100 space-y-2">
-                        {especialistas.map((esp, i) => (
-                            <div key={i} className="flex items-center gap-3 pt-2 first:pt-0">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-50 to-indigo-100 border border-indigo-200/60 flex items-center justify-center text-sm text-indigo-600 font-bold shrink-0 shadow-inner">
-                                    {esp.name.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase() || "Dr"}
-                                </div>
-                                <div className="flex-1">
-                                    <p className="font-bold text-slate-800 text-sm">{esp.name}</p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{esp.specialty}</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Mi Ficha de Salud */}
-                <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-100/80 space-y-4 text-left">
-                    <h3 className="text-xs font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2">
-                        <FiFileText size={14} /> Mi Ficha de Salud
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-slate-50 p-3 rounded-2xl">
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Nro. Historia</span>
-                            <span className="font-extrabold text-slate-700 text-xs truncate block">{user.nroHistoria || `HC-${(user.id || "").slice(-6).toUpperCase()}`}</span>
-                        </div>
-                        <div className="bg-slate-50 p-3 rounded-2xl">
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Entidad (EPS)</span>
-                            <span className="font-extrabold text-slate-700 text-xs truncate block">{user.nombreEps || "Particular"}</span>
-                        </div>
-                    </div>
-
-                    {user.alertas ? (
-                        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex gap-3 items-start">
-                            <FiAlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={16} />
-                            <div>
-                                <h4 className="font-black text-rose-800 text-[9px] uppercase tracking-wider mb-1">Alertas Médicas / Alergias</h4>
-                                <p className="text-rose-700 text-xs font-semibold leading-relaxed">{user.alertas}</p>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex gap-3 items-center">
-                            <FiHeart className="text-emerald-500 shrink-0" size={16} />
-                            <div>
-                                <p className="text-emerald-700 text-xs font-bold leading-none">No se registran alergias o alertas críticas.</p>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Resumen financiero rápido */}
-                {pagos.length > 0 && (
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-center">
-                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Pagado</p>
-                            <p className="text-lg font-black text-emerald-700">${totalPagado.toLocaleString("es-CO")}</p>
-                        </div>
-                        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 text-center">
-                            <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">Pendiente</p>
-                            <p className="text-lg font-black text-rose-700">${totalPendiente.toLocaleString("es-CO")}</p>
-                        </div>
-                    </div>
-                )}
-
-                {/* Acciones rápidas */}
-                <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => { setCitaEnviada(false); setActiveModal("cita"); }} className="bg-white p-5 rounded-2xl shadow-sm hover:shadow-md transition text-center group">
-                        <div className="text-3xl mb-2 group-hover:scale-110 transition">📅</div>
-                        <div className="font-bold text-slate-700 text-sm">Nueva Cita</div>
-                        <div className="text-[10px] text-indigo-500 font-bold mt-1">Solicitar</div>
-                    </button>
-                    <button onClick={() => setActiveModal("pagos")} className="bg-white p-5 rounded-2xl shadow-sm hover:shadow-md transition text-center group">
-                        <div className="text-3xl mb-2 group-hover:scale-110 transition">💳</div>
-                        <div className="font-bold text-slate-700 text-sm">Mis Pagos</div>
-                        <div className="text-[10px] text-slate-400 font-bold mt-1">{pagos.length} factura(s)</div>
-                    </button>
-                    <button onClick={() => setActiveModal("tratamiento")} className="bg-white p-5 rounded-2xl shadow-sm hover:shadow-md transition text-center group">
-                        <div className="text-3xl mb-2 group-hover:scale-110 transition">🦷</div>
-                        <div className="font-bold text-slate-700 text-sm">Tratamiento</div>
-                        <div className="text-[10px] text-slate-400 font-bold mt-1">{planes.length} plan(es)</div>
-                    </button>
-                    <button onClick={() => setActiveModal("soporte")} className="bg-white p-5 rounded-2xl shadow-sm hover:shadow-md transition text-center group">
-                        <div className="text-3xl mb-2 group-hover:scale-110 transition">💬</div>
-                        <div className="font-bold text-slate-700 text-sm">Soporte</div>
-                        <div className="text-[10px] text-green-500 font-bold mt-1">WhatsApp</div>
-                    </button>
-                </div>
-
-                {/* Historial de citas */}
-                {todasCitas.length > 0 && (
-                    <div className="bg-white rounded-2xl shadow-sm p-5">
-                        <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest mb-3">Historial de Visitas</h3>
-                        <div className="space-y-2 max-h-52 overflow-y-auto">
-                            {todasCitas.slice(0, 8).map(c => (
-                                <div key={c.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-700">{c.fecha} {(c.horaInicio || c.hora) && `• ${c.horaInicio || c.hora}`}</p>
-                                        <p className="text-[10px] text-slate-400">{c.motivo || c.title || "Consulta"}</p>
+                            {loadingData ? (
+                                <div className="h-20 bg-slate-100 rounded-2xl animate-pulse" />
+                            ) : nextAppt ? (
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-4 bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl">
+                                        <div className="bg-indigo-600 text-white rounded-xl px-3.5 py-2.5 text-center shadow-sm shrink-0 min-w-[60px]">
+                                            <div className="text-[10px] font-black uppercase tracking-wider text-indigo-200">
+                                                {new Date(`${nextAppt.fecha}T12:00:00`).toLocaleString('es-CO', { month: 'short' })}
+                                            </div>
+                                            <div className="text-2xl font-black leading-tight">
+                                                {new Date(`${nextAppt.fecha}T12:00:00`).getDate()}
+                                            </div>
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-black text-slate-800 flex items-center gap-1.5">
+                                                <span>{nextAppt.horaInicio || nextAppt.hora || "08:00 AM"}</span>
+                                            </div>
+                                            <p className="text-xs font-bold text-indigo-900 truncate mt-0.5">
+                                                {nextAppt.dentista || "Odontólogo Tratante"}
+                                            </p>
+                                            <p className="text-[11px] text-slate-500 truncate">
+                                                {nextAppt.especialidad || nextAppt.motivo || "Control Odontológico"}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide ${
-                                        ["atendida","completada"].includes((c.estado||"").toLowerCase()) ? "bg-emerald-100 text-emerald-700" :
-                                        (c.estado||"").toLowerCase() === "cancelada" ? "bg-rose-100 text-rose-700" :
-                                        "bg-amber-100 text-amber-700"
-                                    }`}>{c.estado || "Pendiente"}</span>
+
+                                    <button
+                                        onClick={() => { setCitaEnviada(false); setActiveModal("cita"); }}
+                                        className="w-full py-2.5 rounded-xl border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold text-xs transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <FiCalendar size={14} /> Solicitar otra cita o reagendar
+                                    </button>
                                 </div>
-                            ))}
+                            ) : (
+                                <div className="text-center py-4 px-2 space-y-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <div className="text-2xl">🗓️</div>
+                                    <p className="text-xs text-slate-500 font-medium">
+                                        No tienes citas programadas actualmente.
+                                    </p>
+                                    <button
+                                        onClick={() => { setCitaEnviada(false); setActiveModal("cita"); }}
+                                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider shadow-sm transition-all"
+                                    >
+                                        Solicitar Cita Ahora
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 3. Tus Especialistas Médicos */}
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-4">
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                                <FiUser size={15} /> Tus Especialistas
+                            </h3>
+
+                            <div className="divide-y divide-slate-100">
+                                {especialistas.map((esp, i) => (
+                                    <div key={i} className="flex items-center gap-3.5 py-3 first:pt-0 last:pb-0">
+                                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-50 to-indigo-100 border border-indigo-200 flex items-center justify-center text-xs text-indigo-700 font-black shrink-0 shadow-inner">
+                                            {esp.name.split(' ').filter(Boolean).slice(0, 2).map(n => n[0]).join('').toUpperCase() || "DR"}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-extrabold text-slate-800 text-xs sm:text-sm truncate">
+                                                {esp.name}
+                                            </p>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
+                                                {esp.specialty}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 4. Canales de Atención Directos de la Clínica */}
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-4">
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                                <FiMapPin size={15} /> Sede y Atención
+                            </h3>
+                            <div className="space-y-3 text-xs text-slate-600">
+                                {config.address && (
+                                    <div className="flex items-start gap-2.5">
+                                        <FiMapPin className="text-slate-400 shrink-0 mt-0.5" size={14} />
+                                        <span>{config.address}{config.city ? `, ${config.city}` : ""}</span>
+                                    </div>
+                                )}
+                                {config.phone && (
+                                    <div className="flex items-center gap-2.5">
+                                        <FiPhone className="text-slate-400 shrink-0" size={14} />
+                                        <span>{config.phone}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {config.phone && (
+                                <a
+                                    href={`https://wa.me/${config.phone.replace(/\D/g, "")}?text=Hola, soy ${encodeURIComponent(user.nombreCompleto || user.nombres || "paciente")}, me comunico desde el portal de pacientes.`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm"
+                                >
+                                    <FiMessageCircle size={15} /> WhatsApp Recepción
+                                </a>
+                            )}
                         </div>
                     </div>
-                )}
 
-                <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-5 rounded-2xl shadow-lg text-white text-center">
-                    <p className="font-bold text-base mb-1">😊 ¡Gracias por confiar en nosotros!</p>
-                    <p className="text-white/80 text-xs">Recuerda cepillarte 3 veces al día y usar hilo dental.</p>
+                    {/* ══ COLUMNA DERECHA (lg:col-span-8) ══ */}
+                    <div className="lg:col-span-8 space-y-6">
+
+                        {/* 1. Resumen Financiero y Estado de Cuenta */}
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-5">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                                        Finanzas del Paciente
+                                    </span>
+                                    <h3 className="text-base font-black text-slate-800">
+                                        Estado de Cuenta y Recibos
+                                    </h3>
+                                </div>
+                                <button
+                                    onClick={() => setActiveModal("pagos")}
+                                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                                >
+                                    <FiDollarSign size={14} /> Ver {pagos.length} recibo(s)
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/60">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                                        Total Tratamientos
+                                    </span>
+                                    <span className="text-lg sm:text-xl font-black text-slate-800">
+                                        ${totalPlanes.toLocaleString("es-CO")}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 block mt-1">
+                                        {planes.length} plan(es) registrados
+                                    </span>
+                                </div>
+
+                                <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-200/80">
+                                    <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider block mb-1">
+                                        Total Abonado / Pagado
+                                    </span>
+                                    <span className="text-lg sm:text-xl font-black text-emerald-800">
+                                        ${totalPagado.toLocaleString("es-CO")}
+                                    </span>
+                                    <span className="text-[10px] text-emerald-600 font-bold block mt-1">
+                                        {pagos.length} comprobante(s) registrado(s)
+                                    </span>
+                                </div>
+
+                                <div className={`rounded-2xl p-4 border ${
+                                    totalPendiente > 0 
+                                        ? "bg-amber-50 border-amber-200/80" 
+                                        : "bg-emerald-50 border-emerald-200/80"
+                                }`}>
+                                    <span className={`text-[10px] font-black uppercase tracking-wider block mb-1 ${
+                                        totalPendiente > 0 ? "text-amber-700" : "text-emerald-700"
+                                    }`}>
+                                        Saldo Pendiente
+                                    </span>
+                                    <span className={`text-lg sm:text-xl font-black ${
+                                        totalPendiente > 0 ? "text-amber-800" : "text-emerald-800"
+                                    }`}>
+                                        ${totalPendiente.toLocaleString("es-CO")}
+                                    </span>
+                                    <span className={`text-[10px] font-bold block mt-1 ${
+                                        totalPendiente > 0 ? "text-amber-600" : "text-emerald-600"
+                                    }`}>
+                                        {totalPendiente > 0 ? "Por cancelar" : "¡Al día!"}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 2. Planes de Tratamiento y Progreso Clínico */}
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-5">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                                        Salud Bucal
+                                    </span>
+                                    <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                                        <FiActivity className="text-indigo-600" size={18} /> Plan de Tratamiento
+                                    </h3>
+                                </div>
+                                {planes.length > 0 && (
+                                    <button
+                                        onClick={() => setActiveModal("tratamiento")}
+                                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                                    >
+                                        Ver detalle completo
+                                    </button>
+                                )}
+                            </div>
+
+                            {loadingData ? (
+                                <div className="h-28 bg-slate-100 rounded-2xl animate-pulse" />
+                            ) : planes.length === 0 ? (
+                                <div className="text-center py-8 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                                    <p className="text-sm font-bold text-slate-600">
+                                        No hay planes de tratamiento activos en este momento.
+                                    </p>
+                                    <p className="text-xs text-slate-400">
+                                        Tus presupuestos y evoluciones clínicas aparecerán aquí una vez tu odontólogo los genere.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {planes.map(plan => {
+                                        const items = plan.items || [];
+                                        const completados = items.filter(it => it.done || it.completado).length;
+                                        const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
+                                        return (
+                                            <div key={plan.id} className="bg-slate-50 rounded-2xl p-5 border border-slate-200/60 space-y-3">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <h4 className="font-extrabold text-sm sm:text-base text-slate-800">
+                                                            {plan.title || plan.nombre || "Plan de Tratamiento Integral"}
+                                                        </h4>
+                                                        <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                                                            Especialista: {plan.doctorName || plan.dentista || "Odontólogo Tratante"}
+                                                        </p>
+                                                    </div>
+                                                    {(() => {
+                                                        const statusInfo = STATUS_MAP[(plan.status || "").toLowerCase()] || {
+                                                            label: plan.status || "Activo",
+                                                            classes: "bg-blue-100 text-blue-700"
+                                                        };
+                                                        return (
+                                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${statusInfo.classes}`}>
+                                                                {statusInfo.label}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
+
+                                                {/* Barra de progreso */}
+                                                <div>
+                                                    <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                                        <span>{completados} de {items.length} procedimientos completados</span>
+                                                        <span className="text-indigo-600">{pct}%</span>
+                                                    </div>
+                                                    <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500"
+                                                            style={{ width: `${pct}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Lista de procedimientos */}
+                                                {items.length > 0 && (
+                                                    <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {items.slice(0, 6).map((it, idx) => (
+                                                            <div key={idx} className="flex items-center gap-2 text-xs bg-white p-2.5 rounded-xl border border-slate-100">
+                                                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold ${
+                                                                    it.done || it.completado ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                                                                }`}>
+                                                                    {it.done || it.completado ? "✓" : idx + 1}
+                                                                </span>
+                                                                <span className={`truncate ${it.done || it.completado ? "line-through text-slate-400" : "font-semibold text-slate-700"}`}>
+                                                                    {it.desc || it.nombre || "Procedimiento Odontológico"}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {plan.total && (
+                                                    <div className="pt-1 text-right">
+                                                        <span className="text-xs font-black text-indigo-700">
+                                                            Presupuesto: ${Number(plan.total).toLocaleString("es-CO")}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 3. Historial Completo de Visitas */}
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                                        Registro Clínico
+                                    </span>
+                                    <h3 className="text-base font-black text-slate-800">
+                                        Historial de Consultas y Citas
+                                    </h3>
+                                </div>
+                                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
+                                    {todasCitas.length} visita(s)
+                                </span>
+                            </div>
+
+                            {loadingData ? (
+                                <div className="space-y-2">
+                                    {[1, 2, 3].map(i => <div key={i} className="h-14 bg-slate-100 rounded-2xl animate-pulse" />)}
+                                </div>
+                            ) : todasCitas.length === 0 ? (
+                                <p className="text-slate-400 text-sm italic text-center py-6">
+                                    No hay registros de citas anteriores.
+                                </p>
+                            ) : (
+                                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto pr-1">
+                                    {todasCitas.map(c => (
+                                        <div key={c.id} className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0">
+                                            <div className="min-w-0">
+                                                <p className="text-xs sm:text-sm font-extrabold text-slate-800">
+                                                    {c.fecha} {c.horaInicio && `· ${c.horaInicio}`}
+                                                </p>
+                                                <p className="text-xs text-indigo-700 font-semibold truncate mt-0.5">
+                                                    {c.dentista || "Odontólogo General"}
+                                                </p>
+                                                <p className="text-[11px] text-slate-400 truncate">
+                                                    {c.motivo || "Control general"}
+                                                </p>
+                                            </div>
+                                            <div className="shrink-0">
+                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                                                    ["atendida", "atendido", "completada", "completado"].includes((c.estado || "").toLowerCase())
+                                                        ? "bg-emerald-100 text-emerald-800"
+                                                        : (c.estado || "").toLowerCase() === "cancelada"
+                                                        ? "bg-rose-100 text-rose-700"
+                                                        : "bg-blue-100 text-blue-700"
+                                                }`}>
+                                                    {c.estado || "Programada"}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 4. Barra de Acciones Rápidas */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            <button
+                                onClick={() => { setCitaEnviada(false); setActiveModal("cita"); }}
+                                className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80 hover:border-indigo-300 hover:shadow-md transition text-center group"
+                            >
+                                <div className="text-2xl mb-1 group-hover:scale-110 transition">📅</div>
+                                <div className="font-extrabold text-slate-700 text-xs">Nueva Cita</div>
+                                <div className="text-[10px] text-indigo-600 font-bold mt-0.5">Solicitar</div>
+                            </button>
+
+                            <button
+                                onClick={() => setActiveModal("pagos")}
+                                className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80 hover:border-indigo-300 hover:shadow-md transition text-center group"
+                            >
+                                <div className="text-2xl mb-1 group-hover:scale-110 transition">💳</div>
+                                <div className="font-extrabold text-slate-700 text-xs">Mis Pagos</div>
+                                <div className="text-[10px] text-slate-400 font-bold mt-0.5">{pagos.length} comprobante(s)</div>
+                            </button>
+
+                            <button
+                                onClick={() => setActiveModal("tratamiento")}
+                                className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80 hover:border-indigo-300 hover:shadow-md transition text-center group"
+                            >
+                                <div className="text-2xl mb-1 group-hover:scale-110 transition">🦷</div>
+                                <div className="font-extrabold text-slate-700 text-xs">Tratamiento</div>
+                                <div className="text-[10px] text-slate-400 font-bold mt-0.5">{planes.length} plan(es)</div>
+                            </button>
+
+                            <button
+                                onClick={() => setActiveModal("soporte")}
+                                className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200/80 hover:border-emerald-300 hover:shadow-md transition text-center group"
+                            >
+                                <div className="text-2xl mb-1 group-hover:scale-110 transition">💬</div>
+                                <div className="font-extrabold text-slate-700 text-xs">Atención</div>
+                                <div className="text-[10px] text-emerald-600 font-bold mt-0.5">WhatsApp</div>
+                            </button>
+                        </div>
+
+                    </div>
                 </div>
-            </div>
+            </main>
+
+            {/* Footer */}
+            <footer className="mt-auto border-t border-slate-200/60 bg-white py-4 px-4 text-center">
+                <p className="text-xs text-slate-400 font-medium">
+                    © {new Date().getFullYear()} {config.name || "OdontoCloud"} · Portal de Salud Protegido bajo Ley 1581 de 2012
+                </p>
+            </footer>
 
             {/* ── MODAL: Nueva Cita ─────────────────────────────────────────── */}
             {activeModal === "cita" && (
