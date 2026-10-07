@@ -756,10 +756,25 @@ export const generateReciboCajaHtml = ({
     tenant?.ciudad ||
     "Sincelejo";
 
+  const formatDocTypeLabel = (dt) => {
+    if (!dt) return "CC";
+    const upper = String(dt).toUpperCase().trim();
+    if (upper.includes("CÉDULA") || upper.includes("CEDULA") || upper === "CC") return "CC";
+    if (upper.includes("TARJETA") || upper === "TI") return "TI";
+    if (upper.includes("REGISTRO CIVIL") || upper === "RC") return "RC";
+    if (upper.includes("EXTRANJER") || upper === "CE") return "CE";
+    if (upper.includes("PASAPORTE") || upper === "PA") return "PA";
+    if (upper.includes("PERMISO") || upper.includes("PROTECCI") || upper === "PPT") return "PPT";
+    if (upper === "PEP") return "PEP";
+    if (upper === "NIT") return "NIT";
+    return dt;
+  };
+
   const patientDocType =
     patient?.tipoDocumento ||
     patient?.tipo_documento ||
     recibo?.pacienteTipoDocumento ||
+    recibo?.tipoDocumento ||
     "CC";
 
   const patientDocNumber =
@@ -769,7 +784,7 @@ export const generateReciboCajaHtml = ({
     recibo?.pacienteDocumento ||
     "—";
 
-  const docTypeLabel = getDocumentTypeLabel(patientDocType);
+  const docTypeLabel = formatDocTypeLabel(patientDocType);
   const docNumberFormatted = formatDocNumber(patientDocNumber);
 
   const issueDate =
@@ -786,8 +801,9 @@ export const generateReciboCajaHtml = ({
     recibo?.numero ||
     (recibo?.id ? recibo.id.slice(-4).toUpperCase() : "2026");
 
+  const userProfile = data?.userProfile || null;
   const elaboradoPor = (() => {
-    const reg = recibo?.registradoPor || recibo?.registrado_por || recibo?.cajero || recibo?.usuario || recibo?.usuarioRegistro;
+    const reg = recibo?.registradoPor || recibo?.registrado_por || recibo?.usuario_nombre || recibo?.cajero || recibo?.usuario || recibo?.usuarioRegistro || userProfile?.nombreCompleto || userProfile?.nombre;
     if (reg && typeof reg === "string" && !reg.includes("@")) {
       return reg.trim();
     }
@@ -797,7 +813,7 @@ export const generateReciboCajaHtml = ({
     if (reg && typeof reg === "string" && reg.includes("@")) {
       return reg.split("@")[0].toUpperCase();
     }
-    return "Cajero / Auxiliar";
+    return userProfile?.nombreCompleto || userProfile?.nombre || "Cajero / Auxiliar";
   })();
 
   const paymentMethodLabel = getPaymentMethodLabel(
@@ -961,14 +977,13 @@ export const generateReciboCajaHtml = ({
       </div>
     </div>
 
-    <!-- CUSTOMER INFO CARD -->
+    <!-- CUSTOMER INFO CARD (Address removed as requested) -->
     <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
       <div style="border-right: 1px solid #cbd5e1; padding-right: 10px;">
         <span style="font-size: 7.5px; font-weight: 700; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">Información del Paciente</span>
         <h2 style="margin: 0; font-size: 9.5px; font-weight: 700; color: #000000; text-transform: uppercase; letter-spacing: 0.1px;">${patientName}</h2>
         <div style="display: grid; grid-template-columns: 1fr; gap: 1.5px; margin-top: 3px;">
           <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${docTypeLabel} ${docNumberFormatted}</p>
-          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">Dirección:</strong> ${patientAddress}</p>
           <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">Celular:</strong> ${patient?.telefono || patient?.celular || "—"}</p>
         </div>
       </div>
@@ -1012,15 +1027,15 @@ export const generateReciboCajaHtml = ({
         <span style="font-weight: 700; color: #000000; text-transform: uppercase; font-size: 7.5px; display: block; margin-bottom: 2px;">Observaciones:</span>
         <div style="font-weight: 400; color: #000000; white-space: pre-wrap;">${observacionesText}</div>
       </div>
-      <div style="width: 220px; display: flex; flex-direction: column; gap: 2px;">
+      <div style="width: 195px; display: flex; flex-direction: column; gap: 2px;">
         <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 8px; font-weight: 600; color: #000000; padding: 0 4px;">
           <span style="text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">Subtotal</span>
           <span style="font-size: 10px; font-weight: 600; font-family: monospace; color: #000000;">${formatCOP(finalTotal)}</span>
         </div>
         <div style="height: 1px; background: #bfdbfe; margin: 2px 0;"></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; background: #eff6ff; border: 1.5px solid #bfdbfe; color: #000000; padding: 5px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-          <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">TOTAL ABONADO</span>
-          <span style="font-size: 13px; font-weight: 800; color: #000000; font-family: monospace;">${formatCOP(finalTotal)}</span>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: #eff6ff; border: 1.5px solid #bfdbfe; color: #000000; padding: 4px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+          <span style="font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">TOTAL ABONADO</span>
+          <span style="font-size: 12.5px; font-weight: 800; color: #000000; font-family: monospace;">${formatCOP(finalTotal)}</span>
         </div>
 
         ${(planInfo?.totalPlan !== undefined || planInfo?.planTitle) ? `
@@ -1053,8 +1068,8 @@ export const generateReciboCajaHtml = ({
       </div>
     </div>
 
-    <!-- SIGNATURE BLOCK -->
-    <div style="margin-top: 14px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
+    <!-- SIGNATURE BLOCK (Generous margin-top for manual signing) -->
+    <div style="margin-top: 36px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
       <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
         <p style="margin: 0; font-size: 8px; font-weight: 700; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
         <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 500; text-transform: uppercase;">${elaboradoPor || ""}</p>
@@ -1084,7 +1099,8 @@ export const printReciboCaja = async (data) => {
     const patient = data?.patient || {};
     const tenant = data?.tenant || {};
     const planInfo = data?.planInfo || null;
-    await ReceiptPrintService.generatePDF(recibo, patient, tenant, null, planInfo);
+    const userProfile = data?.userProfile || null;
+    await ReceiptPrintService.generatePDF(recibo, patient, tenant, userProfile, planInfo);
   } catch (err) {
     console.error("Error al generar PDF de recibo con ReceiptPrintService:", err);
     const html = generateReciboCajaHtml(data);

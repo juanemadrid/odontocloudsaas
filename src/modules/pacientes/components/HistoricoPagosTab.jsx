@@ -249,10 +249,12 @@ export default function HistoricoPagosTab({ patientId }) {
                     fecha: pago.fecha || pago.created_at || new Date(),
                     pacienteNombre: targetPatient.nombreCompleto,
                     pacienteDocumento: targetPatient.documento,
+                    pacienteTipoDocumento: targetPatient.tipoDocumento || "CC",
                     pacienteDireccion: targetPatient.direccion,
                     pacienteCiudad: targetPatient.ciudad,
                     pacienteTelefono: targetPatient.telefono,
                     profesionalNombre: profName,
+                    registradoPor: pago.registrado_por || pago.registradoPor || meta.registradoPor || meta.registrado_por || pago.usuario_nombre || pago.creadoPor || pago.creado_por || userProfile?.nombreCompleto || "",
                     medioPago: pago.metodo || pago.medio || meta.medio || "Efectivo",
                     conceptos: conceptosList,
                     total: Number(pago.monto || pago.valor || 0),
@@ -261,6 +263,7 @@ export default function HistoricoPagosTab({ patientId }) {
                     anulado: pago.estado === "Anulado" || meta.estado === "Anulado"
                 },
                 patient: targetPatient,
+                userProfile: userProfile,
                 tenant: tenantData,
                 planInfo: planFinancials
             });

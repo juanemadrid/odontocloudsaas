@@ -205,8 +205,36 @@ export const ReceiptPrintService = {
 
             const patientName = patient?.nombreCompleto || `${patient?.nombres || patient?.nombre || ''} ${patient?.apellidos || patient?.apellido || ''}`.trim() || patient?.displayName || pago?.pacienteNombre || pago?.patientNombre || pago?.tercero || pago?.proveedor || "Paciente / Tercero";
             const patientDoc = patient?.documento || patient?.nroDocumento || patient?.numero_documento || patient?.nro_documento || patient?.identificacion || patient?.cedula || patient?.docNumber || pago?.pacienteDocumento || pago?.documento || pago?.patientDoc || pago?.documentoTercero || pago?.nit || "—";
-            const patientDocType = patient?.tipoDocumento || patient?.tipo_documento || patient?.tipoDoc || pago?.tipoDocumento || (String(patientDoc).length >= 9 ? "NIT" : "CC");
-            const patientAddress = patient?.direccion || patient?.direccionDomicilio || patient?.lugarResidencia || patient?.address || pago?.direccion || "—";
+            
+            const formatDocTypeLabel = (dt) => {
+                if (!dt) return "CC";
+                const upper = String(dt).toUpperCase().trim();
+                if (upper.includes("CÉDULA") || upper.includes("CEDULA") || upper === "CC") return "CC";
+                if (upper.includes("TARJETA") || upper === "TI") return "TI";
+                if (upper.includes("REGISTRO CIVIL") || upper === "RC") return "RC";
+                if (upper.includes("EXTRANJER") || upper === "CE") return "CE";
+                if (upper.includes("PASAPORTE") || upper === "PA") return "PA";
+                if (upper.includes("PERMISO") || upper.includes("PROTECCI") || upper === "PPT") return "PPT";
+                if (upper === "PEP") return "PEP";
+                if (upper === "NIT") return "NIT";
+                return dt;
+            };
+
+            let rawDocType = patient?.tipoDocumento || patient?.tipo_documento || patient?.tipoDoc || pago?.tipoDocumento || pago?.tipo_documento || "";
+            if (!rawDocType && !isEgreso && (patient?.id || pago?.paciente_id || pago?.pacienteId)) {
+                const targetPid = patient?.id || pago?.paciente_id || pago?.pacienteId;
+                try {
+                    const { data: dbPac } = await supabase.from("pacientes").select("tipo_documento").eq("id", targetPid).maybeSingle();
+                    if (dbPac?.tipo_documento) {
+                        rawDocType = dbPac.tipo_documento;
+                    }
+                } catch (_) {}
+            }
+
+            const patientDocType = isEgreso 
+                ? (rawDocType ? formatDocTypeLabel(rawDocType) : (patientDoc && patientDoc !== "—" ? "NIT / CC" : ""))
+                : formatDocTypeLabel(rawDocType || "CC");
+
             const patientPhone = patient?.celular || patient?.telefono || patient?.phone || patient?.movil || pago?.telefono || "—";
             
             // Clean consecutive number (avoid "No. No. REC-...")
@@ -232,25 +260,69 @@ export const ReceiptPrintService = {
                 String(pago.notas || "").includes("ANULADO");
 
             // Usuario que registra el recibo/egreso (Cajero / Auxiliar / Usuario en sesión, NO el odontólogo asignado)
-            const usuarioRegistro = (() => {
-                const reg = pago.registradoPor || pago.registrado_por || pago.cajero || pago.usuario || pago.usuarioRegistro;
-                if (reg && typeof reg === "string" && !reg.includes("@")) {
-                    return reg.trim();
+            let usuarioRegistro = "";
+            const rawRegCandidates = [
+                pago.registradoPor,
+                pago.registrado_por,
+                pago.usuario_nombre,
+                pago.usuarioNombre,
+                pago.creadoPor,
+                pago.creado_por,
+                pago.cajero,
+                pago.usuario,
+                pago.usuarioRegistro,
+                parsedMetadata?.registradoPor,
+                parsedMetadata?.usuarioNombre,
+                parsedMetadata?.creadoPor,
+                parsedMetadata?.cajero,
+                parsedMetadata?.usuario,
+                userProfile?.nombreCompleto,
+                userProfile?.nombre
+            ].filter(Boolean);
+
+            for (const cand of rawRegCandidates) {
+                if (typeof cand === "string") {
+                    const trimmed = cand.trim();
+                    if (trimmed && !trimmed.includes("@") && !(trimmed.length === 36 && trimmed.includes("-"))) {
+                        usuarioRegistro = trimmed;
+                        break;
+                    }
                 }
-                if (userProfile?.nombreCompleto && typeof userProfile.nombreCompleto === "string") {
-                    return userProfile.nombreCompleto.trim();
+            }
+
+            // Si es un email o UUID o no se encontró, buscar en profiles
+            if (!usuarioRegistro) {
+                const identifier = rawRegCandidates.find(c => typeof c === "string" && (c.includes("@") || (c.length === 36 && c.includes("-"))));
+                if (identifier) {
+                    try {
+                        const query = identifier.includes("@")
+                            ? supabase.from("profiles").select("full_name, nombre, apellido").eq("email", identifier.trim()).maybeSingle()
+                            : supabase.from("profiles").select("full_name, nombre, apellido").eq("id", identifier.trim()).maybeSingle();
+                        const { data: prof } = await query;
+                        if (prof?.full_name) usuarioRegistro = prof.full_name.trim();
+                        else if (prof?.nombre) usuarioRegistro = `${prof.nombre} ${prof.apellido || ''}`.trim();
+                        else if (identifier.includes("@")) usuarioRegistro = identifier.split("@")[0].toUpperCase();
+                    } catch (_) {}
                 }
-                if (userProfile?.nombre && typeof userProfile.nombre === "string") {
-                    return userProfile.nombre.trim();
-                }
-                if (pago.creadoPor && typeof pago.creadoPor === "string" && !pago.creadoPor.includes("@")) {
-                    return pago.creadoPor.trim();
-                }
-                if (reg && typeof reg === "string" && reg.includes("@")) {
-                    return reg.split("@")[0].toUpperCase();
-                }
-                return "Cajero / Auxiliar";
-            })();
+            }
+
+            // Fallback al usuario autenticado actual de la sesión activa
+            if (!usuarioRegistro) {
+                try {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user) {
+                        const { data: prof } = await supabase.from("profiles").select("full_name, nombre, apellido").eq("id", user.id).maybeSingle();
+                        if (prof?.full_name) usuarioRegistro = prof.full_name.trim();
+                        else if (prof?.nombre) usuarioRegistro = `${prof.nombre} ${prof.apellido || ''}`.trim();
+                        else if (user.user_metadata?.full_name) usuarioRegistro = user.user_metadata.full_name.trim();
+                        else if (user.email) usuarioRegistro = user.email.split("@")[0].toUpperCase();
+                    }
+                } catch (_) {}
+            }
+
+            if (!usuarioRegistro) {
+                usuarioRegistro = "Cajero / Auxiliar";
+            }
 
             const html = `
                 <div style="border: 1px solid #cbd5e1; padding: 14px 18px; border-radius: 12px; position: relative; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);">
@@ -258,7 +330,7 @@ export const ReceiptPrintService = {
                     <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background-color: ${topAccentBarColor}; border-top-left-radius: 12px; border-top-right-radius: 12px;"></div>
 
                     <!-- Unified Header (Media Carta Proportions) -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid ${headerDividerColor}; padding-bottom: 8px; margin-bottom: 10px; margin-top: 2px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid ${headerDividerColor}; padding-bottom: 8px; margin-bottom: 8px; margin-top: 2px;">
                         <div style="display: flex; gap: 12px; align-items: center;">
                             ${logoUrl 
                                 ? `<img src="${logoUrl}" style="max-height: 44px; max-width: 110px; object-fit: contain;" crossorigin="anonymous" />`
@@ -284,16 +356,15 @@ export const ReceiptPrintService = {
                         </div>
                     </div>
 
-                    <!-- CUSTOMER / BENEFICIARY INFO CARD -->
-                    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
+                    <!-- CUSTOMER / BENEFICIARY INFO CARD (Sin Dirección para mayor espacio) -->
+                    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
                         <div style="border-right: 1px solid #cbd5e1; padding-right: 10px;">
                             <span style="font-size: 7.5px; font-weight: 700; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">
                                 ${isEgreso ? "Beneficiario" : "Información del Paciente"}
                             </span>
                             <h2 style="margin: 0; font-size: 9.5px; font-weight: 700; color: #000000; text-transform: uppercase; letter-spacing: 0.1px;">${patientName}</h2>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 1.5px; margin-top: 3px;">
-                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${patientDocType.toUpperCase()} ${patientDoc}</p>
-                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">Dirección:</strong> ${patientAddress}</p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${isEgreso ? (patientDoc && patientDoc !== '—' ? `${patientDocType ? `${patientDocType} ` : ''}${patientDoc}` : '—') : `${patientDocType} ${patientDoc}`}</p>
                                 <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">Celular:</strong> ${patientPhone}</p>
                             </div>
                         </div>
@@ -301,7 +372,7 @@ export const ReceiptPrintService = {
                             <span style="font-size: 7.5px; font-weight: 700; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">
                                 ${isEgreso ? "Detalles del Egreso" : "Detalles del Documento"}
                             </span>
-                            <div style="display: grid; grid-template-columns: 1fr; gap: 2.5px; margin-top: 3px;">
+                            <div style="display: grid; grid-template-columns: 1fr; gap: 2px; margin-top: 3px;">
                                 <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">Fecha de Emisión:</strong> <span style="text-transform: uppercase; font-weight: 600;">${formattedDate}</span></p>
                                 <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 400;"><strong style="color: #000000; font-size: 7.5px; font-weight: 700; text-transform: uppercase; margin-right: 3px;">Medio de Pago:</strong> <span style="text-transform: uppercase; font-weight: 600;">${pago.medio || pago.metodo || pago.metodo_pago || pago.medioPago || (isConsumoSaldo ? "Saldo a favor" : "Efectivo")}</span></p>
                             </div>
@@ -309,69 +380,69 @@ export const ReceiptPrintService = {
                     </div>
 
                     <!-- ITEMS DETAIL TABLE (Compact Media Carta) -->
-                    <div style="margin-bottom: 8px;">
+                    <div style="margin-bottom: 6px;">
                         <table style="width: 100%; border-collapse: collapse; border-radius: 6px; overflow: hidden; border-style: hidden; box-shadow: 0 0 0 1px #cbd5e1;">
                             <thead>
                                 <tr style="background: ${tableHeaderBg}; border-bottom: ${tableHeaderBorder}; color: ${tableHeaderColor};">
-                                    <th style="padding: 5px 6px; text-align: left; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: ${tableHeaderColor};">Concepto</th>
-                                    <th style="padding: 5px 6px; text-align: right; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; width: 95px; color: ${tableHeaderColor};">Precio Unitario</th>
-                                    <th style="padding: 5px 6px; text-align: center; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; width: 40px; color: ${tableHeaderColor};">Cant.</th>
-                                    <th style="padding: 5px 6px; text-align: right; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; width: 105px; color: ${tableHeaderColor};">Total</th>
+                                    <th style="padding: 4px 6px; text-align: left; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: ${tableHeaderColor};">Concepto</th>
+                                    <th style="padding: 4px 6px; text-align: right; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; width: 95px; color: ${tableHeaderColor};">Precio Unitario</th>
+                                    <th style="padding: 4px 6px; text-align: center; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; width: 40px; color: ${tableHeaderColor};">Cant.</th>
+                                    <th style="padding: 4px 6px; text-align: right; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; width: 105px; color: ${tableHeaderColor};">Total</th>
                                 </tr>
                             </thead>
                             <tbody style="font-size: 8px; color: #000000;">
                                 ${rawItems && rawItems.length > 0 ? rawItems.map((ip, index) => `
                                     <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#fafafa'}; border-bottom: 1px solid #e2e8f0;">
-                                        <td style="padding: 5px 6px; font-size: 8px; font-weight: 500; text-transform: uppercase; color: #000000;">${ip.desc}</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10px; font-weight: 600; color: #000000;">$ ${Number(ip.precioUnitario !== undefined ? ip.precioUnitario : ip.monto).toLocaleString('es-CO')}</td>
-                                        <td style="padding: 5px 6px; text-align: center; font-size: 8.5px; font-weight: 600; color: #000000;">${ip.cantidad || 1}</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 4px 6px; font-size: 8px; font-weight: 500; text-transform: uppercase; color: #000000;">${ip.desc}</td>
+                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-size: 9.5px; font-weight: 600; color: #000000;">$ ${Number(ip.precioUnitario !== undefined ? ip.precioUnitario : ip.monto).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 4px 6px; text-align: center; font-size: 8px; font-weight: 600; color: #000000;">${ip.cantidad || 1}</td>
+                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-size: 10px; font-weight: 700; color: #000000;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `).join('') : `
                                     <tr style="background: #ffffff; border-bottom: 1px solid #e2e8f0;">
-                                        <td style="padding: 5px 6px; font-size: 8px; font-weight: 500; text-transform: uppercase; color: #000000;">${conceptStr}</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10px; font-weight: 600; color: #000000;">$ ${Number(pago.monto || pago.total || 0).toLocaleString('es-CO')}</td>
-                                        <td style="padding: 5px 6px; text-align: center; font-size: 8.5px; font-weight: 600; color: #000000;">1</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(pago.total || pago.monto || 0).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 4px 6px; font-size: 8px; font-weight: 500; text-transform: uppercase; color: #000000;">${conceptStr}</td>
+                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-size: 9.5px; font-weight: 600; color: #000000;">$ ${Number(pago.monto || pago.total || 0).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 4px 6px; text-align: center; font-size: 8px; font-weight: 600; color: #000000;">1</td>
+                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-size: 10px; font-weight: 700; color: #000000;">$ ${Number(pago.total || pago.monto || 0).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `}
                             </tbody>
                         </table>
                     </div>
 
-                    <!-- OBS & TOTALS ROW -->
-                    <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; align-items: flex-start;">
-                        <div style="flex: 1; border: 1px dashed #94a3b8; border-radius: 6px; padding: 5px 8px; background-color: #f8fafc; font-size: 8px; line-height: 1.35; min-height: 32px;">
+                    <!-- OBS & TOTALS ROW (Recuadro de Total más angosto) -->
+                    <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; align-items: flex-start;">
+                        <div style="flex: 1; border: 1px dashed #94a3b8; border-radius: 6px; padding: 4px 8px; background-color: #f8fafc; font-size: 8px; line-height: 1.35; min-height: 28px;">
                             <span style="font-weight: 700; color: #000000; text-transform: uppercase; font-size: 7.5px; display: block; margin-bottom: 2px;">Observaciones:</span>
                             <div style="font-weight: 400; color: #000000; white-space: pre-wrap;">${cleanObservations}</div>
                         </div>
-                        <div style="width: 220px; display: flex; flex-direction: column; gap: 2px;">
+                        <div style="width: 195px; display: flex; flex-direction: column; gap: 2px;">
                             <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 8px; font-weight: 600; color: #000000; padding: 0 4px;">
                                 <span style="text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">Subtotal</span>
-                                <span style="font-size: 10px; font-weight: 600; font-family: monospace; color: #000000;">${subtotalStr}</span>
+                                <span style="font-size: 9.5px; font-weight: 600; font-family: monospace; color: #000000;">${subtotalStr}</span>
                             </div>
-                            <div style="height: 1px; background: ${headerDividerColor}; margin: 2px 0;"></div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: ${totalBoxBg}; border: ${totalBoxBorder}; color: ${totalBoxColor}; padding: 5px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                                <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: ${totalBoxColor};">${totalBadgeLabel}</span>
-                                <span style="font-size: 13px; font-weight: 800; color: ${totalBoxColor}; font-family: monospace;">${totalStr}</span>
+                            <div style="height: 1px; background: ${headerDividerColor}; margin: 1px 0;"></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: ${totalBoxBg}; border: ${totalBoxBorder}; color: ${totalBoxColor}; padding: 4px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                                <span style="font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: ${totalBoxColor};">${totalBadgeLabel}</span>
+                                <span style="font-size: 12px; font-weight: 800; color: ${totalBoxColor}; font-family: monospace;">${totalStr}</span>
                             </div>
 
                             ${hasPlanInfo ? `
-                                <div style="height: 1px; border-top: 1px dashed #cbd5e1; margin: 4px 0 2px 0;"></div>
+                                <div style="height: 1px; border-top: 1px dashed #cbd5e1; margin: 3px 0 1px 0;"></div>
 
-                                <div style="display: flex; justify-content: space-between; font-size: 7.5px; font-weight: 500; color: #000000; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 7px; font-weight: 500; color: #000000; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Plan de Trat.:</span>
                                     <span style="font-weight: 700; text-transform: uppercase; text-align: right;" title="${planTitle || 'Tratamiento'}">${planTitle || 'Tratamiento'}</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 7.5px; font-weight: 500; color: #000000; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 7px; font-weight: 500; color: #000000; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Total plan:</span>
                                     <span style="font-family: monospace; font-weight: 600;">$ ${Number(totalPlan).toLocaleString('es-CO')}</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 7.5px; font-weight: 500; color: #047857; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 7px; font-weight: 500; color: #047857; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Total pagado:</span>
                                     <span style="font-family: monospace; font-weight: 600;">$ ${Number(totalPagadoPlan || 0).toLocaleString('es-CO')}</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 7.5px; font-weight: 500; color: #b91c1c; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 7px; font-weight: 500; color: #b91c1c; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Saldo restante:</span>
                                     <span style="font-family: monospace; font-weight: 600;">$ ${Number(saldoPlan || 0).toLocaleString('es-CO')}</span>
                                 </div>
@@ -379,8 +450,8 @@ export const ReceiptPrintService = {
                         </div>
                     </div>
 
-                    <!-- SIGNATURE BLOCK (Compact Media Carta) -->
-                    <div style="margin-top: 14px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
+                    <!-- SIGNATURE BLOCK (Espacio vertical generoso para firma manuscrita) -->
+                    <div style="margin-top: 36px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
                         <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
                             <p style="margin: 0; font-size: 8px; font-weight: 700; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
                             <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 500; text-transform: uppercase;">${usuarioRegistro}</p>
