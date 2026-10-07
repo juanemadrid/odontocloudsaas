@@ -278,7 +278,8 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
         { id: 'pacientes', icon: FiUsers, label: 'PACIENTES' },
         { id: 'caja', icon: FiDollarSign, label: 'CAJA' },
         { id: 'administracion', icon: FiBriefcase, label: 'ADMINISTRACIÓN' },
-        { id: 'reportes', icon: FiPieChart, label: 'REPORTES' }
+        { id: 'reportes', icon: FiPieChart, label: 'REPORTES' },
+        { id: 'config', icon: FiSettings, label: 'CONFIGURACIÓN' }
     ];
 
     const filteredNavItems = useMemo(() => {
@@ -303,6 +304,11 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                        can("Administración", "Esterilizacion", "consultar");
             }
             if (item.id === 'reportes') return can("Reportes", "Gestion Reportes", "consultar");
+            if (item.id === 'config') {
+                return can("Configuración", "Gestion Configuración", "consultar") ||
+                       userProfile?.rol === 'admin' ||
+                       userProfile?.rol === 'superadmin';
+            }
             return true;
         });
     }, [userProfile, can]);
@@ -310,7 +316,11 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
     const handleNavClick = (id) => {
         setSidebarOpen(false);
         const safeBasePath = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
-        const path = id === 'Inicio' ? safeBasePath : `${safeBasePath}/${id}`;
+        const path = id === 'Inicio' 
+            ? safeBasePath 
+            : id === 'config'
+                ? `${safeBasePath}/config/datos-basicos`
+                : `${safeBasePath}/${id}`;
         
         if (window.checkIncompletePatientNavigation) {
             const intercepted = window.checkIncompletePatientNavigation(path);
@@ -367,7 +377,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             {/* Sidebar - Slender Pro v3.0 (Advanced Glassmorphism) */}
             <aside
                 className={`
-          fixed inset-y-0 left-0 z-50 bg-white/40 backdrop-blur-[40px] border-r border-slate-200/40 shadow-[10px_0_50px_rgba(0,0,0,0.02)]
+          fixed inset-y-0 left-0 z-50 bg-white/95 lg:bg-white/40 backdrop-blur-[40px] border-r border-slate-200/40 shadow-[10px_0_50px_rgba(0,0,0,0.06)]
           ${sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0"}
           ${collapsedDesktop ? "lg:w-20" : "lg:w-64"} w-64
           transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)
@@ -379,6 +389,16 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
 
                     {/* Logo Area - Clinic Focus */}
                     <div className={`px-4 py-5 relative shrink-0 border-b border-slate-100/50 bg-slate-50/30 flex flex-col items-center justify-center min-h-[120px] transition-all duration-500 ${collapsedDesktop ? 'mt-10' : ''}`}>
+                        {/* Botón cerrar para móvil */}
+                        <button
+                            type="button"
+                            onClick={() => setSidebarOpen(false)}
+                            className="lg:hidden absolute top-3 right-3 w-8 h-8 rounded-lg bg-slate-100 text-slate-500 hover:text-slate-800 hover:bg-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+                            title="Cerrar menú"
+                        >
+                            <FiX size={18} />
+                        </button>
+
                         <div className="flex flex-col items-center gap-4 group cursor-pointer transition-all duration-500" onClick={() => handleNavClick('Inicio')}>
                             <div className={`${collapsedDesktop ? 'w-10 h-10 rounded-lg' : 'w-20 h-20 rounded-2xl'} bg-white border border-slate-100 shadow-xl flex items-center justify-center overflow-hidden group-hover:scale-105 group-hover:rotate-1 transition-all duration-500 shrink-0`}>
                                 {userProfile?.rol === 'superadmin' ? (
@@ -436,8 +456,14 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                         <div className="space-y-2">
                             {filteredNavItems.map((item) => {
                                 const safeBasePath = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
-                                const fullPath = item.id === 'Inicio' ? safeBasePath : `${safeBasePath}/${item.id}`;
-                                const isActive = location.pathname === fullPath || (item.id !== 'Inicio' && location.pathname.startsWith(fullPath));
+                                const fullPath = item.id === 'Inicio' 
+                                    ? safeBasePath 
+                                    : item.id === 'config'
+                                        ? `${safeBasePath}/config`
+                                        : `${safeBasePath}/${item.id}`;
+                                const isActive = item.id === 'Inicio' 
+                                    ? (location.pathname === safeBasePath || location.pathname === `${safeBasePath}/`)
+                                    : location.pathname.startsWith(fullPath);
 
                                 return (
                                     <button
@@ -466,6 +492,70 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                             })}
                         </div>
                     </nav>
+
+                    {/* Sidebar Footer: Usuario, Configuración y Cerrar Sesión */}
+                    <div className="shrink-0 p-3 border-t border-slate-200/70 bg-white/80 backdrop-blur-md">
+                        <div className={`flex items-center ${collapsedDesktop ? 'justify-center' : 'justify-between'} gap-2`}>
+                            {!collapsedDesktop && (
+                                <div
+                                    onClick={() => {
+                                        setSidebarOpen(false);
+                                        setProfileModalOpen(true);
+                                    }}
+                                    className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-lg flex-1"
+                                    title="Mi Perfil"
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0 overflow-hidden border border-blue-200">
+                                        {(userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL) ? (
+                                            <img
+                                                src={userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL}
+                                                alt="Foto"
+                                                className="w-full h-full object-cover"
+                                            />
+                                        ) : (
+                                            (userProfile?.full_name || userProfile?.nombre || user?.email || "U").charAt(0).toUpperCase()
+                                        )}
+                                    </div>
+                                    <div className="min-w-0 truncate text-left">
+                                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">
+                                            {userProfile?.full_name || userProfile?.nombre || user?.email?.split('@')[0] || "Usuario"}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 truncate uppercase tracking-wider font-semibold">
+                                            {userProfile?.rol || "Usuario"}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className={`flex items-center ${collapsedDesktop ? 'flex-col gap-2' : 'gap-1'} shrink-0`}>
+                                {(can("Configuración", "Gestion Configuración", "consultar") || userProfile?.rol === 'admin' || userProfile?.rol === 'superadmin') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSidebarOpen(false);
+                                            const safeBasePath = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+                                            navigate(`${safeBasePath}/config/datos-basicos`);
+                                        }}
+                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                        title="Configuración"
+                                    >
+                                        <FiSettings size={17} />
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSidebarOpen(false);
+                                        handleLogout();
+                                    }}
+                                    className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Cerrar sesión"
+                                >
+                                    <FiLogOut size={17} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </aside>
 
@@ -514,7 +604,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                         </button>
 
                         {/* Configuración rápida */}
-                        {can("Configuración", "Gestion Configuración", "consultar") && (
+                        {(can("Configuración", "Gestion Configuración", "consultar") || userProfile?.rol === 'admin' || userProfile?.rol === 'superadmin') && (
                             <button
                                 type="button"
                                 onClick={() => navigate(`${basePath}/config/datos-basicos`)}
@@ -619,6 +709,17 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                                 </div>
                             )}
                         </div>
+
+                        {/* Botón directo Cerrar Sesión en Header */}
+                        <button
+                            type="button"
+                            onClick={handleLogout}
+                            className="flex items-center gap-1.5 px-2 py-1.5 text-rose-600 hover:text-rose-700 bg-rose-50/70 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer font-bold text-xs shrink-0"
+                            title="Cerrar sesión"
+                        >
+                            <FiLogOut size={14} />
+                            <span className="hidden md:inline">Salir</span>
+                        </button>
                     </div>
                 </header>
 

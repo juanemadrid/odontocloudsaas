@@ -135,7 +135,33 @@ export default function ConfigLayout({ children }) {
     }, []);
 
     return (
-        <div className="flex h-full gap-6 p-2 md:p-6 overflow-hidden bg-slate-50/50">
+        <div className="flex flex-col lg:flex-row h-full gap-3 md:gap-6 p-2 md:p-6 overflow-hidden bg-slate-50/50">
+            {/* Mobile Horizontal Sub-Navigation Bar */}
+            <div className="lg:hidden flex-none bg-white rounded-xl border border-slate-200 shadow-sm p-1.5 overflow-x-auto custom-scrollbar flex items-center gap-1.5 shrink-0">
+                {activeMenuItems.map((item) => {
+                    if (item.requiresWebsite && !hasWebsiteAccess) return null;
+
+                    const itemSlug = item.slug || item.subSlug;
+                    const isActive = location.pathname.includes(`/config/${itemSlug}`);
+                    return (
+                        <NavLink
+                            key={itemSlug}
+                            to={buildDashboardPath(`config/${itemSlug}`)}
+                            className={`
+                                flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 shrink-0
+                                ${isActive
+                                    ? "bg-blue-600 text-white shadow-sm"
+                                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-blue-600"
+                                }
+                            `}
+                        >
+                            <item.icon size={14} className={`flex-none ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                            <span className="truncate">{item.label}</span>
+                        </NavLink>
+                    );
+                })}
+            </div>
+
             {/* Sidebar Navigation */}
             <aside className="config-layout-sidebar w-64 flex-none flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hidden lg:flex">
                 <div className="p-4 border-b border-slate-100 bg-slate-50/50">
