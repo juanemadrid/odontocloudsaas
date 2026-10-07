@@ -183,33 +183,69 @@ Deno.serve(async (request) => {
         };
       });
 
-      // Enriquecer planes con datos reales de doctor y desempacar detalles/items
-      const enrichedPlans = plans.map((pl: any) => {
+      // Filtrar y enriquecer SOLAMENTE planes de tratamiento formales (excluir presupuestos/borradores)
+      const isRealTreatmentPlan = (pl: any) => {
         const det = (typeof pl.detalles === "object" && pl.detalles !== null) ? pl.detalles : {};
-        const items = Array.isArray(pl.items) && pl.items.length > 0
-          ? pl.items
-          : (Array.isArray(det.items) ? det.items : []);
-        const docId = pl.doctor_id || pl.profesional_id || det.doctorId || det.doctor_id;
-        const doc = docId ? doctorsMap.get(String(docId)) : null;
-        return {
-          ...pl,
-          title: pl.title || pl.nombre || det.title || "Plan de Tratamiento",
-          nombre: pl.nombre || pl.title || "Plan de Tratamiento",
-          status: pl.status || pl.estado || "activo",
-          estado: pl.estado || pl.status || "activo",
-          total: Number(pl.total || pl.costoTotal || det.total || det.costoTotal || 0),
-          items,
-          doctorName: pl.doctorName || det.doctor || det.doctorName || doc?.name || pl.profesional_nombre || "Odontólogo Tratante",
-          specialty: doc?.specialty || det.especialidad || pl.especialidad || "Odontología General",
-        };
-      });
+        const planType = String(pl.type || det.type || "").toLowerCase();
+        if (planType === "presupuesto") return false;
+        const st = String(pl.status || pl.estado || "").toLowerCase();
+        if (st === "draft" || st === "borrador" || st === "rechazado") return false;
+        const name = String(pl.nombre || pl.title || det.title || "").toLowerCase();
+        if (name.startsWith("presupuesto") && planType !== "plan") return false;
+        return true;
+      };
+
+      const enrichedPlans = plans
+        .filter(isRealTreatmentPlan)
+        .map((pl: any) => {
+          const det = (typeof pl.detalles === "object" && pl.detalles !== null) ? pl.detalles : {};
+          const items = Array.isArray(pl.items) && pl.items.length > 0
+            ? pl.items
+            : (Array.isArray(det.items) ? det.items : []);
+          const docId = pl.doctor_id || pl.profesional_id || det.doctorId || det.doctor_id;
+          const doc = docId ? doctorsMap.get(String(docId)) : null;
+          return {
+            ...pl,
+            title: pl.title || pl.nombre || det.title || "Plan de Tratamiento",
+            nombre: pl.nombre || pl.title || "Plan de Tratamiento",
+            status: pl.status || pl.estado || "activo",
+            estado: pl.estado || pl.status || "activo",
+            total: Number(pl.total || pl.costoTotal || det.total || det.costoTotal || 0),
+            items,
+            doctorName: pl.doctorName || det.doctor || det.doctorName || doc?.name || pl.profesional_nombre || "Odontólogo Tratante",
+            specialty: doc?.specialty || det.especialidad || pl.especialidad || "Odontología General",
+          };
+        });
 
       // Consolidar pagos sin duplicados (pagos + recibos_caja + facturas + cfg.pagos)
       const allPaymentsMap = new Map();
+      const getCleanConsecutivo = (p: any) => {
+        const raw = p.nro_consecutivo || p.numero || p.consecutivo;
+        if (!raw) return null;
+        const digits = String(raw).replace(/\D/g, "");
+        return digits ? parseInt(digits, 10) : null;
+      };
+
       const addPaymentRow = (p: any) => {
         if (!p || typeof p !== "object") return;
-        const idKey = String(p.id || p.idFactura || p.consecutivo || `${p.fecha}_${p.total || p.monto}`);
-        if (!allPaymentsMap.has(idKey)) {
+        const consNum = getCleanConsecutivo(p);
+        const idKey = consNum !== null
+          ? `cons_${consNum}`
+          : String(p.id || p.idFactura || `${(p.fecha || p.created_at || "").slice(0, 10)}_${Number(p.total || p.monto || 0)}`);
+
+        if (allPaymentsMap.has(idKey)) {
+          const existing = allPaymentsMap.get(idKey);
+          const isExistingSaldo = (existing.descripcion || existing.concepto || "").toLowerCase().includes("saldo a favor");
+          const isNewSaldo = (p.descripcion || p.concepto || "").toLowerCase().includes("saldo a favor");
+          allPaymentsMap.set(idKey, {
+            ...existing,
+            ...p,
+            descripcion: isExistingSaldo ? existing.descripcion : (isNewSaldo ? p.descripcion : (p.descripcion || existing.descripcion)),
+            concepto: isExistingSaldo ? existing.concepto : (isNewSaldo ? p.concepto : (p.concepto || existing.concepto)),
+            numero: existing.numero || p.numero || (consNum ? String(consNum).padStart(4, "0") : ""),
+            nro_consecutivo: existing.nro_consecutivo || p.nro_consecutivo || (consNum ? String(consNum).padStart(4, "0") : "")
+          });
+        } else {
           allPaymentsMap.set(idKey, p);
         }
       };

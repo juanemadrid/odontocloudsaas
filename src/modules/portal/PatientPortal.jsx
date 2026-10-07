@@ -72,6 +72,7 @@ export default function PatientPortal() {
     // Data states
     const [pagos, setPagos] = useState([]);
     const [planes, setPlanes] = useState([]);
+    const [currentPlanPage, setCurrentPlanPage] = useState(1);
     const [todasCitas, setTodasCitas] = useState([]);
     const [loadingData, setLoadingData] = useState(false);
     const [notificaciones, setNotificaciones] = useState([]);
@@ -438,17 +439,60 @@ export default function PatientPortal() {
             !["cancelada", "no asistio"].includes((appointment.estado || "").toLowerCase())
         ) || null);
 
-        const seenIds = new Set();
-        const paymentRows = (portalData.payments || []).filter(payment => {
-            if (seenIds.has(payment.id)) return false;
-            seenIds.add(payment.id);
-            return true;
+        // 4. Deduplicar pagos y recibos con precisión (por consecutivo numérico normalizado)
+        const getCleanConsecutivo = (p) => {
+            const raw = p.nro_consecutivo || p.numero || p.consecutivo;
+            if (!raw) return null;
+            const digits = String(raw).replace(/\D/g, "");
+            return digits ? parseInt(digits, 10) : null;
+        };
+
+        const uniquePaymentsMap = new Map();
+        (portalData.payments || []).forEach(p => {
+            if (!p || typeof p !== "object") return;
+            const consNum = getCleanConsecutivo(p);
+            const key = consNum !== null 
+                ? `cons_${consNum}` 
+                : String(p.id || p.idFactura || `${(p.fecha || p.created_at || "").slice(0, 10)}_${Number(p.total || p.monto || 0)}`);
+
+            if (uniquePaymentsMap.has(key)) {
+                const existing = uniquePaymentsMap.get(key);
+                const isExistingSaldo = (existing.descripcion || existing.concepto || "").toLowerCase().includes("saldo a favor");
+                const isNewSaldo = (p.descripcion || p.concepto || "").toLowerCase().includes("saldo a favor");
+                uniquePaymentsMap.set(key, {
+                    ...existing,
+                    ...p,
+                    descripcion: isExistingSaldo ? existing.descripcion : (isNewSaldo ? p.descripcion : (p.descripcion || existing.descripcion)),
+                    concepto: isExistingSaldo ? existing.concepto : (isNewSaldo ? p.concepto : (p.concepto || existing.concepto)),
+                    numero: existing.numero || p.numero || (consNum ? String(consNum).padStart(4, "0") : ""),
+                    nro_consecutivo: existing.nro_consecutivo || p.nro_consecutivo || (consNum ? String(consNum).padStart(4, "0") : "")
+                });
+            } else {
+                uniquePaymentsMap.set(key, p);
+            }
         });
+
+        const paymentRows = Array.from(uniquePaymentsMap.values());
         setPagos(paymentRows.sort((first, second) =>
             new Date(second.created_at || second.fecha || 0).getTime() -
             new Date(first.created_at || first.fecha || 0).getTime()
         ));
-        setPlanes(portalData.plans || []);
+
+        // 5. Filtrar ÚNICAMENTE planes de tratamiento formales (excluir presupuestos/borradores)
+        const isRealTreatmentPlan = (p) => {
+            const det = (typeof p.detalles === "object" && p.detalles !== null) ? p.detalles : {};
+            const planType = String(p.type || det.type || "").toLowerCase();
+            if (planType === "presupuesto") return false;
+            const st = String(p.status || p.estado || "").toLowerCase();
+            if (st === "draft" || st === "borrador" || st === "rechazado") return false;
+            const name = String(p.nombre || p.title || det.title || "").toLowerCase();
+            if (name.startsWith("presupuesto") && planType !== "plan") return false;
+            return true;
+        };
+
+        const treatmentPlans = (portalData.plans || []).filter(isRealTreatmentPlan);
+        setPlanes(treatmentPlans);
+        setCurrentPlanPage(1);
         setNotificaciones(portalData.notifications || []);
     };
 
@@ -916,12 +960,14 @@ export default function PatientPortal() {
     };
 
     const getReciboTitle = (p) => {
-        if (p.nro_consecutivo) return `Recibo #${p.nro_consecutivo}`;
-        if (p.consecutivo) return `Recibo #${p.consecutivo}`;
+        const rawNum = p.numero || p.nro_consecutivo || p.consecutivo;
+        if (rawNum) {
+            const cleanDigits = String(rawNum).replace(/\D/g, "");
+            return `Recibo #${cleanDigits ? String(cleanDigits).padStart(4, "0") : rawNum}`;
+        }
         if (p.idFactura) return `Factura #${p.idFactura}`;
-        if (p.numero) return `Comprobante #${p.numero}`;
         const desc = (p.descripcion || p.concepto || p.observaciones || "").toLowerCase();
-        if (desc.includes("saldo a favor")) return "Abono Saldo a Favor";
+        if (desc.includes("saldo a favor")) return "Recibo Saldo a Favor";
         return `Comprobante de Caja #${(p.id || "").slice(-6).toUpperCase()}`;
     };
 
@@ -1362,83 +1408,132 @@ export default function PatientPortal() {
                                         No hay planes de tratamiento activos en este momento.
                                     </p>
                                     <p className="text-xs text-slate-400">
-                                        Tus presupuestos y evoluciones clínicas aparecerán aquí una vez tu odontólogo los genere.
+                                        Tus planes de tratamiento formalizados por tu odontólogo aparecerán aquí una vez sean registrados.
                                     </p>
                                 </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    {planes.map(plan => {
-                                        const items = plan.items || (plan.detalles && plan.detalles.items) || [];
-                                        const completados = items.filter(it => it.done || it.completado).length;
-                                        const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
-                                        return (
-                                            <div key={plan.id} className="bg-slate-50 rounded-2xl p-5 border border-slate-200/60 space-y-3">
-                                                <div className="flex items-start justify-between gap-3">
+                            ) : (() => {
+                                const PLANS_PER_PAGE = 2;
+                                const totalPlanPages = Math.ceil(planes.length / PLANS_PER_PAGE) || 1;
+                                const paginatedPlans = planes.slice((currentPlanPage - 1) * PLANS_PER_PAGE, currentPlanPage * PLANS_PER_PAGE);
+
+                                return (
+                                    <div className="space-y-4">
+                                        {paginatedPlans.map(plan => {
+                                            const items = plan.items || (plan.detalles && plan.detalles.items) || [];
+                                            const completados = items.filter(it => it.done || it.completado).length;
+                                            const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
+                                            return (
+                                                <div key={plan.id} className="bg-slate-50 rounded-2xl p-5 border border-slate-200/60 space-y-3">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div>
+                                                            <h4 className="font-extrabold text-sm sm:text-base text-slate-800">
+                                                                {plan.title || plan.nombre || "Plan de Tratamiento Integral"}
+                                                            </h4>
+                                                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                                                                Especialista: {plan.doctorName || plan.dentista || "Odontólogo Tratante"}
+                                                            </p>
+                                                        </div>
+                                                        {(() => {
+                                                            const statusInfo = STATUS_MAP[(plan.status || "").toLowerCase()] || {
+                                                                label: plan.status || "Activo",
+                                                                classes: "bg-blue-100 text-blue-700"
+                                                            };
+                                                            return (
+                                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${statusInfo.classes}`}>
+                                                                    {statusInfo.label}
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                    </div>
+
+                                                    {/* Barra de progreso */}
                                                     <div>
-                                                        <h4 className="font-extrabold text-sm sm:text-base text-slate-800">
-                                                            {plan.title || plan.nombre || "Plan de Tratamiento Integral"}
-                                                        </h4>
-                                                        <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                                                            Especialista: {plan.doctorName || plan.dentista || "Odontólogo Tratante"}
-                                                        </p>
+                                                        <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                                            <span>{completados} de {items.length} procedimientos completados</span>
+                                                            <span className="text-indigo-600 font-bold">{pct}%</span>
+                                                        </div>
+                                                        <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500"
+                                                                style={{ width: `${pct}%` }}
+                                                            />
+                                                        </div>
                                                     </div>
-                                                    {(() => {
-                                                        const statusInfo = STATUS_MAP[(plan.status || "").toLowerCase()] || {
-                                                            label: plan.status || "Activo",
-                                                            classes: "bg-blue-100 text-blue-700"
-                                                        };
-                                                        return (
-                                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${statusInfo.classes}`}>
-                                                                {statusInfo.label}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                </div>
 
-                                                {/* Barra de progreso */}
-                                                <div>
-                                                    <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
-                                                        <span>{completados} de {items.length} procedimientos completados</span>
-                                                        <span className="text-indigo-600">{pct}%</span>
-                                                    </div>
-                                                    <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500"
-                                                            style={{ width: `${pct}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-
-                                                {/* Lista de procedimientos */}
-                                                {items.length > 0 && (
-                                                    <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                        {items.slice(0, 6).map((it, idx) => (
-                                                            <div key={idx} className="flex items-center gap-2 text-xs bg-white p-2.5 rounded-xl border border-slate-100">
-                                                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold ${
-                                                                    it.done || it.completado ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
-                                                                }`}>
-                                                                    {it.done || it.completado ? "✓" : idx + 1}
-                                                                </span>
-                                                                <span className={`truncate ${it.done || it.completado ? "line-through text-slate-400" : "font-semibold text-slate-700"}`}>
-                                                                    {it.desc || it.nombre || "Procedimiento Odontológico"}
-                                                                </span>
+                                                    {/* Lista de procedimientos compacta */}
+                                                    {items.length > 0 && (
+                                                        <div className="pt-1">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                {items.slice(0, 4).map((it, idx) => (
+                                                                    <div key={idx} className="flex items-center gap-2 text-xs bg-white p-2.5 rounded-xl border border-slate-100">
+                                                                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold ${
+                                                                            it.done || it.completado ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                                                                        }`}>
+                                                                            {it.done || it.completado ? "✓" : idx + 1}
+                                                                        </span>
+                                                                        <span className={`truncate ${it.done || it.completado ? "line-through text-slate-400" : "font-semibold text-slate-700"}`}>
+                                                                            {it.desc || it.nombre || "Procedimiento Odontológico"}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
                                                             </div>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                            {items.length > 4 && (
+                                                                <div className="pt-2 text-center">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setActiveModal("tratamiento")}
+                                                                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                                                                    >
+                                                                        + Ver {items.length - 4} procedimiento{items.length - 4 === 1 ? "" : "s"} más en el detalle
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
 
-                                                {plan.total && (
-                                                    <div className="pt-1 text-right">
-                                                        <span className="text-xs font-black text-indigo-700">
-                                                            Presupuesto: ${Number(plan.total).toLocaleString("es-CO")}
-                                                        </span>
-                                                    </div>
-                                                )}
+                                                    {plan.total && (
+                                                        <div className="pt-2 text-right border-t border-slate-200/50">
+                                                            <span className="text-xs font-black text-indigo-700">
+                                                                Valor del tratamiento: ${Number(plan.total).toLocaleString("es-CO")}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+
+                                        {/* Barra de paginación si hay más de PLANS_PER_PAGE tratamientos */}
+                                        {totalPlanPages > 1 && (
+                                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                                                <span className="text-[11px] font-bold text-slate-400">
+                                                    Página {currentPlanPage} de {totalPlanPages} ({planes.length} tratamientos)
+                                                </span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        disabled={currentPlanPage === 1}
+                                                        onClick={() => setCurrentPlanPage(prev => Math.max(1, prev - 1))}
+                                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 font-bold transition-all cursor-pointer"
+                                                    >
+                                                        Anterior
+                                                    </button>
+                                                    <span className="px-2.5 py-1 font-black text-indigo-700 bg-indigo-50 rounded-lg">
+                                                        {currentPlanPage} / {totalPlanPages}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        disabled={currentPlanPage === totalPlanPages}
+                                                        onClick={() => setCurrentPlanPage(prev => Math.min(totalPlanPages, prev + 1))}
+                                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 font-bold transition-all cursor-pointer"
+                                                    >
+                                                        Siguiente
+                                                    </button>
+                                                </div>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {/* 3. Historial Completo de Visitas */}
@@ -1723,7 +1818,7 @@ export default function PatientPortal() {
                                                 </div>
                                             </>
                                         )}
-                                        {plan.total && <p className="text-xs font-black text-emerald-600 mt-3">Total: ${Number(plan.total).toLocaleString("es-CO")}</p>}
+                                        {plan.total && <p className="text-xs font-black text-emerald-600 mt-3">Valor del tratamiento: ${Number(plan.total).toLocaleString("es-CO")}</p>}
                                     </div>
                                 );
                             })}
