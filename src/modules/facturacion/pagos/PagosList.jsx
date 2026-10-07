@@ -108,9 +108,11 @@ export default function PagosList({ onNew }) {
 
   const handlePrintPago = async (pago) => {
     try {
-      const clinic = userProfile?.tenant || {
-        nombre: userProfile?.tenantNombre || userProfile?.clinica || "CLÍNICA ODONTOLÓGICA",
-        inquilino: userProfile?.inquilino || userProfile?.tenantId
+      const clinic = {
+        ...(userProfile?.tenant || {}),
+        nombre: userProfile?.tenant?.nombre || userProfile?.tenant?.name || userProfile?.tenantNombre || userProfile?.clinica || "CLÍNICA ODONTOLÓGICA",
+        inquilino: userProfile?.tenant?.id || userProfile?.inquilino || userProfile?.tenantId || "",
+        ciudad: userProfile?.tenant?.ciudad || userProfile?.tenantCiudad || "Sincelejo"
       };
 
       const terceroNombre = pago.tercero || pago.proveedor || "BENEFICIARIO / TERCERO";

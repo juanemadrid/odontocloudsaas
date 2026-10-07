@@ -139,13 +139,14 @@ export const ReceiptPrintService = {
             printElement.style.fontFamily = "'Inter', system-ui, -apple-system, sans-serif";
 
             // Fetch company configuration (empresa) for actual logo, nit, address, phone etc.
-            const tenantId = clinic.inquilino || userProfile?.inquilino || "";
+            const tenantId = clinic?.inquilino || clinic?.id || userProfile?.inquilino || userProfile?.tenantId || "";
             let dbLogoUrl = "";
             let dbClinicName = "";
             let dbClinicNit = "";
             let dbClinicAddress = "";
             let dbClinicPhone = "";
             let dbClinicEmail = "";
+            let dbClinicCity = "";
 
             if (tenantId) {
                 try {
@@ -161,6 +162,7 @@ export const ReceiptPrintService = {
                         dbClinicAddress = clinicConfig.address || clinicConfig.direccion || "";
                         dbClinicPhone = clinicConfig.phone || clinicConfig.telefono || "";
                         dbClinicEmail = clinicConfig.email || "";
+                        dbClinicCity = clinicConfig.city || clinicConfig.ciudad || "";
                     }
                 } catch (err) {
                     console.error("Error loading tenant config for print:", err);
@@ -168,20 +170,21 @@ export const ReceiptPrintService = {
             }
 
             // Resolve values
-            const rawLogoUrl = dbLogoUrl || clinic.logo || clinic.logoUrl || "";
+            const rawLogoUrl = dbLogoUrl || clinic?.logo || clinic?.logoUrl || "";
             const logoUrl = rawLogoUrl;
-            const clinicName = dbClinicName || clinic.nombreComercial || clinic.nombre || "Clínica Dental";
-            const clinicNit = dbClinicNit || clinic.nit || "—";
-            const clinicAddress = dbClinicAddress || clinic.direccion || "—";
-            const clinicPhone = dbClinicPhone || clinic.telefono || "—";
-            const clinicEmail = dbClinicEmail || clinic.email || "";
+            const clinicName = dbClinicName || clinic?.nombreComercial || clinic?.nombre || "Clínica Dental";
+            const clinicNit = dbClinicNit || clinic?.nit || "—";
+            const clinicAddress = dbClinicAddress || clinic?.direccion || "—";
+            const clinicPhone = dbClinicPhone || clinic?.telefono || "—";
+            const clinicEmail = dbClinicEmail || clinic?.email || "";
+            const clinicCity = dbClinicCity || clinic?.ciudad || clinic?.city || userProfile?.tenantCiudad || "";
 
-            const patientName = patient.nombreCompleto || `${patient.nombres || patient.nombre || ''} ${patient.apellidos || patient.apellido || ''}`.trim() || patient.displayName || pago.pacienteNombre || pago.patientNombre || pago.tercero || pago.proveedor || "Paciente / Tercero";
-            const patientDoc = patient.documento || patient.nroDocumento || patient.numero_documento || patient.nro_documento || patient.identificacion || patient.cedula || patient.docNumber || pago.pacienteDocumento || pago.documento || pago.patientDoc || pago.documentoTercero || pago.nit || "—";
-            const patientDocType = patient.tipoDocumento || patient.tipo_documento || patient.tipoDoc || pago.tipoDocumento || (String(patientDoc).length >= 9 ? "NIT" : "CC");
-            const patientAddress = patient.direccion || patient.direccionDomicilio || patient.lugarResidencia || patient.address || pago.direccion || "—";
-            const patientCity = patient.ciudadDomicilio || patient.ciudad || patient.municipio || clinic.ciudad || pago.ciudad || "Sincelejo";
-            const patientPhone = patient.celular || patient.telefono || patient.phone || patient.movil || pago.telefono || "—";
+            const patientName = patient?.nombreCompleto || `${patient?.nombres || patient?.nombre || ''} ${patient?.apellidos || patient?.apellido || ''}`.trim() || patient?.displayName || pago?.pacienteNombre || pago?.patientNombre || pago?.tercero || pago?.proveedor || "Paciente / Tercero";
+            const patientDoc = patient?.documento || patient?.nroDocumento || patient?.numero_documento || patient?.nro_documento || patient?.identificacion || patient?.cedula || patient?.docNumber || pago?.pacienteDocumento || pago?.documento || pago?.patientDoc || pago?.documentoTercero || pago?.nit || "—";
+            const patientDocType = patient?.tipoDocumento || patient?.tipo_documento || patient?.tipoDoc || pago?.tipoDocumento || (String(patientDoc).length >= 9 ? "NIT" : "CC");
+            const patientAddress = patient?.direccion || patient?.direccionDomicilio || patient?.lugarResidencia || patient?.address || pago?.direccion || "—";
+            const patientCity = patient?.ciudadDomicilio || patient?.ciudad || patient?.municipio || clinic?.ciudad || pago?.ciudad || "Sincelejo";
+            const patientPhone = patient?.celular || patient?.telefono || patient?.phone || patient?.movil || pago?.telefono || "—";
             
             // Clean consecutive number (avoid "No. No. REC-...")
             let rawConsecutive = String(pago.nroConsecutivo || pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "").trim();
