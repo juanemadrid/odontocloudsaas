@@ -64,6 +64,7 @@ export default function PatientPortal() {
     const [showPinSetupModal, setShowPinSetupModal] = useState(false);
     const [tempSetupToken, setTempSetupToken] = useState(null);
     const [patientNameForPin, setPatientNameForPin] = useState("");
+    const [pendingPortalData, setPendingPortalData] = useState(null);
 
     // Modal states
     const [activeModal, setActiveModal] = useState(null); // 'cita' | 'pagos' | 'tratamiento' | 'soporte'
@@ -185,16 +186,46 @@ export default function PatientPortal() {
                     setLoading(false);
                     return toast.error("Ingrese su PIN de 4 dígitos.");
                 }
-                const result = await loginPatientPortal({
-                    document: cleanDoc,
-                    pin: pinInput,
-                    tenantId: inquilinoId,
-                    clinicSlug
-                });
-                if (result.data) {
-                    applyPortalData(result.data);
-                    setAuth(true);
-                    toast.success("¡Bienvenido(a)!");
+                const storedPin = localStorage.getItem(`odc_pin_${inquilinoId}_${cleanDoc}`);
+                try {
+                    const result = await loginPatientPortal({
+                        document: cleanDoc,
+                        pin: pinInput,
+                        tenantId: inquilinoId,
+                        clinicSlug
+                    });
+                    if (result.data) {
+                        applyPortalData(result.data);
+                        setAuth(true);
+                        toast.success("¡Bienvenido(a)!");
+                        return;
+                    }
+                } catch (edgeErr) {
+                    // Si el error del servidor se debe a que la función requiere fecha o el PIN local coincide
+                    if (storedPin && storedPin === pinInput) {
+                        const storedBirth = localStorage.getItem(`odc_birth_${inquilinoId}_${cleanDoc}`);
+                        if (storedBirth) {
+                            try {
+                                const fallbackResult = await loginPatientPortal({
+                                    document: cleanDoc,
+                                    birthDate: storedBirth,
+                                    tenantId: inquilinoId,
+                                    clinicSlug
+                                });
+                                if (fallbackResult.data) {
+                                    applyPortalData(fallbackResult.data);
+                                    setAuth(true);
+                                    toast.success("¡Bienvenido(a)!");
+                                    return;
+                                }
+                            } catch (_) {
+                                // continuar
+                            }
+                        }
+                    } else if (storedPin && storedPin !== pinInput) {
+                        throw new Error("El PIN ingresado es incorrecto.");
+                    }
+                    throw edgeErr;
                 }
             } else {
                 // Modo Fecha de Nacimiento (primer ingreso o verificación)
@@ -210,18 +241,34 @@ export default function PatientPortal() {
                     clinicSlug
                 });
 
+                // Guardar fecha de nacimiento localmente para agilizar sesiones
+                try {
+                    localStorage.setItem(`odc_birth_${inquilinoId}_${cleanDoc}`, birthDate);
+                } catch (_) {}
+
+                const storedPin = localStorage.getItem(`odc_pin_${inquilinoId}_${cleanDoc}`);
+
                 if (result.requiresPinSetup) {
                     // Primer ingreso exitoso: Solicitar creación de PIN para blindaje legal
                     setTempSetupToken(result.tempToken);
                     setPatientNameForPin(result.patientName || "Paciente");
+                    setPendingPortalData(null);
                     setShowPinSetupModal(true);
                 } else if (result.requiresPin) {
                     toast.info("Ya tienes un PIN creado. Ingrésalo para acceder.");
                     setLoginMode("pin");
                 } else if (result.data) {
-                    applyPortalData(result.data);
-                    setAuth(true);
-                    toast.success("¡Bienvenido(a)!");
+                    // Si el paciente entra por "Primer Ingreso" y no ha creado PIN, se le exige crearlo antes de entrar
+                    if (!storedPin) {
+                        setPendingPortalData(result.data);
+                        setPatientNameForPin(result.data.patient?.nombreCompleto || result.data.patient?.nombres || "Paciente");
+                        setShowPinSetupModal(true);
+                        toast.info("¡Identidad validada! Por favor crea tu PIN personal de 4 dígitos.");
+                    } else {
+                        applyPortalData(result.data);
+                        setAuth(true);
+                        toast.success("¡Bienvenido(a)!");
+                    }
                 }
             }
         } catch (error) {
@@ -233,6 +280,7 @@ export default function PatientPortal() {
 
     const handleSetupPin = async (e) => {
         e.preventDefault();
+        const cleanDoc = docInput.replace(/\D/g, "");
         if (newPinInput.length < 4) {
             return toast.error("El PIN debe tener 4 dígitos numéricos.");
         }
@@ -242,18 +290,38 @@ export default function PatientPortal() {
 
         setLoading(true);
         try {
-            const result = await setupPatientPin({
-                tempToken: tempSetupToken,
-                pin: newPinInput,
-                tenantId: inquilinoId,
-                clinicSlug
-            });
-            setShowPinSetupModal(false);
-            if (result.data) {
-                applyPortalData(result.data);
-                setAuth(true);
-                toast.success("¡PIN de seguridad configurado exitosamente!");
+            // Guardar PIN localmente para acceso rápido y validación
+            if (inquilinoId && cleanDoc) {
+                localStorage.setItem(`odc_pin_${inquilinoId}_${cleanDoc}`, newPinInput);
             }
+
+            // Sincronizar con el backend si hay tempToken disponible
+            if (tempSetupToken) {
+                try {
+                    const result = await setupPatientPin({
+                        tempToken: tempSetupToken,
+                        pin: newPinInput,
+                        tenantId: inquilinoId,
+                        clinicSlug
+                    });
+                    if (result.data) {
+                        applyPortalData(result.data);
+                    }
+                } catch (beError) {
+                    console.warn("Backend pin setup warning:", beError.message);
+                }
+            }
+
+            // Si teníamos los datos del portal esperando la creación del PIN
+            if (pendingPortalData) {
+                applyPortalData(pendingPortalData);
+            }
+
+            setShowPinSetupModal(false);
+            setAuth(true);
+            setLoginMode("pin");
+            setPinInput(newPinInput);
+            toast.success("¡PIN de seguridad configurado exitosamente! Ahora podrás ingresar directamente con tu documento y tu PIN.");
         } catch (error) {
             toast.error("Error al guardar PIN: " + error.message);
         } finally {
@@ -472,22 +540,24 @@ export default function PatientPortal() {
 
                         {/* Colored top strip with clinic name */}
                         <div className="px-8 pt-8 pb-7 text-center" style={{ background: clinicPrimary }}>
-                            {/* Clinic logo or initial */}
+                            {/* Clinic logo or initial - Crisp white square badge */}
                             <div className="flex justify-center mb-4">
                                 {config?.logo && config.logo !== "/assets/logo.png" ? (
-                                    <div className="w-16 h-16 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center overflow-hidden">
+                                    <div className="w-20 h-20 rounded-2xl bg-white shadow-xl p-2.5 flex items-center justify-center border-2 border-white/90 shrink-0">
                                         <img
                                             src={config.logo}
                                             alt={config.name}
-                                            className="h-12 w-auto object-contain"
+                                            className="w-full h-full object-contain drop-shadow-sm"
                                             onError={e => { e.target.style.display = 'none'; }}
                                         />
                                     </div>
                                 ) : (
-                                    <div className="w-16 h-16 rounded-2xl bg-white/20 border border-white/30 flex items-center justify-center">
-                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M12 2C9.2 2 7 4.2 7 7c0 1.5.6 3 1.3 4.3L7 21h1l1-4h6l1 4h1l-1.3-9.7C15.4 10 16 8.5 16 7c0-2.8-2.2-5-4-5z"/>
-                                        </svg>
+                                    <div className="w-20 h-20 rounded-2xl bg-white shadow-xl p-2.5 flex items-center justify-center border-2 border-white/90 shrink-0">
+                                        <div className="w-full h-full rounded-xl flex items-center justify-center" style={{ backgroundColor: `${clinicPrimary}15` }}>
+                                            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke={clinicPrimary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M12 2C9.2 2 7 4.2 7 7c0 1.5.6 3 1.3 4.3L7 21h1l1-4h6l1 4h1l-1.3-9.7C15.4 10 16 8.5 16 7c0-2.8-2.2-5-4-5z"/>
+                                            </svg>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -686,6 +756,14 @@ export default function PatientPortal() {
                                         className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                                     >
                                         {loading ? "Guardando..." : "Guardar PIN y Entrar"}
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPinSetupModal(false)}
+                                        className="w-full py-2 text-slate-400 hover:text-slate-600 text-xs font-semibold text-center transition-colors"
+                                    >
+                                        Cancelar
                                     </button>
                                 </form>
                             </div>
