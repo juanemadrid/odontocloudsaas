@@ -79,7 +79,7 @@ Deno.serve(async (request) => {
         }
       };
 
-      const [patientResult, appointments, payments, receipts, plans, notifications, doctorProfiles, websiteRow] =
+      const [patientResult, appointments, payments, receipts, invoices, plans, notifications, doctorProfiles, websiteRow] =
         await Promise.all([
           admin
             .from("pacientes")
@@ -90,6 +90,7 @@ Deno.serve(async (request) => {
           queryRows("citas", (query) => query.eq("paciente_id", patientId)),
           queryRows("pagos", (query) => query.eq("paciente_id", patientId)),
           queryRows("recibos_caja", (query) => query.eq("paciente_id", patientId)),
+          queryRows("facturas", (query) => query.eq("paciente_id", patientId)),
           queryRows("treatment_plans", (query) => query.eq("paciente_id", patientId)),
           queryRows("notificaciones", (query) =>
             query.eq("paciente_id", patientId).eq("target", "patient")
@@ -155,6 +156,8 @@ Deno.serve(async (request) => {
         id: source.id,
         tenant_id: source.tenant_id,
         inquilino: source.tenant_id,
+        documento: source.documento || source.nro_documento || source.nroDocumento || "",
+        nro_documento: source.nro_documento || source.documento || "",
         nombres: source.nombres || source.nombre || "",
         apellidos: source.apellidos || source.apellido || "",
         nombreCompleto: source.nombreCompleto ||
@@ -171,7 +174,8 @@ Deno.serve(async (request) => {
 
       // Enriquecer citas con datos reales de doctor
       const enrichedAppointments = appointments.map((apt: any) => {
-        const doc = apt.profesional_id ? doctorsMap.get(String(apt.profesional_id)) : null;
+        const docId = apt.profesional_id || apt.doctor_id || apt.doctorId;
+        const doc = docId ? doctorsMap.get(String(docId)) : null;
         return {
           ...apt,
           profesional_nombre: apt.profesional_nombre || doc?.name || apt.dentista || apt.doctorName || "Odontólogo Especialista",
@@ -179,25 +183,58 @@ Deno.serve(async (request) => {
         };
       });
 
-      // Enriquecer planes con datos reales de doctor
+      // Enriquecer planes con datos reales de doctor y desempacar detalles/items
       const enrichedPlans = plans.map((pl: any) => {
-        const doc = pl.doctor_id || pl.profesional_id ? doctorsMap.get(String(pl.doctor_id || pl.profesional_id)) : null;
+        const det = (typeof pl.detalles === "object" && pl.detalles !== null) ? pl.detalles : {};
+        const items = Array.isArray(pl.items) && pl.items.length > 0
+          ? pl.items
+          : (Array.isArray(det.items) ? det.items : []);
+        const docId = pl.doctor_id || pl.profesional_id || det.doctorId || det.doctor_id;
+        const doc = docId ? doctorsMap.get(String(docId)) : null;
         return {
           ...pl,
-          doctorName: pl.doctorName || pl.profesional_nombre || doc?.name || "Odontólogo Tratante",
-          specialty: doc?.specialty || pl.especialidad || "Odontología General",
+          title: pl.title || pl.nombre || det.title || "Plan de Tratamiento",
+          nombre: pl.nombre || pl.title || "Plan de Tratamiento",
+          status: pl.status || pl.estado || "activo",
+          estado: pl.estado || pl.status || "activo",
+          total: Number(pl.total || pl.costoTotal || det.total || det.costoTotal || 0),
+          items,
+          doctorName: pl.doctorName || det.doctor || det.doctorName || doc?.name || pl.profesional_nombre || "Odontólogo Tratante",
+          specialty: doc?.specialty || det.especialidad || pl.especialidad || "Odontología General",
         };
       });
+
+      // Consolidar pagos sin duplicados (pagos + recibos_caja + facturas + cfg.pagos)
+      const allPaymentsMap = new Map();
+      const addPaymentRow = (p: any) => {
+        if (!p || typeof p !== "object") return;
+        const idKey = String(p.id || p.idFactura || p.consecutivo || `${p.fecha}_${p.total || p.monto}`);
+        if (!allPaymentsMap.has(idKey)) {
+          allPaymentsMap.set(idKey, p);
+        }
+      };
+
+      (payments || []).forEach(addPaymentRow);
+      (receipts || []).forEach(addPaymentRow);
+      (invoices || []).forEach(addPaymentRow);
+
+      // Si hay pagos archivados en website_config para este paciente
+      if (Array.isArray(cfg.pagos)) {
+        cfg.pagos
+          .filter((p: any) => String(p.paciente_id || p.pacienteId || p.patient_id) === String(patientId))
+          .forEach(addPaymentRow);
+      }
 
       return {
         patient,
         clinic,
         doctors: doctorsList,
         appointments: enrichedAppointments,
-        payments: [...payments, ...receipts],
+        payments: Array.from(allPaymentsMap.values()),
         plans: enrichedPlans,
         notifications,
       };
+    };
     };
 
     const validateSession = async () => {

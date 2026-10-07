@@ -816,8 +816,8 @@ export default function PatientPortal() {
     const totalPagado = pagos.filter(esPagado).reduce((s, p) => s + getPagoMonto(p), 0);
     // El pendiente real = total de los planes de tratamiento - lo ya abonado
     const totalPlanes = planes.reduce((s, plan) => {
-        const items = plan.items || [];
-        const planTotal = Number(plan.total || 0) || items.reduce((sum, it) => sum + Number(it.precio || it.price || it.valor || 0), 0);
+        const items = plan.items || (plan.detalles && plan.detalles.items) || [];
+        const planTotal = Number(plan.total || plan.costoTotal || 0) || items.reduce((sum, it) => sum + Number(it.precio || it.price || it.valor || 0), 0);
         return s + planTotal;
     }, 0);
     const totalPendiente = Math.max(0, totalPlanes - totalPagado);
@@ -1221,7 +1221,7 @@ export default function PatientPortal() {
                             ) : (
                                 <div className="space-y-4">
                                     {planes.map(plan => {
-                                        const items = plan.items || [];
+                                        const items = plan.items || (plan.detalles && plan.detalles.items) || [];
                                         const completados = items.filter(it => it.done || it.completado).length;
                                         const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
                                         return (
@@ -1471,7 +1471,7 @@ export default function PatientPortal() {
                     : (
                         <div className="space-y-4">
                             {planes.map(plan => {
-                                const items = plan.items || [];
+                                const items = plan.items || (plan.detalles && plan.detalles.items) || [];
                                 const completados = items.filter(it => it.done || it.completado).length;
                                 const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
                                 return (
