@@ -61,8 +61,22 @@ export default function ModernLayout() {
 
             <VivaFooter config={displayConfig} />
 
-            {/* Floating Intelligent AI Assistant & WhatsApp Support */}
-            <LandingAiAssistant config={displayConfig} />
+            {/* Floating Intelligent AI Assistant (Solo en Master Landing de OdontoCloud SaaS) */}
+            {isMaster && <LandingAiAssistant config={displayConfig} />}
+
+            {/* Para Clínicas: Botón directo a WhatsApp de Recepción sin bot de ventas SaaS */}
+            {!isMaster && (config.phone || config.contactPhone) && (
+                <a
+                    href={`https://wa.me/57${(config.phone || config.contactPhone || "").replace(/\D/g, '')}?text=Hola,%20me%20gustar%C3%ADa%20solicitar%20informaci%C3%B3n%20en%20${encodeURIComponent(displayConfig.name || "la clínica")}.`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs uppercase tracking-wider py-3 px-4 rounded-full shadow-2xl hover:scale-105 transition-all"
+                    title="Chatear con Recepción por WhatsApp"
+                >
+                    <FaWhatsapp size={20} />
+                    <span className="hidden sm:inline">WhatsApp Recepción</span>
+                </a>
+            )}
         </div>
     );
 }

@@ -145,11 +145,12 @@ export default function VivaHeader({ config = {}, isPreview = false, overlay = f
                             </div>
                         ) : (
                             <>
-                                <div className="relative p-1 rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200/60 shadow-sm group-hover:shadow-md transition-all group-hover:scale-105 shrink-0">
+                                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white shadow-md p-1.5 flex items-center justify-center border border-slate-200/80 group-hover:border-blue-400 group-hover:shadow-lg transition-all group-hover:scale-105 shrink-0 overflow-hidden">
                                     <img
                                         src={config?.logo || `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/atm_logo.png`}
                                         alt={displayName}
-                                        className="h-10 md:h-12 w-auto object-contain max-w-[140px]"
+                                        className="w-full h-full object-contain drop-shadow-xs"
+                                        onError={(e) => { e.target.style.display = 'none'; }}
                                     />
                                 </div>
 
