@@ -219,7 +219,11 @@ export default function AppointmentModal({
                     fecha: f,
                     hora: h,
                     duracion: initialData?.duracion || 30,
-                    comentario: initialData?.comentario || "",
+                    comentario: (() => {
+                        const raw = initialData?.comentario ?? initialData?.notas ?? initialData?.motivo ?? "";
+                        if (typeof raw === "string" && raw.trim().toLowerCase() === "consulta odontológica") return "";
+                        return typeof raw === "string" ? raw.trim() : "";
+                    })(),
                     status: initialData?.status || "confirmed",
                     valoracion: Boolean(initialData?.valoracion),
                     control: Boolean(initialData?.control) && !initialData?.valoracion,

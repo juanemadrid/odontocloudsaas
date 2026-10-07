@@ -202,7 +202,9 @@ export default function AgendaDetailView({ doctors = [], branches = [], chairs =
                     sucursalId: c.sucursal_id,
                     sucursalNombre: branchObj?.nombre || "Global / Todas",
                     estado: (c.estado || "CONFIRMADA").toUpperCase(),
-                    motivo: c.motivo || c.notas || "Consulta odontológica",
+                    motivo: (c.notas && c.notas.trim() && c.notas.trim().toLowerCase() !== "consulta odontológica")
+                        ? c.notas.trim()
+                        : (c.motivo && c.motivo.trim().toLowerCase() !== "consulta odontológica" ? c.motivo.trim() : ""),
                     duracion: c.duracion || 30,
                     futuraCita: nextDate
                 };

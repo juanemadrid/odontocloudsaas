@@ -480,8 +480,18 @@ export function useAgenda() {
                     duracion: Math.max(5, Math.round((endObj.getTime() - startObj.getTime()) / 60000)),
                     status: normStatus,
                     estado: c.estado || "CONFIRMADA",
-                    comentario: c.notas || c.motivo || "",
-                    motivo: c.motivo || "",
+                    comentario: (() => {
+                        const cleanNotas = (c.notas || "").trim();
+                        if (cleanNotas) {
+                            return cleanNotas.toLowerCase() === "consulta odontológica" ? "" : cleanNotas;
+                        }
+                        const cleanMotivo = (c.motivo || "").trim();
+                        if (cleanMotivo && cleanMotivo.toLowerCase() !== "consulta odontológica") {
+                            return cleanMotivo;
+                        }
+                        return "";
+                    })(),
+                    motivo: (c.motivo && c.motivo.trim().toLowerCase() !== "consulta odontológica") ? c.motivo.trim() : (c.notas || ""),
                     paciente: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
                     pacienteNombre: c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim() : (c.motivo || "Paciente"),
                     celular: c.paciente?.telefono || "",
@@ -606,8 +616,10 @@ export function useAgenda() {
             fecha_inicio: (data.start || new Date()).toISOString(),
             fecha_fin: (data.end || new Date((data.start || new Date()).getTime() + (data.duracion || 30) * 60000)).toISOString(),
             estado: data.estado || "CONFIRMADA",
-            motivo: data.comentario || data.motivo || "Consulta odontológica",
-            notas: data.comentario || ""
+            motivo: (data.comentario && data.comentario.trim()) 
+                ? data.comentario.trim() 
+                : (data.motivo && data.motivo.trim().toLowerCase() !== "consulta odontológica" ? data.motivo.trim() : ""),
+            notas: (data.comentario && data.comentario.trim()) ? data.comentario.trim() : ""
         };
 
         const { data: inserted, error: insertErr } = await supabase.from("citas").insert([rawPayload]).select().single();
@@ -732,7 +744,11 @@ export function useAgenda() {
         if (finalPatch.sucursalId !== undefined) supPatch.sucursal_id = finalPatch.sucursalId;
         if (finalPatch.estado !== undefined) supPatch.estado = finalPatch.estado;
         if (finalPatch.status !== undefined) supPatch.estado = statusMap[finalPatch.status] || finalPatch.status.toUpperCase();
-        if (finalPatch.comentario !== undefined) supPatch.notas = finalPatch.comentario;
+        if (finalPatch.comentario !== undefined) {
+            const cleanComentario = (finalPatch.comentario || "").trim();
+            supPatch.notas = cleanComentario;
+            supPatch.motivo = cleanComentario;
+        }
         if (timeChanged) {
             supPatch.fecha_inicio = validatedStart.toISOString();
             supPatch.fecha_fin = validatedEnd.toISOString();

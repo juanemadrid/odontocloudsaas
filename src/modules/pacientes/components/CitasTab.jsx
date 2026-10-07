@@ -342,7 +342,7 @@ export default function CitasTab({ patient }) {
             fecha: `${yyyy}-${mm}-${dd}`,
             hora: `${hh}:${min}`,
             duracion: 30,
-            motivo: "Consulta odontológica",
+            motivo: "",
             comentario: "",
             status: "confirmed"
         });

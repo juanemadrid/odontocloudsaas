@@ -81,7 +81,7 @@ export default function Agenda() {
                 start: start || new Date(),
                 pacienteId: data.pacienteId || "",
                 pacienteNombre: data.pacienteNombre || "",
-                comentario: data.motivo || "",
+                comentario: (data.motivo && data.motivo.trim().toLowerCase() !== "consulta odontológica") ? data.motivo.trim() : (data.comentario || ""),
                 fecha: data.fecha || "",
             });
             setModalOpen(true);

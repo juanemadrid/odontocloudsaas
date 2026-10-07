@@ -141,8 +141,8 @@ export const createAppointment = async (tenantId, appointmentData) => {
         fecha_inicio: startDate.toISOString(),
         fecha_fin: endDate.toISOString(),
         estado: appointmentData.status || "programada",
-        motivo: motivo || "Consulta odontológica",
-        notas: notas || ""
+        motivo: (appointmentData.comentario || motivo || notas || "").trim(),
+        notas: (appointmentData.comentario || notas || "").trim()
     };
 
     const { data, error } = await supabase

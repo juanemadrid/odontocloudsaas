@@ -197,7 +197,7 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                                     <span className={`font-black text-slate-800 uppercase block truncate transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9.5px] max-w-[140px]' : 'text-[12.5px] max-w-[260px]'}`} title={apt.doctorDisplayName}>{apt.doctorDisplayName}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
-                                                    <span className={`text-slate-600 font-bold italic block uppercase transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[180px]' : 'text-[12px] truncate max-w-[320px]'}`} title={apt.comentario}>{apt.comentario || "-"}</span>
+                                                    <span className={`text-slate-600 font-bold italic block uppercase transition-all print:whitespace-normal ${sidebarVisible ? 'text-[9px] truncate max-w-[180px]' : 'text-[12px] truncate max-w-[320px]'}`} title={apt.comentario || ""}>{apt.comentario || ""}</span>
                                                 </td>
                                                 <td className="py-3 px-2">
                                                     {(() => {
