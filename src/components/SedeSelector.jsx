@@ -30,11 +30,11 @@ export default function SedeSelector() {
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="h-8 px-4 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-[11px] font-bold tracking-wide transition-all shadow-xs flex items-center gap-2 cursor-pointer active:scale-95 select-none"
+                className="h-8 px-2.5 sm:px-4 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-[11px] font-bold tracking-wide transition-all shadow-xs flex items-center gap-1.5 sm:gap-2 cursor-pointer active:scale-95 select-none max-w-[130px] xs:max-w-[170px] sm:max-w-none"
                 title="Cambiar sucursal / sede activa"
             >
                 <FiMapPin size={13} className="shrink-0 text-white/90" />
-                <span className="truncate max-w-[220px] sm:max-w-[320px]">
+                <span className="truncate max-w-[70px] xs:max-w-[120px] sm:max-w-[320px]">
                     {activeSede?.nombre || "SEDE PRINCIPAL"}
                 </span>
                 <FiChevronDown

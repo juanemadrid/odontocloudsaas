@@ -278,8 +278,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
         { id: 'pacientes', icon: FiUsers, label: 'PACIENTES' },
         { id: 'caja', icon: FiDollarSign, label: 'CAJA' },
         { id: 'administracion', icon: FiBriefcase, label: 'ADMINISTRACIÓN' },
-        { id: 'reportes', icon: FiPieChart, label: 'REPORTES' },
-        { id: 'config', icon: FiSettings, label: 'CONFIGURACIÓN' }
+        { id: 'reportes', icon: FiPieChart, label: 'REPORTES' }
     ];
 
     const filteredNavItems = useMemo(() => {
@@ -304,11 +303,6 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                        can("Administración", "Esterilizacion", "consultar");
             }
             if (item.id === 'reportes') return can("Reportes", "Gestion Reportes", "consultar");
-            if (item.id === 'config') {
-                return can("Configuración", "Gestion Configuración", "consultar") ||
-                       userProfile?.rol === 'admin' ||
-                       userProfile?.rol === 'superadmin';
-            }
             return true;
         });
     }, [userProfile, can]);
@@ -316,11 +310,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
     const handleNavClick = (id) => {
         setSidebarOpen(false);
         const safeBasePath = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
-        const path = id === 'Inicio' 
-            ? safeBasePath 
-            : id === 'config'
-                ? `${safeBasePath}/config/datos-basicos`
-                : `${safeBasePath}/${id}`;
+        const path = id === 'Inicio' ? safeBasePath : `${safeBasePath}/${id}`;
         
         if (window.checkIncompletePatientNavigation) {
             const intercepted = window.checkIncompletePatientNavigation(path);
@@ -492,82 +482,19 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                             })}
                         </div>
                     </nav>
-
-                    {/* Sidebar Footer: Usuario, Configuración y Cerrar Sesión */}
-                    <div className="shrink-0 p-3 border-t border-slate-200/70 bg-white/80 backdrop-blur-md">
-                        <div className={`flex items-center ${collapsedDesktop ? 'justify-center' : 'justify-between'} gap-2`}>
-                            {!collapsedDesktop && (
-                                <div
-                                    onClick={() => {
-                                        setSidebarOpen(false);
-                                        setProfileModalOpen(true);
-                                    }}
-                                    className="flex items-center gap-2.5 min-w-0 cursor-pointer hover:opacity-80 transition-opacity p-1 rounded-lg flex-1"
-                                    title="Mi Perfil"
-                                >
-                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0 overflow-hidden border border-blue-200">
-                                        {(userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL) ? (
-                                            <img
-                                                src={userProfile?.foto_perfil || userProfile?.fotoPerfil || userProfile?.photoURL}
-                                                alt="Foto"
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            (userProfile?.full_name || userProfile?.nombre || user?.email || "U").charAt(0).toUpperCase()
-                                        )}
-                                    </div>
-                                    <div className="min-w-0 truncate text-left">
-                                        <p className="text-xs font-bold text-slate-800 truncate leading-tight">
-                                            {userProfile?.full_name || userProfile?.nombre || user?.email?.split('@')[0] || "Usuario"}
-                                        </p>
-                                        <p className="text-[10px] text-slate-400 truncate uppercase tracking-wider font-semibold">
-                                            {userProfile?.rol || "Usuario"}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className={`flex items-center ${collapsedDesktop ? 'flex-col gap-2' : 'gap-1'} shrink-0`}>
-                                {(can("Configuración", "Gestion Configuración", "consultar") || userProfile?.rol === 'admin' || userProfile?.rol === 'superadmin') && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSidebarOpen(false);
-                                            const safeBasePath = basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
-                                            navigate(`${safeBasePath}/config/datos-basicos`);
-                                        }}
-                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                                        title="Configuración"
-                                    >
-                                        <FiSettings size={17} />
-                                    </button>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setSidebarOpen(false);
-                                        handleLogout();
-                                    }}
-                                    className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                    title="Cerrar sesión"
-                                >
-                                    <FiLogOut size={17} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </aside>
 
             {/* Content Area */}
             <div className={`flex-1 flex flex-col min-w-0 min-h-screen relative z-1 transition-all duration-500 ${collapsedDesktop ? 'lg:pl-20' : 'lg:pl-64'}`}>
                 {/* Top Header Bar - Multi-Sede & User Controls (Oral Drive Style) */}
-                <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-30 shadow-xs px-4 sm:px-6 h-14 flex items-center justify-between">
+                <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-30 shadow-xs px-3 sm:px-6 h-14 flex items-center justify-between gap-2">
                     {/* Left: Mobile Menu Toggle & Sede Selector */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                         <button
                             onClick={() => setSidebarOpen(true)}
-                            className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200/60 lg:hidden flex items-center justify-center text-slate-500 hover:text-slate-800"
+                            className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200/60 lg:hidden flex items-center justify-center text-slate-500 hover:text-slate-800 shrink-0"
+                            title="Abrir menú"
                         >
                             <FiMenu size={18} />
                         </button>
@@ -575,26 +502,28 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                     </div>
 
                     {/* Right: Quick actions & User identity */}
-                    <div className="flex items-center gap-3 sm:gap-4 text-xs font-semibold text-slate-600">
+                    <div className="flex items-center gap-2 sm:gap-4 text-xs font-semibold text-slate-600 shrink-0">
                         {/* Indicador de Conexión Híbrida / Offline */}
-                        <ConnectionStatusBadge />
+                        <div className="hidden sm:flex">
+                            <ConnectionStatusBadge />
+                        </div>
 
                         {/* Ayuda / Asistente IA */}
                         <button
                             type="button"
                             onClick={() => setHelpModalOpen(true)}
-                            className="flex items-center gap-1.5 text-slate-600 hover:text-blue-600 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
+                            className="hidden sm:flex items-center gap-1.5 text-slate-600 hover:text-blue-600 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
                             title="Centro de ayuda y asistente IA"
                         >
                             <FiHelpCircle size={15} className="text-blue-600" />
-                            <span className="hidden sm:inline font-bold">Ayuda</span>
+                            <span className="font-bold">Ayuda</span>
                         </button>
 
                         {/* Notificaciones */}
                         <button
                             type="button"
                             onClick={() => setNotificationsOpen(true)}
-                            className="relative p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
+                            className="relative p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer shrink-0"
                             title="Notificaciones"
                         >
                             <FiBell size={16} />
@@ -603,15 +532,15 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                             )}
                         </button>
 
-                        {/* Configuración rápida */}
+                        {/* Configuración rápida - Visible tanto en móvil como en computadora */}
                         {(can("Configuración", "Gestion Configuración", "consultar") || userProfile?.rol === 'admin' || userProfile?.rol === 'superadmin') && (
                             <button
                                 type="button"
                                 onClick={() => navigate(`${basePath}/config/datos-basicos`)}
-                                className="p-1.5 text-slate-400 hover:text-slate-700 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer"
-                                title="Ajustes - Datos Básicos"
+                                className="p-1.5 text-slate-500 hover:text-blue-600 transition-colors rounded-lg hover:bg-slate-50 cursor-pointer shrink-0"
+                                title="Configuración"
                             >
-                                <FiSettings size={16} />
+                                <FiSettings size={17} />
                             </button>
                         )}
 
@@ -709,17 +638,6 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                                 </div>
                             )}
                         </div>
-
-                        {/* Botón directo Cerrar Sesión en Header */}
-                        <button
-                            type="button"
-                            onClick={handleLogout}
-                            className="flex items-center gap-1.5 px-2 py-1.5 text-rose-600 hover:text-rose-700 bg-rose-50/70 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer font-bold text-xs shrink-0"
-                            title="Cerrar sesión"
-                        >
-                            <FiLogOut size={14} />
-                            <span className="hidden md:inline">Salir</span>
-                        </button>
                     </div>
                 </header>
 
