@@ -244,8 +244,23 @@ export const ReceiptPrintService = {
             }
             const receiptNumber = rawConsecutive ? rawConsecutive : "S/N";
 
-            const date = pago.fecha ? (pago.fecha.toDate ? pago.fecha.toDate() : new Date(pago.fecha)) : new Date();
-            const formattedDate = date.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+            let formattedDate = "";
+            const rawFecha = pago.fecha;
+            if (typeof rawFecha === "string") {
+                const match = rawFecha.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+                if (match && (!rawFecha.includes("T") || rawFecha.includes("T00:00:00") || rawFecha.includes("T05:00:00"))) {
+                    const [, y, m, d] = match;
+                    const months = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+                    const monthName = months[parseInt(m, 10) - 1] || "";
+                    formattedDate = `${parseInt(d, 10)} de ${monthName} de ${y}`;
+                }
+            }
+            if (!formattedDate) {
+                const date = rawFecha ? (rawFecha.toDate ? rawFecha.toDate() : new Date(rawFecha)) : new Date();
+                formattedDate = isNaN(date.getTime())
+                    ? new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
+                    : date.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+            }
 
             const subtotalStr = `$ ${Number(pago.subtotal || pago.total || pago.monto || 0).toLocaleString('es-CO')}`;
             const totalStr = `$ ${Number(pago.total || pago.monto || 0).toLocaleString('es-CO')}`;

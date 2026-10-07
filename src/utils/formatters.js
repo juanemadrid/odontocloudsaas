@@ -15,7 +15,14 @@ export const formatCurrency = (value) => {
  */
 export const formatDate = (date) => {
     if (!date) return '—';
-    const d = new Date(date);
+    if (typeof date === 'string') {
+        const match = date.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match && (!date.includes('T') || date.includes('T00:00:00') || date.includes('T05:00:00'))) {
+            const [, y, m, d] = match;
+            return `${d}/${m}/${y}`;
+        }
+    }
+    const d = date?.toDate ? date.toDate() : new Date(date);
     if (isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('es-CO');
 };

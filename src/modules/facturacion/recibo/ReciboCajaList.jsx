@@ -22,7 +22,14 @@ const fmt = (n) =>
 
 const fmtDate = (ts) => {
   if (!ts) return "—";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  if (typeof ts === 'string') {
+    const match = ts.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match && (!ts.includes('T') || ts.includes('T00:00:00') || ts.includes('T05:00:00'))) {
+      const [, y, m, d] = match;
+      return `${d}/${m}/${y}`;
+    }
+  }
+  const d = ts?.toDate ? ts.toDate() : new Date(ts);
   if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("es-CO", {
     day: "2-digit",
@@ -580,7 +587,7 @@ export default function ReciboCajaList({ onNew }) {
                     }
 
                     let rawDate = d.fecha || d.created_at;
-                    if (d.created_at && d.fecha && ((d.referencia || "").toUpperCase().includes("SALDO A FAVOR") || (d.concepto || "").toUpperCase().includes("SALDO A FAVOR"))) {
+                    if (d.created_at && d.fecha) {
                         const fDate = new Date(d.fecha);
                         const cDate = new Date(d.created_at);
                         if (cDate.getTime() - fDate.getTime() > 0 && cDate.getTime() - fDate.getTime() < 36 * 3600 * 1000) {
@@ -676,7 +683,7 @@ export default function ReciboCajaList({ onNew }) {
                     const effectiveProf = metadata.profesionalNombre || metadata.profesional || pData.profesional || metadata.doctor || pData.doctor || userProfile?.nombreCompleto || "Doctor";
 
                     let rawDate = pData.fechaISO || pData.created_at || pData.fecha;
-                    if (pData.created_at && (pData.fecha || pData.fechaISO) && ((pData.referencia || "").toUpperCase().includes("SALDO A FAVOR") || (metadata.concepto || "").toUpperCase().includes("SALDO A FAVOR"))) {
+                    if (pData.created_at && (pData.fecha || pData.fechaISO)) {
                         const fDate = new Date(pData.fecha || pData.fechaISO);
                         const cDate = new Date(pData.created_at);
                         if (cDate.getTime() - fDate.getTime() > 0 && cDate.getTime() - fDate.getTime() < 36 * 3600 * 1000) {
@@ -795,7 +802,18 @@ export default function ReciboCajaList({ onNew }) {
             combined = combined.filter(r => {
                 if (!startTime && !endTime) return true;
                 if (!r.rawDate) return true;
-                const rTime = new Date(r.rawDate).getTime();
+                let rTime = null;
+                if (typeof r.rawDate === 'string') {
+                    const match = r.rawDate.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+                    if (match && (!r.rawDate.includes('T') || r.rawDate.includes('T00:00:00') || r.rawDate.includes('T05:00:00'))) {
+                        const [, y, m, d] = match;
+                        rTime = new Date(Number(y), Number(m) - 1, Number(d), 12, 0, 0).getTime();
+                    }
+                }
+                if (!rTime) {
+                    const dObj = r.rawDate.toDate ? r.rawDate.toDate() : new Date(r.rawDate);
+                    rTime = dObj.getTime();
+                }
                 if (isNaN(rTime)) return true;
                 if (startTime && rTime < startTime) return false;
                 if (endTime && rTime > endTime) return false;

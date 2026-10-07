@@ -118,7 +118,7 @@ export const getPatientFinancials = async (patientId, tenantId) => {
                 if (cDate.getTime() - fDate.getTime() > 0 && cDate.getTime() - fDate.getTime() < 36 * 3600 * 1000) {
                     const fLocalDay = fDate.toLocaleDateString('es-CO');
                     const cLocalDay = cDate.toLocaleDateString('es-CO');
-                    if (fLocalDay !== cLocalDay && (p.referencia === "SALDO A FAVOR" || rawConcepto === "SALDO A FAVOR")) {
+                    if (fLocalDay !== cLocalDay) {
                         resolvedFecha = p.created_at;
                         // Auto-sanar en segundo plano para que quede corregido en BD permanentemente
                         try {

@@ -37,7 +37,15 @@ const getMethodBadge = (m) => {
 const formatDate = (iso) => {
     if (!iso) return '—';
     try {
-        const d = new Date(iso);
+        if (typeof iso === 'string') {
+            const match = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (match && (!iso.includes('T') || iso.includes('T00:00:00') || iso.includes('T05:00:00'))) {
+                const [, y, m, d] = match;
+                return `${d}/${m}/${y}`;
+            }
+        }
+        const d = iso?.toDate ? iso.toDate() : new Date(iso);
+        if (isNaN(d.getTime())) return '—';
         return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
     } catch {
         return '—';

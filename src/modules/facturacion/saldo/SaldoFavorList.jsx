@@ -20,6 +20,13 @@ const fmt = (n) =>
 const formatDateOnly = (dObj) => {
   if (!dObj) return "—";
   try {
+    if (typeof dObj === 'string') {
+      const match = dObj.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match && (!dObj.includes('T') || dObj.includes('T00:00:00') || dObj.includes('T05:00:00'))) {
+        const [, y, m, d] = match;
+        return `${d}/${m}/${y}`;
+      }
+    }
     const d = dObj.toDate ? dObj.toDate() : new Date(dObj);
     return d.toLocaleDateString("es-CO", {
       day: "2-digit",

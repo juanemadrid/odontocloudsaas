@@ -14,7 +14,15 @@ const fmt = (n) =>
 
 const fmtDate = (ts) => {
   if (!ts) return "—";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  if (typeof ts === 'string') {
+    const match = ts.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match && (!ts.includes('T') || ts.includes('T00:00:00') || ts.includes('T05:00:00'))) {
+      const [, y, m, d] = match;
+      return `${d}/${m}/${y}`;
+    }
+  }
+  const d = ts?.toDate ? ts.toDate() : new Date(ts);
+  if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
@@ -58,7 +66,18 @@ export default function PagosList({ onNew }) {
       const filtered = (list || [])
         .filter(p => {
           if (!p.fecha && !p.created_at) return false;
-          const ts = new Date(p.fecha || p.created_at).getTime();
+          let ts = null;
+          const raw = p.fecha || p.created_at;
+          if (typeof raw === 'string') {
+            const match = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (match && (!raw.includes('T') || raw.includes('T00:00:00') || raw.includes('T05:00:00'))) {
+              const [, y, m, d] = match;
+              ts = new Date(Number(y), Number(m) - 1, Number(d), 12, 0, 0).getTime();
+            }
+          }
+          if (!ts) {
+            ts = new Date(raw).getTime();
+          }
           return ts >= start.getTime() && ts <= end.getTime();
         })
         .sort((a, b) => new Date(b.fecha || b.created_at).getTime() - new Date(a.fecha || a.created_at).getTime());

@@ -19,6 +19,13 @@ const fmt = (n) =>
 const fmtDate = (ts) => {
   if (!ts) return "—";
   try {
+    if (typeof ts === 'string') {
+      const match = ts.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match && (!ts.includes('T') || ts.includes('T00:00:00') || ts.includes('T05:00:00'))) {
+        const [, y, m, d] = match;
+        return `${d}/${m}/${y}`;
+      }
+    }
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
     return d.toLocaleString("es-CO", {
       day: "2-digit",

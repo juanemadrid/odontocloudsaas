@@ -22,6 +22,13 @@ const formatDocNumber = (doc) => {
 const formatDateSlash = (dateInput) => {
   if (!dateInput) return '—';
   try {
+    if (typeof dateInput === 'string') {
+      const match = dateInput.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match && (!dateInput.includes('T') || dateInput.includes('T00:00:00') || dateInput.includes('T05:00:00'))) {
+        const [, y, m, d] = match;
+        return `${d}/${m}/${y}`;
+      }
+    }
     const d = dateInput?.toDate ? dateInput.toDate() : new Date(dateInput);
     if (isNaN(d.getTime())) return '—';
     const day = String(d.getDate()).padStart(2, '0');

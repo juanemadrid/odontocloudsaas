@@ -59,8 +59,16 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
 
+    const getTodayLocalDateStr = () => {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+
     // Form State
-    const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+    const [fecha, setFecha] = useState(getTodayLocalDateStr);
     const [profesional, setProfesional] = useState({ id: "", nombre: "" });
     const [paciente, setPaciente] = useState(null);
     const [patientSearch, setPatientSearch] = useState("");
@@ -484,7 +492,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 numero: finalConsecutivo,
                 nro_consecutivo: finalConsecutivo,
                 nroConsecutivo: finalConsecutivo,
-                fecha: new Date(fecha + "T00:00:00").toISOString(),
+                fecha: fecha || getTodayLocalDateStr(),
                 profesional_id: validProfId,
                 profesionalId: validProfId,
                 profesional_nombre: profesional.nombre || null,
