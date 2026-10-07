@@ -464,6 +464,9 @@ export function useAgenda() {
                 };
                 const normStatus = statusAliases[stateKey] || (statusMap[stateKey] ? stateKey : "confirmed");
 
+                const doc = (doctors || []).find(d => String(d.id) === String(c.profesional_id));
+                const docSpec = doc?.especialidad || (Array.isArray(doc?.especialidades) ? doc.especialidades[0] : "") || "";
+
                 return {
                     id: c.id,
                     inquilino: c.tenant_id,
@@ -472,6 +475,8 @@ export function useAgenda() {
                     resourceId: c.profesional_id,
                     consultorioId: c.consultorio_id,
                     sucursalId: c.sucursal_id || "",
+                    especialidadId: c.especialidad_id || c.especialidad || docSpec || "",
+                    especialidad: c.especialidad || docSpec || "",
                     fecha: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : "",
                     horaInicio: c.fecha_inicio ? new Date(c.fecha_inicio).toTimeString().substring(0, 5) : "",
                     horaFin: c.fecha_fin ? new Date(c.fecha_fin).toTimeString().substring(0, 5) : "",
@@ -526,7 +531,7 @@ export function useAgenda() {
         } finally {
             setLoading(false);
         }
-    }, [inquilino, viewMode, selectedDate, isDoctorOnly, loggedInDoctorId, filterDocId, filterBranchId, filterChairId, activeSede, sedesList, branches]);
+    }, [inquilino, viewMode, selectedDate, isDoctorOnly, loggedInDoctorId, filterDocId, filterBranchId, filterChairId, activeSede, sedesList, branches, doctors]);
 
     // === Load Appointments Effect & Subscription ===
     useEffect(() => {

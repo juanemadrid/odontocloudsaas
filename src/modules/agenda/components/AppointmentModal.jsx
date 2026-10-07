@@ -69,6 +69,49 @@ const generateSlotsForDay = (columnDateObj, _columnDateStr, schedulesData, consu
         durationMinutes,
         schedules: schedulesData
     }).slots;
+
+const resolveDoctorSpecialtyId = (doc, specialtiesList = []) => {
+    if (!doc || !specialtiesList || specialtiesList.length === 0) return "";
+    
+    const candidates = [
+        doc.especialidadId,
+        doc.especialidad_id,
+        doc.especialidad,
+        ...(Array.isArray(doc.especialidades) ? doc.especialidades : [])
+    ].filter(Boolean);
+
+    for (const cand of candidates) {
+        const candStr = String(cand).trim().toLowerCase();
+        if (!candStr) continue;
+
+        const matched = specialtiesList.find(s => {
+            const sId = String(s.id || s).trim().toLowerCase();
+            const sName = String(s.nombre || s).trim().toLowerCase();
+            return sId === candStr || sName === candStr;
+        });
+        if (matched) {
+            return typeof matched === 'string' ? matched : (matched.id || matched.nombre);
+        }
+    }
+
+    for (const cand of candidates) {
+        const candStr = String(cand).trim().toLowerCase();
+        if (!candStr) continue;
+
+        const matched = specialtiesList.find(s => {
+            const sId = String(s.id || s).trim().toLowerCase();
+            const sName = String(s.nombre || s).trim().toLowerCase();
+            return (sId && candStr.includes(sId)) || (sName && candStr.includes(sName)) ||
+                   (sId && sId.includes(candStr)) || (sName && sName.includes(candStr));
+        });
+        if (matched) {
+            return typeof matched === 'string' ? matched : (matched.id || matched.nombre);
+        }
+    }
+
+    return "";
+};
+
 export default function AppointmentModal({
     isOpen,
     onClose,
@@ -198,6 +241,24 @@ export default function AppointmentModal({
                     h = initialData.hora;
                 }
 
+                let resolvedEspecialidadId = initialData?.especialidadId || initialData?.especialidad || initialData?.especialidad_id || "";
+                const targetDoctorId = initialData?.doctorId || initialData?.profesional_id;
+                const selectedDoctor = (doctors || []).find(d => String(d.id) === String(targetDoctorId));
+
+                if (!resolvedEspecialidadId && selectedDoctor) {
+                    resolvedEspecialidadId = resolveDoctorSpecialtyId(selectedDoctor, specialties);
+                } else if (resolvedEspecialidadId) {
+                    const matched = (specialties || []).find(s => {
+                        const sId = String(s.id || s).trim().toLowerCase();
+                        const sName = String(s.nombre || s).trim().toLowerCase();
+                        const target = String(resolvedEspecialidadId).trim().toLowerCase();
+                        return sId === target || sName === target;
+                    });
+                    if (matched) {
+                        resolvedEspecialidadId = typeof matched === 'string' ? matched : (matched.id || matched.nombre);
+                    }
+                }
+
                 reset({
                     isNewPatient: false,
                     id: initialData?.id,
@@ -213,7 +274,7 @@ export default function AppointmentModal({
                     doctorId: initialData?.doctorId || "",
                     consultorioId: initialData?.consultorioId || "",
                     sucursalId: initialData?.sucursalId || activeSede?.id || (branches?.[0]?.id || ""),
-                    especialidadId: initialData?.especialidadId || "",
+                    especialidadId: resolvedEspecialidadId || "",
                     entidadId: initialData?.entidadId || "",
                     precioItemId: initialData?.precioItemId || "",
                     fecha: f,
@@ -236,7 +297,7 @@ export default function AppointmentModal({
             wasOpenRef.current = false;
             lastInitialDataIdRef.current = null;
         }
-    }, [isOpen, initialData?.id, branches, activeSede?.id, reset]);
+    }, [isOpen, initialData, branches, activeSede?.id, doctors, specialties, reset]);
 
     // Search Logic
     useEffect(() => {
@@ -330,6 +391,11 @@ export default function AppointmentModal({
     // Filtrado dinámico de doctores por sede y especialidad
     const filteredDoctors = useMemo(() => {
         return (doctors || []).filter(d => {
+            // Al editar una cita existente, asegurar que el doctor de la cita siempre esté visible
+            if (initialData?.id && (String(d.id) === String(initialData?.doctorId) || String(d.id) === String(initialData?.profesional_id))) {
+                return true;
+            }
+
             if (watchedSucursalId && Array.isArray(d.sucursales) && d.sucursales.length > 0) {
                 const matchBranch = d.sucursales.some(suc => 
                     String(suc).toLowerCase() === String(watchedSucursalId).toLowerCase() || 
@@ -361,7 +427,7 @@ export default function AppointmentModal({
             }
             return true;
         });
-    }, [doctors, watchedSucursalId, branches, watchedEspecialidadId, specialties]);
+    }, [doctors, watchedSucursalId, branches, watchedEspecialidadId, specialties, initialData?.id, initialData?.doctorId, initialData?.profesional_id]);
 
     // Filtrado dinámico de espacios físicos (consultorios/sillones) por sede y asignación médica
     const availableChairs = useMemo(() => {
@@ -403,6 +469,27 @@ export default function AppointmentModal({
             }
         }
     }, [watchedSucursalId, filteredDoctors, watchedDoctorId, initialData?.id, setValue]);
+
+    // Auto-seleccionar especialidad del doctor si no hay especialidad o al seleccionar profesional
+    const prevDoctorIdRef = useRef(null);
+    useEffect(() => {
+        if (!isOpen) {
+            prevDoctorIdRef.current = null;
+            return;
+        }
+        if (watchedDoctorId && watchedDoctorId !== prevDoctorIdRef.current) {
+            const isInitialAssign = prevDoctorIdRef.current === null;
+            prevDoctorIdRef.current = watchedDoctorId;
+            const currentSpec = watch("especialidadId");
+            const doc = (doctors || []).find(d => String(d.id) === String(watchedDoctorId));
+            if (doc) {
+                const docSpecId = resolveDoctorSpecialtyId(doc, specialties);
+                if (!currentSpec && docSpecId) {
+                    setValue("especialidadId", docSpecId, { shouldDirty: !isInitialAssign });
+                }
+            }
+        }
+    }, [isOpen, watchedDoctorId, doctors, specialties, setValue, watch]);
 
     // Sincronizar consultorioId cuando cambia el doctor, la sucursal o los espacios disponibles
     useEffect(() => {

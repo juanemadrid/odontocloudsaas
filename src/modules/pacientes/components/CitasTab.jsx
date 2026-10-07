@@ -240,10 +240,12 @@ export default function CitasTab({ patient }) {
             const doc = getDoctorName(apt).toLowerCase();
             const chair = getChairName(apt).toLowerCase();
             const branch = getBranchName(apt).toLowerCase();
-            const motivo = (apt.motivo || "").toLowerCase();
-            const notas = (apt.notas || "").toLowerCase();
+            const rawMotivo = (apt.motivo || "").trim();
+            const rawNotas = (apt.notas || "").trim();
+            const cleanMotivo = (rawMotivo && rawMotivo.toLowerCase() !== "consulta odontológica") ? rawMotivo.toLowerCase() : "";
+            const cleanNotas = (rawNotas && rawNotas.toLowerCase() !== "consulta odontológica") ? rawNotas.toLowerCase() : "";
             const estado = (apt.estado || "").toLowerCase();
-            return doc.includes(q) || chair.includes(q) || branch.includes(q) || motivo.includes(q) || notas.includes(q) || estado.includes(q);
+            return doc.includes(q) || chair.includes(q) || branch.includes(q) || cleanMotivo.includes(q) || cleanNotas.includes(q) || estado.includes(q);
         });
     }, [appointments, searchTerm, doctors, chairs, branches]);
 
@@ -295,7 +297,13 @@ export default function CitasTab({ patient }) {
                     "PROFESIONAL": getDoctorName(apt),
                     "ESPACIO FÍSICO": getChairName(apt),
                     "SUCURSAL": getBranchName(apt),
-                    "MOTIVO / COMENTARIO": apt.motivo || apt.notas || "",
+                    "MOTIVO / COMENTARIO": (() => {
+                        const rawNotas = (apt.notas || "").trim();
+                        if (rawNotas && rawNotas.toLowerCase() !== "consulta odontológica") return rawNotas;
+                        const rawMotivo = (apt.motivo || "").trim();
+                        if (rawMotivo && rawMotivo.toLowerCase() !== "consulta odontológica") return rawMotivo;
+                        return "";
+                    })(),
                     "ESTADO": STATUS_LABELS[normStatus] || apt.estado || "Programada"
                 };
             });
@@ -328,6 +336,7 @@ export default function CitasTab({ patient }) {
         const defaultChairId = firstDoc?.recursoPrincipal || 
             (Array.isArray(firstDoc?.espaciosFisicos) ? firstDoc.espaciosFisicos[0] : "") || 
             (chairs[0]?.id || "");
+        const defaultSpec = firstDoc ? (firstDoc.especialidad || (Array.isArray(firstDoc.especialidades) ? firstDoc.especialidades[0] : "")) : (specialties[0]?.id || "");
 
         setEditingApt({
             isNewPatient: false,
@@ -338,7 +347,7 @@ export default function CitasTab({ patient }) {
             doctorId: firstDoc?.id || "",
             consultorioId: defaultChairId,
             sucursalId: branches[0]?.id || "",
-            especialidadId: specialties[0]?.id || "",
+            especialidadId: defaultSpec || specialties[0]?.id || "",
             fecha: `${yyyy}-${mm}-${dd}`,
             hora: `${hh}:${min}`,
             duracion: 30,
@@ -366,6 +375,17 @@ export default function CitasTab({ patient }) {
         const hh = String(start.getHours()).padStart(2, "0");
         const min = String(start.getMinutes()).padStart(2, "0");
 
+        const rawNotas = (apt.notas || "").trim();
+        const rawMotivo = (apt.motivo || "").trim();
+        const cleanComentario = (() => {
+            if (rawNotas && rawNotas.toLowerCase() !== "consulta odontológica") return rawNotas;
+            if (rawMotivo && rawMotivo.toLowerCase() !== "consulta odontológica") return rawMotivo;
+            return "";
+        })();
+
+        const targetDoctor = (doctors || []).find(d => String(d.id) === String(apt.profesional_id || apt.doctorId));
+        const resolvedDocSpec = targetDoctor ? (targetDoctor.especialidad || (Array.isArray(targetDoctor.especialidades) ? targetDoctor.especialidades[0] : "")) : "";
+
         setEditingApt({
             id: apt.id,
             isNewPatient: false,
@@ -376,13 +396,13 @@ export default function CitasTab({ patient }) {
             doctorId: apt.profesional_id || apt.doctorId || "",
             consultorioId: apt.consultorio_id || apt.consultorioId || "",
             sucursalId: apt.sucursal_id || apt.sucursalId || (branches[0]?.id || ""),
-            especialidadId: apt.especialidad_id || "",
+            especialidadId: apt.especialidad_id || apt.especialidad || resolvedDocSpec || "",
             entidadId: apt.entidad_id || "",
             fecha: `${yyyy}-${mm}-${dd}`,
             hora: `${hh}:${min}`,
             duracion: durationMinutes,
-            motivo: apt.motivo || "",
-            comentario: apt.notas || apt.motivo || "",
+            motivo: cleanComentario,
+            comentario: cleanComentario,
             status: normalizeStatus(apt.estado)
         });
         setModalOpen(true);
@@ -548,6 +568,13 @@ export default function CitasTab({ patient }) {
                                     const normStatus = normalizeStatus(apt.estado);
                                     const statusStyle = STATUS_COLORS[normStatus] || "bg-slate-100 text-slate-600 border-slate-200";
                                     const isLocked = isAppointmentLocked(apt);
+                                    const rawNotas = (apt.notas || "").trim();
+                                    const rawMotivo = (apt.motivo || "").trim();
+                                    const cleanComment = (() => {
+                                        if (rawNotas && rawNotas.toLowerCase() !== "consulta odontológica") return rawNotas;
+                                        if (rawMotivo && rawMotivo.toLowerCase() !== "consulta odontológica") return rawMotivo;
+                                        return "";
+                                    })();
 
                                     return (
                                         <tr key={apt.id} className={`hover:bg-slate-50/60 transition-colors ${isLocked ? 'bg-slate-50/40 opacity-90' : ''}`}>
@@ -589,9 +616,13 @@ export default function CitasTab({ patient }) {
 
                                             {/* Comentario / Motivo */}
                                             <td className="py-3 px-4">
-                                                <div className="bg-slate-50 border border-slate-100 rounded-xl p-2 text-xs text-slate-700 min-h-[44px] flex items-center">
-                                                    {apt.motivo || apt.notas || <span className="text-slate-300 italic">Sin comentario</span>}
-                                                </div>
+                                                {cleanComment ? (
+                                                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-2 text-xs text-slate-700 min-h-[44px] flex items-center">
+                                                        {cleanComment}
+                                                    </div>
+                                                ) : (
+                                                    <div className="min-h-[44px] flex items-center"></div>
+                                                )}
                                             </td>
 
                                             {/* Estado Dropdown / Pill */}
