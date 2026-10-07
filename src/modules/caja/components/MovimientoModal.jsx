@@ -33,29 +33,90 @@ const fmt = (n) =>
     style: "currency", currency: "COP", maximumFractionDigits: 0,
   });
 
-// ── Patient search hook ──
-function usePatientSearch(inquilino) {
-  const [patients, setPatients] = useState([]);
+// ── Contacts (Pacientes + Terceros) search hook ──
+function useContactsSearch(inquilino) {
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!inquilino) return;
+    let isMounted = true;
     setLoading(true);
-    supabase.from("pacientes")
-      .select("*")
-      .eq("tenant_id", inquilino)
-      .then(({ data }) => {
-        setPatients((data || []).map(d => ({
+
+    const loadData = async () => {
+      try {
+        const [pacRes, tercRes] = await Promise.allSettled([
+          supabase.from("pacientes").select("*").eq("tenant_id", inquilino),
+          supabase.from("terceros").select("*").eq("tenant_id", inquilino)
+        ]);
+
+        let rawPacientes = (pacRes.status === "fulfilled" && pacRes.value?.data) ? pacRes.value.data : [];
+        let rawTerceros = (tercRes.status === "fulfilled" && tercRes.value?.data) ? tercRes.value.data : [];
+
+        // Fallback a website_config si alguna lista viene vacía
+        if (rawPacientes.length === 0 || rawTerceros.length === 0) {
+          try {
+            const { data: cfgRow } = await supabase
+              .from("website_config")
+              .select("config")
+              .eq("tenant_id", inquilino)
+              .maybeSingle();
+            if (cfgRow?.config) {
+              if (rawPacientes.length === 0 && cfgRow.config.pacientes) {
+                rawPacientes = cfgRow.config.pacientes;
+              }
+              if (rawTerceros.length === 0) {
+                rawTerceros = cfgRow.config.terceros || cfgRow.config.proveedores || [];
+              }
+            }
+          } catch (cfgErr) {}
+        }
+
+        const mappedPatients = (rawPacientes || []).map(d => ({
           id: d.id,
           nombre: d.nombreCompleto || d.nombre || `${d.nombres || ""} ${d.apellidos || ""}`.trim() || "Sin nombre",
-          cedula: d.nroDocumento || d.cedula || "",
-          celular: d.celular || "",
-        })));
-        setLoading(false);
-      }).catch(() => setLoading(false));
+          cedula: d.nroDocumento || d.cedula || d.documento || "",
+          tipoDocumento: d.tipoDocumento || d.tipo_documento || "CC",
+          celular: d.celular || d.telefono || "",
+          direccion: d.direccion || d.direccionDomicilio || "",
+          ciudad: d.ciudad || d.ciudadDomicilio || "",
+          tipo: "paciente",
+          badgeLabel: "Paciente"
+        }));
+
+        const mappedTerceros = (rawTerceros || []).map(t => {
+          const fullName = [t.nombre, t.apellidos].filter(Boolean).join(" ").trim();
+          const displayName = t.razonSocial || t.razon_social || fullName || t.nombreCompleto || t.nombre_completo || t.nombre || "Tercero";
+          const doc = t.nroDocumento || t.documento || t.numero_documento || t.nit || t.identificacion || "";
+          return {
+            id: t.id || doc || displayName,
+            nombre: displayName,
+            razonSocial: t.razonSocial || t.razon_social || "",
+            cedula: doc,
+            tipoDocumento: t.tipoDocumento || t.tipo_documento || (String(doc).length >= 9 ? "NIT" : "CC"),
+            celular: t.telefono || t.celular || "",
+            direccion: t.direccion || "",
+            ciudad: t.ciudad || "",
+            tipo: "tercero",
+            badgeLabel: t.tipo || (t.isIps ? "IPS" : t.isEps ? "EPS" : "Tercero")
+          };
+        });
+
+        if (isMounted) {
+          setContacts([...mappedPatients, ...mappedTerceros]);
+        }
+      } catch (err) {
+        console.warn("Error cargando contactos para caja:", err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadData();
+    return () => { isMounted = false; };
   }, [inquilino]);
 
-  return { patients, loading };
+  return { contacts, loading };
 }
 
 // ── Invoice search (open invoices) ──
@@ -86,39 +147,41 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
     metodoPago: "Efectivo",
     descripcion: "",
   });
-  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [selectedContact, setSelectedContact] = useState(null);
   const [selectedFactura, setSelectedFactura] = useState(null);
-  const [patientSearch, setPatientSearch] = useState("");
-  const [showPatientDrop, setShowPatientDrop] = useState(false);
+  const [contactSearch, setContactSearch] = useState("");
+  const [showContactDrop, setShowContactDrop] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmEgresoDescubierto, setConfirmEgresoDescubierto] = useState(false);
   const [error, setError] = useState("");
-  const patientRef = useRef(null);
+  const contactRef = useRef(null);
 
-  const { patients } = usePatientSearch(inquilino);
-  const facturas = useInvoiceSearch(inquilino, selectedPatient?.id);
+  const { contacts } = useContactsSearch(inquilino);
+  const facturas = useInvoiceSearch(inquilino, selectedContact?.tipo === "paciente" ? selectedContact.id : null);
 
   const handle = (f) => (e) => setForm(p => ({ ...p, [f]: e.target.value }));
 
-  // Close patient dropdown on outside click
+  // Close contact dropdown on outside click
   useEffect(() => {
     const h = (e) => {
-      if (patientRef.current && !patientRef.current.contains(e.target)) {
-        setShowPatientDrop(false);
+      if (contactRef.current && !contactRef.current.contains(e.target)) {
+        setShowContactDrop(false);
       }
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  const filteredPatients = patients.filter(p => {
-    const q = patientSearch.toLowerCase();
+  const filteredContacts = contacts.filter(c => {
+    const q = contactSearch.toLowerCase().trim();
+    if (!q) return false;
     return (
-      p.nombre.toLowerCase().includes(q) ||
-      p.cedula.toLowerCase().includes(q) ||
-      p.celular.toLowerCase().includes(q)
+      c.nombre.toLowerCase().includes(q) ||
+      (c.razonSocial && c.razonSocial.toLowerCase().includes(q)) ||
+      c.cedula.toLowerCase().includes(q) ||
+      c.celular.toLowerCase().includes(q)
     );
-  }).slice(0, 8);
+  }).slice(0, 10);
 
   const montoNum = parseFloat(String(form.monto).replace(/[^0-9]/g, "")) || 0;
   const nuevoSaldo = (caja.saldoActual || 0) + (tipo === "ingreso" ? montoNum : -montoNum);
@@ -153,8 +216,9 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         : `[RC-${finalConsStr.padStart(4, "0")}] `;
 
       let refText = "";
-      if (selectedPatient?.nombre) {
-        refText += `Paciente: ${selectedPatient.nombre}`;
+      if (selectedContact?.nombre) {
+        const tag = selectedContact.tipo === "paciente" ? "Paciente" : "Tercero";
+        refText += `${tag}: ${selectedContact.nombre}`;
       }
       if (form.descripcion?.trim()) {
         refText += (refText ? " | " : "") + form.descripcion.trim();
@@ -206,7 +270,8 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
 
       if (tipo === "ingreso") {
         // A. Sincronizar en Facturación -> Recibos de Caja (recibos_caja)
-        const pacNombreFinal = selectedPatient?.nombre || "Cliente Particular / Venta Mostrador";
+        const isPac = selectedContact?.tipo === "paciente";
+        const contactNombreFinal = selectedContact?.nombre || "Cliente Particular / Venta Mostrador";
         const newRecId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : null;
         const reciboPayload = {
           id: newRecId,
@@ -216,12 +281,16 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
           nro_consecutivo: finalConsStr,
           nroConsecutivo: finalConsStr,
           fecha: new Date().toISOString(),
-          paciente_id: isUUID(selectedPatient?.id) ? selectedPatient.id : null,
-          pacienteId: isUUID(selectedPatient?.id) ? selectedPatient.id : null,
-          paciente_nombre: pacNombreFinal,
-          pacienteNombre: pacNombreFinal,
-          pacienteDocumento: selectedPatient?.cedula || "",
-          pacienteTelefono: selectedPatient?.celular || "",
+          paciente_id: (isPac && isUUID(selectedContact?.id)) ? selectedContact.id : null,
+          pacienteId: (isPac && isUUID(selectedContact?.id)) ? selectedContact.id : null,
+          paciente_nombre: contactNombreFinal,
+          pacienteNombre: contactNombreFinal,
+          pacienteDocumento: selectedContact?.cedula || "",
+          pacienteTelefono: selectedContact?.celular || "",
+          tercero_id: (!isPac && selectedContact?.id) ? selectedContact.id : null,
+          terceroId: (!isPac && selectedContact?.id) ? selectedContact.id : null,
+          tercero: !isPac ? contactNombreFinal : null,
+          tipo_persona: isPac ? "Paciente" : "Tercero",
           condicion_pago: "Contado",
           condicionPago: "Contado",
           medio_pago: form.metodoPago || "Efectivo",
@@ -263,13 +332,13 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
           ]);
         } catch (e) {}
 
-        // B. Si hay paciente seleccionado, sincronizar en ficha del paciente -> Histórico de Pagos (pagos)
-        if (selectedPatient?.id) {
+        // B. Si es paciente seleccionado, sincronizar en ficha del paciente -> Histórico de Pagos (pagos)
+        if (isPac && selectedContact?.id) {
           try {
             const pagoPacientePayload = {
               tenant_id: inquilino,
               fecha: new Date().toISOString(),
-              paciente_id: selectedPatient.id,
+              paciente_id: selectedContact.id,
               monto: montoNum,
               metodo: form.metodoPago || "Efectivo",
               referencia: form.descripcion 
@@ -312,6 +381,8 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         }
       } else {
         // EGRESO: Sincronizar en Administración -> Facturación -> Pagos (pagos_proveedor)
+        const isPac = selectedContact?.tipo === "paciente";
+        const egresoTerceroNombre = selectedContact?.nombre || "Caja Menor / Gastos Varios";
         const egresoRecord = {
           id: `pago_${Date.now()}`,
           tenant_id: inquilino,
@@ -321,11 +392,14 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
           nroConsecutivo: finalConsStr,
           bancoCaja: caja.nombre || "Caja Principal",
           medioPago: form.metodoPago || "Efectivo",
-          terceroId: "caja_menor",
-          tercero: "Caja Menor / Gastos Varios",
-          proveedor: "Caja Menor / Gastos Varios",
-          documentoTercero: "",
-          tipoTercero: "tercero",
+          terceroId: selectedContact?.id || "caja_menor",
+          tercero: egresoTerceroNombre,
+          proveedor: egresoTerceroNombre,
+          documentoTercero: selectedContact?.cedula || "",
+          tipoTercero: isPac ? "paciente" : "tercero",
+          tipoDocumento: selectedContact?.tipoDocumento || (String(selectedContact?.cedula || "").length >= 9 ? "NIT" : "CC"),
+          direccion: selectedContact?.direccion || "",
+          telefono: selectedContact?.celular || "",
           items: [{
             concepto: form.concepto || "Gasto de caja",
             descripcion: form.descripcion || "",
@@ -460,55 +534,80 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
             </div>
           </div>
 
-          {/* ── Paciente (búsqueda en tiempo real) ── */}
-          <div style={{ ...FW, marginBottom: 16 }} ref={patientRef}>
-            <label style={LBL}>Paciente vinculado</label>
-            {selectedPatient ? (
+          {/* ── Paciente o Tercero (búsqueda en tiempo real) ── */}
+          <div style={{ ...FW, marginBottom: 16 }} ref={contactRef}>
+            <label style={LBL}>
+              {tipo === "egreso" ? "Beneficiario / Tercero o Paciente" : "Paciente o Tercero vinculado"}
+            </label>
+            {selectedContact ? (
               <div style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
-                border: "1.5px solid #a7f3d0", borderRadius: 10, padding: "8px 14px",
-                background: "#ecfdf5",
+                border: "1.5px solid",
+                borderColor: selectedContact.tipo === "paciente" ? "#a7f3d0" : "#fed7aa",
+                borderRadius: 10, padding: "8px 14px",
+                background: selectedContact.tipo === "paciente" ? "#ecfdf5" : "#fff7ed",
               }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#065f46" }}>{selectedPatient.nombre}</div>
-                  {selectedPatient.cedula && <div style={{ fontSize: 11, color: "#64748b" }}>CC: {selectedPatient.cedula}</div>}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    padding: "2px 7px",
+                    borderRadius: 5,
+                    background: selectedContact.tipo === "paciente" ? "#047857" : "#ea580c",
+                    color: "#ffffff",
+                    letterSpacing: "0.5px"
+                  }}>
+                    {selectedContact.badgeLabel || (selectedContact.tipo === "paciente" ? "Paciente" : "Tercero")}
+                  </span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{selectedContact.nombre}</div>
+                    {selectedContact.cedula && (
+                      <div style={{ fontSize: 11, color: "#64748b" }}>
+                        {selectedContact.tipoDocumento || (selectedContact.tipo === "paciente" ? "CC" : "NIT")}: {selectedContact.cedula}
+                        {selectedContact.celular ? ` · ${selectedContact.celular}` : ""}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setSelectedPatient(null); setSelectedFactura(null); setPatientSearch(""); }}
+                  onClick={() => { setSelectedContact(null); setSelectedFactura(null); setContactSearch(""); }}
                   style={{
                     width: 24, height: 24, borderRadius: 6, border: "none",
                     background: "#f43f5e", color: "#fff", cursor: "pointer", fontSize: 11,
+                    display: "flex", alignItems: "center", justifyContent: "center"
                   }}
+                  title="Quitar selección"
                 >✕</button>
               </div>
             ) : (
               <div style={{ position: "relative" }}>
                 <input
-                  placeholder="🔍 Buscar por nombre o cédula..."
-                  value={patientSearch}
-                  onChange={e => { setPatientSearch(e.target.value); setShowPatientDrop(true); }}
-                  onFocus={() => setShowPatientDrop(true)}
+                  placeholder="🔍 Buscar paciente o tercero (nombre, razón social, cédula/NIT)..."
+                  value={contactSearch}
+                  onChange={e => { setContactSearch(e.target.value); setShowContactDrop(true); }}
+                  onFocus={() => setShowContactDrop(true)}
                   style={INP}
                 />
-                {showPatientDrop && patientSearch.length >= 1 && (
+                {showContactDrop && contactSearch.trim().length >= 1 && (
                   <div style={{
                     position: "absolute", top: "100%", left: 0, right: 0, zIndex: 1000,
                     background: "#fff", borderRadius: 10, border: "1.5px solid #e2e8f0",
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)", maxHeight: 220, overflowY: "auto",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)", maxHeight: 240, overflowY: "auto",
                     marginTop: 4,
                   }}>
-                    {filteredPatients.length === 0 ? (
+                    {filteredContacts.length === 0 ? (
                       <div style={{ padding: "10px 14px", fontSize: 13, color: "#94a3b8" }}>
-                        Sin resultados
+                        Sin resultados para "{contactSearch}"
                       </div>
-                    ) : filteredPatients.map(p => (
+                    ) : filteredContacts.map(c => (
                       <button
-                        key={p.id}
+                        key={`${c.tipo}_${c.id}`}
                         type="button"
-                        onClick={() => { setSelectedPatient(p); setPatientSearch(""); setShowPatientDrop(false); }}
+                        onClick={() => { setSelectedContact(c); setContactSearch(""); setShowContactDrop(false); }}
                         style={{
-                          display: "flex", flexDirection: "column", width: "100%",
+                          display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
                           padding: "9px 14px", border: "none", background: "transparent",
                           cursor: "pointer", textAlign: "left", borderBottom: "1px solid #f1f5f9",
                           transition: "background 0.1s",
@@ -516,9 +615,23 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
                         onMouseEnter={e => e.currentTarget.style.background = "#f0f9ff"}
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                       >
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{p.nombre}</span>
-                        <span style={{ fontSize: 11, color: "#94a3b8" }}>
-                          {p.cedula && `CC: ${p.cedula}`}{p.celular && ` · ${p.celular}`}
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{c.nombre}</span>
+                          <span style={{ fontSize: 11, color: "#64748b" }}>
+                            {c.cedula ? `${c.tipoDocumento || (c.tipo === "paciente" ? "CC" : "NIT")}: ${c.cedula}` : ""}
+                            {c.celular ? ` · ${c.celular}` : ""}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: 9.5,
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          background: c.tipo === "paciente" ? "#e0f2fe" : "#fef3c7",
+                          color: c.tipo === "paciente" ? "#0369a1" : "#92400e"
+                        }}>
+                          {c.badgeLabel || (c.tipo === "paciente" ? "Paciente" : "Tercero")}
                         </span>
                       </button>
                     ))}
@@ -529,7 +642,7 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
           </div>
 
           {/* ── Facturas pendientes del paciente ── */}
-          {selectedPatient && tipo === "ingreso" && facturas.length > 0 && (
+          {selectedContact && selectedContact.tipo === "paciente" && tipo === "ingreso" && facturas.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <label style={LBL}>Aplicar a factura pendiente (opcional)</label>
               <select
