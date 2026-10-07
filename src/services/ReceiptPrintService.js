@@ -114,9 +114,15 @@ export const ReceiptPrintService = {
                 ? "TOTAL CONSUMIDO" 
                 : (isEgreso ? "TOTAL EGRESO" : "TOTAL ABONADO");
 
-            const accentColor = isEgreso ? "#dc2626" : (isConsumoSaldo ? "#0284c7" : "#2563eb");
-            const accentBg = isEgreso ? "#fef2f2" : (isConsumoSaldo ? "#f0f9ff" : "#eff6ff");
-            const accentBorder = isEgreso ? "#fca5a5" : (isConsumoSaldo ? "#bae6fd" : "#dbeafe");
+            const accentColor = isEgreso ? "#9f1239" : (isConsumoSaldo ? "#0284c7" : "#2563eb");
+            const accentBg = isEgreso ? "#fff1f2" : (isConsumoSaldo ? "#f0f9ff" : "#eff6ff");
+            const accentBorder = isEgreso ? "#fecdd3" : (isConsumoSaldo ? "#bae6fd" : "#dbeafe");
+            const tableHeaderBg = isEgreso ? "#fff1f2" : accentColor;
+            const tableHeaderColor = isEgreso ? "#9f1239" : "white";
+            const tableHeaderBorder = isEgreso ? "1.5px solid #fecdd3" : `1px solid ${accentColor}`;
+            const totalBoxBg = isEgreso ? "#fff1f2" : accentColor;
+            const totalBoxColor = isEgreso ? "#9f1239" : "white";
+            const totalBoxBorder = isEgreso ? "1.5px solid #fecdd3" : "none";
 
             // Items resolution
             const rawItems = (pago.itemPayments && pago.itemPayments.length > 0)
@@ -202,44 +208,44 @@ export const ReceiptPrintService = {
             const hasPlanInfo = !isEgreso && typeof totalPlan === "number" && totalPlan > 0;
 
             const html = `
-                <div style="border: 1px solid #e2e8f0; padding: 16px 20px; border-radius: 14px; position: relative; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);">
+                <div style="border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 12px; position: relative; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);">
                     <!-- Top accent bar -->
-                    <div style="position: absolute; top: 0; left: 0; right: 0; height: 4px; background-color: ${accentColor}; border-top-left-radius: 14px; border-top-right-radius: 14px;"></div>
+                    <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background-color: ${isEgreso ? '#fda4af' : accentColor}; border-top-left-radius: 12px; border-top-right-radius: 12px;"></div>
 
                     <!-- Unified Header (OralDrive Media Carta Proportions) -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid ${accentColor}; padding-bottom: 10px; margin-bottom: 12px; margin-top: 2px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid ${isEgreso ? '#fecdd3' : accentColor}; padding-bottom: 8px; margin-bottom: 10px; margin-top: 2px;">
                         <div style="display: flex; gap: 12px; align-items: center;">
                             ${logoUrl 
-                                ? `<img src="${logoUrl}" style="max-height: 46px; max-width: 115px; object-fit: contain;" crossorigin="anonymous" />`
-                                : `<div style="width: 44px; height: 44px; background: ${accentColor}; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: 900; text-transform: uppercase;">${clinicName.substring(0, 1) || "O"}</div>`
+                                ? `<img src="${logoUrl}" style="max-height: 44px; max-width: 110px; object-fit: contain;" crossorigin="anonymous" />`
+                                : `<div style="width: 40px; height: 40px; background: ${accentColor}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 900; text-transform: uppercase;">${clinicName.substring(0, 1) || "O"}</div>`
                             }
                             <div>
-                                <h1 style="margin: 0; font-size: 14.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: -0.3px;">${clinicName}</h1>
-                                <p style="margin: 1px 0; font-size: 9px; color: #475569; font-weight: 800;">NIT: ${clinicNit}</p>
-                                <p style="margin: 0; font-size: 8.5px; color: #64748b; font-weight: 500;">${clinicAddress} ${clinicCity ? `(${clinicCity})` : ''}</p>
-                                <p style="margin: 0; font-size: 8.5px; color: #64748b; font-weight: 500;">TEL: ${clinicPhone} ${clinicEmail ? `| ${clinicEmail}` : ''}</p>
+                                <h1 style="margin: 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: -0.3px;">${clinicName}</h1>
+                                <p style="margin: 1px 0; font-size: 8.5px; color: #475569; font-weight: 800;">NIT: ${clinicNit}</p>
+                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 500;">${clinicAddress} ${clinicCity ? `(${clinicCity})` : ''}</p>
+                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 500;">TEL: ${clinicPhone} ${clinicEmail ? `| ${clinicEmail}` : ''}</p>
                             </div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="background: ${accentBg}; padding: 3px 10px; border-radius: 8px; border: 1.5px solid ${accentBorder}; margin-bottom: 3px; display: inline-block;">
-                                <span style="font-size: 11px; font-weight: 800; color: ${accentColor}; text-transform: uppercase; letter-spacing: 0.3px;">${documentTitle}</span>
+                            <div style="background: ${accentBg}; padding: 3px 10px; border-radius: 6px; border: 1.5px solid ${accentBorder}; margin-bottom: 2px; display: inline-block;">
+                                <span style="font-size: 10.5px; font-weight: 800; color: ${accentColor}; text-transform: uppercase; letter-spacing: 0.3px;">${documentTitle}</span>
                             </div>
-                            <p style="margin: 0; font-size: 8.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">FECHA DE EMISIÓN: ${formattedDate}</p>
-                            <p style="margin: 1px 0 0 0; font-size: 11px; font-weight: 800; color: ${accentColor}; font-family: monospace;">NRO: ${receiptNumber}</p>
+                            <p style="margin: 0; font-size: 8px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">FECHA DE EMISIÓN: ${formattedDate}</p>
+                            <p style="margin: 1px 0 0 0; font-size: 10.5px; font-weight: 800; color: ${accentColor}; font-family: monospace;">NRO: ${receiptNumber}</p>
                         </div>
                     </div>
 
                     <!-- CUSTOMER / BENEFICIARY INFO CARD -->
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
                         <div style="border-right: 1px solid #cbd5e1; padding-right: 10px;">
                             <span style="font-size: 7px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">
-                                ${isEgreso ? "Beneficiario / Proveedor / Tercero" : "Información del Paciente"}
+                                ${isEgreso ? "Beneficiario" : "Información del Paciente"}
                             </span>
-                            <h2 style="margin: 0; font-size: 11.5px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.2px;">${patientName}</h2>
+                            <h2 style="margin: 0; font-size: 9.5px; font-weight: 700; color: #1e293b; text-transform: uppercase; letter-spacing: 0.2px;">${patientName}</h2>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 1.5px; margin-top: 3px;">
-                                <p style="margin: 0; font-size: 8.5px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7.5px; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${patientDocType.toUpperCase()} ${patientDoc}</p>
-                                <p style="margin: 0; font-size: 8.5px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7.5px; text-transform: uppercase; margin-right: 3px;">Dirección:</strong> ${patientAddress}</p>
-                                <p style="margin: 0; font-size: 8.5px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7.5px; text-transform: uppercase; margin-right: 3px;">Celular:</strong> ${patientPhone}</p>
+                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${patientDocType.toUpperCase()} ${patientDoc}</p>
+                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Dirección:</strong> ${patientAddress}</p>
+                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Celular:</strong> ${patientPhone}</p>
                             </div>
                         </div>
                         <div style="padding-left: 2px;">
@@ -247,37 +253,37 @@ export const ReceiptPrintService = {
                                 ${isEgreso ? "Detalles del Egreso" : "Detalles del Documento"}
                             </span>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 2px; margin-top: 3px;">
-                                <p style="margin: 0; font-size: 8.5px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7.5px; text-transform: uppercase; margin-right: 3px;">Medio de Pago:</strong> <span style="text-transform: uppercase;">${pago.medio || pago.metodo || pago.metodo_pago || pago.medioPago || (isConsumoSaldo ? "Saldo a favor" : "Efectivo")}</span></p>
-                                <p style="margin: 0; font-size: 8.5px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7.5px; text-transform: uppercase; margin-right: 3px;">Elaborado por:</strong> <span style="text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero")}</span></p>
+                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Medio de Pago:</strong> <span style="text-transform: uppercase;">${pago.medio || pago.metodo || pago.metodo_pago || pago.medioPago || (isConsumoSaldo ? "Saldo a favor" : "Efectivo")}</span></p>
+                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Elaborado por:</strong> <span style="text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero")}</span></p>
                             </div>
                         </div>
                     </div>
 
                     <!-- ITEMS DETAIL TABLE (Compact Media Carta) -->
-                    <div style="margin-bottom: 10px;">
-                        <table style="width: 100%; border-collapse: collapse; border-radius: 8px; overflow: hidden; border-style: hidden; box-shadow: 0 0 0 1px #e2e8f0;">
+                    <div style="margin-bottom: 8px;">
+                        <table style="width: 100%; border-collapse: collapse; border-radius: 6px; overflow: hidden; border-style: hidden; box-shadow: 0 0 0 1px #e2e8f0;">
                             <thead>
-                                <tr style="background: ${accentColor}; color: white;">
-                                    <th style="padding: 5px 8px; text-align: left; font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Concepto</th>
-                                    <th style="padding: 5px 8px; text-align: right; font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 90px;">Precio Unitario</th>
-                                    <th style="padding: 5px 8px; text-align: center; font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 45px;">Cant.</th>
-                                    <th style="padding: 5px 8px; text-align: right; font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 100px;">Total</th>
+                                <tr style="background: ${tableHeaderBg}; border-bottom: ${tableHeaderBorder}; color: ${tableHeaderColor};">
+                                    <th style="padding: 4px 6px; text-align: left; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: ${tableHeaderColor};">Concepto</th>
+                                    <th style="padding: 4px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 85px; color: ${tableHeaderColor};">Precio Unitario</th>
+                                    <th style="padding: 4px 6px; text-align: center; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 40px; color: ${tableHeaderColor};">Cant.</th>
+                                    <th style="padding: 4px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 95px; color: ${tableHeaderColor};">Total</th>
                                 </tr>
                             </thead>
-                            <tbody style="font-size: 9px; color: #334155; font-weight: 600;">
+                            <tbody style="font-size: 8.5px; color: #334155; font-weight: 600;">
                                 ${rawItems && rawItems.length > 0 ? rawItems.map((ip, index) => `
-                                    <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'}; border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 5px 8px; font-weight: 700; text-transform: uppercase;">${ip.desc}</td>
-                                        <td style="padding: 5px 8px; text-align: right; font-family: monospace;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
-                                        <td style="padding: 5px 8px; text-align: center; font-weight: 800;">1</td>
-                                        <td style="padding: 5px 8px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
+                                    <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#fafafa'}; border-bottom: 1px solid #f1f5f9;">
+                                        <td style="padding: 4px 6px; font-weight: 700; text-transform: uppercase;">${ip.desc}</td>
+                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 4px 6px; text-align: center; font-weight: 800;">1</td>
+                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `).join('') : `
                                     <tr style="background: #ffffff; border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 6px 8px; font-weight: 700; text-transform: uppercase;">${conceptStr}</td>
-                                        <td style="padding: 6px 8px; text-align: right; font-family: monospace;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
-                                        <td style="padding: 6px 8px; text-align: center; font-weight: 800;">1</td>
-                                        <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 5px 6px; font-weight: 700; text-transform: uppercase;">${conceptStr}</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 5px 6px; text-align: center; font-weight: 800;">1</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `}
                             </tbody>
@@ -285,20 +291,20 @@ export const ReceiptPrintService = {
                     </div>
 
                     <!-- OBS & TOTALS ROW -->
-                    <div style="display: flex; justify-content: space-between; gap: 14px; margin-bottom: 14px; align-items: flex-start;">
-                        <div style="flex: 1; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 6px 10px; background-color: #f8fafc; font-size: 8.5px; line-height: 1.35; min-height: 38px;">
+                    <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; align-items: flex-start;">
+                        <div style="flex: 1; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 5px 8px; background-color: #f8fafc; font-size: 8px; line-height: 1.35; min-height: 32px;">
                             <span style="font-weight: 800; color: #475569; text-transform: uppercase; font-size: 7px; display: block; margin-bottom: 2px;">Observaciones:</span>
                             <div style="font-weight: 500; color: #334155; white-space: pre-wrap;">${cleanObservations}</div>
                         </div>
-                        <div style="width: 220px; display: flex; flex-direction: column; gap: 2px;">
-                            <div style="display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; color: #64748b; padding: 0 4px;">
+                        <div style="width: 210px; display: flex; flex-direction: column; gap: 2px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 8.5px; font-weight: 700; color: #64748b; padding: 0 4px;">
                                 <span style="text-transform: uppercase; letter-spacing: 0.5px;">Subtotal</span>
                                 <span>${subtotalStr}</span>
                             </div>
-                            <div style="height: 1px; background: ${accentColor}; margin: 2px 0;"></div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; background: ${accentColor}; color: white; padding: 6px 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08);">
-                                <span style="font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">${totalBadgeLabel}</span>
-                                <span style="font-size: 13.5px; font-weight: 900;">${totalStr}</span>
+                            <div style="height: 1px; background: ${isEgreso ? '#fecdd3' : accentColor}; margin: 2px 0;"></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: ${totalBoxBg}; border: ${totalBoxBorder}; color: ${totalBoxColor}; padding: 5px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                                <span style="font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: ${totalBoxColor};">${totalBadgeLabel}</span>
+                                <span style="font-size: 12px; font-weight: 900; color: ${totalBoxColor};">${totalStr}</span>
                             </div>
 
                             ${hasPlanInfo ? `
@@ -325,14 +331,14 @@ export const ReceiptPrintService = {
                     </div>
 
                     <!-- SIGNATURE BLOCK (Compact Media Carta) -->
-                    <div style="margin-top: 18px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
-                        <div style="flex: 1; border-top: 1px solid #cbd5e1; padding-top: 6px; text-align: center;">
-                            <p style="margin: 0; font-size: 8.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
-                            <p style="margin: 1px 0; font-size: 7.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero / Auxiliar")}</p>
+                    <div style="margin-top: 14px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
+                        <div style="flex: 1; border-top: 1px solid #cbd5e1; padding-top: 5px; text-align: center;">
+                            <p style="margin: 0; font-size: 8px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
+                            <p style="margin: 1px 0; font-size: 7px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero / Auxiliar")}</p>
                         </div>
-                        <div style="flex: 1; border-top: 1px solid #cbd5e1; padding-top: 6px; text-align: center;">
-                            <p style="margin: 0; font-size: 8.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">${isEgreso ? "Recibido / Beneficiario" : "Aceptado por el Paciente"}</p>
-                            <p style="margin: 1px 0; font-size: 7.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Firma y Cédula / Sello</p>
+                        <div style="flex: 1; border-top: 1px solid #cbd5e1; padding-top: 5px; text-align: center;">
+                            <p style="margin: 0; font-size: 8px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">${isEgreso ? "Firma Beneficiario" : "Aceptado por el Paciente"}</p>
+                            <p style="margin: 1px 0; font-size: 7px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">C.C. / Sello</p>
                         </div>
                     </div>
                 </div>
