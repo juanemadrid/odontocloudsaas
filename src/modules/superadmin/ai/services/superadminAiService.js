@@ -46,7 +46,12 @@ export async function invokeSuperadminAssistant(action, payload = {}) {
     throw err;
   }
   if (response.status === 429) {
-    const err = new Error("Has realizado demasiadas consultas. Espera un momento.");
+    let msg = "El asistente alcanzó temporalmente el límite gratuito. Intenta nuevamente más tarde.";
+    try {
+      const errJson = await response.json();
+      if (errJson?.message) msg = errJson.message;
+    } catch (_) {}
+    const err = new Error(msg);
     err.status = 429;
     throw err;
   }
@@ -54,7 +59,8 @@ export async function invokeSuperadminAssistant(action, payload = {}) {
     let msg = "No fue posible consultar los datos en este momento.";
     try {
       const errJson = await response.json();
-      if (errJson?.error) msg = errJson.error;
+      if (errJson?.message) msg = errJson.message;
+      else if (errJson?.error) msg = errJson.error;
     } catch (_) {}
     const err = new Error(msg);
     err.status = response.status;
@@ -79,6 +85,54 @@ export const getFactusUsageSummary = () => invokeSuperadminAssistant("get_factus
 export const getSubscriptionRequestsPending = () => invokeSuperadminAssistant("get_subscription_requests_pending");
 export const getRecentEmailIssues = () => invokeSuperadminAssistant("get_recent_email_issues");
 export const getPaymentSummary = () => invokeSuperadminAssistant("get_payment_summary");
+
+/**
+ * Consulta a Gemini mediante superadmin-assistant (action: "ask_ai").
+ * En caso de fallo o indisponibilidad del modelo, activa fallback determinista
+ * con datos reales para las preguntas operativas soportadas.
+ */
+export async function askAiAssistant(question, history = [], dashboardData = null) {
+  try {
+    const res = await invokeSuperadminAssistant("ask_ai", { question, history });
+    if (res?.answer) {
+      return {
+        text: res.answer,
+        tags: ["Gemini 3.7", "Datos Reales"],
+        tools_used: res.tools_used || [],
+      };
+    }
+  } catch (err) {
+    console.warn("Fallo o indisponibilidad en asistente IA, evaluando fallback:", err);
+
+    if (err?.status === 429) {
+      return {
+        text: err.message || "El asistente alcanzó temporalmente el límite gratuito. Intenta nuevamente más tarde.",
+        tags: ["Límite de Consultas"],
+      };
+    }
+
+    // Fallback determinista usando datos reales para preguntas conocidas
+    try {
+      const fallback = await answerQueryDeterministically(question, dashboardData);
+      if (fallback && !fallback.tags?.includes("Operaciones Disponibles")) {
+        return {
+          text: fallback.text,
+          tags: [...fallback.tags, "Fallback Operativo"],
+        };
+      }
+    } catch (_) {}
+
+    return {
+      text: "El asistente inteligente no está disponible en este momento. Las consultas operativas básicas siguen disponibles.",
+      tags: ["Asistente No Disponible"],
+    };
+  }
+
+  return {
+    text: "El asistente inteligente no está disponible en este momento. Las consultas operativas básicas siguen disponibles.",
+    tags: ["Asistente No Disponible"],
+  };
+}
 
 /**
  * Enrutador determinista de respuestas rápidas sin LLM.

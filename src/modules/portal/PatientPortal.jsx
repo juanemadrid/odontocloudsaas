@@ -3,12 +3,14 @@ import {
     loginPatientPortal,
     logoutPatientPortal,
     requestPatientAppointment,
-    resumePatientPortal
+    resumePatientPortal,
+    setupPatientPin,
+    resetPatientPin
 } from "../../services/patientPortalService";
 import { useParams, useNavigate } from "react-router-dom";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
 import { fetchTenantConfigBySlug } from "../../utils/tenantConfigHelper";
-import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell } from "react-icons/fi";
+import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell, FiLock, FiKey, FiCheckCircle } from "react-icons/fi";
 import { toast } from "sonner";
 import { isAccessBlocked } from "../../utils/subscriptionHelper";
 
@@ -53,6 +55,15 @@ export default function PatientPortal() {
     const [loadingConfig, setLoadingConfig] = useState(!!clinicSlug);
     const [inquilinoId, setInquilinoId] = useState(null);
     const [tenantInfo, setTenantInfo] = useState(null);
+
+    // PIN Security States (Ley 1581 de Protección de Datos)
+    const [loginMode, setLoginMode] = useState("birthdate"); // "birthdate" | "pin" | "reset_pin"
+    const [pinInput, setPinInput] = useState("");
+    const [newPinInput, setNewPinInput] = useState("");
+    const [confirmPinInput, setConfirmPinInput] = useState("");
+    const [showPinSetupModal, setShowPinSetupModal] = useState(false);
+    const [tempSetupToken, setTempSetupToken] = useState(null);
+    const [patientNameForPin, setPatientNameForPin] = useState("");
 
     // Modal states
     const [activeModal, setActiveModal] = useState(null); // 'cita' | 'pagos' | 'tratamiento' | 'soporte'
@@ -144,24 +155,122 @@ export default function PatientPortal() {
 
     const handleLogin = async (event) => {
         event.preventDefault();
-        if (docInput.replace(/\D/g, "").length < 5) {
+        const cleanDoc = docInput.replace(/\D/g, "");
+        if (cleanDoc.length < 5) {
             return toast.error("Ingrese un documento válido (mínimo 5 dígitos).");
         }
-        if (!birthDate) return toast.error("Ingrese su fecha de nacimiento.");
         if (!inquilinoId) return toast.error("No fue posible identificar la clínica.");
 
         setLoading(true);
         try {
-            const portalData = await loginPatientPortal({
-                document: docInput,
-                birthDate,
+            if (loginMode === "pin") {
+                if (pinInput.length < 4) {
+                    setLoading(false);
+                    return toast.error("Ingrese su PIN de 4 dígitos.");
+                }
+                const result = await loginPatientPortal({
+                    document: cleanDoc,
+                    pin: pinInput,
+                    tenantId: inquilinoId,
+                    clinicSlug
+                });
+                if (result.data) {
+                    applyPortalData(result.data);
+                    setAuth(true);
+                    toast.success("¡Bienvenido(a)!");
+                }
+            } else {
+                // Modo Fecha de Nacimiento (primer ingreso o verificación)
+                if (!birthDate) {
+                    setLoading(false);
+                    return toast.error("Ingrese su fecha de nacimiento.");
+                }
+
+                const result = await loginPatientPortal({
+                    document: cleanDoc,
+                    birthDate,
+                    tenantId: inquilinoId,
+                    clinicSlug
+                });
+
+                if (result.requiresPinSetup) {
+                    // Primer ingreso exitoso: Solicitar creación de PIN para blindaje legal
+                    setTempSetupToken(result.tempToken);
+                    setPatientNameForPin(result.patientName || "Paciente");
+                    setShowPinSetupModal(true);
+                } else if (result.requiresPin) {
+                    toast.info("Ya tienes un PIN creado. Ingrésalo para acceder.");
+                    setLoginMode("pin");
+                } else if (result.data) {
+                    applyPortalData(result.data);
+                    setAuth(true);
+                    toast.success("¡Bienvenido(a)!");
+                }
+            }
+        } catch (error) {
+            toast.error(error.message || "Error al iniciar sesión.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSetupPin = async (e) => {
+        e.preventDefault();
+        if (newPinInput.length < 4) {
+            return toast.error("El PIN debe tener 4 dígitos numéricos.");
+        }
+        if (newPinInput !== confirmPinInput) {
+            return toast.error("Los PINs ingresados no coinciden.");
+        }
+
+        setLoading(true);
+        try {
+            const result = await setupPatientPin({
+                tempToken: tempSetupToken,
+                pin: newPinInput,
                 tenantId: inquilinoId,
                 clinicSlug
             });
-            applyPortalData(portalData);
-            setAuth(true);
+            setShowPinSetupModal(false);
+            if (result.data) {
+                applyPortalData(result.data);
+                setAuth(true);
+                toast.success("¡PIN de seguridad configurado exitosamente!");
+            }
         } catch (error) {
-            toast.error("Error al iniciar sesión: " + error.message);
+            toast.error("Error al guardar PIN: " + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleResetPin = async (e) => {
+        e.preventDefault();
+        const cleanDoc = docInput.replace(/\D/g, "");
+        if (cleanDoc.length < 5) return toast.error("Ingrese un documento válido.");
+        if (!birthDate) return toast.error("Ingrese su fecha de nacimiento.");
+        if (newPinInput.length < 4) return toast.error("El nuevo PIN debe tener 4 dígitos.");
+        if (newPinInput !== confirmPinInput) return toast.error("Los PINs no coinciden.");
+
+        setLoading(true);
+        try {
+            const result = await resetPatientPin({
+                document: cleanDoc,
+                birthDate,
+                newPin: newPinInput,
+                tenantId: inquilinoId,
+                clinicSlug
+            });
+            if (result.data) {
+                applyPortalData(result.data);
+                setAuth(true);
+                setLoginMode("pin");
+                setNewPinInput("");
+                setConfirmPinInput("");
+                toast.success("¡PIN actualizado con éxito!");
+            }
+        } catch (error) {
+            toast.error("Error al actualizar PIN: " + error.message);
         } finally {
             setLoading(false);
         }
@@ -339,54 +448,107 @@ export default function PatientPortal() {
                         </div>
 
                         {/* Form area — white background */}
-                        <div className="px-8 py-7 space-y-5">
-                            <p className="text-slate-500 text-sm text-center leading-snug">
-                                Ingresa tus datos para consultar citas, pagos y tratamientos.
+                        <div className="px-8 py-7 space-y-4">
+                            {/* Mode selector: PIN vs Primer ingreso */}
+                            <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setLoginMode("pin")}
+                                    className={`flex-1 py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 ${loginMode === "pin" ? "bg-white text-slate-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
+                                >
+                                    <FiLock size={12} /> Con PIN
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setLoginMode("birthdate")}
+                                    className={`flex-1 py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 ${loginMode === "birthdate" ? "bg-white text-slate-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
+                                >
+                                    <FiCalendar size={12} /> Primer Ingreso
+                                </button>
+                            </div>
+
+                            <p className="text-slate-500 text-xs text-center leading-snug">
+                                {loginMode === "pin" 
+                                    ? "Ingresa tu número de documento y tu PIN personal de 4 dígitos." 
+                                    : "Valida tu documento y fecha de nacimiento para crear tu PIN seguro."}
                             </p>
 
-                            <form onSubmit={handleLogin} className="space-y-4 mt-2">
+                            <form onSubmit={handleLogin} className="space-y-3.5 mt-2">
                                 {/* Document field */}
-                                <div className="space-y-1.5">
-                                    <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                                <div className="space-y-1">
+                                    <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
                                         Número de documento
                                     </label>
                                     <div className="relative">
                                         <FiUser size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                         <input
                                             type="text"
-                                            placeholder="Ej: 1234567890"
+                                            placeholder="Ej: 42209244"
                                             value={docInput}
                                             onChange={e => setDocInput(e.target.value)}
                                             disabled={loading}
                                             required
-                                            className="w-full pl-10 pr-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white"
+                                            className="w-full pl-10 pr-4 py-3 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white"
                                         />
                                     </div>
                                 </div>
 
-                                {/* Birth date field */}
-                                <div className="space-y-1.5">
-                                    <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
-                                        Fecha de nacimiento
-                                    </label>
-                                    <div className="relative">
-                                        <FiCalendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                                        <input
-                                            type="date"
-                                            value={birthDate}
-                                            onChange={e => setBirthDate(e.target.value)}
-                                            disabled={loading}
-                                            required
-                                            className="w-full pl-10 pr-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white"
-                                         max="9999-12-31" min="1900-01-01" />
+                                {loginMode === "pin" ? (
+                                    /* PIN field */
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center">
+                                            <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                                                PIN de 4 dígitos
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setLoginMode("reset_pin")}
+                                                className="text-[10px] font-bold text-blue-600 hover:underline"
+                                            >
+                                                ¿Olvidaste tu PIN?
+                                            </button>
+                                        </div>
+                                        <div className="relative">
+                                            <FiLock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                            <input
+                                                type="password"
+                                                inputMode="numeric"
+                                                maxLength={6}
+                                                placeholder="••••"
+                                                value={pinInput}
+                                                onChange={e => setPinInput(e.target.value.replace(/\D/g, ""))}
+                                                disabled={loading}
+                                                required
+                                                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm font-bold tracking-widest text-slate-800 placeholder-slate-400 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white text-center"
+                                            />
+                                        </div>
                                     </div>
-                                </div>
+                                ) : (
+                                    /* Birth date field */
+                                    <div className="space-y-1">
+                                        <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                                            Fecha de nacimiento
+                                        </label>
+                                        <div className="relative">
+                                            <FiCalendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                            <input
+                                                type="date"
+                                                value={birthDate}
+                                                onChange={e => setBirthDate(e.target.value)}
+                                                disabled={loading}
+                                                required
+                                                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm font-semibold text-slate-800 bg-slate-50 border-2 border-slate-200 outline-none transition-all focus:border-blue-500 focus:bg-white"
+                                                max="9999-12-31" min="1900-01-01"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
 
-                                {/* Submit button — single solid color */}
+                                {/* Submit button */}
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full py-4 rounded-xl font-black text-sm text-white shadow-lg transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2.5 mt-2"
+                                    className="w-full py-3.5 rounded-xl font-black text-sm text-white shadow-lg transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
                                     style={{ background: clinicPrimary }}
                                 >
                                     {loading ? (
@@ -397,7 +559,7 @@ export default function PatientPortal() {
                                     ) : (
                                         <>
                                             <FiShield size={15} />
-                                            Ingresar al Portal
+                                            {loginMode === "pin" ? "Ingresar al Portal" : "Validar y Continuar"}
                                         </>
                                     )}
                                 </button>
@@ -405,7 +567,7 @@ export default function PatientPortal() {
                         </div>
 
                         {/* Footer */}
-                        <div className="px-8 pb-7 pt-2 text-center border-t border-slate-100">
+                        <div className="px-8 pb-6 pt-2 text-center border-t border-slate-100">
                             <p className="text-[11px] text-slate-400">
                                 ¿Problemas para ingresar?{" "}
                                 <a
@@ -419,6 +581,170 @@ export default function PatientPortal() {
                             </p>
                         </div>
                     </div>
+
+                    {/* MODAL: Configurar PIN por primera vez */}
+                    {showPinSetupModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                            <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden p-6 space-y-4">
+                                <div className="text-center space-y-2">
+                                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                                        <FiShield size={24} />
+                                    </div>
+                                    <h3 className="text-base font-black text-slate-800">
+                                        Protege tu privacidad médica
+                                    </h3>
+                                    <p className="text-xs text-slate-500 leading-relaxed">
+                                        Hola <strong>{patientNameForPin}</strong>. Según la <strong>Ley 1581 de 2012</strong>, crea un PIN de 4 dígitos para que solo tú puedas ver tus citas y tratamientos.
+                                    </p>
+                                </div>
+
+                                <form onSubmit={handleSetupPin} className="space-y-3">
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                                            Crea tu PIN (4 dígitos)
+                                        </label>
+                                        <input
+                                            type="password"
+                                            inputMode="numeric"
+                                            maxLength={4}
+                                            placeholder="••••"
+                                            value={newPinInput}
+                                            onChange={e => setNewPinInput(e.target.value.replace(/\D/g, ""))}
+                                            required
+                                            autoFocus
+                                            className="w-full py-3 px-4 rounded-xl text-center text-lg font-black tracking-widest text-slate-800 bg-slate-50 border-2 border-slate-200 outline-none focus:border-emerald-500 focus:bg-white"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                                            Confirma tu PIN
+                                        </label>
+                                        <input
+                                            type="password"
+                                            inputMode="numeric"
+                                            maxLength={4}
+                                            placeholder="••••"
+                                            value={confirmPinInput}
+                                            onChange={e => setConfirmPinInput(e.target.value.replace(/\D/g, ""))}
+                                            required
+                                            className="w-full py-3 px-4 rounded-xl text-center text-lg font-black tracking-widest text-slate-800 bg-slate-50 border-2 border-slate-200 outline-none focus:border-emerald-500 focus:bg-white"
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={loading || newPinInput.length < 4}
+                                        className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                    >
+                                        {loading ? "Guardando..." : "Guardar PIN y Entrar"}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* MODAL: Restablecer PIN olvidado */}
+                    {loginMode === "reset_pin" && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                            <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden p-6 space-y-4">
+                                <div className="flex justify-between items-start">
+                                    <div className="space-y-1">
+                                        <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                                            <FiKey size={18} className="text-blue-600" /> Restablecer PIN
+                                        </h3>
+                                        <p className="text-xs text-slate-500 leading-snug">
+                                            Ingresa tu fecha de nacimiento para crear un nuevo PIN.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLoginMode("pin")}
+                                        className="p-1 rounded-lg text-slate-400 hover:bg-slate-100"
+                                    >
+                                        <FiX size={18} />
+                                    </button>
+                                </div>
+
+                                <form onSubmit={handleResetPin} className="space-y-3">
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                                            Número de documento
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={docInput}
+                                            onChange={e => setDocInput(e.target.value)}
+                                            required
+                                            className="w-full p-2.5 rounded-xl text-sm font-semibold bg-slate-50 border border-slate-200"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                                            Fecha de nacimiento
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={birthDate}
+                                            onChange={e => setBirthDate(e.target.value)}
+                                            required
+                                            className="w-full p-2.5 rounded-xl text-sm font-semibold bg-slate-50 border border-slate-200"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                                            Nuevo PIN (4 dígitos)
+                                        </label>
+                                        <input
+                                            type="password"
+                                            inputMode="numeric"
+                                            maxLength={4}
+                                            placeholder="••••"
+                                            value={newPinInput}
+                                            onChange={e => setNewPinInput(e.target.value.replace(/\D/g, ""))}
+                                            required
+                                            className="w-full p-2.5 rounded-xl text-center text-sm font-bold tracking-widest bg-slate-50 border border-slate-200"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                                            Confirmar nuevo PIN
+                                        </label>
+                                        <input
+                                            type="password"
+                                            inputMode="numeric"
+                                            maxLength={4}
+                                            placeholder="••••"
+                                            value={confirmPinInput}
+                                            onChange={e => setConfirmPinInput(e.target.value.replace(/\D/g, ""))}
+                                            required
+                                            className="w-full p-2.5 rounded-xl text-center text-sm font-bold tracking-widest bg-slate-50 border border-slate-200"
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-2 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setLoginMode("pin")}
+                                            className="w-1/3 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={loading}
+                                            className="w-2/3 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider shadow-md"
+                                        >
+                                            {loading ? "Actualizando..." : "Actualizar PIN"}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
 
                     <p className="text-center text-white/30 text-[10px] font-semibold mt-5 tracking-wider">
                         © {new Date().getFullYear()} {config.name || "OdontoCloud"} · Todos los derechos reservados

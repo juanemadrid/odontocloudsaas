@@ -29,3 +29,4 @@ scripts/*.mjs
 supabase/backups/
 backups/
 scripts/vps/
+*.bak

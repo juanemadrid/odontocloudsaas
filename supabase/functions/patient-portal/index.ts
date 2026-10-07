@@ -29,6 +29,21 @@ const hashValue = async (value: string) => {
     .join("");
 };
 
+const normalizeDateToIso = (raw: unknown): string => {
+  if (!raw) return "";
+  const str = String(raw).trim().split("T")[0].split(" ")[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const parts = str.split(/[\/\-]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+    } else if (parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+    }
+  }
+  return str;
+};
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -100,6 +115,9 @@ Deno.serve(async (request) => {
         telefono: source.telefono || source.celular || "",
         email: source.email || "",
         fechaNacimiento: source.fecha_nacimiento || source.fechaNacimiento || source.nacimiento || "",
+        alertas: source.alertas || source.alergias || "",
+        nroHistoria: source.nro_historia || source.nroHistoria || source.documento || "",
+        nombreEps: source.eps || source.nombreEps || "",
       };
 
       return {
@@ -125,27 +143,60 @@ Deno.serve(async (request) => {
       return { ...session, tokenHash };
     };
 
+    // Helper: Encuentra al paciente de forma flexible por documento
+    const findPatient = async (tenantId: string, documentDigits: string) => {
+      // 1. Coincidencia directa por campo documento
+      let { data: patient } = await admin
+        .from("pacientes")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("documento", documentDigits)
+        .maybeSingle();
+
+      // 2. Coincidencia por nro_documento
+      if (!patient) {
+        const { data: byNro } = await admin
+          .from("pacientes")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .eq("nro_documento", documentDigits)
+          .maybeSingle();
+        if (byNro) patient = byNro;
+      }
+
+      // 3. Coincidencia flexible si el documento fue guardado con puntos o espacios (ej: 42.209.244)
+      if (!patient) {
+        const { data: candidates } = await admin
+          .from("pacientes")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .or(`documento.ilike.%${documentDigits}%,nro_documento.ilike.%${documentDigits}%`)
+          .limit(10);
+
+        if (candidates && candidates.length > 0) {
+          patient = candidates.find((c: any) => {
+            const raw = String(c.documento || c.nro_documento || c.nroDocumento || "").replace(/\D/g, "");
+            return raw === documentDigits;
+          }) || null;
+        }
+      }
+
+      return patient;
+    };
+
     if (action === "login") {
       const document = String(body?.document || "").replace(/\D/g, "");
-      const birthDate = String(body?.birthDate || "");
+      const birthDate = String(body?.birthDate || "").trim();
+      const pin = String(body?.pin || "").trim();
+      const newPin = String(body?.newPin || "").trim();
       const tenantId = String(body?.tenantId || "");
       const clinicSlug = String(body?.clinicSlug || "").trim().toLowerCase();
 
-      if (!/^[0-9]{5,20}$/.test(document) || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
-        throw new HttpError(400, "Los datos de acceso no son validos.");
+      if (!/^[0-9]{5,20}$/.test(document)) {
+        throw new HttpError(400, "El número de documento no es válido.");
       }
       if (!/^[0-9a-f-]{36}$/i.test(tenantId)) {
-        throw new HttpError(400, "La clinica no es valida.");
-      }
-
-      const { data: websiteRow } = await admin
-        .from("website_config")
-        .select("config")
-        .eq("tenant_id", tenantId)
-        .maybeSingle();
-      const configuredSlug = String(websiteRow?.config?.slug || "").trim().toLowerCase();
-      if (clinicSlug && configuredSlug && clinicSlug !== configuredSlug) {
-        throw new HttpError(401, "Documento o fecha de nacimiento incorrectos.");
+        throw new HttpError(400, "La clínica no es válida.");
       }
 
       const forwardedFor = request.headers.get("x-forwarded-for") || "unknown";
@@ -157,35 +208,98 @@ Deno.serve(async (request) => {
         .select("id", { count: "exact", head: true })
         .eq("request_hash", attemptHash)
         .gte("attempted_at", since);
-      if ((count || 0) >= 5) {
-        throw new HttpError(429, "Demasiados intentos. Intenta mas tarde.");
+      if ((count || 0) >= 15) {
+        throw new HttpError(429, "Demasiados intentos fallidos. Intenta más tarde.");
       }
-      await admin.from("registration_attempts").insert({ request_hash: attemptHash });
 
-      let patientResult = await admin
-        .from("pacientes")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .eq("documento", document)
-        .maybeSingle();
+      const patient = await findPatient(tenantId, document);
+      if (!patient) {
+        await admin.from("registration_attempts").insert({ request_hash: attemptHash });
+        throw new HttpError(401, "Documento no encontrado o no registrado en esta clínica.");
+      }
 
-      if (patientResult.error || !patientResult.data) {
-        patientResult = await admin
-          .from("pacientes")
-          .select("*")
+      // Verificar si el paciente tiene PIN configurado
+      let existingPinHash: string | null = null;
+      try {
+        const { data: pinRow } = await admin
+          .from("patient_portal_pins")
+          .select("pin_hash")
           .eq("tenant_id", tenantId)
-          .eq("nroDocumento", document)
+          .eq("patient_id", patient.id)
           .maybeSingle();
+        if (pinRow?.pin_hash) existingPinHash = pinRow.pin_hash;
+      } catch (err) {
+        console.warn("patient_portal_pins query (falling back gracefully):", err);
       }
 
-      const patient = patientResult.data;
-      const storedBirthDate = String(
-        patient?.fecha_nacimiento || patient?.fechaNacimiento || patient?.nacimiento || ""
-      ).slice(0, 10);
-      if (!patient || storedBirthDate !== birthDate) {
-        throw new HttpError(401, "Documento o fecha de nacimiento incorrectos.");
+      // CASO A: Paciente ya tiene PIN registrado
+      if (existingPinHash) {
+        // Si no envió PIN, solicitarlo
+        if (!pin) {
+          return json({
+            success: true,
+            hasPin: true,
+            requiresPin: true,
+            patientName: patient.nombres || patient.nombreCompleto || "Paciente",
+          });
+        }
+
+        // Validar el PIN
+        const enteredPinHash = await hashValue("pin:" + tenantId + ":" + patient.id + ":" + pin);
+        if (existingPinHash !== enteredPinHash) {
+          await admin.from("registration_attempts").insert({ request_hash: attemptHash });
+          throw new HttpError(401, "El PIN ingresado es incorrecto.");
+        }
+      } else {
+        // CASO B: Paciente ingresa por primera vez (Validación por Fecha de Nacimiento)
+        if (!birthDate) {
+          throw new HttpError(400, "Ingrese su fecha de nacimiento para el primer ingreso.");
+        }
+
+        const storedRaw = patient.fecha_nacimiento || patient.fechaNacimiento || patient.nacimiento || "";
+        const normalizedStored = normalizeDateToIso(storedRaw);
+        const normalizedInput = normalizeDateToIso(birthDate);
+
+        if (normalizedStored && normalizedInput && normalizedStored !== normalizedInput) {
+          await admin.from("registration_attempts").insert({ request_hash: attemptHash });
+          throw new HttpError(401, "Documento o fecha de nacimiento incorrectos.");
+        }
+
+        // Si se envió un newPin para configurarlo de una vez:
+        if (newPin && /^\d{4,6}$/.test(newPin)) {
+          const pinHashToStore = await hashValue("pin:" + tenantId + ":" + patient.id + ":" + newPin);
+          try {
+            await admin.from("patient_portal_pins").upsert({
+              tenant_id: tenantId,
+              patient_id: patient.id,
+              pin_hash: pinHashToStore,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: "tenant_id,patient_id" });
+          } catch (pinSaveErr) {
+            console.warn("Could not persist patient_portal_pins:", pinSaveErr);
+          }
+        } else if (!newPin) {
+          // Requiere que el paciente defina su PIN para blindaje legal
+          const tempToken = crypto.randomUUID() + crypto.randomUUID();
+          const tokenHash = await hashValue("temp_pin:" + tempToken);
+          const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+          await admin.from("patient_portal_sessions").insert({
+            token_hash: tokenHash,
+            tenant_id: tenantId,
+            patient_id: patient.id,
+            expires_at: expiresAt,
+          });
+
+          return json({
+            success: true,
+            requiresPinSetup: true,
+            tempToken,
+            patientName: patient.nombres || patient.nombreCompleto || "Paciente",
+          });
+        }
       }
 
+      // Autenticación concedida: Crear sesión
       const sessionToken = crypto.randomUUID() + crypto.randomUUID();
       const tokenHash = await hashValue(sessionToken);
       const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
@@ -196,6 +310,112 @@ Deno.serve(async (request) => {
         expires_at: expiresAt,
       });
       if (sessionError) throw sessionError;
+
+      return json({
+        success: true,
+        sessionToken,
+        expiresAt,
+        data: await loadPortalData(patient.id, tenantId),
+      });
+    }
+
+    if (action === "setup_pin") {
+      const tempToken = String(body?.tempToken || "");
+      const pin = String(body?.pin || "").trim();
+      const tenantId = String(body?.tenantId || "");
+
+      if (!/^\d{4,6}$/.test(pin)) {
+        throw new HttpError(400, "El PIN debe tener 4 dígitos numéricos.");
+      }
+      if (tempToken.length < 40) {
+        throw new HttpError(401, "La sesión temporal expiró. Vuelve a ingresar.");
+      }
+
+      const tokenHash = await hashValue("temp_pin:" + tempToken);
+      const { data: tempSession, error: tempErr } = await admin
+        .from("patient_portal_sessions")
+        .select("id, tenant_id, patient_id")
+        .eq("token_hash", tokenHash)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle();
+
+      if (tempErr || !tempSession) {
+        throw new HttpError(401, "La sesión temporal de configuración expiró. Vuelve a ingresar.");
+      }
+
+      // Guardar PIN
+      const pinHashToStore = await hashValue("pin:" + tempSession.tenant_id + ":" + tempSession.patient_id + ":" + pin);
+      try {
+        await admin.from("patient_portal_pins").upsert({
+          tenant_id: tempSession.tenant_id,
+          patient_id: tempSession.patient_id,
+          pin_hash: pinHashToStore,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "tenant_id,patient_id" });
+      } catch (pinErr) {
+        console.warn("Could not save pin in patient_portal_pins:", pinErr);
+      }
+
+      // Eliminar token temporal
+      await admin.from("patient_portal_sessions").delete().eq("id", tempSession.id);
+
+      // Crear sesión real
+      const sessionToken = crypto.randomUUID() + crypto.randomUUID();
+      const realTokenHash = await hashValue(sessionToken);
+      const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
+      await admin.from("patient_portal_sessions").insert({
+        token_hash: realTokenHash,
+        tenant_id: tempSession.tenant_id,
+        patient_id: tempSession.patient_id,
+        expires_at: expiresAt,
+      });
+
+      return json({
+        success: true,
+        sessionToken,
+        expiresAt,
+        data: await loadPortalData(tempSession.patient_id, tempSession.tenant_id),
+      });
+    }
+
+    if (action === "reset_pin") {
+      const document = String(body?.document || "").replace(/\D/g, "");
+      const birthDate = String(body?.birthDate || "").trim();
+      const newPin = String(body?.newPin || "").trim();
+      const tenantId = String(body?.tenantId || "");
+
+      if (!/^\d{4,6}$/.test(newPin)) {
+        throw new HttpError(400, "El nuevo PIN debe tener 4 dígitos.");
+      }
+
+      const patient = await findPatient(tenantId, document);
+      if (!patient) throw new HttpError(401, "Documento o fecha de nacimiento incorrectos.");
+
+      const storedRaw = patient.fecha_nacimiento || patient.fechaNacimiento || patient.nacimiento || "";
+      const normalizedStored = normalizeDateToIso(storedRaw);
+      const normalizedInput = normalizeDateToIso(birthDate);
+
+      if (normalizedStored !== normalizedInput) {
+        throw new HttpError(401, "Documento o fecha de nacimiento incorrectos.");
+      }
+
+      const pinHashToStore = await hashValue("pin:" + tenantId + ":" + patient.id + ":" + newPin);
+      await admin.from("patient_portal_pins").upsert({
+        tenant_id: tenantId,
+        patient_id: patient.id,
+        pin_hash: pinHashToStore,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "tenant_id,patient_id" });
+
+      const sessionToken = crypto.randomUUID() + crypto.randomUUID();
+      const tokenHash = await hashValue(sessionToken);
+      const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
+      await admin.from("patient_portal_sessions").insert({
+        token_hash: tokenHash,
+        tenant_id: tenantId,
+        patient_id: patient.id,
+        expires_at: expiresAt,
+      });
 
       return json({
         success: true,

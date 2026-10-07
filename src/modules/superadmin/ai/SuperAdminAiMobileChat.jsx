@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { FiSend, FiArrowLeft, FiCpu, FiClock, FiShield, FiRefreshCw, FiAlertTriangle } from "react-icons/fi";
 import { MOBILE_CHIPS } from "./mockAiData";
-import { answerQueryDeterministically } from "./services/superadminAiService";
+import { answerQueryDeterministically, askAiAssistant } from "./services/superadminAiService";
 
 export default function SuperAdminAiMobileChat({
     onBack,
@@ -48,12 +48,21 @@ export default function SuperAdminAiMobileChat({
             timestamp: getFormattedTime(),
         };
 
-        setMessages((prev) => [...prev, userMsg]);
+        const currentMessages = [...messages, userMsg];
+        setMessages(currentMessages);
         setInputValue("");
         setIsThinking(true);
 
+        const history = currentMessages
+            .filter((m) => m.sender === "user" || m.sender === "ai")
+            .slice(-8)
+            .map((m) => ({
+                role: m.sender === "user" ? "user" : "model",
+                text: m.text,
+            }));
+
         try {
-            const aiResp = await answerQueryDeterministically(query, dashboardData);
+            const aiResp = await askAiAssistant(query, history, dashboardData);
             const aiMsg = {
                 id: `ai-${Date.now()}`,
                 sender: "ai",
@@ -256,7 +265,7 @@ export default function SuperAdminAiMobileChat({
                             <div className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[8px]">
                                 <FiCpu className="w-2 h-2" />
                             </div>
-                            <span className="text-xs text-slate-500 font-medium">Consultando backend...</span>
+                            <span className="text-xs text-slate-500 font-medium">Analizando datos de OdontoCloud...</span>
                             <div className="flex gap-1 items-center ml-1">
                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]"></span>

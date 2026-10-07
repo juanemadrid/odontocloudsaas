@@ -24,18 +24,57 @@ const invokePortal = async (action, payload = {}) => {
 export const loginPatientPortal = async ({
   document,
   birthDate,
+  pin,
+  newPin,
   tenantId,
   clinicSlug,
 }) => {
   const result = await invokePortal("login", {
     document,
     birthDate,
+    pin,
+    newPin,
     tenantId,
     clinicSlug,
   });
-  sessionStorage.setItem(SESSION_KEY, result.sessionToken);
-  sessionStorage.setItem(SESSION_SLUG_KEY, clinicSlug || "");
-  return result.data;
+
+  // Si requiere configurar PIN o ingresar PIN antes de abrir sesión
+  if (result.requiresPinSetup || result.requiresPin) {
+    return result;
+  }
+
+  if (result.sessionToken) {
+    sessionStorage.setItem(SESSION_KEY, result.sessionToken);
+    sessionStorage.setItem(SESSION_SLUG_KEY, clinicSlug || "");
+  }
+  return result;
+};
+
+export const setupPatientPin = async ({ tempToken, pin, tenantId, clinicSlug }) => {
+  const result = await invokePortal("setup_pin", {
+    tempToken,
+    pin,
+    tenantId,
+  });
+  if (result.sessionToken) {
+    sessionStorage.setItem(SESSION_KEY, result.sessionToken);
+    sessionStorage.setItem(SESSION_SLUG_KEY, clinicSlug || "");
+  }
+  return result;
+};
+
+export const resetPatientPin = async ({ document, birthDate, newPin, tenantId, clinicSlug }) => {
+  const result = await invokePortal("reset_pin", {
+    document,
+    birthDate,
+    newPin,
+    tenantId,
+  });
+  if (result.sessionToken) {
+    sessionStorage.setItem(SESSION_KEY, result.sessionToken);
+    sessionStorage.setItem(SESSION_SLUG_KEY, clinicSlug || "");
+  }
+  return result;
 };
 
 export const resumePatientPortal = async (clinicSlug) => {
@@ -53,7 +92,7 @@ export const resumePatientPortal = async (clinicSlug) => {
 
 export const requestPatientAppointment = (appointment) => {
   const sessionToken = sessionStorage.getItem(SESSION_KEY);
-  if (!sessionToken) throw new Error("La sesion del portal expiro.");
+  if (!sessionToken) throw new Error("La sesión del portal expiró.");
   return invokePortal("request_appointment", { sessionToken, ...appointment });
 };
 

@@ -22,6 +22,7 @@ import { QUICK_QUESTIONS } from "./mockAiData";
 import {
     getDashboardSummary,
     answerQueryDeterministically,
+    askAiAssistant,
 } from "./services/superadminAiService";
 import SuperAdminAiMobileChat from "./SuperAdminAiMobileChat";
 
@@ -103,12 +104,21 @@ export default function SuperAdminAiCenter({ onBack }) {
             timestamp: getFormattedTime(),
         };
 
-        setMessages((prev) => [...prev, userMsg]);
+        const currentMessages = [...messages, userMsg];
+        setMessages(currentMessages);
         setInputValue("");
         setIsThinking(true);
 
+        const history = currentMessages
+            .filter((m) => m.sender === "user" || m.sender === "ai")
+            .slice(-8)
+            .map((m) => ({
+                role: m.sender === "user" ? "user" : "model",
+                text: m.text,
+            }));
+
         try {
-            const aiResp = await answerQueryDeterministically(query, dashboardData);
+            const aiResp = await askAiAssistant(query, history, dashboardData);
             const aiMsg = {
                 id: `ai-${Date.now()}`,
                 sender: "ai",
@@ -645,7 +655,7 @@ export default function SuperAdminAiCenter({ onBack }) {
                                     <div className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px]">
                                         <FiCpu className="w-2.5 h-2.5" />
                                     </div>
-                                    <span className="text-xs text-slate-500 font-medium">Consultando backend...</span>
+                                    <span className="text-xs text-slate-500 font-medium">Analizando datos de OdontoCloud...</span>
                                     <div className="flex gap-1 items-center ml-2">
                                         <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                                         <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
