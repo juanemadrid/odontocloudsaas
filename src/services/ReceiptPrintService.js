@@ -118,10 +118,10 @@ export const ReceiptPrintService = {
             const accentBg = isEgreso ? "#fff1f2" : (isConsumoSaldo ? "#f0f9ff" : "#eff6ff");
             const accentBorder = isEgreso ? "#fecdd3" : (isConsumoSaldo ? "#bae6fd" : "#dbeafe");
             const tableHeaderBg = isEgreso ? "#fff1f2" : accentColor;
-            const tableHeaderColor = isEgreso ? "#9f1239" : "white";
+            const tableHeaderColor = isEgreso ? "#000000" : "white";
             const tableHeaderBorder = isEgreso ? "1.5px solid #fecdd3" : `1px solid ${accentColor}`;
             const totalBoxBg = isEgreso ? "#fff1f2" : accentColor;
-            const totalBoxColor = isEgreso ? "#9f1239" : "white";
+            const totalBoxColor = isEgreso ? "#000000" : "white";
             const totalBoxBorder = isEgreso ? "1.5px solid #fecdd3" : "none";
 
             // Items resolution
@@ -141,7 +141,7 @@ export const ReceiptPrintService = {
             printElement.style.width = "720px";
             printElement.style.padding = "14px 18px";
             printElement.style.backgroundColor = "white";
-            printElement.style.color = "#1e293b";
+            printElement.style.color = "#000000";
             printElement.style.fontFamily = "'Inter', system-ui, -apple-system, sans-serif";
 
             // Fetch company configuration (empresa) for actual logo, nit, address, phone etc.
@@ -208,7 +208,7 @@ export const ReceiptPrintService = {
             const hasPlanInfo = !isEgreso && typeof totalPlan === "number" && totalPlan > 0;
 
             const html = `
-                <div style="border: 1px solid #e2e8f0; padding: 14px 18px; border-radius: 12px; position: relative; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);">
+                <div style="border: 1px solid #cbd5e1; padding: 14px 18px; border-radius: 12px; position: relative; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);">
                     <!-- Top accent bar -->
                     <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background-color: ${isEgreso ? '#fda4af' : accentColor}; border-top-left-radius: 12px; border-top-right-radius: 12px;"></div>
 
@@ -220,70 +220,70 @@ export const ReceiptPrintService = {
                                 : `<div style="width: 40px; height: 40px; background: ${accentColor}; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 900; text-transform: uppercase;">${clinicName.substring(0, 1) || "O"}</div>`
                             }
                             <div>
-                                <h1 style="margin: 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: -0.3px;">${clinicName}</h1>
-                                <p style="margin: 1px 0; font-size: 8.5px; color: #475569; font-weight: 800;">NIT: ${clinicNit}</p>
-                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 500;">${clinicAddress} ${clinicCity ? `(${clinicCity})` : ''}</p>
-                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 500;">TEL: ${clinicPhone} ${clinicEmail ? `| ${clinicEmail}` : ''}</p>
+                                <h1 style="margin: 0; font-size: 14px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: -0.3px;">${clinicName}</h1>
+                                <p style="margin: 1px 0; font-size: 8.5px; color: #000000; font-weight: 800;">NIT: ${clinicNit}</p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;">${clinicAddress} ${clinicCity ? `(${clinicCity})` : ''}</p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;">TEL: ${clinicPhone} ${clinicEmail ? `| ${clinicEmail}` : ''}</p>
                             </div>
                         </div>
                         <div style="text-align: right;">
                             <div style="background: ${accentBg}; padding: 3px 10px; border-radius: 6px; border: 1.5px solid ${accentBorder}; margin-bottom: 2px; display: inline-block;">
                                 <span style="font-size: 10.5px; font-weight: 800; color: ${accentColor}; text-transform: uppercase; letter-spacing: 0.3px;">${documentTitle}</span>
                             </div>
-                            <p style="margin: 0; font-size: 8px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">FECHA DE EMISIÓN: ${formattedDate}</p>
+                            <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 700; text-transform: uppercase;">FECHA DE EMISIÓN: ${formattedDate}</p>
                             <p style="margin: 1px 0 0 0; font-size: 10.5px; font-weight: 800; color: ${accentColor}; font-family: monospace;">NRO: ${receiptNumber}</p>
                         </div>
                     </div>
 
                     <!-- CUSTOMER / BENEFICIARY INFO CARD -->
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
+                    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
                         <div style="border-right: 1px solid #cbd5e1; padding-right: 10px;">
-                            <span style="font-size: 7px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">
+                            <span style="font-size: 7.5px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">
                                 ${isEgreso ? "Beneficiario" : "Información del Paciente"}
                             </span>
-                            <h2 style="margin: 0; font-size: 9.5px; font-weight: 700; color: #1e293b; text-transform: uppercase; letter-spacing: 0.2px;">${patientName}</h2>
+                            <h2 style="margin: 0; font-size: 9.5px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.2px;">${patientName}</h2>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 1.5px; margin-top: 3px;">
-                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${patientDocType.toUpperCase()} ${patientDoc}</p>
-                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Dirección:</strong> ${patientAddress}</p>
-                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Celular:</strong> ${patientPhone}</p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${patientDocType.toUpperCase()} ${patientDoc}</p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Dirección:</strong> ${patientAddress}</p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Celular:</strong> ${patientPhone}</p>
                             </div>
                         </div>
                         <div style="padding-left: 2px;">
-                            <span style="font-size: 7px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">
+                            <span style="font-size: 7.5px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">
                                 ${isEgreso ? "Detalles del Egreso" : "Detalles del Documento"}
                             </span>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 2px; margin-top: 3px;">
-                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Medio de Pago:</strong> <span style="text-transform: uppercase;">${pago.medio || pago.metodo || pago.metodo_pago || pago.medioPago || (isConsumoSaldo ? "Saldo a favor" : "Efectivo")}</span></p>
-                                <p style="margin: 0; font-size: 8px; color: #64748b; font-weight: 600;"><strong style="color: #94a3b8; font-size: 7px; text-transform: uppercase; margin-right: 3px;">Elaborado por:</strong> <span style="text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero")}</span></p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Medio de Pago:</strong> <span style="text-transform: uppercase; font-weight: 700;">${pago.medio || pago.metodo || pago.metodo_pago || pago.medioPago || (isConsumoSaldo ? "Saldo a favor" : "Efectivo")}</span></p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Elaborado por:</strong> <span style="text-transform: uppercase; font-weight: 700;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero")}</span></p>
                             </div>
                         </div>
                     </div>
 
                     <!-- ITEMS DETAIL TABLE (Compact Media Carta) -->
                     <div style="margin-bottom: 8px;">
-                        <table style="width: 100%; border-collapse: collapse; border-radius: 6px; overflow: hidden; border-style: hidden; box-shadow: 0 0 0 1px #e2e8f0;">
+                        <table style="width: 100%; border-collapse: collapse; border-radius: 6px; overflow: hidden; border-style: hidden; box-shadow: 0 0 0 1px #cbd5e1;">
                             <thead>
                                 <tr style="background: ${tableHeaderBg}; border-bottom: ${tableHeaderBorder}; color: ${tableHeaderColor};">
-                                    <th style="padding: 4px 6px; text-align: left; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: ${tableHeaderColor};">Concepto</th>
-                                    <th style="padding: 4px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 85px; color: ${tableHeaderColor};">Precio Unitario</th>
-                                    <th style="padding: 4px 6px; text-align: center; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 40px; color: ${tableHeaderColor};">Cant.</th>
-                                    <th style="padding: 4px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 95px; color: ${tableHeaderColor};">Total</th>
+                                    <th style="padding: 5px 6px; text-align: left; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: ${tableHeaderColor};">Concepto</th>
+                                    <th style="padding: 5px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 95px; color: ${tableHeaderColor};">Precio Unitario</th>
+                                    <th style="padding: 5px 6px; text-align: center; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 40px; color: ${tableHeaderColor};">Cant.</th>
+                                    <th style="padding: 5px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 105px; color: ${tableHeaderColor};">Total</th>
                                 </tr>
                             </thead>
-                            <tbody style="font-size: 8.5px; color: #334155; font-weight: 600;">
+                            <tbody style="font-size: 8.5px; color: #000000;">
                                 ${rawItems && rawItems.length > 0 ? rawItems.map((ip, index) => `
-                                    <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#fafafa'}; border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 4px 6px; font-weight: 700; text-transform: uppercase;">${ip.desc}</td>
-                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
-                                        <td style="padding: 4px 6px; text-align: center; font-weight: 800;">1</td>
-                                        <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
+                                    <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#fafafa'}; border-bottom: 1px solid #e2e8f0;">
+                                        <td style="padding: 5px 6px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: #000000;">${ip.desc}</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 5px 6px; text-align: center; font-size: 9px; font-weight: 800; color: #000000;">1</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 800; color: #000000;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `).join('') : `
-                                    <tr style="background: #ffffff; border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 5px 6px; font-weight: 700; text-transform: uppercase;">${conceptStr}</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
-                                        <td style="padding: 5px 6px; text-align: center; font-weight: 800;">1</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
+                                    <tr style="background: #ffffff; border-bottom: 1px solid #e2e8f0;">
+                                        <td style="padding: 5px 6px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: #000000;">${conceptStr}</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 5px 6px; text-align: center; font-size: 9px; font-weight: 800; color: #000000;">1</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 800; color: #000000;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `}
                             </tbody>
@@ -292,37 +292,37 @@ export const ReceiptPrintService = {
 
                     <!-- OBS & TOTALS ROW -->
                     <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; align-items: flex-start;">
-                        <div style="flex: 1; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 5px 8px; background-color: #f8fafc; font-size: 8px; line-height: 1.35; min-height: 32px;">
-                            <span style="font-weight: 800; color: #475569; text-transform: uppercase; font-size: 7px; display: block; margin-bottom: 2px;">Observaciones:</span>
-                            <div style="font-weight: 500; color: #334155; white-space: pre-wrap;">${cleanObservations}</div>
+                        <div style="flex: 1; border: 1px dashed #94a3b8; border-radius: 6px; padding: 5px 8px; background-color: #f8fafc; font-size: 8px; line-height: 1.35; min-height: 32px;">
+                            <span style="font-weight: 800; color: #000000; text-transform: uppercase; font-size: 7.5px; display: block; margin-bottom: 2px;">Observaciones:</span>
+                            <div style="font-weight: 500; color: #000000; white-space: pre-wrap;">${cleanObservations}</div>
                         </div>
-                        <div style="width: 210px; display: flex; flex-direction: column; gap: 2px;">
-                            <div style="display: flex; justify-content: space-between; font-size: 8.5px; font-weight: 700; color: #64748b; padding: 0 4px;">
-                                <span style="text-transform: uppercase; letter-spacing: 0.5px;">Subtotal</span>
-                                <span>${subtotalStr}</span>
+                        <div style="width: 220px; display: flex; flex-direction: column; gap: 2px;">
+                            <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 8.5px; font-weight: 700; color: #000000; padding: 0 4px;">
+                                <span style="text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">Subtotal</span>
+                                <span style="font-size: 10.5px; font-weight: 800; font-family: monospace; color: #000000;">${subtotalStr}</span>
                             </div>
                             <div style="height: 1px; background: ${isEgreso ? '#fecdd3' : accentColor}; margin: 2px 0;"></div>
                             <div style="display: flex; justify-content: space-between; align-items: center; background: ${totalBoxBg}; border: ${totalBoxBorder}; color: ${totalBoxColor}; padding: 5px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                                <span style="font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: ${totalBoxColor};">${totalBadgeLabel}</span>
-                                <span style="font-size: 12px; font-weight: 900; color: ${totalBoxColor};">${totalStr}</span>
+                                <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: ${totalBoxColor};">${totalBadgeLabel}</span>
+                                <span style="font-size: 13.5px; font-weight: 900; color: ${totalBoxColor};">${totalStr}</span>
                             </div>
 
                             ${hasPlanInfo ? `
                                 <div style="height: 1px; border-top: 1px dashed #cbd5e1; margin: 4px 0 2px 0;"></div>
 
-                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #64748b; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #000000; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Plan de Trat.:</span>
                                     <span style="font-weight: 800; text-transform: uppercase; text-align: right;" title="${planTitle || 'Tratamiento'}">${planTitle || 'Tratamiento'}</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #64748b; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #000000; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Total plan:</span>
                                     <span style="font-family: monospace; font-weight: bold;">$ ${Number(totalPlan).toLocaleString('es-CO')}</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #10b981; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #047857; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Total pagado:</span>
                                     <span style="font-family: monospace; font-weight: bold;">$ ${Number(totalPagadoPlan || 0).toLocaleString('es-CO')}</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #ef4444; padding: 0 4px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #b91c1c; padding: 0 4px;">
                                     <span style="text-transform: uppercase; font-size: 6.5px;">Saldo restante:</span>
                                     <span style="font-family: monospace; font-weight: bold;">$ ${Number(saldoPlan || 0).toLocaleString('es-CO')}</span>
                                 </div>
@@ -332,13 +332,13 @@ export const ReceiptPrintService = {
 
                     <!-- SIGNATURE BLOCK (Compact Media Carta) -->
                     <div style="margin-top: 14px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
-                        <div style="flex: 1; border-top: 1px solid #cbd5e1; padding-top: 5px; text-align: center;">
-                            <p style="margin: 0; font-size: 8px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
-                            <p style="margin: 1px 0; font-size: 7px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero / Auxiliar")}</p>
+                        <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
+                            <p style="margin: 0; font-size: 8px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
+                            <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero / Auxiliar")}</p>
                         </div>
-                        <div style="flex: 1; border-top: 1px solid #cbd5e1; padding-top: 5px; text-align: center;">
-                            <p style="margin: 0; font-size: 8px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">${isEgreso ? "Firma Beneficiario" : "Aceptado por el Paciente"}</p>
-                            <p style="margin: 1px 0; font-size: 7px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">C.C. / Sello</p>
+                        <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
+                            <p style="margin: 0; font-size: 8px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">${isEgreso ? "Firma Beneficiario" : "Aceptado por el Paciente"}</p>
+                            <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">C.C. / Sello</p>
                         </div>
                     </div>
                 </div>
