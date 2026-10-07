@@ -10,20 +10,20 @@ import {
 import { useParams, useNavigate } from "react-router-dom";
 import { DEFAULT_CONFIG } from "../../constants/DefaultConfig";
 import { fetchTenantConfigBySlug } from "../../utils/tenantConfigHelper";
-import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell, FiLock, FiKey, FiCheckCircle, FiClock, FiMapPin } from "react-icons/fi";
+import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageCircle, FiX, FiPhone, FiUser, FiShield, FiAlertTriangle, FiHeart, FiFileText, FiBell, FiLock, FiKey, FiCheckCircle, FiClock, FiMapPin, FiCreditCard, FiChevronRight } from "react-icons/fi";
 import { toast } from "sonner";
 import { isAccessBlocked } from "../../utils/subscriptionHelper";
 
 // ── Modal genérico del portal ─────────────────────────────────────────────────
-function PortalModal({ title, icon: Icon, color, onClose, children }) {
+function PortalModal({ title, icon: Icon, color, onClose, maxWidth = "max-w-md", children }) {
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
-            <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
+            <div className={`w-full ${maxWidth} bg-white rounded-3xl shadow-2xl overflow-hidden transition-all`}>
                 <div className={`flex items-center justify-between px-6 py-4 ${color}`}>
                     <h2 className="font-black text-base flex items-center gap-2"><Icon size={18} /> {title}</h2>
-                    <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-black/10 transition-colors"><FiX size={18} /></button>
+                    <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-black/10 transition-colors cursor-pointer"><FiX size={18} /></button>
                 </div>
-                <div className="p-6 max-h-[70vh] overflow-y-auto">{children}</div>
+                <div className="p-6 max-h-[75vh] overflow-y-auto">{children}</div>
             </div>
         </div>
     );
@@ -73,6 +73,7 @@ export default function PatientPortal() {
     const [pagos, setPagos] = useState([]);
     const [planes, setPlanes] = useState([]);
     const [currentPlanPage, setCurrentPlanPage] = useState(1);
+    const [selectedPlanIdx, setSelectedPlanIdx] = useState(0);
     const [todasCitas, setTodasCitas] = useState([]);
     const [loadingData, setLoadingData] = useState(false);
     const [notificaciones, setNotificaciones] = useState([]);
@@ -1298,104 +1299,138 @@ export default function PatientPortal() {
                     <div className="lg:col-span-8 space-y-6">
 
                         {/* 1. Resumen Financiero y Estado de Cuenta */}
-                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-5">
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-5 sm:p-6 space-y-4">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                                 <div>
                                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
                                         Finanzas del Paciente
                                     </span>
-                                    <h3 className="text-base font-black text-slate-800">
-                                        Estado de Cuenta y Recibos
+                                    <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                                        <FiDollarSign className="text-indigo-600" size={17} /> Estado de Cuenta y Recibos
                                     </h3>
                                 </div>
                                 <button
                                     onClick={() => setActiveModal("pagos")}
-                                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 cursor-pointer bg-indigo-50/70 hover:bg-indigo-100/70 px-3 py-1.5 rounded-xl transition-all"
                                 >
-                                    <FiDollarSign size={14} /> Ver {pagos.length} recibo(s)
+                                    <FiFileText size={14} /> Ver {pagos.length} recibo(s)
                                 </button>
                             </div>
 
-                            <div className={`grid grid-cols-1 ${saldoFavor > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} gap-4`}>
-                                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/60">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
-                                        Total Tratamientos
-                                    </span>
-                                    <span className="text-lg sm:text-xl font-black text-slate-800">
-                                        ${totalPlanes.toLocaleString("es-CO")}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 block mt-1">
-                                        {planes.length} plan(es) registrados
-                                    </span>
+                            <div className={`grid grid-cols-1 ${saldoFavor > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} gap-3.5`}>
+                                {/* Total Tratamientos */}
+                                <div className="bg-slate-50/70 hover:bg-white rounded-2xl p-4 border border-slate-200/70 hover:border-slate-300 hover:shadow-xs transition-all flex flex-col justify-between">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                            Total Tratamientos
+                                        </span>
+                                        <div className="w-7 h-7 rounded-lg bg-slate-200/70 flex items-center justify-center text-slate-600">
+                                            <FiFileText size={14} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className="text-lg sm:text-xl font-black text-slate-800 tracking-tight block">
+                                            ${totalPlanes.toLocaleString("es-CO")}
+                                        </span>
+                                        <span className="text-[10px] font-semibold text-slate-400 block mt-1">
+                                            {planes.length} plan(es) registrado(s)
+                                        </span>
+                                    </div>
                                 </div>
 
-                                <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-200/80">
-                                    <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider block mb-1">
-                                        Total Abonado / Pagado
-                                    </span>
-                                    <span className="text-lg sm:text-xl font-black text-emerald-800">
-                                        ${totalPagado.toLocaleString("es-CO")}
-                                    </span>
-                                    <span className="text-[10px] text-emerald-600 font-bold block mt-1">
-                                        {pagos.length} comprobante(s) registrado(s)
-                                    </span>
+                                {/* Total Abonado */}
+                                <div className="bg-emerald-50/40 hover:bg-white rounded-2xl p-4 border border-emerald-200/60 hover:border-emerald-300 hover:shadow-xs transition-all flex flex-col justify-between">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                                            Total Abonado
+                                        </span>
+                                        <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                                            <FiCheckCircle size={14} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className="text-lg sm:text-xl font-black text-emerald-800 tracking-tight block">
+                                            ${totalPagado.toLocaleString("es-CO")}
+                                        </span>
+                                        <span className="text-[10px] font-semibold text-emerald-600 block mt-1">
+                                            {pagos.length} comprobante(s) verificado(s)
+                                        </span>
+                                    </div>
                                 </div>
 
+                                {/* Saldo a Favor Disponible */}
                                 {saldoFavor > 0 && (
-                                    <div className="bg-teal-50 rounded-2xl p-4 border-2 border-teal-300/80 shadow-sm relative overflow-hidden">
-                                        <span className="text-[10px] font-black text-teal-800 uppercase tracking-wider block mb-1">
-                                            Saldo a Favor Disponible
-                                        </span>
-                                        <span className="text-lg sm:text-xl font-black text-teal-900 block">
-                                            ${saldoFavor.toLocaleString("es-CO")}
-                                        </span>
-                                        <span className="text-[10px] text-teal-700 font-bold block mt-1">
-                                            Abono disponible para tratamientos
-                                        </span>
+                                    <div className="bg-teal-50/50 hover:bg-white rounded-2xl p-4 border border-teal-300/70 hover:border-teal-400 hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-[10px] font-black text-teal-800 uppercase tracking-wider">
+                                                Saldo a Favor
+                                            </span>
+                                            <div className="w-7 h-7 rounded-lg bg-teal-100 flex items-center justify-center text-teal-700">
+                                                <FiCreditCard size={14} />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span className="text-lg sm:text-xl font-black text-teal-900 tracking-tight block">
+                                                ${saldoFavor.toLocaleString("es-CO")}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-teal-700 block mt-1">
+                                                Abono a favor del paciente
+                                            </span>
+                                        </div>
                                     </div>
                                 )}
 
-                                <div className={`rounded-2xl p-4 border ${
+                                {/* Saldo Pendiente */}
+                                <div className={`hover:bg-white rounded-2xl p-4 border transition-all flex flex-col justify-between ${
                                     totalPendiente > 0 
-                                        ? "bg-amber-50 border-amber-200/80" 
-                                        : "bg-emerald-50 border-emerald-200/80"
+                                        ? "bg-amber-50/40 border-amber-200/70 hover:border-amber-300 hover:shadow-xs" 
+                                        : "bg-emerald-50/30 border-emerald-200/50 hover:border-emerald-300 hover:shadow-xs"
                                 }`}>
-                                    <span className={`text-[10px] font-black uppercase tracking-wider block mb-1 ${
-                                        totalPendiente > 0 ? "text-amber-700" : "text-emerald-700"
-                                    }`}>
-                                        Saldo Pendiente
-                                    </span>
-                                    <span className={`text-lg sm:text-xl font-black ${
-                                        totalPendiente > 0 ? "text-amber-800" : "text-emerald-800"
-                                    }`}>
-                                        ${totalPendiente.toLocaleString("es-CO")}
-                                    </span>
-                                    <span className={`text-[10px] font-bold block mt-1 ${
-                                        totalPendiente > 0 ? "text-amber-600" : "text-emerald-600"
-                                    }`}>
-                                        {totalPendiente > 0 ? "Por cancelar" : "¡Al día!"}
-                                    </span>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                                            totalPendiente > 0 ? "text-amber-800" : "text-emerald-700"
+                                        }`}>
+                                            Saldo Pendiente
+                                        </span>
+                                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                                            totalPendiente > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                                        }`}>
+                                            <FiClock size={14} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className={`text-lg sm:text-xl font-black tracking-tight block ${
+                                            totalPendiente > 0 ? "text-amber-900" : "text-emerald-800"
+                                        }`}>
+                                            ${totalPendiente.toLocaleString("es-CO")}
+                                        </span>
+                                        <span className={`text-[10px] font-semibold block mt-1 ${
+                                            totalPendiente > 0 ? "text-amber-700" : "text-emerald-600"
+                                        }`}>
+                                            {totalPendiente > 0 ? "Por cancelar en clínica" : "¡Tratamientos al día!"}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
                         {/* 2. Planes de Tratamiento y Progreso Clínico */}
-                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 space-y-5">
+                        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-5 sm:p-6 space-y-4">
                             <div className="flex items-center justify-between flex-wrap gap-2">
                                 <div>
                                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
                                         Salud Bucal
                                     </span>
                                     <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
-                                        <FiActivity className="text-indigo-600" size={18} /> Plan de Tratamiento
+                                        <FiActivity className="text-indigo-600" size={17} /> Plan de Tratamiento
                                     </h3>
                                 </div>
                                 {planes.length > 0 && (
                                     <button
-                                        onClick={() => setActiveModal("tratamiento")}
-                                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+                                        onClick={() => { setSelectedPlanIdx(0); setActiveModal("tratamiento"); }}
+                                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 cursor-pointer bg-indigo-50/70 hover:bg-indigo-100/70 px-3 py-1.5 rounded-xl transition-all"
                                     >
-                                        Ver detalle completo
+                                        <FiActivity size={14} /> Ver detalle interactivo ({planes.length})
                                     </button>
                                 )}
                             </div>
@@ -1417,20 +1452,26 @@ export default function PatientPortal() {
                                 const paginatedPlans = planes.slice((currentPlanPage - 1) * PLANS_PER_PAGE, currentPlanPage * PLANS_PER_PAGE);
 
                                 return (
-                                    <div className="space-y-4">
-                                        {paginatedPlans.map(plan => {
+                                    <div className="space-y-3.5">
+                                        {paginatedPlans.map((plan, planIdx) => {
+                                            const globalPlanIdx = (currentPlanPage - 1) * PLANS_PER_PAGE + planIdx;
                                             const items = plan.items || (plan.detalles && plan.detalles.items) || [];
                                             const completados = items.filter(it => it.done || it.completado).length;
                                             const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
                                             return (
-                                                <div key={plan.id} className="bg-slate-50 rounded-2xl p-5 border border-slate-200/60 space-y-3">
+                                                <div 
+                                                    key={plan.id} 
+                                                    className="bg-slate-50/80 hover:bg-slate-50 rounded-2xl p-4 sm:p-5 border border-slate-200/70 hover:border-indigo-200 transition-all space-y-3"
+                                                >
                                                     <div className="flex items-start justify-between gap-3">
-                                                        <div>
-                                                            <h4 className="font-extrabold text-sm sm:text-base text-slate-800">
+                                                        <div className="min-w-0">
+                                                            <h4 className="font-extrabold text-sm sm:text-base text-slate-800 truncate">
                                                                 {plan.title || plan.nombre || "Plan de Tratamiento Integral"}
                                                             </h4>
-                                                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                                                                Especialista: {plan.doctorName || plan.dentista || "Odontólogo Tratante"}
+                                                            <p className="text-[11px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5">
+                                                                <FiUser size={12} className="text-slate-400 shrink-0" />
+                                                                <span>{plan.doctorName || plan.dentista || "Odontólogo Tratante"}</span>
+                                                                {plan.specialty && <span className="text-slate-400">· {plan.specialty}</span>}
                                                             </p>
                                                         </div>
                                                         {(() => {
@@ -1439,20 +1480,20 @@ export default function PatientPortal() {
                                                                 classes: "bg-blue-100 text-blue-700"
                                                             };
                                                             return (
-                                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${statusInfo.classes}`}>
+                                                                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${statusInfo.classes}`}>
                                                                     {statusInfo.label}
                                                                 </span>
                                                             );
                                                         })()}
                                                     </div>
 
-                                                    {/* Barra de progreso */}
+                                                    {/* Barra de progreso estilizada y compacta */}
                                                     <div>
-                                                        <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                                        <div className="flex justify-between text-[11px] font-semibold text-slate-500 mb-1">
                                                             <span>{completados} de {items.length} procedimientos completados</span>
                                                             <span className="text-indigo-600 font-bold">{pct}%</span>
                                                         </div>
-                                                        <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                                                        <div className="h-2 bg-slate-200/80 rounded-full overflow-hidden">
                                                             <div
                                                                 className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500"
                                                                 style={{ width: `${pct}%` }}
@@ -1460,44 +1501,43 @@ export default function PatientPortal() {
                                                         </div>
                                                     </div>
 
-                                                    {/* Lista de procedimientos compacta */}
+                                                    {/* Vista previa compacta de procedimientos */}
                                                     {items.length > 0 && (
-                                                        <div className="pt-1">
-                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        <div className="pt-0.5">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                                                 {items.slice(0, 4).map((it, idx) => (
-                                                                    <div key={idx} className="flex items-center gap-2 text-xs bg-white p-2.5 rounded-xl border border-slate-100">
-                                                                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold ${
+                                                                    <div key={idx} className="flex items-center gap-2 text-xs bg-white/90 px-3 py-1.5 rounded-xl border border-slate-200/60 shadow-2xs">
+                                                                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] shrink-0 font-bold ${
                                                                             it.done || it.completado ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
                                                                         }`}>
                                                                             {it.done || it.completado ? "✓" : idx + 1}
                                                                         </span>
-                                                                        <span className={`truncate ${it.done || it.completado ? "line-through text-slate-400" : "font-semibold text-slate-700"}`}>
-                                                                            {it.desc || it.nombre || "Procedimiento Odontológico"}
+                                                                        <span className={`truncate ${it.done || it.completado ? "line-through text-slate-400" : "font-medium text-slate-700"}`}>
+                                                                            {it.desc || it.nombre || "Procedimiento"}
                                                                         </span>
                                                                     </div>
                                                                 ))}
                                                             </div>
-                                                            {items.length > 4 && (
-                                                                <div className="pt-2 text-center">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setActiveModal("tratamiento")}
-                                                                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-                                                                    >
-                                                                        + Ver {items.length - 4} procedimiento{items.length - 4 === 1 ? "" : "s"} más en el detalle
-                                                                    </button>
-                                                                </div>
-                                                            )}
                                                         </div>
                                                     )}
 
-                                                    {plan.total && (
-                                                        <div className="pt-2 text-right border-t border-slate-200/50">
-                                                            <span className="text-xs font-black text-indigo-700">
-                                                                Valor del tratamiento: ${Number(plan.total).toLocaleString("es-CO")}
-                                                            </span>
-                                                        </div>
-                                                    )}
+                                                    {/* Pie de tarjeta con costo y botón interactivo */}
+                                                    <div className="pt-2 flex items-center justify-between border-t border-slate-200/60 flex-wrap gap-2">
+                                                        <span className="text-xs font-black text-slate-700">
+                                                            Valor: <span className="text-indigo-700">${Number(plan.total || 0).toLocaleString("es-CO")}</span>
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedPlanIdx(globalPlanIdx);
+                                                                setActiveModal("tratamiento");
+                                                            }}
+                                                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer transition-colors"
+                                                        >
+                                                            <span>Ver detalle interactivo</span>
+                                                            <FiChevronRight size={14} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             );
                                         })}
@@ -1777,72 +1817,262 @@ export default function PatientPortal() {
 
             {/* ── MODAL: Tratamiento ───────────────────────────────────────── */}
             {activeModal === "tratamiento" && (
-                <PortalModal title="Mi Tratamiento" icon={FiActivity} color="bg-purple-600 text-white" onClose={() => setActiveModal(null)}>
-                    {loadingData ? <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-20 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-                    : planes.length === 0 ? <p className="text-slate-400 text-sm italic text-center py-8">No hay planes de tratamiento registrados.</p>
-                    : (
-                        <div className="space-y-4">
-                            {planes.map(plan => {
-                                const items = plan.items || (plan.detalles && plan.detalles.items) || [];
-                                const completados = items.filter(it => it.done || it.completado).length;
-                                const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
-                                return (
-                                    <div key={plan.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <p className="text-sm font-black text-slate-800">{plan.title || plan.nombre || "Plan de Tratamiento"}</p>
-                                            {(() => {
-                                                const statusInfo = STATUS_MAP[(plan.status || "").toLowerCase()] || { label: plan.status || "Activo", classes: "bg-amber-100 text-amber-700" };
-                                                return (
-                                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${statusInfo.classes}`}>
-                                                        {statusInfo.label}
+                <PortalModal title="Mi Plan de Tratamiento" icon={FiActivity} color="bg-purple-600 text-white" maxWidth="max-w-2xl" onClose={() => setActiveModal(null)}>
+                    {loadingData ? (
+                        <div className="space-y-3">{[1, 2].map(i => <div key={i} className="h-24 bg-slate-100 rounded-2xl animate-pulse" />)}</div>
+                    ) : planes.length === 0 ? (
+                        <p className="text-slate-400 text-sm italic text-center py-8">No hay planes de tratamiento formalizados registrados.</p>
+                    ) : (() => {
+                        const currentPlan = planes[selectedPlanIdx] || planes[0] || {};
+                        const items = currentPlan.items || (currentPlan.detalles && currentPlan.detalles.items) || [];
+                        const completados = items.filter(it => it.done || it.completado).length;
+                        const pct = items.length > 0 ? Math.round((completados / items.length) * 100) : 0;
+                        const statusInfo = STATUS_MAP[(currentPlan.status || currentPlan.estado || "").toLowerCase()] || {
+                            label: currentPlan.status || currentPlan.estado || "Activo",
+                            classes: "bg-blue-100 text-blue-700"
+                        };
+
+                        return (
+                            <div className="space-y-4">
+                                {/* Selector interactivo de tratamientos (Tabs) si hay más de 1 */}
+                                {planes.length > 1 && (
+                                    <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100">
+                                        {planes.map((p, idx) => {
+                                            const isSelected = selectedPlanIdx === idx;
+                                            const pItems = p.items || (p.detalles && p.detalles.items) || [];
+                                            return (
+                                                <button
+                                                    key={p.id || idx}
+                                                    type="button"
+                                                    onClick={() => setSelectedPlanIdx(idx)}
+                                                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer shrink-0 ${
+                                                        isSelected
+                                                            ? "bg-purple-600 text-white shadow-md shadow-purple-600/25"
+                                                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                                    }`}
+                                                >
+                                                    <span>{p.title || p.nombre || `Tratamiento ${idx + 1}`}</span>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
+                                                        isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
+                                                    }`}>
+                                                        {pItems.length}
                                                     </span>
-                                                );
-                                            })()}
-                                        </div>
-                                        {items.length > 0 && (
-                                            <>
-                                                <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1">
-                                                    <span>{completados}/{items.length} procedimientos</span>
-                                                    <span>{pct}% completado</span>
-                                                </div>
-                                                <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                                                </div>
-                                                <div className="mt-3 space-y-1">
-                                                    {items.map((it, idx) => (
-                                                        <div key={idx} className="flex items-center gap-2 text-xs">
-                                                            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] shrink-0 ${it.done || it.completado ? "bg-emerald-100 text-emerald-600" : "bg-slate-200 text-slate-400"}`}>{it.done || it.completado ? "✓" : idx+1}</span>
-                                                            <span className={`font-semibold ${it.done || it.completado ? "line-through text-slate-400" : "text-slate-700"}`}>{it.desc || it.nombre || "Procedimiento"}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </>
-                                        )}
-                                        {plan.total && <p className="text-xs font-black text-emerald-600 mt-3">Valor del tratamiento: ${Number(plan.total).toLocaleString("es-CO")}</p>}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                )}
+
+                                {/* Cabecera del tratamiento seleccionado */}
+                                <div className="bg-slate-50 rounded-2xl p-4 sm:p-5 border border-slate-200/80 space-y-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 block mb-0.5">
+                                                Plan Clínico Seleccionado
+                                            </span>
+                                            <h3 className="text-base sm:text-lg font-black text-slate-900">
+                                                {currentPlan.title || currentPlan.nombre || "Tratamiento Integral"}
+                                            </h3>
+                                            <p className="text-xs text-slate-500 font-semibold mt-0.5 flex items-center gap-1.5">
+                                                <FiUser size={13} className="text-slate-400 shrink-0" />
+                                                <span>{currentPlan.doctorName || currentPlan.dentista || "Odontólogo Tratante"}</span>
+                                                {currentPlan.specialty && <span className="text-slate-400">· {currentPlan.specialty}</span>}
+                                            </p>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider block mb-1 ${statusInfo.classes}`}>
+                                                {statusInfo.label}
+                                            </span>
+                                            {currentPlan.total && (
+                                                <span className="text-xs font-black text-indigo-700 block">
+                                                    ${Number(currentPlan.total).toLocaleString("es-CO")}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Barra de progreso interactiva */}
+                                    <div>
+                                        <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                            <span>Progreso del tratamiento: {completados} de {items.length} completados</span>
+                                            <span className="text-purple-600 font-black">{pct}%</span>
+                                        </div>
+                                        <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full transition-all duration-500"
+                                                style={{ width: `${pct}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Desglose detallado de procedimientos */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">
+                                            Procedimientos Incluidos ({items.length})
+                                        </h4>
+                                        <span className="text-[10px] font-bold text-slate-400">
+                                            {completados} realizado{completados === 1 ? "" : "s"}
+                                        </span>
+                                    </div>
+
+                                    {items.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic py-4 text-center bg-slate-50 rounded-xl">
+                                            No hay procedimientos desglosados en este plan.
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {items.map((it, idx) => {
+                                                const isDone = Boolean(it.done || it.completado);
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 text-left ${
+                                                            isDone
+                                                                ? "bg-emerald-50/50 border-emerald-200/70"
+                                                                : "bg-white border-slate-200/70 hover:border-slate-300"
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0 font-black ${
+                                                                isDone ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500"
+                                                            }`}>
+                                                                {isDone ? "✓" : idx + 1}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className={`text-xs font-bold leading-snug truncate ${
+                                                                    isDone ? "line-through text-slate-500" : "text-slate-800"
+                                                                }`}>
+                                                                    {it.desc || it.nombre || "Procedimiento Odontológico"}
+                                                                </p>
+                                                                {it.diente && (
+                                                                    <span className="text-[10px] text-slate-400 font-semibold block">
+                                                                        Diente: {it.diente}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="shrink-0 text-right">
+                                                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                                                isDone
+                                                                    ? "bg-emerald-100 text-emerald-700"
+                                                                    : "bg-slate-100 text-slate-600"
+                                                            }`}>
+                                                                {isDone ? "Completado" : "Pendiente"}
+                                                            </span>
+                                                            {it.precio && (
+                                                                <span className="text-[10px] text-slate-400 font-bold block mt-0.5">
+                                                                    ${Number(it.precio).toLocaleString("es-CO")}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Observaciones si existen */}
+                                {(currentPlan.observaciones || currentPlan.detalles?.observaciones) && (
+                                    <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl text-xs text-purple-900">
+                                        <p className="font-bold mb-0.5">Observaciones del especialista:</p>
+                                        <p className="text-slate-600">{currentPlan.observaciones || currentPlan.detalles?.observaciones}</p>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </PortalModal>
             )}
 
             {/* ── MODAL: Notificaciones ──────────────────────────────────────── */}
             {activeModal === "notificaciones" && (
-                <PortalModal title="Mis Notificaciones" icon={FiBell} color="bg-indigo-600 text-white" onClose={() => setActiveModal(null)}>
+                <PortalModal title="Centro de Notificaciones" icon={FiBell} color="bg-indigo-600 text-white" maxWidth="max-w-lg" onClose={() => setActiveModal(null)}>
                     {notificaciones.length === 0 ? (
-                        <p className="text-slate-400 text-sm italic text-center py-8">No tienes notificaciones recientes.</p>
+                        <div className="text-center py-10 space-y-2">
+                            <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
+                                <FiBell size={22} />
+                            </div>
+                            <p className="text-slate-500 font-bold text-sm">Sin notificaciones recientes</p>
+                            <p className="text-slate-400 text-xs">Aquí recibirás recordatorios y novedades sobre tus citas y tratamientos.</p>
+                        </div>
                     ) : (
-                        <div className="space-y-3">
-                            {notificaciones.map(n => (
-                                <div key={n.id} className={`p-4 rounded-2xl border transition-all text-left ${n.read ? 'bg-slate-50 border-slate-100' : 'bg-indigo-50/50 border-indigo-100 shadow-sm'}`}>
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <h4 className="font-bold text-slate-800 text-xs">{n.title}</h4>
-                                        <span className="text-[9px] text-slate-400 font-semibold">{n.createdAt ? new Date(n.createdAt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                        <div className="space-y-2.5">
+                            {notificaciones.map(n => {
+                                const rawDate = n.createdAt || n.created_at;
+                                const dateFormatted = rawDate
+                                    ? new Date(rawDate).toLocaleDateString("es-CO", {
+                                          day: "2-digit",
+                                          month: "short",
+                                          year: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit"
+                                      })
+                                    : "";
+
+                                const cleanMsg = String(n.message || "")
+                                    .replace(/\s*del\s+undefined\s+a\s+las\s*/gi, " ")
+                                    .replace(/\s*del\s+undefined\s*/gi, " ")
+                                    .replace(/\s*a\s+las\s+undefined\s*/gi, " ")
+                                    .replace(/undefined/gi, "")
+                                    .trim();
+
+                                const titleLower = String(n.title || "").toLowerCase();
+                                const isConfirmed = titleLower.includes("confirmad");
+                                const isCancelled = titleLower.includes("cancelad");
+                                const isCompleted = titleLower.includes("completad");
+                                const isScheduled = titleLower.includes("agendad") || titleLower.includes("programad");
+
+                                const iconBg = isConfirmed
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : isCancelled
+                                    ? "bg-rose-100 text-rose-700"
+                                    : isCompleted
+                                    ? "bg-purple-100 text-purple-700"
+                                    : isScheduled
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-indigo-100 text-indigo-700";
+
+                                const IconComponent = isConfirmed
+                                    ? FiCheckCircle
+                                    : isCancelled
+                                    ? FiAlertTriangle
+                                    : isCompleted
+                                    ? FiCheckCircle
+                                    : isScheduled
+                                    ? FiCalendar
+                                    : FiClock;
+
+                                return (
+                                    <div
+                                        key={n.id}
+                                        className={`p-4 rounded-2xl border transition-all text-left flex items-start gap-3.5 ${
+                                            n.read ? "bg-slate-50/70 border-slate-200/60" : "bg-indigo-50/40 border-indigo-200/80 shadow-xs"
+                                        }`}
+                                    >
+                                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+                                            <IconComponent size={17} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center justify-between gap-2 mb-1">
+                                                <h4 className="font-extrabold text-slate-800 text-xs truncate">
+                                                    {n.title}
+                                                </h4>
+                                                {dateFormatted && (
+                                                    <span className="text-[10px] text-slate-400 font-semibold shrink-0">
+                                                        {dateFormatted}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-slate-600 text-xs leading-relaxed font-medium">
+                                                {cleanMsg}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <p className="text-slate-600 text-xs leading-relaxed">{n.message}</p>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </PortalModal>

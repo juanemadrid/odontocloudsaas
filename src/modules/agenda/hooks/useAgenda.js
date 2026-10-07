@@ -782,28 +782,40 @@ export function useAgenda() {
             });
 
             if (pacienteId) {
-                const matchedDoctor = doctors.find(d => d.id === (currentData.doctorId || currentData.profesional_id || cleanPatch.doctorId));
-                const doctorName = matchedDoctor?.nombreCompleto || matchedDoctor?.full_name || matchedDoctor?.nombre || currentData.dentista || "";
+                const rawStartDate = currentData.fecha_inicio ? new Date(currentData.fecha_inicio) : null;
+                const origFecha = rawStartDate && !isNaN(rawStartDate.getTime()) ? rawStartDate.toISOString().slice(0, 10) : (currentData.fecha || "");
+                const origHora = rawStartDate && !isNaN(rawStartDate.getTime()) 
+                    ? `${String(rawStartDate.getHours()).padStart(2, "0")}:${String(rawStartDate.getMinutes()).padStart(2, "0")}`
+                    : (currentData.horaInicio || currentData.hora || "");
+
+                const citaFecha = cleanPatch.fecha || origFecha;
+                const citaHora = cleanPatch.horaInicio || origHora;
+                const horaText = citaHora ? ` a las ${citaHora}` : "";
+                const fechaText = citaFecha ? ` del ${citaFecha}` : "";
+
+                const docId = cleanPatch.doctorId || currentData.profesional_id || currentData.doctorId;
+                const matchedDoctor = doctors.find(d => String(d.id) === String(docId));
+                const doctorName = matchedDoctor?.nombreCompleto || matchedDoctor?.full_name || matchedDoctor?.nombre || currentData.dentista || currentData.profesional_nombre || "";
                 const docText = doctorName ? ` con el/la Dr(a). ${doctorName}` : "";
 
                 let title = "Tu Cita ha sido Actualizada";
-                let message = `Tu cita del ${currentData.fecha} ha sido actualizada.`;
+                let message = `Tu cita${fechaText}${horaText}${docText} ha sido actualizada.`;
                 
                 if (cleanPatch.status || cleanPatch.estado) {
                     const statusText = (cleanPatch.status || cleanPatch.estado).toLowerCase();
                     if (statusText === 'cancelled' || ['cancelada', 'cancelado'].includes(statusText)) {
                         title = "Cita Cancelada ⚠️";
-                        message = `Tu cita del ${currentData.fecha} a las ${currentData.horaInicio || currentData.hora || ""} ha sido cancelada.`;
+                        message = `Tu cita${fechaText}${horaText}${docText} ha sido cancelada.`;
                     } else if (statusText === 'completed' || ['completada', 'completado'].includes(statusText)) {
                         title = "Cita Completada ✅";
-                        message = `Tu cita del ${currentData.fecha}${docText} ha sido registrada como completada. ¡Gracias por asistir!`;
+                        message = `Tu cita${fechaText}${docText} ha sido registrada como completada. ¡Gracias por asistir!`;
                     } else if (statusText === 'confirmed' || ['confirmada', 'confirmado'].includes(statusText)) {
                         title = "Cita Confirmada 👍";
-                        message = `Tu cita del ${currentData.fecha} a las ${currentData.horaInicio || currentData.hora || ""}${docText} ha sido confirmada.`;
+                        message = `Tu cita${fechaText}${horaText}${docText} ha sido confirmada. Te esperamos en la clínica.`;
                     }
                 } else if (cleanPatch.fecha || cleanPatch.horaInicio) {
                     title = "Cita Reagendada 📅";
-                    message = `Tu cita ha sido reprogramada para el ${cleanPatch.fecha || currentData.fecha} a las ${cleanPatch.horaInicio || currentData.horaInicio || ""}${docText}.`;
+                    message = `Tu cita ha sido reprogramada para el ${citaFecha}${horaText}${docText}.`;
                 }
 
                 await supabase.from("notificaciones").insert([{

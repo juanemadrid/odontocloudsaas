@@ -261,6 +261,24 @@ Deno.serve(async (request) => {
           .forEach(addPaymentRow);
       }
 
+      const cleanNotifications = (notifications || []).map((n: any) => {
+        let msg = String(n.message || "");
+        if (msg.includes("undefined")) {
+          msg = msg
+            .replace(/\s*del\s+undefined\s+a\s+las\s*/gi, " ")
+            .replace(/\s*del\s+undefined\s*/gi, " ")
+            .replace(/\s*a\s+las\s+undefined\s*/gi, " ")
+            .replace(/undefined/gi, "")
+            .trim();
+        }
+        return {
+          ...n,
+          message: msg,
+          createdAt: n.created_at || n.createdAt || null,
+          created_at: n.created_at || n.createdAt || null,
+        };
+      });
+
       return {
         patient,
         clinic,
@@ -268,7 +286,7 @@ Deno.serve(async (request) => {
         appointments: enrichedAppointments,
         payments: Array.from(allPaymentsMap.values()),
         plans: enrichedPlans,
-        notifications,
+        notifications: cleanNotifications,
       };
     };
     };
