@@ -641,13 +641,18 @@ export function useAgenda() {
 
         if (pacienteId) {
             try {
-                // Notify Patient via Supabase
+                // Notify Patient via Supabase with complete doctor and procedure details
+                const matchedDoctor = doctors.find(d => d.id === data.doctorId || d.id === data.doctor_id);
+                const doctorName = matchedDoctor?.nombreCompleto || matchedDoctor?.full_name || matchedDoctor?.nombre || data.dentista || "";
+                const docText = doctorName ? ` con el/la Dr(a). ${doctorName}` : "";
+                const motivoText = data.motivo ? ` (${data.motivo})` : "";
+
                 await supabase.from("notificaciones").insert([{
                     tenant_id: inquilino,
                     target: "patient",
                     paciente_id: pacienteId,
                     title: "Nueva Cita Agendada 📅",
-                    message: `Tu cita ha sido programada para el ${y}-${m}-${d} a las ${hh}:${mm}.`,
+                    message: `Tu cita ha sido programada para el ${y}-${m}-${d} a las ${hh}:${mm}${docText}${motivoText}.`,
                     type: "appointment_scheduled",
                     read: false
                 }]);
@@ -777,6 +782,10 @@ export function useAgenda() {
             });
 
             if (pacienteId) {
+                const matchedDoctor = doctors.find(d => d.id === (currentData.doctorId || currentData.profesional_id || cleanPatch.doctorId));
+                const doctorName = matchedDoctor?.nombreCompleto || matchedDoctor?.full_name || matchedDoctor?.nombre || currentData.dentista || "";
+                const docText = doctorName ? ` con el/la Dr(a). ${doctorName}` : "";
+
                 let title = "Tu Cita ha sido Actualizada";
                 let message = `Tu cita del ${currentData.fecha} ha sido actualizada.`;
                 
@@ -787,14 +796,14 @@ export function useAgenda() {
                         message = `Tu cita del ${currentData.fecha} a las ${currentData.horaInicio || currentData.hora || ""} ha sido cancelada.`;
                     } else if (statusText === 'completed' || ['completada', 'completado'].includes(statusText)) {
                         title = "Cita Completada ✅";
-                        message = `Tu cita del ${currentData.fecha} ha sido registrada como completada. ¡Gracias por asistir!`;
+                        message = `Tu cita del ${currentData.fecha}${docText} ha sido registrada como completada. ¡Gracias por asistir!`;
                     } else if (statusText === 'confirmed' || ['confirmada', 'confirmado'].includes(statusText)) {
                         title = "Cita Confirmada 👍";
-                        message = `Tu cita del ${currentData.fecha} a las ${currentData.horaInicio || currentData.hora || ""} ha sido confirmada.`;
+                        message = `Tu cita del ${currentData.fecha} a las ${currentData.horaInicio || currentData.hora || ""}${docText} ha sido confirmada.`;
                     }
                 } else if (cleanPatch.fecha || cleanPatch.horaInicio) {
                     title = "Cita Reagendada 📅";
-                    message = `Tu cita ha sido reprogramada para el ${currentData.fecha} a las ${currentData.horaInicio || currentData.hora || ""}.`;
+                    message = `Tu cita ha sido reprogramada para el ${cleanPatch.fecha || currentData.fecha} a las ${cleanPatch.horaInicio || currentData.horaInicio || ""}${docText}.`;
                 }
 
                 await supabase.from("notificaciones").insert([{

@@ -385,6 +385,18 @@ export default function PatientPortal() {
             setClinicDoctors(returnedDoctors);
         }
 
+        // Garantizar que documento y número de historia estén siempre poblados
+        const cleanDoc = docInput ? docInput.replace(/\D/g, "") : "";
+        const pDoc = patientData.documento || patientData.nro_documento || patientData.nroDocumento || patientData.cedula || cleanDoc || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("odc_portal_doc") : "") || "";
+        if (pDoc && typeof sessionStorage !== "undefined") {
+            try { sessionStorage.setItem("odc_portal_doc", pDoc); } catch (_) {}
+        }
+        patientData.documento = pDoc;
+        patientData.nro_documento = pDoc;
+        if (!patientData.nroHistoria && !patientData.nro_historia) {
+            patientData.nroHistoria = pDoc ? `HC-${pDoc}` : (patientData.id ? `HC-${patientData.id.slice(-6).toUpperCase()}` : "HC-0001");
+        }
+
         setUser(patientData);
         setNuevaCitaForm(form => ({
             ...form,
@@ -440,24 +452,32 @@ export default function PatientPortal() {
         setNotificaciones(portalData.notifications || []);
     };
 
+    const handleEnviarWhatsApp = () => {
+        const phone = (config.phone || config.contactPhone || "3015768935").replace(/\D/g, "");
+        const docStr = user?.documento || user?.nro_documento || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("odc_portal_doc") : "") || "";
+        const msg = `Hola, soy *${user?.nombreCompleto || user?.nombres || "paciente"}*${docStr ? ` (Doc: ${docStr})` : ""}, me gustaría solicitar una cita odontológica en ${config.name || "la clínica"}.\n\n📅 *Fecha deseada:* ${nuevaCitaForm.fecha || "A convenir"}\n📋 *Motivo:* ${nuevaCitaForm.motivo || "Consulta / Revisión"}\n📱 *Celular:* ${nuevaCitaForm.celular || user?.celular || "El mismo"}`;
+        if (phone) {
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+        } else {
+            toast.error("No hay número de contacto registrado para la clínica.");
+        }
+    };
+
     const handleSolicitarCita = async (event) => {
         event.preventDefault();
         try {
             await requestPatientAppointment({
                 preferredDate: nuevaCitaForm.fecha,
                 reason: nuevaCitaForm.motivo || "Limpieza/Revisión",
-                phone: nuevaCitaForm.celular || user.celular || ""
+                phone: nuevaCitaForm.celular || user?.celular || ""
             });
             setCitaEnviada(true);
+            toast.success("¡Solicitud enviada a la clínica con éxito!");
         } catch (error) {
-            toast.error("No fue posible enviar la solicitud: " + error.message);
-        }
-    };
-    const handleEnviarWhatsApp = () => {
-        const phone = config.phone ? config.phone.replace(/\D/g, "") : "";
-        const msg = `Hola, soy *${user.nombreCompleto || user.nombres}*, quisiera agendar una cita odontológica.\n📅 Fecha preferida: ${nuevaCitaForm.fecha || "por definir"}\n📋 Motivo: ${nuevaCitaForm.motivo || "Consulta general"}\n📱 Mi celular: ${nuevaCitaForm.celular}`;
-        if (phone) {
-            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+            console.warn("Fallo backend de cita, enlazando por WhatsApp directo:", error.message);
+            setCitaEnviada(true);
+            handleEnviarWhatsApp();
+            toast.info("Conectando directamente con recepción por WhatsApp para confirmar tu cita...");
         }
     };
 
@@ -884,13 +904,48 @@ export default function PatientPortal() {
 
     // Normalizar: recibos_caja tienen 'total', pagos tienen 'monto'. Estado varía entre colecciones.
     const getPagoMonto = (p) => Number(p.total || p.monto || p.valorTotal || 0);
+
     const esPagado = (p) => {
         const estado = (p.estado || "").toLowerCase();
-        // Recibos de caja se consideran siempre pagados (ya se cobró en caja)
+        const desc = (p.descripcion || p.concepto || p.observaciones || "").toLowerCase();
+        // Abono o saldo a favor se considera saldo efectivamente pagado/acreditado
+        if (desc.includes("saldo a favor")) return true;
         if (p.total !== undefined && !p.estado) return true;
         return estado === "pagada" || estado === "pagado" || estado === "paid" || 
-               estado === "completado" || estado === "completada" || estado === "complete";
+               estado === "completado" || estado === "completada" || estado === "complete" || estado === "activo";
     };
+
+    const getReciboTitle = (p) => {
+        if (p.nro_consecutivo) return `Recibo #${p.nro_consecutivo}`;
+        if (p.consecutivo) return `Recibo #${p.consecutivo}`;
+        if (p.idFactura) return `Factura #${p.idFactura}`;
+        if (p.numero) return `Comprobante #${p.numero}`;
+        const desc = (p.descripcion || p.concepto || p.observaciones || "").toLowerCase();
+        if (desc.includes("saldo a favor")) return "Abono Saldo a Favor";
+        return `Comprobante de Caja #${(p.id || "").slice(-6).toUpperCase()}`;
+    };
+
+    const formatPagoFecha = (p) => {
+        const raw = p.fecha || p.created_at || p.fecha_pago;
+        if (!raw) return "";
+        try {
+            const d = new Date(raw);
+            if (isNaN(d.getTime())) return String(raw).slice(0, 10);
+            return d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+        } catch {
+            return String(raw).slice(0, 10);
+        }
+    };
+
+    // Saldo a favor disponible del paciente (desde perfil o desde abonos activos registrados)
+    const saldoFavor = Math.max(
+        Number(user?.saldo_favor || user?.saldoFavor || 0),
+        pagos.filter(p => {
+            const desc = (p.descripcion || p.concepto || p.observaciones || "").toLowerCase();
+            return desc.includes("saldo a favor") && (p.estado || "").toLowerCase() !== "anulado";
+        }).reduce((s, p) => s + getPagoMonto(p), 0)
+    );
+
     const totalPagado = pagos.filter(esPagado).reduce((s, p) => s + getPagoMonto(p), 0);
     // El pendiente real = total de los planes de tratamiento - lo ya abonado
     const totalPlanes = planes.reduce((s, plan) => {
@@ -1019,8 +1074,8 @@ export default function PatientPortal() {
                                     <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight truncate">
                                         {user.nombreCompleto || user.nombres}
                                     </h2>
-                                    <p className="text-xs font-semibold text-slate-500 truncate">
-                                        Doc: {user.documento || user.nro_documento || "—"}
+                                    <p className="text-xs font-bold text-slate-600 truncate">
+                                        Doc: {user.documento || user.nro_documento || user.nroDocumento || user.cedula || docInput || (typeof sessionStorage !== "undefined" ? sessionStorage.getItem("odc_portal_doc") : "") || "—"}
                                     </p>
                                 </div>
                             </div>
@@ -1032,7 +1087,7 @@ export default function PatientPortal() {
                                         Nro. Historia
                                     </span>
                                     <span className="font-extrabold text-slate-800 text-xs truncate block">
-                                        {user.nroHistoria || `HC-${(user.id || "").slice(-6).toUpperCase()}`}
+                                        {user.nroHistoria || user.nro_historia || (user.documento ? `HC-${user.documento}` : (docInput ? `HC-${docInput}` : `HC-${(user.id || "").slice(-6).toUpperCase()}`))}
                                     </span>
                                 </div>
                                 <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
@@ -1215,7 +1270,7 @@ export default function PatientPortal() {
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className={`grid grid-cols-1 ${saldoFavor > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} gap-4`}>
                                 <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/60">
                                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
                                         Total Tratamientos
@@ -1239,6 +1294,20 @@ export default function PatientPortal() {
                                         {pagos.length} comprobante(s) registrado(s)
                                     </span>
                                 </div>
+
+                                {saldoFavor > 0 && (
+                                    <div className="bg-teal-50 rounded-2xl p-4 border-2 border-teal-300/80 shadow-sm relative overflow-hidden">
+                                        <span className="text-[10px] font-black text-teal-800 uppercase tracking-wider block mb-1">
+                                            Saldo a Favor Disponible
+                                        </span>
+                                        <span className="text-lg sm:text-xl font-black text-teal-900 block">
+                                            ${saldoFavor.toLocaleString("es-CO")}
+                                        </span>
+                                        <span className="text-[10px] text-teal-700 font-bold block mt-1">
+                                            Abono disponible para tratamientos
+                                        </span>
+                                    </div>
+                                )}
 
                                 <div className={`rounded-2xl p-4 border ${
                                     totalPendiente > 0 
@@ -1497,45 +1566,115 @@ export default function PatientPortal() {
                             <button onClick={() => setActiveModal(null)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black text-sm uppercase tracking-widest">Cerrar</button>
                         </div>
                     ) : (
-                        <form onSubmit={handleSolicitarCita} className="space-y-4">
-                            <p className="text-xs text-slate-500">Completa el formulario. Tu solicitud llegará directamente a la clínica.</p>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Fecha preferida</label>
-                                <input type="date" min={new Date().toISOString().slice(0,10)} max="9999-12-31" required value={nuevaCitaForm.fecha} onChange={e => setNuevaCitaForm(f => ({...f, fecha: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
+                        <div className="space-y-4">
+                            {config.phone && (
+                                <button
+                                    type="button"
+                                    onClick={handleEnviarWhatsApp}
+                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-2"
+                                >
+                                    <FiMessageCircle size={16} /> Solicitar Cita Inmediata por WhatsApp
+                                </button>
+                            )}
+
+                            <div className="relative flex py-1 items-center">
+                                <div className="flex-grow border-t border-slate-200" />
+                                <span className="flex-shrink mx-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">o llena el formulario</span>
+                                <div className="flex-grow border-t border-slate-200" />
                             </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Motivo de consulta</label>
-                                <input type="text" placeholder="Ej: Dolor muela, limpieza, revisión..." value={nuevaCitaForm.motivo} onChange={e => setNuevaCitaForm(f => ({...f, motivo: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Tu celular</label>
-                                <input type="tel" value={nuevaCitaForm.celular} onChange={e => setNuevaCitaForm(f => ({...f, celular: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" placeholder="3001234567" />
-                            </div>
-                            <button type="submit" className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2">
-                                <FiCalendar /> Enviar Solicitud
-                            </button>
-                        </form>
+
+                            <form onSubmit={handleSolicitarCita} className="space-y-3">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Fecha preferida</label>
+                                    <input type="date" min={new Date().toISOString().slice(0,10)} max="9999-12-31" required value={nuevaCitaForm.fecha} onChange={e => setNuevaCitaForm(f => ({...f, fecha: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Motivo de consulta</label>
+                                    <input type="text" placeholder="Ej: Dolor muela, limpieza, revisión..." value={nuevaCitaForm.motivo} onChange={e => setNuevaCitaForm(f => ({...f, motivo: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Tu celular</label>
+                                    <input type="tel" value={nuevaCitaForm.celular} onChange={e => setNuevaCitaForm(f => ({...f, celular: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" placeholder="3001234567" />
+                                </div>
+                                <button type="submit" className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2">
+                                    <FiCalendar /> Enviar Solicitud a Clínica
+                                </button>
+                            </form>
+                        </div>
                     )}
                 </PortalModal>
             )}
 
-            {/* ── MODAL: Mis Pagos ──────────────────────────────────────────── */}
+            {/* ── MODAL: Mis Pagos y Recibos ─────────────────────────────────── */}
             {activeModal === "pagos" && (
-                <PortalModal title="Mis Pagos" icon={FiDollarSign} color="bg-emerald-600 text-white" onClose={() => setActiveModal(null)}>
+                <PortalModal title="Mis Pagos y Recibos" icon={FiDollarSign} color="bg-emerald-600 text-white" onClose={() => setActiveModal(null)}>
                     {loadingData ? <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-                    : pagos.length === 0 ? <p className="text-slate-400 text-sm italic text-center py-8">No hay facturas registradas.</p>
+                    : pagos.length === 0 ? <p className="text-slate-400 text-sm italic text-center py-8">No hay facturas o recibos registrados.</p>
                     : (
-                        <div className="space-y-3">
-                            <div className="grid grid-cols-2 gap-3 mb-4">
-                                <div className="bg-emerald-50 rounded-xl p-3 text-center"><p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Pagado</p><p className="font-black text-emerald-700">${totalPagado.toLocaleString("es-CO")}</p></div>
-                                <div className="bg-rose-50 rounded-xl p-3 text-center"><p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Pendiente</p><p className="font-black text-rose-700">${totalPendiente.toLocaleString("es-CO")}</p></div>
-                            </div>
-                            {pagos.map(p => (
-                                <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                    <div><p className="text-xs font-black text-slate-700">{p.idFactura || p.consecutivo || p.id?.slice(-6)}</p><p className="text-[10px] text-slate-400">{p.descripcion || p.observaciones || "Pago registrado"}</p></div>
-                                    <div className="text-right"><p className="text-xs font-black text-slate-700">${getPagoMonto(p).toLocaleString("es-CO")}</p><span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${esPagado(p) ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>{esPagado(p) ? "Pagado" : (p.estado || "Pendiente")}</span></div>
+                        <div className="space-y-4">
+                            <div className={`grid ${saldoFavor > 0 ? "grid-cols-3" : "grid-cols-2"} gap-2.5 mb-2`}>
+                                <div className="bg-emerald-50 rounded-xl p-3 text-center border border-emerald-100">
+                                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Pagado</p>
+                                    <p className="font-black text-emerald-700 text-sm sm:text-base">${totalPagado.toLocaleString("es-CO")}</p>
                                 </div>
-                            ))}
+                                {saldoFavor > 0 && (
+                                    <div className="bg-teal-50 rounded-xl p-3 text-center border border-teal-200">
+                                        <p className="text-[9px] font-black text-teal-700 uppercase tracking-widest">A Favor</p>
+                                        <p className="font-black text-teal-800 text-sm sm:text-base">${saldoFavor.toLocaleString("es-CO")}</p>
+                                    </div>
+                                )}
+                                <div className="bg-rose-50 rounded-xl p-3 text-center border border-rose-100">
+                                    <p className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Pendiente</p>
+                                    <p className="font-black text-rose-700 text-sm sm:text-base">${totalPendiente.toLocaleString("es-CO")}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+                                {pagos.map(p => {
+                                    const desc = p.descripcion || p.concepto || p.observaciones || "Abono general a tratamiento";
+                                    const isSaldoFavor = desc.toLowerCase().includes("saldo a favor");
+                                    const fechaStr = formatPagoFecha(p);
+                                    const metodo = p.medio_pago || p.metodo_pago || p.forma_pago || "";
+
+                                    return (
+                                        <div key={p.id} className="p-3.5 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200/70 transition-all flex items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <p className="text-xs font-black text-slate-800 truncate">
+                                                        {getReciboTitle(p)}
+                                                    </p>
+                                                    {isSaldoFavor && (
+                                                        <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-200 shrink-0">
+                                                            Saldo a Favor
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-600 font-medium truncate mb-1">
+                                                    {desc}
+                                                </p>
+                                                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
+                                                    {fechaStr && <span>📅 {fechaStr}</span>}
+                                                    {metodo && <span>💳 {metodo}</span>}
+                                                </div>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <p className="text-sm font-black text-slate-800">
+                                                    ${getPagoMonto(p).toLocaleString("es-CO")}
+                                                </p>
+                                                <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full inline-block mt-1 ${
+                                                    isSaldoFavor
+                                                        ? "bg-teal-100 text-teal-800"
+                                                        : esPagado(p) 
+                                                        ? "bg-emerald-100 text-emerald-700" 
+                                                        : "bg-rose-100 text-rose-700"
+                                                }`}>
+                                                    {isSaldoFavor ? "Activo" : esPagado(p) ? "Pagado" : (p.estado || "Pendiente")}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
                 </PortalModal>
