@@ -803,28 +803,28 @@ export const generateReciboCajaHtml = ({
 
   if (rawConceptos.length > 0) {
     itemRowsHtml = rawConceptos
-      .map((c) => {
+      .map((c, index) => {
         const qty = parseFloat(c.cantidad || 1) || 1;
         const price = parseFloat(c.precioUnitario || c.precio || c.valor || 0) || 0;
         const line = c.total !== undefined ? parseFloat(c.total) : price * qty;
         calculatedTotal += line;
         return `
-        <tr>
-          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${c.concepto || c.descripcion || "Servicio Odontológico"}</td>
-          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(price)}</td>
-          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: center; vertical-align: middle;">${qty}</td>
-          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(line)}</td>
+        <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#fafafa'}; border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 5px 6px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: #000000;">${c.concepto || c.descripcion || "Servicio Odontológico"}</td>
+          <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">${formatCOP(price)}</td>
+          <td style="padding: 5px 6px; text-align: center; font-size: 9px; font-weight: 800; color: #000000;">${qty}</td>
+          <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 800; color: #000000;">${formatCOP(line)}</td>
         </tr>`;
       })
       .join("");
   } else {
     calculatedTotal = parseFloat(recibo?.total || recibo?.monto || 0);
     itemRowsHtml = `
-      <tr>
-        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${recibo?.concepto || "Abono a tratamiento"}</td>
-        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(calculatedTotal)}</td>
-        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: center; vertical-align: middle;">1</td>
-        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle;">${formatCOP(calculatedTotal)}</td>
+      <tr style="background: #ffffff; border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 5px 6px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: #000000;">${recibo?.concepto || "Abono a tratamiento"}</td>
+        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">${formatCOP(calculatedTotal)}</td>
+        <td style="padding: 5px 6px; text-align: center; font-size: 9px; font-weight: 800; color: #000000;">1</td>
+        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 800; color: #000000;">${formatCOP(calculatedTotal)}</td>
       </tr>`;
   }
 
@@ -836,15 +836,15 @@ export const generateReciboCajaHtml = ({
     tenant?.nombre ||
     "ATM Centro del Dolor Orofacial";
 
-  const clinicNit = tenant?.nit ? `NIT ${tenant.nit}` : "";
+  const clinicNit = tenant?.nit ? `NIT: ${tenant.nit}` : "";
   const clinicAddress = tenant?.direccion || "";
-  const clinicCity = tenant?.ciudad ? ` - ${tenant.ciudad}` : "";
+  const clinicCity = tenant?.ciudad ? ` (${tenant.ciudad})` : "";
   const clinicPhone = tenant?.telefono || tenant?.celular || "";
   const clinicEmail = tenant?.email || "";
 
-  const logoHtml = tenant?.logoUrl
-    ? `<img src="${tenant.logoUrl}" style="max-height: 80px; max-width: 170px; object-fit: contain; display: block;" alt="Logo" />`
-    : `<div style="font-size: 18px; font-weight: bold; color: #333; line-height: 1.1; text-transform: uppercase;">${clinicName}</div>`;
+  const logoHtml = (tenant?.logoUrl || tenant?.logo)
+    ? `<img src="${tenant.logoUrl || tenant.logo}" style="max-height: 44px; max-width: 110px; object-fit: contain; display: block;" alt="Logo" />`
+    : `<div style="width: 40px; height: 40px; background: #0f172a; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; font-weight: 900; text-transform: uppercase;">${clinicName.substring(0, 1) || "O"}</div>`;
 
   let cleanObs = "";
   const rawNotesVal = recibo?.observaciones || recibo?.notas || "";
@@ -911,291 +911,154 @@ export const generateReciboCajaHtml = ({
     @page { size: 5.5in 8.5in; margin: 8mm 10mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      position: relative;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 10.5px;
-      color: #000;
-      background: #fff;
-      padding: 14px 18px;
-      max-width: 780px;
-      margin: 0 auto;
-      line-height: 1.25;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 10px;
+      color: #000000;
+      background: #ffffff;
+      padding: 10px;
+      line-height: 1.3;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-
-    /* HEADER */
-    .header-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 12px;
-    }
-    .header-logo {
-      width: 25%;
-      vertical-align: top;
-    }
-    .header-company {
-      width: 45%;
-      vertical-align: top;
-      padding-left: 8px;
-      font-size: 10px;
-      line-height: 1.25;
-      color: #222;
-    }
-    .company-title {
-      font-size: 12px;
-      font-weight: bold;
-      color: #000;
-      margin-bottom: 2px;
-      text-transform: uppercase;
-    }
-    .header-meta {
-      width: 30%;
-      vertical-align: top;
-      text-align: right;
-    }
-
-    /* INFO GRID */
-    .info-table {
-      width: 100%;
-      border-collapse: collapse;
-      table-layout: fixed;
-      margin-bottom: 12px;
-    }
-    .info-table td {
-      border: 1px solid #111;
-      padding: 4px 6px;
-      font-size: 10px;
-      vertical-align: middle;
-      word-wrap: break-word;
-    }
-    .info-table td.lbl {
-      background: #ffffff;
-      font-weight: bold;
-      font-size: 9px;
-      text-transform: uppercase;
-      color: #000;
-    }
-
-    /* ITEMS TABLE */
-    .items-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 12px;
-    }
-    .items-table th {
-      border: 1px solid #111;
-      background: #ffffff;
-      font-weight: bold;
-      font-size: 10px;
-      padding: 5px 8px;
-      text-transform: none;
-    }
-    .items-table td {
-      border: 1px solid #111;
-      padding: 5px 8px;
-      font-size: 10.5px;
-      vertical-align: middle;
-    }
-
-    /* SUMMARY / TOTALS SECTION */
-    .summary-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 16px;
-    }
-    .obs-cell {
-      width: 58%;
-      vertical-align: top;
-      padding-right: 12px;
-      font-size: 10px;
-    }
-    .totals-cell {
-      width: 42%;
-      vertical-align: top;
-    }
-    .totals-inner-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .totals-inner-table td {
-      padding: 3.5px 6px;
-      font-size: 10.5px;
-    }
-    .totals-inner-table td.tot-label {
-      font-weight: bold;
-      text-align: right;
-      width: 45%;
-    }
-    .totals-inner-table td.tot-val {
-      font-weight: bold;
-      text-align: right;
-      width: 55%;
-      white-space: nowrap;
-    }
-
-    /* SIGNATURES SECTION */
-    .signatures-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 40px;
-      margin-bottom: 15px;
-    }
-    .sig-block {
-      width: 50%;
-      text-align: center;
-      vertical-align: bottom;
-      padding: 0 35px;
-    }
-    .sig-line {
-      border-top: 1.5px solid #000;
-      width: 85%;
-      margin: 0 auto 6px auto;
-    }
-    .sig-title {
-      font-size: 9.5px;
-      font-weight: bold;
-      text-transform: uppercase;
-      color: #000;
-    }
-
-    @media print { 
-      body { padding: 0; } 
-      .no-print { display: none !important; }
+    @media print {
+      body { padding: 0; }
     }
   </style>
 </head>
 <body>
-  <table class="header-table">
-    <tr>
-      <td class="header-logo">${logoHtml}</td>
-      <td class="header-company">
-        <div class="company-title">${clinicName}</div>
-        ${clinicNit ? `<div>${clinicNit}</div>` : ""}
-        ${clinicAddress || clinicCity ? `<div>${clinicAddress}${clinicCity}</div>` : ""}
-        ${clinicPhone ? `<div>${clinicPhone}</div>` : ""}
-        ${clinicEmail ? `<div>${clinicEmail}</div>` : ""}
-      </td>
-      <td class="header-meta">
-        <div style="text-align: right;">
-          <div style="font-size: 12px; font-weight: bold; text-transform: uppercase;">${docTitleLabel}</div>
-          <div style="font-size: 15px; font-weight: bold; margin-top: 2px; color: ${isAnulado ? '#e11d48' : '#000'};">No.${nroRecibo}</div>
-          ${isAnulado ? `
-          <div style="display: inline-block; background-color: #ffe4e6; color: #be123c; border: 1.5px solid #f43f5e; font-size: 9.5px; font-weight: 900; padding: 2px 7px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;">
-            ANULADO
-          </div>` : ""}
+  <div style="border: 1px solid #cbd5e1; padding: 14px 18px; border-radius: 12px; position: relative; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04); max-width: 720px; margin: 0 auto;">
+    <!-- Top accent bar -->
+    <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background-color: #94a3b8; border-top-left-radius: 12px; border-top-right-radius: 12px;"></div>
+
+    <!-- Unified Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid #cbd5e1; padding-bottom: 8px; margin-bottom: 10px; margin-top: 2px;">
+      <div style="display: flex; gap: 12px; align-items: center;">
+        ${logoHtml}
+        <div>
+          <h1 style="margin: 0; font-size: 14px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: -0.3px;">${clinicName}</h1>
+          <p style="margin: 1px 0; font-size: 8.5px; color: #000000; font-weight: 800;">${clinicNit}</p>
+          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;">${clinicAddress}${clinicCity}</p>
+          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;">TEL: ${clinicPhone} ${clinicEmail ? `| ${clinicEmail}` : ''}</p>
         </div>
-      </td>
-    </tr>
-  </table>
-
-  <table class="info-table">
-    <tr>
-      <td class="lbl" style="width: 16%;">SEÑOR(A)</td>
-      <td style="width: 38%; font-weight: 500;">${patientName}</td>
-      <td class="lbl" style="width: 26%;">FECHA DE EXPEDICIÓN (DD/MM/AA)</td>
-      <td style="width: 20%; text-align: center;">${fechaExpFormatted}</td>
-    </tr>
-    <tr>
-      <td class="lbl">DIRECCIÓN</td>
-      <td>${patientAddress}</td>
-      <td class="lbl"></td>
-      <td></td>
-    </tr>
-    <tr>
-      <td class="lbl">CIUDAD</td>
-      <td>${patientCity}</td>
-      <td class="lbl">${docTypeLabel}</td>
-      <td style="text-align: center; font-weight: 500;">${docNumberFormatted}</td>
-    </tr>
-    <tr>
-      <td class="lbl">TELÉFONO</td>
-      <td>${patient?.telefono || patient?.celular || "—"}</td>
-      <td class="lbl">MEDIO DE PAGO</td>
-      <td style="text-align: center; font-weight: 500;">${paymentMethodLabel}</td>
-    </tr>
-    <tr>
-      <td class="lbl">ELABORADO POR</td>
-      <td colspan="3" style="font-weight: 500;">${elaboradoPor}</td>
-    </tr>
-  </table>
-
-  <table class="items-table">
-    <thead>
-      <tr>
-        <th style="width: 60%; text-align: left;">Concepto</th>
-        <th style="width: 15%; text-align: right;">Precio</th>
-        <th style="width: 10%; text-align: center;">Cantidad</th>
-        <th style="width: 15%; text-align: right;">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemRowsHtml}
-    </tbody>
-  </table>
-
-  <table class="summary-table">
-    <tr>
-      <td class="obs-cell">
+      </div>
+      <div style="text-align: right;">
+        <div style="background: #f8fafc; padding: 3px 10px; border-radius: 6px; border: 1.5px solid #cbd5e1; margin-bottom: 2px; display: inline-block;">
+          <span style="font-size: 10.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.3px;">${docTitleLabel}</span>
+        </div>
+        <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 700; text-transform: uppercase;">FECHA DE EMISIÓN: ${fechaExpFormatted}</p>
+        <p style="margin: 1px 0 0 0; font-size: 10.5px; font-weight: 800; color: #0f172a; font-family: monospace;">NRO: ${nroRecibo}</p>
         ${isAnulado ? `
-        <div style="background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px;">
-          <div style="font-weight: 900; color: #e11d48; font-size: 10px; text-transform: uppercase;">⚠️ DOCUMENTO ANULADO</div>
-          <div style="color: #9f1239; font-size: 9.5px; font-weight: 600; margin-top: 2px;">
-            ${motivoAnulacion ? `Motivo: ${motivoAnulacion}` : 'Documento invalidado en sistema'}${anuladoPor ? ` | Por: ${anuladoPor}` : ''}${fechaAnulacion ? ` | Fecha: ${fechaAnulacion}` : ''}
+          <div style="display: inline-block; background-color: #fee2e2; color: #dc2626; border: 1.5px solid #f87171; font-size: 8px; font-weight: 900; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">
+            ANULADO
           </div>
-        </div>` : ""}
-        <div style="font-weight: bold; margin-bottom: 4px;">Observaciones:</div>
-        <div>${observacionesText}</div>
-      </td>
-      <td class="totals-cell">
-        <table class="totals-inner-table">
-          <tr>
-            <td class="tot-label">Subtotal</td>
-            <td class="tot-val">${formatCOP(finalTotal)}</td>
-          </tr>
-          <tr>
-            <td class="tot-label">Total</td>
-            <td class="tot-val">${formatCOP(finalTotal)}</td>
-          </tr>
-          ${planInfo?.planTitle ? `
-          <tr>
-            <td class="tot-label">P. de trat.</td>
-            <td class="tot-val">${planInfo.planTitle}</td>
-          </tr>` : ""}
-          ${planInfo?.totalPlan !== undefined ? `
-          <tr>
-            <td class="tot-label">Total plan</td>
-            <td class="tot-val">${formatCOP(planInfo.totalPlan)}</td>
-          </tr>` : ""}
-          ${planInfo?.totalPagado !== undefined ? `
-          <tr>
-            <td class="tot-label">Total pagado</td>
-            <td class="tot-val">${formatCOP(planInfo.totalPagado)}</td>
-          </tr>` : ""}
-          ${planInfo?.saldo !== undefined ? `
-          <tr>
-            <td class="tot-label">Saldo total</td>
-            <td class="tot-val">${formatCOP(planInfo.saldo)}</td>
-          </tr>` : ""}
-        </table>
-      </td>
-    </tr>
-  </table>
+        ` : ''}
+      </div>
+    </div>
 
-  <table class="signatures-table">
-    <tr>
-      <td class="sig-block">
-        <div class="sig-line"></div>
-        <div class="sig-title">ELABORADO POR</div>
-        <div style="font-size: 8.5px; color: #555; margin-top: 3px;">${elaboradoPor || ""}</div>
-      </td>
-      <td class="sig-block">
-        <div class="sig-line"></div>
-        <div class="sig-title">ACEPTADA, FIRMA Y/O SELLO Y FECHA</div>
-        <div style="font-size: 8.5px; color: #555; margin-top: 3px;">C.C. / NIT Paciente</div>
-      </td>
-    </tr>
-  </table>
+    <!-- CUSTOMER INFO CARD -->
+    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px;">
+      <div style="border-right: 1px solid #cbd5e1; padding-right: 10px;">
+        <span style="font-size: 7.5px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">Información del Paciente</span>
+        <h2 style="margin: 0; font-size: 9.5px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.2px;">${patientName}</h2>
+        <div style="display: grid; grid-template-columns: 1fr; gap: 1.5px; margin-top: 3px;">
+          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">ID / DOC:</strong> ${docTypeLabel} ${docNumberFormatted}</p>
+          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Dirección:</strong> ${patientAddress}</p>
+          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Celular:</strong> ${patient?.telefono || patient?.celular || "—"}</p>
+        </div>
+      </div>
+      <div style="padding-left: 2px;">
+        <span style="font-size: 7.5px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 2px;">Detalles del Documento</span>
+        <div style="display: grid; grid-template-columns: 1fr; gap: 2px; margin-top: 3px;">
+          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Medio de Pago:</strong> <span style="text-transform: uppercase; font-weight: 700;">${paymentMethodLabel}</span></p>
+          <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Elaborado por:</strong> <span style="text-transform: uppercase; font-weight: 700;">${elaboradoPor}</span></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ITEMS DETAIL TABLE -->
+    <div style="margin-bottom: 8px;">
+      <table style="width: 100%; border-collapse: collapse; border-radius: 6px; overflow: hidden; border-style: hidden; box-shadow: 0 0 0 1px #cbd5e1;">
+        <thead>
+          <tr style="background: #f8fafc; border-bottom: 1.5px solid #cbd5e1; color: #000000;">
+            <th style="padding: 5px 6px; text-align: left; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">Concepto</th>
+            <th style="padding: 5px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 95px; color: #000000;">Precio Unitario</th>
+            <th style="padding: 5px 6px; text-align: center; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 40px; color: #000000;">Cant.</th>
+            <th style="padding: 5px 6px; text-align: right; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 105px; color: #000000;">Total</th>
+          </tr>
+        </thead>
+        <tbody style="font-size: 8.5px; color: #000000;">
+          ${itemRowsHtml}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- OBS & TOTALS ROW -->
+    <div style="display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; align-items: flex-start;">
+      <div style="flex: 1; border: 1px dashed #94a3b8; border-radius: 6px; padding: 5px 8px; background-color: #f8fafc; font-size: 8px; line-height: 1.35; min-height: 32px;">
+        ${isAnulado ? `
+          <div style="background-color: #fee2e2; border: 1px solid #f87171; border-radius: 4px; padding: 4px 6px; margin-bottom: 4px;">
+            <span style="font-weight: 900; color: #dc2626; font-size: 8px; text-transform: uppercase;">DOCUMENTO ANULADO</span>
+            <div style="color: #991b1b; font-size: 7.5px; font-weight: 600;">
+              ${motivoAnulacion ? `Motivo: ${motivoAnulacion}` : 'Documento invalidado'}${anuladoPor ? ` | Por: ${anuladoPor}` : ''}
+            </div>
+          </div>
+        ` : ''}
+        <span style="font-weight: 800; color: #000000; text-transform: uppercase; font-size: 7.5px; display: block; margin-bottom: 2px;">Observaciones:</span>
+        <div style="font-weight: 500; color: #000000; white-space: pre-wrap;">${observacionesText}</div>
+      </div>
+      <div style="width: 220px; display: flex; flex-direction: column; gap: 2px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 8.5px; font-weight: 700; color: #000000; padding: 0 4px;">
+          <span style="text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">Subtotal</span>
+          <span style="font-size: 10.5px; font-weight: 800; font-family: monospace; color: #000000;">${formatCOP(finalTotal)}</span>
+        </div>
+        <div style="height: 1px; background: #cbd5e1; margin: 2px 0;"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1.5px solid #cbd5e1; color: #000000; padding: 5px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+          <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">TOTAL ABONADO</span>
+          <span style="font-size: 13.5px; font-weight: 900; color: #000000;">${formatCOP(finalTotal)}</span>
+        </div>
+
+        ${(planInfo?.totalPlan !== undefined || planInfo?.planTitle) ? `
+          <div style="height: 1px; border-top: 1px dashed #cbd5e1; margin: 4px 0 2px 0;"></div>
+          ${planInfo.planTitle ? `
+            <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #000000; padding: 0 4px;">
+              <span style="text-transform: uppercase; font-size: 6.5px;">Plan de Trat.:</span>
+              <span style="font-weight: 800; text-transform: uppercase; text-align: right;">${planInfo.planTitle}</span>
+            </div>
+          ` : ''}
+          ${planInfo.totalPlan !== undefined ? `
+            <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #000000; padding: 0 4px;">
+              <span style="text-transform: uppercase; font-size: 6.5px;">Total plan:</span>
+              <span style="font-family: monospace; font-weight: bold;">${formatCOP(planInfo.totalPlan)}</span>
+            </div>
+          ` : ''}
+          ${planInfo.totalPagado !== undefined ? `
+            <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #047857; padding: 0 4px;">
+              <span style="text-transform: uppercase; font-size: 6.5px;">Total pagado:</span>
+              <span style="font-family: monospace; font-weight: bold;">${formatCOP(planInfo.totalPagado)}</span>
+            </div>
+          ` : ''}
+          ${planInfo.saldo !== undefined ? `
+            <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 600; color: #b91c1c; padding: 0 4px;">
+              <span style="text-transform: uppercase; font-size: 6.5px;">Saldo restante:</span>
+              <span style="font-family: monospace; font-weight: bold;">${formatCOP(planInfo.saldo)}</span>
+            </div>
+          ` : ''}
+        ` : ''}
+      </div>
+    </div>
+
+    <!-- SIGNATURE BLOCK -->
+    <div style="margin-top: 14px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
+      <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
+        <p style="margin: 0; font-size: 8px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
+        <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">${elaboradoPor || ""}</p>
+      </div>
+      <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
+        <p style="margin: 0; font-size: 8px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">Aceptado por el Paciente</p>
+        <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">Firma y Cédula / Sello</p>
+      </div>
+    </div>
+  </div>
 
   <script>
     window.onload = function() {
@@ -1208,16 +1071,26 @@ export const generateReciboCajaHtml = ({
 </html>`;
 };
 
-export const printReciboCaja = (data) => {
-  const html = generateReciboCajaHtml(data);
-  const win = window.open("", "_blank", "width=800,height=900");
-  if (!win) {
-    alert("Por favor permite las ventanas emergentes para imprimir el recibo.");
-    return;
+export const printReciboCaja = async (data) => {
+  try {
+    const { ReceiptPrintService } = await import("../services/ReceiptPrintService");
+    const recibo = data?.recibo || data || {};
+    const patient = data?.patient || {};
+    const tenant = data?.tenant || {};
+    const planInfo = data?.planInfo || null;
+    await ReceiptPrintService.generatePDF(recibo, patient, tenant, null, planInfo);
+  } catch (err) {
+    console.error("Error al generar PDF de recibo con ReceiptPrintService:", err);
+    const html = generateReciboCajaHtml(data);
+    const win = window.open("", "_blank", "width=800,height=900");
+    if (!win) {
+      alert("Por favor permite las ventanas emergentes para imprimir el recibo.");
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
   }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
 };
 
 export const printElectronicInvoice = (data) => {

@@ -6,8 +6,8 @@ import supabase from "../lib/supabaseClient";
 import { getReceiptPlanFinancials } from "./billingService";
 
 export const ReceiptPrintService = {
-    generatePDF: async (pago, patient, clinic, userProfile) => {
-        if (!pago || !patient || !clinic) {
+    generatePDF: async (pago, patient = {}, clinic = {}, userProfile = {}, directPlanInfo = null) => {
+        if (!pago) {
             console.error("Missing data for PDF generation:", { pago, patient, clinic });
             toast.error("Datos insuficientes para generar el documento");
             return;
@@ -59,20 +59,28 @@ export const ReceiptPrintService = {
             let planTitle = pago.planTitle || parsedMetadata?.planTitle;
 
             if (!isEgreso) {
-                const targetPlanId = pago.planId || pago.plan_id || parsedMetadata?.planId;
-                const targetPatientId = patient.id || pago.pacienteId || pago.paciente_id;
-                const planFinancials = await getReceiptPlanFinancials({
-                    planId: targetPlanId,
-                    patientId: targetPatientId,
-                    tenantId: clinic?.inquilino || userProfile?.inquilino || "",
-                    receiptAmount: Number(pago.monto || 0),
-                    planTitle: pago.planTitle || parsedMetadata?.planTitle || ""
-                });
-                if (planFinancials) {
-                    planTitle = planFinancials.planTitle;
-                    totalPlan = planFinancials.totalPlan;
-                    totalPagadoPlan = planFinancials.totalPagado;
-                    saldoPlan = planFinancials.saldo;
+                const info = directPlanInfo || pago.planInfo;
+                if (info && (info.totalPlan !== undefined || info.planTitle)) {
+                    planTitle = info.planTitle || planTitle;
+                    totalPlan = info.totalPlan !== undefined ? info.totalPlan : totalPlan;
+                    totalPagadoPlan = info.totalPagado !== undefined ? info.totalPagado : totalPagadoPlan;
+                    saldoPlan = info.saldo !== undefined ? info.saldo : saldoPlan;
+                } else {
+                    const targetPlanId = pago.planId || pago.plan_id || parsedMetadata?.planId;
+                    const targetPatientId = patient.id || pago.pacienteId || pago.paciente_id;
+                    const planFinancials = await getReceiptPlanFinancials({
+                        planId: targetPlanId,
+                        patientId: targetPatientId,
+                        tenantId: clinic?.inquilino || userProfile?.inquilino || "",
+                        receiptAmount: Number(pago.monto || pago.total || 0),
+                        planTitle: pago.planTitle || parsedMetadata?.planTitle || ""
+                    });
+                    if (planFinancials) {
+                        planTitle = planFinancials.planTitle;
+                        totalPlan = planFinancials.totalPlan;
+                        totalPagadoPlan = planFinancials.totalPagado;
+                        saldoPlan = planFinancials.saldo;
+                    }
                 }
             }
 
@@ -114,22 +122,29 @@ export const ReceiptPrintService = {
                 ? "TOTAL CONSUMIDO" 
                 : (isEgreso ? "TOTAL EGRESO" : "TOTAL ABONADO");
 
-            const accentColor = isEgreso ? "#9f1239" : (isConsumoSaldo ? "#0284c7" : "#2563eb");
-            const accentBg = isEgreso ? "#fff1f2" : (isConsumoSaldo ? "#f0f9ff" : "#eff6ff");
-            const accentBorder = isEgreso ? "#fecdd3" : (isConsumoSaldo ? "#bae6fd" : "#dbeafe");
-            const tableHeaderBg = isEgreso ? "#fff1f2" : accentColor;
-            const tableHeaderColor = isEgreso ? "#000000" : "white";
-            const tableHeaderBorder = isEgreso ? "1.5px solid #fecdd3" : `1px solid ${accentColor}`;
-            const totalBoxBg = isEgreso ? "#fff1f2" : accentColor;
-            const totalBoxColor = isEgreso ? "#000000" : "white";
-            const totalBoxBorder = isEgreso ? "1.5px solid #fecdd3" : "none";
+            const accentColor = isEgreso ? "#9f1239" : (isConsumoSaldo ? "#0284c7" : "#0f172a");
+            const accentBg = isEgreso ? "#fff1f2" : (isConsumoSaldo ? "#f0f9ff" : "#f8fafc");
+            const accentBorder = isEgreso ? "#fecdd3" : (isConsumoSaldo ? "#bae6fd" : "#cbd5e1");
+            const tableHeaderBg = isEgreso ? "#fff1f2" : (isConsumoSaldo ? "#f0f9ff" : "#f8fafc");
+            const tableHeaderColor = "#000000";
+            const tableHeaderBorder = isEgreso ? "1.5px solid #fecdd3" : (isConsumoSaldo ? "1.5px solid #bae6fd" : "1.5px solid #cbd5e1");
+            const totalBoxBg = isEgreso ? "#fff1f2" : (isConsumoSaldo ? "#f0f9ff" : "#f8fafc");
+            const totalBoxColor = "#000000";
+            const totalBoxBorder = isEgreso ? "1.5px solid #fecdd3" : (isConsumoSaldo ? "1.5px solid #bae6fd" : "1.5px solid #cbd5e1");
 
             // Items resolution
             const rawItems = (pago.itemPayments && pago.itemPayments.length > 0)
                 ? pago.itemPayments
                 : (parsedMetadata?.itemPayments && parsedMetadata.itemPayments.length > 0)
                     ? parsedMetadata.itemPayments
-                    : null;
+                    : (pago.conceptos && pago.conceptos.length > 0)
+                        ? pago.conceptos.map(c => ({
+                            desc: c.concepto || c.descripcion || "Servicio Odontológico",
+                            monto: c.total !== undefined ? Number(c.total) : (Number(c.precioUnitario || c.precio || c.valor || 0) * Number(c.cantidad || 1)),
+                            precioUnitario: c.precioUnitario || c.precio || c.valor || 0,
+                            cantidad: c.cantidad || 1
+                          }))
+                        : null;
             
             const conceptStr = pago.concepto || parsedMetadata?.concepto || (isConsumoSaldo ? "Consumo saldo a favor" : (isEgreso ? "Egreso / Pago" : "Abono a tratamiento"));
 
@@ -193,7 +208,7 @@ export const ReceiptPrintService = {
             const patientPhone = patient?.celular || patient?.telefono || patient?.phone || patient?.movil || pago?.telefono || "—";
             
             // Clean consecutive number (avoid "No. No. REC-...")
-            let rawConsecutive = String(pago.nroConsecutivo || pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "").trim();
+            let rawConsecutive = String(pago.nroConsecutivo || pago.consecutivo || pago.consecutivoNumero || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "").trim();
             if (rawConsecutive.startsWith("No.")) {
                 rawConsecutive = rawConsecutive.replace(/^No\.\s*/i, "");
             }
@@ -202,18 +217,27 @@ export const ReceiptPrintService = {
             const date = pago.fecha ? (pago.fecha.toDate ? pago.fecha.toDate() : new Date(pago.fecha)) : new Date();
             const formattedDate = date.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
 
-            const subtotalStr = `$ ${Number(pago.monto || 0).toLocaleString('es-CO')}`;
-            const totalStr = `$ ${Number(pago.monto || 0).toLocaleString('es-CO')}`;
+            const subtotalStr = `$ ${Number(pago.subtotal || pago.total || pago.monto || 0).toLocaleString('es-CO')}`;
+            const totalStr = `$ ${Number(pago.total || pago.monto || 0).toLocaleString('es-CO')}`;
 
             const hasPlanInfo = !isEgreso && typeof totalPlan === "number" && totalPlan > 0;
+
+            const isAnulado =
+                Boolean(pago.anulado) ||
+                String(pago.estado || "").toLowerCase() === "anulado" ||
+                String(pago.referencia || "").toUpperCase().includes("ANULADO") ||
+                String(pago.observaciones || "").includes("[ANULADO") ||
+                String(pago.notas || "").includes("ANULADO");
+
+            const profesionalName = pago.profesionalNombre || pago.profesional || pago.creadoPor || ((pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero / Auxiliar"));
 
             const html = `
                 <div style="border: 1px solid #cbd5e1; padding: 14px 18px; border-radius: 12px; position: relative; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);">
                     <!-- Top accent bar -->
-                    <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background-color: ${isEgreso ? '#fda4af' : accentColor}; border-top-left-radius: 12px; border-top-right-radius: 12px;"></div>
+                    <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background-color: ${isEgreso ? '#fda4af' : (isConsumoSaldo ? '#7dd3fc' : '#94a3b8')}; border-top-left-radius: 12px; border-top-right-radius: 12px;"></div>
 
                     <!-- Unified Header (OralDrive Media Carta Proportions) -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid ${isEgreso ? '#fecdd3' : accentColor}; padding-bottom: 8px; margin-bottom: 10px; margin-top: 2px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid ${isEgreso ? '#fecdd3' : (isConsumoSaldo ? '#bae6fd' : '#cbd5e1')}; padding-bottom: 8px; margin-bottom: 10px; margin-top: 2px;">
                         <div style="display: flex; gap: 12px; align-items: center;">
                             ${logoUrl 
                                 ? `<img src="${logoUrl}" style="max-height: 44px; max-width: 110px; object-fit: contain;" crossorigin="anonymous" />`
@@ -232,6 +256,11 @@ export const ReceiptPrintService = {
                             </div>
                             <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 700; text-transform: uppercase;">FECHA DE EMISIÓN: ${formattedDate}</p>
                             <p style="margin: 1px 0 0 0; font-size: 10.5px; font-weight: 800; color: ${accentColor}; font-family: monospace;">NRO: ${receiptNumber}</p>
+                            ${isAnulado ? `
+                                <div style="display: inline-block; background-color: #fee2e2; color: #dc2626; border: 1.5px solid #f87171; font-size: 8px; font-weight: 900; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">
+                                    ANULADO
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
 
@@ -254,7 +283,7 @@ export const ReceiptPrintService = {
                             </span>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 2px; margin-top: 3px;">
                                 <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Medio de Pago:</strong> <span style="text-transform: uppercase; font-weight: 700;">${pago.medio || pago.metodo || pago.metodo_pago || pago.medioPago || (isConsumoSaldo ? "Saldo a favor" : "Efectivo")}</span></p>
-                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Elaborado por:</strong> <span style="text-transform: uppercase; font-weight: 700;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero")}</span></p>
+                                <p style="margin: 0; font-size: 8px; color: #000000; font-weight: 500;"><strong style="color: #000000; font-size: 7.5px; font-weight: 800; text-transform: uppercase; margin-right: 3px;">Elaborado por:</strong> <span style="text-transform: uppercase; font-weight: 700;">${profesionalName}</span></p>
                             </div>
                         </div>
                     </div>
@@ -274,16 +303,16 @@ export const ReceiptPrintService = {
                                 ${rawItems && rawItems.length > 0 ? rawItems.map((ip, index) => `
                                     <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#fafafa'}; border-bottom: 1px solid #e2e8f0;">
                                         <td style="padding: 5px 6px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: #000000;">${ip.desc}</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
-                                        <td style="padding: 5px 6px; text-align: center; font-size: 9px; font-weight: 800; color: #000000;">1</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(ip.precioUnitario !== undefined ? ip.precioUnitario : ip.monto).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 5px 6px; text-align: center; font-size: 9px; font-weight: 800; color: #000000;">${ip.cantidad || 1}</td>
                                         <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 800; color: #000000;">$ ${Number(ip.monto).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `).join('') : `
                                     <tr style="background: #ffffff; border-bottom: 1px solid #e2e8f0;">
                                         <td style="padding: 5px 6px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: #000000;">${conceptStr}</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 10.5px; font-weight: 700; color: #000000;">$ ${Number(pago.monto || pago.total || 0).toLocaleString('es-CO')}</td>
                                         <td style="padding: 5px 6px; text-align: center; font-size: 9px; font-weight: 800; color: #000000;">1</td>
-                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 800; color: #000000;">$ ${Number(pago.monto || 0).toLocaleString('es-CO')}</td>
+                                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 800; color: #000000;">$ ${Number(pago.total || pago.monto || 0).toLocaleString('es-CO')}</td>
                                     </tr>
                                 `}
                             </tbody>
@@ -301,7 +330,7 @@ export const ReceiptPrintService = {
                                 <span style="text-transform: uppercase; letter-spacing: 0.5px; color: #000000;">Subtotal</span>
                                 <span style="font-size: 10.5px; font-weight: 800; font-family: monospace; color: #000000;">${subtotalStr}</span>
                             </div>
-                            <div style="height: 1px; background: ${isEgreso ? '#fecdd3' : accentColor}; margin: 2px 0;"></div>
+                            <div style="height: 1px; background: ${isEgreso ? '#fecdd3' : (isConsumoSaldo ? '#bae6fd' : '#cbd5e1')}; margin: 2px 0;"></div>
                             <div style="display: flex; justify-content: space-between; align-items: center; background: ${totalBoxBg}; border: ${totalBoxBorder}; color: ${totalBoxColor}; padding: 5px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
                                 <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: ${totalBoxColor};">${totalBadgeLabel}</span>
                                 <span style="font-size: 13.5px; font-weight: 900; color: ${totalBoxColor};">${totalStr}</span>
@@ -334,11 +363,11 @@ export const ReceiptPrintService = {
                     <div style="margin-top: 14px; display: flex; justify-content: space-between; gap: 30px; padding: 0 16px;">
                         <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
                             <p style="margin: 0; font-size: 8px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">Elaborado por</p>
-                            <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">${(pago.registradoPor && !pago.registradoPor.includes('@')) ? pago.registradoPor : (userProfile?.nombreCompleto || userProfile?.nombre || "Cajero / Auxiliar")}</p>
+                            <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">${profesionalName}</p>
                         </div>
                         <div style="flex: 1; border-top: 1px solid #94a3b8; padding-top: 5px; text-align: center;">
                             <p style="margin: 0; font-size: 8px; font-weight: 800; color: #000000; text-transform: uppercase; letter-spacing: 0.5px;">${isEgreso ? "Firma Beneficiario" : "Aceptado por el Paciente"}</p>
-                            <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">C.C. / Sello</p>
+                            <p style="margin: 1px 0; font-size: 7.5px; color: #000000; font-weight: 600; text-transform: uppercase;">${isEgreso ? "C.C. / Sello" : "Firma y Cédula / Sello"}</p>
                         </div>
                     </div>
                 </div>
