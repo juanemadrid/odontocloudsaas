@@ -23,6 +23,12 @@ const toCompatibilityCredentials = (status) => {
 export const saveClinicFactusConfig = async (tenantId, configData) => {
   await configureFactus(tenantId, configData);
   try {
+    const { setFevRips0948Enabled } = await import("../modules/rips/v003/ripsFeatureFlagService.js");
+    await setFevRips0948Enabled(tenantId, true);
+  } catch (flagErr) {
+    console.warn("Aviso al habilitar flag FEV-RIPS:", flagErr?.message);
+  }
+  try {
     await updateTenantDetails(tenantId, {
       facturacionCuota: Number(configData.facturacionCuota) || 0,
       hasFactusCreds: true,

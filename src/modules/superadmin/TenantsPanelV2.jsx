@@ -12,7 +12,7 @@ import {
     FiPlus, FiRefreshCw, FiSearch, FiActivity, FiCheck, FiX,
     FiEdit3, FiTrash2, FiToggleLeft, FiToggleRight, FiGift,
     FiAlertCircle, FiChevronRight, FiUser, FiCalendar,
-    FiFileText, FiMail, FiSliders, FiMessageSquare, FiKey, FiCopy, FiEye, FiEyeOff, FiRepeat
+    FiFileText, FiMail, FiSliders, FiMessageSquare, FiKey, FiCopy, FiEye, FiEyeOff, FiRepeat, FiShield
 } from "react-icons/fi";
 
 const fmt = (ts) => {
@@ -680,6 +680,29 @@ export default function TenantsPanelV2() {
                                                         )}
                                                         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                                                             {grantingId === t.id ? "Aplicando..." : "Regalar 1 mes"}
+                                                        </span>
+                                                    </button>
+                                                    <button onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            try {
+                                                                const { setFevRips0948Enabled, isFevRips0948Enabled } = await import("../rips/v003/ripsFeatureFlagService.js");
+                                                                const currentlyEnabled = await isFevRips0948Enabled(t.id);
+                                                                const nextState = !currentlyEnabled;
+                                                                await setFevRips0948Enabled(t.id, nextState);
+                                                                alert(nextState 
+                                                                    ? `✅ Módulo FEV-RIPS (Res. 0948 de 2026) HABILITADO exitosamente para "${t.name}".`
+                                                                    : `ℹ️ Módulo FEV-RIPS deshabilitado para "${t.name}".`
+                                                                );
+                                                                loadData();
+                                                            } catch (err) {
+                                                                alert("Error al actualizar FEV-RIPS: " + err.message);
+                                                            }
+                                                        }}
+                                                        title="Habilitar o autorizar módulo FEV-RIPS Salud (Res. 0948 / 2275)"
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white transition-all group relative">
+                                                        <FiShield size={13}/>
+                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                                            Autorizar FEV-RIPS 0948
                                                         </span>
                                                     </button>
                                                     <button onClick={()=>handleDelete(t.id, t.name)} disabled={processing}
