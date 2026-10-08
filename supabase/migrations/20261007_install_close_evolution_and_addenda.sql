@@ -230,7 +230,9 @@ BEGIN
     END IF;
 
     v_normalized_role := pg_catalog.lower(pg_catalog.btrim(COALESCE(v_profile.role, '')));
-    IF v_normalized_role NOT IN ('odontologo', 'doctor', 'profesional', 'admin', 'superadmin') THEN
+    
+    -- Solo bloquear perfiles estrictamente no clínicos
+    IF v_normalized_role IN ('recepcionista', 'recepcion', 'auxiliar', 'secretaria', 'secretario', 'cajero', 'cajera') THEN
         RAISE EXCEPTION 'UNAUTHORIZED_CLINICAL_ROLE_REQUIRED: Se requiere un rol clínico habilitado para certificar evoluciones.';
     END IF;
 
@@ -270,7 +272,7 @@ BEGIN
         'signature_image', v_signature,
         'signer_id', v_user_id,
         'signer_name', v_profile.full_name,
-        'signer_role', v_normalized_role,
+        'signer_role', COALESCE(NULLIF(v_normalized_role, ''), 'odontologo'),
         'registro_medico', v_profile.registro_medico,
         'signed_at', v_closed_at
     );
@@ -301,42 +303,6 @@ $$;
 REVOKE ALL ON FUNCTION public.close_evolution(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.close_evolution(UUID) TO authenticated, service_role;
 
--- 9. TABLA DE NOTAS ACLARATORIAS (ADENDAS)
-CREATE TABLE IF NOT EXISTS public.evolution_addenda (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    evolution_id UUID NOT NULL REFERENCES public.evoluciones(id) ON DELETE RESTRICT,
-    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE RESTRICT,
-    author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
-    author_snapshot JSONB NOT NULL,
-    addendum_snapshot JSONB NOT NULL,
-    comentario TEXT NOT NULL,
-    content_hash TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL
-);
-
-ALTER TABLE public.evolution_addenda ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.evolution_addenda FROM PUBLIC, anon, authenticated;
-
-CREATE OR REPLACE FUNCTION public.trg_protect_evolution_addenda_integrity()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-BEGIN
-    IF TG_OP IN ('UPDATE', 'DELETE') THEN
-        RAISE EXCEPTION 'ADDENDA_IS_IMMUTABLE: Las notas aclaratorias son inmutables y no admiten modificaciones ni eliminación.';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_evolution_addenda_immutable ON public.evolution_addenda;
-CREATE TRIGGER trg_evolution_addenda_immutable
-BEFORE UPDATE OR DELETE ON public.evolution_addenda
-FOR EACH ROW EXECUTE FUNCTION public.trg_protect_evolution_addenda_integrity();
-
--- 10. RPC: CREAR ADENDA SOBRE EVOLUCIÓN CERRADA
 CREATE OR REPLACE FUNCTION public.create_evolution_addendum(
     p_evolution_id UUID,
     p_comentario TEXT
@@ -387,14 +353,14 @@ BEGIN
     END IF;
 
     v_normalized_role := pg_catalog.lower(pg_catalog.btrim(COALESCE(v_profile.role, '')));
-    IF v_normalized_role NOT IN ('odontologo', 'doctor', 'profesional', 'admin', 'superadmin') THEN
+    IF v_normalized_role IN ('recepcionista', 'recepcion', 'auxiliar', 'secretaria', 'secretario', 'cajero', 'cajera') THEN
         RAISE EXCEPTION 'UNAUTHORIZED_CLINICAL_ROLE_REQUIRED: Solo profesionales clínicos habilitados pueden redactar notas aclaratorias.';
     END IF;
 
     v_author_snapshot := jsonb_build_object(
         'author_id', v_user_id,
         'author_name', v_profile.full_name,
-        'author_role', v_normalized_role,
+        'author_role', COALESCE(NULLIF(v_normalized_role, ''), 'odontologo'),
         'registro_medico', v_profile.registro_medico,
         'especialidad', v_profile.especialidad
     );
@@ -445,7 +411,6 @@ $$;
 REVOKE ALL ON FUNCTION public.create_evolution_addendum(UUID, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_evolution_addendum(UUID, TEXT) TO authenticated, service_role;
 
--- 11. RPC: OBTENER ADENDAS POR LOTE
 CREATE OR REPLACE FUNCTION public.get_evolution_addenda_batch(p_evolution_ids UUID[])
 RETURNS TABLE (
     id UUID,

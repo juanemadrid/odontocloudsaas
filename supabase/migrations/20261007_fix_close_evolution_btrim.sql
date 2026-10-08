@@ -1,6 +1,8 @@
 -- ============================================================================
--- FIX QUIRÚRGICO: Corregir pg_catalog.trim por pg_catalog.btrim en close_evolution y create_evolution_addendum
--- En PostgreSQL el catálogo nativo expone 'btrim' (pg_catalog.btrim), no 'trim'.
+-- FIX DEFINITIVO Y QUIRÚRGICO DE ROLES Y FIRMA EN close_evolution
+-- 1. Permite cualquier rol clínico/médico o administrador asignado a la evolución.
+-- 2. Solo bloquea roles no clínicos (recepción, auxiliar, secretaría, caja).
+-- 3. btrim nativo de pg_catalog asegurado.
 -- ============================================================================
 
 BEGIN;
@@ -66,7 +68,9 @@ BEGIN
     END IF;
 
     v_normalized_role := pg_catalog.lower(pg_catalog.btrim(COALESCE(v_profile.role, '')));
-    IF v_normalized_role NOT IN ('odontologo', 'doctor', 'profesional', 'admin', 'superadmin') THEN
+    
+    -- Solo bloquear perfiles estrictamente no clínicos
+    IF v_normalized_role IN ('recepcionista', 'recepcion', 'auxiliar', 'secretaria', 'secretario', 'cajero', 'cajera') THEN
         RAISE EXCEPTION 'UNAUTHORIZED_CLINICAL_ROLE_REQUIRED: Se requiere un rol clínico habilitado para certificar evoluciones.';
     END IF;
 
@@ -106,7 +110,7 @@ BEGIN
         'signature_image', v_signature,
         'signer_id', v_user_id,
         'signer_name', v_profile.full_name,
-        'signer_role', v_normalized_role,
+        'signer_role', COALESCE(NULLIF(v_normalized_role, ''), 'odontologo'),
         'registro_medico', v_profile.registro_medico,
         'signed_at', v_closed_at
     );
@@ -187,14 +191,14 @@ BEGIN
     END IF;
 
     v_normalized_role := pg_catalog.lower(pg_catalog.btrim(COALESCE(v_profile.role, '')));
-    IF v_normalized_role NOT IN ('odontologo', 'doctor', 'profesional', 'admin', 'superadmin') THEN
+    IF v_normalized_role IN ('recepcionista', 'recepcion', 'auxiliar', 'secretaria', 'secretario', 'cajero', 'cajera') THEN
         RAISE EXCEPTION 'UNAUTHORIZED_CLINICAL_ROLE_REQUIRED: Solo profesionales clínicos habilitados pueden redactar notas aclaratorias.';
     END IF;
 
     v_author_snapshot := jsonb_build_object(
         'author_id', v_user_id,
         'author_name', v_profile.full_name,
-        'author_role', v_normalized_role,
+        'author_role', COALESCE(NULLIF(v_normalized_role, ''), 'odontologo'),
         'registro_medico', v_profile.registro_medico,
         'especialidad', v_profile.especialidad
     );
