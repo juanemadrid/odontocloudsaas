@@ -1,8 +1,8 @@
 -- ============================================================================
--- FIX DEFINITIVO Y QUIRÚRGICO DE ROLES Y FIRMA EN close_evolution
--- 1. Permite cualquier rol clínico/médico o administrador asignado a la evolución.
--- 2. Solo bloquea roles no clínicos (recepción, auxiliar, secretaría, caja).
--- 3. btrim nativo de pg_catalog asegurado.
+-- FIX QUIRÚRGICO FINAL: CORRECCIÓN DE CAST DE TEXTO A BYTEA (convert_to)
+-- 'v_snapshot::text::bytea' genera error 'invalid input syntax for type bytea'
+-- porque PostgreSQL espera formato de escape/hex en el cast directo.
+-- La función canónica en PostgreSQL es: pg_catalog.convert_to(..., 'UTF8')
 -- ============================================================================
 
 BEGIN;
@@ -104,7 +104,9 @@ BEGIN
 
     v_closed_at := pg_catalog.clock_timestamp();
     v_snapshot := public.build_evolution_clinical_snapshot(v_evo);
-    v_hash := pg_catalog.encode(extensions.digest(v_snapshot::text::bytea, 'sha256'), 'hex');
+    
+    -- Conversión canónica segura de string a bytea UTF-8 (sin depender de formato escape ::bytea)
+    v_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_snapshot::text, 'UTF8'), 'sha256'), 'hex');
 
     v_sig_snapshot := jsonb_build_object(
         'signature_image', v_signature,
@@ -214,7 +216,7 @@ BEGIN
         'created_at', v_created_at
     );
 
-    v_content_hash := pg_catalog.encode(extensions.digest(v_addendum_snapshot::text::bytea, 'sha256'), 'hex');
+    v_content_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_addendum_snapshot::text, 'UTF8'), 'sha256'), 'hex');
 
     INSERT INTO public.evolution_addenda (
         evolution_id,

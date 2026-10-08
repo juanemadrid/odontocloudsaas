@@ -266,7 +266,9 @@ BEGIN
 
     v_closed_at := pg_catalog.clock_timestamp();
     v_snapshot := public.build_evolution_clinical_snapshot(v_evo);
-    v_hash := pg_catalog.encode(extensions.digest(v_snapshot::text::bytea, 'sha256'), 'hex');
+    
+    -- Conversión canónica segura de string a bytea UTF-8 (sin depender de formato escape ::bytea)
+    v_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_snapshot::text, 'UTF8'), 'sha256'), 'hex');
 
     v_sig_snapshot := jsonb_build_object(
         'signature_image', v_signature,
@@ -376,7 +378,7 @@ BEGIN
         'created_at', v_created_at
     );
 
-    v_content_hash := pg_catalog.encode(extensions.digest(v_addendum_snapshot::text::bytea, 'sha256'), 'hex');
+    v_content_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_addendum_snapshot::text, 'UTF8'), 'sha256'), 'hex');
 
     INSERT INTO public.evolution_addenda (
         evolution_id,
@@ -582,9 +584,9 @@ BEGIN
         'snapshot_version', 1
     );
 
-    v_doc_hash := pg_catalog.encode(extensions.digest(v_snapshot::text::bytea, 'sha256'), 'hex');
+    v_doc_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_snapshot::text, 'UTF8'), 'sha256'), 'hex');
     v_raw_token := pg_catalog.encode(extensions.gen_random_bytes(24), 'hex');
-    v_token_hash := pg_catalog.encode(extensions.digest(v_raw_token::bytea, 'sha256'), 'hex');
+    v_token_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_raw_token, 'UTF8'), 'sha256'), 'hex');
     v_expires_at := pg_catalog.timezone('utc'::text, pg_catalog.now()) + interval '24 hours';
 
     INSERT INTO public.signature_tokens (
