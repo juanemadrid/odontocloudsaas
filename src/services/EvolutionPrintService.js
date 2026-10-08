@@ -384,15 +384,27 @@ export const EvolutionPrintService = {
             }
 
             // Signature & Footer: Resolver doctor y firma del especialista
-            const primaryDoctorIdent = normalizedEvolutions[0]?.profesional || normalizedEvolutions[0]?.profesionalId || defaultDocName || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
+            const firstEvo = normalizedEvolutions[0];
+            const rawFirstSnap = firstEvo?.professional_signature_snapshot;
+            const firstSnap = typeof rawFirstSnap === 'string' ? (() => { try { return JSON.parse(rawFirstSnap); } catch { return null; } })() : rawFirstSnap;
+            const snapshotSig = firstSnap?.signature_image || firstSnap?.firma_base64 || firstSnap?.firma || null;
+            const snapshotName = firstSnap?.signer_name || firstSnap?.nombre_completo || null;
+            const snapshotReg = firstSnap?.registro_medico || null;
+
+            const primaryDoctorIdent = snapshotName || normalizedEvolutions[0]?.profesional || normalizedEvolutions[0]?.profesionalId || defaultDocName || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
             const doctorData = await getDoctorSignatureAndData(primaryDoctorIdent, tenantId, userProfile);
 
-            const docSignatureImg = (doctorData.isDoctor && doctorData.firma)
-                ? `<img src="${doctorData.firma}" style="max-height: 55px; max-width: 180px; object-fit: contain;" crossOrigin="anonymous" />`
+            const resolvedFirma = snapshotSig 
+                || (doctorData.isDoctor && doctorData.firma ? doctorData.firma : null)
+                || (userProfile?.esDoctor ? (userProfile?.firmaElectronica || userProfile?.firma) : null)
+                || null;
+
+            const docSignatureImg = resolvedFirma
+                ? `<img src="${resolvedFirma}" alt="Firma Profesional" style="max-height: 55px; max-width: 180px; object-fit: contain;" />`
                 : '';
 
-            const docName = doctorData.nombreCompleto || primaryDoctorIdent || (doctorData.isDoctor ? userProfile?.nombreCompleto : '') || 'Odontólogo Tratante';
-            const docLicense = doctorData.registroMedico ? `TP / Reg. Médico: ${doctorData.registroMedico}` : (userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Sello y Registro Médico');
+            const docName = snapshotName || doctorData.nombreCompleto || primaryDoctorIdent || (doctorData.isDoctor ? userProfile?.nombreCompleto : '') || 'Odontólogo Tratante';
+            const docLicense = snapshotReg ? `TP / Reg. Médico: ${snapshotReg}` : (doctorData.registroMedico ? `TP / Reg. Médico: ${doctorData.registroMedico}` : (userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Sello y Registro Médico'));
             const docSpecialty = doctorData.especialidad ? `${doctorData.especialidad}` : 'Especialista / Odontólogo';
 
             const footerHTML = `

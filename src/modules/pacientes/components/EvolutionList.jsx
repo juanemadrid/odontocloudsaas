@@ -102,16 +102,40 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
         ? 'Borrador'
         : evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : isOrtho ? 'Evolución Ortodoncia' : 'Evolución';
 
+    // Resolver snapshot de firma profesional
+    const rawSnap = evo.professional_signature_snapshot;
+    const sigSnap = typeof rawSnap === 'string' ? (() => { try { return JSON.parse(rawSnap); } catch { return null; } })() : rawSnap;
+
     // Resolver datos y firma del doctor (SOLO si fue cerrada por profesional o firmada por doctor)
-    const isDoctorSigned = isProfessionalClosed || Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage);
+    const isDoctorSigned = isProfessionalClosed || Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage || sigSnap);
     const docSig = isProfessionalClosed
-        ? (evo.professional_signature_snapshot?.firma_base64 || evo.doctorSignature?.signatureImage || null)
+        ? (
+            sigSnap?.signature_image 
+            || sigSnap?.firma_base64 
+            || sigSnap?.firma 
+            || evo.doctorSignature?.signatureImage 
+            || (userProfile?.esDoctor ? (userProfile?.firmaElectronica || userProfile?.firma) : null)
+            || (typeof localStorage !== 'undefined' && userProfile?.uid ? localStorage.getItem('odontocloud_doctor_signature_' + userProfile.uid) : null)
+            || null
+        )
         : (evo.doctorSignature?.signatureImage || null);
     const docNom = isProfessionalClosed
-        ? (evo.professional_signature_snapshot?.nombre_completo || evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante')
+        ? (
+            sigSnap?.signer_name 
+            || sigSnap?.nombre_completo 
+            || evo.doctorSignature?.signature 
+            || evo.profesional 
+            || userProfile?.nombreCompleto 
+            || 'Doctor Tratante'
+        )
         : (evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante');
     const docReg = isProfessionalClosed
-        ? (evo.professional_signature_snapshot?.registro_medico || evo.doctorSignature?.registroMedico || '')
+        ? (
+            sigSnap?.registro_medico 
+            || evo.doctorSignature?.registroMedico 
+            || userProfile?.registroMedico 
+            || ''
+        )
         : (evo.doctorSignature?.registroMedico || '');
 
     const html = `<!DOCTYPE html>
@@ -450,7 +474,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
       ${!isHistorical && isDoctorSigned ? `
       <div class="sig-block">
         <div class="sig-image-holder">
-          ${docSig ? `<img src="${docSig}" crossorigin="anonymous" />` : ''}
+          ${docSig ? `<img src="${docSig}" alt="Firma Profesional" />` : ''}
         </div>
         <div class="sig-name">${docNom}</div>
         <div class="sig-role">Doctor/Profesional ${docReg ? `· TP: ${docReg}` : ''}</div>
@@ -459,7 +483,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
       ${evo.patientSignature ? `
         <div class="sig-block">
           <div class="sig-image-holder">
-            <img src="${evo.patientSignature}" crossorigin="anonymous" />
+            <img src="${evo.patientSignature}" alt="Firma Paciente" />
           </div>
           <div class="sig-name">${patientName}</div>
           <div class="sig-role">Paciente / Aceptante</div>
@@ -809,36 +833,44 @@ function EvolutionCard({
             )}
 
             {/* BLOQUE CERTIFICACIÓN PROFESIONAL */}
-            {isProfessionalClosed && (
-                <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-xl p-3 my-2 flex items-center justify-between text-[10px]">
-                    <div className="flex items-center gap-2.5">
-                        <FiShield className="text-emerald-600 shrink-0" size={16} />
-                        <div>
-                            <span className="font-extrabold text-emerald-950 uppercase">Certificada por: </span>
-                            <span className="font-bold text-emerald-800">
-                                {evo.professional_signature_snapshot?.nombre_completo || evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante'}
-                            </span>
-                            {(evo.professional_signature_snapshot?.registro_medico || evo.doctorSignature?.registroMedico) && (
-                                <span className="text-emerald-700 font-medium"> · TP: {evo.professional_signature_snapshot?.registro_medico || evo.doctorSignature?.registroMedico}</span>
-                            )}
-                            {evo.closed_at && (
-                                <span className="text-emerald-600 block text-[9px] font-semibold mt-0.5">
-                                    Cierre: {new Date(evo.closed_at).toLocaleString('es-CO')}
+            {isProfessionalClosed && (() => {
+                const rawCardSnap = evo.professional_signature_snapshot;
+                const cardSnap = typeof rawCardSnap === 'string' ? (() => { try { return JSON.parse(rawCardSnap); } catch { return null; } })() : rawCardSnap;
+                const cardSigImg = cardSnap?.signature_image || cardSnap?.firma_base64 || cardSnap?.firma || evo.doctorSignature?.signatureImage;
+                const cardSignerName = cardSnap?.signer_name || cardSnap?.nombre_completo || evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante';
+                const cardRegMedico = cardSnap?.registro_medico || evo.doctorSignature?.registroMedico;
+
+                return (
+                    <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-xl p-3 my-2 flex items-center justify-between text-[10px]">
+                        <div className="flex items-center gap-2.5">
+                            <FiShield className="text-emerald-600 shrink-0" size={16} />
+                            <div>
+                                <span className="font-extrabold text-emerald-950 uppercase">Certificada por: </span>
+                                <span className="font-bold text-emerald-800">
+                                    {cardSignerName}
                                 </span>
-                            )}
+                                {cardRegMedico && (
+                                    <span className="text-emerald-700 font-medium"> · TP: {cardRegMedico}</span>
+                                )}
+                                {evo.closed_at && (
+                                    <span className="text-emerald-600 block text-[9px] font-semibold mt-0.5">
+                                        Cierre: {new Date(evo.closed_at).toLocaleString('es-CO')}
+                                    </span>
+                                )}
+                            </div>
                         </div>
+                        {cardSigImg && (
+                            <div className="h-9 max-w-[120px] bg-white border border-emerald-200 rounded-lg p-1 flex items-center justify-center shrink-0">
+                                <img
+                                    src={cardSigImg}
+                                    alt="Firma Profesional"
+                                    className="max-h-full max-w-full object-contain"
+                                />
+                            </div>
+                        )}
                     </div>
-                    {(evo.professional_signature_snapshot?.firma_base64 || evo.doctorSignature?.signatureImage) && (
-                        <div className="h-9 max-w-[120px] bg-white border border-emerald-200 rounded-lg p-1 flex items-center justify-center shrink-0">
-                            <img
-                                src={evo.professional_signature_snapshot?.firma_base64 || evo.doctorSignature?.signatureImage}
-                                alt="Firma Profesional"
-                                className="max-h-full max-w-full object-contain"
-                            />
-                        </div>
-                    )}
-                </div>
-            )}
+                );
+            })()}
 
             {/* FILA 3: Texto del registro */}
             {text && (
