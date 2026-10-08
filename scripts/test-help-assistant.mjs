@@ -248,3 +248,69 @@ console.log('CPU regression: natural appointment requests use short reference wi
 
 assert.ok(helpPrompt(HELP_GUIDES.find(g=>g.id==='citas'),'quiero apartar una cita').includes('+ Nueva Cita'));
 assert.ok(HELP_GUIDES.find(g=>g.id==='citas').steps[0].includes('+ Nueva Cita'));
+
+// A configured superadministrator key must never route clinic help to Gemini.
+for (const stream of [false, true]) {
+ const urls = [];
+ const clinicOnly = makeHandler({
+  env: key => ({ GEMINI_API_KEY: 'must-not-be-used', ODONTO_HELP_GEMINI_API_KEY: 'must-not-be-used', ODONTO_HELP_OLLAMA_URL: 'http://ollama-help:11434', ODONTO_HELP_OLLAMA_MODEL: 'local-test' })[key],
+  fetchImpl: async (url, options) => {
+   urls.push(url);
+   const payload = JSON.parse(options.body);
+   assert.ok(payload.messages[0].content.length < 1100, 'Initial budget instructions stay bounded even with step-by-step suffix');
+   assert.ok(payload.messages[0].content.includes('[+ Nuevo Presupuesto]'));
+   const result = {done:true, done_reason:'stop', message:{content:'Abre la ficha del paciente.'}};
+   return stream ? new Response(JSON.stringify(result)+'\n') : Response.json(result);
+  }
+ });
+ const response = await clinicOnly(req({ question:'Quiero hacer un presupuesto. Explícame paso a paso', stream }));
+ const output = await response.text();
+ assert.ok(output.includes('ollama'));
+ assert.deepEqual(urls,['http://ollama-help:11434/api/chat']);
+}
+console.log('Regression: clinic help ignores Gemini keys; budget step-by-step requests use compact context in JSON and streaming.');
+
+// Repeated follow-up requests must not replay the whole transcript or lose the latest step.
+const olderTurns = [
+ {role:'user',content:'ANTIGUO '.repeat(60)},
+ {role:'assistant',content:'ANTIGUO '.repeat(60)},
+ {role:'user',content:'Ya abrí la ficha del paciente.'},
+ {role:'assistant',content:'Pulsa [+ Nuevo Presupuesto]. ¿Apareció la ventana?'}
+];
+await handler(req({question:'¿Y después?',previousIds:['presupuestos'],history:olderTurns}));
+const nextTurn = calls.at(-1).body.messages;
+assert.deepEqual(nextTurn.slice(1,-1),olderTurns.slice(-2));
+assert.ok(nextTurn[0].content.length < 1100);
+assert.ok(!JSON.stringify(nextTurn).includes('ANTIGUO'));
+await handler(req({question:'¿Qué campos son obligatorios al crear un paciente para la cita?',previousIds:['citas'],history:olderTurns}));
+assert.ok(helpPrompt(HELP_GUIDES.find(g => g.id === 'citas'), '¿Qué campos son obligatorios al crear un paciente para la cita?').includes('fecha de nacimiento y sexo'));
+console.log('Follow-up regression: latest exchange preserved, old turns excluded, specific questions retain full reference.');
+
+const choiceHistory = [
+ {role:'user',content:'¿Cómo agrego procedimientos?'},
+ {role:'assistant',content:'1. Agregar Items / Procedimientos: busca en el tarifario. 2. Cargar Paquete / Combo Completo. 3. Odonto. Actual: importa hallazgos del odontograma. ¿Qué opción eliges?'}
+];
+for (const question of ['la primera','la segunda','ya agregué Exodoncia Quirúrgica con posibles complicaciones asociadas a fracturas o endodoncias previas','ya agregué endodoncia y cirugía','acabo de guardar']) {
+ assert.equal(resolveHelpGuides(question,['presupuestos'])[0]?.id,'presupuestos');
+ const before=calls.length;
+ const result=await (await handler(req({question,previousIds:['presupuestos'],history:choiceHistory}))).json();
+ assert.equal(result.provider,'ollama','Contextual reply must reach the model');
+ assert.equal(calls.length,before+1);
+ assert.deepEqual(calls.at(-1).body.messages.slice(1,-1),choiceHistory);
+}
+assert.deepEqual(resolveHelpGuides('la primera'),[]);
+assert.deepEqual(resolveHelpGuides('la primera',['presupuestos'],'public'),[]);
+assert.deepEqual(resolveHelpGuides('ya agregué algo en Edunexus',['presupuestos']),[]);
+assert.equal(resolveHelpGuides('¿Cómo cierro caja?',['presupuestos'])[0]?.id,'cerrar-caja');
+console.log('Context regression: ordinal choices and completed actions reach Ollama with their options; new topics and public isolation preserved.');
+
+// Use the same brief-confirmation classification for retrieval and prompt selection.
+for (const question of ['sí ya','si','sí, ya lo veo','ok','ya está','perfecto','¿y ahora?']) {
+ const response=await handler(req({question,previousIds:['presupuestos'],history:choiceHistory}));
+ assert.equal((await response.json()).provider,'ollama');
+ const messages=calls.at(-1).body.messages;
+ assert.ok(messages[0].content.length<1100, question+' must not expand to the full guide');
+ assert.deepEqual(messages.slice(1,-1),choiceHistory);
+}
+assert.ok(helpPrompt(HELP_GUIDES.find(g=>g.id==='citas'),'¿Qué campos son obligatorios al crear un paciente para la cita?').includes('fecha de nacimiento y sexo'));
+console.log('Brief confirmations: compact reference and latest exchange preserved.');

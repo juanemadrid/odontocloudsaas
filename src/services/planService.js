@@ -28,6 +28,8 @@ export const createPlan = async (planData) => {
             type: type,
             profesional: planData.profesional || planData.profesionalNombre || "",
             profesionalId: planData.profesionalId || "",
+            creadoPor: planData.creadoPor || "",
+            rolCreador: planData.rolCreador || "",
             vigencia: planData.vigencia || 30,
             observaciones: planData.observaciones || "",
             cobertura: planData.cobertura || {},
@@ -99,6 +101,9 @@ export const getPlansByPatient = async (patientId) => {
                 type: type,
                 profesional: d.profesional || p.profesional || "",
                 profesionalId: d.profesionalId || p.profesional_id || "",
+                creadoPor: d.creadoPor || "",
+                rolCreador: d.rolCreador || "",
+                nroConsecutivo: d.nroConsecutivo || p.nro_consecutivo || null,
                 vigencia: d.vigencia || 30,
                 observaciones: d.observaciones || p.observaciones || "",
                 cobertura: d.cobertura || {},
@@ -134,7 +139,10 @@ export const updatePlan = async (planId, planData) => {
             vigencia: planData.vigencia !== undefined ? planData.vigencia : (prevObj.vigencia || 30),
             observaciones: planData.observaciones !== undefined ? planData.observaciones : (prevObj.observaciones || ""),
             cobertura: planData.cobertura !== undefined ? planData.cobertura : (prevObj.cobertura || {}),
-            baseListId: planData.baseListId !== undefined ? planData.baseListId : (prevObj.baseListId || "")
+            baseListId: planData.baseListId !== undefined ? planData.baseListId : (prevObj.baseListId || ""),
+            creadoPor: planData.creadoPor !== undefined ? planData.creadoPor : (prevObj.creadoPor || ""),
+            rolCreador: planData.rolCreador !== undefined ? planData.rolCreador : (prevObj.rolCreador || ""),
+            nroConsecutivo: planData.nroConsecutivo !== undefined ? planData.nroConsecutivo : (prevObj.nroConsecutivo || null)
         };
 
         const payload = {

@@ -46,7 +46,10 @@ const printHTMLInHiddenIframe = (htmlContent) => {
     doc.write(htmlContent);
     doc.close();
 
+    let hasPrinted = false;
     const triggerPrint = () => {
+        if (hasPrinted) return;
+        hasPrinted = true;
         try {
             iframe.contentWindow.focus();
             iframe.contentWindow.print();
@@ -59,7 +62,7 @@ const printHTMLInHiddenIframe = (htmlContent) => {
         setTimeout(triggerPrint, 150);
     };
 
-    setTimeout(triggerPrint, 400);
+    setTimeout(triggerPrint, 500);
 };
 
 // ======================================================
@@ -74,7 +77,13 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
 
     const patientName = patient?.nombreCompleto || patient?.nombre || 'Paciente Sin Nombre';
     const fechaNac = patient?.fechaNacimiento ? new Date(patient.fechaNacimiento) : null;
-    const edad = patient?.edad || (fechaNac && !isNaN(fechaNac.getTime()) ? Math.floor((new Date() - fechaNac) / (365.25 * 24 * 60 * 60 * 1000)) : 'No registrada');
+    const rawAge = patient?.edad || (fechaNac && !isNaN(fechaNac.getTime()) ? Math.floor((new Date() - fechaNac) / (365.25 * 24 * 60 * 60 * 1000)) : 'No registrada');
+    const formatEdad = (val) => {
+        if (!val || val === 'No registrada' || val === '---' || val === 'N/A') return val || 'No registrada';
+        const str = String(val).trim();
+        return str.toLowerCase().includes('año') ? str : `${str} años`;
+    };
+    const edad = formatEdad(rawAge);
 
     const dateStr = evo.date ? new Date(evo.date).toLocaleDateString('es-CO', {
         weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
@@ -97,7 +106,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
     const docBadgeLabel = isHistorical
         ? 'Registro Histórico Protegido'
         : isProfessionalClosed
-        ? 'Firmada'
+        ? ''
         : evo.status === 'borrador'
         ? 'Borrador'
         : evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : isOrtho ? 'Evolución Ortodoncia' : 'Evolución';
@@ -376,31 +385,23 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
         <td class="td-label">Teléfonos</td>
         <td class="td-val">${patient?.celular || patient?.telefono || 'N/A'}</td>
         <td class="td-label">Estado civil</td>
-        <td class="td-val" colspan="3">${patient?.estadoCivil || 'Soltero'}</td>
+        <td class="td-val">${patient?.estadoCivil || 'Soltero'}</td>
+        <td class="td-label">Dirección residencia</td>
+        <td class="td-val">${patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">EPS</td>
+        <td class="td-val" colspan="2">${patient?.nombreEps || patient?.eps || 'N/A'}</td>
+        <td class="td-label">Doctor/Profesional</td>
+        <td class="td-val" colspan="2">${isHistorical ? (evo.profesional || '---') : docNom}</td>
       </tr>
       <tr>
         <td class="td-label">Nombre responsable</td>
         <td class="td-val">${patient?.nombreResponsable || 'N/A'}</td>
-        <td class="td-label">EPS</td>
-        <td class="td-val">${patient?.nombreEps || patient?.eps || 'N/A'}</td>
-        <td class="td-label">Doctor/Profesional</td>
-        <td class="td-val">${isHistorical ? (evo.profesional || '---') : docNom}</td>
-      </tr>
-      <tr>
-        <td class="td-label">Parentesco responsable</td>
+        <td class="td-label">Parentesco</td>
         <td class="td-val">${patient?.parentesco || 'N/A'}</td>
-        <td class="td-label">Nombre acompañante</td>
-        <td class="td-val" colspan="3">${patient?.nombreAcompanante || 'N/A'}</td>
-      </tr>
-      <tr>
         <td class="td-label">Teléfono responsable</td>
-        <td class="td-val">${patient?.celularResponsable || 'N/A'}</td>
-        <td class="td-label">Tel. Acompañante</td>
-        <td class="td-val" colspan="3">${patient?.telefonoAcompanante || 'N/A'}</td>
-      </tr>
-      <tr>
-        <td class="td-label">Dirección residencia</td>
-        <td class="td-val" colspan="5">${patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
+        <td class="td-val">${patient?.celularResponsable || patient?.telefonoResponsable || 'N/A'}</td>
       </tr>
     </tbody>
   </table>
@@ -414,7 +415,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
       <div class="evo-title">
         ${patientName} (${isHistorical ? (evo.profesional || '---') : docNom})
       </div>
-      <div class="evo-badge">${docBadgeLabel}</div>
+      ${docBadgeLabel ? `<div class="evo-badge">${docBadgeLabel}</div>` : ''}
     </div>
     <div class="evo-date">${dateStr} ${timeStr}</div>
 
@@ -755,13 +756,6 @@ function EvolutionCard({
                     {isHistorical && (
                         <>
                             <button
-                                onClick={() => onEdit(evo)}
-                                className="h-7 px-2 bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-slate-200 text-[10px] font-black cursor-pointer"
-                                title="Consultar evolución protegida (Solo Lectura)"
-                            >
-                                <FiEye size={12} /> Ver
-                            </button>
-                            <button
                                 onClick={() => onAddAddendum(evo)}
                                 className="h-7 px-2 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-purple-200 text-[10px] font-black cursor-pointer"
                                 title="Agregar nota aclaratoria"
@@ -774,13 +768,6 @@ function EvolutionCard({
                     {/* ACCIONES: CERRADA PROFESIONAL */}
                     {isProfessionalClosed && (
                         <>
-                            <button
-                                onClick={() => onEdit(evo)}
-                                className="h-7 px-2 bg-slate-50 text-slate-600 hover:bg-indigo-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-slate-200 text-[10px] font-black cursor-pointer"
-                                title="Consultar evolución certificada (Solo Lectura)"
-                            >
-                                <FiEye size={12} /> Ver
-                            </button>
                             <button
                                 onClick={() => onAddAddendum(evo)}
                                 className="h-7 px-2 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-purple-200 text-[10px] font-black cursor-pointer"
@@ -1219,15 +1206,20 @@ function SignatureModal({ isOpen, onClose, evolution, patient, clinicInfo, onSav
 
     // Calcular edad
     const getEdad = () => {
-        if (!patient?.fechaNacimiento) return patient?.edad || 'N/A';
-        try {
-            const birth = new Date(patient.fechaNacimiento);
-            const diff = Date.now() - birth.getTime();
-            const ageDate = new Date(diff);
-            return Math.abs(ageDate.getUTCFullYear() - 1970);
-        } catch {
-            return patient?.edad || 'N/A';
+        let age = patient?.edad;
+        if (patient?.fechaNacimiento) {
+            try {
+                const birth = new Date(patient.fechaNacimiento);
+                const diff = Date.now() - birth.getTime();
+                const ageDate = new Date(diff);
+                age = Math.abs(ageDate.getUTCFullYear() - 1970);
+            } catch {
+                age = patient?.edad || 'N/A';
+            }
         }
+        if (!age || age === 'N/A') return 'N/A';
+        const str = String(age).trim();
+        return str.toLowerCase().includes('año') ? str : `${str} años`;
     };
 
     return (
@@ -1306,31 +1298,23 @@ function SignatureModal({ isOpen, onClose, evolution, patient, clinicInfo, onSav
                                             <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfonos</td>
                                             <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.celular || patient?.telefono || 'N/A'}</td>
                                             <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Estado civil</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.estadoCivil || 'Soltero'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.estadoCivil || 'Soltero'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Dirección residencia</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>EPS</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="2">{patient?.nombreEps || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor/Profesional</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="2">{evolution?.profesional || 'N/A'}</td>
                                         </tr>
                                         <tr>
                                             <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nombre responsable</td>
                                             <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.nombreResponsable || 'N/A'}</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>EPS</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.nombreEps || 'N/A'}</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor/Profesional</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{evolution?.profesional || 'N/A'}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Parentesco responsable</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Parentesco</td>
                                             <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.parentesco || 'N/A'}</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nombre acompañante</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.nombreAcompanante || 'N/A'}</td>
-                                        </tr>
-                                        <tr>
                                             <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfono responsable</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.celularResponsable || 'N/A'}</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tel. Acompañante</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patient?.telefonoAcompanante || 'N/A'}</td>
-                                        </tr>
-                                        <tr>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Dirección residencia</td>
-                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="5">{patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
+                                            <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patient?.celularResponsable || patient?.telefonoResponsable || 'N/A'}</td>
                                         </tr>
                                     </tbody>
                                 </table>

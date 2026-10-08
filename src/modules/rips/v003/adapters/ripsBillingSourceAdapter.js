@@ -236,7 +236,7 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
     });
   } else {
     // Si no viene en itemPayments, verificar items / conceptos directos
-    const rawItems = record.items || record.conceptos || record.servicios || [];
+    const rawItems = record.items || (record.detalles && Array.isArray(record.detalles.items) ? record.detalles.items : null) || record.conceptos || record.servicios || [];
     if (Array.isArray(rawItems) && rawItems.length > 0) {
       rawItems.forEach(it => {
         const explicitCups = it.codigo || it.codigo_cups || it.cups || it.code || "";

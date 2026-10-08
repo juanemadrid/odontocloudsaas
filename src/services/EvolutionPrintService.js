@@ -1,9 +1,46 @@
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
-import DOMPurify from "dompurify";
-import { toast } from "sonner";
 import supabase from "../lib/supabaseClient";
+import { toast } from "sonner";
 import { getDoctorSignatureAndData } from "./doctorSignatureService";
+import { getEvolutionAddendaBatch } from "./evolutionService";
+
+const printHTMLInHiddenIframe = (htmlContent) => {
+    let iframe = document.getElementById("oc-print-iframe");
+    if (iframe) {
+        try { document.body.removeChild(iframe); } catch {}
+    }
+    iframe = document.createElement("iframe");
+    iframe.id = "oc-print-iframe";
+    iframe.style.position = "fixed";
+    iframe.style.top = "-9999px";
+    iframe.style.left = "-9999px";
+    iframe.style.width = "1024px";
+    iframe.style.height = "768px";
+    iframe.style.border = "none";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+
+    let hasPrinted = false;
+    const triggerPrint = () => {
+        if (hasPrinted) return;
+        hasPrinted = true;
+        try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        } catch (e) {
+            console.error("Error al imprimir iframe:", e);
+        }
+    };
+
+    iframe.onload = () => {
+        setTimeout(triggerPrint, 150);
+    };
+
+    setTimeout(triggerPrint, 500);
+};
 
 export const EvolutionPrintService = {
     generatePDF: async (evolutionsList = [], patient = {}, clinic = {}, userProfile = {}) => {
@@ -12,17 +49,16 @@ export const EvolutionPrintService = {
             return;
         }
 
-        const toastId = toast.loading("Generando historial de evoluciones en PDF...");
+        const toastId = toast.loading("Preparando evoluciones para impresión...");
 
         try {
             // 1. Resolve Company Details & Logo
-            const tenantId = clinic.inquilino || clinic.id || userProfile?.inquilino || userProfile?.tenantId || "";
+            const tenantId = clinic.inquilino || clinic.id || userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id || "";
             let dbLogoUrl = "";
             let dbClinicName = "";
             let dbClinicNit = "";
             let dbClinicAddress = "";
             let dbClinicPhone = "";
-            let dbClinicEmail = "";
 
             if (tenantId) {
                 try {
@@ -37,23 +73,54 @@ export const EvolutionPrintService = {
                         dbClinicNit = clinicConfig.nit || "";
                         dbClinicAddress = clinicConfig.address || clinicConfig.direccion || "";
                         dbClinicPhone = clinicConfig.phone || clinicConfig.telefono || "";
-                        dbClinicEmail = clinicConfig.email || "";
                     }
                 } catch (err) {
                     console.error("Error loading tenant config for evolution print:", err);
                 }
             }
 
-            const rawLogoUrl = dbLogoUrl || clinic?.logo || clinic?.logoUrl || userProfile?.tenant?.logo || "";
-            const logoUrl = rawLogoUrl;
+            const logoUrl = dbLogoUrl || clinic?.logo || clinic?.logoUrl || userProfile?.tenant?.logo || "";
+            const clinicName = dbClinicName || clinic?.nombreComercial || clinic?.nombre || clinic?.name || userProfile?.tenant?.nombreComercial || "CLÍNICA DENTAL";
+            const clinicNit = dbClinicNit || clinic?.nit || clinic?.NIT || userProfile?.tenant?.nit || "—";
+            const clinicAddress = dbClinicAddress || clinic?.direccion || clinic?.address || userProfile?.tenant?.direccion || "—";
+            const clinicPhone = dbClinicPhone || clinic?.telefono || clinic?.phone || userProfile?.tenant?.telefono || "—";
 
-            const clinicName = dbClinicName || clinic?.nombreComercial || clinic?.nombre || clinic?.name || userProfile?.tenant?.nombreComercial || "Clínica Dental";
-            const clinicNit = dbClinicNit || clinic?.nit || clinic?.NIT || userProfile?.tenant?.nit || "---";
-            const clinicAddress = dbClinicAddress || clinic?.direccion || clinic?.address || userProfile?.tenant?.direccion || "---";
-            const clinicPhone = dbClinicPhone || clinic?.telefono || clinic?.phone || userProfile?.tenant?.telefono || "---";
-            const clinicEmail = dbClinicEmail || clinic?.email || userProfile?.tenant?.email || "---";
+            // 2. Fetch secure signatures batch & addendas batch for all evolutions
+            const evoIds = (evolutionsList || []).map(e => e.id).filter(Boolean);
+            let signaturesByEvoId = {};
+            let addendasByEvoId = {};
 
-            // 2. Normalize and parse evolutions
+            if (evoIds.length > 0) {
+                try {
+                    const { data: sigs, error: sigError } = await supabase.rpc(
+                        "get_evolution_signatures_batch",
+                        { p_evolution_ids: evoIds.slice(0, 100) }
+                    );
+                    if (!sigError && Array.isArray(sigs)) {
+                        sigs.forEach(s => {
+                            signaturesByEvoId[s.evolution_id] = s;
+                        });
+                    }
+                } catch (e) {
+                    console.warn("Aviso al consultar firmas digitales en lote:", e);
+                }
+
+                try {
+                    const addendasList = await getEvolutionAddendaBatch(evoIds.slice(0, 100));
+                    if (Array.isArray(addendasList)) {
+                        addendasList.forEach(a => {
+                            if (!addendasByEvoId[a.evolution_id]) {
+                                addendasByEvoId[a.evolution_id] = [];
+                            }
+                            addendasByEvoId[a.evolution_id].push(a);
+                        });
+                    }
+                } catch (e) {
+                    console.warn("Aviso al consultar adendas en lote:", e);
+                }
+            }
+
+            // 3. Normalize evolutions list
             const normalizedEvolutions = (evolutionsList || []).map((evo) => {
                 let parsedTratamiento = {};
                 if (evo.tratamiento) {
@@ -65,426 +132,503 @@ export const EvolutionPrintService = {
                         } catch (e) {}
                     }
                 }
+                const secureEvidence = signaturesByEvoId[evo.id] || null;
+                const evoAddendas = addendasByEvoId[evo.id] || evo.addendas || parsedTratamiento.addendas || [];
+
                 return {
                     ...evo,
                     ...parsedTratamiento,
+                    id: evo.id,
                     status: evo.status || parsedTratamiento.status || 'borrador',
                     closure_origin: evo.closure_origin || parsedTratamiento.closure_origin || null,
                     closed_at: evo.closed_at || parsedTratamiento.closed_at || null,
                     professional_signature_snapshot: evo.professional_signature_snapshot || parsedTratamiento.professional_signature_snapshot || null,
-                    addendas: evo.addendas || parsedTratamiento.addendas || [],
-                    profesional: parsedTratamiento.profesional || evo.profesional || evo.profesional_nombre || '',
-                    profesionalId: parsedTratamiento.profesionalId || evo.profesional_id || evo.profesionalId || '',
+                    addendas: evoAddendas,
+                    profesional: evo.profesional || parsedTratamiento.profesional || evo.profesional_nombre || '',
+                    profesionalId: evo.profesional_id || parsedTratamiento.profesionalId || evo.profesionalId || '',
                     description: evo.description || evo.comentario || parsedTratamiento.description || parsedTratamiento.comentario || '',
                     transcribe: parsedTratamiento.transcribe || parsedTratamiento.transcribedBy || evo.transcribe || evo.transcribed_by || '',
                     plantillaItems: evo.plantillaItems || parsedTratamiento.plantillaItems || {},
-                    dxPrincipal: evo.dxPrincipal || parsedTratamiento.dxPrincipal || null,
-                    doctorSignature: evo.doctorSignature || parsedTratamiento.doctorSignature || null,
-                    esterilizaciones: evo.esterilizaciones || parsedTratamiento.esterilizaciones || [],
-                    medicamentos: evo.medicamentos || parsedTratamiento.medicamentos || [],
+                    doctorSignature: parsedTratamiento.doctorSignature || evo.doctorSignature || null,
+                    patientSignature: secureEvidence?.signature_data || parsedTratamiento.patientSignature || evo.patientSignature || null,
+                    date: evo.date || evo.fecha || evo.created_at || new Date(),
+                    reparaciones: evo.reparaciones || parsedTratamiento.reparaciones || [],
+                    higieneOral: evo.higieneOral || parsedTratamiento.higieneOral || '',
+                    horaInicio: evo.horaInicio || parsedTratamiento.horaInicio || '',
+                    horaFin: evo.horaFin || parsedTratamiento.horaFin || '',
+                    alambreSuperior: evo.alambreSuperior || parsedTratamiento.alambreSuperior || '',
+                    alambreInferior: evo.alambreInferior || parsedTratamiento.alambreInferior || '',
+                    accesoriosSuperior: evo.accesoriosSuperior || parsedTratamiento.accesoriosSuperior || [],
+                    accesoriosInferior: evo.accesoriosInferior || parsedTratamiento.accesoriosInferior || [],
                 };
             });
 
-            // Resolve main doctor from evolutions or patient
+            // 4. Resolve Doctor por defecto para el encabezado del paciente
             const defaultDocName = normalizedEvolutions.find(e => e.profesional)?.profesional || patient?.doctorTratante || patient?.profesional || (userProfile?.esDoctor ? userProfile?.nombreCompleto : '') || '---';
 
-            // 3. Resolve Patient Details & Age
+            // 5. Patient Details & Age
             const patientName = patient?.nombreCompleto || `${patient?.nombre || ''} ${patient?.apellido || ''}`.trim() || 'Paciente Sin Nombre';
             const fechaNac = patient?.fechaNacimiento ? new Date(patient.fechaNacimiento) : null;
-            const edad = patient?.edad || (fechaNac && !isNaN(fechaNac.getTime()) ? Math.floor((new Date() - fechaNac) / (365.25 * 24 * 60 * 60 * 1000)) : '---');
-            const printDate = new Date().toLocaleDateString("es-CO", { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const rawAge = patient?.edad || (fechaNac && !isNaN(fechaNac.getTime()) ? Math.floor((new Date() - fechaNac) / (365.25 * 24 * 60 * 60 * 1000)) : 'No registrada');
+            const formatEdad = (val) => {
+                if (!val || val === 'No registrada' || val === '---' || val === 'N/A') return val || 'No registrada';
+                const str = String(val).trim();
+                if (str.toLowerCase().includes('año') || str.toLowerCase().includes('mes')) return str;
+                return `${str} años`;
+            };
+            const edad = formatEdad(rawAge);
+            const printDate = new Date().toLocaleDateString("es-CO");
 
-            // 4. Create Container
-            const printElement = document.createElement("div");
-            printElement.style.position = "absolute";
-            printElement.style.left = "-9999px";
-            printElement.style.top = "0";
-            printElement.style.width = "850px";
-            printElement.style.padding = "40px";
-            printElement.style.backgroundColor = "white";
-            printElement.style.color = "#1e293b";
-            printElement.style.fontFamily = "'Inter', system-ui, -apple-system, sans-serif";
-
-            // Header Logo
-            const logoHTML = logoUrl
-                ? `<img src="${logoUrl}" style="max-height: 70px; max-width: 140px; object-fit: contain; border-radius: 12px;" crossOrigin="anonymous" />`
-                : `<div style="width: 60px; height: 60px; background: #2563eb; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 26px; font-weight: 900;">${clinicName.substring(0, 1) || "O"}</div>`;
-
-            // Header HTML
-            const headerHTML = `
-                <div style="position: relative; padding-bottom: 20px; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-start;">
-                    <!-- Top Brand Accent Bar -->
-                    <div style="position: absolute; top: -40px; left: -40px; right: -40px; height: 8px; background: linear-gradient(90deg, #8dc63f, #a2d654, #7cb035);"></div>
-
-                    <div style="display: flex; gap: 18px; align-items: center;">
-                        ${logoHTML}
-                        <div>
-                            <h1 style="margin: 0; font-size: 24px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: -0.5px;">${clinicName}</h1>
-                            <p style="margin: 3px 0 0 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
-                                <strong style="color: #94a3b8; margin-right: 4px;">NIT:</strong> ${clinicNit}
-                            </p>
-                            <p style="margin: 2px 0 0 0; font-size: 9.5px; color: #64748b; font-weight: 500;">
-                                <strong style="color: #94a3b8; margin-right: 4px;">Dirección:</strong> ${clinicAddress}
-                            </p>
-                            <p style="margin: 2px 0 0 0; font-size: 9.5px; color: #64748b; font-weight: 500;">
-                                <strong style="color: #94a3b8; margin-right: 4px;">Tel:</strong> ${clinicPhone} <span style="color: #cbd5e1; margin: 0 4px;">|</span> <strong style="color: #94a3b8; margin-right: 4px;">Email:</strong> ${clinicEmail}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-                        <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; padding: 10px 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 6px -1px rgba(37,99,235,0.05);">
-                            <span style="font-size: 11px; font-weight: 900; color: #2563eb; text-transform: uppercase; letter-spacing: 1.5px; display: block;">HISTORIA CLÍNICA</span>
-                            <span style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; display: block;">Reporte de Evoluciones</span>
-                        </div>
-                        <p style="margin: 0; font-size: 9px; color: #64748b; font-weight: 600;">
-                            <strong style="color: #94a3b8; text-transform: uppercase; margin-right: 4px;">Fecha Impresión:</strong> ${printDate}
-                        </p>
-                    </div>
-                </div>
-            `;
-
-            // Patient Summary Table
-            const patientTableHTML = `
-                <div style="margin-bottom: 25px;">
-                    <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 10px; background: white;">
-                        <tbody>
-                            <tr>
-                                <td style="width: 18%; background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Nombre del paciente</td>
-                                <td style="width: 32%; border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #0f172a;">${patientName}</td>
-                                <td style="width: 12%; background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Edad</td>
-                                <td style="width: 10%; border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #0f172a;">${edad}</td>
-                                <td style="width: 14%; background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Nro Historia</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #0f172a;">${patient?.numeroDocumento || patient?.documento || patient?.cedula || '---'}</td>
-                            </tr>
-                            <tr>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Tipo documento</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.tipoDocumento || 'Cédula de ciudadanía'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Nro de documento</td>
-                                <td colspan="3" style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #0f172a;">${patient?.numeroDocumento || patient?.documento || patient?.cedula || '---'}</td>
-                            </tr>
-                            <tr>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Sexo</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.genero || patient?.sexo || '---'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Fecha / Lugar Nac.</td>
-                                <td colspan="3" style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">
-                                    ${fechaNac && !isNaN(fechaNac.getTime()) ? fechaNac.toLocaleDateString('es-CO') : '---'} ${patient?.lugarNacimiento ? `· ${patient.lugarNacimiento}` : ''}
-                                </td>
-                            </tr>
-                            <tr>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Correo</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.email || patient?.correo || '---'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Ocupación</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.ocupacion || '---'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Fecha impresión</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${printDate}</td>
-                            </tr>
-                            <tr>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Teléfonos</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.telefono || patient?.celular || '---'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Estado civil</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.estadoCivil || '---'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Doctor/Profesional</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #2563eb;">${defaultDocName}</td>
-                            </tr>
-                            <tr>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Nombre responsable</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.nombreResponsable || patient?.acudiente || '---'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Teléfono responsable</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.telefonoResponsable || '---'}</td>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">EPS</td>
-                                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.nombreEps || patient?.eps || patient?.epsNombre || '---'}</td>
-                            </tr>
-                            <tr>
-                                <td style="background: #f8fafc; font-weight: 800; border: 1px solid #cbd5e1; padding: 6px 8px; color: #475569; text-transform: uppercase;">Dirección residencia</td>
-                                <td colspan="5" style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #334155;">${patient?.lugarResidencia || patient?.direccion || patient?.direccionResidencia || patient?.address || '---'}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            `;
-
-            // Section Title
-            const sectionTitleHTML = `
-                <div style="text-align: center; font-size: 11px; font-weight: 900; color: #2563eb; text-transform: uppercase; letter-spacing: 2px; border-top: 2px solid #e2e8f0; border-bottom: 2px solid #e2e8f0; padding: 8px 0; margin: 25px 0 20px;">
-                    Evoluciones Clínicas Registradas (${normalizedEvolutions.length})
-                </div>
-            `;
-
-            // Evolutions List Render
+            // 6. Build Evolutions HTML
             let evolutionsHTML = "";
-
             if (normalizedEvolutions.length === 0) {
                 evolutionsHTML = `
-                    <div style="padding: 30px; text-align: center; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; color: #94a3b8; font-weight: 700; font-size: 11px; text-transform: uppercase;">
-                        No existen evoluciones clínicas registradas para este paciente.
+                    <div style="padding: 25px; text-align: center; border: 1px dashed #cbd5e1; border-radius: 6px; color: #64748b; font-weight: bold; font-size: 10px; margin-top: 15px;">
+                        NO SE ENCONTRARON REGISTROS DE EVOLUCIÓN CLÍNICA PARA ESTE PACIENTE.
                     </div>
                 `;
             } else {
-                evolutionsHTML = normalizedEvolutions.map((evo) => {
-                    const rawDate = evo.date ? (evo.date.seconds ? new Date(evo.date.seconds * 1000) : new Date(evo.date)) : new Date();
-                    const dateStr = rawDate.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-                    const timeStr = rawDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-                    const profName = evo.profesional || defaultDocName || 'Doctor Tratante';
-                    const isRemission = evo.type === 'remission';
-                    const obsText = evo.description || evo.comentario || 'Sin observaciones registradas.';
-
-                    // Extract procedures from plantillaItems or treatment
-                    let procTagsHTML = "";
-                    if (evo.plantillaItems && typeof evo.plantillaItems === 'object') {
-                        const procs = Object.values(evo.plantillaItems)
-                            .filter(v => v?.checked)
-                            .map(v => {
-                                const name = v.desc || v.procedimiento || v.nombre || '';
-                                const tooth = v.dientes ? `[Diente ${v.dientes}] ` : '';
-                                return tooth + name;
-                            })
-                            .filter(Boolean);
-
-                        if (procs.length > 0) {
-                            procTagsHTML = procs.map(p => `
-                                <span style="display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 9px; font-weight: 800; padding: 3px 8px; border-radius: 6px; margin-right: 6px; margin-bottom: 6px; text-transform: uppercase;">
-                                    ${p}
-                                </span>
-                            `).join('');
-                        }
-                    }
-
-                    if (!procTagsHTML && evo.treatment) {
-                        procTagsHTML = `
-                            <span style="display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 9px; font-weight: 800; padding: 3px 8px; border-radius: 6px; margin-right: 6px; margin-bottom: 6px; text-transform: uppercase;">
-                                ${evo.treatment}
-                            </span>
-                        `;
-                    }
-
-                    // Diagnosis if present
-                    let dxHTML = "";
-                    if (evo.dxPrincipal?.code) {
-                        dxHTML = `
-                            <div style="font-size: 9.5px; font-weight: 700; color: #475569; margin-top: 4px;">
-                                <strong style="color: #94a3b8; text-transform: uppercase;">Dx CIE-10:</strong> ${evo.dxPrincipal.code} — ${evo.dxPrincipal.name || ''}
-                            </div>
-                        `;
-                    }
-
-                    const isNota = evo.type === 'nota';
+                evolutionsHTML = normalizedEvolutions.map((evo, idx) => {
                     const isHistorical = evo.status === 'cerrada' && evo.closure_origin === 'legacy_migration';
                     const isProfessionalClosed = evo.status === 'cerrada' && evo.closure_origin === 'professional';
+                    const isOrtho = evo.type === 'evolucion_ortodoncia' || evo.type === 'ortodoncia' || evo.isOrthodontic || (evo.treatment && String(evo.treatment).toLowerCase().includes('ortodoncia'));
 
-                    let badgeText = isRemission ? 'Remisión' : isNota ? 'Nota Aclaratoria' : 'Evolución';
-                    let badgeBg = isRemission ? '#fff7ed' : isNota ? '#faf5ff' : '#f0fdf4';
-                    let badgeColor = isRemission ? '#c2410c' : isNota ? '#6b21a8' : '#15803d';
-                    let badgeBorder = isRemission ? '#ffedd5' : isNota ? '#f3e8ff' : '#dcfce7';
+                    // Etiqueta badge (NUNCA mostrar 'Firmada')
+                    const docBadgeLabel = isHistorical
+                        ? 'Registro Histórico Protegido'
+                        : isProfessionalClosed
+                        ? ''
+                        : evo.status === 'borrador'
+                        ? 'Borrador'
+                        : evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : isOrtho ? 'Evolución Ortodoncia' : 'Evolución';
 
-                    let statusBadgeHTML = "";
-                    if (isHistorical) {
-                        statusBadgeHTML = `
-                            <span style="font-size: 8px; font-weight: 900; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
-                                REGISTRO HISTÓRICO PROTEGIDO
-                            </span>
-                        `;
-                    } else if (isProfessionalClosed) {
-                        statusBadgeHTML = `
-                            <span style="font-size: 8px; font-weight: 900; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
-                                CERRADA Y CERTIFICADA
-                            </span>
-                        `;
-                    } else if (evo.status === 'borrador') {
-                        statusBadgeHTML = `
-                            <span style="font-size: 8px; font-weight: 900; background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
-                                BORRADOR
-                            </span>
-                        `;
-                    }
+                    // Parse date
+                    const rawDate = evo.date instanceof Date ? evo.date : (evo.date ? new Date(evo.date) : new Date());
+                    const dateStr = rawDate.toLocaleDateString('es-CO', {
+                        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+                    });
+                    const timeStr = rawDate.toLocaleTimeString('es-CO', {
+                        hour: '2-digit', minute: '2-digit', hour12: true
+                    });
 
-                    const historicalNoticeHTML = isHistorical ? `
-                        <div style="font-size: 9px; font-weight: 600; color: #475569; background: #f8fafc; border: 1px solid #cbd5e1; border-left: 3px solid #64748b; padding: 6px 8px; border-radius: 4px; margin-top: 6px; margin-bottom: 6px;">
-                            <strong>Registro histórico protegido:</strong> Registro previo a la implementación del sistema de cierre y firma clínica. Su contenido se encuentra protegido contra modificaciones.
-                        </div>
-                    ` : '';
+                    // Snapshot y resolución de firma
+                    const rawSnap = evo.professional_signature_snapshot;
+                    const sigSnap = typeof rawSnap === 'string' ? (() => { try { return JSON.parse(rawSnap); } catch { return null; } })() : rawSnap;
+                    const isDoctorSigned = isProfessionalClosed || Boolean(evo.doctorSignature?.signature || evo.doctorSignature?.signatureImage || sigSnap);
 
-                    let addendasHTML = "";
-                    if (Array.isArray(evo.addendas) && evo.addendas.length > 0) {
-                        addendasHTML = `
-                            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
-                                <div style="font-size: 9px; font-weight: 900; color: #6b21a8; text-transform: uppercase; margin-bottom: 4px;">
-                                    Notas Aclaratorias (${evo.addendas.length})
-                                </div>
-                                ${evo.addendas.map((ad, idx) => `
-                                    <div style="font-size: 9px; background: #faf5ff; border: 1px solid #f3e8ff; border-radius: 6px; padding: 6px 8px; margin-top: 4px;">
-                                        <div style="display: flex; justify-content: space-between; font-weight: 800; color: #581c87; margin-bottom: 2px;">
-                                            <span>Nota #${idx + 1} · ${ad.author_snapshot?.nombre_completo || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
-                                            <span style="font-weight: 600; color: #7e22ce;">${new Date(ad.created_at).toLocaleDateString('es-CO')} ${new Date(ad.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
-                                        </div>
-                                        <div style="color: #334155; white-space: pre-wrap; font-weight: 500;">
-                                            ${(ad.contenido || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        `;
-                    }
+                    const docSig = isProfessionalClosed
+                        ? (
+                            sigSnap?.signature_image 
+                            || sigSnap?.firma_base64 
+                            || sigSnap?.firma 
+                            || evo.doctorSignature?.signatureImage 
+                            || (userProfile?.esDoctor ? (userProfile?.firmaElectronica || userProfile?.firma) : null)
+                            || (typeof localStorage !== 'undefined' && userProfile?.uid ? localStorage.getItem('odontocloud_doctor_signature_' + userProfile.uid) : null)
+                            || null
+                        )
+                        : (evo.doctorSignature?.signatureImage || null);
+
+                    const docNom = isProfessionalClosed
+                        ? (
+                            sigSnap?.signer_name 
+                            || sigSnap?.nombre_completo 
+                            || evo.doctorSignature?.signature 
+                            || evo.profesional 
+                            || userProfile?.nombreCompleto 
+                            || 'Doctor Tratante'
+                        )
+                        : (evo.doctorSignature?.signature || evo.profesional || 'Doctor Tratante');
+
+                    const docReg = isProfessionalClosed
+                        ? (
+                            sigSnap?.registro_medico 
+                            || evo.doctorSignature?.registroMedico 
+                            || userProfile?.registroMedico 
+                            || ''
+                        )
+                        : (evo.doctorSignature?.registroMedico || '');
+
+                    // Procedimientos
+                    const plantillaItems = evo.plantillaItems || {};
+                    const procedimientos = Object.values(plantillaItems)
+                        .filter(v => v?.checked)
+                        .map(v => {
+                            const name = v.desc || v.procedimiento || v.nombre || '';
+                            const tooth = v.dientes ? `[Diente ${v.dientes}] ` : '';
+                            return tooth + name;
+                        })
+                        .filter(Boolean);
+
+                    const addendas = evo.addendas || [];
 
                     return `
-                        <div style="margin-bottom: 18px; padding: 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <div>
-                                    <span style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase;">
-                                        ${patientName} (${profName})
-                                    </span>
-                                    ${isRemission && evo.doctorQuienRecibeName ? `
-                                        <div style="font-size: 9px; font-weight: 800; color: #c2410c; margin-top: 2px;">
-                                            RECEPTOR: ${evo.doctorQuienRecibeName}
-                                        </div>
-                                    ` : ''}
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    ${statusBadgeHTML}
-                                    <span style="font-size: 8px; font-weight: 900; background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder}; padding: 2px 6px; border-radius: 12px; text-transform: uppercase;">
-                                        ${badgeText}
-                                    </span>
-                                    <span style="font-size: 9.5px; font-weight: 800; color: #64748b;">
-                                        ${dateStr} — ${timeStr}
-                                    </span>
-                                </div>
-                            </div>
-
-                            ${historicalNoticeHTML}
-                            ${procTagsHTML ? `<div style="margin-top: 6px; margin-bottom: 6px;">${procTagsHTML}</div>` : ''}
-                            ${dxHTML}
-
-                            ${(evo.transcribe || evo.transcribedBy) ? `
-                                <div style="font-size: 9px; font-weight: 800; color: #64748b; margin-top: 6px; margin-bottom: 4px; text-transform: uppercase;">
-                                    Transcribe: <span style="color: #0f172a; font-weight: 900;">${evo.transcribe || evo.transcribedBy}</span>
-                                </div>
-                            ` : ''}
-
-                            <div style="font-size: 10.5px; color: #334155; line-height: 1.6; font-weight: 500; margin-top: 6px; white-space: pre-wrap; word-break: break-word;">
-                                ${obsText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
-                            </div>
-
-                            ${Array.isArray(evo.esterilizaciones) && evo.esterilizaciones.length > 0 ? `
-                                <div style="font-size: 9px; font-weight: 700; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 4px 8px; border-radius: 6px; margin-top: 8px;">
-                                    <strong>CONTROL DE ESTERILIZACIÓN:</strong> ${evo.esterilizaciones.map(e => `${e.ciclo} · ${e.concepto} (Cant: ${e.cantidad})`).join('; ')}
-                                </div>
-                            ` : ''}
-
-                            ${Array.isArray(evo.medicamentos) && evo.medicamentos.length > 0 ? `
-                                <div style="font-size: 9px; font-weight: 700; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 6px; margin-top: 6px;">
-                                    <strong>MEDICAMENTOS APLICADOS:</strong> ${evo.medicamentos.map(m => `${m.medicamento} (Dosis: ${m.dosis} - Vía: ${m.via}${m.hora ? ` - Hora: ${m.hora}` : ''})`).join('; ')}
-                                </div>
-                            ` : ''}
-
-                            ${addendasHTML}
+                      <div class="evo-block">
+                        <div class="evo-header">
+                          <div class="evo-title">
+                            ${patientName} (${isHistorical ? (evo.profesional || '---') : docNom})
+                          </div>
+                          ${docBadgeLabel ? `<div class="evo-badge">${docBadgeLabel}</div>` : ''}
                         </div>
+                        <div class="evo-date">${dateStr} ${timeStr}</div>
+
+                        ${isHistorical ? `
+                          <div class="notice-box">
+                            <strong>REGISTRO HISTÓRICO PROTEGIDO:</strong> Registro previo a la implementación del sistema de cierre y firma clínica. Su contenido se encuentra protegido contra modificaciones.
+                          </div>
+                        ` : ''}
+
+                        <div class="evo-desc">${(evo.description || evo.comentario || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+
+                        ${isOrtho ? `
+                          <div style="margin: 8px 0; padding: 8px; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 9px; line-height: 1.5;">
+                            <div style="font-weight: bold; margin-bottom: 4px; text-transform: uppercase; color: #1e293b;">Detalles de Ortodoncia</div>
+                            ${evo.higieneOral ? `<div><strong>Higiene Oral:</strong> ${evo.higieneOral}</div>` : ''}
+                            ${(evo.horaInicio || evo.horaFin) ? `<div><strong>Horario de atención:</strong> ${evo.horaInicio || '—'} a ${evo.horaFin || '—'}</div>` : ''}
+                            ${Array.isArray(evo.reparaciones) && evo.reparaciones.length > 0 ? `<div><strong>Dientes Reparados:</strong> ${evo.reparaciones.join(', ')}</div>` : ''}
+                            ${(evo.alambreSuperior || (Array.isArray(evo.accesoriosSuperior) && evo.accesoriosSuperior.length > 0)) ? `
+                              <div><strong>Arcada Superior:</strong> ${evo.alambreSuperior ? `Alambre: ${evo.alambreSuperior}` : ''} ${Array.isArray(evo.accesoriosSuperior) && evo.accesoriosSuperior.length > 0 ? `· Accesorios: ${evo.accesoriosSuperior.join(', ')}` : ''}</div>
+                            ` : ''}
+                            ${(evo.alambreInferior || (Array.isArray(evo.accesoriosInferior) && evo.accesoriosInferior.length > 0)) ? `
+                              <div><strong>Arcada Inferior:</strong> ${evo.alambreInferior ? `Alambre: ${evo.alambreInferior}` : ''} ${Array.isArray(evo.accesoriosInferior) && evo.accesoriosInferior.length > 0 ? `· Accesorios: ${evo.accesoriosInferior.join(', ')}` : ''}</div>
+                            ` : ''}
+                          </div>
+                        ` : ''}
+
+                        ${(evo.transcribe || evo.transcribedBy) ? `
+                          <div style="font-size: 8.5px; font-weight: bold; color: #475569; margin-top: 4px; margin-bottom: 6px; text-transform: uppercase;">
+                            Transcribe: <span style="color: #0f172a; font-weight: 800;">${evo.transcribe || evo.transcribedBy}</span>
+                          </div>
+                        ` : ''}
+
+                        ${procedimientos.length > 0 ? procedimientos.map((p, pIdx) => `
+                          <div class="evo-proc">${evo.treatment ? `${evo.treatment} - ` : 'odontología - '}${pIdx + 1}. ${p}</div>
+                        `).join('') : (evo.treatment ? `<div class="evo-proc">${evo.treatment}</div>` : '')}
+
+                        ${Array.isArray(addendas) && addendas.length > 0 ? `
+                          <div class="addendas-box">
+                            <div style="font-size: 10px; font-weight: bold; color: #475569; text-transform: uppercase; margin-bottom: 6px;">
+                              Notas Aclaratorias (${addendas.length})
+                            </div>
+                            ${addendas.map((ad, aIdx) => `
+                              <div class="addenda-item">
+                                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #0f172a; margin-bottom: 4px;">
+                                  <span>Nota #${aIdx + 1} · ${ad.author_snapshot?.nombre_completo || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
+                                  <span style="color: #64748b; font-weight: normal;">${new Date(ad.created_at).toLocaleString('es-CO')}</span>
+                                </div>
+                                <div style="color: #1e293b; white-space: pre-wrap;">${(ad.contenido || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                              </div>
+                            `).join('')}
+                          </div>
+                        ` : ''}
+
+                        <!-- FIRMA INDIVIDUAL DE ESTA EVOLUCIÓN (SI ESTÁ FIRMADA) -->
+                        <div class="signature-container">
+                          ${!isHistorical && isDoctorSigned && docSig ? `
+                          <div class="sig-block">
+                            <div class="sig-image-holder">
+                              <img src="${docSig}" alt="Firma Profesional" />
+                            </div>
+                            <div class="sig-name">${docNom}</div>
+                            <div class="sig-role">Doctor/Profesional ${docReg ? `· TP: ${docReg}` : ''}</div>
+                          </div>
+                          ` : ''}
+                          ${evo.patientSignature ? `
+                            <div class="sig-block">
+                              <div class="sig-image-holder">
+                                <img src="${evo.patientSignature}" alt="Firma Paciente" />
+                              </div>
+                              <div class="sig-name">${patientName}</div>
+                              <div class="sig-role">Paciente / Aceptante</div>
+                            </div>
+                          ` : ''}
+                        </div>
+                      </div>
+                      ${idx < normalizedEvolutions.length - 1 ? `<div class="evo-separator"></div>` : ''}
                     `;
                 }).join('');
             }
 
-            // Signature & Footer: Resolver doctor y firma del especialista
-            const firstEvo = normalizedEvolutions[0];
-            const rawFirstSnap = firstEvo?.professional_signature_snapshot;
-            const firstSnap = typeof rawFirstSnap === 'string' ? (() => { try { return JSON.parse(rawFirstSnap); } catch { return null; } })() : rawFirstSnap;
-            const snapshotSig = firstSnap?.signature_image || firstSnap?.firma_base64 || firstSnap?.firma || null;
-            const snapshotName = firstSnap?.signer_name || firstSnap?.nombre_completo || null;
-            const snapshotReg = firstSnap?.registro_medico || null;
+            // 7. Assemble Full HTML (Exactamente idéntico a printEvolution)
+            const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Evoluciones Clínicas — ${patientName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      color: #000000;
+      padding: 20px 25px;
+      max-width: 800px;
+      margin: 0 auto;
+      line-height: 1.35;
+      font-size: 10px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+    }
+    .header-left {
+      width: 140px;
+    }
+    .clinic-logo {
+      max-height: 60px;
+      max-width: 130px;
+      object-fit: contain;
+    }
+    .header-center {
+      flex: 1;
+      text-align: center;
+      padding: 0 10px;
+    }
+    .clinic-name {
+      font-size: 12px;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+      letter-spacing: 0.3px;
+    }
+    .clinic-sub {
+      font-size: 9.5px;
+      color: #1e293b;
+      margin-bottom: 1px;
+    }
+    .header-right {
+      width: 140px;
+      text-align: right;
+    }
+    .patient-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+      border: 1px solid #475569;
+      font-size: 9.5px;
+    }
+    .patient-table td {
+      border: 1px solid #475569;
+      padding: 3.5px 6px;
+      vertical-align: middle;
+    }
+    .td-label {
+      font-weight: bold;
+      color: #0f172a;
+      width: 16%;
+      white-space: nowrap;
+    }
+    .td-val {
+      color: #1e293b;
+    }
+    .section-divider {
+      text-align: center;
+      margin: 14px 0 10px 0;
+      border: 1px dashed #64748b;
+      padding: 3px 0;
+      font-size: 10.5px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+    .evo-block {
+      margin-top: 10px;
+      padding-top: 5px;
+      page-break-inside: avoid;
+    }
+    .evo-separator {
+      border-top: 1px dashed #cbd5e1;
+      margin: 20px 0 15px 0;
+    }
+    .evo-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 3px;
+    }
+    .evo-title {
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .evo-badge {
+      font-size: 9.5px;
+      color: #475569;
+      font-weight: bold;
+    }
+    .evo-date {
+      font-size: 9px;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    .evo-desc {
+      font-size: 9.5px;
+      color: #0f172a;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      margin-bottom: 6px;
+    }
+    .evo-proc {
+      font-size: 9.5px;
+      font-weight: bold;
+      color: #0f172a;
+      margin-top: 4px;
+      text-transform: uppercase;
+    }
+    .signature-container {
+      display: flex;
+      justify-content: flex-end;
+      gap: 40px;
+      margin-top: 20px;
+      padding-top: 10px;
+    }
+    .sig-block {
+      text-align: center;
+      min-width: 200px;
+    }
+    .sig-image-holder {
+      height: 75px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      border-bottom: 1px solid #475569;
+      margin-bottom: 4px;
+    }
+    .sig-image-holder img {
+      max-height: 70px;
+      max-width: 220px;
+      object-fit: contain;
+    }
+    .sig-name {
+      font-size: 9.5px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    .sig-role {
+      font-size: 8.5px;
+      color: #475569;
+    }
+    .notice-box {
+      margin: 8px 0;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 3px solid #64748b;
+      font-size: 9px;
+      line-height: 1.4;
+      color: #334155;
+    }
+    .addendas-box {
+      margin-top: 15px;
+      border-top: 1px dashed #64748b;
+      padding-top: 10px;
+    }
+    .addenda-item {
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 6px;
+      font-size: 9px;
+      line-height: 1.4;
+    }
+    @media print {
+      body { padding: 0; }
+      @page { size: Letter; margin: 12mm 15mm; }
+      .evo-block { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
 
-            const primaryDoctorIdent = snapshotName || normalizedEvolutions[0]?.profesional || normalizedEvolutions[0]?.profesionalId || defaultDocName || (userProfile?.esDoctor ? userProfile?.nombreCompleto : "");
-            const doctorData = await getDoctorSignatureAndData(primaryDoctorIdent, tenantId, userProfile);
+  <!-- CABECERA CLÍNICA -->
+  <div class="header-container">
+    <div class="header-left">
+      ${logoUrl ? `<img src="${logoUrl}" class="clinic-logo" crossorigin="anonymous" />` : ''}
+    </div>
+    <div class="header-center">
+      <div class="clinic-name">${clinicName}</div>
+      <div class="clinic-sub">NIT: ${clinicNit}</div>
+      <div class="clinic-sub">${clinicAddress}</div>
+      ${clinicPhone ? `<div class="clinic-sub">TEL: ${clinicPhone}</div>` : ''}
+    </div>
+    <div class="header-right"></div>
+  </div>
 
-            const resolvedFirma = snapshotSig 
-                || (doctorData.isDoctor && doctorData.firma ? doctorData.firma : null)
-                || (userProfile?.esDoctor ? (userProfile?.firmaElectronica || userProfile?.firma) : null)
-                || null;
+  <!-- TABLA DE DATOS DEL PACIENTE (FORMATO ORAL DRIVE) -->
+  <table class="patient-table">
+    <tbody>
+      <tr>
+        <td class="td-label">Nombre del paciente</td>
+        <td class="td-val" style="width: 32%;">${patientName}</td>
+        <td class="td-label" style="width: 10%;">Edad</td>
+        <td class="td-val" style="width: 14%;">${edad}</td>
+        <td class="td-label" style="width: 14%;">Nro Historia</td>
+        <td class="td-val" style="width: 14%;">${patient?.documento || patient?.cedula || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Tipo documento</td>
+        <td class="td-val">${patient?.tipoDocumento || 'Cédula de ciudadanía'}</td>
+        <td class="td-label">Nro de documento</td>
+        <td class="td-val" colspan="3">${patient?.documento || patient?.cedula || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Sexo</td>
+        <td class="td-val">${patient?.genero || patient?.sexo || 'Femenino'}</td>
+        <td class="td-label">Fecha y lugar de nacimiento</td>
+        <td class="td-val" colspan="3">
+          ${patient?.fechaNacimiento ? new Date(patient.fechaNacimiento).toLocaleDateString('es-CO') : 'N/A'}${patient?.lugarNacimiento ? `, ${patient.lugarNacimiento}` : ''}
+        </td>
+      </tr>
+      <tr>
+        <td class="td-label">Correo</td>
+        <td class="td-val">${patient?.email || patient?.correo || 'N/A'}</td>
+        <td class="td-label">Ocupación</td>
+        <td class="td-val">${patient?.ocupacion || 'N/A'}</td>
+        <td class="td-label">Fecha impresión</td>
+        <td class="td-val">${printDate}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Teléfonos</td>
+        <td class="td-val">${patient?.celular || patient?.telefono || 'N/A'}</td>
+        <td class="td-label">Estado civil</td>
+        <td class="td-val">${patient?.estadoCivil || 'Soltero'}</td>
+        <td class="td-label">Dirección residencia</td>
+        <td class="td-val">${patient?.direccion || patient?.direccionResidencia || 'N/A'}</td>
+      </tr>
+      <tr>
+        <td class="td-label">EPS</td>
+        <td class="td-val" colspan="2">${patient?.nombreEps || patient?.eps || 'N/A'}</td>
+        <td class="td-label">Doctor/Profesional</td>
+        <td class="td-val" colspan="2">${defaultDocName}</td>
+      </tr>
+      <tr>
+        <td class="td-label">Nombre responsable</td>
+        <td class="td-val">${patient?.nombreResponsable || 'N/A'}</td>
+        <td class="td-label">Parentesco</td>
+        <td class="td-val">${patient?.parentesco || 'N/A'}</td>
+        <td class="td-label">Teléfono responsable</td>
+        <td class="td-val">${patient?.celularResponsable || patient?.telefonoResponsable || 'N/A'}</td>
+      </tr>
+    </tbody>
+  </table>
 
-            const docSignatureImg = resolvedFirma
-                ? `<img src="${resolvedFirma}" alt="Firma Profesional" style="max-height: 70px; max-width: 220px; object-fit: contain;" />`
-                : '';
+  <!-- SEPARADOR EVOLUCIONES -->
+  <div class="section-divider">Evoluciones</div>
 
-            const docName = snapshotName || doctorData.nombreCompleto || primaryDoctorIdent || (doctorData.isDoctor ? userProfile?.nombreCompleto : '') || 'Odontólogo Tratante';
-            const docLicense = snapshotReg ? `TP / Reg. Médico: ${snapshotReg}` : (doctorData.registroMedico ? `TP / Reg. Médico: ${doctorData.registroMedico}` : (userProfile?.registroMedico ? `TP: ${userProfile.registroMedico}` : 'Sello y Registro Médico'));
-            const docSpecialty = doctorData.especialidad ? `${doctorData.especialidad}` : 'Especialista / Odontólogo';
+  <!-- LISTA DE BLOQUES DE EVOLUCIÓN -->
+  ${evolutionsHTML}
 
-            const footerHTML = `
-                <div style="margin-top: 50px; display: flex; justify-content: space-between; gap: 60px; padding: 0 20px;">
-                    <div style="flex: 1; text-align: center;">
-                        <div style="height: 75px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 4px;">
-                            ${docSignatureImg}
-                        </div>
-                        <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">
-                            <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">${docName}</p>
-                            <p style="margin: 2px 0 0 0; font-size: 9.5px; color: #64748b; font-weight: 800; text-transform: uppercase;">${docSpecialty}</p>
-                            <p style="margin: 2px 0 0 0; font-size: 9px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">${docLicense}</p>
-                        </div>
-                    </div>
+</body>
+</html>`;
 
-                    <div style="flex: 1; text-align: center;">
-                        <div style="height: 60px;"></div>
-                        <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">
-                            <p style="margin: 0; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">Responsable de Registro</p>
-                            <p style="margin: 3px 0 0 0; font-size: 9.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Generado por: ${(userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administrador").toUpperCase()}</p>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // 5. Assemble HTML
-            printElement.innerHTML = DOMPurify.sanitize(headerHTML + patientTableHTML + sectionTitleHTML + evolutionsHTML + footerHTML);
-            document.body.appendChild(printElement);
-
-            // Wait for images
-            const images = printElement.querySelectorAll("img");
-            await Promise.all(Array.from(images).map(img => {
-                if (img.complete) return Promise.resolve();
-                return new Promise(resolve => {
-                    img.onload = resolve;
-                    img.onerror = resolve;
-                });
-            }));
-
-            // 6. Render Canvas & PDF with Multi-page Pagination support
-            const canvas = await html2canvas(printElement, {
-                scale: 2.5,
-                useCORS: true,
-                logging: false,
-                backgroundColor: "#ffffff",
-                windowWidth: 850
-            });
-
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'pt',
-                format: 'a4'
-            });
-
-            const imgData = canvas.toDataURL('image/jpeg', 0.95);
-            const imgWidth = pdf.internal.pageSize.getWidth();
-            const pageHeight = pdf.internal.pageSize.getHeight();
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-            let heightLeft = imgHeight;
-            let position = 0;
-
-            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-            heightLeft -= pageHeight;
-
-            while (heightLeft > 0) {
-                position -= pageHeight;
-                pdf.addPage();
-                pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-                heightLeft -= pageHeight;
-            }
-
-            const pdfBlob = pdf.output('bloburl');
-            window.open(pdfBlob, '_blank');
-
-            document.body.removeChild(printElement);
-            toast.success("Historial de evoluciones generado con éxito", { id: toastId });
-
+            printHTMLInHiddenIframe(html);
+            toast.dismiss(toastId);
         } catch (error) {
-            console.error("Error generating evolutions PDF:", error);
-            toast.error("Error al generar el documento de evoluciones", { id: toastId });
+            console.error("Error al generar reporte de evoluciones:", error);
+            toast.error("Error al preparar la impresión de evoluciones");
+            toast.dismiss(toastId);
         }
     }
 };

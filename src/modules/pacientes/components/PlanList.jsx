@@ -40,6 +40,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     const [profesionalesDropdown, setProfesionalesDropdown] = useState([]);
     const [entidades, setEntidades] = useState([]);
     const [tarifas, setTarifas] = useState([]);
+    const [tenantConfigParams, setTenantConfigParams] = useState({ vigencia: 30, textoAyuda: "" });
 
     useEffect(() => {
         loadData();
@@ -235,6 +236,24 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                 .select("*")
                 .eq("tenant_id", inq);
             setTarifas(listData || []);
+
+            // Cargar parámetros institucionales de presupuestos (Vigencia y Texto de ayuda)
+            try {
+                const { data: tRow } = await supabase
+                    .from("tenants")
+                    .select("parametros")
+                    .eq("id", inq)
+                    .maybeSingle();
+                if (tRow?.parametros) {
+                    const rawParams = typeof tRow.parametros === "string" ? JSON.parse(tRow.parametros) : tRow.parametros;
+                    const gen = rawParams?.general || {};
+                    const vig = Number(gen.vigenciaPresupuestos) || 30;
+                    const txt = (gen.textoAyudaPlan || "").trim();
+                    setTenantConfigParams({ vigencia: vig, textoAyuda: txt });
+                }
+            } catch (errParam) {
+                console.warn("Error cargando parametros institucionales en PlanList:", errParam);
+            }
         } catch (e) {
             console.error("Error loading institutional catalogs:", e);
         }
@@ -350,8 +369,8 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
         setFormData({
             nombre: '',
             profesional: currentUserFullName || (profesionalesDropdown.length > 0 ? profesionalesDropdown[0] : ''),
-            vigencia: 30,
-            observaciones: '',
+            vigencia: tenantConfigParams.vigencia || 30,
+            observaciones: tenantConfigParams.textoAyuda || '',
             paymentMode: 'particular',
             epsName: patient?.nombreEps || patient?.eps || '',
             entidadId: '',

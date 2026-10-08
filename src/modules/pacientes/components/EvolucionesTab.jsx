@@ -84,6 +84,8 @@ export default function EvolucionesTab({ patient }) {
                 .from("evoluciones")
                 .select("*")
                 .eq("paciente_id", patient.id)
+                .order("created_at", { ascending: false });
+
             const evos = (evosData || []).map(d => {
                 let parsedTratamiento = {};
                 if (d.tratamiento) {
@@ -100,6 +102,10 @@ export default function EvolucionesTab({ patient }) {
                     ...d,
                     ...parsedTratamiento,
                     id: d.id,
+                    status: d.status || parsedTratamiento.status || 'borrador',
+                    closure_origin: d.closure_origin || parsedTratamiento.closure_origin || null,
+                    closed_at: d.closed_at || parsedTratamiento.closed_at || null,
+                    professional_signature_snapshot: d.professional_signature_snapshot || parsedTratamiento.professional_signature_snapshot || null,
                     description: d.comentario || parsedTratamiento.description || parsedTratamiento.comentario || d.description || '',
                     date: d.fecha || d.created_at || new Date(),
                     profesional: parsedTratamiento.profesional || d.profesional || '',

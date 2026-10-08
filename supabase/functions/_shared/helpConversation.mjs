@@ -16,11 +16,25 @@ export function conversationalReply(question, previousIds = [], mode = 'app') {
   return answer ? { success: true, provider: 'assistant', version: KNOWLEDGE_VERSION, answer, sources: [], reason: 'conversation' } : null;
 }
 
+// Replies to a choice or a completed step belong to the active workflow.
+export function isBriefFollowup(question) {
+  return /^(?:si(?: ya| listo| lo veo| ya lo veo)?|ya(?: esta| lo hice)?|ok|okay|vale|listo|perfecto|hecho|y ahora|y despues|despues|siguiente|continua|continuar|que sigue|no entendi|no entiendo|explicame(?: mejor| de nuevo)?|mas despacio|mas detalle|paso a paso|no aparece|no lo veo|no encuentro|donde esta|cual boton)$/.test(normalize(question));
+}
+
+export function isContextualReply(question) {
+  const q = normalize(question);
+  return /^(?:(?:la|el) (?:primer[oa]|segund[oa]|tercer[oa]|ultim[oa])(?: opcion)?|(?:opcion )?[123]|es[ao]|esa opcion)$/.test(q) ||
+    /^(?:(?:si|listo|perfecto) )?ya (?:lo |la |los |las )?(?:agregue|anadi|seleccione|elegi|guarde|cree|abri|termine|complete|hice|veo|aparece|estan|esta)(?:\b|$)/.test(q) ||
+    /^(?:acabo de|termine de) (?:agregar|anadir|seleccionar|guardar|crear|abrir)(?:\b|$)/.test(q);
+}
+
 export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   const q = normalize(question);
   if (/\bedunexus\b/.test(q)) return [];
-  const followup = /^(no entendi|no entiendo|explicame( mejor| de nuevo)?|mas despacio|mas detalle|paso a paso|y ahora|y despues|siguiente|continua|listo|ya esta|ya lo hice|si|ok|no aparece|no lo veo|no encuentro|donde esta|cual boton)(\b|$)/.test(q);
+  const followup = isBriefFollowup(question) || /^(no entendi|no entiendo|explicame( mejor| de nuevo)?|mas despacio|mas detalle|paso a paso|y ahora|y despues|siguiente|continua|listo|ya esta|ya lo hice|si|ok|no aparece|no lo veo|no encuentro|donde esta|cual boton)(\b|$)/.test(q);
   const candidates = HELP_GUIDES.filter(g => mode !== 'public' || PUBLIC_GUIDE_IDS.has(g.id));
+  const active = previousIds.map(id => candidates.find(g => g.id === id)).filter(Boolean).slice(0, 1);
+  if (active.length && isContextualReply(question)) return active;
   if (/\b(planes|suscripcion|mensualidad)\b/.test(q) && !/\b(tratamiento|paciente|presupuesto)\b/.test(q)) {
     return candidates.filter(g => g.id === 'planes-suscripcion');
   }

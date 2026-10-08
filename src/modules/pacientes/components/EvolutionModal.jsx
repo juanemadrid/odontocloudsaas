@@ -1001,6 +1001,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
 
     if (!isOpen) return null;
 
+    const isClosed = initialData?.status === 'cerrada';
+
     return (
         <>
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-5 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
@@ -1450,7 +1452,9 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     </label>
                                     <textarea 
                                         {...register("comentario")} 
-                                        className="w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none"
+                                        readOnly={isClosed}
+                                        disabled={isClosed}
+                                        className={`w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none ${isClosed ? 'bg-slate-50 text-slate-500 cursor-not-allowed select-text' : ''}`}
                                         placeholder="Escribe aquí la nota aclaratoria..."
                                     />
                                 </div>
@@ -1517,7 +1521,9 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     
                                     <textarea 
                                         {...register("comentario")} 
-                                        className="w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none"
+                                        readOnly={isClosed}
+                                        disabled={isClosed}
+                                        className={`w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none ${isClosed ? 'bg-slate-50 text-slate-500 cursor-not-allowed select-text' : ''}`}
                                         placeholder="Escribe aquí los hallazgos subjetivos, objetivos y plan..."
                                     />
                                 </div>
@@ -1778,7 +1784,9 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     </div>
                                     <textarea 
                                         {...register("comentario")} 
-                                        className="w-full h-32 p-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] custom-scrollbar resize-none"
+                                        readOnly={isClosed}
+                                        disabled={isClosed}
+                                        className={`w-full h-32 p-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-[#8dc63f] custom-scrollbar resize-none ${isClosed ? 'bg-slate-50 text-slate-500 cursor-not-allowed select-text' : ''}`}
                                         placeholder="Escribe aquí los hallazgos de ortodoncia, ajustes y plan..."
                                     />
                                 </div>

@@ -540,10 +540,47 @@ export default function RipsGenerator() {
             }
 
             try {
+                const normalizeDocRecord = (d, coleccion, tipoDoc) => {
+                    let det = d.detalles;
+                    if (typeof det === "string") {
+                        try { det = JSON.parse(det); } catch (_) { det = {}; }
+                    } else if (!det || typeof det !== "object") {
+                        det = {};
+                    }
+                    const num = d.numero || d.consecutivo || d.numeroFactura || det.factusInvoiceNumber || det.numero || d.id;
+                    const fFecha = d.fecha_emision || d.fecha || d.fechaFactura || det.fecha || d.created_at || d.createdAt;
+                    const fRealizado = d.fechaRealizado || d.fechaServicio || det.fechaRealizado || fFecha;
+                    const clientName = d.cliente || d.nombreTercero || d.tercero || det.pacienteNombre || det.tercero?.nombre || det.paciente || d.paciente || "";
+                    const clientDoc = d.pacienteDocumento || det.pacienteDocumento || det.tercero?.nroDocumento || d.nit || d.documento || "";
+                    const profId = d.profesionalId || d.profesional_id || det.profesional_id || det.profesional || d.doctorId || d.doctor_id || "";
+                    const itms = (Array.isArray(d.items) && d.items.length > 0) ? d.items : (Array.isArray(det.items) ? det.items : []);
+                    const cufeVal = d.cufe || det.cufe || null;
+
+                    return {
+                        _coleccion: coleccion,
+                        _tipoDoc: tipoDoc,
+                        ...d,
+                        detalles: det,
+                        numero: num,
+                        numeroFactura: num,
+                        consecutivo: num,
+                        fecha: fFecha,
+                        fecha_emision: fFecha,
+                        fechaRealizado: fRealizado,
+                        cliente: clientName,
+                        pacienteNombre: clientName,
+                        pacienteDocumento: clientDoc,
+                        profesionalId: profId,
+                        profesional_id: profId,
+                        items: itms,
+                        cufe: cufeVal,
+                    };
+                };
+
                 const inRange = (docData) => {
                     const raw = filterType === 'facturacion'
-                        ? (docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.createdAt)
-                        : (docData.fechaRealizado || docData.fechaServicio || docData.fecha || docData.createdAt);
+                        ? (docData.fecha_emision || docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.created_at || docData.createdAt)
+                        : (docData.fechaRealizado || docData.fechaServicio || docData.fecha_emision || docData.fecha || docData.created_at || docData.createdAt);
                     const fechaDoc = normalizeFecha(raw);
                     if (!fechaDoc) return false;
                     return fechaDoc >= dateRange.start && fechaDoc <= dateRange.end;
@@ -566,7 +603,7 @@ export default function RipsGenerator() {
                 let docs = [];
                 snapshots.forEach((colDocs, i) => {
                     const mapped = colDocs
-                        .map(d => ({ _coleccion: colecciones[i].nombre, _tipoDoc: colecciones[i].tipoDoc, ...d }))
+                        .map(d => normalizeDocRecord(d, colecciones[i].nombre, colecciones[i].tipoDoc))
                         .filter(inRange);
                     docs.push(...mapped);
                 });
@@ -772,11 +809,48 @@ export default function RipsGenerator() {
                 facturas = [...selectedInvoices];
                 setLogs(prev => [...prev, `📋 Procesando ${facturas.length} facturas seleccionadas en la lista`]);
             } else {
+                const normalizeDocRecord = (d, coleccion, tipoDoc) => {
+                    let det = d.detalles;
+                    if (typeof det === "string") {
+                        try { det = JSON.parse(det); } catch (_) { det = {}; }
+                    } else if (!det || typeof det !== "object") {
+                        det = {};
+                    }
+                    const num = d.numero || d.consecutivo || d.numeroFactura || det.factusInvoiceNumber || det.numero || d.id;
+                    const fFecha = d.fecha_emision || d.fecha || d.fechaFactura || det.fecha || d.created_at || d.createdAt;
+                    const fRealizado = d.fechaRealizado || d.fechaServicio || det.fechaRealizado || fFecha;
+                    const clientName = d.cliente || d.nombreTercero || d.tercero || det.pacienteNombre || det.tercero?.nombre || det.paciente || d.paciente || "";
+                    const clientDoc = d.pacienteDocumento || det.pacienteDocumento || det.tercero?.nroDocumento || d.nit || d.documento || "";
+                    const profId = d.profesionalId || d.profesional_id || det.profesional_id || det.profesional || d.doctorId || d.doctor_id || "";
+                    const itms = (Array.isArray(d.items) && d.items.length > 0) ? d.items : (Array.isArray(det.items) ? det.items : []);
+                    const cufeVal = d.cufe || det.cufe || null;
+
+                    return {
+                        _coleccion: coleccion,
+                        _tipoDoc: tipoDoc,
+                        ...d,
+                        detalles: det,
+                        numero: num,
+                        numeroFactura: num,
+                        consecutivo: num,
+                        fecha: fFecha,
+                        fecha_emision: fFecha,
+                        fechaRealizado: fRealizado,
+                        cliente: clientName,
+                        pacienteNombre: clientName,
+                        pacienteDocumento: clientDoc,
+                        profesionalId: profId,
+                        profesional_id: profId,
+                        items: itms,
+                        cufe: cufeVal,
+                    };
+                };
+
                 const inRange = (docData) => {
                     if (!dateRange.start || !dateRange.end) return true;
                     const raw = filterType === 'facturacion'
-                        ? (docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.createdAt)
-                        : (docData.fechaRealizado || docData.fechaServicio || docData.fecha || docData.createdAt);
+                        ? (docData.fecha_emision || docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.created_at || docData.createdAt)
+                        : (docData.fechaRealizado || docData.fechaServicio || docData.fecha_emision || docData.fecha || docData.created_at || docData.createdAt);
                     const fechaDoc = normalizeFecha(raw);
                     if (!fechaDoc) return false;
                     return fechaDoc >= dateRange.start && fechaDoc <= dateRange.end;
@@ -798,7 +872,7 @@ export default function RipsGenerator() {
 
                 snapshots.forEach((docs, i) => {
                     const mapped = docs
-                        .map(d => ({ _coleccion: colecciones[i].nombre, _tipoDoc: colecciones[i].tipoDoc, ...d }))
+                        .map(d => normalizeDocRecord(d, colecciones[i].nombre, colecciones[i].tipoDoc))
                         .filter(inRange);
                     facturas.push(...mapped);
                 });

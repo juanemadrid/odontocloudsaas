@@ -1621,7 +1621,9 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 cobertura,
                 inquilino: inquilino || patient?.inquilino || "",
                 baseListId: baseListId || null,
-                convertedAt: new Date()
+                convertedAt: new Date(),
+                creadoPor: initialData?.creadoPor || userProfile?.nombreCompleto || userProfile?.nombre || "",
+                rolCreador: initialData?.rolCreador || userProfile?.rol || userProfile?.cargo || ""
             };
 
             let planConsecutivo = null;
@@ -1689,7 +1691,9 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 observaciones: obs,
                 cobertura,
                 inquilino: inquilino || patient?.inquilino || "",
-                baseListId: baseListId // Persistir el tarifario usado
+                baseListId: baseListId, // Persistir el tarifario usado
+                creadoPor: initialData?.creadoPor || userProfile?.nombreCompleto || userProfile?.nombre || "",
+                rolCreador: initialData?.rolCreador || userProfile?.rol || userProfile?.cargo || ""
             };
 
             if (isEditing) {
@@ -1753,7 +1757,10 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             total: calculateTotal(),
             date: initialData?.date || new Date(),
             type: initialData?.type || "presupuesto",
-            profesional: initialData?.profesional || userProfile?.nombreCompleto || userProfile?.nombre || "",
+            profesional: initialData?.profesional || "",
+            creadoPor: initialData?.creadoPor || userProfile?.nombreCompleto || userProfile?.nombre || "",
+            rolCreador: initialData?.rolCreador || userProfile?.rol || userProfile?.cargo || "",
+            nroConsecutivo: initialData?.nroConsecutivo || initialData?.consecutivo || null,
             observaciones: obs,
             cobertura
         };
