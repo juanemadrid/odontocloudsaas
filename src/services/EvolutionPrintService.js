@@ -400,7 +400,7 @@ export const EvolutionPrintService = {
                 || null;
 
             const docSignatureImg = resolvedFirma
-                ? `<img src="${resolvedFirma}" alt="Firma Profesional" style="max-height: 55px; max-width: 180px; object-fit: contain;" />`
+                ? `<img src="${resolvedFirma}" alt="Firma Profesional" style="max-height: 70px; max-width: 220px; object-fit: contain;" />`
                 : '';
 
             const docName = snapshotName || doctorData.nombreCompleto || primaryDoctorIdent || (doctorData.isDoctor ? userProfile?.nombreCompleto : '') || 'Odontólogo Tratante';
@@ -410,7 +410,7 @@ export const EvolutionPrintService = {
             const footerHTML = `
                 <div style="margin-top: 50px; display: flex; justify-content: space-between; gap: 60px; padding: 0 20px;">
                     <div style="flex: 1; text-align: center;">
-                        <div style="height: 60px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 4px;">
+                        <div style="height: 75px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 4px;">
                             ${docSignatureImg}
                         </div>
                         <div style="border-top: 1.5px solid #64748b; padding-top: 8px;">

@@ -97,7 +97,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
     const docBadgeLabel = isHistorical
         ? 'Registro Histórico Protegido'
         : isProfessionalClosed
-        ? 'Cerrada y Certificada'
+        ? 'Firmada'
         : evo.status === 'borrador'
         ? 'Borrador'
         : evo.type === 'remission' ? 'Remisión' : evo.type === 'nota' ? 'Nota Aclaratoria' : isOrtho ? 'Evolución Ortodoncia' : 'Evolución';
@@ -272,7 +272,7 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
       min-width: 200px;
     }
     .sig-image-holder {
-      height: 45px;
+      height: 75px;
       display: flex;
       align-items: flex-end;
       justify-content: center;
@@ -280,8 +280,8 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
       margin-bottom: 4px;
     }
     .sig-image-holder img {
-      max-height: 42px;
-      max-width: 180px;
+      max-height: 70px;
+      max-width: 220px;
       object-fit: contain;
     }
     .sig-name {
@@ -671,7 +671,7 @@ function EvolutionCard({
         statusBadgeLabel = 'Registro histórico protegido';
     } else if (isProfessionalClosed) {
         statusBadgeClass = 'text-emerald-700 bg-emerald-50 border-emerald-300';
-        statusBadgeLabel = 'Cerrada y certificada';
+        statusBadgeLabel = 'Firmada';
     }
 
     const typeBadgeClass = isRemission
@@ -841,29 +841,29 @@ function EvolutionCard({
                 const cardRegMedico = cardSnap?.registro_medico || evo.doctorSignature?.registroMedico;
 
                 return (
-                    <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-xl p-3 my-2 flex items-center justify-between text-[10px]">
-                        <div className="flex items-center gap-2.5">
-                            <FiShield className="text-emerald-600 shrink-0" size={16} />
+                    <div className="bg-slate-50/80 border border-slate-200/80 rounded-lg px-2.5 py-1.5 my-2 flex items-center justify-between text-[10px]">
+                        <div className="flex items-center gap-2">
+                            <FiCheck className="text-emerald-600 shrink-0" size={13} strokeWidth={3} />
                             <div>
-                                <span className="font-extrabold text-emerald-950 uppercase">Certificada por: </span>
-                                <span className="font-bold text-emerald-800">
+                                <span className="font-semibold text-slate-500">Firmado por: </span>
+                                <span className="font-bold text-slate-800">
                                     {cardSignerName}
                                 </span>
                                 {cardRegMedico && (
-                                    <span className="text-emerald-700 font-medium"> · TP: {cardRegMedico}</span>
+                                    <span className="text-slate-500 font-medium"> · TP: {cardRegMedico}</span>
                                 )}
                                 {evo.closed_at && (
-                                    <span className="text-emerald-600 block text-[9px] font-semibold mt-0.5">
-                                        Cierre: {new Date(evo.closed_at).toLocaleString('es-CO')}
+                                    <span className="text-slate-400 text-[9px] font-normal ml-1.5">
+                                        ({new Date(evo.closed_at).toLocaleDateString('es-CO')})
                                     </span>
                                 )}
                             </div>
                         </div>
                         {cardSigImg && (
-                            <div className="h-9 max-w-[120px] bg-white border border-emerald-200 rounded-lg p-1 flex items-center justify-center shrink-0">
+                            <div className="h-7 max-w-[95px] bg-white border border-slate-200 rounded px-1 flex items-center justify-center shrink-0">
                                 <img
                                     src={cardSigImg}
-                                    alt="Firma Profesional"
+                                    alt="Firma"
                                     className="max-h-full max-w-full object-contain"
                                 />
                             </div>
