@@ -651,14 +651,21 @@ export default function RipsGenerator() {
 
                         const items = f.items || f.conceptos || f.detalles || [];
                         if (Array.isArray(items) && items.length > 0) {
-                            return items.some(it => 
+                            const hasItemMatch = items.some(it => 
                                 it.profesionalId === selectedDoctor || 
                                 it.profesional_id === selectedDoctor || 
                                 it.doctorId === selectedDoctor || 
                                 it.doctor_id === selectedDoctor ||
                                 (selDocNum && String(it.profesionalDocumento || it.doctorDoc || "").trim() === selDocNum)
                             );
+                            if (hasItemMatch) return true;
                         }
+
+                        // Si la factura no tiene otro doctor asignado explícitamente, se atribuye al profesional independiente
+                        const docIdOnFactura = f.profesionalId || f.profesional_id || f.doctorId || f.doctor_id;
+                        const docNameOnFactura = f.profesionalNombre || f.doctor || f.odontologo;
+                        if (!docIdOnFactura && !docNameOnFactura) return true;
+
                         return false;
                     });
                 }
@@ -909,14 +916,21 @@ export default function RipsGenerator() {
 
                         const items = f.items || f.conceptos || f.detalles || [];
                         if (Array.isArray(items) && items.length > 0) {
-                            return items.some(it => 
+                            const hasItemMatch = items.some(it => 
                                 it.profesionalId === selectedDoctor || 
                                 it.profesional_id === selectedDoctor || 
                                 it.doctorId === selectedDoctor || 
                                 it.doctor_id === selectedDoctor ||
                                 (selDocNum && String(it.profesionalDocumento || it.doctorDoc || "").trim() === selDocNum)
                             );
+                            if (hasItemMatch) return true;
                         }
+
+                        // Si la factura no tiene otro doctor asignado explícitamente, se atribuye al profesional independiente
+                        const docIdOnFactura = f.profesionalId || f.profesional_id || f.doctorId || f.doctor_id;
+                        const docNameOnFactura = f.profesionalNombre || f.doctor || f.odontologo;
+                        if (!docIdOnFactura && !docNameOnFactura) return true;
+
                         return false;
                     });
                 }
@@ -1237,18 +1251,14 @@ export default function RipsGenerator() {
 
                         const profObj = resolveDoctorInfo(matchedDoc?.profesional_id || docMeta.profesionalNombre, profilesList, tenantConfig);
                         if (!isIps && selectedDoctor) {
+                            const docIdOnDoc = matchedDoc?.profesional_id || matchedDoc?.usuario_id || matchedDoc?.doctor_id || item.profesionalId || item.profesional_id || item.doctorId || item.doctor_id;
+                            const docNameOnDoc = matchedDoc?.profesionalNombre || docMeta?.profesionalNombre;
                             const matchDoc = 
-                                matchedDoc?.profesional_id === selectedDoctor || 
-                                matchedDoc?.usuario_id === selectedDoctor || 
-                                matchedDoc?.doctor_id === selectedDoctor || 
-                                item.profesionalId === selectedDoctor || 
-                                item.profesional_id === selectedDoctor || 
-                                item.doctorId === selectedDoctor || 
-                                item.doctor_id === selectedDoctor ||
+                                (!docIdOnDoc && !docNameOnDoc) ||
+                                docIdOnDoc === selectedDoctor || 
                                 (selDocNum && (matchedDoc?.numeroDocumento === selDocNum || profObj?.numDocumentoIdentificacion === selDocNum)) ||
                                 (selDocName && (
-                                    (matchedDoc?.profesionalNombre && matchedDoc.profesionalNombre.toLowerCase().includes(selDocName)) ||
-                                    (docMeta?.profesionalNombre && docMeta.profesionalNombre.toLowerCase().includes(selDocName))
+                                    (docNameOnDoc && String(docNameOnDoc).toLowerCase().includes(selDocName))
                                 ));
                             if (!matchDoc) continue;
                         }
@@ -1359,20 +1369,14 @@ export default function RipsGenerator() {
                         const codComp = evoData.complicacion?.code || evoData.complicacion || null;
                         const profObj = resolveDoctorInfo(matchedEvo?.profesional_id || evoData.doctorId, profilesList, tenantConfig);
                         if (!isIps && selectedDoctor) {
+                            const docIdOnEvo = matchedEvo?.profesional_id || matchedEvo?.doctor_id || matchedEvo?._tData?.doctorId || matchedPlanItem?.profesionalId || matchedPlanItem?.doctor_id || item.profesionalId || item.profesional_id || item.doctorId || item.doctor_id;
+                            const docNameOnEvo = matchedEvo?.profesionalNombre || matchedPlanItem?.profesionalNombre || evoData?.doctor;
                             const matchDoc = 
-                                matchedEvo?.profesional_id === selectedDoctor || 
-                                matchedEvo?.doctor_id === selectedDoctor || 
-                                matchedEvo?._tData?.doctorId === selectedDoctor || 
-                                matchedPlanItem?.profesionalId === selectedDoctor || 
-                                matchedPlanItem?.doctor_id === selectedDoctor || 
-                                item.profesionalId === selectedDoctor || 
-                                item.profesional_id === selectedDoctor || 
-                                item.doctorId === selectedDoctor || 
-                                item.doctor_id === selectedDoctor ||
+                                (!docIdOnEvo && !docNameOnEvo) ||
+                                docIdOnEvo === selectedDoctor || 
                                 (selDocNum && (matchedEvo?.numeroDocumento === selDocNum || profObj?.numDocumentoIdentificacion === selDocNum)) ||
                                 (selDocName && (
-                                    (matchedEvo?.profesionalNombre && matchedEvo.profesionalNombre.toLowerCase().includes(selDocName)) ||
-                                    (matchedPlanItem?.profesionalNombre && matchedPlanItem.profesionalNombre.toLowerCase().includes(selDocName))
+                                    (docNameOnEvo && String(docNameOnEvo).toLowerCase().includes(selDocName))
                                 ));
                             if (!matchDoc) continue;
                         }
