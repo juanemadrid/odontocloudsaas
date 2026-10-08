@@ -13,6 +13,8 @@
  * - fuente_oficial
  */
 
+import { CUPS_COMPLETO } from "../../../data/cupsCompleto.js";
+
 // Semilla oficial base extraída de las tablas maestras vigentes de SISPRO:
 export const OFFICIAL_SEED_CATALOGS = {
   // RIPSTipoUsuarioVersion2 (01 al 14 publicado por SISPRO. El código 14 fue incorporado en v003)
@@ -278,6 +280,73 @@ let activeVersionCache = {
 };
 const cupsCodeCache = new Map();
 
+// Mapa indexado en memoria para búsquedas O(1) ultra rápidas desde catálogos oficiales empaquetados
+let localCupsMap = null;
+
+function getLocalCupsEntry(cleanCode) {
+  if (!localCupsMap) {
+    localCupsMap = new Map();
+    // 1. Cargar catálogo nacional completo (10.025 registros oficiales)
+    if (Array.isArray(CUPS_COMPLETO)) {
+      for (let i = 0; i < CUPS_COMPLETO.length; i++) {
+        const item = CUPS_COMPLETO[i];
+        if (item && item.code) {
+          const codeUpper = String(item.code).trim().toUpperCase();
+          const isConsulta = codeUpper.startsWith("89");
+          localCupsMap.set(codeUpper, {
+            codigo: codeUpper,
+            descripcionOficial: item.name || item.descripcion || "PROCEDIMIENTO O CONSULTA",
+            tipoRips: isConsulta ? "consulta" : "procedimiento",
+            archivoRips: isConsulta ? "AC" : "AP",
+            correspondeBloqueConsultas: isConsulta,
+            correspondeBloqueProcedimientos: !isConsulta,
+            correspondeBloqueOtrosServicios: false,
+            activo: true,
+            vigenciaDesde: "2026-01-01",
+            vigenciaHasta: null,
+            fuenteOficial: "MinSalud / SISPRO - Catálogo Oficial CUPS Colombia",
+            versionCatalogo: "v003_2026",
+            exists: true,
+            active: true,
+            error: null,
+            errorCode: null,
+          });
+        }
+      }
+    }
+    // 2. Sobrescribir con catálogo odontológico curado 2026 de alta fidelidad si existe
+    if (Array.isArray(CUPS_RIPS_2026_ENTRIES)) {
+      for (let i = 0; i < CUPS_RIPS_2026_ENTRIES.length; i++) {
+        const item = CUPS_RIPS_2026_ENTRIES[i];
+        if (item && item.codigo) {
+          const codeUpper = String(item.codigo).trim().toUpperCase();
+          const isConsulta = item.correspondeBloqueConsultas ?? (item.capitulo === "17" || codeUpper.startsWith("89"));
+          localCupsMap.set(codeUpper, {
+            codigo: codeUpper,
+            descripcionOficial: item.descripcionOficial || item.descripcion || "PROCEDIMIENTO O CONSULTA",
+            tipoRips: isConsulta ? "consulta" : "procedimiento",
+            archivoRips: isConsulta ? "AC" : "AP",
+            correspondeBloqueConsultas: isConsulta,
+            correspondeBloqueProcedimientos: !isConsulta,
+            correspondeBloqueOtrosServicios: false,
+            activo: item.activo !== false,
+            vigenciaDesde: item.vigenciaDesde || "2026-01-01",
+            vigenciaHasta: null,
+            fuenteOficial: item.fuenteOficial || "MinSalud / SISPRO - CUPSRips 2026",
+            versionCatalogo: "v003_2026",
+            exists: true,
+            active: true,
+            error: null,
+            errorCode: null,
+          });
+        }
+      }
+    }
+  }
+
+  return localCupsMap.get(cleanCode) || null;
+}
+
 /**
  * Obtiene el cliente de Supabase (inyección global o importación diferida).
  * @private
@@ -504,6 +573,12 @@ export async function getCupsClassification(cupsCode) {
   // 1. Resolver versión ACTIVE oficial
   const activeVersion = await getActiveCupsRipsVersion();
   if (!activeVersion) {
+    const localFallback = getLocalCupsEntry(cleanCode);
+    if (localFallback) {
+      cupsCodeCache.set(`fallback:${cleanCode}`, localFallback);
+      return localFallback;
+    }
+
     return {
       codigo: cleanCode,
       descripcionOficial: null,
@@ -544,6 +619,12 @@ export async function getCupsClassification(cupsCode) {
       .maybeSingle();
 
     if (error) {
+      const localFallback = getLocalCupsEntry(cleanCode);
+      if (localFallback) {
+        cupsCodeCache.set(cacheKey, localFallback);
+        return localFallback;
+      }
+
       return {
         codigo: cleanCode,
         descripcionOficial: null,
@@ -565,6 +646,12 @@ export async function getCupsClassification(cupsCode) {
     }
     row = data;
   } catch (err) {
+    const localFallback = getLocalCupsEntry(cleanCode);
+    if (localFallback) {
+      cupsCodeCache.set(cacheKey, localFallback);
+      return localFallback;
+    }
+
     return {
       codigo: cleanCode,
       descripcionOficial: null,
@@ -587,6 +674,12 @@ export async function getCupsClassification(cupsCode) {
 
   // 4. Registro no encontrado en el snapshot ACTIVE
   if (!row) {
+    const localFallback = getLocalCupsEntry(cleanCode);
+    if (localFallback) {
+      cupsCodeCache.set(cacheKey, localFallback);
+      return localFallback;
+    }
+
     const notFoundResult = {
       codigo: cleanCode,
       descripcionOficial: null,
@@ -627,7 +720,13 @@ export async function getCupsClassification(cupsCode) {
     archivoRips = "AT";
     correspondeBloqueOtrosServicios = true;
   } else {
-    // Inconsistencia o metadatos oficiales faltantes / desconocidos
+    // Si la metadata en base de datos es incompleta o null, intentar resolver con catálogo oficial empaquetado
+    const localFallback = getLocalCupsEntry(cleanCode);
+    if (localFallback) {
+      cupsCodeCache.set(cacheKey, localFallback);
+      return localFallback;
+    }
+
     return {
       codigo: cleanCode,
       descripcionOficial: row.descripcion || null,
