@@ -209,7 +209,8 @@ export default function UserProfileModal({ isOpen, onClose }) {
                         full_name: fullName,
                         telefono: telefono.trim(),
                         registro_medico: registroMedico.trim(),
-                        apellido: apellido.trim()
+                        apellido: apellido.trim(),
+                        firma: currentSignature
                     }).eq("id", userId);
                 } catch (e) {}
 
