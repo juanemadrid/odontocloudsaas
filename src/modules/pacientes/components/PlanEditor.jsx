@@ -594,7 +594,14 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
                 supabase.from("tenant_secrets").select("sispro_config").eq("tenant_id", inquilino).maybeSingle()
             ]);
-            billingCfg = billingSection?.general || billingSection?.por_sucursal?.general || billingSection || {};
+            const branchBilling = billingSection?.por_sucursal || {};
+            const branchId = userProfile?.sucursal_id || userProfile?.sucursal || patient?.sucursal_id || null;
+            billingCfg = (branchId && branchBilling[branchId])
+                || branchBilling.general 
+                || Object.values(branchBilling)[0] 
+                || billingSection?.general 
+                || billingSection 
+                || {};
             const dTenant = tenantRow?.data || {};
             const dSispro = sisproSecrets?.data?.sispro_config || {};
             providerCode = String(

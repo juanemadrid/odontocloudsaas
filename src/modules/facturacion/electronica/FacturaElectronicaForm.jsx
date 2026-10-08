@@ -202,7 +202,13 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
     const loadBillingCfg = async () => {
       try {
         const cfg = await getConfigSection(inquilino, "facturacion_electronica", {});
-        const generalCfg = cfg?.general || cfg?.por_sucursal?.general || cfg || {};
+        const branchBilling = cfg?.por_sucursal || {};
+        const generalCfg = cfg?.general 
+          || (userProfile?.sucursal_id && branchBilling[userProfile?.sucursal_id])
+          || branchBilling.general 
+          || Object.values(branchBilling)[0] 
+          || cfg 
+          || {};
         setBillingConfig(generalCfg);
         if (!initialFactura) {
           if (generalCfg.health_payment_method_code) setModalidadSalud(generalCfg.health_payment_method_code);

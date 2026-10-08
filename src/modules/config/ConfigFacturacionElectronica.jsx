@@ -217,6 +217,7 @@ export default function ConfigFacturacionElectronica() {
             };
             const updatedConfig = {
                 ...billingConfig,
+                general: storedData,
                 por_sucursal: {
                     ...(billingConfig?.por_sucursal || {}),
                     [key]: storedData
