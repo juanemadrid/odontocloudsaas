@@ -661,12 +661,21 @@ export default function RipsGenerator() {
                             if (hasItemMatch) return true;
                         }
 
-                        // Si la factura no tiene otro doctor asignado explícitamente, se atribuye al profesional independiente
-                        const docIdOnFactura = f.profesionalId || f.profesional_id || f.doctorId || f.doctor_id;
-                        const docNameOnFactura = f.profesionalNombre || f.doctor || f.odontologo;
-                        if (!docIdOnFactura && !docNameOnFactura) return true;
+                        // En modalidad Profesional Independiente, solo descartamos si la factura
+                        // está explícitamente asignada a otro doctor conocido de la lista
+                        const isAssignedToOtherDoctor = doctorRipsList.some(otherDoc => {
+                            if (otherDoc.id === selectedDoctor) return false;
+                            const otherName = (otherDoc.nombreCompleto || otherDoc.nombre || "").toLowerCase().trim();
+                            const otherNum = String(otherDoc.numeroDocumento || "").trim();
+                            const fProfId = f.profesionalId || f.profesional_id || f.doctorId || f.doctor_id;
+                            if (fProfId && (fProfId === otherDoc.id || fProfId === otherDoc.usuario_id)) return true;
+                            if (otherName && f.profesionalNombre && f.profesionalNombre.toLowerCase().includes(otherName)) return true;
+                            if (otherName && f.doctor && f.doctor.toLowerCase().includes(otherName)) return true;
+                            if (otherNum && (f.profesionalDocumento === otherNum || f.doctorDoc === otherNum)) return true;
+                            return false;
+                        });
 
-                        return false;
+                        return !isAssignedToOtherDoctor;
                     });
                 }
 
@@ -926,12 +935,21 @@ export default function RipsGenerator() {
                             if (hasItemMatch) return true;
                         }
 
-                        // Si la factura no tiene otro doctor asignado explícitamente, se atribuye al profesional independiente
-                        const docIdOnFactura = f.profesionalId || f.profesional_id || f.doctorId || f.doctor_id;
-                        const docNameOnFactura = f.profesionalNombre || f.doctor || f.odontologo;
-                        if (!docIdOnFactura && !docNameOnFactura) return true;
+                        // En modalidad Profesional Independiente, solo descartamos si la factura
+                        // está explícitamente asignada a otro doctor conocido de la lista
+                        const isAssignedToOtherDoctor = doctorRipsList.some(otherDoc => {
+                            if (otherDoc.id === selectedDoctor) return false;
+                            const otherName = (otherDoc.nombreCompleto || otherDoc.nombre || "").toLowerCase().trim();
+                            const otherNum = String(otherDoc.numeroDocumento || "").trim();
+                            const fProfId = f.profesionalId || f.profesional_id || f.doctorId || f.doctor_id;
+                            if (fProfId && (fProfId === otherDoc.id || fProfId === otherDoc.usuario_id)) return true;
+                            if (otherName && f.profesionalNombre && f.profesionalNombre.toLowerCase().includes(otherName)) return true;
+                            if (otherName && f.doctor && f.doctor.toLowerCase().includes(otherName)) return true;
+                            if (otherNum && (f.profesionalDocumento === otherNum || f.doctorDoc === otherNum)) return true;
+                            return false;
+                        });
 
-                        return false;
+                        return !isAssignedToOtherDoctor;
                     });
                 }
             }
@@ -1251,16 +1269,18 @@ export default function RipsGenerator() {
 
                         const profObj = resolveDoctorInfo(matchedDoc?.profesional_id || docMeta.profesionalNombre, profilesList, tenantConfig);
                         if (!isIps && selectedDoctor) {
-                            const docIdOnDoc = matchedDoc?.profesional_id || matchedDoc?.usuario_id || matchedDoc?.doctor_id || item.profesionalId || item.profesional_id || item.doctorId || item.doctor_id;
-                            const docNameOnDoc = matchedDoc?.profesionalNombre || docMeta?.profesionalNombre;
-                            const matchDoc = 
-                                (!docIdOnDoc && !docNameOnDoc) ||
-                                docIdOnDoc === selectedDoctor || 
-                                (selDocNum && (matchedDoc?.numeroDocumento === selDocNum || profObj?.numDocumentoIdentificacion === selDocNum)) ||
-                                (selDocName && (
-                                    (docNameOnDoc && String(docNameOnDoc).toLowerCase().includes(selDocName))
-                                ));
-                            if (!matchDoc) continue;
+                            const isAssignedToOtherDoctor = doctorRipsList.some(otherDoc => {
+                                if (otherDoc.id === selectedDoctor) return false;
+                                const otherName = (otherDoc.nombreCompleto || otherDoc.nombre || "").toLowerCase().trim();
+                                const otherNum = String(otherDoc.numeroDocumento || "").trim();
+                                const docIdOnDoc = matchedDoc?.profesional_id || matchedDoc?.usuario_id || matchedDoc?.doctor_id;
+                                if (docIdOnDoc && (docIdOnDoc === otherDoc.id || docIdOnDoc === otherDoc.usuario_id)) return true;
+                                if (otherNum && matchedDoc?.numeroDocumento === otherNum) return true;
+                                if (otherName && matchedDoc?.profesionalNombre && matchedDoc.profesionalNombre.toLowerCase().includes(otherName)) return true;
+                                if (otherName && docMeta?.profesionalNombre && docMeta.profesionalNombre.toLowerCase().includes(otherName)) return true;
+                                return false;
+                            });
+                            if (isAssignedToOtherDoctor) continue;
                         }
                         const fechaAtencion = formatDateTimeRips(matchedDoc?.fecha || matchedDoc?.created_at || fechaDoc);
 
@@ -1369,16 +1389,19 @@ export default function RipsGenerator() {
                         const codComp = evoData.complicacion?.code || evoData.complicacion || null;
                         const profObj = resolveDoctorInfo(matchedEvo?.profesional_id || evoData.doctorId, profilesList, tenantConfig);
                         if (!isIps && selectedDoctor) {
-                            const docIdOnEvo = matchedEvo?.profesional_id || matchedEvo?.doctor_id || matchedEvo?._tData?.doctorId || matchedPlanItem?.profesionalId || matchedPlanItem?.doctor_id || item.profesionalId || item.profesional_id || item.doctorId || item.doctor_id;
-                            const docNameOnEvo = matchedEvo?.profesionalNombre || matchedPlanItem?.profesionalNombre || evoData?.doctor;
-                            const matchDoc = 
-                                (!docIdOnEvo && !docNameOnEvo) ||
-                                docIdOnEvo === selectedDoctor || 
-                                (selDocNum && (matchedEvo?.numeroDocumento === selDocNum || profObj?.numDocumentoIdentificacion === selDocNum)) ||
-                                (selDocName && (
-                                    (docNameOnEvo && String(docNameOnEvo).toLowerCase().includes(selDocName))
-                                ));
-                            if (!matchDoc) continue;
+                            const isAssignedToOtherDoctor = doctorRipsList.some(otherDoc => {
+                                if (otherDoc.id === selectedDoctor) return false;
+                                const otherName = (otherDoc.nombreCompleto || otherDoc.nombre || "").toLowerCase().trim();
+                                const otherNum = String(otherDoc.numeroDocumento || "").trim();
+                                const docIdOnEvo = matchedEvo?.profesional_id || matchedEvo?.doctor_id || matchedEvo?._tData?.doctorId;
+                                if (docIdOnEvo && (docIdOnEvo === otherDoc.id || docIdOnEvo === otherDoc.usuario_id)) return true;
+                                if (otherNum && matchedEvo?.numeroDocumento === otherNum) return true;
+                                if (otherName && matchedEvo?.profesionalNombre && matchedEvo.profesionalNombre.toLowerCase().includes(otherName)) return true;
+                                if (otherName && matchedPlanItem?.profesionalNombre && matchedPlanItem.profesionalNombre.toLowerCase().includes(otherName)) return true;
+                                if (otherName && evoData?.doctor && String(evoData.doctor).toLowerCase().includes(otherName)) return true;
+                                return false;
+                            });
+                            if (isAssignedToOtherDoctor) continue;
                         }
                         const fechaAtencion = formatDateTimeRips(matchedEvo?.fecha || evoData.date || matchedPlanItem?.fechaRealizado || fechaDoc);
 
