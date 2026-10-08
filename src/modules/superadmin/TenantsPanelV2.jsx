@@ -44,7 +44,10 @@ const formatRelativeLogin = (ts) => {
     const diffMs = now.getTime() - d.getTime();
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+    const isSameDay = d >= startOfToday;
+    const isYesterday = d >= startOfYesterday && d < startOfToday;
 
     const timeStr = d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: true });
     const dateStr = d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -55,11 +58,11 @@ const formatRelativeLogin = (ts) => {
     if (diffMins < 60) {
         return { text: `Hace ${diffMins} min`, sub: `Hoy a las ${timeStr}`, badge: "today" };
     }
-    if (diffDays === 0) {
+    if (isSameDay) {
         return { text: `Hoy ${timeStr}`, sub: `Hace ${diffHours} h`, badge: "today" };
     }
-    if (diffDays === 1) {
-        return { text: `Ayer ${timeStr}`, sub: `${dateStr}`, badge: "recent" };
+    if (isYesterday) {
+        return { text: `Ayer ${timeStr}`, sub: `Hace ${diffHours} h`, badge: "recent" };
     }
     if (diffDays < 7) {
         return { text: `Hace ${diffDays} días`, sub: `${dateStr} · ${timeStr}`, badge: "recent" };
