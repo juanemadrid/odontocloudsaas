@@ -554,7 +554,7 @@ export default function RipsGenerator() {
                     const clientDoc = d.pacienteDocumento || det.pacienteDocumento || det.tercero?.nroDocumento || d.nit || d.documento || "";
                     const profId = d.profesionalId || d.profesional_id || det.profesional_id || det.profesional || d.doctorId || d.doctor_id || "";
                     const itms = (Array.isArray(d.items) && d.items.length > 0) ? d.items : (Array.isArray(det.items) ? det.items : []);
-                    const cufeVal = d.cufe || det.cufe || null;
+                    const cufeVal = d.cufe || det.cufe || det.factusCufe || det.factusResponse?.cufe || det.factusResponse?.bill?.cufe || null;
 
                     return {
                         _coleccion: coleccion,
@@ -823,7 +823,7 @@ export default function RipsGenerator() {
                     const clientDoc = d.pacienteDocumento || det.pacienteDocumento || det.tercero?.nroDocumento || d.nit || d.documento || "";
                     const profId = d.profesionalId || d.profesional_id || det.profesional_id || det.profesional || d.doctorId || d.doctor_id || "";
                     const itms = (Array.isArray(d.items) && d.items.length > 0) ? d.items : (Array.isArray(det.items) ? det.items : []);
-                    const cufeVal = d.cufe || det.cufe || null;
+                    const cufeVal = d.cufe || det.cufe || det.factusCufe || det.factusResponse?.cufe || det.factusResponse?.bill?.cufe || null;
 
                     return {
                         _coleccion: coleccion,
@@ -1533,7 +1533,7 @@ export default function RipsGenerator() {
                 dianList.push({
                     id: invoiceId,
                     paciente: pacNombre,
-                    cufe: f.cufe || f.cufeFactura || "SIN_CUFE",
+                    cufe: f.cufe || f.cufeFactura || f.detalles?.factusCufe || f.detalles?.factusResponse?.cufe || f.detalles?.factusResponse?.bill?.cufe || "SIN_CUFE",
                     errors: invoiceErrors,
                     status: isValidInvoice 
                         ? (normalizedDoc.sourceMode === RIPS_MODES.LOCAL_PREVIEW 
@@ -2220,9 +2220,9 @@ export default function RipsGenerator() {
 
                 // 2. Obtener AttachedDocument XML real (solo para OFFICIAL_FEV, sin inventar XML)
                 if (doc.sourceMode === RIPS_MODES.OFFICIAL_FEV) {
-                    let xmlContent = doc.rawDoc?.attached_document_xml || doc.rawDoc?.xml_content || doc.rawDoc?.xml || null;
+                    let xmlContent = doc.rawDoc?.attached_document_xml || doc.rawDoc?.xml_content || doc.rawDoc?.xml || doc.rawDoc?.detalles?.attached_document_xml || null;
 
-                    if (!xmlContent && doc.rawDoc?.factus_id) {
+                    if (!xmlContent) {
                         try {
                             const xmlRes = await downloadFactusAttachedDocumentXml(invoiceId);
                             if (xmlRes?.xml || xmlRes?.attachedDocument) {
@@ -3006,9 +3006,19 @@ export default function RipsGenerator() {
                                                                  />
                                                              </td>
                                                              <td className="py-2 px-3">
-                                                                 <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wide border ${badgeClass}`}>
+                                                                 <span className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wide border ${badgeClass}`} title={doc.errors.join(' | ')}>
                                                                      {badgeLabel}
                                                                  </span>
+                                                                 {doc.errors && doc.errors.length > 0 && (
+                                                                     <div className="mt-1 text-[10px] text-rose-600 font-normal whitespace-normal max-w-xs space-y-0.5">
+                                                                         {doc.errors.map((e, i) => (
+                                                                             <div key={i} className="leading-tight flex items-start gap-1">
+                                                                                 <span className="font-bold">•</span>
+                                                                                 <span>{e}</span>
+                                                                             </div>
+                                                                         ))}
+                                                                     </div>
+                                                                 )}
                                                              </td>
                                                              <td className="py-2 px-3">
                                                                  {doc.sourceMode === RIPS_MODES.LOCAL_PREVIEW ? (
