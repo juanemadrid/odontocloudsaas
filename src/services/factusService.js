@@ -216,7 +216,12 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   // Auto-fetch the correct "Factura de Venta" numbering range from Factus API.
   // IMPORTANT: /v2/bills/validate ONLY accepts ranges of type "Factura de Venta".
   // Ranges like "Nota Crédito", "Nota Débito", etc. will cause a 422 error.
-  let numberingRangeId = Number(resolvedCreds.factusNumberingRangeId || tenantCredentials?.factusNumberingRangeId) || 0;
+  let numberingRangeId = Number(
+    invoiceData?.numbering_range_id ||
+    invoiceData?.numberingRangeId ||
+    resolvedCreds.factusNumberingRangeId ||
+    tenantCredentials?.factusNumberingRangeId
+  ) || 0;
   if (!numberingRangeId) try {
     const rangesData = await getNumberingRanges();
 
