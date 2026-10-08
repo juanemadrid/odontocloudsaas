@@ -774,6 +774,22 @@ export default function RipsGenerator() {
                 numDocumentoIdentificacion: defaultDocNum,
             };
         }
+        if (typeof docIdOrName === "object") {
+            const rawType = String(docIdOrName.tipoDocumentoIdentificacion || docIdOrName.tipoDocumento || docIdOrName.tipoDoc || defaultDocType).toUpperCase().trim();
+            let docType = defaultDocType;
+            if (["CC", "CE", "PA", "TI", "RC", "AS", "MS", "CD", "SC", "PE", "PT", "DE"].includes(rawType)) docType = rawType;
+            else if (rawType.includes("CIUDADAN")) docType = "CC";
+            else if (rawType.includes("EXTRANJ")) docType = "CE";
+            else if (rawType.includes("PASAPORT")) docType = "PA";
+            else if (rawType.includes("PERMISO")) docType = "PT";
+
+            const numDoc = String(docIdOrName.numDocumentoIdentificacion || docIdOrName.numeroDocumento || docIdOrName.documento || docIdOrName.cedula || docIdOrName.registro_medico || defaultDocNum).replace(/\D/g, "") || defaultDocNum;
+            return {
+                ...docIdOrName,
+                tipoDocumentoIdentificacion: docType,
+                numDocumentoIdentificacion: numDoc,
+            };
+        }
         const target = String(docIdOrName).trim().toLowerCase();
         const profMatch = profilesList.find(p => 
             String(p.id).toLowerCase() === target ||
@@ -1503,7 +1519,7 @@ export default function RipsGenerator() {
                                 codZonaTerritorialResidencia: usuarioWithValidation.codZonaTerritorialResidencia,
                                 incapacidad: usuarioWithValidation.incapacidad,
                             },
-                            profesional: selectedDoctorObj || resolveDoctorInfo(null, profilesList, tenantConfig),
+                            profesional: resolveDoctorInfo(selectedDoctorObj, profilesList, tenantConfig),
                             atenciones: adaptedAtencionesForInvoice,
                         });
 

@@ -207,8 +207,18 @@ export async function adaptClinicalDataToRipsV003(input) {
     if (!input.profesional || typeof input.profesional !== "object") {
       throw new Error("MISSING_REQUIRED_DATA: Objeto 'profesional' es obligatorio.");
     }
-    const tipoDocProf = requireNonEmptyString(input.profesional.tipoDocumentoIdentificacion, "profesional.tipoDocumentoIdentificacion").toUpperCase();
-    const numDocProf = requireNonEmptyString(input.profesional.numDocumentoIdentificacion, "profesional.numDocumentoIdentificacion").replace(/[^0-9A-Za-z]/g, "");
+    const rawTipoDoc = input.profesional.tipoDocumentoIdentificacion || input.profesional.tipoDocumento || input.profesional.tipoDoc || "CC";
+    let tipoDocProf = String(rawTipoDoc).toUpperCase().trim();
+    if (tipoDocProf.includes("CIUDADAN")) tipoDocProf = "CC";
+    else if (tipoDocProf.includes("EXTRANJ")) tipoDocProf = "CE";
+    else if (tipoDocProf.includes("PASAPORT")) tipoDocProf = "PA";
+    else if (tipoDocProf.includes("PERMISO")) tipoDocProf = "PT";
+    if (!["CC", "CE", "PA", "TI", "RC", "AS", "MS", "CD", "SC", "PE", "PT", "DE"].includes(tipoDocProf)) {
+      tipoDocProf = "CC";
+    }
+
+    const rawNumDoc = input.profesional.numDocumentoIdentificacion || input.profesional.numeroDocumento || input.profesional.documento || input.profesional.cedula || input.profesional.registro_medico;
+    const numDocProf = requireNonEmptyString(rawNumDoc, "profesional.numDocumentoIdentificacion").replace(/[^0-9A-Za-z]/g, "");
 
     // 5. ATENCIONES
     if (!Array.isArray(input.atenciones) || input.atenciones.length === 0) {
