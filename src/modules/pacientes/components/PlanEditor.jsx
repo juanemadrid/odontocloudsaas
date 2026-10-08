@@ -773,21 +773,9 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 numero:           nroFactura,
                 fecha_emision:    new Date().toISOString(),
                 subtotal:         totalFactura,
+                impuestos:        0,
                 total:            totalFactura,
                 estado:           'Pendiente',
-                // Si el presupuesto fue marcado por entidad/IPS, la factura se carga a nombre del Tercero
-                tercero_id:       isPlanEntidad ? (planCob.terceroId || planCob.entidadId) : null,
-                tercero_nombre:   isPlanEntidad ? terceroNombre : null,
-                tercero_documento: isPlanEntidad ? terceroDoc : null,
-                cliente_nombre:   isPlanEntidad ? terceroNombre : patientFullName,
-                cliente_documento: isPlanEntidad ? terceroDoc : (patient?.nroDocumento || patient?.documento || ''),
-                paciente_nombre:  patientFullName,
-                es_entidad:       Boolean(isPlanEntidad),
-                entidad_id:       isPlanEntidad ? (planCob.terceroId || planCob.entidadId) : null,
-                entidad_nombre:   isPlanEntidad ? terceroNombre : null,
-                observaciones:    isPlanEntidad 
-                    ? `Facturado a Entidad / IPS: ${terceroNombre} (NIT: ${terceroDoc}) - Paciente: ${patientFullName}` 
-                    : (obs || '')
             };
 
             const invoiceData = {
@@ -801,8 +789,9 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 numbering_range_id: preflightResult.numberingRangeId,
                 numberingRangeId: preflightResult.numberingRangeId,
                 fechaISO:   new Date().toISOString(),
-                total:      totalFactura,
                 subtotal:   totalFactura,
+                impuestos:  0,
+                total:      totalFactura,
                 medioPago:  '10',
                 condicionPago: '1',
                 estado:     'Pendiente',
@@ -814,6 +803,9 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 clienteNombre: isPlanEntidad ? terceroNombre : patientFullName,
                 pacienteNombre: patientFullName,
                 esEntidad:   Boolean(isPlanEntidad),
+                observaciones: isPlanEntidad 
+                    ? `Facturado a Entidad / IPS: ${terceroNombre} (NIT: ${terceroDoc}) - Paciente: ${patientFullName}` 
+                    : (obs || ''),
                 items:      invoiceItems,
                 // Flujo oficial FEV Salud SS-CUFE
                 esSectorSalud: true,
