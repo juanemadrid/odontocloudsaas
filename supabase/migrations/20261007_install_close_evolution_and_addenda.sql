@@ -229,7 +229,7 @@ BEGIN
         RAISE EXCEPTION 'CROSS_TENANT_VIOLATION: Conflicto de pertenencia de clínica.';
     END IF;
 
-    v_normalized_role := pg_catalog.lower(pg_catalog.trim(COALESCE(v_profile.role, '')));
+    v_normalized_role := pg_catalog.lower(pg_catalog.btrim(COALESCE(v_profile.role, '')));
     IF v_normalized_role NOT IN ('odontologo', 'doctor', 'profesional', 'admin', 'superadmin') THEN
         RAISE EXCEPTION 'UNAUTHORIZED_CLINICAL_ROLE_REQUIRED: Se requiere un rol clínico habilitado para certificar evoluciones.';
     END IF;
@@ -239,7 +239,7 @@ BEGIN
     v_signature := v_profile.firma;
 
     -- 2) Si no está en profiles, consultar en website_config -> user_details -> user_id
-    IF v_signature IS NULL OR pg_catalog.length(pg_catalog.trim(v_signature)) = 0 THEN
+    IF v_signature IS NULL OR pg_catalog.length(pg_catalog.btrim(v_signature)) = 0 THEN
         SELECT COALESCE(
             wc.config -> 'user_details' -> (v_user_id::text) ->> 'firma',
             wc.config -> 'user_details' -> (v_user_id::text) ->> 'firmaElectronica',
@@ -250,7 +250,7 @@ BEGIN
         LIMIT 1;
 
         -- Sincronizar en profiles.firma para alta eficiencia en consultas posteriores
-        IF v_signature IS NOT NULL AND pg_catalog.length(pg_catalog.trim(v_signature)) > 0 THEN
+        IF v_signature IS NOT NULL AND pg_catalog.length(pg_catalog.btrim(v_signature)) > 0 THEN
             UPDATE public.profiles
             SET firma = v_signature
             WHERE id = v_user_id;
@@ -258,7 +258,7 @@ BEGIN
     END IF;
 
     -- Validar presencia de firma digital
-    IF v_signature IS NULL OR pg_catalog.length(pg_catalog.trim(v_signature)) = 0 THEN
+    IF v_signature IS NULL OR pg_catalog.length(pg_catalog.btrim(v_signature)) = 0 THEN
         RAISE EXCEPTION 'DOCTOR_SIGNATURE_REQUIRED: El profesional debe registrar su firma en su perfil antes de cerrar la evolución.';
     END IF;
 
@@ -363,7 +363,7 @@ BEGIN
         RAISE EXCEPTION 'NOT_AUTHENTICATED: Sesión requerida para registrar una nota aclaratoria.';
     END IF;
 
-    v_clean_comment := pg_catalog.trim(pg_catalog.coalesce(p_comentario, ''));
+    v_clean_comment := pg_catalog.btrim(pg_catalog.coalesce(p_comentario, ''));
     IF pg_catalog.length(v_clean_comment) < 5 OR pg_catalog.length(v_clean_comment) > 5000 THEN
         RAISE EXCEPTION 'INVALID_ADDENDUM_LENGTH: La nota aclaratoria debe contener entre 5 y 5000 caracteres.';
     END IF;
@@ -386,7 +386,7 @@ BEGIN
         RAISE EXCEPTION 'CROSS_TENANT_VIOLATION: Conflicto de pertenencia de clínica.';
     END IF;
 
-    v_normalized_role := pg_catalog.lower(pg_catalog.trim(COALESCE(v_profile.role, '')));
+    v_normalized_role := pg_catalog.lower(pg_catalog.btrim(COALESCE(v_profile.role, '')));
     IF v_normalized_role NOT IN ('odontologo', 'doctor', 'profesional', 'admin', 'superadmin') THEN
         RAISE EXCEPTION 'UNAUTHORIZED_CLINICAL_ROLE_REQUIRED: Solo profesionales clínicos habilitados pueden redactar notas aclaratorias.';
     END IF;
