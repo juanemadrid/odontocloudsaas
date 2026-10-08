@@ -61,6 +61,9 @@ export default function UserProfileModal({ isOpen, onClose }) {
             setTelefono(loadedTel);
             setRegistroMedico(loadedReg);
             setFotoPerfil(loadedFoto);
+            if (!loadedFirma && userId) {
+                try { loadedFirma = localStorage.getItem("odontocloud_doctor_signature_" + userId) || ""; } catch (e) {}
+            }
             setFirmaElectronica(loadedFirma);
 
             setTimeout(() => {
@@ -71,7 +74,7 @@ export default function UserProfileModal({ isOpen, onClose }) {
 
                     if (loadedFirma) {
                         const img = new Image();
-                        img.crossOrigin = "anonymous";
+                        if (!loadedFirma.startsWith("data:")) { img.crossOrigin = "anonymous"; }
                         img.onload = () => {
                             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         };
@@ -228,6 +231,15 @@ export default function UserProfileModal({ isOpen, onClose }) {
                 setUserProfile(prev => ({ ...prev, ...updatePayload }));
             }
 
+            if (userId) {
+                try {
+                    if (currentSignature) {
+                        localStorage.setItem("odontocloud_doctor_signature_" + userId, currentSignature);
+                    } else {
+                        localStorage.removeItem("odontocloud_doctor_signature_" + userId);
+                    }
+                } catch (e) {}
+            }
             toast.success("Perfil actualizado con éxito");
             onClose();
         } catch (err) {

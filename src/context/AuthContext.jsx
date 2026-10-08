@@ -215,7 +215,8 @@ export const AuthProvider = ({ children }) => {
                                    empresaNombre || 
                                    "Clínica Odontológica";
 
-        const firmaResuelta = profile.firma || profile.firma_url || userDetail.firma || userDetail.firmaElectronica || null;
+        const localSig = (profile.id || authUser?.id) ? (() => { try { return localStorage.getItem("odontocloud_doctor_signature_" + (profile.id || authUser.id)); } catch(e){ return null; } })() : null;
+        const firmaResuelta = profile.firma || profile.firma_url || userDetail.firma || userDetail.firmaElectronica || localSig || null;
         const regMedicoResuelto = profile.registro_medico || profile.tarjeta_profesional || userDetail.registroMedico || userDetail.tarjetaProfesional || "";
         const fotoPerfilResuelta = profile.foto_perfil || userDetail.fotoPerfil || authUser.user_metadata?.avatar_url || "";
         const telefonoResuelto = profile.telefono || userDetail.telefonoMovil || userDetail.telefono || "";

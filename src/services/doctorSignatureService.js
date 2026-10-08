@@ -71,7 +71,10 @@ export async function getDoctorSignatureAndData(doctorNameOrId, tenantId, curren
     
     // Asignar firma solo si tiene rol de doctor
     if (isDoc) {
-      result.firma = currentUserProfile.firmaElectronica || currentUserProfile.firma || currentUserProfile.firma_url || null;
+      const doctorUid = currentUserProfile.id || currentUserProfile.uid;
+      let localDocSig = null;
+      if (doctorUid) { try { localDocSig = localStorage.getItem("odontocloud_doctor_signature_" + doctorUid); } catch(e){} }
+      result.firma = currentUserProfile.firmaElectronica || currentUserProfile.firma || currentUserProfile.firma_url || localDocSig || null;
     }
     
     if (result.firma && result.registroMedico) {
