@@ -44,6 +44,7 @@ const formatRelativeLogin = (ts) => {
     const diffMs = now.getTime() - d.getTime();
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
     const isSameDay = d >= startOfToday;

@@ -75,13 +75,17 @@ export function canonicalButtonLabels(answer, reference) {
 
 export function helpPrompt(guide, question, isPublic = false, screenContext = '', history = []) {
   if (isPublic) return publicSystemPrompt(guide);
+  const q = normalize(question);
+  const isLost = /(?:donde|no (?:se|veo|encuentro)|como llego|como entro|estoy en inicio)/.test(q);
   const followup = isContextualReply(question) || isBriefFollowup(question);
-  const generalAppointment = isGeneralAppointment(question) || followup;
-  const generalBudget = isGeneralBudget(question) || followup || /(?:donde|no se|no veo|no encuentro|como llego|como entro|estoy en inicio)/.test(normalize(question));
+  const generalAppointment = isGeneralAppointment(question) || followup || isLost;
+  const generalBudget = isGeneralBudget(question) || followup || isLost;
   const stageReference = guide.id === 'presupuestos' ? budgetStageReference(question, screenContext, history) : null;
-  const paymentReference = guide.id === 'pagos-paciente' ? 'Pacientes > ficha > [Realizar pago] > [Pagar / Abonar] abre [Prestaciones]. Marca procedimientos; aún no están pagados. [Abono parcial] vacío paga el total seleccionado; con importe hace abono. Revisa [Total a pagar]. Elige [Medio de Pago]. [Número de Referencia / Comprobante] aparece solo con Transferencia, Cheque, Consignación, Nequi, Daviplata o PSE; con Efectivo NO aparece. Selecciona [Profesional / Responsable]; [Observaciones] opcional. Pulsa [Finalizar Transacción] y espera «Pago registrado exitosamente»; no afirmes haber verificado el pago. Un abono no liquida toda la deuda. Los nombres de esta referencia prevalecen sobre errores del historial.' : null;
+  const paymentNav = isLost ? 'Desde Inicio: entra a [Pacientes] en el menú principal, busca al paciente y abre su ficha. Allí está [Realizar pago] en el menú de esa ficha para pulsar [Pagar / Abonar]. No está en Inicio.' : null;
+  const appointmentNav = isLost ? 'Desde Inicio: entra a [Agenda] en el menú lateral izquierdo. Arriba a la derecha de Gestión Citas encontrarás el botón azul [+ Nueva Cita]. Ese botón no está en Inicio.' : null;
+  const paymentReference = guide.id === 'pagos-paciente' ? (paymentNav || 'Pacientes > ficha > [Realizar pago] > [Pagar / Abonar] abre [Prestaciones]. Marca procedimientos; aún no están pagados. [Abono parcial] vacío paga el total seleccionado; con importe hace abono. Revisa [Total a pagar]. Elige [Medio de Pago]. [Número de Referencia / Comprobante] aparece solo con Transferencia, Cheque, Consignación, Nequi, Daviplata o PSE; con Efectivo NO aparece. Selecciona [Profesional / Responsable]; [Observaciones] opcional. Pulsa [Finalizar Transacción] y espera «Pago registrado exitosamente»; no afirmes haber verificado el pago. Un abono no liquida toda la deuda. Los nombres de esta referencia prevalecen sobre errores del historial.') : null;
   const reference = paymentReference || stageReference || ((guide.id === 'citas' && generalAppointment)
-    ? appointmentSummary
+    ? (appointmentNav || appointmentSummary)
     : (guide.id === 'presupuestos' && generalBudget)
       ? budgetSummary
       : focusedReference(guide, question));
@@ -209,7 +213,7 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
           const response = await fetchImpl(url.toString(), {
             method: 'POST', redirect: 'error', signal: controller.signal,
             headers: { 'Content-Type': 'application/json', ...(env('ODONTO_HELP_OLLAMA_TOKEN') ? { Authorization: 'Bearer ' + env('ODONTO_HELP_OLLAMA_TOKEN') } : {}) },
-            body: JSON.stringify({ model, stream: !!emit, keep_alive: '30m', options: { temperature: 0.35, num_predict: 180, num_ctx: 4096 },
+            body: JSON.stringify({ model, stream: !!emit, keep_alive: '30m', options: { temperature: 0.25, num_predict: 140, num_ctx: 1536 },
               messages: [{ role: 'system', content: systemPrompt }, ...modelHistory, { role: 'user', content: question }] }),
           });
           trace('ollama_headers', { status: response.status });

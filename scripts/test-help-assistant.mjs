@@ -417,3 +417,21 @@ assert.ok(paymentPrompt.includes('Cheque, Consignación'));
 assert.ok(paymentPrompt.includes('aún no están pagados'));
 assert.ok(paymentPrompt.includes('Pago registrado exitosamente'));
 console.log('Payment help: real checkout labels, conditional reference and save confirmation verified.');
+// Verification of navigation guidance across appointments and payments when user is lost
+const aptPromptLost = helpPrompt(HELP_GUIDES.find(g => g.id === 'citas'), 'No encuentro ese botón, ¿dónde está?');
+assert.ok(aptPromptLost.includes('[Agenda]'));
+assert.ok(aptPromptLost.includes('[+ Nueva Cita]'));
+assert.ok(/no está en Inicio/i.test(aptPromptLost));
+
+const payPromptLost = helpPrompt(HELP_GUIDES.find(g => g.id === 'pagos-paciente'), '¿Dónde está el botón de pagar?');
+assert.ok(payPromptLost.includes('[Pacientes]'));
+assert.ok(payPromptLost.includes('[Realizar pago]'));
+assert.ok(/no está en Inicio/i.test(payPromptLost));
+
+// Verification of CPU-optimized inference parameters
+const testHandler = makeHandler();
+await testHandler(req({ question: '¿Cómo apartar una cita?' }));
+const lastPayload = calls.at(-1).body;
+assert.ok(lastPayload.options.num_ctx <= 2048, 'num_ctx must stay bounded <= 2048 for CPU inference');
+assert.ok(lastPayload.options.num_predict <= 150, 'num_predict must stay bounded <= 150 for brief responsive answers');
+console.log('Inference and cross-module navigation regressions verified.');

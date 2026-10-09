@@ -8,6 +8,7 @@ import WebCms from "../modules/cms/WebsiteEditor";
 import SuperAdminAiCenter from "../modules/superadmin/ai/SuperAdminAiCenter";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import ErrorBoundary from "../components/shared/ErrorBoundary";
 import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell, FiCpu } from "react-icons/fi";
 import "../styles/modern.css";
 import superAdminUtilities from "../styles/utilities.css?inline";
@@ -253,13 +254,15 @@ export default function SuperAdminPanel() {
 
                     {/* Content Section */}
                     <section className={activeTab === 'site' || activeTab === 'ai-assistant' ? 'w-full h-full' : ''}>
-                        {activeTab === "clinics" && <TenantsPanelV2 />}
-                        {activeTab === "ai-assistant" && <SuperAdminAiCenter onBack={() => setActiveTab("clinics")} />}
-                        {activeTab === "plans" && <PlanManagement />}
-                        {activeTab === "payments" && <PaymentManagement />}
-                        {activeTab === "facturacion" && <FacturasQuotaPanel />}
-                        {activeTab === "novedades" && <NovedadesAdmin />}
-                        {activeTab === "site" && <WebCms />}
+                        <ErrorBoundary>
+                            {activeTab === "clinics" && <TenantsPanelV2 />}
+                            {activeTab === "ai-assistant" && <SuperAdminAiCenter onBack={() => setActiveTab("clinics")} />}
+                            {activeTab === "plans" && <PlanManagement />}
+                            {activeTab === "payments" && <PaymentManagement />}
+                            {activeTab === "facturacion" && <FacturasQuotaPanel />}
+                            {activeTab === "novedades" && <NovedadesAdmin />}
+                            {activeTab === "site" && <WebCms />}
+                        </ErrorBoundary>
                     </section>
                 </main>
             </div>
