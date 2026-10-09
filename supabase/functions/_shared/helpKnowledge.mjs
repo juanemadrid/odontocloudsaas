@@ -4,13 +4,13 @@ export const KNOWLEDGE_VERSION = '2026-09-29';
 const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
   id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
-  guide('citas', 'Agenda', 'Apartar una cita nueva', 'agendar reservar apartar cita turno agenda nueva', 'src/modules/agenda/components/AppointmentModal.jsx', [
-    'Haz clic en [Agenda] en el menú izquierdo. En la parte superior derecha de Gestión Citas, pulsa el botón azul [+ Nueva Cita]. Se abrirá el formulario de la cita.',
+  guide('citas', 'Agenda', 'Apartar una cita nueva', 'agendar reservar apartar cita turno agenda nueva boton confirmar registro donde esta', 'src/modules/agenda/components/AppointmentModal.jsx', [
+    'Haz clic en [Agenda] en el menú lateral izquierdo. En la parte superior derecha de Gestión Citas, pulsa el botón azul [+ Nueva Cita]. Se abrirá el formulario de la cita.',
     'En [Identidad del Paciente], escribe el nombre o la cédula en [BUSCAR POR NOMBRE O CC...] y haz clic en el paciente que aparece en los resultados. Si aún no está registrado, marca la casilla [Nuevo] y completa los campos obligatorios: nombres, apellidos, documento, celular, fecha de nacimiento y sexo.',
     'En [Detalles de la Cita], confirma la [Sede], selecciona el [Profesional] (odontólogo) y el [Espacio Clínico] (sillón o consultorio).',
     'Define la [Fecha de Cita], la [Hora] y la [Duración Estimada] en minutos (por defecto 30 min). Puedes marcar [Valoración] o [Control] si corresponde.',
     'Añade comentarios o el motivo de consulta y verifica que el [Estado de la Cita] esté en [Sin Confirmar].',
-    'Pulsa el botón verde inferior [CONFIRMAR REGISTRO]. El sistema validará que no haya cruces de horarios con el doctor o el sillón y guardará la cita.',
+    'En la parte inferior derecha del formulario modal, pulsa el botón verde [CONFIRMAR REGISTRO]. El sistema validará que no haya cruces de horarios con el doctor o el sillón y guardará la cita.',
   ], 'Si sales sin guardar habiendo hecho cambios, el sistema mostrará la alerta: ¿Descartar Cambios? con las opciones [Descartar y Cerrar] o [Seguir Editando]. Las citas con más de 30 días de antigüedad están bloqueadas bajo el estado CITA CERRADA (+1 MES).',
   'Antes de apartar tu primera cita, recuerda que debes tener configurados previamente en el sistema:\n• La **Sede** activa en [Configuración] > [Sucursales].\n• El **Profesional (Odontólogo)** registrado como usuario en [Configuración] > [Usuarios].\n• El **Espacio Clínico (Sillón / Consultorio)** asignado a la sede en [Configuración] > [Recursos físicos].\n• Los **Horarios y turnos** de atención del profesional en [Administración] > [Gestión Agenda].'),
   guide('editar-cita', 'Agenda', 'Modificar o cancelar una cita', 'reprogramar cambiar cancelar eliminar modificar cita', 'src/modules/agenda/components/AppointmentModal.jsx', [
@@ -34,12 +34,12 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Revisa también [Configuración] > [Recursos físicos] para verificar que los sillones estén activos, y [Configuración] > [Usuarios] para el odontólogo.',
     'Vuelve a [Agenda] y comprueba los espacios disponibles.',
   ], '', 'Antes de asignar horarios, el profesional debe estar creado en [Configuración] > [Usuarios] y la sede debe estar activa en [Configuración] > [Sucursales].'),
-  guide('pacientes', 'Pacientes', 'Crear o buscar un paciente', 'crear registrar nuevo buscar paciente documento celular', 'src/modules/pacientes/components/PatientList.jsx', [
-    'Entra a [Pacientes] en el menú lateral. En la barra superior busca primero por documento, nombre o celular para evitar registros duplicados.',
-    'Si no existe, haz clic en el botón verde superior [+ Nuevo Paciente].',
+  guide('pacientes', 'Pacientes', 'Crear o buscar un paciente', 'crear registrar nuevo buscar paciente documento celular boton nuevo paciente', 'src/modules/pacientes/components/PatientList.jsx', [
+    'Entra a [Pacientes] en el menú lateral izquierdo. En la barra superior busca primero por documento, nombre o celular para evitar registros duplicados.',
+    'Si no existe, haz clic en el botón verde [+ Nuevo Paciente] en la parte superior derecha.',
     'Completa los campos obligatorios: Tipo de documento, Número de documento, Nombres, Apellidos, Celular, Fecha de nacimiento y Sexo.',
     'Opcionalmente añade correo, dirección, EPS y ocupación.',
-    'Pulsa [Guardar]. El paciente quedará registrado y listo para agendar citas o abrir su expediente clínico.',
+    'Pulsa [Guardar] abajo a la derecha del formulario. El paciente quedará registrado y listo para agendar citas o abrir su expediente clínico.',
   ], '', 'Antes de crear un paciente nuevo, escribe siempre su documento o nombre en el buscador superior para comprobar si ya existe y evitar expedientes duplicados.'),
   guide('importar-pacientes', 'Pacientes', 'Importar pacientes (Excel)', 'importar pacientes excel csv carga masiva', 'src/modules/pacientes/components/ImportadorPacientes.jsx', [
     'En [Pacientes], haz clic en el botón [Importar Pacientes (Excel)].',
@@ -60,14 +60,13 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Selecciona el formulario clínico (Anamnesis, Consentimiento Informado o Historia General) y completa la información requerida.',
     'Revisa las firmas del paciente y del profesional antes de guardar.',
   ], '', 'El paciente debe estar registrado previamente y las plantillas clínicas deben estar configuradas en [Configuración] > [Plantillas Doc. Clínicos].'),
-  guide('odontograma', 'Clínica', 'Odontograma digital y registro de hallazgos clínicos', 'odontograma dientes diente superficies hallazgos caries grafico adulto infantil', 'src/modules/odontograma/Odontograma.jsx', [
-    'Abre la ficha del paciente y haz clic en la pestaña [Odontogramas].',
-    'En el listado inicial, pulsa [+ Nuevo Odontograma] para abrir el editor interactivo.',
-    'Selecciona el [Tipo de Dentición] (Completo, Adulto o Infantil) y si deseas, filtra por superficie (Vestibular, Palatina, Mesial, Distal u Oclusal).',
-    'En la barra de herramientas, elige el hallazgo (ej: Caries, Obturación, Corona, Endodoncia, Extracción, Implante o Borrador).',
-    'Haz clic sobre la cara o pieza dental correspondiente. A la derecha se irá listando el plan de tratamiento con los dientes y superficies marcados.',
-    'Para continuar después sin cerrar el caso, pulsa [Guardar Progreso] (estado Abierto). Para finalizar y mandar a cotizar, pulsa [Finalizar Odontograma].',
-  ], 'Al pulsar [Finalizar Odontograma], los hallazgos y tratamientos planificados quedan disponibles en la pestaña [Presupuestos & planes] para cargarse opcionalmente con el botón [Odonto. Actual].',
+  guide('odontograma', 'Clínica', 'Odontograma digital, dientes y registro de hallazgos clínicos', 'odontograma dientes diente muela superficies hallazgos caries grafico adulto infantil boton nuevo odontograma guardar finalizar donde esta paciente ficha', 'src/modules/odontograma/Odontograma.jsx', [
+    'Desde [Pacientes], abre la ficha del paciente y haz clic en la pestaña [Odontogramas] en la barra lateral de la ficha.',
+    'En la cabecera del historial, arriba a la derecha, pulsa el botón índigo [+ Nuevo Odontograma] para abrir el editor interactivo.',
+    'Selecciona el [Tipo de Dentición] (Completo, Adulto o Infantil) y la herramienta clínica (ej: Caries, Obturación, Corona, Endodoncia, Extracción o Implante).',
+    'Haz clic sobre la cara o pieza dental correspondiente (Vestibular, Oclusal/Incisal, Lingual/Palatina, Mesial, Distal).',
+    'En la barra superior (cabecera), arriba a la derecha, pulsa el botón azul [Guardar] para salvar el progreso, o el botón verde [Finalizar] para completar la sesión clínica. También cuentas con [Imprimir] en color ámbar.',
+  ], 'Al pulsar [Finalizar], los hallazgos y tratamientos planificados quedan disponibles en la pestaña [Presupuestos & planes] para cargarse opcionalmente con el botón [Odonto. Actual].',
   'Para que los hallazgos del odontograma se coticen automáticamente al finalizarlo, la clínica debe tener su tarifario activo en [Configuración] > [Lista de precios].'),
   guide('periodontograma', 'Clínica', 'Consultar y registrar el periodontograma', 'periodontograma periodontal sondaje', 'src/modules/odontograma/Periodontograma.jsx', [
     'Abre la ficha del paciente y selecciona la pestaña [Periodontogramas].',
@@ -84,11 +83,11 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Pulsa [Guardar Evolución]. Si necesitas corregir un detalle posterior, utiliza la pestaña [Nota Aclaratoria] para mantener la inmutabilidad legal.',
   ], 'El sistema valida que solo el profesional tratante asignado pueda registrar evoluciones, y que las correcciones queden como notas aclaratorias para cumplir la normatividad de historia clínica.',
   '¡Regla obligatoria de OdontoCloud! El odontólogo que registra la evolución DEBE estar asignado previamente en la pestaña [Profesionales] del paciente. Si no está asignado, el sistema bloqueará el guardado mostrando: «No estás asignado como profesional tratante».'),
-  guide('presupuestos', 'Clínica', 'Crear presupuesto y planes de tratamiento', 'presupuesto presupuestos plan planes tratamiento cotizacion cotizaciones cotizar procedimientos tarifario agregar items', 'src/modules/pacientes/components/PlanList.jsx', [
-    'Abre la ficha del paciente y entra a la pestaña [Presupuestos & planes] en el menú lateral izquierdo.',
-    'Encontrarás dos secciones: para una cotización pulsa el botón verde [+ Nuevo Presupuesto], o para un tratamiento activo pulsa [+ Nuevo Plan de Tratamiento].',
-    'En la ventana emergente, escribe el [Nombre] (ej: Ortodoncia, Diseño de sonrisa), selecciona el [Profesional] tratante, confirma la vigencia en días y la modalidad (Particular o EPS/Convenio), y pulsa el botón verde [Crear].',
-    'En el editor, haz clic en [+ Agregar Items / Procedimientos] (o el botón verde [+ Agregar items]) para buscar y seleccionar procedimientos en la lista de precios de la clínica. También puedes usar [Cargar Paquete / Combo Completo].',
+  guide('presupuestos', 'Clínica', 'Crear presupuesto y planes de tratamiento', 'presupuesto presupuestos plan planes tratamiento cotizacion cotizaciones cotizar procedimientos tarifario agregar items boton nuevo presupuesto crear', 'src/modules/pacientes/components/PlanList.jsx', [
+    'Desde [Pacientes], abre la ficha del paciente y entra a la pestaña [Presupuestos & planes] en el menú lateral izquierdo de la ficha. No está en Inicio.',
+    'Encontrarás dos secciones: en la cabecera de la tabla superior a la derecha pulsa el botón verde [+ Nuevo Presupuesto], o más abajo pulsa [+ Nuevo Plan de Tratamiento].',
+    'En la ventana emergente, escribe el [Nombre], selecciona el [Profesional] tratante, confirma la vigencia en días y la modalidad (Particular o EPS/Convenio), y en la esquina inferior derecha pulsa el botón verde [Crear].',
+    'En el editor, haz clic en [+ Agregar Items / Procedimientos] (o el botón verde [+ Agregar items]) en la parte superior para buscar y seleccionar procedimientos en la lista de precios de la clínica. También puedes usar [Cargar Paquete / Combo Completo].',
     'Nota opcional: Si el paciente ya tiene hallazgos registrados en su odontograma, puedes pulsar el botón verde [Odonto. Actual] para importarlos sin digitarlos uno a uno.',
     'Ajusta cantidades, descuentos o copagos. Para cotizaciones, puedes imprimir el PDF formal con el ícono de impresora o pulsar [Convertir a Plan] al ser aprobado. En planes activos, marca (✓) y pulsa el botón azul [Realizar] para mandar el procedimiento a evolución clínica.',
   ], 'No es obligatorio hacer un odontograma previo para crear un presupuesto: puedes cargar directamente los procedimientos desde el tarifario con [+ Agregar Items / Procedimientos].',
@@ -98,11 +97,11 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Haz clic en subir archivo para adjuntar radiografías panorámicas, periapicales, fotos clínicas o documentos PDF.',
     'Organiza los archivos por fecha y categoría clínica.',
   ], '', 'Tener creado el expediente del paciente y los archivos en formato compatible (JPG, PNG o PDF con peso menor a 15 MB).'),
-  guide('abrir-caja', 'Caja', 'Apertura de caja al inicio del turno', 'abrir apertura caja base inicial', 'src/modules/caja/components/AbrirCajaModal.jsx', [
-    'Entra a [Caja] en el menú lateral y haz clic en el botón superior [Abrir Caja].',
+  guide('abrir-caja', 'Caja', 'Apertura de caja al inicio del turno', 'abrir apertura caja base inicial boton abrir caja donde esta', 'src/modules/caja/components/AbrirCajaModal.jsx', [
+    'Entra a [Caja] en el menú lateral izquierdo y haz clic en el botón verde [Abrir Caja] en la parte superior derecha.',
     'Confirma el nombre de la caja (ej: Caja Principal).',
     'En el campo obligatorio [Ajustar Base Inicial], digita el monto de efectivo con el que inicias el turno (en pesos COP).',
-    'Escribe observaciones si corresponde (ej: Turno mañana) y haz clic en el botón verde [Abrir Caja].',
+    'Escribe observaciones si corresponde y haz clic en el botón verde [Abrir Caja] en la parte inferior del modal.',
   ], 'El sistema no permite abrir una segunda caja si el usuario ya tiene una caja abierta activa sin cerrar.',
   'Antes de abrir caja, verifica no tener otra caja abierta activa a tu nombre en esa sede (el sistema solo permite una caja abierta simultánea por usuario) y ten a la mano el monto exacto de la base de efectivo inicial.'),
   guide('pagos-paciente', 'Caja', 'Registrar pago o abono de un paciente', 'cobrar abonar pago paciente recaudo abono', 'src/modules/pacientes/components/PagoTab.jsx', [
@@ -115,14 +114,14 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Revisa los datos y pulsa [Finalizar Transacción]. Espera el mensaje «Pago registrado exitosamente»; si aparece un error, no des el pago por registrado. La ayuda no puede comprobar que el pago se guardó.',
   ], 'Pagar / Abonar abre el formulario; Finalizar Transacción envía el pago. No son el mismo botón. Un abono parcial no liquida toda la deuda.',
   'Verifica el importe y el medio recibido antes de confirmar. Si aparece Número de Referencia / Comprobante, ten a mano el comprobante correspondiente.'),
-  guide('cerrar-caja', 'Caja', 'Cerrar y cuadrar la caja (Arqueo diario)', 'cerrar cierre arqueo cuadrar caja efectivo contado diferencia', 'src/modules/caja/components/CerrarCajaModal.jsx', [
-    'En [Caja], localiza tu caja abierta y haz clic en [Cerrar Caja].',
+  guide('cerrar-caja', 'Caja', 'Cerrar y cuadrar la caja (Arqueo diario)', 'cerrar cierre arqueo cuadrar caja efectivo contado diferencia boton cerrar caja definitivamente', 'src/modules/caja/components/CerrarCajaModal.jsx', [
+    'En [Caja] en el menú lateral, localiza tu caja abierta y haz clic en [Cerrar Caja] en la tarjeta activa.',
     'Revisa el resumen financiero: Base Inicial + Ingresos - Egresos = [Saldo Teórico].',
     'En [Efectivo Contado], digita el total de billetes y monedas que contaste físicamente.',
     'En [Otros Medios], digita el valor total de los vouchers de datáfono y transferencias.',
     'Revisa la [Diferencia] (sobrante o faltante). Añade observaciones si hubo alguna novedad.',
     'Marca la casilla obligatoria: Declaro que he realizado el conteo físico detallado...',
-    'Haz clic en el botón rojo [Cerrar Caja Definitivamente].',
+    'En la parte inferior derecha, haz clic en el botón rojo [Cerrar Caja Definitivamente].',
   ], 'El botón de cierre definitivo solo se habilita tras marcar la confirmación del conteo físico.',
   'Antes de cerrar la caja definitivamente, debes realizar el conteo físico de todo el efectivo (billetes y monedas) y tener a la mano el total de comprobantes de datáfono y transferencias del turno.'),
   guide('facturas', 'Facturación', 'Factura de venta y facturación electrónica', 'factura venta electronica dian factus cufe emitir', 'src/modules/administracion/views/FacturacionHub.jsx', [
@@ -298,7 +297,11 @@ const aliases = {
   cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar',
   registro: 'registrar', guardo: 'guardar', cobro: 'cobrar', abro: 'abrir', cierro: 'cerrar',
   costo: 'precio', costos: 'precios', valor: 'precio', valores: 'precios',
-  cotizacion: 'presupuesto', cotizaciones: 'presupuesto', cotizar: 'presupuesto'
+  cotizacion: 'presupuesto', cotizaciones: 'presupuesto', cotizar: 'presupuesto',
+  diente: 'odontograma', dientes: 'odontograma', muela: 'odontograma', muelas: 'odontograma', carie: 'odontograma', caries: 'odontograma',
+  pago: 'pago', pagos: 'pago', abono: 'pago', recaudo: 'pago',
+  cita: 'cita', citas: 'cita', turno: 'cita', turnos: 'cita',
+  evolucion: 'evolucion', evoluciones: 'evolucion',
 };
 const tokens = text => [...new Set(normalize(text).split(' ').filter(t => t.length > 2 && !stop.has(t)).map(t => aliases[t] || (t.startsWith('configur') ? 'configuracion' : (t.length > 4 && t.endsWith('s') ? t.slice(0, -1) : t))))];
 

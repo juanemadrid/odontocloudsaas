@@ -435,3 +435,33 @@ const lastPayload = calls.at(-1).body;
 assert.ok(lastPayload.options.num_ctx <= 2048, 'num_ctx must stay bounded <= 2048 for CPU inference');
 assert.ok(lastPayload.options.num_predict <= 150, 'num_predict must stay bounded <= 150 for brief responsive answers');
 console.log('Inference and cross-module navigation regressions verified.');
+
+// Verification of Odontograma and precise button placement
+const odontoGuide = HELP_GUIDES.find(g => g.id === 'odontograma');
+const odontoPromptLost = helpPrompt(odontoGuide, '¿Dónde está el botón de odontograma?');
+assert.ok(odontoPromptLost.includes('[Pacientes]'));
+assert.ok(odontoPromptLost.includes('[Odontogramas]'));
+assert.ok(odontoPromptLost.includes('[+ Nuevo Odontograma]'));
+assert.ok(odontoPromptLost.includes('[Guardar]'));
+assert.ok(odontoPromptLost.includes('[Finalizar]'));
+assert.ok(/arriba a la derecha/i.test(odontoPromptLost));
+
+// Verification of natural conversational questions resolving to exact modules
+const naturalQueries = [
+  ['dónde veo los dientes del paciente', 'odontograma'],
+  ['dónde están las muelas', 'odontograma'],
+  ['dónde cobro al paciente', 'pagos-paciente'],
+  ['dónde hago una cotización', 'presupuestos'],
+  ['no encuentro el botón de agendar', 'citas'],
+  ['dónde abro la caja', 'abrir-caja'],
+  ['dónde cierro la caja', 'cerrar-caja'],
+  ['dónde está el botón de odontograma', 'odontograma'],
+  ['no encuentro el botón de nueva cita', 'citas'],
+  ['dónde creo el presupuesto', 'presupuestos'],
+  ['dónde registro el pago', 'pagos-paciente'],
+  ['no veo el botón de evolucion', 'evoluciones'],
+];
+for (const [q, id] of naturalQueries) {
+  assert.equal(searchGuides(q)[0]?.id, id, `Query "${q}" must resolve to ${id}`);
+}
+console.log('Odontograma button positions and natural conversational retrieval verified.');
