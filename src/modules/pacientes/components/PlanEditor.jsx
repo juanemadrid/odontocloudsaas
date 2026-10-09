@@ -41,7 +41,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     const [items, setItems] = useState(initialData?.items || []);
     const [obs, setObs] = useState(initialData?.observaciones || "");
     const [cobertura, setCobertura] = useState(() => ({
-        tipo: initialData?.cobertura?.tipo || (patient?.nombreEps || patient?.convenioBeneficio ? "entidad" : "particular"),
+        tipo: initialData?.cobertura?.tipo || "particular",
         epsNombre: initialData?.cobertura?.epsNombre || patient?.nombreEps || "",
         entidadId: initialData?.cobertura?.entidadId || "",
         entidadNombre: initialData?.cobertura?.entidadNombre || patient?.convenioBeneficio || "",
@@ -54,6 +54,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
     const [evolutions, setEvolutions] = useState([]);
     const [payments, setPayments] = useState([]);
+    const [copagosTarifas, setCopagosTarifas] = useState([]);
+    const [manejaCopagosActivo, setManejaCopagosActivo] = useState(false);
 
     const inquilino = userProfile?.inquilino;
     const [planes, setPlanes] = useState([]);
@@ -255,6 +257,32 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         };
         fetchPayments();
     }, [patientId, currentPlanId]);
+
+    useEffect(() => {
+        const loadCopagosConfig = async () => {
+            const inq = inquilino || patient?.inquilino || patient?.tenant_id;
+            if (!inq) return;
+            try {
+                const { data: tRow } = await supabase
+                    .from("tenants")
+                    .select("parametros")
+                    .eq("id", inq)
+                    .maybeSingle();
+                if (tRow?.parametros) {
+                    const rawParams = typeof tRow.parametros === "string" ? JSON.parse(tRow.parametros) : tRow.parametros;
+                    setManejaCopagosActivo(Boolean(rawParams?.general?.manejaCopagos));
+                } else if (userProfile?.tenant?.parametros?.general?.manejaCopagos !== undefined) {
+                    setManejaCopagosActivo(Boolean(userProfile.tenant.parametros.general.manejaCopagos));
+                }
+
+                const cList = await getConfigItems(inq, "tarifas_copago", "tarifas_copago");
+                setCopagosTarifas(cList || []);
+            } catch (err) {
+                console.warn("Aviso cargando copagos en PlanEditor:", err);
+            }
+        };
+        loadCopagosConfig();
+    }, [inquilino, patient?.inquilino, patient?.tenant_id]);
 
     const isItemRealized = (itemId) => {
         // 1. Check direct realizado flag on the item itself (set from plan editor)
@@ -1898,7 +1926,13 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => setCobertura({ ...cobertura, tipo: "entidad" })}
+                                    onClick={() => {
+                                        if (!manejaCopagosActivo) {
+                                            toast.error("Para usar la opción EPS / Convenio, debe habilitar 'Maneja copagos' en Configuración > Parámetros");
+                                            return;
+                                        }
+                                        setCobertura({ ...cobertura, tipo: "entidad" });
+                                    }}
                                     className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${cobertura.tipo === "entidad" ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-500 border-slate-200 hover:border-blue-200"}`}
                                 >
                                     EPS / convenio
@@ -1927,13 +1961,32 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Tarifa</label>
-                                    <input
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Tarifa (Copago)</label>
+                                    <select
                                         className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-300"
-                                        value={cobertura.tarifaNombre}
-                                        onChange={(e) => setCobertura({ ...cobertura, tarifaNombre: e.target.value })}
-                                        placeholder="Tarifario"
-                                    />
+                                        value={cobertura.tarifaId || ""}
+                                        onChange={(e) => {
+                                            const selId = e.target.value;
+                                            const selTarifa = copagosTarifas.find(t => String(t.id) === String(selId));
+                                            setCobertura({
+                                                ...cobertura,
+                                                tarifaId: selId,
+                                                tarifaNombre: selTarifa ? (selTarifa.nombre || selTarifa.name || "") : ""
+                                            });
+                                        }}
+                                    >
+                                        <option value="">Seleccione tarifa copago...</option>
+                                        {copagosTarifas.map(tarifa => {
+                                            const detalle = tarifa.esValorFijo
+                                                ? ` (Fijo: $${Number(tarifa.valorFijo || 0).toLocaleString('es-CO')})`
+                                                : (tarifa.porcentaje ? ` (${tarifa.porcentaje}%)` : '');
+                                            return (
+                                                <option key={tarifa.id} value={tarifa.id}>
+                                                    {tarifa.nombre || tarifa.name || "Tarifa copago"}{detalle}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Orden</label>

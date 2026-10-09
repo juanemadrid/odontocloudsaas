@@ -5,6 +5,7 @@ import { FiPlus, FiPrinter, FiEdit3, FiTrash2, FiX, FiAlertCircle, FiShield, FiF
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { BudgetPrintService } from '../../../services/BudgetPrintService';
+import { getConfigItems } from '../../../services/configPersistenceService';
 import supabase from '../../../lib/supabaseClient';
 
 export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditingPlan }) {
@@ -40,7 +41,8 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
     const [profesionalesDropdown, setProfesionalesDropdown] = useState([]);
     const [entidades, setEntidades] = useState([]);
     const [tarifas, setTarifas] = useState([]);
-    const [tenantConfigParams, setTenantConfigParams] = useState({ vigencia: 30, textoAyuda: "" });
+    const [tenantConfigParams, setTenantConfigParams] = useState({ vigencia: 30, textoAyuda: "", manejaCopagos: false });
+    const [showCopagosAlertModal, setShowCopagosAlertModal] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -230,14 +232,16 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
 
             setEntidades(Array.from(combinedMap.values()));
 
-            // Cargar listas de precios / tarifas
-            const { data: listData } = await supabase
-                .from("listas_precios")
-                .select("*")
-                .eq("tenant_id", inq);
-            setTarifas(listData || []);
+            // Cargar Tarifas de Copago registradas en Configuración > Tarifas Copagos
+            let copagosList = [];
+            try {
+                copagosList = await getConfigItems(inq, "tarifas_copago", "tarifas_copago");
+            } catch (eCop) {
+                console.warn("Error cargando tarifas de copago en PlanList:", eCop);
+            }
+            setTarifas(copagosList || []);
 
-            // Cargar parámetros institucionales de presupuestos (Vigencia y Texto de ayuda)
+            // Cargar parámetros institucionales de presupuestos (Vigencia, Texto de ayuda y Maneja Copagos)
             try {
                 const { data: tRow } = await supabase
                     .from("tenants")
@@ -249,10 +253,17 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                     const gen = rawParams?.general || {};
                     const vig = Number(gen.vigenciaPresupuestos) || 30;
                     const txt = (gen.textoAyudaPlan || "").trim();
-                    setTenantConfigParams({ vigencia: vig, textoAyuda: txt });
+                    const copagosActivo = Boolean(gen.manejaCopagos);
+                    setTenantConfigParams({ vigencia: vig, textoAyuda: txt, manejaCopagos: copagosActivo });
                 }
             } catch (errParam) {
                 console.warn("Error cargando parametros institucionales en PlanList:", errParam);
+            }
+
+            // Fallback en userProfile si no vino en tenants
+            const upManeja = userProfile?.tenant?.parametros?.general?.manejaCopagos;
+            if (upManeja !== undefined) {
+                setTenantConfigParams(prev => ({ ...prev, manejaCopagos: Boolean(upManeja) }));
             }
         } catch (e) {
             console.error("Error loading institutional catalogs:", e);
@@ -366,6 +377,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
 
     const openModal = (type) => {
         setModalType(type);
+        setShowCopagosAlertModal(false);
         setFormData({
             nombre: '',
             profesional: currentUserFullName || (profesionalesDropdown.length > 0 ? profesionalesDropdown[0] : ''),
@@ -380,6 +392,16 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
             ordenUrgente: false
         });
         setShowModal(true);
+    };
+
+    const handleSelectPaymentMode = (mode) => {
+        if (mode === 'entidad') {
+            if (!tenantConfigParams.manejaCopagos) {
+                setShowCopagosAlertModal(true);
+                return;
+            }
+        }
+        setFormData(prev => ({ ...prev, paymentMode: mode }));
     };
 
     const handleCreateSubmit = (e) => {
@@ -821,14 +843,14 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                 <div className="grid grid-cols-2 gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => setFormData({ ...formData, paymentMode: 'particular' })}
+                                        onClick={() => handleSelectPaymentMode('particular')}
                                         className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${formData.paymentMode === 'particular' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
                                     >
                                         Particular
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => setFormData({ ...formData, paymentMode: 'entidad' })}
+                                        onClick={() => handleSelectPaymentMode('entidad')}
                                         className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${formData.paymentMode === 'entidad' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-200'}`}
                                     >
                                         EPS / convenio
@@ -866,17 +888,29 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tarifa</label>
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tarifa (Copago)</label>
                                             <select
                                                 className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-blue-500 text-xs font-bold text-slate-700"
                                                 value={formData.tarifaId}
                                                 onChange={(e) => setFormData({ ...formData, tarifaId: e.target.value })}
                                             >
-                                                <option value="">Seleccione...</option>
-                                                {tarifas.map(tarifa => (
-                                                    <option key={tarifa.id} value={tarifa.id}>{tarifa.nombre || tarifa.name || tarifa.id}</option>
-                                                ))}
+                                                <option value="">Seleccione tarifa copago...</option>
+                                                {tarifas.map(tarifa => {
+                                                    const detalle = tarifa.esValorFijo
+                                                        ? ` (Fijo: $${Number(tarifa.valorFijo || 0).toLocaleString('es-CO')})`
+                                                        : (tarifa.porcentaje ? ` (${tarifa.porcentaje}%)` : '');
+                                                    return (
+                                                        <option key={tarifa.id} value={tarifa.id}>
+                                                            {tarifa.nombre || tarifa.name || "Tarifa copago"}{detalle}
+                                                        </option>
+                                                    );
+                                                })}
                                             </select>
+                                            {tarifas.length === 0 && (
+                                                <p className="text-[10px] text-amber-600 mt-1">
+                                                    * No hay tarifas de copago registradas en Configuración &gt; Tarifas copagos
+                                                </p>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Orden</label>
@@ -927,6 +961,37 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                 className="px-6 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
                             >
                                 Crear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Informativo: Maneja Copagos Requerido */}
+            {showCopagosAlertModal && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[10001] flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+                        <div className="flex items-center gap-3 text-amber-500">
+                            <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0 border border-amber-200">
+                                <FiShield size={20} className="text-amber-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-800">Opción no habilitada</h3>
+                                <p className="text-xs text-slate-500">Modalidad EPS / Convenio</p>
+                            </div>
+                        </div>
+
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                            Para usar la opción <strong>EPS / Convenio</strong>, primero debe habilitar la opción <strong>"Maneja copagos"</strong> en el módulo de <strong>Configuración &gt; Parámetros</strong>.
+                        </p>
+
+                        <div className="flex justify-end pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowCopagosAlertModal(false)}
+                                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
+                            >
+                                Entendido
                             </button>
                         </div>
                     </div>
