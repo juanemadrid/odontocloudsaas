@@ -147,14 +147,102 @@ export default function PagosList({ onNew }) {
         celular: pago.telefono || "—"
       };
 
+      // 1. Identificar y resolver Facturas de Compra asociadas si existen
+      let facturasMap = {};
+      const tieneFacturas = pago.pagoFacturasCompra || 
+        (pago.facturasSeleccionadas && pago.facturasSeleccionadas.length > 0) ||
+        (pago.items && pago.items.some(it => it.isFactura || it.facturaId || /^FC[A-Z0-9\-_]*/i.test(it.concepto || "") || /^DS[A-Z0-9\-_]*/i.test(it.concepto || "")));
+
+      if (tieneFacturas) {
+        try {
+          const { data: fcDb } = await supabase
+            .from("facturas_compra")
+            .select("*")
+            .eq("tenant_id", inquilino);
+          if (fcDb && fcDb.length > 0) {
+            fcDb.forEach(f => {
+              if (f.id) facturasMap[f.id] = f;
+              if (f.nroFactura) facturasMap[f.nroFactura] = f;
+              if (f.documentoNumero) facturasMap[f.documentoNumero] = f;
+            });
+          }
+        } catch (_) {}
+
+        if (Object.keys(facturasMap).length === 0) {
+          try {
+            const { data: cfgRow } = await supabase
+              .from("website_config")
+              .select("config")
+              .eq("tenant_id", inquilino)
+              .maybeSingle();
+            const fcs = cfgRow?.config?.facturas_compra || [];
+            fcs.forEach(f => {
+              if (f.id) facturasMap[f.id] = f;
+              if (f.nroFactura) facturasMap[f.nroFactura] = f;
+              if (f.documentoNumero) facturasMap[f.documentoNumero] = f;
+            });
+          } catch (_) {}
+        }
+      }
+
+      let facturaRefNotas = [];
       const itemsList = (pago.items && pago.items.length > 0)
-        ? pago.items.map(it => ({
-            desc: (it.concepto && it.descripcion && it.concepto !== it.descripcion)
-              ? `${it.concepto} - ${it.descripcion}`
-              : (it.concepto || it.descripcion || "Item"),
-            monto: it.total || it.precioUnitario || 0
-          }))
+        ? pago.items.map(it => {
+            const isFc = it.isFactura || it.facturaId || /^FC[A-Z0-9\-_]*/i.test(it.concepto || "") || /^DS[A-Z0-9\-_]*/i.test(it.concepto || "");
+            const fcObj = isFc ? (facturasMap[it.facturaId] || facturasMap[it.concepto] || facturasMap[it.numeroFactura]) : null;
+
+            let descItem = "";
+            if (isFc) {
+              const numDoc = fcObj?.nroFactura || fcObj?.documentoNumero || it.numeroFactura || it.concepto;
+              if (numDoc) {
+                facturaRefNotas.push(`Factura de compra / Documento soporte: ${numDoc}`);
+              }
+              // Resolver concepto real de la factura de compra (evitando repetir el nombre del proveedor)
+              if (fcObj && Array.isArray(fcObj.items) && fcObj.items.length > 0) {
+                descItem = fcObj.items.map(i => (i.concepto && i.descripcion && i.concepto !== i.descripcion) ? `${i.concepto} - ${i.descripcion}` : (i.concepto || i.descripcion)).filter(Boolean).join(", ");
+              } else if (fcObj?.concepto || fcObj?.descripcion) {
+                descItem = fcObj.concepto || fcObj.descripcion;
+              } else if (it.descripcion && it.descripcion !== terceroNombre && !it.descripcion.toLowerCase().includes(terceroNombre.toLowerCase())) {
+                descItem = it.descripcion;
+              } else {
+                descItem = "ADQUISICIÓN DE BIENES / SERVICIOS";
+              }
+            } else {
+              // Movimiento normal o de caja
+              if (it.concepto && it.descripcion && it.concepto !== it.descripcion) {
+                descItem = `${it.concepto} - ${it.descripcion}`;
+              } else {
+                descItem = it.concepto || it.descripcion || "Item";
+              }
+            }
+
+            return {
+              desc: descItem,
+              monto: it.total || it.precioUnitario || 0
+            };
+          })
         : null;
+
+      // Limpieza de observaciones para evitar redundancias
+      let obsFinal = String(pago.observaciones || "").trim();
+
+      // Caso 1: Si es de caja menor y la observación sólo repite "Egreso caja menor: X"
+      // y ese texto ya está en la descripción del concepto, no duplicar en observaciones
+      if (/^egreso caja menor:\s*/i.test(obsFinal)) {
+        const obsContenido = obsFinal.replace(/^egreso caja menor:\s*/i, "").trim().toLowerCase();
+        const yaEnConcepto = (itemsList || []).some(it => it.desc.toLowerCase().includes(obsContenido));
+        if (yaEnConcepto || obsContenido === "") {
+          obsFinal = "";
+        }
+      }
+
+      // Caso 2: Si hay factura asociada, agregar la referencia a observaciones de forma limpia
+      if (facturaRefNotas.length > 0) {
+        const uniqueFacturas = [...new Set(facturaRefNotas)].join(" | ");
+        if (!obsFinal.includes(uniqueFacturas)) {
+          obsFinal = obsFinal ? `${uniqueFacturas} — ${obsFinal}` : uniqueFacturas;
+        }
+      }
 
       const pagoPayload = {
         ...pago,
@@ -162,12 +250,12 @@ export default function PagosList({ onNew }) {
         tipoDocumento: "Egreso",
         documentTitle: "COMPROBANTE DE EGRESO",
         monto: Number(pago.monto || pago.total || 0),
-        concepto: pago.concepto || "Egreso / Pago a proveedor",
+        concepto: (itemsList && itemsList[0]?.desc) || pago.concepto || "Egreso / Pago a proveedor",
         nroConsecutivo: pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "S/N",
         medio: pago.medioPago || pago.bancoCaja || "Efectivo",
         registradoPor: (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador"),
         itemPayments: itemsList,
-        observaciones: pago.observaciones || ""
+        observaciones: obsFinal
       };
 
       await ReceiptPrintService.generatePDF(pagoPayload, patientPayload, clinic, userProfile);

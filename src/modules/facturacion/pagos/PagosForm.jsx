@@ -633,14 +633,18 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
         const fc = asociarFacturaData.facturaObj;
         const num = fc ? getFacturaCode(fc) : "Factura de compra";
-        const desc = fc ? (fc.descripcion || fc.proveedor || fc.tercero || "Factura de compra") : (selectedTerceroObj?.nombre ? `Pago factura ${selectedTerceroObj.nombre}` : "Pago de factura");
+        // Obtener el concepto real de la factura de compra sin repetir el nombre del proveedor
+        const conceptoRealFc = (fc?.items && Array.isArray(fc.items) && fc.items.length > 0)
+            ? fc.items.map(it => (it.concepto && it.descripcion && it.concepto !== it.descripcion) ? `${it.concepto} - ${it.descripcion}` : (it.concepto || it.descripcion)).filter(Boolean).join(", ")
+            : (fc?.concepto || fc?.descripcion || "Adquisición de bienes / servicios");
 
         setItems(prev => [
             ...prev,
             {
                 id: Date.now() + Math.random(),
-                concepto: num,
-                descripcion: desc,
+                concepto: conceptoRealFc,
+                numeroFactura: num,
+                descripcion: `Factura ${num}`,
                 precioUnitario: valPagar,
                 cantidad: parseFloat(asociarFacturaData.cantidad) || 1,
                 impuesto: asociarFacturaData.impuesto,

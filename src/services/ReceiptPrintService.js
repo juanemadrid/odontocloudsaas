@@ -118,6 +118,11 @@ export const ReceiptPrintService = {
                 cleanObservations = "";
             }
 
+            // Para comprobantes de egreso: no duplicar la observación si es de caja menor y ya está en los conceptos
+            if (isEgreso && /^egreso caja menor:\s*/i.test(cleanObservations)) {
+                cleanObservations = "";
+            }
+
             const totalBadgeLabel = isConsumoSaldo 
                 ? "TOTAL CONSUMIDO" 
                 : (isEgreso ? "TOTAL EGRESO" : "TOTAL ABONADO");
