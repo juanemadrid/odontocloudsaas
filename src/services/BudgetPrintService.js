@@ -455,8 +455,7 @@ export const BudgetPrintService = {
     <div class="sig-line-block">
       <div class="sig-line"></div>
       <div class="sig-info">
-        <p style="margin: 0; font-size: 10px; font-weight: bold; color: #000000; text-transform: uppercase;">${elaboradorNombre}</p>
-        <p style="margin: 2px 0 0 0; font-size: 8.5px; color: #475569; text-transform: uppercase;">Elaborado por · ${elaboradorRol}</p>
+        <p style="margin: 0; font-size: 10px; font-weight: bold; color: #000000; text-transform: uppercase;">Elaborado por: ${elaboradorNombre}</p>
       </div>
     </div>
   </div>
