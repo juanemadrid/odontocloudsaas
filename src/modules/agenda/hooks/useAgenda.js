@@ -466,6 +466,7 @@ export function useAgenda() {
 
                 const doc = (doctors || []).find(d => String(d.id) === String(c.profesional_id));
                 const docSpec = doc?.especialidad || (Array.isArray(doc?.especialidades) ? doc.especialidades[0] : "") || "";
+                const finalSpecialty = c.especialidad || c.especialidad_id || docSpec || "";
 
                 return {
                     id: c.id,
@@ -475,8 +476,8 @@ export function useAgenda() {
                     resourceId: c.profesional_id,
                     consultorioId: c.consultorio_id,
                     sucursalId: c.sucursal_id || "",
-                    especialidadId: c.especialidad_id || c.especialidad || docSpec || "",
-                    especialidad: c.especialidad || docSpec || "",
+                    especialidadId: finalSpecialty,
+                    especialidad: finalSpecialty,
                     fecha: c.fecha_inicio ? c.fecha_inicio.split("T")[0] : "",
                     horaInicio: c.fecha_inicio ? new Date(c.fecha_inicio).toTimeString().substring(0, 5) : "",
                     horaFin: c.fecha_fin ? new Date(c.fecha_fin).toTimeString().substring(0, 5) : "",
@@ -612,6 +613,7 @@ export function useAgenda() {
             }
         }
 
+        const chosenSpecialty = (data.especialidad || data.especialidadId || data.especialidad_id || "").trim();
         const rawPayload = {
             tenant_id: inquilino,
             paciente_id: pacienteId || null,
@@ -624,11 +626,23 @@ export function useAgenda() {
             motivo: (data.comentario && data.comentario.trim()) 
                 ? data.comentario.trim() 
                 : (data.motivo && data.motivo.trim().toLowerCase() !== "consulta odontológica" ? data.motivo.trim() : ""),
-            notas: (data.comentario && data.comentario.trim()) ? data.comentario.trim() : ""
+            notas: (data.comentario && data.comentario.trim()) ? data.comentario.trim() : "",
+            ...(chosenSpecialty ? { especialidad: chosenSpecialty } : {})
         };
 
-        const { data: inserted, error: insertErr } = await supabase.from("citas").insert([rawPayload]).select().single();
-        if (insertErr) throw insertErr;
+        let inserted = null;
+        const res = await supabase.from("citas").insert([rawPayload]).select().single();
+        if (res.error && (res.error.code === '42703' || String(res.error.message).includes("especialidad"))) {
+            const fallbackPayload = { ...rawPayload };
+            delete fallbackPayload.especialidad;
+            const retryRes = await supabase.from("citas").insert([fallbackPayload]).select().single();
+            if (retryRes.error) throw retryRes.error;
+            inserted = retryRes.data;
+        } else if (res.error) {
+            throw res.error;
+        } else {
+            inserted = res.data;
+        }
         const newId = inserted?.id;
 
         // Audit log
@@ -764,10 +778,27 @@ export function useAgenda() {
             supPatch.fecha_fin = validatedEnd.toISOString();
         }
 
+        if (finalPatch.especialidad !== undefined || finalPatch.especialidadId !== undefined || finalPatch.especialidad_id !== undefined) {
+            const specToSave = (finalPatch.especialidad || finalPatch.especialidadId || finalPatch.especialidad_id || "").trim();
+            if (specToSave) {
+                supPatch.especialidad = specToSave;
+            }
+        }
+
         if (Object.keys(supPatch).length > 0) {
-            const { error: updateError } = await supabase.from("citas").update(supPatch)
+            let { error: updateError } = await supabase.from("citas").update(supPatch)
                 .eq("tenant_id", inquilino).eq("id", id);
-            if (updateError) throw updateError;
+            if (updateError && (updateError.code === '42703' || String(updateError.message).includes("especialidad"))) {
+                const fallbackPatch = { ...supPatch };
+                delete fallbackPatch.especialidad;
+                if (Object.keys(fallbackPatch).length > 0) {
+                    const retry = await supabase.from("citas").update(fallbackPatch)
+                        .eq("tenant_id", inquilino).eq("id", id);
+                    if (retry.error) throw retry.error;
+                }
+            } else if (updateError) {
+                throw updateError;
+            }
         }
         // Notify patient if status/date changed
         try {

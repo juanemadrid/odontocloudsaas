@@ -70,6 +70,8 @@ const generateSlotsForDay = (columnDateObj, _columnDateStr, schedulesData, consu
         schedules: schedulesData
     }).slots;
 
+const normalizeSpecText = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+
 const resolveDoctorSpecialtyId = (doc, specialtiesList = []) => {
     if (!doc || !specialtiesList || specialtiesList.length === 0) return "";
     
@@ -78,16 +80,16 @@ const resolveDoctorSpecialtyId = (doc, specialtiesList = []) => {
         doc.especialidad_id,
         doc.especialidad,
         ...(Array.isArray(doc.especialidades) ? doc.especialidades : [])
-    ].filter(Boolean);
+    ].flatMap(c => typeof c === 'string' ? c.split(',').map(s => s.trim()) : [c]).filter(Boolean);
 
     for (const cand of candidates) {
-        const candStr = String(cand).trim().toLowerCase();
-        if (!candStr) continue;
+        const candNorm = normalizeSpecText(cand);
+        if (!candNorm) continue;
 
         const matched = specialtiesList.find(s => {
-            const sId = String(s.id || s).trim().toLowerCase();
-            const sName = String(s.nombre || s).trim().toLowerCase();
-            return sId === candStr || sName === candStr;
+            const sId = normalizeSpecText(s.id || s);
+            const sName = normalizeSpecText(s.nombre || s);
+            return sId === candNorm || sName === candNorm;
         });
         if (matched) {
             return typeof matched === 'string' ? matched : (matched.id || matched.nombre);
@@ -95,14 +97,14 @@ const resolveDoctorSpecialtyId = (doc, specialtiesList = []) => {
     }
 
     for (const cand of candidates) {
-        const candStr = String(cand).trim().toLowerCase();
-        if (!candStr) continue;
+        const candNorm = normalizeSpecText(cand);
+        if (!candNorm) continue;
 
         const matched = specialtiesList.find(s => {
-            const sId = String(s.id || s).trim().toLowerCase();
-            const sName = String(s.nombre || s).trim().toLowerCase();
-            return (sId && candStr.includes(sId)) || (sName && candStr.includes(sName)) ||
-                   (sId && sId.includes(candStr)) || (sName && sName.includes(candStr));
+            const sId = normalizeSpecText(s.id || s);
+            const sName = normalizeSpecText(s.nombre || s);
+            return (sId && candNorm.includes(sId)) || (sName && candNorm.includes(sName)) ||
+                   (sId && sId.includes(candNorm)) || (sName && sName.includes(candNorm));
         });
         if (matched) {
             return typeof matched === 'string' ? matched : (matched.id || matched.nombre);
@@ -111,6 +113,7 @@ const resolveDoctorSpecialtyId = (doc, specialtiesList = []) => {
 
     return "";
 };
+
 
 export default function AppointmentModal({
     isOpen,
@@ -241,23 +244,37 @@ export default function AppointmentModal({
                     h = initialData.hora;
                 }
 
-                let resolvedEspecialidadId = initialData?.especialidadId || initialData?.especialidad || initialData?.especialidad_id || "";
-                const targetDoctorId = initialData?.doctorId || initialData?.profesional_id;
-                const selectedDoctor = (doctors || []).find(d => String(d.id) === String(targetDoctorId));
+                let rawInitialSpec = initialData?.especialidadId || initialData?.especialidad || initialData?.especialidad_id || "";
+                let resolvedEspecialidadId = "";
 
-                if (!resolvedEspecialidadId && selectedDoctor) {
-                    resolvedEspecialidadId = resolveDoctorSpecialtyId(selectedDoctor, specialties);
-                } else if (resolvedEspecialidadId) {
+                if (rawInitialSpec) {
+                    const rawNorm = normalizeSpecText(rawInitialSpec);
                     const matched = (specialties || []).find(s => {
-                        const sId = String(s.id || s).trim().toLowerCase();
-                        const sName = String(s.nombre || s).trim().toLowerCase();
-                        const target = String(resolvedEspecialidadId).trim().toLowerCase();
-                        return sId === target || sName === target;
+                        const sId = normalizeSpecText(s.id || s);
+                        const sName = normalizeSpecText(s.nombre || s);
+                        return sId === rawNorm || sName === rawNorm;
                     });
                     if (matched) {
                         resolvedEspecialidadId = typeof matched === 'string' ? matched : (matched.id || matched.nombre);
+                    } else {
+                        const partial = (specialties || []).find(s => {
+                            const sId = normalizeSpecText(s.id || s);
+                            const sName = normalizeSpecText(s.nombre || s);
+                            return (sId && rawNorm.includes(sId)) || (sName && rawNorm.includes(sName)) ||
+                                   (sId && sId.includes(rawNorm)) || (sName && sName.includes(rawNorm));
+                        });
+                        resolvedEspecialidadId = partial ? (typeof partial === 'string' ? partial : (partial.id || partial.nombre)) : rawInitialSpec;
                     }
                 }
+
+                if (!resolvedEspecialidadId) {
+                    const targetDoctorId = initialData?.doctorId || initialData?.profesional_id;
+                    const selectedDoctor = (doctors || []).find(d => String(d.id) === String(targetDoctorId));
+                    if (selectedDoctor) {
+                        resolvedEspecialidadId = resolveDoctorSpecialtyId(selectedDoctor, specialties);
+                    }
+                }
+
 
                 reset({
                     isNewPatient: false,
@@ -477,19 +494,26 @@ export default function AppointmentModal({
             prevDoctorIdRef.current = null;
             return;
         }
+        const currentSpec = watch("especialidadId");
+        const doc = (doctors || []).find(d => String(d.id) === String(watchedDoctorId));
         if (watchedDoctorId && watchedDoctorId !== prevDoctorIdRef.current) {
             const isInitialAssign = prevDoctorIdRef.current === null;
             prevDoctorIdRef.current = watchedDoctorId;
-            const currentSpec = watch("especialidadId");
-            const doc = (doctors || []).find(d => String(d.id) === String(watchedDoctorId));
             if (doc) {
                 const docSpecId = resolveDoctorSpecialtyId(doc, specialties);
                 if (!currentSpec && docSpecId) {
                     setValue("especialidadId", docSpecId, { shouldDirty: !isInitialAssign });
                 }
             }
+        } else if (!currentSpec && doc && specialties.length > 0) {
+            // Sincronizar si las especialidades o doctores terminaron de cargar después
+            const docSpecId = resolveDoctorSpecialtyId(doc, specialties);
+            if (docSpecId) {
+                setValue("especialidadId", docSpecId, { shouldDirty: false });
+            }
         }
     }, [isOpen, watchedDoctorId, doctors, specialties, setValue, watch]);
+
 
     // Sincronizar consultorioId cuando cambia el doctor, la sucursal o los espacios disponibles
     useEffect(() => {
@@ -627,8 +651,21 @@ export default function AppointmentModal({
                 });
             }
             const finalEstado = statusMap[finalStatus] || 'CONFIRMADA';
+            const currentSpecVal = data.especialidadId || "";
+            const matchedSpecObj = (specialties || []).find(s => {
+                const sId = typeof s === 'string' ? s : (s.id || s.nombre);
+                const sName = typeof s === 'string' ? s : (s.nombre || s.id);
+                return String(sId) === String(currentSpecVal) || String(sName) === String(currentSpecVal);
+            });
+            const descriptiveSpec = matchedSpecObj 
+                ? (typeof matchedSpecObj === 'string' ? matchedSpecObj : (matchedSpecObj.nombre || matchedSpecObj.id)) 
+                : currentSpecVal;
+
             const payload = {
                 ...data,
+                especialidadId: currentSpecVal,
+                especialidad: descriptiveSpec,
+                especialidad_id: currentSpecVal,
                 status: finalStatus,
                 estado: finalEstado,
                 start,
@@ -925,6 +962,21 @@ export default function AppointmentModal({
                                         className="w-full bg-white border border-slate-200 rounded-[14px] px-4 py-3 text-[11px] font-bold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/30 uppercase cursor-pointer shadow-sm transition-all appearance-none"
                                     >
                                         <option value="">ELIJA ESPECIALIDAD...</option>
+                                        {/* Mantener la opción actual si no está en la lista estándar para que nunca quede en blanco */}
+                                        {(() => {
+                                            const currentVal = watch("especialidadId");
+                                            if (!currentVal) return null;
+                                            const normVal = String(currentVal).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+                                            const alreadyInList = (specialties || []).some(s => {
+                                                const sId = String(typeof s === 'string' ? s : (s.id || s.nombre)).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+                                                const sName = String(typeof s === 'string' ? s : (s.nombre || s.id)).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+                                                return sId === normVal || sName === normVal;
+                                            });
+                                            if (!alreadyInList) {
+                                                return <option value={currentVal}>{currentVal}</option>;
+                                            }
+                                            return null;
+                                        })()}
                                         {/* ✅ FILTRADO POR SUCURSAL */}
                                         {specialties
                                             .filter(s => {

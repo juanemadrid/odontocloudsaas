@@ -133,6 +133,7 @@ export const createAppointment = async (tenantId, appointmentData) => {
         end: endDate,
     });
 
+    const chosenSpecialty = appointmentData.especialidad || appointmentData.especialidadId || appointmentData.especialidad_id || null;
     const payload = {
         tenant_id: tenantId,
         paciente_id: pacienteId || null,
@@ -142,16 +143,27 @@ export const createAppointment = async (tenantId, appointmentData) => {
         fecha_fin: endDate.toISOString(),
         estado: appointmentData.status || "programada",
         motivo: (appointmentData.comentario || motivo || notas || "").trim(),
-        notas: (appointmentData.comentario || notas || "").trim()
+        notas: (appointmentData.comentario || notas || "").trim(),
+        ...(chosenSpecialty ? { especialidad: chosenSpecialty } : {})
     };
 
-    const { data, error } = await supabase
+    let data, error;
+    const res = await supabase
         .from("citas")
         .insert([payload])
         .select()
         .single();
-
-    if (error) throw error;
+    if (res.error && (res.error.code === '42703' || String(res.error.message).includes("especialidad"))) {
+        const fallback = { ...payload };
+        delete fallback.especialidad;
+        const retryRes = await supabase.from("citas").insert([fallback]).select().single();
+        if (retryRes.error) throw retryRes.error;
+        data = retryRes.data;
+    } else if (res.error) {
+        throw res.error;
+    } else {
+        data = res.data;
+    }
 
     return {
         id: data.id,
@@ -173,6 +185,10 @@ export const updateAppointment = async (tenantId, id, appointmentData) => {
     if (appointmentData.status || appointmentData.estado) payload.estado = appointmentData.status || appointmentData.estado;
     if (appointmentData.motivo !== undefined) payload.motivo = appointmentData.motivo;
     if (appointmentData.notas !== undefined) payload.notas = appointmentData.notas;
+    if (appointmentData.especialidad !== undefined || appointmentData.especialidadId !== undefined || appointmentData.especialidad_id !== undefined) {
+        const espVal = appointmentData.especialidad || appointmentData.especialidadId || appointmentData.especialidad_id;
+        if (espVal) payload.especialidad = espVal;
+    }
 
     const { data: current, error: currentError } = await supabase
         .from("citas")
@@ -197,7 +213,7 @@ export const updateAppointment = async (tenantId, id, appointmentData) => {
         });
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
         .from("citas")
         .update(payload)
         .eq("tenant_id", tenantId)
@@ -205,7 +221,15 @@ export const updateAppointment = async (tenantId, id, appointmentData) => {
         .select()
         .single();
 
-    if (error) throw error;
+    if (error && (error.code === '42703' || String(error.message).includes("especialidad"))) {
+        const fallback = { ...payload };
+        delete fallback.especialidad;
+        const retry = await supabase.from("citas").update(fallback).eq("tenant_id", tenantId).eq("id", id).select().single();
+        if (retry.error) throw retry.error;
+        data = retry.data;
+    } else if (error) {
+        throw error;
+    }
 
     return {
         id: data.id,
