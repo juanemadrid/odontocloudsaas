@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { HELP_GUIDES, searchGuides } from '../supabase/functions/_shared/helpKnowledge.mjs';
-import { createHelpHandler, HelpError, helpPrompt } from '../supabase/functions/odontocloud-help/handler.mjs';
+import { HELP_GUIDES, searchGuides, PUBLIC_GUIDE_IDS } from '../supabase/functions/_shared/helpKnowledge.mjs';
+import { createHelpHandler, HelpError, helpPrompt, budgetStageReference, canonicalButtonLabels } from '../supabase/functions/odontocloud-help/handler.mjs';
 import { authenticateHelp } from '../supabase/functions/odontocloud-help/auth.mjs';
 
 function mockAdmin({ authError = null, profile = { tenant_id: 'clinic-a', activo: true }, tenant = { id: 'clinic-a', activo: true } } = {}) {
@@ -161,7 +161,7 @@ assert.equal(thanksResponse.success, true);
 assert.equal(thanksResponse.provider, 'assistant');
 
 console.log(`Help assistant: ${HELP_GUIDES.length} guide sources verified; retrieval, authentication boundary, application isolation and local fallback checks passed.`);
-import { conversationalReply, resolveHelpGuides, compactHistory, readHelpEvents } from '../supabase/functions/_shared/helpConversation.mjs';
+import { conversationalReply, resolveHelpGuides, compactHistory, readHelpEvents, screenContextFromLocation, trustedScreenContext } from '../supabase/functions/_shared/helpConversation.mjs';
 
 assert.equal(conversationalReply('hola').provider, 'assistant');
 assert.ok(conversationalReply('hola', ['citas']).answer.includes('cita'));
@@ -314,3 +314,70 @@ for (const question of ['sí ya','si','sí, ya lo veo','ok','ya está','perfecto
 }
 assert.ok(helpPrompt(HELP_GUIDES.find(g=>g.id==='citas'),'¿Qué campos son obligatorios al crear un paciente para la cita?').includes('fecha de nacimiento y sexo'));
 console.log('Brief confirmations: compact reference and latest exchange preserved.');
+
+for (const question of ['Quiero hacer un presupuesto','No, porque no sé dónde están presupuestos y planes','Estoy en Inicio, ¿cómo llego al presupuesto?']) {
+ const result=await (await handler(req({question,previousIds:['presupuestos'],history:choiceHistory,screenContext:'Inicio'}))).json();
+ assert.equal(result.provider,'ollama');
+ const prompt=calls.at(-1).body.messages[0].content;
+ assert.ok(/\[Pacientes\] en (?:el )?menú principal/.test(prompt));
+ assert.ok(prompt.includes('abre su ficha'));
+ assert.ok(/no está en Inicio/i.test(prompt));
+ assert.ok(prompt.length<1200);
+}
+console.log('Navigation regression: budget entry and location corrections include the route from Inicio through Pacientes.');
+
+for (const question of ['hola me puedes ayudar a configuraasr el sistema','¿Me ayudas a configurar el sistema?','Necesito configurar mi clínica','quiero configurar los usuarios']) {
+ const expected=question.includes('usuarios')?'usuarios':'empresa';
+ assert.equal(resolveHelpGuides(question)[0]?.id,expected,question);
+}
+for (const guide of HELP_GUIDES.filter(g=>!PUBLIC_GUIDE_IDS.has(g.id))) {
+ const prompt=helpPrompt(guide,guide.title);
+ assert.ok(prompt.length<1800,guide.id+' must have bounded prompt');
+}
+console.log('Retrieval regression: conversational wording and configuration typos; bounded references across internal guides.');
+
+const navigation=budgetStageReference('Quiero hacer un presupuesto','Inicio');
+assert.ok(navigation.includes('[Pacientes]'));
+assert.ok(!navigation.includes('[Crear]'),'Initial navigation must not expose the later save action');
+const form=budgetStageReference('Ya abrí la ficha y veo Presupuestos & planes','Inicio');
+assert.ok(form.includes('[Nombre]') && form.includes('[Profesional]'));
+assert.ok(form.includes('Solo después'));
+const added=budgetStageReference('Ya agregué endodoncia y cirugía','Presupuestos');
+assert.ok(added.includes('revisa cantidades'));
+assert.equal(canonicalButtonLabels('Pulsa [Pac-ientes].','Ruta [Pacientes]'), 'Pulsa [Pacientes].');
+assert.equal(canonicalButtonLabels('Pulsa [Eliminar].','Ruta [Pacientes]'), 'Pulsa [Eliminar].','Do not guess a different button');
+console.log('Workflow checks: navigation before creation, fields before save, completed actions and canonical button spelling.');
+
+// Regression from the actual production transcript, including the old client's bad screen hint.
+const flowHistory=[{role:'user',content:'Quiero hacer un presupuesto'},{role:'assistant',content:'Abre Pacientes, busca al paciente y entra a su ficha.'}];
+for (const question of ['no encuentro ese boton','pero no hay otro lado por donde buscarlo','eso no me sale','¿y dónde lo encuentro?']) {
+ const selected=resolveHelpGuides(question,['presupuestos']);
+ assert.equal(selected[0]?.id,'presupuestos',question);
+ const response=await handler(req({question,previousIds:['presupuestos'],history:flowHistory,screenContext:'Pestaña activa: BUSCAR... | Ruta: /dashboard_admin'}));
+ assert.equal((await response.json()).provider,'ollama');
+ const prompt=calls.at(-1).body.messages[0].content;
+ assert.ok(prompt.includes('Inicio'));
+ assert.ok(!prompt.includes('BUSCAR...'));
+ assert.ok(!prompt.includes('Usuarios, perfiles y permisos'));
+}
+for(const [question,id] of [['Cómo cierro caja','cerrar-caja'],['Quiero configurar la clínica','empresa'],['Quiero crear usuarios','usuarios']]) assert.equal(resolveHelpGuides(question,['presupuestos'])[0]?.id,id);
+assert.equal(screenContextFromLocation('/dashboard_admin'),'Inicio');
+assert.equal(screenContextFromLocation('/dashboard_doctor/agenda'),'Agenda');
+assert.equal(screenContextFromLocation('/dashboard_admin/pacientes','?id=private-patient&tab=presu'),'Ficha del paciente > Presupuestos & planes');
+assert.equal(screenContextFromLocation('/dashboard_admin/pacientes/private-id/planes'),'Ficha del paciente > Presupuestos & planes');
+assert.equal(screenContextFromLocation('/other'),'');
+assert.equal(trustedScreenContext('Pestaña activa: BUSCAR... | Ruta: /dashboard_admin'),'Inicio');
+assert.equal(trustedScreenContext('Paciente Nombre Privado'),'');
+console.log('Production transcript regression: stable topic, explicit topic changes, canonical route context and no patient identifiers.');
+
+const treatmentHistory=[{role:'user',content:'Ayúdame a crear un plan de tratamiento'},{role:'assistant',content:'Puedes añadir procedimientos del tarifario. ¿Deseas continuar con este paso?'}];
+await handler(req({question:'SI',previousIds:['presupuestos'],history:treatmentHistory,screenContext:'Ficha del paciente > Presupuestos & planes'}));
+const acceptancePrompt=calls.at(-1).body.messages[0].content;
+assert.ok(acceptancePrompt.includes('[+ Nuevo Plan de Tratamiento]'));
+assert.ok(!acceptancePrompt.includes('[+ Nuevo Presupuesto]'));
+assert.ok(acceptancePrompt.includes('no afirma haber completado acciones'));
+assert.ok(acceptancePrompt.includes('ANTES de Crear'));
+assert.ok(!acceptancePrompt.includes('No exige odontograma'));
+const confirmedForm=budgetStageReference('Sí, ya abrí la ventana','Ficha del paciente',treatmentHistory);
+assert.equal(confirmedForm,null,'An explicit completed action is not mere acceptance of guidance');
+console.log('Treatment conversation: yes refers to the previous invitation, preserves plan type and does not claim completed actions.');

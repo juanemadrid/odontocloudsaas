@@ -28,6 +28,7 @@ export function isContextualReply(question) {
     /^(?:acabo de|termine de) (?:agregar|anadir|seleccionar|guardar|crear|abrir)(?:\b|$)/.test(q);
 }
 
+const topicWords = text => normalize(text).split(' ').map(w=>w.startsWith('configur')?'configuracion':w.endsWith('s')?w.slice(0,-1):w).filter(w=>w.length>3 && !['crear','nuevo','nueva','modificar','hacer','como','boton','opcion','sistema','ayuda','guia','paso'].includes(w));
 export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   const q = normalize(question);
   if (/\bedunexus\b/.test(q)) return [];
@@ -35,13 +36,23 @@ export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   const candidates = HELP_GUIDES.filter(g => mode !== 'public' || PUBLIC_GUIDE_IDS.has(g.id));
   const active = previousIds.map(id => candidates.find(g => g.id === id)).filter(Boolean).slice(0, 1);
   if (active.length && isContextualReply(question)) return active;
-  if (/\b(planes|suscripcion|mensualidad)\b/.test(q) && !/\b(tratamiento|paciente|presupuesto)\b/.test(q)) {
+  if (/\b(planes|suscripcion|mensualidad)\b/.test(q) && !/\b(tratamientos?|pacientes?|presupuestos?)\b/.test(q)) {
     return candidates.filter(g => g.id === 'planes-suscripcion');
   }
-  const direct = searchGuides(question, [], mode).slice(0, 1);
+  const matches = searchGuides(question, [], mode);
+  const words = topicWords(question);
+  const namedTopic = matches.find(g => topicWords(g.title+' '+g.category).some(word=>words.includes(word)));
+  const direct = namedTopic ? [namedTopic] : matches.slice(0, 1);
   // A clear new topic wins over the old conversation (e.g. "explicame los planes").
-  if (direct.length) return direct;
+  if (direct.length) {
+    const anchor = topicWords(direct[0].title+' '+direct[0].category);
+    const words = topicWords(question);
+    // Generic words such as "button" must not replace an ongoing workflow with permissions.
+    if (active.length && !anchor.some(word=>words.includes(word))) return active;
+    return direct;
+  }
   if (followup && previousIds.length) return previousIds.map(id => candidates.find(g => g.id === id)).filter(Boolean).slice(0, 1);
+  if (active.length && /\b(ese|esa|eso|ahi|alli|otro|otra|buscarlo|hacerlo|encontrarlo|sale|aparece|veo|encuentro)\b/.test(q)) return active;
   return searchGuides(question, previousIds, mode).slice(0, 1);
 }
 
@@ -93,4 +104,32 @@ export async function* readHelpEvents(body) {
       }
     }
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
+
+// Route-derived context: no DOM text, names, identifiers or arbitrary query values.
+export function screenContextFromLocation(pathname = '', search = '') {
+ const parts=pathname.toLowerCase().split('/').filter(Boolean);
+ if (!/^dashboard(?:_admin|_doctor|_recepcion)?$/.test(parts[0] || '')) return '';
+ const section=parts[1];
+ if (!section) return 'Inicio';
+ const params=new URLSearchParams(search);
+ if (section==='pacientes') {
+   if (parts.length>2 || params.has('id')) {
+     const tabs={presu:'Presupuestos & planes',datos:'Datos personales',odonto:'Odontogramas',perio:'Periodontogramas',prof:'Profesionales'};
+     const tab=parts.includes('planes')?'Presupuestos & planes':tabs[params.get('tab')];
+     return 'Ficha del paciente'+(tab?' > '+tab:'');
+   }
+   return 'Pacientes';
+ }
+ return {agenda:'Agenda',config:'Configuración',caja:'Caja',administracion:'Administración',reportes:'Reportes'}[section] || '';
+}
+
+export function trustedScreenContext(value) {
+ const raw=String(value || '');
+ const route=raw.match(/Ruta:\s*(\/[^\s|]*)/);
+ if(route) return screenContextFromLocation(route[1]);
+ const known=['Inicio','Pacientes','Ficha del paciente','Agenda','Configuración','Caja','Administración','Reportes'];
+ if (known.includes(raw)) return raw;
+ if (/^Ficha del paciente > (Presupuestos & planes|Datos personales|Odontogramas|Periodontogramas|Profesionales)$/.test(raw)) return raw;
+ return '';
 }

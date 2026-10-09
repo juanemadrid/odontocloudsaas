@@ -1,0 +1,74 @@
+{
+  "numDocumentoIdObligado": "901234567",
+  "numFactura": "SETP-990000123",
+  "tipoNota": null,
+  "numNota": null,
+  "usuarios": [
+    {
+      "tipoDocumentoIdentificacion": "CC",
+      "numDocumentoIdentificacion": "1102885391",
+      "tipoUsuario": "12",
+      "fechaNacimiento": "1994-06-15",
+      "codSexo": "M",
+      "codPaisResidencia": "170",
+      "codMunicipioResidencia": "70001",
+      "codZonaTerritorialResidencia": "01",
+      "incapacidad": "02",
+      "codPaisOrigen": "170",
+      "consecutivo": 1,
+      "servicios": {
+        "consultas": [
+          {
+            "codPrestador": "700010012301",
+            "fechaInicioAtencion": "2026-10-07 09:30",
+            "numAutorizacion": null,
+            "codConsulta": "890201",
+            "modalidadGrupoServicioTecSal": "01",
+            "grupoServicios": "01",
+            "codServicio": 356,
+            "finalidadTecnologiaSalud": "10",
+            "causaMotivoAtencion": "38",
+            "codDiagnosticoPrincipal": "K021",
+            "tipoDiagnosticoPrincipal": "01",
+            "tipoDocumentoIdentificacion": "CC",
+            "numDocumentoIdentificacion": "64576359",
+            "vrServicio": 80000,
+            "conceptoRecaudo": "05",
+            "valorPagoModerador": 0,
+            "numFEVPagoModerador": null,
+            "consecutivo": 1
+          }
+        ],
+        "procedimientos": [
+          {
+            "codPrestador": "700010012301",
+            "fechaInicioAtencion": "2026-10-07 10:15",
+            "idMIPRES": null,
+            "numAutorizacion": null,
+            "codProcedimiento": "232101",
+            "viaIngresoServicioSalud": "01",
+            "modalidadGrupoServicioTecSal": "01",
+            "grupoServicios": "01",
+            "codServicio": 356,
+            "finalidadTecnologiaSalud": "10",
+            "codDiagnosticoPrincipal": "K021",
+            "codDiagnosticoRelacionado": null,
+            "codComplicacion": null,
+            "tipoDocumentoIdentificacion": "CC",
+            "numDocumentoIdentificacion": "64576359",
+            "vrServicio": 150000,
+            "conceptoRecaudo": "05",
+            "valorPagoModerador": 0,
+            "numFEVPagoModerador": null,
+            "consecutivo": 1
+          }
+        ],
+        "urgencias": [],
+        "hospitalizacion": [],
+        "recienNacidos": [],
+        "medicamentos": [],
+        "otrosServicios": []
+      }
+    }
+  ]
+}

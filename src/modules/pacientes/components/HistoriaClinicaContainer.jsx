@@ -312,12 +312,31 @@ export default function HistoriaClinicaContainer({ patient }) {
     };
 
     const handleDeleteDoc = (docId) => {
+        const selectedDoc = documents.find(doc => doc.id === docId);
+        const isConsulta = selectedDoc && (selectedDoc.tipoDocumento === 'Consulta' || selectedDoc.tipo === 'Consulta' || selectedDoc.titulo === 'Consulta Odontológica');
+        const isFinalizada = isConsulta && (selectedDoc.estado === 'Finalizada' || selectedDoc.finalizado === true || selectedDoc.firmado === true || selectedDoc.metadata?.estado === 'Finalizada' || selectedDoc.metadata?.finalizado === true);
+
+        if (isFinalizada) {
+            toast.error("Por normativa médico-legal (Resolución 1995 de 1999 y Ley 2015 de 2020), las consultas médicas finalizadas son inalterables y no pueden eliminarse.");
+            return;
+        }
+
         setDeleteModal({ isOpen: true, docId });
     };
 
     const confirmDeleteDoc = async () => {
         const docId = deleteModal.docId;
         setDeleteModal({ isOpen: false, docId: null });
+
+        const selectedDoc = documents.find(doc => doc.id === docId);
+        const isConsulta = selectedDoc && (selectedDoc.tipoDocumento === 'Consulta' || selectedDoc.tipo === 'Consulta' || selectedDoc.titulo === 'Consulta Odontológica');
+        const isFinalizada = isConsulta && (selectedDoc.estado === 'Finalizada' || selectedDoc.finalizado === true || selectedDoc.firmado === true || selectedDoc.metadata?.estado === 'Finalizada' || selectedDoc.metadata?.finalizado === true);
+
+        if (isFinalizada) {
+            toast.error("Acción denegada: Un registro clínico finalizado es inalterable por ley.");
+            return;
+        }
+
         try {
             // 1. Table delete
             try {
@@ -1692,9 +1711,19 @@ export default function HistoriaClinicaContainer({ patient }) {
                                                                 <FiPenTool size={11} strokeWidth={2.5} />
                                                             </button>
                                                         )}
-                                                        <button onClick={() => handleDeleteDoc(doc.id)} className="w-6 h-6 bg-rose-100 hover:bg-rose-200 text-rose-500 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Eliminar">
-                                                            <FiTrash2 size={11} strokeWidth={2.5} />
-                                                        </button>
+                                                        {isFinalizada ? (
+                                                            <button 
+                                                                type="button"
+                                                                className="w-6 h-6 bg-slate-100 text-slate-400 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-not-allowed opacity-75" 
+                                                                title="Inalterable: Por Resolución 1995 de 1999 y Ley 2015 de 2020, las consultas médicas finalizadas no pueden eliminarse"
+                                                            >
+                                                                <FiLock size={11} strokeWidth={2.5} />
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={() => handleDeleteDoc(doc.id)} className="w-6 h-6 bg-rose-100 hover:bg-rose-200 text-rose-500 rounded-lg flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Eliminar">
+                                                                <FiTrash2 size={11} strokeWidth={2.5} />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>

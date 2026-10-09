@@ -4,6 +4,7 @@ import {
     FiMessageSquare, FiRefreshCw, FiMinimize2, FiMaximize2, FiHelpCircle, FiChevronRight 
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { screenContextFromLocation } from '../../supabase/functions/_shared/helpConversation.mjs';
 import { askHelp } from '../services/helpAssistantService';
 import { HELP_GUIDES, formatGuide, normalize, searchGuides } from '../../supabase/functions/_shared/helpKnowledge.mjs';
 
@@ -214,37 +215,7 @@ function HelpPanel({ onClose }) {
     };
 
 function detectScreenContext() {
-    try {
-        const parts = [];
-        const headings = Array.from(document.querySelectorAll('h1, h2:not(#help-title), h3.font-bold, h4.font-bold'));
-        const mainHeading = headings.find(h => {
-            const txt = h.innerText?.trim();
-            return txt && !txt.includes('Ayuda de OdontoCloud') && !txt.includes('Guía en vivo') && txt.length < 80;
-        });
-        if (mainHeading) {
-            parts.push(`Pantalla: ${mainHeading.innerText.trim()}`);
-        }
-
-        const tabs = Array.from(document.querySelectorAll('button, a, div[role="tab"]'));
-        const activeTab = tabs.find(el => {
-            const cls = el.className || '';
-            const isPurpleOrBlue = typeof cls === 'string' && (cls.includes('bg-purple') || cls.includes('text-purple') || cls.includes('bg-blue-600') || cls.includes('text-blue-600'));
-            const txt = el.innerText?.trim();
-            return isPurpleOrBlue && txt && !txt.includes('Paso a Paso') && !txt.includes('Biblioteca') && txt.length < 40;
-        });
-        if (activeTab) {
-            parts.push(`Pestaña activa: ${activeTab.innerText.trim()}`);
-        }
-
-        const path = window.location.pathname;
-        if (path && path !== '/') {
-            parts.push(`Ruta: ${path}`);
-        }
-
-        return parts.join(' | ').slice(0, 200);
-    } catch {
-        return '';
-    }
+    return screenContextFromLocation(window.location.pathname, window.location.search);
 }
 
     const handleSend = async (customQuery = null) => {
@@ -270,7 +241,7 @@ function detectScreenContext() {
         if (requestId !== generation.current) return;
         const sources = (result.sources || []).filter(s => s && HELP_GUIDES.some(g => g.id === s.id));
         setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, reason: result.reason, sources } : m));
-        if (result.reason !== 'conversation' && result.reason !== 'cancelled') setPreviousIds(sources.map(s => s.id));
+        if (sources.length && result.reason !== 'conversation' && result.reason !== 'cancelled') setPreviousIds(sources.map(s => s.id));
         pending.current = false;
         setIsTyping(false);
         inputRef.current?.focus();
