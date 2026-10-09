@@ -22,6 +22,7 @@ import ResetPassword from "./pages/ResetPassword";
 import ClinicServiciosPage from "./pages/landing/ClinicServiciosPage";
 import ClinicNosotrosPage from "./pages/landing/ClinicNosotrosPage";
 import ClinicSedesPage from "./pages/landing/ClinicSedesPage";
+import LegalPage from "./pages/landing/LegalPage";
 
 // Lazy Imports
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
@@ -128,6 +129,23 @@ export default function App() {
           <Route path="/funcionalidades" element={<Servicios />} />
           <Route path="/planes" element={<Planes />} />
           <Route path="/faq" element={<FAQPage />} />
+          <Route path="/soporte" element={<FAQPage />} />
+
+          {/* Rutas Legales Públicas (Cumplimiento Ley 1581/2012, Habeas Data, Términos) */}
+          <Route path="/privacidad" element={<LegalPage />} />
+          <Route path="/politica-de-privacidad" element={<LegalPage />} />
+          <Route path="/politicas-de-privacidad" element={<LegalPage />} />
+          <Route path="/terminos" element={<LegalPage />} />
+          <Route path="/terminos-y-condiciones" element={<LegalPage />} />
+          <Route path="/terminos-del-servicio" element={<LegalPage />} />
+
+          {/* Rutas Legales Públicas por Clínica */}
+          <Route path="/c/:clinicSlug/privacidad" element={<LegalPage />} />
+          <Route path="/c/:clinicSlug/politica-de-privacidad" element={<LegalPage />} />
+          <Route path="/c/:clinicSlug/politicas-de-privacidad" element={<LegalPage />} />
+          <Route path="/c/:clinicSlug/terminos" element={<LegalPage />} />
+          <Route path="/c/:clinicSlug/terminos-y-condiciones" element={<LegalPage />} />
+          <Route path="/c/:clinicSlug/terminos-del-servicio" element={<LegalPage />} />
         </Route>
 
         {/* Private Routes */}

@@ -2,7 +2,7 @@
 // 📄 Login.jsx - Acceso híbrido OdontoCloud (Supabase Auth)
 // ===============================
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import supabase from "../lib/supabaseClient";
 import "../styles/login.css";
@@ -392,6 +392,25 @@ const Login = () => {
             )}
 
           </form>
+
+          <div style={{
+            marginTop: "1.5rem",
+            paddingTop: "1rem",
+            borderTop: "1px solid #f1f5f9",
+            textAlign: "center",
+            fontSize: "0.75rem",
+            color: "#64748b",
+            lineHeight: 1.5
+          }}>
+            Al ingresar aceptas nuestros{" "}
+            <Link to="/terminos" style={{ color: "#0284c7", fontWeight: 600, textDecoration: "underline" }}>
+              Términos de Servicio
+            </Link>{" "}
+            y la{" "}
+            <Link to="/privacidad" style={{ color: "#0284c7", fontWeight: 600, textDecoration: "underline" }}>
+              Política de Privacidad
+            </Link>.
+          </div>
         </div>
       </div>
 
