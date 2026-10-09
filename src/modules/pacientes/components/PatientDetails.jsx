@@ -1909,7 +1909,7 @@ export default function PatientDetails({ initialData, onClose, onDelete }) {
 
     if (!patient) return (<div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40"><div className="bg-white p-8 rounded-2xl"><p>Cargando datos del paciente...</p></div></div>);
 
-    const isFullHeightTab = ['odonto', 'perio', 'presu', 'hc', 'ai_insights'].includes(activeTab);
+    const isFullHeightTab = ['odonto', 'perio', 'presu', 'hc', 'ai_insights', 'evo'].includes(activeTab);
 
     const getPageTitle = () => {
         if (activeTab === 'eps') return 'Edición Eps paciente';

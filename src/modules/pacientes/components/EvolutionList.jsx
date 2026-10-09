@@ -1861,7 +1861,7 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
                 </span>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[580px] xl:max-h-[640px] overflow-y-auto pr-2 custom-scrollbar">
                 {filtered.map((evo) => {
                     const lookup = evo.planId ? (planItemsLookup[evo.planId] || {}) : {};
                     return (
