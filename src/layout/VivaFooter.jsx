@@ -48,7 +48,7 @@ export default function VivaFooter({ config, isPreview = false }) {
                         </Link>
                         <p className="text-slate-400 font-light leading-relaxed text-lg max-w-sm">
                             {isMaster
-                                ? "La plataforma líder en gestión dental inteligente. Diseñada para transformar clínicas odontológicas en negocios eficientes y escalables."
+                                ? "La plataforma líder en gestión dental inteligente en Colombia. Diseñada para transformar consultorios y clínicas odontológicas en negocios eficientes, seguros y escalables."
                                 : (config?.footerDesc || "Comprometidos con la excelencia en salud oral, combinando tecnología de vanguardia con un trato humano excepcional.")
                             }
                         </p>
@@ -111,11 +111,9 @@ export default function VivaFooter({ config, isPreview = false }) {
                                      </Link>
                                  </li>
                              )}
-                             <li><Link to={isPreview ? "#" : (isMaster ? "/soporte" : (config?.supportUrl || `${clinicBase}/faq`))} onClick={(e) => isPreview && e.preventDefault()} className="hover:text-sky-400 transition-colors text-sm font-medium">{isMaster ? "Centro de Ayuda" : "Soporte"}</Link></li>
-                            {/* Fixed broken documentation link */}
-                            {isMaster && <li><a href="https://docs.odontocloud.pro" target="_blank" rel="noopener noreferrer" className="hover:text-sky-400 transition-colors text-sm font-medium">Documentación API</a></li>}
-                            <li><Link to={isPreview ? "#" : (config?.privacyUrl || "/privacidad")} onClick={(e) => isPreview && e.preventDefault()} className="hover:text-sky-400 transition-colors text-sm font-medium">Política de Privacidad</Link></li>
-                            <li><Link to={isPreview ? "#" : (config?.termsUrl || "/terminos")} onClick={(e) => isPreview && e.preventDefault()} className="hover:text-sky-400 transition-colors text-sm font-medium">Términos del Servicio</Link></li>
+                             <li><Link to={isPreview ? "#" : (isMaster ? "/faq" : (config?.supportUrl || `${clinicBase}/faq`))} onClick={(e) => isPreview && e.preventDefault()} className="hover:text-sky-400 transition-colors text-sm font-medium">{isMaster ? "Centro de Ayuda" : "Soporte"}</Link></li>
+                             <li><Link to={isPreview ? "#" : (config?.privacyUrl || (isMaster ? "/privacidad" : `${clinicBase}/privacidad`))} onClick={(e) => isPreview && e.preventDefault()} className="hover:text-sky-400 transition-colors text-sm font-medium">Política de Privacidad</Link></li>
+                             <li><Link to={isPreview ? "#" : (config?.termsUrl || (isMaster ? "/terminos" : `${clinicBase}/terminos`))} onClick={(e) => isPreview && e.preventDefault()} className="hover:text-sky-400 transition-colors text-sm font-medium">Términos del Servicio</Link></li>
                         </ul>
                     </div>
 
@@ -126,19 +124,19 @@ export default function VivaFooter({ config, isPreview = false }) {
                                 <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-sky-500/20 group-hover:text-sky-400 transition-colors">
                                     <FiPhone size={18} />
                                 </div>
-                                <span className="font-medium">+57 {(config?.contactPhone || "3001234567")}</span>
+                                <span className="font-medium">+57 {(config?.contactPhone || "3015768935")}</span>
                             </li>
                             <li className="flex items-center gap-4 group">
                                 <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-sky-500/20 group-hover:text-sky-400 transition-colors">
                                     <FiMail size={18} />
                                 </div>
-                                <span className="font-medium">{(config?.contactEmail || "soporte@odontocloud.co")}</span>
+                                <span className="font-medium">{(config?.contactEmail || "odontocloudcolombia@gmail.com")}</span>
                             </li>
                             <li className="flex items-center gap-4 group">
                                 <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-sky-500/20 group-hover:text-sky-400 transition-colors">
                                     <FiMapPin size={18} />
                                 </div>
-                                <span className="font-medium text-sm">{(config?.address || "Bogotá, Colombia - World Wide Support")}</span>
+                                <span className="font-medium text-sm">{(config?.address || "Sincelejo, Sucre - Colombia")}</span>
                             </li>
                         </ul>
                     </div>

@@ -13,8 +13,8 @@ export const MASTER_CONFIG = {
     // Hero Buttons
     heroBtn1Text: "Comenzar Prueba Gratis",
     heroBtn1Link: "#trial", // Opens modal or scrolls to trial
-    heroBtn2Text: "Ver Documentación",
-    heroBtn2Link: "https://docs.odontocloud.pro",
+    heroBtn2Text: "Ver Funcionalidades",
+    heroBtn2Link: "/funcionalidades",
 
     // Content Sections
     servicesSectionBadge: "FUNCIONALIDADES CLAVE",
@@ -208,6 +208,8 @@ export const MASTER_CONFIG = {
 
     // Global Contact & CTA
     contactPhone: "3015768935",
+    contactEmail: "odontocloudcolombia@gmail.com",
+    address: "Sincelejo, Sucre - Colombia",
     ctaTitle: "¿Listo para transformar tu clínica?",
     ctaText: "Únete a la nueva era de la odontología digital. Sin contratos de permanencia, sin complicaciones.",
     ctaBtnText: "SOLICITAR MI PRUEBA GRATIS",

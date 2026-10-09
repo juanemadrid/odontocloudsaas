@@ -840,15 +840,15 @@ export const getGlobalConfig = async () => {
 
         const global = row?.config?.global || {};
         return {
-            adminPhone: global.adminPhone || "3001234567",
-            supportEmail: global.supportEmail || "soporte@odontocloud.com",
-            supportPhone: global.supportPhone || "+57 300 000 0000"
+            adminPhone: global.adminPhone || "3015768935",
+            supportEmail: global.supportEmail || "odontocloudcolombia@gmail.com",
+            supportPhone: global.supportPhone || "+57 301 576 8935"
         };
     } catch (e) {
         return {
-            adminPhone: "3001234567",
-            supportEmail: "soporte@odontocloud.com",
-            supportPhone: "+57 300 000 0000"
+            adminPhone: "3015768935",
+            supportEmail: "odontocloudcolombia@gmail.com",
+            supportPhone: "+57 301 576 8935"
         };
     }
 };

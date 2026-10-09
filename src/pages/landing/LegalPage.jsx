@@ -136,9 +136,9 @@ export default function LegalPage() {
                     </div>
                     <div className="text-right text-[9pt] text-slate-600 font-light leading-snug">
                         <strong>Ecosistema SaaS Clínico OdontoCloud</strong><br />
-                        NIT / Domicilio: Colombia<br />
+                        Domicilio Principal: Sincelejo, Sucre - Colombia<br />
                         Portal: www.odontocloudcolombia.com<br />
-                        Soporte Legal: privacidad@odontocloudcolombia.com
+                        Soporte Legal: odontocloudcolombia@gmail.com
                     </div>
                 </div>
 
@@ -389,9 +389,10 @@ export default function LegalPage() {
                                 <h2 className="text-xl font-bold text-[#022a63] mb-3">1. Identificación del Encargado y Oficial de Protección de Datos</h2>
                                 <div className="p-4 bg-slate-100/70 rounded-xl text-sm space-y-1.5 text-slate-700">
                                     <p><strong>Razón Social:</strong> OdontoCloud SaaS Colombia</p>
+                                    <p><strong>Domicilio Principal:</strong> Sincelejo, Sucre - Colombia</p>
                                     <p><strong>Naturaleza:</strong> Plataforma Tecnológica en la Nube para el Sector Salud Odontológico</p>
                                     <p><strong>Oficial de Protección de Datos Personales:</strong> Área de Cumplimiento y Seguridad de la Información</p>
-                                    <p><strong>Correo Electrónico para Derechos ARCO / PQRS:</strong> <a href="mailto:privacidad@odontocloudcolombia.com" className="text-sky-600 font-semibold hover:underline">privacidad@odontocloudcolombia.com</a> / <a href="mailto:soporte@odontocloudcolombia.com" className="text-sky-600 font-semibold hover:underline">soporte@odontocloudcolombia.com</a></p>
+                                    <p><strong>Correo Electrónico para Derechos ARCO / PQRS:</strong> <a href="mailto:odontocloudcolombia@gmail.com" className="text-sky-600 font-semibold hover:underline">odontocloudcolombia@gmail.com</a></p>
                                     <p><strong>Línea de Atención Oficial:</strong> +57 (301) 576-8935</p>
                                 </div>
                             </div>
@@ -472,7 +473,7 @@ export default function LegalPage() {
                             <div>
                                 <h2 className="text-xl font-bold text-[#022a63] mb-3">8. Procedimiento Legal para Consultas y Reclamos (Art. 14 y 15 Ley 1581)</h2>
                                 <p>
-                                    Los titulares o sus causahabientes podrán ejercer sus derechos a través del canal oficial: <a href="mailto:privacidad@odontocloudcolombia.com" className="text-sky-600 font-semibold hover:underline">privacidad@odontocloudcolombia.com</a>.
+                                    Los titulares o sus causahabientes podrán ejercer sus derechos a través del canal oficial: <a href="mailto:odontocloudcolombia@gmail.com" className="text-sky-600 font-semibold hover:underline">odontocloudcolombia@gmail.com</a>.
                                 </p>
                                 <ul className="list-disc pl-6 space-y-2">
                                     <li>
@@ -546,7 +547,7 @@ export default function LegalPage() {
                         Válido como anexo técnico legal y probatorio de cumplimiento de Habilitación en Salud y Habeas Data.
                     </p>
                     <p className="italic text-slate-400">
-                        Canal oficial de soporte: soporte@odontocloudcolombia.com • www.odontocloudcolombia.com
+                        Canal oficial de soporte: odontocloudcolombia@gmail.com • www.odontocloudcolombia.com
                     </p>
                 </div>
             </div>
