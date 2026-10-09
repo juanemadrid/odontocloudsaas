@@ -195,7 +195,7 @@ export default function PagosList({ onNew }) {
             if (isFc) {
               const numDoc = fcObj?.nroFactura || fcObj?.documentoNumero || it.numeroFactura || it.concepto;
               if (numDoc) {
-                facturaRefNotas.push(`Factura de compra / Documento soporte: ${numDoc}`);
+                facturaRefNotas.push(numDoc);
               }
               // Resolver concepto real de la factura de compra (evitando repetir el nombre del proveedor)
               if (fcObj && Array.isArray(fcObj.items) && fcObj.items.length > 0) {
@@ -226,6 +226,9 @@ export default function PagosList({ onNew }) {
       // Limpieza de observaciones para evitar redundancias
       let obsFinal = String(pago.observaciones || "").trim();
 
+      // Limpiar prefijo legacy "Factura de compra / Documento soporte:" si venía guardado
+      obsFinal = obsFinal.replace(/factura de compra\s*\/\s*documento soporte:\s*/gi, "").trim();
+
       // Caso 1: Si es de caja menor y la observación sólo repite "Egreso caja menor: X"
       // y ese texto ya está en la descripción del concepto, no duplicar en observaciones
       if (/^egreso caja menor:\s*/i.test(obsFinal)) {
@@ -236,11 +239,13 @@ export default function PagosList({ onNew }) {
         }
       }
 
-      // Caso 2: Si hay factura asociada, agregar la referencia a observaciones de forma limpia
+      // Caso 2: Si hay factura asociada, fijar el número de documento soporte/factura y anexar cualquier observación adicional
       if (facturaRefNotas.length > 0) {
-        const uniqueFacturas = [...new Set(facturaRefNotas)].join(" | ");
-        if (!obsFinal.includes(uniqueFacturas)) {
-          obsFinal = obsFinal ? `${uniqueFacturas} — ${obsFinal}` : uniqueFacturas;
+        const uniqueFacturas = [...new Set(facturaRefNotas)].join(", ");
+        if (!obsFinal) {
+          obsFinal = uniqueFacturas;
+        } else if (!obsFinal.includes(uniqueFacturas)) {
+          obsFinal = `${uniqueFacturas} — ${obsFinal}`;
         }
       }
 

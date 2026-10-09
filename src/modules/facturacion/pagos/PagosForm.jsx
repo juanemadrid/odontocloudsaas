@@ -362,18 +362,57 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 }
                 setMediosPagoList(mpList);
 
-                // 8. Cargar Facturas de Compra pendientes
+                // 8. Cargar Facturas de Compra pendientes y pagos previos para asegurar saldo real
                 try {
-                    const { data: fcDb } = await supabase
-                        .from("facturas_compra")
-                        .select("*")
-                        .eq("tenant_id", inquilino);
+                    const [{ data: fcDb }, { data: ppDb }] = await Promise.all([
+                        supabase.from("facturas_compra").select("*").eq("tenant_id", inquilino),
+                        supabase.from("pagos_proveedor").select("items, total").eq("tenant_id", inquilino)
+                    ]);
                     let allFc = fcDb || [];
                     if (allFc.length === 0) {
                         allFc = cfg.facturas_compra || cfg.facturasCompra || [];
                     }
-                    setFacturasCompraPendientes(allFc);
-                } catch (e) {}
+                    const allPp = ppDb || cfg.pagos_proveedor || [];
+
+                    // Mapear abonos previos por factura
+                    const abonosPorFactura = {};
+                    (allPp || []).forEach(pago => {
+                        (pago.items || []).forEach(it => {
+                            const fId = String(it.facturaId || "");
+                            const fNum = String(it.numeroFactura || it.concepto || "");
+                            const monto = Number(it.total || it.precioUnitario || 0);
+                            if (fId) abonosPorFactura[fId] = (abonosPorFactura[fId] || 0) + monto;
+                            if (fNum) abonosPorFactura[fNum] = (abonosPorFactura[fNum] || 0) + monto;
+                        });
+                    });
+
+                    const facturasCalculadas = allFc.map(fc => {
+                        const totalDoc = Number(fc.total || fc.monto || 0);
+                        const fcCode = fc.factus_number || fc.nroFactura || fc.documentoNumero || fc.numero || (String(fc.id).startsWith("fc_") ? `FC-${String(fc.id).slice(3, 8)}` : `FC-${fc.id}`);
+                        const abonado = Math.max(
+                            abonosPorFactura[String(fc.id)] || 0,
+                            abonosPorFactura[String(fcCode)] || 0
+                        );
+
+                        let saldo = fc.saldo_pendiente !== undefined && fc.saldo_pendiente !== null
+                            ? Number(fc.saldo_pendiente)
+                            : (fc.saldoPendiente !== undefined && fc.saldoPendiente !== null ? Number(fc.saldoPendiente) : Math.max(0, totalDoc - abonado));
+
+                        if (abonado > 0 && (fc.saldo_pendiente === undefined || fc.saldo_pendiente === null) && (fc.saldoPendiente === undefined || fc.saldoPendiente === null)) {
+                            saldo = Math.max(0, totalDoc - abonado);
+                        }
+
+                        return {
+                            ...fc,
+                            saldo_pendiente: saldo,
+                            saldoPendiente: saldo
+                        };
+                    });
+
+                    setFacturasCompraPendientes(facturasCalculadas);
+                } catch (e) {
+                    console.warn("Aviso cargando facturas de compra:", e);
+                }
 
                 // Auto-seleccionar Banco o Caja según sesión activa
                 if (userCaja) {
@@ -560,7 +599,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
         }
     };
 
-    // Facturas de compra disponibles exclusivamente para el tercero seleccionado
+    // Facturas de compra disponibles exclusivamente para el tercero seleccionado con saldo pendiente
     const availableFacturasCompra = useMemo(() => {
         if (!selectedTerceroObj && !terceroSearchQuery.trim()) return [];
         const tName = (selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase().trim();
@@ -570,6 +609,20 @@ export default function PagosForm({ onCancel, onSuccess }) {
         if (!facturasCompraPendientes || facturasCompraPendientes.length === 0) return [];
         
         return facturasCompraPendientes.filter(fc => {
+            // 1. Filtrar sólo facturas que tengan saldo pendiente real mayor a 0
+            const saldo = parseFloat(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.total ?? fc.monto ?? 0);
+            if (saldo <= 0) return false;
+
+            // 2. Descartar facturas con estado Pagada o Anulada
+            const estado = (fc.estado || fc.status || "").toLowerCase().trim();
+            if (estado === "pagada" || estado === "anulada") return false;
+
+            // 3. Tampoco mostrar si ya fue agregada en la lista actual de items de este pago
+            const fcCode = fc.factus_number || fc.nroFactura || fc.documentoNumero || fc.numero || (String(fc.id).startsWith("fc_") ? `FC-${String(fc.id).slice(3, 8)}` : `FC-${fc.id}`);
+            const yaEnItems = items.some(it => it.isFactura && (String(it.facturaId) === String(fc.id) || String(it.numeroFactura) === String(fcCode)));
+            if (yaEnItems) return false;
+
+            // 4. Coincidencia con el tercero seleccionado
             const fcProvId = String(fc.tercero_id || fc.terceroId || fc.proveedor_id || fc.proveedorId || "");
             const fcProv = (fc.proveedor || fc.tercero || fc.proveedorNombre || fc.terceroNombre || fc.nombre || "").toLowerCase().trim();
             const fcDoc = (fc.documentoTercero || fc.documento || fc.nit || fc.nroDocumento || "").toLowerCase().trim();
@@ -580,7 +633,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
             
             return matchId || matchName || matchDoc;
         });
-    }, [facturasCompraPendientes, selectedTerceroObj, terceroSearchQuery]);
+    }, [facturasCompraPendientes, selectedTerceroObj, terceroSearchQuery, items]);
 
     const getFacturaCode = (fc) => {
         if (!fc) return "Factura de compra";
@@ -754,7 +807,20 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 concepto: validItems.map(i => i.concepto).filter(Boolean).join(", ") || (pagoFacturasCompra ? "Pago facturas compra" : "Pago a proveedor"),
                 monto: totalGeneral,
                 total: totalGeneral,
-                observaciones,
+                observaciones: (() => {
+                    let obsStr = String(observaciones || "").trim();
+                    const facturasNums = [...new Set(
+                        validItems
+                            .filter(i => i.isFactura)
+                            .map(i => i.numeroFactura || i.concepto)
+                            .filter(Boolean)
+                    )].join(", ");
+                    if (facturasNums) {
+                        if (!obsStr) return facturasNums;
+                        if (!obsStr.includes(facturasNums)) return `${facturasNums} — ${obsStr}`;
+                    }
+                    return obsStr;
+                })(),
                 created_at: new Date().toISOString(),
                 created_by: user?.id || userProfile?.uid
             };
