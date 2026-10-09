@@ -41,11 +41,11 @@ export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   }
   const matches = searchGuides(question, [], mode);
   const words = topicWords(question);
-  const namedTopic = matches.find(g => topicWords(g.title+' '+g.category).some(word=>words.includes(word)));
+  const namedTopic = matches.find(g => topicWords(g.title+' '+g.category+' '+g.keywords).some(word=>words.includes(word)));
   const direct = namedTopic ? [namedTopic] : matches.slice(0, 1);
   // A clear new topic wins over the old conversation (e.g. "explicame los planes").
   if (direct.length) {
-    const anchor = topicWords(direct[0].title+' '+direct[0].category);
+    const anchor = topicWords(direct[0].title+' '+direct[0].category+' '+direct[0].keywords);
     const words = topicWords(question);
     // Generic words such as "button" must not replace an ongoing workflow with permissions.
     if (active.length && !anchor.some(word=>words.includes(word))) return active;

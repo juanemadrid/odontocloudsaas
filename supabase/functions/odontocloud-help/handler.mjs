@@ -20,6 +20,8 @@ export function getModuleLocationReference(guideId) {
       return 'Desde Inicio: entra a [Pacientes], abre la ficha del paciente y selecciona la pestaña [Evoluciones & Remis]. El botón verde [Evolución] está arriba a la derecha. Nota: El odontólogo debe estar vinculado previamente como tratante en la pestaña [Profesionales].';
     case 'historia':
       return 'Desde Inicio: entra a [Pacientes], abre la ficha del paciente y selecciona la pestaña [Doc. Clínicos] en el menú lateral de la ficha.';
+    case 'empresa':
+      return 'Desde Inicio: entra a [Configuración] en el menú lateral izquierdo y selecciona [Datos Básicos]. En esa pantalla puedes escribir el [Nombre Comercial], [Razón Social], [NIT / Identificación] y cargar el [Logo] de tu empresa o clínica. Arriba a la derecha pulsa el botón azul [Guardar Cambios].';
     case 'usuarios':
       return 'Desde Inicio: entra a [Configuración] en el menú lateral y haz clic en [Usuarios]. El botón para crear nuevo usuario está arriba a la derecha. Requiere perfil Administrador.';
     case 'sedes':
@@ -111,7 +113,7 @@ export function canonicalButtonLabels(answer, reference) {
 export function helpPrompt(guide, question, isPublic = false, screenContext = '', history = []) {
   if (isPublic) return publicSystemPrompt(guide);
   const q = normalize(question);
-  const isLost = /(?:donde|no (?:se|veo|encuentro)|como llego|como entro|estoy en inicio|donde esta|ubicacion|cual boton|donde le doy|donde hago clic|donde presiono)/.test(q);
+  const isLost = /(?:d[oe]nde|no (?:se|veo|encuentro)|como llego|como entro|estoy en inicio|ubicacion|cual boton|le doy|hago clic|presiono|pongo|cambio)/.test(q);
   const followup = isContextualReply(question) || isBriefFollowup(question);
   const generalAppointment = isGeneralAppointment(question) || followup || isLost;
   const generalBudget = isGeneralBudget(question) || followup || isLost;

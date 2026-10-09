@@ -465,3 +465,13 @@ for (const [q, id] of naturalQueries) {
   assert.equal(searchGuides(q)[0]?.id, id, `Query "${q}" must resolve to ${id}`);
 }
 console.log('Odontograma button positions and natural conversational retrieval verified.');
+
+// Verification of seamless topic transition when asking about company/clinic settings
+assert.equal(resolveHelpGuides('y doinde pongo el nombre de la empresa', ['odontograma'])[0]?.id, 'empresa');
+assert.equal(resolveHelpGuides('dónde cambio el logo de la clínica', ['odontograma'])[0]?.id, 'empresa');
+const empresaPrompt = helpPrompt(HELP_GUIDES.find(g => g.id === 'empresa'), 'y doinde pongo el nombre de la empresa');
+assert.ok(empresaPrompt.includes('[Configuración]'));
+assert.ok(empresaPrompt.includes('[Datos Básicos]'));
+assert.ok(empresaPrompt.includes('[Nombre Comercial]'));
+assert.ok(empresaPrompt.includes('[Guardar Cambios]'));
+console.log('Company settings topic transition and location verified.');

@@ -185,11 +185,13 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Si falta una opción o aparece bloqueada, solicita al administrador que revise tu perfil y la acción permitida.',
   ], 'El asistente explica opciones, pero no concede permisos ni cambia roles.',
   'Solo un Administrador puede crear usuarios. Ten a mano el correo electrónico del profesional, su nombre completo y el rol que tendrá (Odontólogo, Recepción, Administrador).'),
-  guide('empresa', 'Configuración', 'Datos de la clínica y configuración inicial', 'empresa clinica logo nit direccion configuracion inicial asistente', 'src/modules/config/ConfigMenu.jsx', [
-    'Entra a Configuración > Asistente de Configuración para revisar la preparación inicial.',
-    'Utiliza Datos Básicos para revisar la información de la clínica y el logo.',
-    'Completa las secciones de sedes, usuarios y catálogos necesarias antes de operar.',
-  ]),
+  guide('empresa', 'Configuración', 'Datos de la clínica y empresa (Configuración inicial)', 'empresa clinica razon social nombre comercial logo nit direccion telefono configuracion inicial datos basicos donde pongo cambiar poner', 'src/modules/config/ConfigEmpresa.jsx', [
+    'Entra a [Configuración] en el menú lateral izquierdo y haz clic en la opción [Datos Básicos].',
+    'En el formulario completa el [Nombre Comercial] (nombre de tu clínica o consultorio), la [Razón Social] y el [NIT / Identificación].',
+    'Para cambiar o subir el logotipo de la empresa, haz clic sobre el recuadro [Subir logo] y selecciona el archivo de imagen (PNG o JPG).',
+    'Ingresa los datos de contacto: teléfono celular, correo electrónico y dirección física principal.',
+    'En la parte superior derecha, pulsa el botón azul [Guardar Cambios] para guardar la información en toda la plataforma.',
+  ], 'El nombre comercial y el logo guardados aquí se reflejarán automáticamente en presupuestos, consentimientos, recibos y facturas.'),
   guide('precios', 'Configuración', 'Listas de precios y planes', 'precio tarifa lista planes copago', 'src/modules/config/ConfigRouter.jsx', [
     'Entra a Configuración > Lista de precios o Planes según lo que necesites configurar.',
     'Revisa los conceptos y valores aplicables antes de guardar cambios.',
