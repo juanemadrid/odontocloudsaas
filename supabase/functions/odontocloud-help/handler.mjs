@@ -30,6 +30,8 @@ export function getModuleLocationReference(guideId) {
       return 'Desde Inicio: entra a [Configuración] en el menú lateral y selecciona [Sucursales] (para sedes) o [Recursos físicos] (para sillones/consultorios). Requiere perfil Administrador.';
     case 'precios':
       return 'Desde Inicio: entra a [Configuración] en el menú lateral y haz clic en [Lista de precios] para gestionar el tarifario. Requiere perfil Administrador.';
+    case 'rips':
+      return 'Desde Inicio: entra a [Administración] en el menú lateral izquierdo y haz clic en [RIPS JSON]. Configura [Fecha inicial] y [Fecha final], selecciona la sede o doctor y pulsa el botón verde [Buscar]. Para transmitir al MUV pulsa el botón azul [ENVIAR] arriba a la derecha, o el botón verde [EXPORTAR] para descargar el paquete JSON.';
     default:
       return null;
   }

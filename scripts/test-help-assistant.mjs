@@ -486,3 +486,16 @@ assert.ok(usuariosPrompt.includes('[Especializaciones]'));
 assert.ok(usuariosPrompt.includes('[Nuevo Usuario]'));
 console.log('Doctor, specialist and specialty handling verified.');
 
+// Verification of RIPS resolution and transition from pricing/public guides
+assert.equal(searchGuides('como puedo hacer lo rips')[0]?.id, 'rips');
+assert.equal(searchGuides('cómo genero los rips')[0]?.id, 'rips');
+assert.equal(resolveHelpGuides('como puedo hacer lo rips', ['planes-suscripcion'])[0]?.id, 'rips');
+const ripsPrompt = helpPrompt(HELP_GUIDES.find(g => g.id === 'rips'), 'como puedo hacer lo rips');
+assert.ok(ripsPrompt.includes('[Administración]'));
+assert.ok(ripsPrompt.includes('[RIPS JSON]'));
+assert.ok(ripsPrompt.includes('[Buscar]'));
+assert.ok(ripsPrompt.includes('[ENVIAR]'));
+assert.ok(ripsPrompt.includes('[EXPORTAR]'));
+console.log('RIPS resolution, location and action buttons verified.');
+
+

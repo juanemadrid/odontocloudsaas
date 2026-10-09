@@ -152,13 +152,14 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Hay reportes de pacientes, planes de tratamiento, facturación, convenios, ventas, clínico, cumpleaños, citas, morbilidad, consultas y evoluciones.',
     'Ajusta los filtros que ofrezca el reporte y revisa el período antes de interpretar o exportar sus resultados.',
   ]),
-  guide('rips', 'Administración', 'Generar y revisar RIPS', 'rips muv json fev validacion cuv', 'src/modules/rips/RipsGenerator.jsx', [
-    'Entra a Administración > RIPS JSON y selecciona los datos o documentos que vas a procesar.',
-    'Revisa la validación previa y corrige los errores que señale el módulo.',
-    'Distingue la descarga preliminar local de la opción Validar y enviar al MUV.',
-    'Consulta el resultado de validación antes de dar el envío por aceptado.',
-  ], 'Un JSON preliminar no equivale a un envío oficial aceptado.',
-  'Antes de generar RIPS oficiales (Resolución 2275):\n• Cada procedimiento debe tener su código CUPS y diagnóstico CIE-10 registrado en las evoluciones.\n• El paciente debe tener sus datos demográficos completos (tipo de documento, fecha de nacimiento, sexo, departamento, municipio y zona de residencia).'),
+  guide('rips', 'Administración', 'Generación y validación de RIPS JSON (Resolución 2275)', 'rips rip generacion generar hacer lo rips los rips descargar validar validacion envio json muv cuv resolucion 2275 minsalud fev', 'src/modules/rips/RipsGenerator.jsx', [
+    'Entra a [Administración] en el menú lateral izquierdo y haz clic en la opción [RIPS JSON].',
+    'En el formulario superior selecciona el rango de fechas en [Fecha inicial] y [Fecha final].',
+    'Selecciona la [Sucursal] (para IPS) o el [Profesional] (para independientes) y elige el filtro en [Generar con] (por fecha de facturación o fecha de realización).',
+    'Haz clic en el botón verde [Buscar] para cargar las atenciones y facturas del período.',
+    'Revisa la validación clínica en la tabla y pulsa el botón azul [ENVIAR] arriba a la derecha para transmitir al MUV y obtener el CUV, o el botón verde [EXPORTAR] para descargar el paquete JSON y XML comprimido.',
+  ], 'Los RIPS oficiales (Resolución 2275) requieren que las evoluciones clínicas tengan código CUPS y diagnóstico CIE-10.',
+  'Antes de generar RIPS, verifica que la clínica tenga configurado el NIT y Código de Prestador (REPS) en [Configuración] > [Datos Básicos], y que los doctores tengan habilitada la opción de RIPS en [Configuración] > [Usuarios].'),
   guide('terceros', 'Administración', 'Gestionar terceros y convenios', 'tercero cliente proveedor convenio descuento', 'src/modules/administracion/AdministracionRouter.jsx', [
     'En Administración, entra a Terceros para proveedores y clientes, o a Convenios para su gestión.',
     'Busca el registro existente antes de crear otro.',
@@ -301,7 +302,7 @@ export const PUBLIC_GUIDE_IDS = new Set([
 ]);
 
 export const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const stop = new Set('como hago para una uno unos unas los las del que con por puedo quiero necesito donde este esta esto eso cual cuando sistema paso pasos consultar utilizar usar revisar hola buenas puedes podria podrias ayudar ayudame ayuda favor gracias me el un de a en es al no si ya'.split(' '));
+const stop = new Set('como hago para una uno unos unas los las del que con por puedo quiero necesito donde este esta esto eso cual cuando sistema paso pasos consultar utilizar usar revisar hola buenas puedes podria podrias ayudar ayudame ayuda favor gracias me el un de a en es al no si ya lo'.split(' '));
 const aliases = {
   hacer: 'crear', hace: 'crear', configurar: 'configuracion', configurarlo: 'configuracion', configura: 'configuracion', configuracion: 'configuracion', configuraasr: 'configuracion',
   cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar',
@@ -311,6 +312,7 @@ const aliases = {
   diente: 'odontograma', dientes: 'odontograma', muela: 'odontograma', muelas: 'odontograma', carie: 'odontograma', caries: 'odontograma',
   especialidad: 'especialidad', especialidades: 'especialidad', especializaciones: 'especialidad', especializacion: 'especialidad',
   ortodoncia: 'especialidad', endodoncia: 'especialidad', periodoncia: 'especialidad', odontopediatria: 'especialidad',
+  rip: 'rips', rips: 'rips',
   pago: 'pago', pagos: 'pago', abono: 'pago', recaudo: 'pago',
   cita: 'cita', citas: 'cita', turno: 'cita', turnos: 'cita',
   evolucion: 'evolucion', evoluciones: 'evolucion',
@@ -327,13 +329,17 @@ export function searchGuides(question, previousIds = [], mode = 'app') {
     ? HELP_GUIDES.filter(g => PUBLIC_GUIDE_IDS.has(g.id))
     : HELP_GUIDES.filter(g => !['historia-odontograma-public', 'agenda-whatsapp-public', 'facturacion-dian-rips', 'seguridad-migracion'].includes(g.id));
 
+  const GENERIC_ACTIONS = new Set(['crear', 'modificar', 'consultar', 'revisar', 'ver', 'buscar', 'abrir', 'cerrar']);
   const ranked = candidateGuides.map(item => {
     const titleWords = tokens(item.title);
     const keyWords = tokens(item.keywords);
     const score = words.reduce((n, word) => {
       let s = 0;
-      if (titleWords.includes(word)) s += 5;
-      if (keyWords.includes(word)) s += 3;
+      const isGeneric = GENERIC_ACTIONS.has(word);
+      const tw = isGeneric ? 1 : 5;
+      const kw = isGeneric ? 1 : 3;
+      if (titleWords.includes(word)) s += tw;
+      if (keyWords.includes(word)) s += kw;
       return n + s;
     }, 0);
     return { item, score };
