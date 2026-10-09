@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { formatCurrency } from '../../../utils/formatters';
 import { getConfigSection } from '../../../services/configPersistenceService';
+import { isDoctorUser } from '../../../utils/doctorHelpers';
 
 const fmtDate = (iso) => {
     if (!iso) return '\u2014';
@@ -336,7 +337,7 @@ export default function HistoricoFacturasTab({ patientId, patient }) {
                                 const invoiceNro = fact.numero || fact.nroFactura || fact.id?.slice(-6).toUpperCase();
                                 const officialDian = fact.factusNumero || (fact.numero && fact.numero.startsWith('SETP') ? fact.numero : null);
                                 const userEmail = patient?.email || patient?.correo || '—';
-                                const profName  = fact.profesional || userProfile?.nombreCompleto || '—';
+                                const profName  = fact.profesional || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : '') || patient?.doctorTratante || '—';
                                 const branchName = tenant?.nombreComercial || 'Sede Principal';
 
                                 return (

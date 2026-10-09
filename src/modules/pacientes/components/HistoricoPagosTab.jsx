@@ -5,6 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useAudit } from '../../../hooks/useAudit';
 import { printReciboCaja } from '../../../utils/electronicInvoiceTemplate';
 import { getConfigSection } from '../../../services/configPersistenceService';
+import { isDoctorUser } from '../../../utils/doctorHelpers';
 import { formatCurrency } from '../../../utils/formatters';
 import { getPatientFinancials, getReceiptPlanFinancials } from '../../../services/billingService';
 import {
@@ -247,7 +248,7 @@ export default function HistoricoPagosTab({ patientId }) {
                 logoUrl: userProfile?.tenant?.logoUrl || ""
             };
 
-            const profName = meta.profesional || pago.profesional || pago.doctor || userProfile?.nombreCompleto || "Doctor";
+            const profName = meta.profesional || pago.profesional || pago.doctor || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : '') || targetPatient?.doctorTratante || "Sin asignar";
             const numConsecutivo = pago.nroConsecutivo || meta.nroConsecutivo || pago.nro_consecutivo || "1";
 
             printReciboCaja({

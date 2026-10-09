@@ -79,7 +79,8 @@ export function helpPrompt(guide, question, isPublic = false, screenContext = ''
   const generalAppointment = isGeneralAppointment(question) || followup;
   const generalBudget = isGeneralBudget(question) || followup || /(?:donde|no se|no veo|no encuentro|como llego|como entro|estoy en inicio)/.test(normalize(question));
   const stageReference = guide.id === 'presupuestos' ? budgetStageReference(question, screenContext, history) : null;
-  const reference = stageReference || ((guide.id === 'citas' && generalAppointment)
+  const paymentReference = guide.id === 'pagos-paciente' ? 'Pacientes > ficha > [Realizar pago] > [Pagar / Abonar] abre [Prestaciones]. Marca procedimientos; aún no están pagados. [Abono parcial] vacío paga el total seleccionado; con importe hace abono. Revisa [Total a pagar]. Elige [Medio de Pago]. [Número de Referencia / Comprobante] aparece solo con Transferencia, Cheque, Consignación, Nequi, Daviplata o PSE; con Efectivo NO aparece. Selecciona [Profesional / Responsable]; [Observaciones] opcional. Pulsa [Finalizar Transacción] y espera «Pago registrado exitosamente»; no afirmes haber verificado el pago. Un abono no liquida toda la deuda. Los nombres de esta referencia prevalecen sobre errores del historial.' : null;
+  const reference = paymentReference || stageReference || ((guide.id === 'citas' && generalAppointment)
     ? appointmentSummary
     : (guide.id === 'presupuestos' && generalBudget)
       ? budgetSummary
@@ -194,6 +195,15 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
       if (request.signal.aborted) abort();
       const timer = setTimeout(abort, ollamaTimeoutMs);
       const run = async emit => {
+        let answer = '';
+        const interrupted = reason => {
+          // Preserve visible tokens without presenting unfinished instructions as complete.
+          if (!emit || !answer.trim() || answer.length > 12000 || request.signal.aborted) return fallback(reason);
+          trace('answer_interrupted', { reason, answerChars: answer.length });
+          return json({ success: true, provider: 'ollama', reason: 'partial', complete: false,
+            version: KNOWLEDGE_VERSION, sources,
+            answer: 'Respuesta incompleta: la generación se interrumpió. El texto siguiente puede quedar cortado; consulta la guía relacionada antes de seguir.\n\n' + canonicalButtonLabels(answer.trim(), systemPrompt) });
+        };
         try {
           trace('ollama_started', { promptChars: systemPrompt.length + question.length + modelHistory.reduce((n, m) => n + m.content.length, 0), historyMessages: modelHistory.length });
           const response = await fetchImpl(url.toString(), {
@@ -205,7 +215,6 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
           trace('ollama_headers', { status: response.status });
           if (!response.ok) return fallback('provider_error');
           let result;
-          let answer = '';
           if (emit) {
             for await (const event of readHelpEvents(response.body)) {
               if (event.error) throw new Error('Provider stream failed');
@@ -220,10 +229,10 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
             result = await response.json();
             answer = result?.message?.content;
           }
-          if (typeof answer !== 'string' || !answer.trim() || answer.length > 12000 || !result?.done || result.done_reason === 'length') return fallback('incomplete_response');
+          if (typeof answer !== 'string' || !answer.trim() || answer.length > 12000 || !result?.done || result.done_reason === 'length') return interrupted('incomplete_response');
           trace('answer_completed');
           return json({ success: true, provider: 'ollama', version: KNOWLEDGE_VERSION, answer: canonicalButtonLabels(answer.trim(), systemPrompt), sources });
-        } catch { return fallback(controller.signal.aborted ? 'timeout' : 'unavailable'); }
+        } catch { return interrupted(controller.signal.aborted ? 'timeout' : 'unavailable'); }
         finally { clearTimeout(timer); request.signal.removeEventListener('abort', abort); }
       };
       if (!body.stream) return await run(null);

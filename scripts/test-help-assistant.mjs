@@ -201,7 +201,8 @@ for(const complete of [true,false]) {
  for await(const event of readHelpEvents(response.body))events.push(event);
  assert.equal(events[0].type,'status');
  assert.equal(events.filter(e=>e.type==='delta').map(e=>e.text).join(''),'¡Hola! Abre Agenda.');
- assert.equal(events.at(-1).result.provider,complete?'ollama':'manual');
+ assert.equal(events.at(-1).result.provider,'ollama');
+ if (!complete) { assert.equal(events.at(-1).result.reason,'partial'); assert.equal(events.at(-1).result.complete,false); assert.ok(events.at(-1).result.answer.includes('¡Hola! Abre Agenda.')); }
 }
 let aborted=false;
 const cancelling=makeHandler({fetchImpl:async(_url,{signal})=>new Promise((_,reject)=>{
@@ -381,3 +382,38 @@ assert.ok(!acceptancePrompt.includes('No exige odontograma'));
 const confirmedForm=budgetStageReference('Sí, ya abrí la ventana','Ficha del paciente',treatmentHistory);
 assert.equal(confirmedForm,null,'An explicit completed action is not mere acceptance of guidance');
 console.log('Treatment conversation: yes refers to the previous invitation, preserves plan type and does not claim completed actions.');
+
+const partialLogs = [];
+const partialTimeout = makeHandler({ ollamaTimeoutMs: 20, log: e => partialLogs.push(e), fetchImpl: async (_url, {signal}) =>
+  new Response(new ReadableStream({ start(c) {
+    c.enqueue(new TextEncoder().encode(JSON.stringify({message:{content:'Abre Pacientes. Después selecciona'},done:false})+'\n'));
+    signal.addEventListener('abort',()=>c.error(new Error('aborted')), {once:true});
+  }}))
+});
+const partialEvents=[];
+for await (const event of readHelpEvents((await partialTimeout(req({question:'Cómo apartar una cita',stream:true}))).body)) partialEvents.push(event);
+const partialResult=partialEvents.at(-1).result;
+assert.equal(partialResult.reason,'partial');
+assert.equal(partialResult.complete,false);
+assert.ok(partialResult.answer.includes('Abre Pacientes. Después selecciona'));
+assert.ok(partialResult.answer.startsWith('Respuesta incompleta:'));
+assert.ok(partialLogs.some(e=>e.stage==='answer_interrupted' && e.reason==='timeout'));
+assert.ok(!partialLogs.some(e=>e.stage==='answer_completed'));
+console.log('Timeout after streaming preserves text with an explicit incomplete warning.');
+
+// Keep payment help aligned with the actual checkout, including conditional fields.
+const paymentUI=readFileSync('src/modules/pacientes/components/PagoTab.jsx','utf8');
+const paymentGuide=HELP_GUIDES.find(g=>g.id==='pagos-paciente');
+const paymentPrompt=helpPrompt(paymentGuide,'y ya con eso queda pago o no',false,'', [{role:'assistant',content:'Pulsa Registrar Pago y selecciona Método de Pago.'}]);
+for (const label of ['Medio de Pago','Número de Referencia / Comprobante','Profesional / Responsable','Finalizar Transacción']) {
+ assert.ok(paymentUI.includes(label));
+ assert.ok(paymentGuide.steps.join(' ').includes('['+label+']'));
+ assert.ok(paymentPrompt.includes('['+label+']'));
+}
+assert.ok(!paymentPrompt.includes('[Registrar Pago]'));
+assert.ok(!paymentPrompt.includes('[Método de Pago]'));
+assert.ok(paymentPrompt.includes('con Efectivo NO aparece'));
+assert.ok(paymentPrompt.includes('Cheque, Consignación'));
+assert.ok(paymentPrompt.includes('aún no están pagados'));
+assert.ok(paymentPrompt.includes('Pago registrado exitosamente'));
+console.log('Payment help: real checkout labels, conditional reference and save confirmation verified.');

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
-import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { isDoctorUser, getPatientAssignedDoctors } from "../../../utils/doctorHelpers";
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems } from "../../../services/configPersistenceService";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
@@ -241,13 +241,14 @@ export default function ReporteFinanciero() {
 
         const listProfs = [];
         const profDict = {};
+        const nonDoctorIdentifiers = new Set();
 
         (snapshotUsuarios || []).forEach((u) => {
-          if (isDoctorUser(u)) {
-            const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || u.email || "";
-            const primerApellido = u.apellido || u.apellidos || "";
-            const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
+          const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || u.email || "";
+          const primerApellido = u.apellido || u.apellidos || "";
+          const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
 
+          if (isDoctorUser(u)) {
             listProfs.push({
               id: u.id,
               nombre: nombreCompleto,
@@ -261,8 +262,33 @@ export default function ReporteFinanciero() {
             });
             profDict[u.id] = nombreCompleto;
             profDict[nombreCompleto.toLowerCase()] = nombreCompleto;
+          } else {
+            // Usuario administrativo / recepcionista / cajero (NO es médico/doctor)
+            if (u.id) nonDoctorIdentifiers.add(String(u.id).toLowerCase());
+            if (nombreCompleto) nonDoctorIdentifiers.add(nombreCompleto.toLowerCase());
+            if (primerNombre) nonDoctorIdentifiers.add(primerNombre.toLowerCase());
+            if (u.email) nonDoctorIdentifiers.add(u.email.toLowerCase());
           }
         });
+
+        // Asegurar que el usuario activo, si no tiene rol médico, sea registrado como no-doctor
+        if (userProfile && !isDoctorUser(userProfile)) {
+          const myFullName = (userProfile?.nombreCompleto || `${userProfile?.nombre || ''} ${userProfile?.apellido || ''}`).trim();
+          if (myFullName) nonDoctorIdentifiers.add(myFullName.toLowerCase());
+          if (userProfile?.nombre) nonDoctorIdentifiers.add(userProfile.nombre.toLowerCase());
+          if (userProfile?.email) nonDoctorIdentifiers.add(userProfile.email.toLowerCase());
+          if (userProfile?.id) nonDoctorIdentifiers.add(String(userProfile.id).toLowerCase());
+        }
+        nonDoctorIdentifiers.add("juan madrid");
+        nonDoctorIdentifiers.add("administrador");
+        nonDoctorIdentifiers.add("administracion");
+        nonDoctorIdentifiers.add("administración");
+        nonDoctorIdentifiers.add("admin");
+        nonDoctorIdentifiers.add("cajero");
+        nonDoctorIdentifiers.add("recepcion");
+        nonDoctorIdentifiers.add("recepción");
+        nonDoctorIdentifiers.add("facturacion");
+        nonDoctorIdentifiers.add("facturación");
 
         // Complementar con getDoctorsList
         try {
@@ -283,33 +309,67 @@ export default function ReporteFinanciero() {
 
         setProfesionales(listProfs);
 
-        // Helper para resolver el nombre real del profesional sin quemar datos ficticios
-        const resolveDoctorName = (profVal, profIdVal) => {
-          if (profIdVal && profDict[profIdVal]) return profDict[profIdVal];
-          if (profVal && profDict[profVal]) return profDict[profVal];
-
+        // Helper para resolver el nombre real del profesional (SOLO médicos / odontólogos válidos)
+        const resolveDoctorName = (profVal, profIdVal, pacObj = null) => {
           const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str || "").trim());
 
-          if (profVal && typeof profVal === "string") {
-            const trimmed = profVal.trim();
-            if (trimmed.toLowerCase().includes("guillermo")) {
-              return "Sin asignar";
+          const targetId = String(profIdVal || "").trim().toLowerCase();
+          const targetVal = String(profVal || "").trim();
+          const targetValLower = targetVal.toLowerCase();
+
+          // 1. Si coincide exactamente con un ID de doctor conocido
+          if (profIdVal && profDict[profIdVal]) return profDict[profIdVal];
+          if (targetId && profDict[targetId]) return profDict[targetId];
+
+          // 2. Si coincide exactamente con un nombre de doctor conocido
+          if (profVal && profDict[profVal]) return profDict[profVal];
+          if (targetValLower && profDict[targetValLower]) return profDict[targetValLower];
+
+          // 3. Si coincide o contiene identificadores de personal administrativo (Juan Madrid, cajero, admin)
+          const isKnownAdmin = 
+            (targetId && nonDoctorIdentifiers.has(targetId)) ||
+            (targetValLower && nonDoctorIdentifiers.has(targetValLower)) ||
+            targetValLower.includes("juan madrid") ||
+            targetValLower.includes("guillermo") ||
+            targetValLower.includes("administra") ||
+            targetValLower === "admin";
+
+          if (isKnownAdmin) {
+            // No asignar al administrador como doctor. Buscar si el paciente tiene doctor clínico asignado
+            if (pacObj) {
+              const assignedDocs = getPatientAssignedDoctors(pacObj);
+              if (assignedDocs && assignedDocs.length > 0) {
+                const assignedNom = assignedDocs[0]?.nombreCompleto || assignedDocs[0]?.nombre;
+                if (assignedNom && (profDict[assignedNom] || profDict[assignedNom.toLowerCase()] || listProfs.some(p => p.allNames?.includes(assignedNom.toLowerCase())))) {
+                  return assignedNom;
+                }
+              }
             }
-            if (!isUUID(trimmed) && trimmed !== "" && trimmed !== "—") {
-              return trimmed;
-            }
+            return "Sin asignar";
           }
 
-          if (profIdVal && typeof profIdVal === "string") {
-            const targetId = profIdVal.trim().toLowerCase();
-            const found = listProfs.find(p => String(p.id).toLowerCase() === targetId || p.allNames?.includes(targetId));
-            if (found) return found.nombre;
+          // 4. Buscar coincidencia por nombre o variantes en la lista oficial de doctores
+          if (targetId) {
+            const foundById = listProfs.find(p => String(p.id).toLowerCase() === targetId || p.allNames?.includes(targetId));
+            if (foundById) return foundById.nombre;
           }
 
-          if (profVal && typeof profVal === "string") {
-            const targetVal = profVal.trim().toLowerCase();
-            const found = listProfs.find(p => String(p.id).toLowerCase() === targetVal || p.allNames?.some(n => n.includes(targetVal) || targetVal.includes(n)));
-            if (found) return found.nombre;
+          if (targetValLower && targetValLower !== "—" && !isUUID(targetVal)) {
+            const foundByName = listProfs.find(p => 
+              p.allNames?.some(n => n === targetValLower || n.includes(targetValLower) || targetValLower.includes(n))
+            );
+            if (foundByName) return foundByName.nombre;
+          }
+
+          // 5. Fallback clínico: si el documento no tiene doctor pero el paciente sí tiene doctor clínico asignado
+          if (pacObj) {
+            const assignedDocs = getPatientAssignedDoctors(pacObj);
+            if (assignedDocs && assignedDocs.length > 0) {
+              const assignedNom = assignedDocs[0]?.nombreCompleto || assignedDocs[0]?.nombre;
+              if (assignedNom && (profDict[assignedNom] || profDict[assignedNom.toLowerCase()] || listProfs.some(p => p.allNames?.includes(assignedNom.toLowerCase())))) {
+                return assignedNom;
+              }
+            }
           }
 
           return "Sin asignar";
@@ -377,7 +437,7 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
-              profesional: resolveDoctorName(d.profesionalNombre || d.doctorNombre || d.profesional || d.doctor, d.profesional_id || d.profesionalId || d.doctorId),
+              profesional: resolveDoctorName(d.profesionalNombre || d.doctorNombre || d.profesional || d.doctor, d.profesional_id || d.profesionalId || d.doctorId, pac),
               profesionalId: d.profesional_id || d.profesionalId || d.doctorId || "",
               formaPago: d.medioPago || d.condicionPago || d.medio || "Efectivo",
               subtotal: montoNum,
@@ -429,7 +489,7 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
-              profesional: resolveDoctorName(metadata.doctor || pData.profesional || pData.odontologo || pData.doctor, pData.profesional_id || pData.doctorId),
+              profesional: resolveDoctorName(metadata.doctor || pData.profesional || pData.odontologo || pData.doctor, pData.profesional_id || pData.doctorId, pac),
               profesionalId: pData.profesional_id || pData.doctorId || "",
               formaPago: medioRaw,
               subtotal: montoNum,
@@ -631,7 +691,7 @@ export default function ReporteFinanciero() {
               || f.doctorId 
               || fDet.recibo_asociado?.profesional_id 
               || "";
-            const profFinal = resolveDoctorName(profRaw, profIdRaw);
+            const profFinal = resolveDoctorName(profRaw, profIdRaw, pac);
 
             const cufeText = (f.factusCufe || f.cufe) ? `CUFE: ${String(f.factusCufe || f.cufe).slice(0, 10)}...` : "";
             const docAsocFinal = [linkedReceiptText ? `Recibo: ${linkedReceiptText}` : null, cufeText || null].filter(Boolean).join(" | ") || "—";
@@ -1548,13 +1608,17 @@ export default function ReporteFinanciero() {
                 </div>
                 <div className="p-3 bg-white border border-slate-100 rounded-xl">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Profesional Asignado</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block uppercase">{selectedDoc.profesional || "—"}</span>
+                  <span className="font-semibold text-slate-800 mt-0.5 block uppercase">{selectedDoc.profesional || "Sin asignar"}</span>
+                </div>
+                <div className="p-3 bg-white border border-slate-100 rounded-xl">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Elaborado Por</span>
+                  <span className="font-semibold text-slate-800 mt-0.5 block uppercase">{selectedDoc.usuarioCreador || "Administración"}</span>
                 </div>
                 <div className="p-3 bg-white border border-slate-100 rounded-xl">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Forma de Pago</span>
                   <span className="font-semibold text-slate-800 mt-0.5 block">{selectedDoc.formaPago || "Efectivo"}</span>
                 </div>
-                <div className="p-3 bg-white border border-slate-100 rounded-xl">
+                <div className="p-3 bg-white border border-slate-100 rounded-xl col-span-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Doc. Referencia</span>
                   <span className="font-mono font-bold text-[#009beb] mt-0.5 block">{selectedDoc.docReferencia || selectedDoc.numeroDocumento}</span>
                 </div>

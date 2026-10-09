@@ -12,6 +12,7 @@ import DocClinicoModal from './DocClinicoModal';
 import { BudgetPrintService } from '../../../services/BudgetPrintService';
 import factusService from '../../../services/factusService';
 import { getConfigItems } from '../../../services/configPersistenceService';
+import { isDoctorUser } from '../../../utils/doctorHelpers';
 
 export default function PlanEditor({ patient: dbPatient, initialData, onClose, onSaved }) {
     const { watch: watchPatient } = useFormContext() || { watch: () => ({}) };
@@ -824,7 +825,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 condicionPago: '1',
                 estado:     'Pendiente',
                 factusEstado: 'Pendiente',
-                profesional: initialData?.profesionalId || initialData?.profesional || userProfile?.nombreCompleto || 'Profesional',
+                profesional: initialData?.profesionalId || initialData?.profesional || initialData?.doctor || patient?.doctorTratante || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : null) || 'Sin asignar',
                 terceroId:   isPlanEntidad ? (planCob.terceroId || planCob.entidadId) : null,
                 terceroNombre: isPlanEntidad ? terceroNombre : null,
                 terceroDocumento: isPlanEntidad ? terceroDoc : null,

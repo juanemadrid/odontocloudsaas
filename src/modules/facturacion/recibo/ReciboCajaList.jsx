@@ -12,6 +12,7 @@ import { useToast } from "../../../context/ToastContext";
 import { printReciboCaja } from "../../../utils/electronicInvoiceTemplate";
 import { getReceiptPlanFinancials } from "../../../services/billingService";
 import { getConfigSection, getConfigItems } from "../../../services/configPersistenceService";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -147,7 +148,7 @@ export default function ReciboCajaList({ onNew }) {
                 planTitle: dynamicPlanTitle
             });
 
-            const profName = recibo.profesionalNombre || recibo._meta?.profesional || recibo.profesional || userProfile?.nombreCompleto || "Doctor";
+            const profName = recibo.profesionalNombre || recibo._meta?.profesional || recibo.profesional || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : "") || "Sin asignar";
             const consNum = recibo.consecutivoNumero || recibo.nroConsecutivo || recibo._meta?.nroConsecutivo || "1";
 
             printReciboCaja({
@@ -606,7 +607,7 @@ export default function ReciboCajaList({ onNew }) {
                         pacienteDireccion: d.pacienteDireccion || pacInfo.direccion || "",
                         pacienteCiudad: d.pacienteCiudad || pacInfo.ciudad || companyInfo?.ciudad || "Sincelejo",
                         tipoDoc: d.tipoDoc || "Recibo de caja",
-                        profesionalNombre: d.profesionalNombre || d.doctorNombre || d.doctor || userProfile?.nombreCompleto || "Doctor",
+                        profesionalNombre: d.profesionalNombre || d.doctorNombre || d.doctor || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : null) || "Sin asignar",
                         registradoPor: d.registradoPor || d.registrado_por || d.usuarioRegistro || d.usuario_nombre || d.creadoPor || d.creado_por || d.cajero || d.usuario || "",
                         medioPago: d.medioPago || d.condicionPago || d.medio || "Efectivo",
                         referencia: d.referencia || d.comprobante || "",
@@ -680,7 +681,7 @@ export default function ReciboCajaList({ onNew }) {
                     const targetPlan = targetPlanId ? pMap[targetPlanId] : null;
                     const dynamicPlanTitle = metadata.planTitle || pData.planTitle || targetPlan?.nombre || targetPlan?.title || "";
 
-                    const effectiveProf = metadata.profesionalNombre || metadata.profesional || pData.profesional || metadata.doctor || pData.doctor || userProfile?.nombreCompleto || "Doctor";
+                    const effectiveProf = metadata.profesionalNombre || metadata.profesional || pData.profesional || metadata.doctor || pData.doctor || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : null) || "Sin asignar";
 
                     let rawDate = pData.fechaISO || pData.created_at || pData.fecha;
                     if (pData.created_at && (pData.fecha || pData.fechaISO)) {
