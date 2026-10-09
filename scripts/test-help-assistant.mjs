@@ -475,3 +475,14 @@ assert.ok(empresaPrompt.includes('[Datos Básicos]'));
 assert.ok(empresaPrompt.includes('[Nombre Comercial]'));
 assert.ok(empresaPrompt.includes('[Guardar Cambios]'));
 console.log('Company settings topic transition and location verified.');
+
+// Verification of doctors, specialists, and specialties guidance
+assert.equal(resolveHelpGuides('y los especialistas', ['usuarios'])[0]?.id, 'usuarios');
+assert.equal(searchGuides('cómo creo una especialidad')[0]?.id, 'especialidades');
+assert.equal(searchGuides('dónde configuro ortodoncia')[0]?.id, 'especialidades');
+const usuariosPrompt = helpPrompt(HELP_GUIDES.find(g => g.id === 'usuarios'), 'y los especialistas');
+assert.ok(usuariosPrompt.includes('[¿Es doctor / profesional clínico?]'));
+assert.ok(usuariosPrompt.includes('[Especializaciones]'));
+assert.ok(usuariosPrompt.includes('[Nuevo Usuario]'));
+console.log('Doctor, specialist and specialty handling verified.');
+

@@ -23,7 +23,9 @@ export function getModuleLocationReference(guideId) {
     case 'empresa':
       return 'Desde Inicio: entra a [Configuración] en el menú lateral izquierdo y selecciona [Datos Básicos]. En esa pantalla puedes escribir el [Nombre Comercial], [Razón Social], [NIT / Identificación] y cargar el [Logo] de tu empresa o clínica. Arriba a la derecha pulsa el botón azul [Guardar Cambios].';
     case 'usuarios':
-      return 'Desde Inicio: entra a [Configuración] en el menú lateral y haz clic en [Usuarios]. El botón para crear nuevo usuario está arriba a la derecha. Requiere perfil Administrador.';
+      return 'Desde Inicio: entra a [Configuración] en el menú lateral y pulsa [Usuarios]. Arriba a la derecha haz clic en el botón azul [Nuevo Usuario]. Para registrar a un doctor o especialista: completa sus datos y activa el interruptor verde [¿Es doctor / profesional clínico?], luego en la sección [Especializaciones] selecciona y transfiere sus especialidades para que aparezca habilitado en la Agenda. Abajo a la derecha pulsa [Guardar Usuario]. Requiere perfil Administrador.';
+    case 'especialidades':
+      return 'Desde Inicio: entra a [Configuración] en el menú lateral y selecciona [Especialidades]. Arriba a la derecha pulsa el botón azul [+ Nueva Especialidad], escribe el nombre del área (ej. Ortodoncia o Periodoncia) y pulsa [Guardar].';
     case 'sedes':
       return 'Desde Inicio: entra a [Configuración] en el menú lateral y selecciona [Sucursales] (para sedes) o [Recursos físicos] (para sillones/consultorios). Requiere perfil Administrador.';
     case 'precios':
