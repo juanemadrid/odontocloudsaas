@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems } from "../../../services/configPersistenceService";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiEye, FiPrinter } from "react-icons/fi";
@@ -239,6 +240,8 @@ export default function ReporteFinanciero() {
         } catch (e) {}
 
         const listProfs = [];
+        const profDict = {};
+
         (snapshotUsuarios || []).forEach((u) => {
           if (isDoctorUser(u)) {
             const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || u.email || "";
@@ -249,16 +252,68 @@ export default function ReporteFinanciero() {
               id: u.id,
               nombre: nombreCompleto,
               allNames: [
-                u.id,
+                String(u.id).toLowerCase(),
                 nombreCompleto.toLowerCase(),
                 primerNombre.toLowerCase(),
                 primerApellido.toLowerCase(),
                 (u.email || "").toLowerCase()
               ].filter(Boolean)
             });
+            profDict[u.id] = nombreCompleto;
+            profDict[nombreCompleto.toLowerCase()] = nombreCompleto;
           }
         });
+
+        // Complementar con getDoctorsList
+        try {
+          const docsFromService = await getDoctorsList(userProfile || { inquilino: tenantId });
+          (docsFromService || []).forEach(d => {
+            const nom = d.nombreCompleto || d.nombre || "";
+            if (nom && !listProfs.some(p => String(p.id) === String(d.id))) {
+              listProfs.push({
+                id: d.id,
+                nombre: nom,
+                allNames: [String(d.id).toLowerCase(), nom.toLowerCase(), (d.email || "").toLowerCase()].filter(Boolean)
+              });
+            }
+            if (d.id && nom) profDict[d.id] = nom;
+            if (nom) profDict[nom.toLowerCase()] = nom;
+          });
+        } catch (e) {}
+
         setProfesionales(listProfs);
+
+        // Helper para resolver el nombre real del profesional sin quemar datos ficticios
+        const resolveDoctorName = (profVal, profIdVal) => {
+          if (profIdVal && profDict[profIdVal]) return profDict[profIdVal];
+          if (profVal && profDict[profVal]) return profDict[profVal];
+
+          const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str || "").trim());
+
+          if (profVal && typeof profVal === "string") {
+            const trimmed = profVal.trim();
+            if (trimmed.toLowerCase().includes("guillermo")) {
+              return "Sin asignar";
+            }
+            if (!isUUID(trimmed) && trimmed !== "" && trimmed !== "—") {
+              return trimmed;
+            }
+          }
+
+          if (profIdVal && typeof profIdVal === "string") {
+            const targetId = profIdVal.trim().toLowerCase();
+            const found = listProfs.find(p => String(p.id).toLowerCase() === targetId || p.allNames?.includes(targetId));
+            if (found) return found.nombre;
+          }
+
+          if (profVal && typeof profVal === "string") {
+            const targetVal = profVal.trim().toLowerCase();
+            const found = listProfs.find(p => String(p.id).toLowerCase() === targetVal || p.allNames?.some(n => n.includes(targetVal) || targetVal.includes(n)));
+            if (found) return found.nombre;
+          }
+
+          return "Sin asignar";
+        };
 
         const allRows = [];
 
@@ -322,8 +377,8 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
-              profesional: d.profesionalNombre || d.doctorNombre || d.doctor || "Guillermo Rodriguez",
-              profesionalId: d.profesional_id || "",
+              profesional: resolveDoctorName(d.profesionalNombre || d.doctorNombre || d.profesional || d.doctor, d.profesional_id || d.profesionalId || d.doctorId),
+              profesionalId: d.profesional_id || d.profesionalId || d.doctorId || "",
               formaPago: d.medioPago || d.condicionPago || d.medio || "Efectivo",
               subtotal: montoNum,
               descuento: 0,
@@ -374,7 +429,7 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
-              profesional: metadata.doctor || pData.profesional || pData.odontologo || pData.doctor || "Guillermo Rodriguez",
+              profesional: resolveDoctorName(metadata.doctor || pData.profesional || pData.odontologo || pData.doctor, pData.profesional_id || pData.doctorId),
               profesionalId: pData.profesional_id || pData.doctorId || "",
               formaPago: medioRaw,
               subtotal: montoNum,
@@ -488,7 +543,7 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: m.beneficiario || m.proveedor || "Proveedor / Tercero",
               documentoTercero: m.nit || m.documento || "",
-              profesional: m.profesional || "Guillermo Rodriguez",
+              profesional: (m.profesional && !m.profesional.toLowerCase().includes("guillermo")) ? resolveDoctorName(m.profesional, m.profesional_id) : "No aplica",
               profesionalId: m.profesional_id || "",
               formaPago: m.metodo_pago || m.forma_pago || "Efectivo",
               subtotal: montoNum,
@@ -551,14 +606,32 @@ export default function ReporteFinanciero() {
             const refClean = cleanDocReferencia(f.resolucion || f.cufe, String(nroDoc));
 
             let linkedReceiptText = "";
+            let fDet = {};
             try {
-              let fDet = typeof f.detalles === "string" ? JSON.parse(f.detalles) : (f.detalles || {});
+              fDet = typeof f.detalles === "string" ? JSON.parse(f.detalles) : (f.detalles || {});
               if (Array.isArray(fDet.recibos_asociados) && fDet.recibos_asociados.length > 0) {
                 linkedReceiptText = fDet.recibos_asociados.map(r => r.numero || `REC-${String(r.id || '').slice(0,6)}`).join(", ");
               } else if (fDet.recibo_asociado?.numero) {
                 linkedReceiptText = fDet.recibo_asociado.numero;
               }
             } catch {}
+
+            const profRaw = f.profesional_nombre 
+              || f.profesionalNombre 
+              || fDet.profesional_nombre 
+              || f.profesional 
+              || fDet.profesional 
+              || f.doctor 
+              || fDet.doctor 
+              || fDet.recibo_asociado?.profesional
+              || "";
+            const profIdRaw = f.profesional_id 
+              || f.profesionalId 
+              || fDet.profesional_id 
+              || f.doctorId 
+              || fDet.recibo_asociado?.profesional_id 
+              || "";
+            const profFinal = resolveDoctorName(profRaw, profIdRaw);
 
             const cufeText = (f.factusCufe || f.cufe) ? `CUFE: ${String(f.factusCufe || f.cufe).slice(0, 10)}...` : "";
             const docAsocFinal = [linkedReceiptText ? `Recibo: ${linkedReceiptText}` : null, cufeText || null].filter(Boolean).join(" | ") || "—";
@@ -578,8 +651,8 @@ export default function ReporteFinanciero() {
               estado: isAnulado ? "Anulado" : "Activo",
               tercero: pacNom,
               documentoTercero: pacDoc,
-              profesional: f.profesional_nombre || f.profesional || "Guillermo Rodriguez",
-              profesionalId: f.profesional_id || "",
+              profesional: profFinal,
+              profesionalId: profIdRaw || "",
               formaPago: f.medioPago || f.metodo_pago || f.forma_pago || "Efectivo",
               subtotal: subtotalNum,
               descuento: descNum,
@@ -662,8 +735,8 @@ export default function ReporteFinanciero() {
               estado: (nc.estado || "Activo"),
               tercero: nc.pacienteNombre || nc.tercero || "Paciente / Tercero",
               documentoTercero: nc.documento || "",
-              profesional: nc.profesional || "Guillermo Rodriguez",
-              profesionalId: "",
+              profesional: resolveDoctorName(nc.profesional_nombre || nc.profesional, nc.profesional_id),
+              profesionalId: nc.profesional_id || "",
               formaPago: "Nota Crédito",
               subtotal: totalNum,
               descuento: 0,
@@ -703,8 +776,8 @@ export default function ReporteFinanciero() {
               estado: (nd.estado || "Activo"),
               tercero: nd.pacienteNombre || nd.tercero || "Paciente / Tercero",
               documentoTercero: nd.documento || "",
-              profesional: nd.profesional || "Guillermo Rodriguez",
-              profesionalId: "",
+              profesional: resolveDoctorName(nd.profesional_nombre || nd.profesional, nd.profesional_id),
+              profesionalId: nd.profesional_id || "",
               formaPago: "Nota Débito",
               subtotal: totalNum,
               descuento: 0,
@@ -1533,7 +1606,7 @@ export default function ReporteFinanciero() {
                       ? userProfile.nombre
                       : (selectedDoc.usuarioCreador && !selectedDoc.usuarioCreador.includes("@") && selectedDoc.usuarioCreador !== "Administración")
                       ? selectedDoc.usuarioCreador
-                      : "Guillermo Rodríguez";
+                      : "Administración";
 
                     const pagoData = {
                       id: selectedDoc.rawId || selectedDoc.id,

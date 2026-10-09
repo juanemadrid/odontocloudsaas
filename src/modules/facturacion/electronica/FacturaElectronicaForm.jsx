@@ -685,12 +685,16 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       const medioPagoCode = mapMedioPagoCode(medioPago);
       const condicionPagoCode = mapCondicionPagoCode(condicionPago);
 
+      const selectedProfObj = (profesionales || []).find((p) => String(p.id) === String(profesionalId));
+      const profNombreSelected = selectedProfObj?.nombre || selectedProfObj?.nombreCompleto || "";
+
       const invoiceData = {
         tenant_id: inquilino,
         inquilino,
         fecha,
         profesional: profesionalId,
         profesional_id: profesionalId,
+        profesional_nombre: profNombreSelected,
         items: items.map((it, idx) => {
           const cups = it.cups || it.codigo_cups || it.concepto || (isSalud ? "SERV-0001" : `ITEM-${Date.now().toString(36)}`);
           const lineId = it.invoiceLineId || (crypto?.randomUUID ? crypto.randomUUID() : `line-${idx + 1}-${Date.now()}`);
@@ -739,6 +743,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           observaciones,
           profesional: profesionalId,
           profesional_id: profesionalId,
+          profesional_nombre: profNombreSelected,
           fecha,
           esBorrador: true,
           dianStatus: "BORRADOR",
@@ -888,6 +893,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         observaciones,
         profesional: profesionalId,
         profesional_id: profesionalId,
+        profesional_nombre: profNombreSelected,
         fecha,
         factusReferenceCode: invoiceData.factusReferenceCode,
         factusResponse: result.factusResponse || null,

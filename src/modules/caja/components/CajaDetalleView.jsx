@@ -280,7 +280,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       ? userProfile.nombre
       : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
       ? caja.usuarioNombre
-      : "Guillermo Rodríguez";
+      : "Administración";
 
     const rowsXml = movimientos.map(m => {
       const isEg = m.tipo === "egreso";
@@ -542,7 +542,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       ? userProfile.nombre
       : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
       ? caja.usuarioNombre
-      : "Guillermo Rodríguez";
+      : "Administración";
 
     // 2. Extraer consecutivo real
     const consecutiveNumber = mov.nroConsecutivo || mov.consecutivo || (mov.tipo === "egreso" ? "EGR-0001" : "RC-0001");
@@ -812,7 +812,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           ? userProfile.nombre
           : (caja.usuarioNombre && !caja.usuarioNombre.includes("@"))
           ? caja.usuarioNombre
-          : "Guillermo Rodríguez";
+          : "Administración";
 
         const esEgresoModal = selectedMovimiento.tipo === "egreso";
 
