@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
+import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { getConfigItems } from "../../../services/configPersistenceService";
 import { FiSearch, FiFileText, FiFilter, FiSend, FiClock } from "react-icons/fi";
 import { format, differenceInDays } from "date-fns";
 import * as XLSX from "xlsx";
@@ -57,42 +59,130 @@ export default function ReporteOportunidadCitas() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!userProfile?.inquilino) return;
+      const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
+      if (!tenantId) return;
       setLoading(true);
       try {
-        let snapSuc = [];
+        // 1. Cargar Sucursales
+        let listSuc = [{ id: "TODAS", nombre: "Todas las sucursales" }];
         try {
-          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
-          if (data) snapSuc = data;
+          const cfgSuc = await getConfigItems(tenantId, "sucursales", "sucursales");
+          if (Array.isArray(cfgSuc) && cfgSuc.length > 0) {
+            cfgSuc.forEach(s => {
+              const name = s.nombre || s.nombreSucursal || s.nombreComercial || s.name;
+              if (name && !listSuc.some(item => item.nombre.toLowerCase() === name.toLowerCase())) {
+                listSuc.push({ id: s.id, nombre: name });
+              }
+            });
+          }
         } catch (e) {}
-        setSucursalesList((snapSuc || []).map(d => ({ id: d.id, nombre: d.nombre || d.id })));
 
+        try {
+          const { data: dbSuc } = await supabase.from("sucursales").select("*").eq("tenant_id", tenantId);
+          (dbSuc || []).forEach(s => {
+            const name = s.nombre || s.name;
+            if (name && !listSuc.some(item => item.nombre.toLowerCase() === name.toLowerCase())) {
+              listSuc.push({ id: s.id, nombre: name });
+            }
+          });
+        } catch (e) {}
+
+        if (listSuc.length === 1) {
+          listSuc.push({ id: "PRINCIPAL", nombre: "CLINICA DENTAL SINCELEJO - SEDE PRINCIPAL" });
+        }
+        setSucursalesList(listSuc);
+
+        // 2. Cargar Odontólogos / Profesionales
+        let snapUsers = [];
+        try {
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", tenantId);
+          if (data) snapUsers = data;
+        } catch (e) {}
+
+        const profMap = {};
+        const listProf = (snapUsers || []).filter(isDoctorUser).map(u => {
+          const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
+          const primerApellido = u.apellido || u.apellidos || "";
+          const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
+          profMap[u.id] = nombreCompleto;
+          return {
+            id: u.id,
+            nombre: nombreCompleto,
+            allNames: [u.id, nombreCompleto.toLowerCase(), primerNombre.toLowerCase(), primerApellido.toLowerCase(), (u.email || "").toLowerCase()].filter(Boolean)
+          };
+        });
+
+        // 3. Cargar Pacientes reales
+        let snapPacientes = [];
+        try {
+          const { data } = await supabase
+            .from("pacientes")
+            .select("id, nombre, apellido, nombres, apellidos, documento, nroDocumento, tipoDocumento, tipo_documento, telefono, sucursal, sucursal_id")
+            .eq("tenant_id", tenantId);
+          if (data) snapPacientes = data;
+        } catch (e) {}
+
+        const pacMap = {};
+        (snapPacientes || []).forEach(p => {
+          const nom = (p.nombreCompleto || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`).trim();
+          const docNum = p.documento || p.nroDocumento || "";
+          const tDoc = p.tipoDocumento || p.tipo_documento || "CC";
+          const obj = { id: p.id, nombre: nom, documento: docNum, tipoDocumento: tDoc, sucursal: p.sucursal };
+          pacMap[p.id] = obj;
+          if (docNum) pacMap[docNum] = obj;
+        });
+
+        // 4. Cargar Citas
         let snapCitas = [];
         try {
-          const { data } = await supabase.from("citas").select("*").eq("tenant_id", userProfile.inquilino);
+          const { data } = await supabase.from("citas").select("*").eq("tenant_id", tenantId);
           if (data) snapCitas = data;
         } catch (e) {}
         const listCitas = [];
 
         (snapCitas || []).forEach(c => {
           const fSolicitud = c.created_at ? new Date(c.created_at) : (c.fecha_creacion ? new Date(c.fecha_creacion) : new Date());
-          const fAsignada = c.fecha_inicio ? new Date(c.fecha_inicio) : (c.fecha ? new Date(`${c.fecha}T${c.hora || '08:00'}`) : fSolicitud);
+          const rawAsignada = c.fecha_inicio || c.fechaInicio || (c.fecha ? `${c.fecha}T${c.hora || "08:00"}:00` : fSolicitud);
+          const fAsignada = new Date(rawAsignada);
 
           let diffDays = 0;
           if (fSolicitud && fAsignada && !isNaN(fSolicitud.getTime()) && !isNaN(fAsignada.getTime())) {
             diffDays = Math.max(0, differenceInDays(fAsignada, fSolicitud));
           }
 
+          // Paciente
+          const pacId = c.paciente_id || c.pacienteId;
+          const pac = pacMap[pacId] || pacMap[c.pacienteDocumento] || pacMap[c.documento] || {};
+          const pacNombre = pac.nombre || c.nombrePaciente || c.pacienteNombre || c.paciente || "—";
+          const pacDoc = pac.documento || c.pacienteIdentificacion || c.documento || "—";
+
+          // Profesional
+          const profId = c.profesional_id || c.profesionalId || c.doctorId;
+          let profNombre = profMap[profId];
+          if (!profNombre) {
+            const rawName = c.dentista || c.odontologo || c.profesional || c.doctor || "";
+            if (rawName) {
+              const matchedProf = listProf.find(p => p.allNames.some(alias => rawName.toLowerCase().includes(alias) || alias.includes(rawName.toLowerCase())));
+              profNombre = matchedProf ? matchedProf.nombre : rawName;
+            }
+          }
+          if (!profNombre || profNombre === "—") {
+            profNombre = "Sin asignar";
+          }
+
+          // Sucursal
+          const sucNombre = c.sucursal || c.oficina || pac.sucursal || (listSuc[1]?.nombre) || (listSuc[0]?.nombre) || "SEDE PRINCIPAL";
+
           listCitas.push({
-            id: doc.id,
-            paciente: c.nombrePaciente || "—",
-            documento: c.pacienteIdentificacion || c.documento || "—",
+            id: c.id,
+            paciente: pacNombre,
+            documento: pacDoc,
             fechaSolicitud: fSolicitud,
             fechaAsignada: fAsignada,
             diasOportunidad: `${diffDays} días`,
             especialidad: c.motivo || c.servicio || "Consulta Odontológica",
-            profesional: c.dentista || c.profesional || "—",
-            sucursal: c.sucursal || c.oficina || "ATM CENTRO DEL DOLOR OROFACIAL",
+            profesional: profNombre,
+            sucursal: sucNombre,
             estado: c.estado || "Programada"
           });
         });
@@ -114,7 +204,7 @@ export default function ReporteOportunidadCitas() {
     };
 
     fetchData();
-  }, [userProfile?.inquilino]);
+  }, [userProfile?.inquilino, userProfile?.tenant_id]);
 
   const filterData = (sourceList, filters, quickSearch) => {
     let result = sourceList.filter(c => {

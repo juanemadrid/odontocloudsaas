@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { getConfigItems } from "../../../services/configPersistenceService";
 import { FiSearch, FiFileText, FiFilter } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -61,50 +62,131 @@ export default function ReporteAsistenciaClientes() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!userProfile?.inquilino) return;
+      const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
+      if (!tenantId) return;
       setLoading(true);
       try {
         // 1. Cargar Sucursales
-        let snapSuc = [];
+        let listSuc = [{ id: "TODAS", nombre: "Todas las sucursales" }];
         try {
-          const { data } = await supabase.from("sucursales").select("*").eq("tenant_id", userProfile.inquilino);
-          if (data) snapSuc = data;
+          const cfgSuc = await getConfigItems(tenantId, "sucursales", "sucursales");
+          if (Array.isArray(cfgSuc) && cfgSuc.length > 0) {
+            cfgSuc.forEach(s => {
+              const name = s.nombre || s.nombreSucursal || s.nombreComercial || s.name;
+              if (name && !listSuc.some(item => item.nombre.toLowerCase() === name.toLowerCase())) {
+                listSuc.push({ id: s.id, nombre: name });
+              }
+            });
+          }
         } catch (e) {}
-        const listSuc = (snapSuc || []).map(doc => ({ id: doc.id, nombre: doc.nombre || doc.id }));
+
+        try {
+          const { data: dbSuc } = await supabase.from("sucursales").select("*").eq("tenant_id", tenantId);
+          (dbSuc || []).forEach(s => {
+            const name = s.nombre || s.name;
+            if (name && !listSuc.some(item => item.nombre.toLowerCase() === name.toLowerCase())) {
+              listSuc.push({ id: s.id, nombre: name });
+            }
+          });
+        } catch (e) {}
+
+        if (listSuc.length === 1) {
+          listSuc.push({ id: "PRINCIPAL", nombre: "CLINICA DENTAL SINCELEJO - SEDE PRINCIPAL" });
+        }
         setSucursalesList(listSuc);
-        if (listSuc.length > 0) setOficina(listSuc[0].nombre);
+        if (listSuc.length > 1 && !oficina) {
+          setOficina(listSuc[1].nombre);
+        }
 
         // 2. Cargar Odontólogos / Profesionales
         let snapUsers = [];
         try {
-          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", userProfile.inquilino);
+          const { data } = await supabase.from("profiles").select("*").eq("tenant_id", tenantId);
           if (data) snapUsers = data;
         } catch (e) {}
-        const listProf = (snapUsers || []).filter(isDoctorUser).map(u => ({ id: u.id, nombre: u.full_name || u.nombreCompleto || u.nombre || u.email }));
+
+        const profMap = {};
+        const listProf = (snapUsers || []).filter(isDoctorUser).map(u => {
+          const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
+          const primerApellido = u.apellido || u.apellidos || "";
+          const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
+          profMap[u.id] = nombreCompleto;
+          return {
+            id: u.id,
+            nombre: nombreCompleto,
+            allNames: [u.id, nombreCompleto.toLowerCase(), primerNombre.toLowerCase(), primerApellido.toLowerCase(), (u.email || "").toLowerCase()].filter(Boolean)
+          };
+        });
         setProfesionalesList(listProf);
 
-        // 3. Cargar Asistencia de Citas de la Agenda
+        // 3. Cargar Pacientes reales para resolver nombres y documentos
+        let snapPacientes = [];
+        try {
+          const { data } = await supabase
+            .from("pacientes")
+            .select("id, nombre, apellido, nombres, apellidos, documento, nroDocumento, tipoDocumento, tipo_documento, telefono, sucursal, sucursal_id")
+            .eq("tenant_id", tenantId);
+          if (data) snapPacientes = data;
+        } catch (e) {}
+
+        const pacMap = {};
+        (snapPacientes || []).forEach(p => {
+          const nom = (p.nombreCompleto || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`).trim();
+          const doc = p.documento || p.nroDocumento || "";
+          const tDoc = p.tipoDocumento || p.tipo_documento || "CC";
+          const obj = { id: p.id, nombre: nom, documento: doc, tipoDocumento: tDoc, sucursal: p.sucursal };
+          pacMap[p.id] = obj;
+          if (doc) pacMap[doc] = obj;
+        });
+
+        // 4. Cargar Asistencia de Citas de la Agenda
         let snapAgenda = [];
         try {
-          const { data } = await supabase.from("citas").select("*").eq("tenant_id", userProfile.inquilino);
+          const { data } = await supabase.from("citas").select("*").eq("tenant_id", tenantId);
           if (data) snapAgenda = data;
         } catch (e) {}
         const listData = [];
 
         (snapAgenda || []).forEach(c => {
-          const dateObj = c.fecha ? new Date(`${c.fecha}T${c.hora || "08:00"}:00`) : (c.createdAt?.toDate ? c.createdAt.toDate() : new Date(c.created_at || Date.now()));
+          const rawDate = c.fecha_inicio || c.fechaInicio || (c.fecha ? `${c.fecha}T${c.hora || "08:00"}:00` : (c.created_at || c.createdAt));
+          const dateObj = new Date(rawDate);
           const est = (c.estado || "Atendida").toUpperCase();
           const asistioOk = est === "ATENDIDA" || est === "COMPLETADA" || est === "EN CONSULTA";
 
+          // Paciente
+          const pacId = c.paciente_id || c.pacienteId;
+          const pac = pacMap[pacId] || pacMap[c.pacienteDocumento] || pacMap[c.documento] || {};
+          const pacNombre = pac.nombre || c.pacienteNombre || c.paciente || (c.detalles?.pacienteNombre) || "—";
+          const pacDoc = pac.documento || c.pacienteDocumento || c.documento || (c.detalles?.documento) || "—";
+          const pacTipoDoc = pac.tipoDocumento || c.tipoDocPaciente || c.tipoDocumento || "CC";
+
+          // Profesional
+          const profId = c.profesional_id || c.profesionalId || c.doctorId;
+          let profNombre = profMap[profId];
+          if (!profNombre) {
+            const rawName = c.odontologo || c.profesional || c.doctor || (c.detalles?.profesional) || "";
+            if (rawName) {
+              const matchedProf = listProf.find(p => p.allNames.some(alias => rawName.toLowerCase().includes(alias) || alias.includes(rawName.toLowerCase())));
+              profNombre = matchedProf ? matchedProf.nombre : rawName;
+            }
+          }
+          if (!profNombre || profNombre === "—") {
+            profNombre = "Sin asignar";
+          }
+
+          // Sucursal
+          const sucNombre = c.sucursal || c.oficina || pac.sucursal || (listSuc[1]?.nombre) || (listSuc[0]?.nombre) || "SEDE PRINCIPAL";
+
           listData.push({
             id: c.id,
+            pacienteId: pacId,
             fechaObj: dateObj,
             fechaCitaStr: isNaN(dateObj.getTime()) ? (c.fecha || "") : format(dateObj, "dd/MM/yyyy HH:mm"),
-            profesional: c.odontologo || c.profesional || c.doctor || "—",
-            sucursal: c.sucursal || c.oficina || listSuc[0]?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
-            tipoDocPaciente: c.tipoDocPaciente || "CC",
-            numDocPaciente: c.pacienteDocumento || c.documento || "—",
-            nombrePaciente: c.pacienteNombre || c.paciente || "—",
+            profesional: profNombre,
+            sucursal: sucNombre,
+            tipoDocPaciente: pacTipoDoc,
+            numDocPaciente: pacDoc,
+            nombrePaciente: pacNombre,
             estadoCita: c.estado || "Atendida",
             asistio: asistioOk ? "SI" : "NO"
           });
@@ -122,7 +204,7 @@ export default function ReporteAsistenciaClientes() {
     };
 
     fetchData();
-  }, [userProfile?.inquilino]);
+  }, [userProfile?.inquilino, userProfile?.tenant_id]);
 
   const filterData = (sourceList, filters, quickSearch) => {
     let result = sourceList.filter(item => {
