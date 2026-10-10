@@ -129,17 +129,26 @@ export default function ReporteEvoluciones() {
       } catch (_) {}
 
       const profMap = {};
-      const listProf = (snapUsers || []).map(u => {
+      (snapUsers || []).forEach(u => {
         const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
         const primerApellido = u.apellido || u.apellidos || "";
         const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email || "Doctor tratante";
         profMap[u.id] = nombreCompleto;
-        return {
-          id: u.id,
-          nombre: nombreCompleto,
-          cargo: u.cargo || u.especialidad || (isDoctorUser(u) ? "Odontólogo" : "Profesional")
-        };
       });
+
+      // Filtrar estrictamente: Solo personas con rol de doctor / profesionales médicos
+      const listProf = (snapUsers || [])
+        .filter(u => isDoctorUser(u))
+        .map(u => {
+          const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
+          const primerApellido = u.apellido || u.apellidos || "";
+          const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email || "Doctor tratante";
+          return {
+            id: u.id,
+            nombre: nombreCompleto,
+            cargo: u.cargo || u.especialidad || "Doctor"
+          };
+        });
       setProfesionalesList(listProf);
 
       // 3. Cargar Directorio de Pacientes reales para resolver nombres y documentos
