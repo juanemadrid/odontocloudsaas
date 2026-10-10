@@ -40,6 +40,7 @@ export default function ReporteVentasEfectividad() {
   const [rawDoctores, setRawDoctores] = useState([]);
   const [rawPlanes, setRawPlanes] = useState([]);
   const [rawPagos, setRawPagos] = useState([]);
+  const [rawPacientes, setRawPacientes] = useState([]);
 
   // Carga inicial de datos desde Supabase
   useEffect(() => {
@@ -123,6 +124,17 @@ export default function ReporteVentasEfectividad() {
         } catch (e) {}
         setRawPagos(listPagos);
 
+        // 5. Cargar Pacientes para vinculación autoritativa de doctor tratante
+        let listPacientes = [];
+        try {
+          const { data: snapPacs } = await supabase
+            .from("pacientes")
+            .select("id, nombre, apellido, nombres, apellidos, documento, nroDocumento, doctorTratante, doctorTratanteId, profesional_id, profesional, sucursal, sucursal_id")
+            .eq("tenant_id", tenantId);
+          if (snapPacs) listPacientes = snapPacs;
+        } catch (e) {}
+        setRawPacientes(listPacientes);
+
       } catch (error) {
         console.error("Error cargando datos para Reporte de Efectividad:", error);
       } finally {
@@ -144,13 +156,21 @@ export default function ReporteVentasEfectividad() {
   };
 
   // Cálculo dinámico de Efectividad y Recaudo por Doctor
-  const { dataEfectividad, generalIndicador, maxRecaudoValue } = useMemo(() => {
+  const { dataEfectividad, generalIndicador, maxRecaudoValue, totalsResumen } = useMemo(() => {
     const initDate = appliedFilters.fechaInicial ? new Date(appliedFilters.fechaInicial + "T00:00:00") : null;
     const endDate = appliedFilters.fechaFinal ? new Date(appliedFilters.fechaFinal + "T23:59:59") : null;
     const sucursalTarget = (appliedFilters.sucursal || "").toLowerCase();
     const isTodasSucursales = !appliedFilters.sucursal || appliedFilters.sucursal === "Todas las sucursales" || appliedFilters.sucursal === "TODAS";
 
-    // Inicializar mapa de doctores
+    // Diccionario de pacientes para resolución de doctor tratante
+    const pacMap = {};
+    (rawPacientes || []).forEach(p => {
+      pacMap[p.id] = p;
+      if (p.documento) pacMap[p.documento] = p;
+      if (p.nroDocumento) pacMap[p.nroDocumento] = p;
+    });
+
+    // Inicializar mapa de doctores registrados
     const map = {};
     rawDoctores.forEach(d => {
       map[d.id] = {
@@ -165,16 +185,33 @@ export default function ReporteVentasEfectividad() {
       };
     });
 
-    // Slot especial "Sin Doctor" como en OralDrive
+    // Slot especial "Sin Doctor"
     map["__sin_doctor__"] = {
       id: "__sin_doctor__",
       nombre: "Sin Doctor",
-      allNames: ["sin doctor", "—", "ninguno"],
+      allNames: ["sin doctor", "—", "ninguno", "sin asignar"],
       presupuestosGenerados: 0,
       montoPresupuestado: 0,
       presupuestosAceptados: 0,
       montoAceptado: 0,
       recaudo: 0
+    };
+
+    // Función auxiliar para emparejar doctor
+    const matchDoctorKey = (docId, docName) => {
+      const cleanId = String(docId || "").trim();
+      const cleanName = String(docName || "").trim().toLowerCase();
+
+      if (cleanId && map[cleanId]) return cleanId;
+
+      if (cleanName && cleanName !== "—" && cleanName !== "sin doctor" && cleanName !== "sin asignar") {
+        const found = Object.keys(map).find(k => {
+          if (k === "__sin_doctor__") return false;
+          return map[k].allNames.some(alias => cleanName.includes(alias) || alias.includes(cleanName));
+        });
+        if (found) return found;
+      }
+      return null;
     };
 
     // 1. Procesar Planes de Tratamiento / Presupuestos
@@ -186,15 +223,24 @@ export default function ReporteVentasEfectividad() {
         if (endDate && dt > endDate) return;
       }
 
+      // Parsear detalles si viene como string JSON
+      let d = p.detalles || {};
+      if (typeof d === "string") {
+        try { d = JSON.parse(d); } catch (e) { d = {}; }
+      }
+
+      const pacId = p.paciente_id || p.pacienteId || p.patientId || p.patient_id || d.paciente_id || d.pacienteId || d.patientId;
+      const pac = pacMap[pacId] || (p.documento ? pacMap[p.documento] : {}) || {};
+
       // Filtro de sucursal
       if (!isTodasSucursales) {
-        const pSuc = (p.sucursal || p.sede || p.oficina || p.detalles?.sucursal || "").toLowerCase();
+        const pSuc = (p.sucursal || p.sede || p.oficina || d.sucursal || pac.sucursal || "").toLowerCase();
         if (pSuc && !pSuc.includes(sucursalTarget) && !sucursalTarget.includes(pSuc)) return;
       }
 
-      const total = Number(p.total || p.montoTotal || p.valor || p.costoTotal || 0);
-      const pagado = Number(p.pagado || p.montoPagado || p.abono || 0);
-      const statusStr = String(p.status || p.estado || p.detalles?.status || p.detalles?.estado || "").toLowerCase();
+      const total = Number(p.total || p.montoTotal || p.valor || p.costoTotal || d.total || d.costoTotal || 0);
+      const pagado = Number(p.pagado || p.montoPagado || p.abono || d.pagado || 0);
+      const statusStr = String(p.status || p.estado || d.status || d.estado || "").toLowerCase();
       const isAceptado =
         statusStr.includes("acept") ||
         statusStr.includes("approv") ||
@@ -205,29 +251,28 @@ export default function ReporteVentasEfectividad() {
         statusStr.includes("fin") ||
         pagado > 0;
 
-      const profId = p.profesionalId || p.profesional_id || p.odontologoId || p.doctorId || p.detalles?.profesionalId || "";
-      const profName = p.profesionalAsignado || p.profesional || p.odontologo || p.doctor || p.detalles?.profesional || "";
+      // Resolución de doctor con múltiples fuentes
+      const itemsList = Array.isArray(d) ? d : (d.items && Array.isArray(d.items) ? d.items : []);
+      const itemWithDoc = itemsList.find(it => it.profesionalId || it.profesional || it.doctor || it.odontologo);
 
-      let matchedKey = null;
-      if (profId || profName) {
-        matchedKey = Object.keys(map).find(k =>
-          k !== "__sin_doctor__" && (k === profId || (profName && map[k].allNames.some(n => profName.toLowerCase().includes(n))))
-        );
-      }
+      const rawProfId = p.profesionalId || p.profesional_id || p.odontologoId || p.doctorId || d.profesionalId || d.profesional_id || d.doctorId || (itemWithDoc && (itemWithDoc.profesionalId || itemWithDoc.profesional_id)) || pac.profesional_id || pac.doctorTratanteId || "";
+      const rawProfName = p.profesionalAsignado || p.profesional || p.odontologo || p.doctor || d.profesional || d.profesionalAsignado || d.doctor || d.odontologo || (itemWithDoc && (itemWithDoc.profesional || itemWithDoc.doctor)) || pac.doctorTratante || pac.profesional || "";
+
+      let matchedKey = matchDoctorKey(rawProfId, rawProfName);
 
       if (!matchedKey) {
-        if (profName && profName !== "—") {
-          map[profName] = {
-            id: profName,
-            nombre: profName,
-            allNames: [profName.toLowerCase()],
+        if (rawProfName && rawProfName !== "—" && rawProfName.trim().length > 2) {
+          map[rawProfName] = {
+            id: rawProfName,
+            nombre: rawProfName,
+            allNames: [rawProfName.toLowerCase()],
             presupuestosGenerados: 0,
             montoPresupuestado: 0,
             presupuestosAceptados: 0,
             montoAceptado: 0,
             recaudo: 0
           };
-          matchedKey = profName;
+          matchedKey = rawProfName;
         } else {
           matchedKey = "__sin_doctor__";
         }
@@ -255,36 +300,59 @@ export default function ReporteVentasEfectividad() {
         if (endDate && dt > endDate) return;
       }
 
+      // Parsear notas de pago
+      let notasObj = {};
+      if (pago.notas) {
+        if (typeof pago.notas === "string" && pago.notas.trim().startsWith("{")) {
+          try { notasObj = JSON.parse(pago.notas); } catch (e) {}
+        } else if (typeof pago.notas === "object") {
+          notasObj = pago.notas;
+        }
+      }
+
+      const pacId = pago.paciente_id || pago.pacienteId || notasObj.pacienteId || notasObj.patientId;
+      const pac = pacMap[pacId] || {};
+
       // Filtro de sucursal
       if (!isTodasSucursales) {
-        const pagoSuc = (pago.sucursal || pago.sede || pago.oficina || "").toLowerCase();
+        const pagoSuc = (pago.sucursal || pago.sede || pago.oficina || notasObj.sucursal || pac.sucursal || "").toLowerCase();
         if (pagoSuc && !pagoSuc.includes(sucursalTarget) && !sucursalTarget.includes(pagoSuc)) return;
       }
 
       const monto = Number(pago.monto || pago.valor || 0);
-      const profId = pago.profesional_id || pago.profesionalId || pago.doctorId || "";
-      const profName = pago.profesional || pago.odontologo || pago.doctor || "";
 
-      let matchedKey = null;
-      if (profId || profName) {
-        matchedKey = Object.keys(map).find(k =>
-          k !== "__sin_doctor__" && (k === profId || (profName && map[k].allNames.some(n => profName.toLowerCase().includes(n))))
-        );
+      // Si el pago tiene plan asociado, buscar doctor del plan
+      const targetPlanId = pago.plan_id || notasObj.planId;
+      const targetPlan = targetPlanId ? rawPlanes.find(pl => pl.id === targetPlanId) : null;
+      let planDocId = "";
+      let planDocName = "";
+      if (targetPlan) {
+        let plD = targetPlan.detalles || {};
+        if (typeof plD === "string") {
+          try { plD = JSON.parse(plD); } catch (e) {}
+        }
+        planDocId = targetPlan.profesionalId || targetPlan.profesional_id || plD.profesionalId || "";
+        planDocName = targetPlan.profesional || plD.profesional || "";
       }
 
+      const rawProfId = pago.profesional_id || pago.profesionalId || pago.doctorId || notasObj.profesionalId || notasObj.profesional_id || planDocId || pac.profesional_id || pac.doctorTratanteId || "";
+      const rawProfName = pago.profesional || pago.odontologo || pago.doctor || notasObj.profesional || notasObj.doctor || planDocName || pac.doctorTratante || pac.profesional || "";
+
+      let matchedKey = matchDoctorKey(rawProfId, rawProfName);
+
       if (!matchedKey) {
-        if (profName && profName !== "—") {
-          map[profName] = {
-            id: profName,
-            nombre: profName,
-            allNames: [profName.toLowerCase()],
+        if (rawProfName && rawProfName !== "—" && rawProfName.trim().length > 2) {
+          map[rawProfName] = {
+            id: rawProfName,
+            nombre: rawProfName,
+            allNames: [rawProfName.toLowerCase()],
             presupuestosGenerados: 0,
             montoPresupuestado: 0,
             presupuestosAceptados: 0,
             montoAceptado: 0,
             recaudo: 0
           };
-          matchedKey = profName;
+          matchedKey = rawProfName;
         } else {
           matchedKey = "__sin_doctor__";
         }
@@ -315,7 +383,7 @@ export default function ReporteVentasEfectividad() {
       }));
     } else {
       list = list.map(d => {
-        const pctNum = d.presupuestosGenerados > 0 ? (d.presupuestosAceptados / d.presupuestosGenerados) * 100 : (d.recaudo > 0 ? 25 : 0);
+        const pctNum = d.presupuestosGenerados > 0 ? (d.presupuestosAceptados / d.presupuestosGenerados) * 100 : 0;
         return {
           ...d,
           pctNum: Number(pctNum.toFixed(2)),
@@ -324,24 +392,35 @@ export default function ReporteVentasEfectividad() {
       });
     }
 
-    // Ordenar de mayor a menor recaudo
-    list.sort((a, b) => b.recaudo - a.recaudo);
+    // Ordenar de mayor a menor recaudo o efectividad
+    list.sort((a, b) => b.recaudo - a.recaudo || b.pctNum - a.pctNum);
 
-    // Calcular efectividad global promedio
+    // Calcular efectividad global promedio y totales
     const totalGen = list.reduce((acc, curr) => acc + curr.presupuestosGenerados, 0);
     const totalAcep = list.reduce((acc, curr) => acc + curr.presupuestosAceptados, 0);
-    const globalEf = totalGen > 0 ? Math.round((totalAcep / totalGen) * 100) : (list.some(d => d.recaudo > 0) ? 25 : 0);
+    const totalPresupuestado = list.reduce((acc, curr) => acc + curr.montoPresupuestado, 0);
+    const totalAceptado = list.reduce((acc, curr) => acc + curr.montoAceptado, 0);
+    const totalRecaudo = list.reduce((acc, curr) => acc + curr.recaudo, 0);
 
+    const globalEf = totalGen > 0 ? Math.round((totalAcep / totalGen) * 100) : 0;
     const maxR = Math.max(...list.map(d => d.recaudo), 1000000);
 
     return {
       dataEfectividad: list,
       generalIndicador: globalEf,
-      maxRecaudoValue: maxR
+      maxRecaudoValue: maxR,
+      totalsResumen: {
+        totalGen,
+        totalAcep,
+        totalPresupuestado,
+        totalAceptado,
+        totalRecaudo,
+        globalEf
+      }
     };
-  }, [rawDoctores, rawPlanes, rawPagos, appliedFilters]);
+  }, [rawDoctores, rawPlanes, rawPagos, rawPacientes, appliedFilters]);
 
-  // Rotación de aguja para velocímetro semáforo de OralDrive (-90deg a +90deg)
+  // Rotación de aguja para velocímetro semáforo (-90deg a +90deg)
   const needleRotation = -90 + (generalIndicador / 100) * 180;
 
   return (
@@ -400,19 +479,19 @@ export default function ReporteVentasEfectividad() {
         </button>
       </div>
 
-      {/* ─── PANELES 1:1 ORALDRIVE (3 TARJETAS BLANCAS CON FONDO GRIS CLARO) ─── */}
+      {/* ─── PANELES DE CONTROL (INDICADOR, EFECTIVIDAD, RECAUDO Y TABLA) ─── */}
       <div className="mx-6 mt-4 space-y-4 animate-fadeIn">
         
-        {/* TARJETA 1: Indicador general (Velocímetro Semicircular de OralDrive) */}
+        {/* TARJETA 1: Indicador general (Velocímetro Semicircular) */}
         <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-2xs relative flex flex-col items-center justify-center min-h-[220px]">
-          {/* Botón de exportación hamburguesa OralDrive ≡ */}
           <div className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer p-1">
             <FiMenu size={16} />
           </div>
 
-          <h3 className="text-sm font-normal text-slate-600 mb-2">Indicador general</h3>
+          <h3 className="text-sm font-semibold text-slate-700 mb-1">Indicador general</h3>
+          <p className="text-xs text-slate-400 font-medium mb-2">Efectividad global del equipo: <span className="font-bold text-slate-800">{generalIndicador}%</span></p>
 
-          {/* Gráfico SVG Velocímetro Semicircular idéntico a Highcharts OralDrive */}
+          {/* Gráfico SVG Velocímetro Semicircular */}
           <div className="relative w-72 h-40 flex items-center justify-center">
             <svg className="w-72 h-72" viewBox="0 0 100 65">
               {/* Arco Rojo (0 - 40) */}
@@ -440,7 +519,7 @@ export default function ReporteVentasEfectividad() {
                 strokeLinecap="round"
               />
 
-              {/* Escala numérica de 10 en 10 como en OralDrive */}
+              {/* Escala numérica de 10 en 10 */}
               <text x="12" y="58" fontSize="3" fill="#64748b" textAnchor="middle">0</text>
               <text x="17" y="44" fontSize="3" fill="#64748b" textAnchor="middle">10</text>
               <text x="26" y="32" fontSize="3" fill="#64748b" textAnchor="middle">20</text>
@@ -453,7 +532,7 @@ export default function ReporteVentasEfectividad() {
               <text x="83" y="44" fontSize="3" fill="#64748b" textAnchor="middle">90</text>
               <text x="88" y="58" fontSize="3" fill="#64748b" textAnchor="middle">100</text>
 
-              {/* Aguja delgada y centro gris */}
+              {/* Aguja y centro */}
               <g transform="translate(50, 52)">
                 <line
                   x1="0"
@@ -476,70 +555,75 @@ export default function ReporteVentasEfectividad() {
           </div>
         </div>
 
-        {/* TARJETA 2: Efectividad por profesional (Gráfico de Columnas Anchas OralDrive) */}
+        {/* TARJETA 2: Efectividad por profesional (Gráfico de Columnas con escala real 0% - 100%) */}
         <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-2xs relative">
           <div className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer p-1">
             <FiMenu size={16} />
           </div>
 
-          <h3 className="text-sm font-normal text-slate-600 text-center mb-4">Efectividad por profesional</h3>
+          <h3 className="text-sm font-semibold text-slate-700 text-center mb-1">Efectividad por profesional</h3>
+          <p className="text-xs text-slate-400 text-center mb-4">Porcentaje de presupuestos aceptados sobre el total generados</p>
 
-          {/* Leyenda en la esquina superior derecha como en OralDrive */}
-          <div className="flex flex-wrap items-center justify-end gap-4 mb-3 text-[11px] text-slate-600 px-4">
+          {/* Leyenda */}
+          <div className="flex flex-wrap items-center justify-end gap-4 mb-4 text-[11px] text-slate-600 px-4">
             {dataEfectividad.map((d, i) => (
               <div key={d.id} className="flex items-center gap-1.5">
                 <div
                   className="w-2.5 h-2.5 rounded-2xs"
                   style={{ backgroundColor: PALETTE_COLORS[i % PALETTE_COLORS.length] }}
                 />
-                <span className="text-[11px] text-slate-600">{d.nombre}</span>
+                <span className="text-[11px] font-medium text-slate-700">{d.nombre}</span>
               </div>
             ))}
           </div>
 
-          {/* Gráfico con cuadrícula horizontal del 0.00 al 0.25+ */}
-          <div className="relative w-full max-w-4xl mx-auto h-64 flex flex-col justify-between pt-4 pb-6 px-8 border-b border-slate-200">
+          {/* Gráfico con cuadrícula horizontal del 0% al 100% */}
+          <div className="relative w-full max-w-4xl mx-auto h-64 flex flex-col justify-between pt-4 pb-6 px-10 border-b border-slate-200">
             
-            {/* Líneas de guía horizontales de Highcharts */}
-            <div className="absolute inset-x-8 top-4 bottom-6 flex flex-col justify-between pointer-events-none opacity-40">
+            {/* Líneas de guía horizontales de 20% en 20% */}
+            <div className="absolute inset-x-10 top-4 bottom-6 flex flex-col justify-between pointer-events-none opacity-40">
               <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">0.25</span>
+                <span className="-ml-9 font-mono">100%</span>
               </div>
               <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">0.20</span>
+                <span className="-ml-9 font-mono">80%</span>
               </div>
               <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">0.15</span>
+                <span className="-ml-9 font-mono">60%</span>
               </div>
               <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">0.10</span>
+                <span className="-ml-9 font-mono">40%</span>
               </div>
               <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">0.05</span>
+                <span className="-ml-9 font-mono">20%</span>
               </div>
               <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">0</span>
+                <span className="-ml-9 font-mono">0%</span>
               </div>
             </div>
 
-            {/* Columnas anchas */}
+            {/* Columnas */}
             <div className="relative z-10 flex items-end justify-center gap-8 h-full">
               {dataEfectividad.map((d, i) => {
-                const heightPct = Math.max(d.pctNum > 0 ? (d.pctNum / 25) * 100 : 8, 4);
+                const heightPct = Math.min(Math.max(d.pctNum, d.pctNum > 0 ? 4 : 2), 100);
                 const color = PALETTE_COLORS[i % PALETTE_COLORS.length];
 
                 return (
-                  <div key={d.id} className="flex flex-col items-center justify-end h-full flex-1 max-w-[280px]">
-                    <span className="text-[10px] font-bold text-slate-600 mb-1">
+                  <div key={d.id} className="flex flex-col items-center justify-end h-full flex-1 max-w-[200px]">
+                    <span className="text-[11px] font-bold text-slate-700 mb-1">
                       {d.pctNum > 0 ? `${d.pctNum.toFixed(2)}%` : '0.00%'}
                     </span>
                     <div
-                      className="w-full rounded-t-2xs transition-all duration-1000 shadow-2xs"
+                      className="w-full rounded-t-sm transition-all duration-1000 shadow-xs hover:brightness-95 cursor-pointer"
                       style={{
-                        height: `${Math.min(heightPct, 100)}%`,
+                        height: `${heightPct}%`,
                         backgroundColor: color
                       }}
+                      title={`${d.nombre}: ${d.presupuestosAceptados} de ${d.presupuestosGenerados} presupuestos (${d.pctNum.toFixed(2)}%)`}
                     />
+                    <span className="text-[10px] font-semibold text-slate-500 mt-2 truncate max-w-[120px] text-center" title={d.nombre}>
+                      {d.nombre}
+                    </span>
                   </div>
                 );
               })}
@@ -549,73 +633,77 @@ export default function ReporteVentasEfectividad() {
 
         </div>
 
-        {/* TARJETA 3: Recaudo por profesional (Gráfico con valores COP 1:1 OralDrive) */}
+        {/* TARJETA 3: Recaudo por profesional (Gráfico con valores COP reales) */}
         <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-2xs relative">
           <div className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer p-1">
             <FiMenu size={16} />
           </div>
 
-          <h3 className="text-sm font-normal text-slate-600 text-center mb-4">Recaudo por profesional</h3>
+          <h3 className="text-sm font-semibold text-slate-700 text-center mb-1">Recaudo por profesional</h3>
+          <p className="text-xs text-slate-400 text-center mb-4">Total de pagos recaudados efectivamente en el período</p>
 
-          {/* Leyenda en la esquina superior derecha como en OralDrive */}
-          <div className="flex flex-wrap items-center justify-end gap-4 mb-3 text-[11px] text-slate-600 px-4">
+          {/* Leyenda */}
+          <div className="flex flex-wrap items-center justify-end gap-4 mb-4 text-[11px] text-slate-600 px-4">
             {dataEfectividad.map((d, i) => (
               <div key={d.id} className="flex items-center gap-1.5">
                 <div
                   className="w-2.5 h-2.5 rounded-2xs"
                   style={{ backgroundColor: PALETTE_COLORS[i % PALETTE_COLORS.length] }}
                 />
-                <span className="text-[11px] text-slate-600">{d.nombre}</span>
+                <span className="text-[11px] font-medium text-slate-700">{d.nombre}</span>
               </div>
             ))}
           </div>
 
           {/* Gráfico de barras de recaudo */}
-          <div className="relative w-full max-w-4xl mx-auto h-64 flex flex-col justify-between pt-4 pb-6 px-8 border-b border-slate-200">
+          <div className="relative w-full max-w-4xl mx-auto h-64 flex flex-col justify-between pt-4 pb-6 px-12 border-b border-slate-200">
             
-            {/* Líneas de guía horizontales (0, 20, 40, 60, 80, 100) */}
-            <div className="absolute inset-x-8 top-4 bottom-6 flex flex-col justify-between pointer-events-none opacity-40">
-              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">100</span>
+            {/* Líneas de guía con valores en COP */}
+            <div className="absolute inset-x-12 top-4 bottom-6 flex flex-col justify-between pointer-events-none opacity-40">
+              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[9px] text-slate-400">
+                <span className="-ml-11 font-mono">${Math.round(maxRecaudoValue / 1000).toLocaleString('es-CO')}k</span>
               </div>
-              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">80</span>
+              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[9px] text-slate-400">
+                <span className="-ml-11 font-mono">${Math.round((maxRecaudoValue * 0.75) / 1000).toLocaleString('es-CO')}k</span>
               </div>
-              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">60</span>
+              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[9px] text-slate-400">
+                <span className="-ml-11 font-mono">${Math.round((maxRecaudoValue * 0.5) / 1000).toLocaleString('es-CO')}k</span>
               </div>
-              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">40</span>
+              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[9px] text-slate-400">
+                <span className="-ml-11 font-mono">${Math.round((maxRecaudoValue * 0.25) / 1000).toLocaleString('es-CO')}k</span>
               </div>
-              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">20</span>
-              </div>
-              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[10px] text-slate-400">
-                <span className="-ml-7">0</span>
+              <div className="border-b border-slate-200 w-full flex items-center justify-between text-[9px] text-slate-400">
+                <span className="-ml-11 font-mono">$0</span>
               </div>
             </div>
 
             {/* Columnas con etiquetas de valor en COP */}
-            <div className="relative z-10 flex items-end justify-center gap-12 h-full">
+            <div className="relative z-10 flex items-end justify-center gap-10 h-full">
               {dataEfectividad.map((d, i) => {
                 const maxVal = maxRecaudoValue || 1000000;
-                const heightPct = d.recaudo > 0 ? (d.recaudo / maxVal) * 100 : 4;
+                const heightPct = d.recaudo > 0 ? Math.min((d.recaudo / maxVal) * 100, 100) : 3;
                 const color = PALETTE_COLORS[i % PALETTE_COLORS.length];
 
                 return (
-                  <div key={d.id} className="flex flex-col items-center justify-end h-full flex-1 max-w-[80px]">
-                    {d.recaudo > 0 && (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold text-white mb-1 shadow-2xs" style={{ backgroundColor: color }}>
+                  <div key={d.id} className="flex flex-col items-center justify-end h-full flex-1 max-w-[140px]">
+                    {d.recaudo > 0 ? (
+                      <span className="px-2 py-0.5 rounded text-[9px] font-black text-white mb-1 shadow-xs" style={{ backgroundColor: color }}>
                         ${d.recaudo.toLocaleString('es-CO')}
                       </span>
+                    ) : (
+                      <span className="text-[9px] font-bold text-slate-400 mb-1">$0</span>
                     )}
                     <div
-                      className="w-full rounded-t-2xs transition-all duration-1000 shadow-2xs"
+                      className="w-full rounded-t-sm transition-all duration-1000 shadow-xs hover:brightness-95 cursor-pointer"
                       style={{
-                        height: `${Math.min(heightPct, 100)}%`,
+                        height: `${heightPct}%`,
                         backgroundColor: color
                       }}
+                      title={`${d.nombre}: Recaudo $${d.recaudo.toLocaleString('es-CO')}`}
                     />
+                    <span className="text-[10px] font-semibold text-slate-500 mt-2 truncate max-w-[120px] text-center" title={d.nombre}>
+                      {d.nombre}
+                    </span>
                   </div>
                 );
               })}
@@ -623,6 +711,70 @@ export default function ReporteVentasEfectividad() {
 
           </div>
 
+        </div>
+
+        {/* TARJETA 4: Tabla Resumen Consolidada de Efectividad y Ventas */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-2xs">
+          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center justify-between">
+            <span>Resumen consolidado por profesional</span>
+            <span className="text-[11px] font-normal text-slate-400">
+              {dataEfectividad.length} profesionales registrados
+            </span>
+          </h3>
+
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th className="py-3 px-4">Profesional</th>
+                  <th className="py-3 px-4 text-center">Presupuestos Generados</th>
+                  <th className="py-3 px-4 text-center">Presupuestos Aceptados</th>
+                  <th className="py-3 px-4 text-center">% Efectividad</th>
+                  <th className="py-3 px-4 text-right">Monto Presupuestado</th>
+                  <th className="py-3 px-4 text-right">Monto Aceptado</th>
+                  <th className="py-3 px-4 text-right">Recaudo Cobrado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {dataEfectividad.map((d, idx) => (
+                  <tr key={d.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-3 px-4 font-semibold text-slate-800 flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: PALETTE_COLORS[idx % PALETTE_COLORS.length] }}
+                      />
+                      {d.nombre}
+                    </td>
+                    <td className="py-3 px-4 text-center font-mono font-medium">{d.presupuestosGenerados}</td>
+                    <td className="py-3 px-4 text-center font-mono font-medium text-emerald-600">{d.presupuestosAceptados}</td>
+                    <td className="py-3 px-4 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        d.pctNum >= 70 ? 'bg-emerald-50 text-emerald-700' :
+                        d.pctNum >= 40 ? 'bg-amber-50 text-amber-700' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {d.pctNum.toFixed(2)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-slate-600">$ {d.montoPresupuestado.toLocaleString('es-CO')}</td>
+                    <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-700">$ {d.montoAceptado.toLocaleString('es-CO')}</td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-sky-700">$ {d.recaudo.toLocaleString('es-CO')}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-100/80 font-bold border-t-2 border-slate-300 text-slate-800 text-xs">
+                <tr>
+                  <td className="py-3 px-4">TOTAL GENERAL</td>
+                  <td className="py-3 px-4 text-center font-mono">{totalsResumen.totalGen}</td>
+                  <td className="py-3 px-4 text-center font-mono text-emerald-700">{totalsResumen.totalAcep}</td>
+                  <td className="py-3 px-4 text-center font-mono text-emerald-700">{totalsResumen.globalEf}%</td>
+                  <td className="py-3 px-4 text-right font-mono">$ {totalsResumen.totalPresupuestado.toLocaleString('es-CO')}</td>
+                  <td className="py-3 px-4 text-right font-mono text-emerald-700">$ {totalsResumen.totalAceptado.toLocaleString('es-CO')}</td>
+                  <td className="py-3 px-4 text-right font-mono text-sky-700">$ {totalsResumen.totalRecaudo.toLocaleString('es-CO')}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
 
       </div>
