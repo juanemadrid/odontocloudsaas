@@ -171,31 +171,31 @@ export default function FacturasQuotaPanel() {
   const configuredClinics = tenants.filter(t => t.hasFactusCreds || t.sucursales.some(s => s.hasFactusCreds)).length;
 
   return (
-    <div className="space-y-8 p-4 md:p-8 max-w-6xl mx-auto animate-fadeIn">
+    <div className="space-y-6 sm:space-y-8 p-3 sm:p-6 md:p-8 max-w-6xl mx-auto animate-fadeIn w-full min-w-0">
       {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-200">
-            <FiZap size={28} className="text-white" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="w-12 sm:w-14 h-12 sm:h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-200 shrink-0">
+            <FiZap size={26} className="text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Facturación Electrónica por Clínica</h2>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+            <h2 className="text-lg sm:text-2xl font-black text-slate-800 uppercase tracking-tight">Facturación Electrónica por Clínica</h2>
+            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
               Gestión independiente de paquetes y credenciales API Factus
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-6 px-5 py-2.5 bg-slate-50 border border-slate-200/60 rounded-2xl">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-4 sm:gap-6 px-4 sm:px-5 py-2 sm:py-2.5 bg-slate-50 border border-slate-200/60 rounded-2xl flex-1 sm:flex-initial justify-between">
             <div>
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Clínicas</p>
-              <p className="text-xl font-black text-slate-800">{totalClinics}</p>
+              <p className="text-lg sm:text-xl font-black text-slate-800">{totalClinics}</p>
             </div>
             <div className="w-px h-8 bg-slate-200" />
             <div>
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Configuradas Factus</p>
-              <p className="text-xl font-black text-emerald-600">{configuredClinics}</p>
+              <p className="text-lg sm:text-xl font-black text-emerald-600">{configuredClinics}</p>
             </div>
           </div>
 
@@ -225,7 +225,7 @@ export default function FacturasQuotaPanel() {
             <span className="text-xs font-bold uppercase tracking-widest">Cargando clínicas...</span>
           </div>
         ) : (
-          <div className="w-full">
+          <div className="w-full overflow-x-auto min-w-full">
             <table className="w-full text-left border-collapse table-auto">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/80">

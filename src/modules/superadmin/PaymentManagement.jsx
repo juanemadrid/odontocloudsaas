@@ -124,26 +124,26 @@ export default function PaymentManagement() {
 
     return (
         /* Force explicit white background */
-        <div className="space-y-10 bg-slate-50/30 min-h-full">
+        <div className="space-y-6 sm:space-y-10 bg-slate-50/30 min-h-full">
             {/* Global Config Section - Professional Dashboard Banner */}
-            <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-slate-900 to-indigo-950 p-8 shadow-2xl">
+            <div className="relative overflow-hidden rounded-[24px] sm:rounded-[32px] bg-gradient-to-br from-slate-900 to-indigo-950 p-5 sm:p-8 shadow-2xl">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
                 <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl -ml-10 -mb-10"></div>
 
-                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+                <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6 sm:gap-8">
                     <div className="max-w-md">
-                        <div className="flex items-center gap-2 mb-3">
+                        <div className="flex items-center gap-2 mb-2 sm:mb-3">
                             <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
                             <span className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.2em]">Motor de Recaudo Activo</span>
                         </div>
-                        <h3 className="text-2xl font-black text-white tracking-tight mb-2">Configuración Centralizada</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                        <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight mb-2">Configuración Centralizada</h3>
+                        <p className="text-slate-400 text-xs sm:text-sm leading-relaxed font-medium">
                             Administra el contacto de soporte y los canales oficiales de recaudo para todas tus clínicas.
                         </p>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 bg-white/5 p-2 rounded-[24px] backdrop-blur-md border border-white/10">
-                        <div className="relative group flex-1 min-w-[240px]">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 bg-white/5 p-2 rounded-[20px] sm:rounded-[24px] backdrop-blur-md border border-white/10 w-full sm:w-auto">
+                        <div className="relative group flex-1 min-w-0">
                             <div className="absolute inset-y-0 left-4 flex items-center text-cyan-400">
                                 <FaWhatsapp size={18} />
                             </div>
@@ -151,13 +151,13 @@ export default function PaymentManagement() {
                                 type="text"
                                 value={config.adminPhone}
                                 onChange={(e) => setConfig({ ...config, adminPhone: e.target.value })}
-                                className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-4 pl-12 pr-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all font-bold text-sm outline-none"
+                                className="w-full bg-slate-900/50 border border-slate-700/50 rounded-2xl py-3.5 sm:py-4 pl-12 pr-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all font-bold text-sm outline-none"
                                 placeholder="300 123 4567"
                             />
                         </div>
                         <button
                             onClick={handleSaveConfig}
-                            className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-xl shadow-cyan-500/20 active:scale-95 flex items-center gap-3 justify-center whitespace-nowrap"
+                            className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 text-white px-6 sm:px-8 py-3.5 sm:py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-xl shadow-cyan-500/20 active:scale-95 flex items-center gap-2 sm:gap-3 justify-center whitespace-nowrap"
                         >
                             <FaSave size={14} />
                             Actualizar Datos
@@ -168,19 +168,19 @@ export default function PaymentManagement() {
 
             {/* Methods List - Premium Card Grid */}
             <div>
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-6 sm:mb-8">
                     <div>
-                        <h4 className="text-xl font-black text-slate-800 tracking-tight">Métodos de Recaudo</h4>
-                        <p className="text-xs text-slate-500 font-medium mt-1">Canales habilitados para la facturación de servicios.</p>
+                        <h4 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight">Métodos de Recaudo</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5 sm:mt-1">Canales habilitados para la facturación de servicios.</p>
                     </div>
                     <div className="h-px flex-1 mx-8 bg-slate-200/60 hidden md:block"></div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
                     {/* Add New Card - Sleek White Theme */}
                     <button
                         onClick={() => { setEditingId(null); setForm({ name: "", type: "Billetera Digital", number: "", holder: "", logoUrl: "", active: true }); setShowModal(true); }}
-                        className="h-[220px] bg-white border-2 border-dashed border-slate-200 rounded-[32px] flex flex-col items-center justify-center gap-4 hover:bg-white hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-500/10 transition-all group relative overflow-hidden"
+                        className="h-[200px] sm:h-[220px] bg-white border-2 border-dashed border-slate-200 rounded-[28px] sm:rounded-[32px] flex flex-col items-center justify-center gap-4 hover:bg-white hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-500/10 transition-all group relative overflow-hidden"
                     >
                         <div className="w-14 h-14 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-blue-600 group-hover:bg-blue-50 group-hover:border-blue-200 transition-all">
                             <FiPlus size={24} />
@@ -193,15 +193,15 @@ export default function PaymentManagement() {
 
                     {methods.map(m => (
                         /* Premium Bank Style Cards */
-                        <div key={m.id} className="bg-white rounded-[32px] border border-slate-200 shadow-lg shadow-slate-100/50 flex flex-col relative overflow-hidden hover:shadow-2xl hover:scale-[1.02] transition-all duration-300 group">
+                        <div key={m.id} className="bg-white rounded-[28px] sm:rounded-[32px] border border-slate-200 shadow-lg shadow-slate-100/50 flex flex-col relative overflow-hidden hover:shadow-2xl md:hover:scale-[1.02] transition-all duration-300 group">
                             {/* Card Header Decoration */}
                             <div className={`absolute top-0 right-0 w-32 h-32 blur-3xl -mr-16 -mt-16 opacity-10 
                                 ${m.type === 'Billetera Digital' ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
 
-                            <div className="p-8 relative">
-                                <div className="flex justify-between items-start mb-10">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border-2 overflow-hidden shadow-sm p-2 bg-white
+                            <div className="p-5 sm:p-8 relative">
+                                <div className="flex justify-between items-start mb-6 sm:mb-10">
+                                    <div className="flex items-center gap-3 sm:gap-4">
+                                        <div className={`w-12 sm:w-14 h-12 sm:h-14 rounded-2xl flex items-center justify-center border-2 overflow-hidden shadow-sm p-2 bg-white
                                             ${m.type === 'Billetera Digital' ? 'border-purple-50' : 'border-blue-50'}`}>
                                             {m.displayLogoUrl || m.logoUrl ? (
                                                 <img src={m.displayLogoUrl || m.logoUrl} alt={m.name} className="w-full h-full object-contain" />
@@ -210,15 +210,15 @@ export default function PaymentManagement() {
                                             )}
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">{m.type}</p>
-                                            <h4 className="text-lg font-black text-slate-900 tracking-tight leading-none">{m.name}</h4>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5 sm:mb-1">{m.type}</p>
+                                            <h4 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-none">{m.name}</h4>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => handleEdit(m)} className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-100">
+                                    <div className="flex gap-1.5 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => handleEdit(m)} className="p-2 sm:p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-100" title="Editar">
                                             <FiEdit2 size={14} />
                                         </button>
-                                        <button onClick={() => handleDelete(m.id)} className="p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all border border-slate-100">
+                                        <button onClick={() => handleDelete(m.id)} className="p-2 sm:p-2.5 rounded-xl bg-slate-50 text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all border border-slate-100" title="Eliminar">
                                             <FiTrash2 size={14} />
                                         </button>
                                     </div>

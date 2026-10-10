@@ -9,7 +9,7 @@ import SuperAdminAiCenter from "../modules/superadmin/ai/SuperAdminAiCenter";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import ErrorBoundary from "../components/shared/ErrorBoundary";
-import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell, FiCpu } from "react-icons/fi";
+import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell, FiCpu, FiMenu, FiX } from "react-icons/fi";
 import "../styles/modern.css";
 import superAdminUtilities from "../styles/utilities.css?inline";
 import "../styles/theme.css";
@@ -43,6 +43,7 @@ const IconFolder = ({ className = "w-4 h-4" }) => (
 export default function SuperAdminPanel() {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState("clinics");
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
     const { logout, user } = useAuth();
 
@@ -51,6 +52,11 @@ export default function SuperAdminPanel() {
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
     }, []);
+
+    const handleSelectTab = (tab) => {
+        setActiveTab(tab);
+        setSidebarOpen(false);
+    };
 
     const handleLogout = async () => {
         await logout();
@@ -88,16 +94,54 @@ export default function SuperAdminPanel() {
     return (
         <div className="flex min-h-screen bg-white font-sans text-slate-900">
 
+            {/* Mobile Top App Bar */}
+            <header className="md:hidden fixed top-0 inset-x-0 h-14 bg-white/95 backdrop-blur-md border-b border-slate-200 z-30 px-3.5 flex items-center justify-between shadow-xs">
+                <div className="flex items-center gap-2.5">
+                    <button
+                        onClick={() => setSidebarOpen(true)}
+                        className="p-2 -ml-1 rounded-xl text-slate-700 hover:bg-slate-100 active:scale-95 transition-all"
+                        aria-label="Abrir menú de navegación"
+                    >
+                        <FiMenu size={22} />
+                    </button>
+                    <div className="flex flex-col justify-center">
+                        <span className="text-base font-black leading-tight tracking-tight text-slate-900">
+                            Madrid<span className="text-blue-600">System</span>
+                        </span>
+                        <span className="text-[8px] text-blue-600 font-bold uppercase tracking-[0.18em] leading-none">
+                            Software Master
+                        </span>
+                    </div>
+                </div>
+
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200/60 truncate max-w-[130px]">
+                    {activeTab === "clinics" ? "Clínicas"
+                        : activeTab === "plans" ? "Planes"
+                        : activeTab === "payments" ? "Recaudo"
+                        : activeTab === "facturacion" ? "Facturación"
+                        : activeTab === "novedades" ? "Novedades"
+                        : activeTab === "ai-assistant" ? "Centro IA"
+                        : "Sitio Web"}
+                </span>
+            </header>
+
+            {/* Mobile Backdrop Overlay */}
+            {sidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 md:hidden transition-opacity"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar Enterprise (Strict Professional - Force White) */}
             <aside
-                className="w-64 border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-50"
-                style={{
-                    backgroundColor: '#ffffff',
-                    display: isMobile && activeTab === 'ai-assistant' ? 'none' : 'flex'
-                }}
+                className={`w-64 border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-50 bg-white transition-transform duration-300 ease-in-out ${
+                    sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+                }`}
+                style={{ backgroundColor: '#ffffff' }}
             >
                 {/* Brand Identity Area - Clean White Headers */}
-                <div className="h-16 flex items-center px-6 border-b border-slate-100 shadow-sm z-10 relative" style={{ backgroundColor: '#ffffff' }}>
+                <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100 shadow-sm z-10 relative" style={{ backgroundColor: '#ffffff' }}>
                     <div className="flex items-center gap-2.5">
                         <div className="flex flex-col justify-center">
                             <h1 className="text-lg font-black leading-none tracking-tight">
@@ -107,6 +151,13 @@ export default function SuperAdminPanel() {
                             <span className="text-[9px] text-blue-600 font-bold uppercase tracking-[0.2em] leading-tight mt-0.5">Software Master</span>
                         </div>
                     </div>
+                    <button
+                        onClick={() => setSidebarOpen(false)}
+                        className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                        aria-label="Cerrar menú"
+                    >
+                        <FiX size={20} />
+                    </button>
                 </div>
 
                 {/* Navigation Menu */}
@@ -114,7 +165,7 @@ export default function SuperAdminPanel() {
                     <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Principal</p>
 
                     <button
-                        onClick={() => setActiveTab("clinics")}
+                        onClick={() => handleSelectTab("clinics")}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "clinics"
                             ? "bg-slate-100 text-slate-900 border border-slate-200"
                             : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -125,7 +176,7 @@ export default function SuperAdminPanel() {
                     </button>
 
                     <button
-                        onClick={() => setActiveTab("ai-assistant")}
+                        onClick={() => handleSelectTab("ai-assistant")}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "ai-assistant"
                             ? "bg-slate-100 text-slate-900 border border-slate-200"
                             : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -141,7 +192,7 @@ export default function SuperAdminPanel() {
                     </button>
 
                     <button
-                        onClick={() => setActiveTab("plans")}
+                        onClick={() => handleSelectTab("plans")}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "plans"
                             ? "bg-slate-100 text-slate-900 border border-slate-200"
                             : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -152,7 +203,7 @@ export default function SuperAdminPanel() {
                     </button>
 
                     <button
-                        onClick={() => setActiveTab("payments")}
+                        onClick={() => handleSelectTab("payments")}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "payments"
                             ? "bg-slate-100 text-slate-900 border border-slate-200"
                             : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -165,7 +216,7 @@ export default function SuperAdminPanel() {
                     <div className="pt-4 mt-4 border-t border-slate-100">
                         <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Comunicaciones</p>
                         <button
-                            onClick={() => setActiveTab("novedades")}
+                            onClick={() => handleSelectTab("novedades")}
                             className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "novedades"
                                 ? "bg-slate-100 text-slate-900 border border-slate-200"
                                 : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -176,7 +227,7 @@ export default function SuperAdminPanel() {
                         </button>
                         <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Configuración</p>
                         <button
-                            onClick={() => setActiveTab("facturacion")}
+                            onClick={() => handleSelectTab("facturacion")}
                             className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "facturacion"
                                 ? "bg-slate-100 text-slate-900 border border-slate-200"
                                 : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -186,7 +237,7 @@ export default function SuperAdminPanel() {
                             <span>Facturación Electrónica</span>
                         </button>
                         <button
-                            onClick={() => setActiveTab("site")}
+                            onClick={() => handleSelectTab("site")}
                             className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "site"
                                 ? "bg-slate-100 text-slate-900 border border-slate-200"
                                 : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -222,13 +273,13 @@ export default function SuperAdminPanel() {
             </aside>
 
             {/* Main Content Area - Constrained for standard views, expanded for CMS */}
-            <div className={`flex-1 ${isMobile && activeTab === 'ai-assistant' ? 'ml-0' : 'ml-64'} min-h-screen flex flex-col bg-slate-50`}>
-                <main className={`flex-1 w-full ${activeTab === 'site' ? 'max-w-none p-0 space-y-0' : activeTab === 'ai-assistant' ? (isMobile ? 'max-w-none p-0 space-y-0' : 'max-w-none p-6 lg:p-8 space-y-0') : 'max-w-[1550px] mx-auto py-8 px-6 lg:px-10 space-y-8'} animate-safe-fade-in`} key={user?.uid}>
+            <div className="flex-1 md:ml-64 ml-0 pt-14 md:pt-0 min-h-screen flex flex-col bg-slate-50 w-full min-w-0 overflow-x-hidden">
+                <main className={`flex-1 w-full min-w-0 ${activeTab === 'site' ? 'max-w-none p-0 space-y-0' : activeTab === 'ai-assistant' ? (isMobile ? 'max-w-none p-0 space-y-0' : 'max-w-none p-6 lg:p-8 space-y-0') : 'max-w-[1550px] mx-auto py-5 md:py-8 px-3.5 sm:px-6 lg:px-10 space-y-5 md:space-y-8'} animate-safe-fade-in`} key={user?.uid}>
 
                     {/* Component Header Area - Hidden for CMS and AI Center to maximize dedicated space */}
                     {activeTab !== 'site' && activeTab !== 'ai-assistant' && (
-                        <header className="mb-6 pb-6 border-b border-slate-200">
-                            <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
+                        <header className="mb-4 md:mb-6 pb-4 md:pb-6 border-b border-slate-200">
+                            <h2 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-none">
                             {activeTab === "clinics" ? "Control de Clínicas"
                                 : activeTab === "plans" ? "Gestión de Planes"
                                 : activeTab === "payments" ? "Motor de Recaudo"
@@ -236,7 +287,7 @@ export default function SuperAdminPanel() {
                                 : activeTab === "novedades" ? "Novedades del Sistema"
                                 : "Editor Sitio Oficial"}
                             </h2>
-                            <p className="text-slate-500 font-medium text-xs mt-2">
+                            <p className="text-slate-500 font-medium text-xs mt-1.5 md:mt-2">
                                 {activeTab === "clinics"
                                     ? "Supervisión global de infraestructura operativa de OdontoCloud."
                                     : activeTab === "plans"

@@ -453,20 +453,224 @@ export default function TenantsPanelV2() {
     const inactive = tenants.filter(t => t.status !== "active").length;
     const trial    = tenants.filter(t => t.planId === "trial").length;
 
+    const renderActionDropdown = (t, menuKey, openUp = false) => {
+        const isOpen = openActionMenuId === menuKey;
+        return (
+            <div className="relative inline-block action-menu-container">
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenActionMenuId(isOpen ? null : menuKey);
+                    }}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                        isOpen
+                            ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                            : "text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200/80"
+                    }`}
+                    title="Opciones de la clínica"
+                >
+                    <FiMoreVertical size={16} />
+                </button>
+
+                {isOpen && (
+                    <div
+                        className={`absolute right-0 ${
+                            openUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
+                        } bg-white border border-slate-200 rounded-xl shadow-2xl z-50 py-1.5 w-64 text-left divide-y divide-slate-100 animate-fadeIn`}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="py-1">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    openEdit(t);
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover/item:bg-blue-600 group-hover/item:text-white transition-colors">
+                                    <FiEdit3 size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Editar Clínica</span>
+                                    <span className="text-[10px] text-slate-400 truncate">Nombre, NIT, Correo, Dirección</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                disabled={sendingEmailId === t.id}
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    handleResendWelcome(t);
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50 group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 group-hover/item:bg-sky-600 group-hover/item:text-white transition-colors">
+                                    {sendingEmailId === t.id ? (
+                                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <FiMail size={13} />
+                                    )}
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">
+                                        {sendingEmailId === t.id ? "Enviando correo..." : "Reenviar Bienvenida"}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 truncate">Correo oficial de bienvenida</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    setShowChangePwd(t);
+                                    setPwdForm({ newPassword: "", confirm: "", show: false });
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 group-hover/item:bg-amber-600 group-hover/item:text-white transition-colors">
+                                    <FiKey size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Cambiar Contraseña</span>
+                                    <span className="text-[10px] text-slate-400 truncate">Modificar clave del administrador</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    setShowQuickRenew(t);
+                                    setQuickRenewDuration(t.planDuration || "yearly");
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover/item:bg-emerald-600 group-hover/item:text-white transition-colors">
+                                    <FiRepeat size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Validar Pago y Renovar</span>
+                                    <span className="text-[10px] text-slate-400 truncate">Ampliar suscripción (+1 Año / +1 Mes)</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    setSelectedTenant(t);
+                                    setNewPlanId(t.planId);
+                                    setNewDuration(t.planDuration || "monthly");
+                                    setShowPlan(true);
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover/item:bg-indigo-600 group-hover/item:text-white transition-colors">
+                                    <FiSliders size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Cambiar Plan</span>
+                                    <span className="text-[10px] text-slate-400 truncate">Modificar nivel y ciclo de cobro</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                disabled={grantingId === t.id}
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    handleGrantFree(t);
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50 group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 group-hover/item:bg-purple-600 group-hover/item:text-white transition-colors">
+                                    {grantingId === t.id ? (
+                                        <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <FiGift size={13} />
+                                    )}
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">
+                                        {grantingId === t.id ? "Aplicando mes..." : "Regalar 1 Mes Gratis"}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 truncate">Extender vigencia sin costo</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    setOpenActionMenuId(null);
+                                    try {
+                                        const { setFevRips0948Enabled, isFevRips0948Enabled } = await import("../rips/v003/ripsFeatureFlagService.js");
+                                        const currentlyEnabled = await isFevRips0948Enabled(t.id);
+                                        const nextState = !currentlyEnabled;
+                                        await setFevRips0948Enabled(t.id, nextState);
+                                        alert(nextState 
+                                            ? `✅ Módulo FEV-RIPS (Res. 0948 de 2026) HABILITADO exitosamente para "${t.name}".`
+                                            : `ℹ️ Módulo FEV-RIPS deshabilitado para "${t.name}".`
+                                        );
+                                        loadData();
+                                    } catch (err) {
+                                        alert("Error al actualizar FEV-RIPS: " + err.message);
+                                    }
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover/item:bg-teal-600 group-hover/item:text-white transition-colors">
+                                    <FiShield size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar FEV-RIPS 0948</span>
+                                    <span className="text-[10px] text-slate-400 truncate">Módulo DIAN Salud (Res. 0948)</span>
+                                </div>
+                            </button>
+                        </div>
+
+                        <div className="py-1">
+                            <button
+                                type="button"
+                                disabled={processing}
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    handleDelete(t.id, t.name);
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-rose-50 transition-colors disabled:opacity-50 group/item text-rose-600"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 group-hover/item:bg-rose-600 group-hover/item:text-white transition-colors">
+                                    <FiTrash2 size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-rose-700 leading-tight">Eliminar Clínica</span>
+                                    <span className="text-[10px] text-rose-400 truncate">Borrado permanente del sistema</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
             {/* KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 {[
                     { label:"Clínicas totales", val:tenants.length, color:"text-slate-800",  bg:"bg-white" },
                     { label:"Activas",           val:active,         color:"text-emerald-600",bg:"bg-emerald-50" },
                     { label:"Inactivas",         val:inactive,       color:"text-rose-600",   bg:"bg-rose-50" },
                     { label:"Solicitudes",       val:requests.length,color:"text-amber-600",  bg:"bg-amber-50", onClick:()=>setShowRequests(true), pulse: requests.length > 0 },
                 ].map((k,i) => (
-                    <div key={i} onClick={k.onClick} className={`${k.bg} rounded-2xl border border-white/60 shadow-sm p-5 ${k.onClick?"cursor-pointer hover:shadow-md transition-shadow":""}`}>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{k.label}</p>
+                    <div key={i} onClick={k.onClick} className={`${k.bg} rounded-2xl border border-white/60 shadow-sm p-3.5 sm:p-5 ${k.onClick?"cursor-pointer hover:shadow-md transition-shadow":""}`}>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 truncate">{k.label}</p>
                         <div className="flex items-center gap-2">
-                            <p className={`text-3xl font-black ${k.color}`}>{k.val}</p>
+                            <p className={`text-2xl sm:text-3xl font-black ${k.color}`}>{k.val}</p>
                             {k.pulse && <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"/>}
                         </div>
                     </div>
@@ -474,25 +678,27 @@ export default function TenantsPanelV2() {
             </div>
 
             {/* Toolbar */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-                <div className="flex items-center gap-3">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3.5 sm:p-4">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
                     <div className="relative flex-1">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14}/>
                         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre o correo..."
                             className="pl-9 pr-3 h-10 w-full rounded-lg border border-slate-200 text-sm font-medium text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-slate-50 transition-all"/>
                     </div>
-                    <button onClick={loadData} title="Actualizar lista"
-                        className="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-blue-500 transition-all">
-                        <FiRefreshCw size={14}/>
-                    </button>
-                    <button onClick={()=>setShowCreate(true)}
-                        className="shrink-0 flex items-center gap-2 px-5 h-10 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm shadow-blue-200 whitespace-nowrap">
-                        <FiPlus size={14}/> Registrar Clínica
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={loadData} title="Actualizar lista"
+                            className="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-blue-500 transition-all">
+                            <FiRefreshCw size={14}/>
+                        </button>
+                        <button onClick={()=>setShowCreate(true)}
+                            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 sm:px-5 h-10 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-all shadow-sm shadow-blue-200 whitespace-nowrap">
+                            <FiPlus size={14}/> Registrar Clínica
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* Table */}
+            {/* Content Container (Table on Desktop, Responsive Cards on Mobile) */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 {loading ? (
                     <div className="flex items-center justify-center py-20 gap-2 text-slate-400">
@@ -500,355 +706,266 @@ export default function TenantsPanelV2() {
                         Cargando...
                     </div>
                 ) : (
-                    <div className="overflow-x-auto min-h-[460px]">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-slate-100 bg-slate-50/70">
-                                    {["Clínica","Plan","Vencimiento","Estado","Último Acceso","Facturas","Acciones"].map((h,i)=>(
-                                        <th key={i} className={`px-5 py-3 ${h === "Acciones" ? "text-center" : "text-left"} text-[10px] font-black text-slate-400 uppercase tracking-wide whitespace-nowrap`}>{h}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filtered.map((t, idx) => {
-                                    const isActive = t.status === "active";
-                                    const cuota = t.facturacionCuota ?? 0;
-                                    const usadas = t.facturacionUsadas ?? 0;
-                                    const disp = Math.max(0, cuota - usadas);
-                                    return (
-                                        <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                            <td className="px-5 py-4">
-                                                <div className="flex items-center gap-3 cursor-pointer group/name" onClick={() => { setShowDetail(t); loadClinicEmailLogs(t.id); }}>
-                                                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0">
-                                                        {(t.name||"?")[0].toUpperCase()}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-semibold text-slate-800 text-sm leading-tight">{t.name}</p>
-                                                        <p className="text-[11px] text-slate-400">{t.contactEmail || t.email || "—"}</p>
-                                                    </div>
+                    <>
+                        {/* ── Mobile View: Native Card List (Zero Horizontal Scroll) ── */}
+                        <div className="block md:hidden divide-y divide-slate-100">
+                            {filtered.map((t, idx) => {
+                                const isActive = t.status === "active";
+                                const cuota = t.facturacionCuota ?? 0;
+                                const usadas = t.facturacionUsadas ?? 0;
+                                const disp = Math.max(0, cuota - usadas);
+                                const login = formatRelativeLogin(t.lastSignInAt);
+
+                                let expText = "Sin fecha";
+                                let expBadge = null;
+                                if (t.subscriptionEndDate) {
+                                    const end = new Date(t.subscriptionEndDate);
+                                    const now = new Date();
+                                    const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+                                    const isExp = diffDays < 0;
+                                    const isToday = diffDays === 0;
+                                    const isUrgent = diffDays > 0 && diffDays <= 7;
+                                    const isWarning = diffDays > 7 && diffDays <= 15;
+                                    expText = fmt(t.subscriptionEndDate);
+
+                                    if (isExp) expBadge = <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">Vencido</span>;
+                                    else if (isToday) expBadge = <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-300">Hoy</span>;
+                                    else if (isUrgent) expBadge = <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">{diffDays === 1 ? "Mañana" : `${diffDays}d`}</span>;
+                                    else if (isWarning) expBadge = <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200">{diffDays}d</span>;
+                                }
+
+                                const openUp = idx >= Math.max(1, filtered.length - 2) && filtered.length > 2;
+
+                                return (
+                                    <div key={`mob-${t.id}`} className="p-3.5 space-y-3 bg-white hover:bg-slate-50/50 transition-colors">
+                                        {/* Header Row: Clinic Avatar & Name + Status Toggle + 3-dots Menu */}
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div
+                                                className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer"
+                                                onClick={() => { setShowDetail(t); loadClinicEmailLogs(t.id); }}
+                                            >
+                                                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
+                                                    {(t.name || "?")[0].toUpperCase()}
                                                 </div>
-                                            </td>
-                                            <td className="px-5 py-4">
-                                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 uppercase">
-                                                    {getPlanName(t.planId)}
-                                                </span>
-                                                <p className="text-[10px] text-slate-400 mt-1 ml-0.5">{t.planDuration === "yearly" ? "Anual" : "Mensual"}</p>
-                                            </td>
-                                            <td className="px-5 py-4 text-xs whitespace-nowrap">
-                                                {(() => {
-                                                    if (!t.subscriptionEndDate) {
-                                                        return <span className="text-slate-400 font-medium">Sin fecha</span>;
-                                                    }
-                                                    const end = new Date(t.subscriptionEndDate);
-                                                    const now = new Date();
-                                                    const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
-                                                    const isExp = diffDays < 0;
-                                                    const isToday = diffDays === 0;
-                                                    const isUrgent = diffDays > 0 && diffDays <= 7;
-                                                    const isWarning = diffDays > 7 && diffDays <= 15;
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="font-bold text-slate-800 text-sm leading-tight truncate">{t.name}</p>
+                                                    <p className="text-[11px] text-slate-400 truncate">{t.contactEmail || t.email || "—"}</p>
+                                                </div>
+                                            </div>
 
-                                                    return (
-                                                        <div className="flex flex-col gap-0.5">
-                                                            <span className={isExp ? "text-rose-600 font-bold" : "text-slate-700 font-semibold"}>
-                                                                {fmt(t.subscriptionEndDate)}
-                                                            </span>
-                                                            <div className="flex items-center gap-1">
-                                                                {isExp && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">
-                                                                        Vencido
-                                                                    </span>
-                                                                )}
-                                                                {isToday && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-300">
-                                                                        Vence hoy
-                                                                    </span>
-                                                                )}
-                                                                {isUrgent && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                                                        {diffDays === 1 ? "Vence mañana" : `Vence en ${diffDays} d`}
-                                                                    </span>
-                                                                )}
-                                                                {isWarning && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                                                        Vence en {diffDays} d
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </td>
-                                            <td className="px-5 py-4">
-                                                <button onClick={()=>handleStatusToggle(t.id, t.status)}
-                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all group relative ${isActive
-                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
-                                                        : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"}`}>
-                                                    {isActive ? <FiToggleRight size={13}/> : <FiToggleLeft size={13}/>}
-                                                    <span className="group-hover:hidden">{isActive ? "Activo" : "Inactivo"}</span>
-                                                    <span className="hidden group-hover:inline">{isActive ? "Suspender" : "Activar"}</span>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <button
+                                                    onClick={() => handleStatusToggle(t.id, t.status)}
+                                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                                                        isActive
+                                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                            : "bg-slate-100 text-slate-500 border-slate-200"
+                                                    }`}
+                                                >
+                                                    {isActive ? <FiToggleRight size={13} /> : <FiToggleLeft size={13} />}
+                                                    <span>{isActive ? "Activo" : "Inactivo"}</span>
                                                 </button>
-                                            </td>
-                                            <td className="px-5 py-4 whitespace-nowrap">
-                                                {(() => {
-                                                    const login = formatRelativeLogin(t.lastSignInAt);
-                                                    const isOnline = login.badge === "online";
-                                                    const isToday = login.badge === "today";
-                                                    return (
-                                                        <div className="flex flex-col">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className={`w-2 h-2 rounded-full shrink-0 ${
-                                                                    isOnline ? "bg-emerald-500 animate-pulse" :
-                                                                    isToday ? "bg-emerald-500" :
-                                                                    login.badge === "recent" ? "bg-sky-500" :
-                                                                    login.badge === "older" ? "bg-slate-400" :
-                                                                    "bg-slate-300"
-                                                                }`} />
-                                                                <span className={`text-xs font-bold leading-tight ${
-                                                                    isOnline || isToday ? "text-emerald-700" :
-                                                                    login.badge === "recent" ? "text-slate-700" :
-                                                                    "text-slate-400"
-                                                                }`}>
-                                                                    {login.text}
-                                                                </span>
-                                                            </div>
-                                                            {login.sub && (
-                                                                <span className="text-[10px] text-slate-400 font-medium pl-3.5 mt-0.5">
-                                                                    {login.sub}
-                                                                </span>
-                                                            )}
+
+                                                {renderActionDropdown(t, `mob-${t.id}`, openUp)}
+                                            </div>
+                                        </div>
+
+                                        {/* Key Data Grid */}
+                                        <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-100">
+                                            <div className="bg-slate-50/70 rounded-lg p-2">
+                                                <span className="text-[10px] font-semibold text-slate-400 block">Plan</span>
+                                                <span className="font-bold text-slate-800">{getPlanName(t.planId)}</span>
+                                                <span className="text-[10px] text-slate-500 ml-1">({t.planDuration === "yearly" ? "Anual" : "Mensual"})</span>
+                                            </div>
+
+                                            <div className="bg-slate-50/70 rounded-lg p-2">
+                                                <span className="text-[10px] font-semibold text-slate-400 block">Vencimiento</span>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="font-bold text-slate-700">{expText}</span>
+                                                    {expBadge}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-slate-50/70 rounded-lg p-2">
+                                                <span className="text-[10px] font-semibold text-slate-400 block">Último Acceso</span>
+                                                <span className="font-semibold text-slate-700 flex items-center gap-1 truncate">
+                                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${login.badge === 'online' || login.badge === 'today' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                                                    {login.text}
+                                                </span>
+                                            </div>
+
+                                            <div className="bg-slate-50/70 rounded-lg p-2">
+                                                <span className="text-[10px] font-semibold text-slate-400 block">Facturas DIAN</span>
+                                                <span className="font-bold text-slate-800">
+                                                    {cuota === 0 ? "Sin cuota" : `${disp} disp. / ${cuota}`}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {filtered.length === 0 && (
+                                <div className="p-8 text-center text-slate-400 text-xs">
+                                    {search ? "Sin resultados para esa búsqueda." : "No hay clínicas registradas."}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ── Desktop View: Full Comprehensive Table ── */}
+                        <div className="hidden md:block overflow-x-auto min-h-[460px]">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-slate-100 bg-slate-50/70">
+                                        {["Clínica","Plan","Vencimiento","Estado","Último Acceso","Facturas","Acciones"].map((h,i)=>(
+                                            <th key={i} className={`px-5 py-3 ${h === "Acciones" ? "text-center" : "text-left"} text-[10px] font-black text-slate-400 uppercase tracking-wide whitespace-nowrap`}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filtered.map((t, idx) => {
+                                        const isActive = t.status === "active";
+                                        const cuota = t.facturacionCuota ?? 0;
+                                        const usadas = t.facturacionUsadas ?? 0;
+                                        const disp = Math.max(0, cuota - usadas);
+                                        const openUp = idx >= Math.max(1, filtered.length - 1) && filtered.length > 2;
+
+                                        return (
+                                            <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                                <td className="px-5 py-4">
+                                                    <div className="flex items-center gap-3 cursor-pointer group/name" onClick={() => { setShowDetail(t); loadClinicEmailLogs(t.id); }}>
+                                                        <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black text-sm flex items-center justify-center shrink-0">
+                                                            {(t.name||"?")[0].toUpperCase()}
                                                         </div>
-                                                    );
-                                                })()}
-                                            </td>
-                                            <td className="px-5 py-4">
-                                                {cuota === 0 ? (
-                                                    <span className="text-[11px] text-slate-300">Sin cuota</span>
-                                                ) : (
-                                                    <div>
-                                                        <span className={`text-sm font-black ${disp <= 0 ? "text-rose-600" : disp <= 50 ? "text-amber-500" : "text-emerald-600"}`}>
-                                                            {disp}
-                                                        </span>
-                                                        <span className="text-[10px] text-slate-400"> / {cuota}</span>
-                                                        <div className="w-16 bg-slate-100 rounded-full h-1 mt-1">
-                                                            <div className={`h-1 rounded-full ${disp<=0?"bg-rose-500":disp<=50?"bg-amber-400":"bg-emerald-500"}`}
-                                                                style={{width:`${Math.min(100,Math.round(usadas/cuota*100))}%`}}/>
+                                                        <div>
+                                                            <p className="font-semibold text-slate-800 text-sm leading-tight">{t.name}</p>
+                                                            <p className="text-[11px] text-slate-400">{t.contactEmail || t.email || "—"}</p>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </td>
-                                            <td className="px-5 py-4 text-center">
-                                                <div className="relative inline-block action-menu-container">
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setOpenActionMenuId(openActionMenuId === t.id ? null : t.id);
-                                                        }}
-                                                        className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
-                                                            openActionMenuId === t.id
-                                                                ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                                                                : "text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200/80"
-                                                        }`}
-                                                        title="Opciones de la clínica"
-                                                    >
-                                                        <FiMoreVertical size={16} />
-                                                    </button>
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 uppercase">
+                                                        {getPlanName(t.planId)}
+                                                    </span>
+                                                    <p className="text-[10px] text-slate-400 mt-1 ml-0.5">{t.planDuration === "yearly" ? "Anual" : "Mensual"}</p>
+                                                </td>
+                                                <td className="px-5 py-4 text-xs whitespace-nowrap">
+                                                    {(() => {
+                                                        if (!t.subscriptionEndDate) {
+                                                            return <span className="text-slate-400 font-medium">Sin fecha</span>;
+                                                        }
+                                                        const end = new Date(t.subscriptionEndDate);
+                                                        const now = new Date();
+                                                        const diffDays = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+                                                        const isExp = diffDays < 0;
+                                                        const isToday = diffDays === 0;
+                                                        const isUrgent = diffDays > 0 && diffDays <= 7;
+                                                        const isWarning = diffDays > 7 && diffDays <= 15;
 
-                                                    {openActionMenuId === t.id && (
-                                                        <div
-                                                            className={`absolute right-0 ${
-                                                                idx >= Math.max(1, filtered.length - 1) && filtered.length > 2
-                                                                    ? "bottom-full mb-1.5"
-                                                                    : "top-full mt-1.5"
-                                                            } bg-white border border-slate-200 rounded-xl shadow-2xl z-50 py-1.5 w-64 text-left divide-y divide-slate-100 animate-fadeIn`}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
-                                                            <div className="py-1">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setOpenActionMenuId(null);
-                                                                        openEdit(t);
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover/item:bg-blue-600 group-hover/item:text-white transition-colors">
-                                                                        <FiEdit3 size={13} />
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Editar Clínica</span>
-                                                                        <span className="text-[10px] text-slate-400 truncate">Nombre, NIT, Correo, Dirección</span>
-                                                                    </div>
-                                                                </button>
-
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={sendingEmailId === t.id}
-                                                                    onClick={() => {
-                                                                        setOpenActionMenuId(null);
-                                                                        handleResendWelcome(t);
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50 group/item"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 group-hover/item:bg-sky-600 group-hover/item:text-white transition-colors">
-                                                                        {sendingEmailId === t.id ? (
-                                                                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                                        ) : (
-                                                                            <FiMail size={13} />
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">
-                                                                            {sendingEmailId === t.id ? "Enviando correo..." : "Reenviar Bienvenida"}
+                                                        return (
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <span className={isExp ? "text-rose-600 font-bold" : "text-slate-700 font-semibold"}>
+                                                                    {fmt(t.subscriptionEndDate)}
+                                                                </span>
+                                                                <div className="flex items-center gap-1">
+                                                                    {isExp && (
+                                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 text-rose-600 border border-rose-200 animate-pulse">
+                                                                            Vencido
                                                                         </span>
-                                                                        <span className="text-[10px] text-slate-400 truncate">Correo oficial de bienvenida</span>
-                                                                    </div>
-                                                                </button>
-
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setOpenActionMenuId(null);
-                                                                        setShowChangePwd(t);
-                                                                        setPwdForm({ newPassword: "", confirm: "", show: false });
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 group-hover/item:bg-amber-600 group-hover/item:text-white transition-colors">
-                                                                        <FiKey size={13} />
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Cambiar Contraseña</span>
-                                                                        <span className="text-[10px] text-slate-400 truncate">Modificar clave del administrador</span>
-                                                                    </div>
-                                                                </button>
-
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setOpenActionMenuId(null);
-                                                                        setShowQuickRenew(t);
-                                                                        setQuickRenewDuration(t.planDuration || "yearly");
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover/item:bg-emerald-600 group-hover/item:text-white transition-colors">
-                                                                        <FiRepeat size={13} />
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Validar Pago y Renovar</span>
-                                                                        <span className="text-[10px] text-slate-400 truncate">Ampliar suscripción (+1 Año / +1 Mes)</span>
-                                                                    </div>
-                                                                </button>
-
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setOpenActionMenuId(null);
-                                                                        setSelectedTenant(t);
-                                                                        setNewPlanId(t.planId);
-                                                                        setNewDuration(t.planDuration || "monthly");
-                                                                        setShowPlan(true);
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover/item:bg-indigo-600 group-hover/item:text-white transition-colors">
-                                                                        <FiSliders size={13} />
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Cambiar Plan</span>
-                                                                        <span className="text-[10px] text-slate-400 truncate">Modificar nivel y ciclo de cobro</span>
-                                                                    </div>
-                                                                </button>
-
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={grantingId === t.id}
-                                                                    onClick={() => {
-                                                                        setOpenActionMenuId(null);
-                                                                        handleGrantFree(t);
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50 group/item"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 group-hover/item:bg-purple-600 group-hover/item:text-white transition-colors">
-                                                                        {grantingId === t.id ? (
-                                                                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                                        ) : (
-                                                                            <FiGift size={13} />
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">
-                                                                            {grantingId === t.id ? "Aplicando mes..." : "Regalar 1 Mes Gratis"}
+                                                                    )}
+                                                                    {isToday && (
+                                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-300">
+                                                                            Vence hoy
                                                                         </span>
-                                                                        <span className="text-[10px] text-slate-400 truncate">Extender vigencia sin costo</span>
-                                                                    </div>
-                                                                </button>
-
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={async (e) => {
-                                                                        setOpenActionMenuId(null);
-                                                                        try {
-                                                                            const { setFevRips0948Enabled, isFevRips0948Enabled } = await import("../rips/v003/ripsFeatureFlagService.js");
-                                                                            const currentlyEnabled = await isFevRips0948Enabled(t.id);
-                                                                            const nextState = !currentlyEnabled;
-                                                                            await setFevRips0948Enabled(t.id, nextState);
-                                                                            alert(nextState 
-                                                                                ? `✅ Módulo FEV-RIPS (Res. 0948 de 2026) HABILITADO exitosamente para "${t.name}".`
-                                                                                : `ℹ️ Módulo FEV-RIPS deshabilitado para "${t.name}".`
-                                                                            );
-                                                                            loadData();
-                                                                        } catch (err) {
-                                                                            alert("Error al actualizar FEV-RIPS: " + err.message);
-                                                                        }
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover/item:bg-teal-600 group-hover/item:text-white transition-colors">
-                                                                        <FiShield size={13} />
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar FEV-RIPS 0948</span>
-                                                                        <span className="text-[10px] text-slate-400 truncate">Módulo DIAN Salud (Res. 0948)</span>
-                                                                    </div>
-                                                                </button>
+                                                                    )}
+                                                                    {isUrgent && (
+                                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                                            {diffDays === 1 ? "Vence mañana" : `Vence en ${diffDays} d`}
+                                                                        </span>
+                                                                    )}
+                                                                    {isWarning && (
+                                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                                                            Vence en {diffDays} d
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                             </div>
-
-                                                            <div className="py-1">
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={processing}
-                                                                    onClick={() => {
-                                                                        setOpenActionMenuId(null);
-                                                                        handleDelete(t.id, t.name);
-                                                                    }}
-                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-rose-50 transition-colors disabled:opacity-50 group/item text-rose-600"
-                                                                >
-                                                                    <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 group-hover/item:bg-rose-600 group-hover/item:text-white transition-colors">
-                                                                        <FiTrash2 size={13} />
-                                                                    </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <span className="text-xs font-bold text-rose-700 leading-tight">Eliminar Clínica</span>
-                                                                        <span className="text-[10px] text-rose-400 truncate">Borrado permanente del sistema</span>
-                                                                    </div>
-                                                                </button>
+                                                        );
+                                                    })()}
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <button onClick={()=>handleStatusToggle(t.id, t.status)}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all group relative ${isActive
+                                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+                                                            : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"}`}>
+                                                        {isActive ? <FiToggleRight size={13}/> : <FiToggleLeft size={13}/>}
+                                                        <span className="group-hover:hidden">{isActive ? "Activo" : "Inactivo"}</span>
+                                                        <span className="hidden group-hover:inline">{isActive ? "Suspender" : "Activar"}</span>
+                                                    </button>
+                                                </td>
+                                                <td className="px-5 py-4 whitespace-nowrap">
+                                                    {(() => {
+                                                        const login = formatRelativeLogin(t.lastSignInAt);
+                                                        const isOnline = login.badge === "online";
+                                                        const isToday = login.badge === "today";
+                                                        return (
+                                                            <div className="flex flex-col">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                                                                        isOnline ? "bg-emerald-500 animate-pulse" :
+                                                                        isToday ? "bg-emerald-500" :
+                                                                        login.badge === "recent" ? "bg-sky-500" :
+                                                                        login.badge === "older" ? "bg-slate-400" :
+                                                                        "bg-slate-300"
+                                                                    }`} />
+                                                                    <span className={`text-xs font-bold leading-tight ${
+                                                                        isOnline || isToday ? "text-emerald-700" :
+                                                                        login.badge === "recent" ? "text-slate-700" :
+                                                                        "text-slate-400"
+                                                                    }`}>
+                                                                        {login.text}
+                                                                    </span>
+                                                                </div>
+                                                                {login.sub && (
+                                                                    <span className="text-[10px] text-slate-400 font-medium pl-3.5 mt-0.5">
+                                                                        {login.sub}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    {cuota === 0 ? (
+                                                        <span className="text-[11px] text-slate-300">Sin cuota</span>
+                                                    ) : (
+                                                        <div>
+                                                            <span className={`text-sm font-black ${disp <= 0 ? "text-rose-600" : disp <= 50 ? "text-amber-500" : "text-emerald-600"}`}>
+                                                                {disp}
+                                                            </span>
+                                                            <span className="text-[10px] text-slate-400"> / {cuota}</span>
+                                                            <div className="w-16 bg-slate-100 rounded-full h-1 mt-1">
+                                                                <div className={`h-1 rounded-full ${disp<=0?"bg-rose-500":disp<=50?"bg-amber-400":"bg-emerald-500"}`}
+                                                                    style={{width:`${Math.min(100,Math.round(usadas/cuota*100))}%`}}/>
                                                             </div>
                                                         </div>
                                                     )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                                {filtered.length === 0 && (
-                                    <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-300 text-sm">
-                                        {search ? "Sin resultados para esa búsqueda." : "No hay clínicas registradas."}
-                                    </td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                                </td>
+                                                <td className="px-5 py-4 text-center">
+                                                    {renderActionDropdown(t, t.id, openUp)}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                    {filtered.length === 0 && (
+                                        <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-300 text-sm">
+                                            {search ? "Sin resultados para esa búsqueda." : "No hay clínicas registradas."}
+                                        </td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
             </div>
 

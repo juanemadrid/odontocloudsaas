@@ -204,24 +204,24 @@ export default function PlanManagement({ hideTitle }) {
         <div className="w-full space-y-6 bg-white min-h-full" style={{ backgroundColor: '#ffffff' }}>
 
             {/* Header Action Area */}
-            <div className="bg-white px-6 py-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4" style={{ backgroundColor: '#ffffff' }}>
+            <div className="bg-white px-4 sm:px-6 py-4 sm:py-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 sm:gap-4" style={{ backgroundColor: '#ffffff' }}>
                 <div className="flex items-center gap-3">
                     <span className="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>
                     {/* Explicitly dark slate text */}
                     <h3 className="font-black text-slate-800 text-xs uppercase tracking-[.2em]">Modelos de Negocio</h3>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                     <button
                         onClick={handleSyncOfficialCatalog}
                         disabled={syncing}
-                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
+                        className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-emerald-500/10 transition-all flex items-center justify-center gap-2"
                         title="Actualizar catálogo con Consultorio (3 usuarios), Clínica (5 usuarios) y Enterprise (11 usuarios)"
                     >
                         {syncing ? "Sincronizando..." : "⚡ Sincronizar Catálogo Oficial"}
                     </button>
                     <button
                         onClick={openCreate}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md shadow-blue-500/10 transition-all flex items-center justify-center gap-2"
                     >
                         + Definir Nuevo Plan
                     </button>
@@ -231,15 +231,15 @@ export default function PlanManagement({ hideTitle }) {
             {loading ? (
                 <div className="text-center py-12 text-slate-400 text-sm font-medium">Cargando catálogo...</div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 px-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 px-1 sm:px-4">
                     {plans.map((plan) => {
                         const isRecommended = plan.recommended;
                         return (
                             <div
                                 key={plan.id}
-                                className={`relative rounded-3xl p-8 flex flex-col justify-between transition-all duration-300 group
+                                className={`relative rounded-3xl p-5 sm:p-8 flex flex-col justify-between transition-all duration-300 group
                                     ${isRecommended
-                                        ? "shadow-2xl scale-105 border-2 border-blue-500 ring-4 ring-blue-500/10 z-10"
+                                        ? "shadow-2xl md:scale-105 scale-100 border-2 border-blue-500 ring-4 ring-blue-500/10 z-10"
                                         : "shadow-lg shadow-slate-100 border border-slate-200 hover:border-blue-400 hover:shadow-2xl"
                                     }`}
                                 style={{ backgroundColor: '#ffffff', color: '#000000' }}

@@ -334,9 +334,9 @@ export default function NovedadesAdmin() {
     const filtered = filter === "all" ? avisos : avisos.filter(a => filter === "activo" ? a.activo : !a.activo);
 
     return (
-        <div>
+        <div className="w-full min-w-0">
             {/* ── Stats resumen ─────────────────────────── */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
                 {[
                     { label: "Total publicados", val: avisos.length, color: "#2563eb", bg: "#eff6ff" },
                     { label: "Visibles para clínicas", val: avisos.filter(a => a.activo).length, color: "#059669", bg: "#ecfdf5" },
@@ -350,22 +350,17 @@ export default function NovedadesAdmin() {
             </div>
 
             {/* ── Toolbar ───────────────────────────────── */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5">
                 {/* Filtros */}
-                <div style={{ display: "flex", gap: 4, background: "#f1f5f9", padding: 3, borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 overflow-x-auto">
                     {[
                         { key: "all", label: `Todos (${avisos.length})` },
                         { key: "activo", label: `Visibles (${avisos.filter(a => a.activo).length})` },
                         { key: "inactivo", label: `Borradores (${avisos.filter(a => !a.activo).length})` },
                     ].map(f => (
-                        <button key={f.key} onClick={() => setFilter(f.key)} style={{
-                            padding: "6px 14px", borderRadius: 8, border: "none",
-                            background: filter === f.key ? "white" : "transparent",
-                            color: filter === f.key ? "#0f172a" : "#64748b",
-                            fontWeight: filter === f.key ? 800 : 600, fontSize: 12,
-                            cursor: "pointer", transition: "all 0.15s",
-                            boxShadow: filter === f.key ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
-                        }}>
+                        <button key={f.key} onClick={() => setFilter(f.key)} className={`px-3 py-1.5 rounded-lg border-0 text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            filter === f.key ? "bg-white text-slate-900 shadow-xs" : "bg-transparent text-slate-500 hover:text-slate-800"
+                        }`}>
                             {f.label}
                         </button>
                     ))}
@@ -374,14 +369,7 @@ export default function NovedadesAdmin() {
                 {/* Botón nuevo */}
                 <button
                     onClick={() => { setEditing(null); setShowModal(true); }}
-                    style={{
-                        padding: "9px 18px", borderRadius: 10, border: "none",
-                        background: "#2563eb", color: "white", fontWeight: 800, fontSize: 13,
-                        cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
-                        boxShadow: "0 4px 14px rgba(37,99,235,0.35)", transition: "all 0.15s"
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#1d4ed8"}
-                    onMouseLeave={e => e.currentTarget.style.background = "#2563eb"}
+                    className="px-4 py-2.5 rounded-xl border-0 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 transition-all"
                 >
                     <FiPlus size={16} /> Nueva novedad
                 </button>
