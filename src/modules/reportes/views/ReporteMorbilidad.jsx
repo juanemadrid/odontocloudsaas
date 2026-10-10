@@ -1180,73 +1180,114 @@ export default function ReporteMorbilidad() {
 
       </div>
 
-      {/* ─── MODAL AUDITORÍA DE CASOS CLÍNICOS DETALLADOS ─── */}
+      {/* ─── MODAL AUDITORÍA DE CASOS CLÍNICOS DETALLADOS (PANTALLA COMPLETA / ESPACIOSO) ─── */}
       {selectedCaseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 lg:p-6 animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-[1550px] h-[92vh] flex flex-col overflow-hidden">
             
             {/* Cabecera del modal */}
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-              <div className="flex items-center gap-3">
-                <span className="px-2.5 py-1 rounded-md bg-sky-100 text-sky-800 font-mono font-bold text-xs border border-sky-200">
+            <div className="px-6 py-4 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-4 bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="px-3 py-1.5 rounded-xl bg-sky-100/80 text-sky-800 font-mono font-black text-sm border border-sky-200 shadow-2xs">
                   {selectedCaseModal.codigoDiagnostico}
-                </span>
+                </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-800">
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">
                     {selectedCaseModal.diagnostico}
                   </h3>
-                  <span className="text-[11px] text-slate-500">
-                    Auditoría de {selectedCaseModal.casosDetalle.length} casos clínicos registrados
-                  </span>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-0.5">
+                    <span>Auditoría de <strong>{selectedCaseModal.casosDetalle.length}</strong> casos registrados</span>
+                    <span>•</span>
+                    <span><strong>{selectedCaseModal.pacientesCount}</strong> pacientes únicos</span>
+                    <span>•</span>
+                    <span className="text-emerald-700 font-bold">{selectedCaseModal.porcentaje} de la morbilidad</span>
+                  </div>
                 </div>
               </div>
 
-              <button
-                onClick={() => setSelectedCaseModal(null)}
-                className="w-7 h-7 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-all"
-              >
-                <FiX size={16} />
-              </button>
+              <div className="flex items-center gap-2.5">
+                {/* Exportar casos de este diagnóstico a Excel */}
+                <button
+                  onClick={() => {
+                    const detailRows = selectedCaseModal.casosDetalle.map((caso, idx) => ({
+                      "#": idx + 1,
+                      "Código CIE-10": selectedCaseModal.codigoDiagnostico,
+                      "Patología": selectedCaseModal.diagnostico,
+                      "Fecha y Hora": isValid(caso.fecha) ? format(caso.fecha, "dd/MM/yyyy HH:mm") : "—",
+                      "Tipo Doc": caso.pacienteTipoDoc,
+                      "Documento": caso.pacienteDoc,
+                      "Paciente": caso.pacienteNombre,
+                      "Profesional Tratante": caso.profesional,
+                      "Sede": caso.oficina,
+                      "Origen Registro": caso.origen,
+                      "Notas Clínicas": caso.notas
+                    }));
+                    const ws = XLSX.utils.json_to_sheet(detailRows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Casos Clínicos");
+                    XLSX.writeFile(wb, `Casos_${selectedCaseModal.codigoDiagnostico}_${format(new Date(), "yyyyMMdd")}.xlsx`);
+                  }}
+                  className="h-8 px-3 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all"
+                  title="Exportar casos de este diagnóstico a Excel"
+                >
+                  <FiDownload size={13} />
+                  <span>Exportar Casos</span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedCaseModal(null)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-200/80 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all cursor-pointer"
+                  title="Cerrar ventana"
+                >
+                  <FiX size={18} />
+                </button>
+              </div>
             </div>
 
-            {/* Lista detallada de casos */}
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            {/* Lista detallada de casos a pantalla completa */}
+            <div className="flex-1 overflow-auto custom-scrollbar p-0">
               <table className="w-full text-left border-collapse text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold sticky top-0">
+                <thead className="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-bold sticky top-0 z-10 shadow-2xs">
                   <tr>
-                    <th className="px-3 py-2">Fecha</th>
-                    <th className="px-3 py-2">Paciente</th>
-                    <th className="px-3 py-2">Documento</th>
-                    <th className="px-3 py-2">Profesional Tratante</th>
-                    <th className="px-3 py-2">Sede</th>
-                    <th className="px-3 py-2">Origen</th>
-                    <th className="px-3 py-2">Notas / Procedimiento</th>
+                    <th className="px-4 py-3 text-center w-12">#</th>
+                    <th className="px-4 py-3 whitespace-nowrap w-40">Fecha y Hora</th>
+                    <th className="px-5 py-3 whitespace-nowrap min-w-[220px]">Paciente</th>
+                    <th className="px-4 py-3 whitespace-nowrap w-40">Identificación</th>
+                    <th className="px-4 py-3 whitespace-nowrap min-w-[200px]">Profesional Tratante</th>
+                    <th className="px-4 py-3 whitespace-nowrap min-w-[200px]">Sede / Consultorio</th>
+                    <th className="px-4 py-3 whitespace-nowrap w-44">Origen del Registro</th>
+                    <th className="px-5 py-3 min-w-[260px]">Notas Clínicas / Observaciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {selectedCaseModal.casosDetalle.map((c, i) => (
-                    <tr key={i} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-500">
-                        {isValid(c.fecha) ? format(c.fecha, "dd/MM/yyyy HH:mm") : "—"}
+                    <tr key={i} className="hover:bg-sky-50/40 transition-colors">
+                      <td className="px-4 py-3 text-center font-bold text-slate-400 text-[11px]">
+                        {i + 1}
                       </td>
-                      <td className="px-3 py-2 font-bold text-slate-800">
+                      <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-600">
+                        {isValid(c.fecha) ? format(c.fecha, "dd/MM/yyyy • hh:mm a") : "—"}
+                      </td>
+                      <td className="px-5 py-3 font-bold text-slate-900 text-xs">
                         {c.pacienteNombre}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-slate-500 font-mono text-[11px]">
-                        {c.pacienteTipoDoc} {c.pacienteDoc}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="font-mono text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                          {c.pacienteTipoDoc} {c.pacienteDoc}
+                        </span>
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-slate-700">
+                      <td className="px-4 py-3 whitespace-nowrap text-slate-800 font-medium">
                         {c.profesional}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap uppercase text-[11px] text-slate-500">
+                      <td className="px-4 py-3 whitespace-nowrap uppercase text-[11px] font-semibold text-slate-600">
                         {c.oficina}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                           {c.origen}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-slate-500 max-w-xs truncate" title={c.notas}>
+                      <td className="px-5 py-3 text-slate-600 text-xs leading-relaxed">
                         {c.notas || "—"}
                       </td>
                     </tr>
@@ -1256,12 +1297,15 @@ export default function ReporteMorbilidad() {
             </div>
 
             {/* Pie del modal */}
-            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-500 font-medium">
+                Mostrando los <strong>{selectedCaseModal.casosDetalle.length}</strong> episodios clínicos asociados a este diagnóstico.
+              </span>
               <button
                 onClick={() => setSelectedCaseModal(null)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-all"
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 active:scale-[0.98] text-white text-xs font-bold rounded-lg transition-all cursor-pointer"
               >
-                Cerrar
+                Cerrar Ventana
               </button>
             </div>
 
