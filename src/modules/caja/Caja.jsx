@@ -144,7 +144,7 @@ export default function Caja() {
       const mergedMap = new Map();
       [...list, ...cfgCajas].forEach(c => {
         if (c && c.id && !mergedMap.has(c.id)) {
-          const cajaMovs = movsList.filter(m => m.caja_id === c.id || m.cajaId === c.id);
+          const cajaMovs = movsList.filter(m => (m.caja_id === c.id || m.cajaId === c.id) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
           const movIngresos = cajaMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const movEgresos = cajaMovs.filter(m => m.tipo === "egreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           

@@ -1,10 +1,27 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
-import { FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiChevronDown, FiChevronRight } from "react-icons/fi";
+import { getDoctorsList } from "../../../services/supabaseServices";
+import { FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiChevronDown, FiChevronRight, FiRefreshCw } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
+
+// Función auxiliar para traducir y normalizar estados en español
+export const formatEstadoPlan = (raw) => {
+  if (!raw) return "Borrador";
+  const st = String(raw).toLowerCase().trim();
+  if (st === "approved" || st === "aprobado") return "Aprobado";
+  if (st === "accepted" || st === "aceptado") return "Aceptado";
+  if (st === "draft" || st === "borrador") return "Borrador";
+  if (st === "activo" || st === "active") return "Activo";
+  if (st === "completed" || st === "completado" || st === "finalizado") return "Finalizado";
+  if (st.includes("progreso") || st === "iniciado" || st === "in_progress") return "En progreso";
+  if (st === "cancelled" || st === "cancelado" || st === "anulado") return "Cancelado";
+  if (st === "rejected" || st === "rechazado") return "Rechazado";
+  if (st === "pending" || st === "pendiente") return "Pendiente";
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
 
 export default function ReportePlanesTratamiento() {
   const { userProfile } = useAuth();
@@ -13,12 +30,15 @@ export default function ReportePlanesTratamiento() {
   const [pacientesList, setPacientesList] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros del formulario superior (1:1 con OralDrive)
+  // Fechas por defecto: mes actual
   const now = new Date();
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const [fechaInicial, setFechaInicial] = useState(format(firstDayOfMonth, "yyyy-MM-dd"));
   const [fechaFinal, setFechaFinal] = useState(format(now, "yyyy-MM-dd"));
-  const [selectedProfesional, setSelectedProfesional] = useState("");
+  const [isAllHistory, setIsAllHistory] = useState(false);
+
+  // Filtros de selección
+  const [selectedProfesional, setSelectedProfesional] = useState("TODOS");
   const [selectedPacienteTerm, setSelectedPacienteTerm] = useState("");
   const [selectedPacienteId, setSelectedPacienteId] = useState("");
   const [showPacienteDropdown, setShowPacienteDropdown] = useState(false);
@@ -26,20 +46,21 @@ export default function ReportePlanesTratamiento() {
   const [filtroFechaTipo, setFiltroFechaTipo] = useState("creacion"); // "creacion" | "realizado"
   const [pendientesFacturar, setPendientesFacturar] = useState(false);
 
-  // Agrupamiento y expansión
-  const [expandAllGroups, setExpandAllGroups] = useState(true);
-  const [collapsedGroups, setCollapsedGroups] = useState({});
+  // Agrupamiento y expansión (INICIA CERRADO / COLAPSADO POR DEFECTO A SOLICITUD DEL USUARIO)
+  const [expandAllGroups, setExpandAllGroups] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
 
   const pacienteDropdownRef = useRef(null);
 
-  // Estado de búsqueda: inicia en false hasta que el usuario hace clic en "Buscar"
-  const [hasSearched, setHasSearched] = useState(false);
+  // Estado de búsqueda
+  const [hasSearched, setHasSearched] = useState(true);
 
-  // Filtros aplicados al presionar "Buscar"
+  // Filtros aplicados
   const [appliedFilters, setAppliedFilters] = useState({
     fechaInicial: format(firstDayOfMonth, "yyyy-MM-dd"),
     fechaFinal: format(now, "yyyy-MM-dd"),
-    profesional: "",
+    isAllHistory: false,
+    profesional: "TODOS",
     pacienteId: "",
     pacienteTerm: "",
     tipoPlan: "TODOS",
@@ -136,228 +157,273 @@ export default function ReportePlanesTratamiento() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Cargar datos reales desde Supabase
-  useEffect(() => {
-    const fetchData = async () => {
-      const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
-      if (!tenantId) return;
-      setLoading(true);
-      try {
-        // 1. Cargar Pacientes reales
-        let snapPacientes = [];
-        try {
-          const { data, error } = await supabase
-            .from("pacientes")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (!error && data) snapPacientes = data;
-        } catch (e) {
-          console.warn("Error cargando pacientes:", e);
-        }
+  // Cargar datos en paralelo optimizado desde el VPS
+  const fetchData = useCallback(async () => {
+    const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
+    if (!tenantId) return;
+    setLoading(true);
 
-        const pacDict = {};
-        const listPacs = (snapPacientes || []).map(p => {
-          const nombreCompleto = `${p.nombres || p.nombre || ''} ${p.apellidos || p.apellido || ''}`.trim() || p.nombreCompleto || p.documento || p.nroDocumento || 'Paciente sin nombre';
-          const pacObj = {
-            id: p.id,
-            nombre: nombreCompleto,
-            documento: p.documento || p.nroDocumento || p.identificacion || '',
-            telefono: p.telefono || p.celular || '',
-            email: p.email || p.correo || '',
-            eps: p.eps || p.nombreEps || p.convenio || ''
-          };
-          pacDict[p.id] = pacObj;
-          if (p.documento) pacDict[p.documento] = pacObj;
-          if (p.nroDocumento) pacDict[p.nroDocumento] = pacObj;
-          return pacObj;
-        });
-        setPacientesList(listPacs);
+    try {
+      const [docsFromService, profilesRes, pacRes, pagosRes, planesRes] = await Promise.all([
+        getDoctorsList(userProfile, null).catch(e => {
+          console.warn("Aviso catálogo doctores:", e);
+          return [];
+        }),
+        supabase.from("profiles").select("*").eq("tenant_id", tenantId),
+        supabase.from("pacientes").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+        supabase.from("pagos").select("*").eq("tenant_id", tenantId),
+        supabase.from("treatment_plans").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false })
+      ]);
 
-        // 2. Cargar Doctores reales
-        let snapUsuarios = [];
-        try {
-          const { data } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (data) snapUsuarios = data;
-        } catch (e) {}
+      // 1. Armar diccionario de Pacientes
+      const pacDict = {};
+      const listPacs = (pacRes?.data || []).map(p => {
+        const nombreCompleto = `${p.nombres || p.nombre || ''} ${p.apellidos || p.apellido || ''}`.trim() || p.nombreCompleto || p.documento || p.nroDocumento || 'Paciente sin nombre';
+        const doc = p.documento || p.nroDocumento || p.identificacion || p.nro_historia || '';
+        const pacObj = {
+          id: p.id,
+          nombre: nombreCompleto,
+          documento: doc,
+          telefono: p.telefono || p.celular || '',
+          email: p.email || p.correo || '',
+          eps: p.eps || p.nombreEps || p.convenio || ''
+        };
+        pacDict[p.id] = pacObj;
+        if (doc) pacDict[doc] = pacObj;
+        return pacObj;
+      });
+      setPacientesList(listPacs);
 
-        const listProfs = [];
-        (snapUsuarios || []).forEach(u => {
-          if (isDoctorUser(u)) {
-            const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
-            const primerApellido = u.apellido || u.apellidos || "";
-            const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
-            listProfs.push({
+      // 2. Armar Catálogo unificado de Profesionales
+      const catalogProfs = Array.isArray(docsFromService) ? [...docsFromService] : [];
+      (profilesRes?.data || []).forEach(u => {
+        if (isDoctorUser(u)) {
+          const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || "";
+          const primerApellido = u.apellido || u.apellidos || "";
+          const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
+          if (!catalogProfs.some(d => String(d.id).toLowerCase() === String(u.id).toLowerCase())) {
+            catalogProfs.push({
               id: u.id,
               nombre: nombreCompleto,
-              allNames: [
-                u.id,
-                nombreCompleto.toLowerCase(),
-                primerNombre.toLowerCase(),
-                primerApellido.toLowerCase(),
-                (u.email || "").toLowerCase()
-              ].filter(Boolean)
+              nombreCompleto: nombreCompleto,
+              email: u.email || "",
+              especialidades: u.especialidades || []
             });
           }
-        });
-        setProfesionales(listProfs);
+        }
+      });
 
-        // 3. Cargar Pagos reales
-        let pagosMap = {};
-        try {
-          const { data: snapPagos } = await supabase
-            .from("pagos")
-            .select("id, paciente_id, monto, valor, plan_id, estado, created_at")
-            .eq("tenant_id", tenantId);
-          
-          (snapPagos || []).forEach(pago => {
-            const isVoided = (pago.estado || "").toLowerCase() === "anulado";
-            if (!isVoided) {
-              const val = Number(pago.monto || pago.valor || 0);
-              if (pago.plan_id) {
-                pagosMap[pago.plan_id] = (pagosMap[pago.plan_id] || 0) + val;
-              }
-            }
-          });
-        } catch (e) {}
+      const docMap = new Map();
+      catalogProfs.forEach(u => {
+        const nom = (u.nombreCompleto || u.nombre || u.displayName || "").trim();
+        const uid = String(u.id || "").toLowerCase().trim();
+        const nomLower = nom.toLowerCase().trim();
+        if (uid && nom) docMap.set(uid, nom);
+        if (nomLower) docMap.set(nomLower, nom);
+      });
 
-        // 4. Cargar Treatment Plans y desglosar por prestación (items)
-        let snapPlanes = [];
-        try {
-          const { data, error } = await supabase
-            .from("treatment_plans")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (!error && data) snapPlanes = data;
-        } catch (e) {
-          console.warn("Error cargando treatment_plans:", e);
+      // 3. Mapear Pagos
+      const pagosMap = {};
+      (pagosRes?.data || []).forEach(pago => {
+        const isVoided = (pago.estado || "").toLowerCase() === "anulado";
+        if (!isVoided) {
+          const val = Number(pago.monto || pago.valor || 0);
+          if (pago.plan_id) {
+            pagosMap[pago.plan_id] = (pagosMap[pago.plan_id] || 0) + val;
+          }
+        }
+      });
+
+      // 4. Procesar y Desglosar Treatment Plans por Prestación (Ítems)
+      const snapPlanes = planesRes?.data || [];
+      const flattenedRows = [];
+      const doctorPlanCounts = {};
+
+      const resolveDocName = (itemDoc, itemDocId, planDoc, planDocId) => {
+        const candidates = [
+          { val: itemDoc, isId: false },
+          { val: itemDocId, isId: true },
+          { val: planDoc, isId: false },
+          { val: planDocId, isId: true }
+        ];
+
+        for (const c of candidates) {
+          if (!c.val) continue;
+          const str = String(c.val).trim();
+          const strLower = str.toLowerCase();
+          if (docMap.has(strLower)) return docMap.get(strLower);
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+          if (isUuid && docMap.has(strLower)) return docMap.get(strLower);
+          if (!c.isId && str && !isUuid && str !== "—" && str !== "null" && str !== "undefined") {
+            return str;
+          }
+        }
+        return "Sin asignar";
+      };
+
+      snapPlanes.forEach(p => {
+        let d = p.detalles || {};
+        if (typeof d === "string") {
+          try { d = JSON.parse(d); } catch (e) { d = {}; }
         }
 
-        const flattenedRows = [];
+        // Extraer ítems desde cualquier estructura soportada
+        let items = [];
+        if (Array.isArray(d)) items = d;
+        else if (Array.isArray(d.items)) items = d.items;
+        else if (Array.isArray(p.items)) items = p.items;
+        else if (Array.isArray(d.procedimientos)) items = d.procedimientos;
+        else if (Array.isArray(p.procedimientos)) items = p.procedimientos;
+        else if (Array.isArray(d.prestaciones)) items = d.prestaciones;
 
-        (snapPlanes || []).forEach(p => {
-          const d = p.detalles || {};
-          const items = Array.isArray(d) ? d : (d.items && Array.isArray(d.items) ? d.items : []);
-          
-          const pacId = p.paciente_id || p.pacienteId || p.patientId || p.patient_id || p.paciente || d.paciente_id || d.pacienteId || d.patientId;
-          const pac = pacDict[pacId] || (p.documento ? pacDict[p.documento] : {}) || {};
-          const pacName = pac.nombre || d.pacienteNombre || d.patientName || p.paciente_nombre || p.pacienteNombre || p.nombrePaciente || p.paciente || "Paciente";
-          const pacDoc = pac.documento || d.pacienteDocumento || d.patientDocument || p.pacienteDocumento || p.documento || "";
-          const pacEmail = pac.email || d.pacienteEmail || d.email || p.email || "";
-          
-          const planTotal = Number(p.total || d.total || d.costoTotal || 0);
-          const rawType = String(d.type || p.type || p.tipo || p.estado || "").toLowerCase();
-          const isPlanTratamiento = rawType.includes("plan") || rawType === "approved" || rawType === "finalizado";
-          const planTitle = p.nombre || d.nombre || d.title || (isPlanTratamiento ? "Plan de Tratamiento" : "Presupuesto");
+        const pacId = p.paciente_id || p.pacienteId || p.patientId || p.patient_id || p.paciente || d.paciente_id || d.pacienteId;
+        const pac = pacDict[pacId] || (p.documento ? pacDict[p.documento] : {}) || {};
+        const pacName = pac.nombre || d.pacienteNombre || d.patientName || p.paciente_nombre || p.nombrePaciente || "Paciente";
+        const pacDoc = pac.documento || d.pacienteDocumento || d.patientDocument || p.pacienteDocumento || p.documento || "";
+        const pacEmail = pac.email || d.pacienteEmail || d.email || p.email || "";
 
-          const docName = d.profesional || d.profesionalNombre || p.profesional || p.profesional_nombre || p.doctor || p.odontologo || "";
-          const docId = d.profesionalId || p.profesional_id || p.doctor_id || "";
+        const planTotal = Number(p.total || d.total || d.costoTotal || 0);
 
-          const planPaid = pagosMap[p.id] || Number(p.pagado || d.pagado || 0);
-          const planBalance = Math.max(0, planTotal - planPaid);
+        // Clasificación de Tipo de Plan
+        const rawType = String(d.type || p.type || p.tipo || "").toLowerCase();
+        const rawEstado = String(p.estado || d.estado || "").toLowerCase();
 
-          if (items.length > 0) {
-            items.forEach((it, idx) => {
-              const itemPrice = Number(it.precio || it.valor || it.valorPrestacion || it.costo || 0);
-              const itemPaid = Number(it.pagado || it.valorPagado || (it.pagada ? itemPrice : 0));
-              const itemLiquidated = Number(it.liquidado || it.valorLiquidado || 0);
-              const isDone = it.realizada === true || it.realizado === true || it.estado === 'completado' || it.estado === 'realizado';
-              const isPaid = it.pagada === true || itemPaid >= itemPrice || planBalance <= 0;
-              const isBilled = it.facturada === true || it.facturado === true;
+        const isBudget = rawType === "presupuesto" || rawType === "draft" || rawType === "borrador" || rawEstado === "draft" || rawEstado === "borrador";
+        const isPlanTratamiento = !isBudget;
 
-              flattenedRows.push({
-                id: `${p.id}_${idx}`,
-                planId: p.id,
-                planTitle: planTitle,
-                planType: isPlanTratamiento ? "plan" : "presupuesto",
-                planTypeLabel: isPlanTratamiento ? "Plan de tratamiento" : "Presupuesto",
-                planDate: p.created_at || d.date || p.date,
-                patientId: pacId || p.paciente_id,
-                historia: pacDoc || pacId || "",
-                pacienteNombre: pacName,
-                emailPaciente: pacEmail,
-                prestacion: it.nombre || it.descripcion || it.procedimiento || it.prestacion || "Procedimiento Odontológico",
-                codigoCups: it.codigo || it.cups || it.codigo_cups || "—",
-                realizada: isDone ? "Sí" : "No",
-                pagada: isPaid ? "Sí" : "No",
-                facturada: isBilled ? "Sí" : "No",
-                valorPagado: itemPaid,
-                valorPrestacion: itemPrice,
-                valorLiquidado: itemLiquidated,
-                profesional: it.profesional || docName || "—",
-                profesionalId: it.profesionalId || docId || "",
-                fechaCreacionPrestacion: it.fechaCreacion || it.fecha || p.created_at,
-                fechaRealizado: it.fechaRealizado || it.fecha_realizado || (isDone ? p.created_at : ""),
-                estado: p.estado || d.estado || (isPlanTratamiento ? "Aprobado" : "Borrador"),
-                valorPlanTratamiento: planTotal,
-                saldoPlan: planBalance,
-                egresos: Number(it.egresos || d.egresos || 0),
-                proximaCita: it.proximaCita || "",
-                orden: it.orden || idx + 1,
-                tarifa: it.tarifa || d.tarifa || "Particular",
-                valorTarifa: Number(it.valorTarifa || itemPrice),
-                entidad: it.entidad || pac.eps || "—",
-                finalizado: p.estado === 'Finalizado' || p.estado === 'approved' ? "Sí" : "No",
-                facturaEntidad: it.facturaEntidad || "—",
-                compensadoNC: it.compensadoNC || "No",
-                categoria: it.categoria || d.categoria || "Odontología General"
-              });
-            });
-          } else {
+        const planTitle = p.nombre || d.nombre || d.title || (isPlanTratamiento ? "Plan de Tratamiento" : "Presupuesto");
+
+        const planDocName = d.profesional || d.profesionalNombre || p.profesional || p.profesional_nombre || p.doctor || p.odontologo || "";
+        const planDocId = d.profesionalId || p.profesional_id || p.doctor_id || "";
+
+        const planPaid = pagosMap[p.id] || Number(p.pagado || d.pagado || 0);
+        const planBalance = Math.max(0, planTotal - planPaid);
+
+        // Estado garantizado en español
+        const estadoFinalEspanol = formatEstadoPlan(p.estado || d.estado || (isPlanTratamiento ? "Aprobado" : "Borrador"));
+
+        if (items.length > 0) {
+          items.forEach((it, idx) => {
+            const itemPrice = Number(it.amount || it.precio || it.valor || it.valorPrestacion || it.costo || 0);
+            const itemPaid = Number(it.pagado || it.valorPagado || (it.pagada ? itemPrice : 0));
+            const itemLiquidated = Number(it.liquidado || it.valorLiquidado || 0);
+            const isDone = it.realizado === true || it.realizada === true || it.status === 'completed' || it.estado === 'completado' || it.estado === 'realizado';
+            const isPaid = it.pagada === true || it.pagado === true || itemPaid >= itemPrice || (planTotal > 0 && planBalance <= 0);
+            const isBilled = it.facturado === true || it.facturada === true;
+
+            const docResolved = resolveDocName(it.profesional, it.profesionalId, planDocName, planDocId);
+            const docIdResolved = it.profesionalId || planDocId || "";
+
+            doctorPlanCounts[docResolved] = (doctorPlanCounts[docResolved] || 0) + 1;
+
             flattenedRows.push({
-              id: `${p.id}_0`,
+              id: `${p.id}_${idx}`,
               planId: p.id,
               planTitle: planTitle,
               planType: isPlanTratamiento ? "plan" : "presupuesto",
               planTypeLabel: isPlanTratamiento ? "Plan de tratamiento" : "Presupuesto",
               planDate: p.created_at || d.date || p.date,
               patientId: pacId || p.paciente_id,
-              historia: pacDoc || pacId || "",
+              historia: pacDoc || (pacId ? String(pacId).slice(0, 8) : "—"),
               pacienteNombre: pacName,
               emailPaciente: pacEmail,
-              prestacion: planTitle,
-              codigoCups: "—",
-              realizada: p.estado === 'Finalizado' ? "Sí" : "No",
-              pagada: planBalance <= 0 ? "Sí" : "No",
-              facturada: "No",
-              valorPagado: planPaid,
-              valorPrestacion: planTotal,
-              valorLiquidado: 0,
-              profesional: docName || "—",
-              profesionalId: docId || "",
-              fechaCreacionPrestacion: p.created_at,
-              fechaRealizado: "",
-              estado: p.estado || (isPlanTratamiento ? "Aprobado" : "Borrador"),
+              prestacion: it.desc || it.nombre || it.descripcion || it.procedimiento || it.prestacion || "Procedimiento Odontológico",
+              codigoCups: it.codigo_cups || it.code || it.codigo || it.cups || "—",
+              realizada: isDone ? "Sí" : "No",
+              pagada: isPaid ? "Sí" : "No",
+              facturada: isBilled ? "Sí" : "No",
+              valorPagado: itemPaid,
+              valorPrestacion: itemPrice,
+              valorLiquidado: itemLiquidated,
+              profesional: docResolved,
+              profesionalId: docIdResolved,
+              fechaCreacionPrestacion: it.fechaCreacion || it.fecha || p.created_at,
+              fechaRealizado: it.fechaRealizado || it.fecha_realizado || (isDone ? p.created_at : ""),
+              estado: estadoFinalEspanol,
               valorPlanTratamiento: planTotal,
               saldoPlan: planBalance,
-              egresos: 0,
-              proximaCita: "",
-              orden: 1,
-              tarifa: "Particular",
-              valorTarifa: planTotal,
-              entidad: pac.eps || "—",
-              finalizado: p.estado === 'Finalizado' ? "Sí" : "No",
-              facturaEntidad: "—",
-              compensadoNC: "No",
-              categoria: "Odontología General"
+              egresos: Number(it.egresos || d.egresos || 0),
+              proximaCita: it.proximaCita || "",
+              orden: it.orden || idx + 1,
+              tarifa: it.tarifa || d.tarifa || "Particular",
+              valorTarifa: Number(it.valorTarifa || itemPrice),
+              entidad: it.entidad || pac.eps || "Particular",
+              finalizado: estadoFinalEspanol === "Finalizado" || estadoFinalEspanol === "Aprobado" || estadoFinalEspanol === "Aceptado" ? "Sí" : "No",
+              facturaEntidad: it.facturaEntidad || "—",
+              compensadoNC: it.compensadoNC || "No",
+              categoria: it.categoria || d.categoria || "Odontología General"
             });
-          }
-        });
+          });
+        } else {
+          // Fallback para plan sin desglose
+          const docResolved = resolveDocName("", "", planDocName, planDocId);
+          doctorPlanCounts[docResolved] = (doctorPlanCounts[docResolved] || 0) + 1;
 
-        flattenedRows.sort((a, b) => new Date(b.fechaCreacionPrestacion || 0) - new Date(a.fechaCreacionPrestacion || 0));
-        setAllItemRows(flattenedRows);
+          flattenedRows.push({
+            id: `${p.id}_0`,
+            planId: p.id,
+            planTitle: planTitle,
+            planType: isPlanTratamiento ? "plan" : "presupuesto",
+            planTypeLabel: isPlanTratamiento ? "Plan de tratamiento" : "Presupuesto",
+            planDate: p.created_at || d.date || p.date,
+            patientId: pacId || p.paciente_id,
+            historia: pacDoc || (pacId ? String(pacId).slice(0, 8) : "—"),
+            pacienteNombre: pacName,
+            emailPaciente: pacEmail,
+            prestacion: planTitle,
+            codigoCups: "—",
+            realizada: estadoFinalEspanol === "Finalizado" ? "Sí" : "No",
+            pagada: planBalance <= 0 ? "Sí" : "No",
+            facturada: "No",
+            valorPagado: planPaid,
+            valorPrestacion: planTotal,
+            valorLiquidado: 0,
+            profesional: docResolved,
+            profesionalId: planDocId || "",
+            fechaCreacionPrestacion: p.created_at,
+            fechaRealizado: "",
+            estado: estadoFinalEspanol,
+            valorPlanTratamiento: planTotal,
+            saldoPlan: planBalance,
+            egresos: 0,
+            proximaCita: "",
+            orden: 1,
+            tarifa: "Particular",
+            valorTarifa: planTotal,
+            entidad: pac.eps || "Particular",
+            finalizado: estadoFinalEspanol === "Finalizado" || estadoFinalEspanol === "Aprobado" || estadoFinalEspanol === "Aceptado" ? "Sí" : "No",
+            facturaEntidad: "—",
+            compensadoNC: "No",
+            categoria: "Odontología General"
+          });
+        }
+      });
 
-      } catch (error) {
-        console.error("Error cargando reporte de planes de tratamiento:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+      // Actualizar lista de profesionales con conteo de prestaciones
+      const finalProfs = catalogProfs.map(pr => {
+        const nom = (pr.nombreCompleto || pr.nombre || "").trim();
+        return {
+          id: pr.id,
+          nombre: nom,
+          planCount: doctorPlanCounts[nom] || 0
+        };
+      });
+      finalProfs.sort((a, b) => b.planCount - a.planCount);
+      setProfesionales(finalProfs);
 
+      flattenedRows.sort((a, b) => new Date(b.fechaCreacionPrestacion || 0) - new Date(a.fechaCreacionPrestacion || 0));
+      setAllItemRows(flattenedRows);
+
+    } catch (error) {
+      console.error("Error cargando reporte de planes de tratamiento:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [userProfile]);
+
+  useEffect(() => {
     fetchData();
-  }, [userProfile?.inquilino, userProfile?.tenant_id]);
+  }, [fetchData]);
 
   // Formateadores de fecha
   const formatDateTime = (dateVal) => {
@@ -380,21 +446,20 @@ export default function ReportePlanesTratamiento() {
         const targetType = appliedFilters.tipoPlan.toLowerCase();
         const rowType = (row.planType || "").toLowerCase();
         const rowLabel = (row.planTypeLabel || "").toLowerCase();
-        const rowTitle = (row.planTitle || "").toLowerCase();
 
         if (targetType.includes("plan") && !targetType.includes("presupuesto")) {
-          if (!rowType.includes("plan") && !rowLabel.includes("plan") && !rowTitle.includes("plan")) {
+          if (!rowType.includes("plan") && !rowLabel.includes("plan")) {
             return false;
           }
         } else if (targetType.includes("presupuesto")) {
-          if (!rowType.includes("presupuesto") && !rowLabel.includes("presupuesto") && !rowTitle.includes("presupuesto")) {
+          if (!rowType.includes("presupuesto") && !rowLabel.includes("presupuesto")) {
             return false;
           }
         }
       }
 
       // 2. Filtro Fechas
-      if (appliedFilters.fechaInicial && appliedFilters.fechaInicial.trim() !== "") {
+      if (!appliedFilters.isAllHistory && appliedFilters.fechaInicial && appliedFilters.fechaInicial.trim() !== "") {
         const rawDate = appliedFilters.fechaTipo === "creacion" 
           ? row.fechaCreacionPrestacion 
           : (row.fechaRealizado || row.fechaCreacionPrestacion);
@@ -411,21 +476,20 @@ export default function ReportePlanesTratamiento() {
       }
 
       // 3. Filtro Profesional
-      if (appliedFilters.profesional && appliedFilters.profesional.trim() !== "" && appliedFilters.profesional !== "TODOS") {
+      if (appliedFilters.profesional && appliedFilters.profesional !== "TODOS" && appliedFilters.profesional.trim() !== "") {
         const targetProf = appliedFilters.profesional.toLowerCase().trim();
-        const profObj = profesionales.find(pr => pr.nombre === appliedFilters.profesional || pr.id === appliedFilters.profesional);
-        const pProf = String(row.profesional || "").toLowerCase().trim();
-        const pProfId = String(row.profesionalId || "").toLowerCase().trim();
+        const rowDoc = String(row.profesional || "").toLowerCase().trim();
+        const rowDocId = String(row.profesionalId || "").toLowerCase().trim();
 
-        let matchesDoc = false;
-        if (profObj && profObj.allNames) {
-          matchesDoc = profObj.allNames.some(nameVariant => 
-            pProf.includes(nameVariant) || pProfId === nameVariant || nameVariant.includes(pProf)
-          );
+        if (appliedFilters.profesional === "SIN_ASIGNAR") {
+          if (rowDoc !== "sin asignar" && rowDoc !== "—" && rowDoc !== "") return false;
         } else {
-          matchesDoc = pProf.includes(targetProf) || pProfId.includes(targetProf) || targetProf.includes(pProf);
+          const matches = rowDoc === targetProf || 
+                          rowDoc.includes(targetProf) || 
+                          targetProf.includes(rowDoc) ||
+                          rowDocId === targetProf;
+          if (!matches) return false;
         }
-        if (!matchesDoc) return false;
       }
 
       // 4. Filtro Paciente
@@ -436,7 +500,6 @@ export default function ReportePlanesTratamiento() {
         const pEmail = String(row.emailPaciente || "").toLowerCase();
         const isExactId = appliedFilters.pacienteId && row.patientId === appliedFilters.pacienteId;
 
-        // Búsqueda por subpalabras (ej: "JUAN" o "PEREZ")
         const terms = pacSearchTerm.split(" ").filter(Boolean);
         const matchesAllSubterms = terms.every(t => pNom.includes(t) || pDoc.includes(t));
 
@@ -450,12 +513,12 @@ export default function ReportePlanesTratamiento() {
         if (Number(row.saldoPlan || 0) <= 0) return false;
       }
 
-      // 6. Búsqueda rápida global en tabla
-      if (tableSearchTerm.trim() !== "") {
-        const term = tableSearchTerm.toLowerCase();
+      // 6. Buscador rápido en toda la fila
+      if (tableSearchTerm && tableSearchTerm.trim() !== "") {
+        const term = tableSearchTerm.toLowerCase().trim();
         const matchesSearch =
           (row.pacienteNombre || "").toLowerCase().includes(term) ||
-          (row.historia || "").toLowerCase().includes(term) ||
+          String(row.historia || "").toLowerCase().includes(term) ||
           (row.prestacion || "").toLowerCase().includes(term) ||
           (row.codigoCups || "").toLowerCase().includes(term) ||
           (row.profesional || "").toLowerCase().includes(term) ||
@@ -479,7 +542,7 @@ export default function ReportePlanesTratamiento() {
 
       return true;
     });
-  }, [allItemRows, appliedFilters, tableSearchTerm, columnFilters, profesionales]);
+  }, [allItemRows, appliedFilters, tableSearchTerm, columnFilters]);
 
   // Agrupamiento por Plan de tratamiento y Paciente
   const groupedData = useMemo(() => {
@@ -493,6 +556,7 @@ export default function ReportePlanesTratamiento() {
           patientDoc: row.historia,
           planType: row.planTypeLabel,
           planTotal: row.valorPlanTratamiento,
+          estado: row.estado,
           items: []
         };
       }
@@ -501,11 +565,17 @@ export default function ReportePlanesTratamiento() {
     return groups;
   }, [filteredRows]);
 
+  // Manejador para colapsar/expandir grupos (Default: Colapsado)
   const toggleGroupCollapse = (groupKey) => {
-    setCollapsedGroups(prev => ({
-      ...prev,
-      [groupKey]: !prev[groupKey]
-    }));
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
   };
 
   // Manejar clic en "Buscar"
@@ -514,12 +584,36 @@ export default function ReportePlanesTratamiento() {
     setAppliedFilters({
       fechaInicial,
       fechaFinal,
+      isAllHistory,
       profesional: selectedProfesional,
       pacienteId: selectedPacienteId,
       pacienteTerm: selectedPacienteTerm,
       tipoPlan,
       fechaTipo: filtroFechaTipo,
       pendientesFacturar
+    });
+  };
+
+  // Restablecer filtros para ver todo
+  const handleResetFilters = () => {
+    setIsAllHistory(true);
+    setSelectedProfesional("TODOS");
+    setSelectedPacienteId("");
+    setSelectedPacienteTerm("");
+    setTipoPlan("TODOS");
+    setPendientesFacturar(false);
+    setTableSearchTerm("");
+    setColumnFilters({});
+    setAppliedFilters({
+      fechaInicial: "",
+      fechaFinal: "",
+      isAllHistory: true,
+      profesional: "TODOS",
+      pacienteId: "",
+      pacienteTerm: "",
+      tipoPlan: "TODOS",
+      fechaTipo: "creacion",
+      pendientesFacturar: false
     });
   };
 
@@ -531,7 +625,7 @@ export default function ReportePlanesTratamiento() {
     }));
   };
 
-  // Autocomplete: filtra si el usuario escribió algo (ignora mayúsculas y acentos)
+  // Autocomplete de pacientes
   const autocompletePacientes = useMemo(() => {
     const raw = (selectedPacienteTerm || "").trim();
     if (!raw) return [];
@@ -547,68 +641,147 @@ export default function ReportePlanesTratamiento() {
     });
   }, [pacientesList, selectedPacienteTerm]);
 
-  // Exportar reporte a Excel (respeta estrictamente las columnas visibles en el selector)
+  // Exportar a Excel Ejecutivo y Profesional
   const handleExportExcel = () => {
-    const rows = filteredRows.map(r => {
-      const rowObj = {};
-      if (visibleColumns.historia) rowObj["Historia"] = r.historia || "";
-      if (visibleColumns.prestacion) rowObj["Prestación"] = r.prestacion || "";
-      if (visibleColumns.codigoCups) rowObj["Código CUPS"] = r.codigoCups || "";
-      if (visibleColumns.realizada) rowObj["Realizada"] = r.realizada || "No";
-      if (visibleColumns.pagada) rowObj["Pagada"] = r.pagada || "No";
-      if (visibleColumns.facturada) rowObj["Facturada"] = r.facturada || "No";
-      if (visibleColumns.valorPagado) rowObj["Valor pagado"] = Number(r.valorPagado || 0);
-      if (visibleColumns.valorPrestacion) rowObj["Valor prestación"] = Number(r.valorPrestacion || 0);
-      if (visibleColumns.valorLiquidado) rowObj["Valor liquidado"] = Number(r.valorLiquidado || 0);
-      if (visibleColumns.profesional) rowObj["Profesional"] = r.profesional || "";
-      if (visibleColumns.emailPaciente) rowObj["Email paciente"] = r.emailPaciente || "";
-      if (visibleColumns.fechaCreacionPrestacion) rowObj["Fecha creación prestación"] = formatDateTime(r.fechaCreacionPrestacion);
-      if (visibleColumns.fechaRealizado) rowObj["Fecha realizado"] = formatDateShort(r.fechaRealizado);
-      if (visibleColumns.estado) rowObj["Estado"] = r.estado || "";
-      if (visibleColumns.valorPlanTratamiento) rowObj["Valor plan de tratamiento"] = Number(r.valorPlanTratamiento || 0);
-      if (visibleColumns.egresos) rowObj["Egresos"] = Number(r.egresos || 0);
-      if (visibleColumns.proximaCita) rowObj["Próxima cita"] = formatDateShort(r.proximaCita);
-      if (visibleColumns.orden) rowObj["Orden"] = r.orden || 1;
-      if (visibleColumns.tarifa) rowObj["Tarifa"] = r.tarifa || "";
-      if (visibleColumns.valorTarifa) rowObj["Valor tarifa"] = Number(r.valorTarifa || 0);
-      if (visibleColumns.entidad) rowObj["Entidad"] = r.entidad || "";
-      if (visibleColumns.finalizado) rowObj["Finalizado"] = r.finalizado || "No";
-      if (visibleColumns.facturaEntidad) rowObj["Factura a entidad"] = r.facturaEntidad || "";
-      if (visibleColumns.compensadoNC) rowObj["Compensado NC"] = r.compensadoNC || "No";
-      if (visibleColumns.categoria) rowObj["Categoría"] = r.categoria || "";
-      return rowObj;
+    if (filteredRows.length === 0) {
+      alert("No hay registros disponibles para exportar con los filtros seleccionados.");
+      return;
+    }
+
+    const clinicName = userProfile?.nombreClinica || userProfile?.tenant_nombre || "ATM CENTRO DEL DOLOR";
+    const clinicNit = userProfile?.nit || userProfile?.documento || "84976356-3";
+    const dateFormatted = format(new Date(), "dd/MM/yyyy HH:mm");
+    const periodText = appliedFilters.isAllHistory 
+      ? "Histórico Completo (Sin restricción de fechas)" 
+      : `${appliedFilters.fechaInicial || 'Inicio'} al ${appliedFilters.fechaFinal || 'Fin'}`;
+    const profText = appliedFilters.profesional === "TODOS" || !appliedFilters.profesional 
+      ? "Todos los profesionales" 
+      : (appliedFilters.profesional === "SIN_ASIGNAR" ? "Sin profesional asignado" : appliedFilters.profesional);
+
+    const totalPrestacionesVal = filteredRows.reduce((sum, r) => sum + Number(r.valorPrestacion || 0), 0);
+    const totalPagadoVal = filteredRows.reduce((sum, r) => sum + Number(r.valorPagado || 0), 0);
+    const totalSaldoVal = Math.max(0, totalPrestacionesVal - totalPagadoVal);
+
+    const activeColKeys = Object.keys(visibleColumns).filter(k => visibleColumns[k]);
+    const headers = activeColKeys.map(k => columnLabels[k]);
+
+    // Encabezado corporativo institucional
+    const aoa = [
+      ["ODONTOCLOUD COLOMBIA — SISTEMA DE GESTIÓN ODONTOLÓGICA"],
+      ["REPORTE DETALLADO DE PLANES DE TRATAMIENTO Y PRESTACIONES"],
+      [`Clínica / Institución: ${clinicName} (NIT: ${clinicNit})`, "", `Fecha de Generación: ${dateFormatted}`],
+      [`Filtro Período: ${periodText}`, "", `Profesional: ${profText}`],
+      [
+        `Total Prestaciones: ${filteredRows.length}`,
+        `Planes Únicos: ${Object.keys(groupedData).length}`,
+        `Total Valor Prestaciones: $ ${totalPrestacionesVal.toLocaleString('es-CO')}`,
+        `Total Pagado: $ ${totalPagadoVal.toLocaleString('es-CO')}`,
+        `Saldo Pendiente: $ ${totalSaldoVal.toLocaleString('es-CO')}`
+      ],
+      [], // Separador visual
+      headers // Nombres de columnas visibles
+    ];
+
+    // Filas de datos
+    filteredRows.forEach((r, idx) => {
+      const row = [];
+      activeColKeys.forEach(k => {
+        switch (k) {
+          case "historia": row.push(r.historia || ""); break;
+          case "prestacion": row.push(r.prestacion || ""); break;
+          case "codigoCups": row.push(r.codigoCups || "—"); break;
+          case "realizada": row.push(r.realizada || "No"); break;
+          case "pagada": row.push(r.pagada || "No"); break;
+          case "facturada": row.push(r.facturada || "No"); break;
+          case "valorPagado": row.push(Number(r.valorPagado || 0)); break;
+          case "valorPrestacion": row.push(Number(r.valorPrestacion || 0)); break;
+          case "valorLiquidado": row.push(Number(r.valorLiquidado || 0)); break;
+          case "profesional": row.push(r.profesional || "Sin asignar"); break;
+          case "emailPaciente": row.push(r.emailPaciente || "—"); break;
+          case "fechaCreacionPrestacion": row.push(formatDateTime(r.fechaCreacionPrestacion)); break;
+          case "fechaRealizado": row.push(formatDateShort(r.fechaRealizado) || "—"); break;
+          case "estado": row.push(r.estado || "Borrador"); break;
+          case "valorPlanTratamiento": row.push(Number(r.valorPlanTratamiento || 0)); break;
+          case "egresos": row.push(Number(r.egresos || 0)); break;
+          case "proximaCita": row.push(formatDateShort(r.proximaCita) || "—"); break;
+          case "orden": row.push(r.orden || idx + 1); break;
+          case "tarifa": row.push(r.tarifa || "Particular"); break;
+          case "valorTarifa": row.push(Number(r.valorTarifa || 0)); break;
+          case "entidad": row.push(r.entidad || "Particular"); break;
+          case "finalizado": row.push(r.finalizado || "No"); break;
+          case "facturaEntidad": row.push(r.facturaEntidad || "—"); break;
+          case "compensadoNC": row.push(r.compensadoNC || "No"); break;
+          case "categoria": row.push(r.categoria || "Odontología General"); break;
+          default: row.push(r[k] || "");
+        }
+      });
+      aoa.push(row);
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    // Fila final de totales
+    const summaryRow = [];
+    activeColKeys.forEach(k => {
+      if (k === "prestacion") summaryRow.push("TOTALES GENERALES:");
+      else if (k === "valorPrestacion") summaryRow.push(totalPrestacionesVal);
+      else if (k === "valorPagado") summaryRow.push(totalPagadoVal);
+      else if (k === "valorPlanTratamiento") summaryRow.push(totalPrestacionesVal);
+      else summaryRow.push("");
+    });
+    aoa.push([]);
+    aoa.push(summaryRow);
+
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Ajuste automático del ancho de cada columna para legibilidad perfecta
+    const colWidths = headers.map((h, i) => {
+      let maxLen = Math.max(h.length, 12);
+      filteredRows.forEach(r => {
+        const val = String(r[activeColKeys[i]] || "");
+        if (val.length > maxLen) maxLen = Math.min(val.length, 45);
+      });
+      return { wch: maxLen + 4 };
+    });
+    worksheet["!cols"] = colWidths;
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Planes de Tratamiento");
-    
-    const fileNameSuffix = `${appliedFilters.fechaInicial || 'Inicio'}_al_${appliedFilters.fechaFinal || 'Fin'}`;
-    XLSX.writeFile(workbook, `Reporte_Planes_Tratamiento_${fileNameSuffix}.xlsx`);
+
+    const cleanClinic = clinicName.replace(/[^a-zA-Z0-9]/g, "_");
+    const fileNameSuffix = appliedFilters.isAllHistory ? "Historico" : format(new Date(), "yyyyMMdd");
+    XLSX.writeFile(workbook, `Reporte_Planes_Tratamiento_${cleanClinic}_${fileNameSuffix}.xlsx`);
   };
 
   return (
     <div className="flex flex-col min-h-full bg-[#f4f7fb] font-sans text-slate-700 pb-12">
       
-      {/* ─── ENCABEZADO Y BREADCRUMB ─── */}
-      <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shadow-sm shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-[15px] font-bold text-slate-800 tracking-tight">Reporte planes de tratamiento</h2>
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-            <span>🏠 Reportes</span>
-            <span>/</span>
-            <span className="text-slate-500">Reporte planes de tratamiento</span>
-          </div>
+      {/* ─── BARRA DE ACCIONES (SIN ENCABEZADO DUPLICADO) ─── */}
+      <div className="flex items-center justify-between px-6 py-2.5 bg-white border-b border-slate-200 shadow-xs shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">Módulo de Reportes Clínicos:</span>
+          <span className="text-xs font-bold text-slate-800 bg-sky-50 text-[#009beb] px-2 py-0.5 rounded border border-sky-200">
+            Planes de tratamiento
+          </span>
         </div>
 
-        {/* Botón Generar reporte en Excel (Azul Vibrante OralDrive) */}
-        <button
-          onClick={handleExportExcel}
-          className="flex items-center gap-2 px-5 py-2 bg-[#009beb] hover:bg-[#0087cd] active:scale-[0.98] text-white text-xs font-semibold rounded-2xl shadow-sm transition-all cursor-pointer"
-        >
-          <FiDownload size={14} />
-          <span>Generar reporte en excel</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg transition-all cursor-pointer"
+            title="Recargar datos del VPS"
+          >
+            <FiRefreshCw size={13} className={loading ? "animate-spin text-[#009beb]" : ""} />
+            <span>Actualizar</span>
+          </button>
+
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center gap-2 px-5 py-2 bg-[#009beb] hover:bg-[#0087cd] active:scale-[0.98] text-white text-xs font-semibold rounded-2xl shadow-sm transition-all cursor-pointer"
+          >
+            <FiDownload size={14} />
+            <span>Generar reporte en excel</span>
+          </button>
+        </div>
       </div>
 
       {/* ─── ÁREA DE FILTROS 1:1 CON ORALDRIVE ─── */}
@@ -617,26 +790,67 @@ export default function ReportePlanesTratamiento() {
         {/* Fila 1: Fecha inicial / Fecha final */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Fecha inicial</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-slate-600">Fecha inicial</label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAllHistory(!isAllHistory);
+                  if (!isAllHistory) {
+                    setFechaInicial("");
+                    setFechaFinal("");
+                  } else {
+                    setFechaInicial(format(firstDayOfMonth, "yyyy-MM-dd"));
+                    setFechaFinal(format(now, "yyyy-MM-dd"));
+                  }
+                }}
+                className={`text-[11px] font-semibold transition-colors cursor-pointer ${isAllHistory ? 'text-emerald-600 underline' : 'text-[#009beb] hover:underline'}`}
+              >
+                {isAllHistory ? "✓ Viendo todo el histórico" : "Ver todo el histórico"}
+              </button>
+            </div>
             <div className="relative flex items-center">
               <input
                 type="date"
                 value={fechaInicial}
-                onChange={(e) => setFechaInicial(e.target.value)}
-                className="w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium"
+                disabled={isAllHistory}
+                onChange={(e) => {
+                  setFechaInicial(e.target.value);
+                  setIsAllHistory(false);
+                }}
+                className={`w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium ${isAllHistory ? 'bg-slate-100 text-slate-400' : ''}`}
                 max="9999-12-31" min="1900-01-01"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Fecha final</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-slate-600">Fecha final</label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFechaInicial(format(firstDayOfMonth, "yyyy-MM-dd"));
+                    setFechaFinal(format(now, "yyyy-MM-dd"));
+                    setIsAllHistory(false);
+                  }}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                >
+                  Este mes
+                </button>
+              </div>
+            </div>
             <div className="relative flex items-center">
               <input
                 type="date"
                 value={fechaFinal}
-                onChange={(e) => setFechaFinal(e.target.value)}
-                className="w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium"
+                disabled={isAllHistory}
+                onChange={(e) => {
+                  setFechaFinal(e.target.value);
+                  setIsAllHistory(false);
+                }}
+                className={`w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium ${isAllHistory ? 'bg-slate-100 text-slate-400' : ''}`}
                 max="9999-12-31" min="1900-01-01"
               />
             </div>
@@ -652,20 +866,23 @@ export default function ReportePlanesTratamiento() {
               onChange={(e) => setSelectedProfesional(e.target.value)}
               className="w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium"
             >
-              <option value="">Seleccione...</option>
+              <option value="TODOS">-- Todos los profesionales --</option>
+              <option value="SIN_ASIGNAR">Sin profesional asignado</option>
               {profesionales.map(prof => (
-                <option key={prof.id} value={prof.nombre}>{prof.nombre}</option>
+                <option key={prof.id} value={prof.nombre}>
+                  {prof.nombre} {prof.planCount > 0 ? `(${prof.planCount} prestaciones)` : `(0 prestaciones)`}
+                </option>
               ))}
             </select>
           </div>
 
-          {/* Paciente: NO muestra lista al hacer click vacio, solo al escribir */}
+          {/* Paciente */}
           <div className="relative" ref={pacienteDropdownRef}>
             <label className="block text-xs font-medium text-slate-600 mb-1">Paciente</label>
             <div className="relative flex items-center">
               <input
                 type="text"
-                placeholder="Buscar paciente por nombre o documento..."
+                placeholder="BUSCAR PACIENTE POR NOMBRE O DOCUMENTO..."
                 value={selectedPacienteTerm}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -691,7 +908,6 @@ export default function ReportePlanesTratamiento() {
               )}
             </div>
 
-            {/* Dropdown que aparece UNICAMENTE cuando el usuario escribe */}
             {showPacienteDropdown && selectedPacienteTerm.trim().length > 0 && (
               <div className="absolute left-0 right-0 top-14 z-50 bg-white border border-slate-300 rounded-xl shadow-2xl max-h-56 overflow-y-auto p-1.5">
                 <button
@@ -732,7 +948,7 @@ export default function ReportePlanesTratamiento() {
           </div>
         </div>
 
-        {/* Fila 3: Tipo de plan + Botón Buscar */}
+        {/* Fila 3: Tipo de plan + Botones Buscar y Limpiar */}
         <div className="flex flex-wrap md:flex-nowrap items-end justify-between gap-6 mb-4">
           <div className="flex-1">
             <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de plan</label>
@@ -747,7 +963,15 @@ export default function ReportePlanesTratamiento() {
             </select>
           </div>
 
-          <div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleResetFilters}
+              type="button"
+              className="h-8 px-4 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-600 font-semibold text-xs rounded shadow-xs transition-all flex items-center justify-center cursor-pointer"
+              title="Restablecer filtros y ver todo"
+            >
+              Limpiar
+            </button>
             <button
               onClick={handleSearchClick}
               className="h-8 px-8 bg-[#8bc34a] hover:bg-[#7cb342] active:scale-[0.98] text-white font-bold text-xs rounded shadow-sm transition-all flex items-center justify-center cursor-pointer"
@@ -812,8 +1036,13 @@ export default function ReportePlanesTratamiento() {
                 type="checkbox"
                 checked={expandAllGroups}
                 onChange={(e) => {
-                  setExpandAllGroups(e.target.checked);
-                  if (e.target.checked) setCollapsedGroups({});
+                  const isChecked = e.target.checked;
+                  setExpandAllGroups(isChecked);
+                  if (isChecked) {
+                    setExpandedGroups(new Set(Object.keys(groupedData)));
+                  } else {
+                    setExpandedGroups(new Set());
+                  }
                 }}
                 className="rounded text-[#009beb] focus:ring-[#009beb] w-3.5 h-3.5 cursor-pointer"
               />
@@ -835,7 +1064,7 @@ export default function ReportePlanesTratamiento() {
             {/* Botón Descargar Excel rápido */}
             <button
               onClick={handleExportExcel}
-              title="Exportar a Excel"
+              title="Exportar a Excel Profesional"
               className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
             >
               <FiDownload size={15} />
@@ -911,12 +1140,13 @@ export default function ReportePlanesTratamiento() {
           </div>
         </div>
 
-        {/* Tabla completa con scroll horizontal y vertical con altura garantizada */}
+        {/* Tabla completa con scroll horizontal y vertical */}
         <div className="overflow-x-auto overflow-y-auto max-h-[620px] min-h-[380px] custom-scrollbar">
           {loading ? (
-            <div className="flex flex-col items-center justify-center p-12 text-slate-400">
-              <div className="w-7 h-7 border-2 border-[#009beb] border-t-transparent rounded-full animate-spin mb-2" />
-              <span className="text-xs font-semibold">Cargando reporte de planes de tratamiento...</span>
+            <div className="flex flex-col items-center justify-center p-16 text-slate-400">
+              <div className="w-8 h-8 border-3 border-[#009beb] border-t-transparent rounded-full animate-spin mb-3" />
+              <span className="text-xs font-semibold text-slate-600">Cargando reporte de planes de tratamiento...</span>
+              <span className="text-[11px] text-slate-400 mt-1">Conectando con la base de datos</span>
             </div>
           ) : (
             <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
@@ -939,7 +1169,7 @@ export default function ReportePlanesTratamiento() {
                   })}
                 </tr>
 
-                {/* Fila 2: Inputs de filtro por columna (incluyendo selects como Realizada, Pagada, Facturada) */}
+                {/* Fila 2: Inputs de filtro por columna */}
                 <tr className="bg-white border-b border-slate-200">
                   <th className="px-2 py-1 border-r border-slate-200 bg-white"></th>
                   {Object.keys(columnLabels).map((key) => {
@@ -981,35 +1211,62 @@ export default function ReportePlanesTratamiento() {
               <tbody className="divide-y divide-slate-100 text-slate-700 bg-white">
                 {Object.keys(groupedData).map(groupKey => {
                   const group = groupedData[groupKey];
-                  const isCollapsed = !expandAllGroups || !!collapsedGroups[groupKey];
+                  const isOpen = expandAllGroups || expandedGroups.has(groupKey);
 
                   return (
                     <React.Fragment key={groupKey}>
-                      {/* Fila de cabecera de grupo */}
-                      <tr className="bg-slate-100/80 hover:bg-slate-200/70 font-bold text-xs text-slate-800 transition-colors border-y border-slate-200">
+                      {/* Fila de cabecera de grupo (Colapsada por defecto para orden visual total) */}
+                      <tr 
+                        className="bg-slate-100/90 hover:bg-slate-200/80 font-bold text-xs text-slate-800 transition-colors border-y border-slate-200 cursor-pointer select-none"
+                        onClick={() => toggleGroupCollapse(groupKey)}
+                      >
                         <td
                           colSpan={Object.values(visibleColumns).filter(Boolean).length + 1}
-                          className="px-3 py-2 cursor-pointer select-none"
-                          onClick={() => toggleGroupCollapse(groupKey)}
+                          className="px-3 py-2.5"
                         >
-                          <div className="flex items-center gap-2">
-                            {isCollapsed ? <FiChevronRight size={14} className="text-slate-500" /> : <FiChevronDown size={14} className="text-slate-500" />}
-                            <span className="text-[#009beb] font-black uppercase">{group.title}</span>
-                            <span className="text-slate-400">—</span>
-                            <span className="font-bold text-slate-700 uppercase">{group.patientName}</span>
-                            {group.patientDoc && (
-                              <span className="text-slate-400 text-[11px] font-normal">({group.patientDoc})</span>
+                          <div className="flex items-center gap-2.5">
+                            {isOpen ? (
+                              <FiChevronDown size={15} className="text-[#009beb] shrink-0" />
+                            ) : (
+                              <FiChevronRight size={15} className="text-slate-500 shrink-0" />
                             )}
-                            <span className="ml-auto text-xs font-semibold text-slate-600">
-                              {group.items.length} prestación{group.items.length !== 1 ? 'es' : ''} | Total: ${group.planTotal.toLocaleString('es-CO')}
+                            <span className="text-[#009beb] font-black uppercase tracking-tight">{group.title}</span>
+                            <span className="text-slate-300 font-normal">|</span>
+                            <span className="font-bold text-slate-800 uppercase">{group.patientName}</span>
+                            {group.patientDoc && (
+                              <span className="text-slate-500 text-[11px] font-normal">({group.patientDoc})</span>
+                            )}
+
+                            {/* Badge de Estado en Español en la cabecera */}
+                            <span className={`uppercase text-[9px] font-extrabold px-2 py-0.5 rounded border ml-1 ${
+                              group.estado === 'Aprobado' || group.estado === 'Aceptado' 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
+                                : group.estado === 'Finalizado' 
+                                ? 'bg-blue-50 text-blue-700 border-blue-300'
+                                : group.estado === 'En progreso' || group.estado === 'Activo'
+                                ? 'bg-sky-50 text-sky-700 border-sky-300'
+                                : group.estado === 'Cancelado' || group.estado === 'Rechazado'
+                                ? 'bg-rose-50 text-rose-700 border-rose-300'
+                                : 'bg-amber-50 text-amber-700 border-amber-300'
+                            }`}>
+                              {group.estado}
                             </span>
+
+                            <div className="ml-auto flex items-center gap-3 text-xs font-semibold text-slate-600">
+                              <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">
+                                {group.items.length} prestación{group.items.length !== 1 ? 'es' : ''}
+                              </span>
+                              <span>
+                                Total: <strong className="text-slate-900 font-bold">$ {Number(group.planTotal || 0).toLocaleString('es-CO')}</strong>
+                              </span>
+                            </div>
                           </div>
                         </td>
                       </tr>
 
-                      {/* Filas de prestaciones del grupo */}
-                      {!isCollapsed && group.items.map(r => (
-                        <tr key={r.id} className="hover:bg-sky-50/50 transition-colors">
+                      {/* Filas de prestaciones del grupo (se muestran solo si el usuario abre el grupo) */}
+                      {isOpen && group.items.map(r => (
+                        <tr key={r.id} className="hover:bg-sky-50/50 transition-colors bg-white">
                           <td className="px-2 py-2 border-r border-slate-100 text-center">
                             <input type="checkbox" className="rounded text-[#009beb] w-3.5 h-3.5 cursor-pointer" />
                           </td>
@@ -1084,13 +1341,26 @@ export default function ReportePlanesTratamiento() {
                               {formatDateShort(r.fechaRealizado) || "—"}
                             </td>
                           )}
+
+                          {/* ESTADO EN ESPAÑOL CON BADGE PROFESIONAL */}
                           {visibleColumns.estado && (
                             <td className="px-3.5 py-2 border-r border-slate-100 text-center">
-                              <span className="uppercase text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded">
+                              <span className={`uppercase text-[10px] font-bold px-2.5 py-0.5 rounded-md border ${
+                                r.estado === 'Aprobado' || r.estado === 'Aceptado' 
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                  : r.estado === 'Finalizado' 
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : r.estado === 'En progreso' || r.estado === 'Activo'
+                                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                  : r.estado === 'Cancelado' || r.estado === 'Rechazado'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}>
                                 {r.estado}
                               </span>
                             </td>
                           )}
+
                           {visibleColumns.valorPlanTratamiento && (
                             <td className="px-3.5 py-2 border-r border-slate-100 font-mono text-right text-slate-700">
                               $ {Number(r.valorPlanTratamiento || 0).toLocaleString('es-CO')}
@@ -1156,9 +1426,29 @@ export default function ReportePlanesTratamiento() {
                   <tr>
                     <td
                       colSpan={Object.values(visibleColumns).filter(Boolean).length + 1}
-                      className="px-6 py-12 text-center text-slate-400 font-medium text-xs"
+                      className="px-6 py-14 text-center"
                     >
-                      No se encontraron registros de planes de tratamiento para los filtros seleccionados.
+                      <div className="flex flex-col items-center justify-center max-w-md mx-auto">
+                        <div className="w-12 h-12 bg-sky-50 text-sky-500 rounded-full flex items-center justify-center mb-3">
+                          <FiFileText size={22} />
+                        </div>
+                        <div className="text-sm font-bold text-slate-700 mb-1">
+                          No se encontraron registros de planes de tratamiento
+                        </div>
+                        <div className="text-xs text-slate-500 mb-4 text-center">
+                          {allItemRows.length > 0 
+                            ? `Los filtros actuales no coinciden con ninguna prestación. Existen ${allItemRows.length} prestaciones registradas en total.` 
+                            : "No se registran planes de tratamiento en este inquilino."}
+                        </div>
+                        {allItemRows.length > 0 && (
+                          <button
+                            onClick={handleResetFilters}
+                            className="px-4 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white text-xs font-semibold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                          >
+                            <span>Ver todas las prestaciones ({allItemRows.length})</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}

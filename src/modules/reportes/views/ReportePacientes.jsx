@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { getDoctorsList } from "../../../services/supabaseServices";
 import { calculateAgeStr } from "../../../utils/formatters";
-import { FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX } from "react-icons/fi";
+import { FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiCalendar, FiRefreshCw } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
@@ -14,20 +15,20 @@ export default function ReportePacientes() {
   const [loading, setLoading] = useState(true);
 
   // Filtros principales (formulario superior)
-  const [selectedYearMonth, setSelectedYearMonth] = useState(format(new Date(), "yyyy/MM"));
+  const [selectedYearMonth, setSelectedYearMonth] = useState("");
   const [selectedProfesional, setSelectedProfesional] = useState("TODOS");
   const [filtroFechaTipo, setFiltroFechaTipo] = useState("creacion"); // "creacion" | "ingreso"
 
-  // Estado de si se ha presionado Buscar (inicia en false para no cargar hasta que el usuario busque)
-  const [hasSearched, setHasSearched] = useState(false);
+  // Estado de si se ha presionado Buscar
+  const [hasSearched, setHasSearched] = useState(true);
   const [expandAllGroups, setExpandAllGroups] = useState(true);
 
-  const monthPickerRef = React.useRef(null);
-  const tableContainerRef = React.useRef(null);
+  const monthPickerRef = useRef(null);
+  const tableContainerRef = useRef(null);
 
   // Filtros aplicados al presionar "Buscar"
   const [appliedFilters, setAppliedFilters] = useState({
-    yearMonth: format(new Date(), "yyyy/MM"),
+    yearMonth: "",
     profesional: "TODOS",
     fechaTipo: "creacion"
   });
@@ -166,232 +167,280 @@ export default function ReportePacientes() {
     setVisibleColumns(updated);
   };
 
-  // Carga de datos desde Supabase
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!userProfile?.inquilino) return;
-      setLoading(true);
-      try {
-        const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
+  // Carga de datos optimizada en paralelo desde PostgreSQL de tu VPS
+  const fetchData = useCallback(async () => {
+    const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
+    if (!tenantId) return;
+    setLoading(true);
 
-        // 1. Cargar pacientes
-        let dataPacientes = [];
-        try {
-          const { data, error } = await supabase
-            .from("pacientes")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (!error && data) dataPacientes = data;
-        } catch (e) {
-          console.warn("Error consultando pacientes:", e);
-        }
+    try {
+      // Consultas en paralelo para máxima velocidad (1 solo roundtrip al VPS)
+      const [docsFromService, profilesRes, pacRes, citasRes, planesRes] = await Promise.all([
+        getDoctorsList(userProfile, null).catch((e) => {
+          console.warn("Aviso al consultar catálogo de doctores:", e);
+          return [];
+        }),
+        supabase.from("profiles").select("*").eq("tenant_id", tenantId),
+        supabase.from("pacientes").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+        supabase.from("citas").select("*").eq("tenant_id", tenantId),
+        supabase.from("treatment_plans").select("*").eq("tenant_id", tenantId)
+      ]);
 
-        // 2. Cargar citas para calcular la Próxima Cita real y conteo de citas
-        let snapCitas = [];
-        try {
-          const { data: cData } = await supabase
-            .from("citas")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (cData) snapCitas = cData;
-        } catch (e) {
-          console.warn("Error consultando citas:", e);
-        }
+      // 1. Armar catálogo consolidado de profesionales del VPS
+      const catalogProfs = Array.isArray(docsFromService) ? [...docsFromService] : [];
 
-        // 3. Cargar planes de tratamiento para calcular presupuestos y tratamientos
-        let snapPlanes = [];
-        try {
-          const { data: plData } = await supabase
-            .from("treatment_plans")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (plData) snapPlanes = plData;
-        } catch (e) {
-          console.warn("Error consultando planes:", e);
-        }
+      (profilesRes?.data || []).forEach((u) => {
+        if (isDoctorUser(u)) {
+          const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || u.email || "";
+          const primerApellido = u.apellido || u.apellidos || "";
+          const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
 
-        // 4. Cargar usuarios / doctores para el filtro
-        let snapshotUsuarios = [];
-        try {
-          const { data } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("tenant_id", tenantId);
-          if (data) snapshotUsuarios = data;
-        } catch (e) {}
-
-        const listProfs = [];
-        (snapshotUsuarios || []).forEach((u) => {
-          if (isDoctorUser(u)) {
-            const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || u.email || "";
-            const primerApellido = u.apellido || u.apellidos || "";
-            const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
-
-            listProfs.push({
+          if (!catalogProfs.some((d) => String(d.id).toLowerCase() === String(u.id).toLowerCase())) {
+            catalogProfs.push({
               id: u.id,
               nombre: nombreCompleto,
+              nombreCompleto: nombreCompleto,
+              displayName: nombreCompleto,
+              email: u.email || "",
               rawName: primerNombre,
               rawLastName: primerApellido,
-              allNames: [
-                u.id,
-                nombreCompleto.toLowerCase(),
-                primerNombre.toLowerCase(),
-                primerApellido.toLowerCase(),
-                (u.email || "").toLowerCase()
-              ].filter(Boolean)
+              especialidades: u.especialidades || ["Odontología General"]
             });
           }
+        }
+      });
+
+      const docMap = new Map();
+      const listProfs = catalogProfs.map((u) => {
+        const nom = (u.nombreCompleto || u.nombre || u.displayName || "").trim();
+        const uid = String(u.id || "").toLowerCase().trim();
+        const nomLower = nom.toLowerCase().trim();
+
+        if (uid && nom) docMap.set(uid, nom);
+        if (nomLower) docMap.set(nomLower, nom);
+
+        return {
+          id: u.id,
+          nombre: nom,
+          rawName: u.rawName || nom,
+          rawLastName: u.rawLastName || "",
+          cleanNameLower: nomLower
+        };
+      });
+
+      setProfesionales(listProfs);
+
+      const dataPacientes = pacRes?.data || [];
+      const snapCitas = citasRes?.data || [];
+      const snapPlanes = planesRes?.data || [];
+
+      // Fecha de hoy a medianoche para filtrar citas futuras
+      const todayMidnight = new Date();
+      todayMidnight.setHours(0, 0, 0, 0);
+
+      // Normalización uniforme de pacientes con datos clínicos en tiempo real de tu VPS
+      const normalized = dataPacientes.map((p) => {
+        const fn = p.fecha_nacimiento || p.fechaNacimiento || "";
+        const calculatedAge = fn ? calculateAgeStr(fn) : (p.edad || "");
+        const pDocStr = String(p.documento || p.nroDocumento || p.identificacion || "").trim();
+
+        // Citas de este paciente
+        const patientCitas = snapCitas.filter((c) => {
+          const cPacId = c.paciente_id || c.pacienteId || c.paciente;
+          const cDoc = String(c.paciente_documento || c.pacienteDocumento || c.documento || "").trim();
+          return (cPacId && String(cPacId) === String(p.id)) || (cDoc && pDocStr && cDoc === pDocStr);
         });
-        setProfesionales(listProfs);
 
-        // Fecha de hoy a medianoche para filtrar citas futuras
-        const todayMidnight = new Date();
-        todayMidnight.setHours(0, 0, 0, 0);
+        // Próxima Cita
+        const futureCitas = patientCitas.filter((c) => {
+          const estado = (c.estado || "").toLowerCase();
+          if (estado === "cancelada" || estado === "anulada" || estado === "no_asistio" || estado === "no asiste") return false;
 
-        // Normalización uniforme de campos de pacientes con datos clínicos en tiempo real
-        const normalized = (dataPacientes || []).map((p) => {
-          const fn = p.fecha_nacimiento || p.fechaNacimiento || "";
-          const calculatedAge = fn ? calculateAgeStr(fn) : (p.edad || "");
-          const pDocStr = String(p.documento || p.nroDocumento || p.identificacion || "").trim();
+          const rawD = c.fecha || c.fecha_inicio || c.start || c.fechaCita;
+          if (!rawD) return false;
+          const hora = c.hora || c.hora_inicio || "00:00";
+          const citaDt = new Date(rawD.includes("T") ? rawD : `${rawD}T${hora}:00`);
+          return !isNaN(citaDt.getTime()) && citaDt.getTime() >= todayMidnight.getTime();
+        });
 
-          // Citas de este paciente
-          const patientCitas = (snapCitas || []).filter(c => {
-            const cPacId = c.paciente_id || c.pacienteId || c.paciente;
-            const cDoc = String(c.paciente_documento || c.pacienteDocumento || c.documento || "").trim();
-            return (cPacId && cPacId === p.id) || (cDoc && pDocStr && cDoc === pDocStr);
-          });
+        futureCitas.sort((a, b) => {
+          const dtA = new Date(a.fecha ? `${a.fecha}T${a.hora || "00:00"}:00` : (a.fecha_inicio || a.start || 0));
+          const dtB = new Date(b.fecha ? `${b.fecha}T${b.hora || "00:00"}:00` : (b.fecha_inicio || b.start || 0));
+          return dtA - dtB;
+        });
 
-          // Próxima Cita (cita futura más cercana no cancelada)
-          const futureCitas = patientCitas.filter(c => {
-            const estado = (c.estado || "").toLowerCase();
-            if (estado === "cancelada" || estado === "anulada" || estado === "no_asistio") return false;
+        const nextCita = futureCitas[0];
+        let proximaCitaVal = "";
+        if (nextCita) {
+          proximaCitaVal = nextCita.fecha 
+            ? `${nextCita.fecha}${nextCita.hora ? "T" + nextCita.hora : ""}` 
+            : (nextCita.fecha_inicio || nextCita.start);
+        } else {
+          proximaCitaVal = p.proximaCita || p.proxima_cita || "";
+        }
 
-            const rawD = c.fecha || c.fecha_inicio || c.start || c.fechaCita;
-            if (!rawD) return false;
-            const hora = c.hora || c.hora_inicio || "00:00";
-            const citaDt = new Date(rawD.includes("T") ? rawD : `${rawD}T${hora}:00`);
-            return !isNaN(citaDt.getTime()) && citaDt.getTime() >= todayMidnight.getTime();
-          });
+        // Planes de tratamiento de este paciente
+        const patientPlans = snapPlanes.filter((pl) => {
+          const plPacId = pl.paciente_id || pl.pacienteId || pl.patientId;
+          const plDoc = String(pl.documento || pl.pacienteDocumento || "").trim();
+          return (plPacId && String(plPacId) === String(p.id)) || (plDoc && pDocStr && plDoc === pDocStr);
+        });
 
-          futureCitas.sort((a, b) => {
-            const dtA = new Date(a.fecha ? `${a.fecha}T${a.hora || '00:00'}:00` : (a.fecha_inicio || a.start || 0));
-            const dtB = new Date(b.fecha ? `${b.fecha}T${b.hora || '00:00'}:00` : (b.fecha_inicio || b.start || 0));
-            return dtA - dtB;
-          });
+        let presupuestosCount = 0;
+        let tratIniciadosCount = 0;
+        let tratNoIniciadosCount = 0;
+        let tratFinalizadosCount = 0;
 
-          const nextCita = futureCitas[0];
-          let proximaCitaVal = "";
-          if (nextCita) {
-            proximaCitaVal = nextCita.fecha 
-              ? `${nextCita.fecha}${nextCita.hora ? 'T' + nextCita.hora : ''}` 
-              : (nextCita.fecha_inicio || nextCita.start);
+        patientPlans.forEach((pl) => {
+          const d = pl.detalles || {};
+          const status = String(pl.estado || pl.status || d.estado || d.status || "").toLowerCase();
+          const type = String(pl.type || d.type || pl.tipo || "").toLowerCase();
+
+          if (type.includes("presupuesto") || status === "draft" || status === "borrador" || status === "pending") {
+            presupuestosCount++;
+          } else if (status === "finalizado" || status === "completado" || status === "terminado") {
+            tratFinalizadosCount++;
+          } else if (status === "iniciado" || status === "approved" || status === "activo" || status === "en_progreso") {
+            tratIniciadosCount++;
           } else {
-            proximaCitaVal = p.proximaCita || p.proxima_cita || "";
+            tratNoIniciadosCount++;
           }
+        });
 
-          // Planes de tratamiento de este paciente
-          const patientPlans = (snapPlanes || []).filter(pl => {
-            const plPacId = pl.paciente_id || pl.pacienteId || pl.patientId;
-            const plDoc = String(pl.documento || pl.pacienteDocumento || "").trim();
-            return (plPacId && plPacId === p.id) || (plDoc && pDocStr && plDoc === pDocStr);
-          });
+        // ─── RESOLUCIÓN RIGUROSA DE DOCTORES DEL PACIENTE (SIN FALSOS POSITIVOS) ───
+        const docNamesSet = new Set();
+        const docIdsSet = new Set();
 
-          let presupuestosCount = 0;
-          let tratIniciadosCount = 0;
-          let tratNoIniciadosCount = 0;
-          let tratFinalizadosCount = 0;
+        const addValidDoctor = (nameVal, idVal) => {
+          if (nameVal && typeof nameVal === "string") {
+            const clean = nameVal.trim();
+            if (clean.length >= 3 && clean.toLowerCase() !== "sin asignar") {
+              docNamesSet.add(clean);
+            }
+          }
+          if (idVal && typeof idVal === "string") {
+            const cleanId = idVal.trim().toLowerCase();
+            if (cleanId.length >= 3) {
+              docIdsSet.add(cleanId);
+              if (docMap.has(cleanId)) {
+                docNamesSet.add(docMap.get(cleanId));
+              }
+            }
+          }
+        };
 
-          patientPlans.forEach(pl => {
-            const d = pl.detalles || {};
-            const status = String(pl.estado || d.estado || "").toLowerCase();
-            const type = String(pl.type || d.type || pl.tipo || "").toLowerCase();
-
-            if (type.includes("presupuesto") || status === "draft" || status === "borrador" || status === "pending") {
-              presupuestosCount++;
-            } else if (status === "finalizado" || status === "completado" || status === "terminado") {
-              tratFinalizadosCount++;
-            } else if (status === "iniciado" || status === "approved" || status === "activo" || status === "en_progreso") {
-              tratIniciadosCount++;
-            } else {
-              tratNoIniciadosCount++;
+        // A. Array p.profesionales
+        if (Array.isArray(p.profesionales)) {
+          p.profesionales.forEach((docItem) => {
+            if (typeof docItem === "string") addValidDoctor(docItem, null);
+            else if (typeof docItem === "object" && docItem !== null) {
+              addValidDoctor(docItem.nombre || docItem.name || docItem.nombreCompleto, docItem.id);
             }
           });
+        }
 
-          // Profesional asignado
-          const doctorName = p.profesional_nombre || p.profesionalNombre || p.profesionalAsignado || p.profesional || p.odontologo || p.doctor || p.medicoTratante || (Array.isArray(p.historial_medico?.profesionales) ? p.historial_medico.profesionales.map(x => x.nombre).join(", ") : "") || (nextCita?.doctor || nextCita?.profesional_nombre || "");
-          const doctorId = p.profesional_id || p.profesionalId || p.odontologo_id || p.odontologoId || p.doctor_id || p.doctorId || nextCita?.doctor_id || "";
+        // B. Historial médico
+        const hmProfs = p.historial_medico?.profesionales || p.historialMedico?.profesionales;
+        if (Array.isArray(hmProfs)) {
+          hmProfs.forEach((docItem) => {
+            if (typeof docItem === "string") addValidDoctor(docItem, null);
+            else if (typeof docItem === "object" && docItem !== null) {
+              addValidDoctor(docItem.nombre || docItem.name, docItem.id);
+            }
+          });
+        }
 
-          return {
-            id: p.id,
-            raw: p,
-            fechaIngreso: p.fecha_ingreso || p.fechaIngreso || p.created_at || p.createdAt || p.fechaCreacion,
-            fechaCreacion: p.created_at || p.fechaCreacion || p.createdAt || p.fecha_creacion,
-            tipoDocumento: p.tipo_documento || p.tipoDocumento || p.tipoIdentificacion || "Cédula de ciudadanía",
-            documento: p.documento || p.nroDocumento || p.identificacion || "",
-            numeroHistoria: p.nro_historia || p.nroHistoria || p.numeroHistoria || p.documento || p.nroDocumento || p.identificacion || "",
-            nombre: p.nombres || p.nombre || "",
-            apellido: p.apellidos || p.apellido || "",
-            genero: p.genero || p.sexo || "Femenino",
-            rh: p.rh || p.grupo_sanguineo || "—",
-            estadoCivil: p.estado_civil || p.estadoCivil || "1",
-            fechaNacimiento: fn,
-            edad: calculatedAge,
-            paisNacimiento: p.pais_nacimiento || p.paisNacimiento || "Colombia",
-            ciudadNacimiento: p.ciudad_nacimiento || p.ciudadNacimiento || "",
-            direccion: p.lugar_residencia || p.lugarResidencia || p.direccion || "",
-            paisDomicilio: p.pais_domicilio || p.paisDomicilio || "Colombia",
-            ciudadDomicilio: p.ciudad_domicilio || p.ciudadDomicilio || p.ciudad || "",
-            lugarExpedicion: p.lugar_expedicion || p.lugarExpedicion || "",
-            barrio: p.barrio || "",
-            estrato: p.estrato || "1",
-            zonaResidencial: p.zona_residencial || p.zonaResidencial || p.zona || "1",
-            celular: p.telefono || p.celular || "",
-            telefono: p.telefono_domicilio || p.telDomicilio || p.telefono || "",
-            telefonoOficina: p.telefono_oficina || p.telOficina || "",
-            extensionOficina: p.extension || p.extensionOficina || "",
-            correo: p.email || p.correo || "",
-            ocupacion: p.ocupacion || "",
-            nombreResponsable: p.nombre_responsable || p.nombreResponsable || "",
-            relacionResponsable: p.parentesco || p.relacionResponsable || "",
-            celularResponsable: p.celular_responsable || p.celularResponsable || "",
-            telefonoResponsable: p.telefono_responsable || p.telefonoResponsable || "",
-            correoResponsable: p.email_responsable || p.correoResponsable || "",
-            nombreAcompanante: p.nombre_acompanante || p.nombreAcompanante || "",
-            telefonoAcompanante: p.telefono_acompanante || p.telefonoAcompanante || "",
-            convenio: p.plan_nombre || p.planNombre || p.convenio || "",
-            tipoAfiliacion: p.tipo_afiliacion || p.tipoVinculacion || p.tipoAfiliacion || "",
-            eps: p.eps || p.nombre_eps || p.nombreEps || "",
-            polizaSalud: p.poliza_salud || p.polizaSalud || "",
-            sgsss: p.sgsss || "",
-            tipoPaciente: p.tipo_paciente || p.tipoPaciente || "",
-            convenioBeneficio: p.convenio_beneficio || p.convenioBeneficio || "",
-            convenioPago: p.convenio_pago || p.convenioPago || "",
-            comoNosConocio: p.como_conocio || p.comoConocio || p.comoNosConocio || "",
-            campana: p.campania || p.campana || "",
-            remitidoPor: p.remitido_por_value || p.remitidoPorValue || p.remitidoPor || "",
-            asesorComercial: p.asesor_comercial_value || p.asesorComercialValue || p.asesorComercial || "",
-            presupuestos: presupuestosCount || (p.presupuestosCount ?? (p.presupuestos?.length || 0)),
-            tratamientosIniciados: tratIniciadosCount || (p.tratamientosIniciadosCount ?? 0),
-            tratamientosNoIniciados: tratNoIniciadosCount || (p.tratamientosNoIniciadosCount ?? 0),
-            tratamientosFinalizados: tratFinalizadosCount || (p.tratamientosFinalizadosCount ?? 0),
-            citas: patientCitas.length || (p.citasCount ?? 0),
-            profesionales: doctorName,
-            profesionalId: doctorId,
-            proximaCita: proximaCitaVal
-          };
+        // C. Campos directos del paciente
+        addValidDoctor(p.profesional_nombre || p.profesionalNombre || p.profesionalAsignado || p.profesional || p.odontologo || p.doctor, p.profesional_id || p.profesionalId || p.odontologo_id || p.doctor_id);
+
+        // D. Citas del paciente
+        patientCitas.forEach((c) => {
+          addValidDoctor(c.profesional_nombre || c.profesionalNombre || c.doctor || c.doctorNombre, c.profesional_id || c.profesionalId || c.doctor_id || c.doctorId);
         });
 
-        const sortedPacientes = normalized.sort((a, b) => new Date(b.fechaCreacion || 0) - new Date(a.fechaCreacion || 0));
-        setAllPacientes(sortedPacientes);
-      } catch (error) {
-        console.error("Error cargando reporte de pacientes:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+        // E. Planes de tratamiento
+        patientPlans.forEach((pl) => {
+          const d = pl.detalles || {};
+          addValidDoctor(pl.profesional_nombre || pl.doctor || pl.odontologo || d.profesional_nombre || d.doctor, pl.profesional_id || pl.doctor_id || d.profesional_id || d.doctor_id);
+        });
 
+        const docNamesArr = Array.from(docNamesSet);
+        const docIdsArr = Array.from(docIdsSet);
+        const doctorDisplay = docNamesArr.length > 0 ? docNamesArr.join(", ") : "Sin asignar";
+
+        return {
+          id: p.id,
+          raw: p,
+          fechaIngreso: p.fecha_ingreso || p.fechaIngreso || p.created_at || p.createdAt || p.fechaCreacion,
+          fechaCreacion: p.created_at || p.fechaCreacion || p.createdAt || p.fecha_creacion,
+          tipoDocumento: p.tipo_documento || p.tipoDocumento || p.tipoIdentificacion || "Cédula de ciudadanía",
+          documento: p.documento || p.nroDocumento || p.identificacion || "",
+          numeroHistoria: p.nro_historia || p.nroHistoria || p.numeroHistoria || p.documento || p.nroDocumento || p.identificacion || "",
+          nombre: p.nombres || p.nombre || "",
+          apellido: p.apellidos || p.apellido || "",
+          genero: p.genero || p.sexo || "Femenino",
+          rh: p.rh || p.grupo_sanguineo || "—",
+          estadoCivil: p.estado_civil || p.estadoCivil || "1",
+          fechaNacimiento: fn,
+          edad: calculatedAge,
+          paisNacimiento: p.pais_nacimiento || p.paisNacimiento || "Colombia",
+          ciudadNacimiento: p.ciudad_nacimiento || p.ciudadNacimiento || "",
+          direccion: p.lugar_residencia || p.lugarResidencia || p.direccion || "",
+          paisDomicilio: p.pais_domicilio || p.paisDomicilio || "Colombia",
+          ciudadDomicilio: p.ciudad_domicilio || p.ciudadDomicilio || p.ciudad || "",
+          lugarExpedicion: p.lugar_expedicion || p.lugarExpedicion || "",
+          barrio: p.barrio || "",
+          estrato: p.estrato || "1",
+          zonaResidencial: p.zona_residencial || p.zonaResidencial || p.zona || "1",
+          celular: p.telefono || p.celular || "",
+          telefono: p.telefono_domicilio || p.telDomicilio || p.telefono || "",
+          telefonoOficina: p.telefono_oficina || p.telOficina || "",
+          extensionOficina: p.extension || p.extensionOficina || "",
+          correo: p.email || p.correo || "",
+          ocupacion: p.ocupacion || "",
+          nombreResponsable: p.nombre_responsable || p.nombreResponsable || "",
+          relacionResponsable: p.parentesco || p.relacionResponsable || "",
+          celularResponsable: p.celular_responsable || p.celularResponsable || "",
+          telefonoResponsable: p.telefono_responsable || p.telefonoResponsable || "",
+          correoResponsable: p.email_responsable || p.correoResponsable || "",
+          nombreAcompanante: p.nombre_acompanante || p.nombreAcompanante || "",
+          telefonoAcompanante: p.telefono_acompanante || p.telefonoAcompanante || "",
+          convenio: p.plan_nombre || p.planNombre || p.convenio || "",
+          tipoAfiliacion: p.tipo_afiliacion || p.tipoVinculacion || p.tipoAfiliacion || "",
+          eps: p.eps || p.nombre_eps || p.nombreEps || "",
+          polizaSalud: p.poliza_salud || p.polizaSalud || "",
+          sgsss: p.sgsss || "",
+          tipoPaciente: p.tipo_paciente || p.tipoPaciente || "",
+          convenioBeneficio: p.convenio_beneficio || p.convenioBeneficio || "",
+          convenioPago: p.convenio_pago || p.convenioPago || "",
+          comoNosConocio: p.como_conocio || p.comoConocio || p.comoNosConocio || p.medioAtraccion || p.medio_atraccion || "",
+          campana: p.campania || p.campana || "",
+          remitidoPor: p.remitido_por_value || p.remitidoPorValue || p.remitidoPor || "",
+          asesorComercial: p.asesor_comercial_value || p.asesorComercialValue || p.asesorComercial || "",
+          presupuestos: presupuestosCount || (p.presupuestosCount ?? (p.presupuestos?.length || 0)),
+          tratamientosIniciados: tratIniciadosCount || (p.tratamientosIniciadosCount ?? 0),
+          tratamientosNoIniciados: tratNoIniciadosCount || (p.tratamientosNoIniciadosCount ?? 0),
+          tratamientosFinalizados: tratFinalizadosCount || (p.tratamientosFinalizadosCount ?? 0),
+          citas: patientCitas.length || (p.citasCount ?? 0),
+          profesionales: doctorDisplay,
+          doctorNamesList: docNamesArr,
+          doctorIdsList: docIdsArr,
+          proximaCita: proximaCitaVal
+        };
+      });
+
+      const sortedPacientes = normalized.sort((a, b) => new Date(b.fechaCreacion || 0) - new Date(a.fechaCreacion || 0));
+      setAllPacientes(sortedPacientes);
+    } catch (error) {
+      console.error("Error cargando reporte de pacientes desde VPS:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [userProfile]);
+
+  useEffect(() => {
     fetchData();
-  }, [userProfile?.inquilino]);
+  }, [fetchData]);
 
   // Formateadores de fecha auxiliares
   const formatDateTime = (dateVal) => {
@@ -408,66 +457,67 @@ export default function ReportePacientes() {
     return isNaN(d.getTime()) ? String(dateVal) : format(d, "dd/MM/yyyy");
   };
 
-  // Filtrado principal y de columnas
+  // Filtrado principal de tabla con exactitud rigurosa
   const filteredData = useMemo(() => {
     return allPacientes.filter((p) => {
       // 1. Filtro superior: Año/Mes
       const rawYm = (appliedFilters.yearMonth || "").trim();
-      const ymInput = rawYm.replace(/\D/g, ""); // normalizar números (ej. 202608)
-      if (ymInput.length >= 4) {
-        const targetDateRaw = appliedFilters.fechaTipo === "creacion" 
-          ? (p.fechaCreacion || p.raw?.created_at || p.raw?.createdAt)
-          : (p.fechaIngreso || p.raw?.fecha_ingreso || p.raw?.fechaIngreso || p.fechaCreacion || p.raw?.created_at);
+      if (rawYm && rawYm !== "TODOS") {
+        const ymInput = rawYm.replace(/\D/g, ""); // normalizar números (ej: 202610)
+        if (ymInput.length >= 4) {
+          const targetDateRaw = appliedFilters.fechaTipo === "creacion" 
+            ? (p.fechaCreacion || p.raw?.created_at || p.raw?.createdAt)
+            : (p.fechaIngreso || p.raw?.fecha_ingreso || p.raw?.fechaIngreso || p.fechaCreacion || p.raw?.created_at);
 
-        if (targetDateRaw) {
-          const d = targetDateRaw?.toDate ? targetDateRaw.toDate() : new Date(targetDateRaw);
-          if (!isNaN(d.getTime())) {
-            const formattedYM = format(d, "yyyyMM");
-            if (!formattedYM.startsWith(ymInput)) return false;
+          if (targetDateRaw) {
+            const d = targetDateRaw?.toDate ? targetDateRaw.toDate() : new Date(targetDateRaw);
+            if (!isNaN(d.getTime())) {
+              const formattedYM = format(d, "yyyyMM");
+              if (!formattedYM.startsWith(ymInput)) return false;
+            } else {
+              return false;
+            }
           } else {
             return false;
           }
-        } else {
-          return false;
         }
       }
 
-      // 2. Filtro superior: Profesional
+      // 2. Filtro superior: Profesional (Sin falsos positivos)
       if (appliedFilters.profesional && appliedFilters.profesional !== "TODOS") {
-        const targetProf = appliedFilters.profesional.toLowerCase().trim();
-        const profObj = profesionales.find(
-          (pr) => pr.nombre === appliedFilters.profesional || pr.id === appliedFilters.profesional
-        );
-        
-        // Colectar todos los campos del paciente donde pueda estar el doctor
-        const candidateDoctorStrings = [
-          p.profesionales,
-          p.profesionalId,
-          p.raw?.profesional_id,
-          p.raw?.profesionalId,
-          p.raw?.profesional_nombre,
-          p.raw?.profesionalNombre,
-          p.raw?.profesionalAsignado,
-          p.raw?.profesional,
-          p.raw?.odontologo,
-          p.raw?.doctor,
-          p.raw?.medicoTratante
-        ].map(v => String(v || "").toLowerCase().trim()).filter(Boolean);
-
-        let matchesDoctor = false;
-        if (profObj && profObj.allNames) {
-          matchesDoctor = candidateDoctorStrings.some(pDocVal =>
-            profObj.allNames.some(nameVariant => 
-              pDocVal === nameVariant || pDocVal.includes(nameVariant) || nameVariant.includes(pDocVal)
-            )
-          );
+        if (appliedFilters.profesional === "SIN_ASIGNAR") {
+          const isUnassigned = (p.doctorNamesList || []).length === 0 && (p.doctorIdsList || []).length === 0 && (p.profesionales === "Sin asignar" || !p.profesionales);
+          if (!isUnassigned) return false;
         } else {
-          matchesDoctor = candidateDoctorStrings.some(pDocVal => 
-            pDocVal === targetProf || pDocVal.includes(targetProf) || targetProf.includes(pDocVal)
+          const targetProfName = String(appliedFilters.profesional).toLowerCase().trim();
+          const profObj = profesionales.find(
+            (pr) => pr.nombre === appliedFilters.profesional || pr.id === appliedFilters.profesional
           );
-        }
+          const targetId = profObj?.id ? String(profObj.id).toLowerCase().trim() : null;
 
-        if (!matchesDoctor) return false;
+          let matchesDoc = false;
+
+          // A. Coincidencia por ID exacto
+          if (targetId && (p.doctorIdsList || []).includes(targetId)) {
+            matchesDoc = true;
+          }
+
+          // B. Coincidencia por Nombre del profesional
+          if (!matchesDoc && targetProfName.length >= 3) {
+            matchesDoc = (p.doctorNamesList || []).some((dn) => {
+              const dnLower = dn.toLowerCase().trim();
+              return dnLower === targetProfName || dnLower.includes(targetProfName) || targetProfName.includes(dnLower);
+            });
+          }
+
+          // C. Coincidencia en la columna display
+          if (!matchesDoc && targetProfName.length >= 3 && p.profesionales !== "Sin asignar") {
+            const displayLower = String(p.profesionales || "").toLowerCase();
+            matchesDoc = displayLower.includes(targetProfName);
+          }
+
+          if (!matchesDoc) return false;
+        }
       }
 
       // 3. Búsqueda rápida global de tabla
@@ -481,7 +531,8 @@ export default function ReportePacientes() {
           p.correo.toLowerCase().includes(term) ||
           p.celular.toLowerCase().includes(term) ||
           p.ciudadDomicilio.toLowerCase().includes(term) ||
-          p.barrio.toLowerCase().includes(term);
+          p.barrio.toLowerCase().includes(term) ||
+          p.profesionales.toLowerCase().includes(term);
         if (!matchesGlobal) return false;
       }
 
@@ -494,7 +545,7 @@ export default function ReportePacientes() {
         if (colKey === "fechaIngreso") cellValue = formatDateTime(p.fechaIngreso);
         else if (colKey === "fechaCreacion") cellValue = formatDateTime(p.fechaCreacion);
         else if (colKey === "fechaNacimiento") cellValue = formatDateOnly(p.fechaNacimiento);
-        else if (colKey === "proximaCita") cellValue = `${formatDateOnly(p.proximaCita)} ${formatDateTime(p.proximaCita)} ${p.proximaCita || ""}`;
+        else if (colKey === "proximaCita") cellValue = `${formatDateOnly(p.proximaCita)} ${p.proximaCita || ""}`;
         else cellValue = String(p[colKey] || "");
 
         if (!cellValue.toLowerCase().includes(search)) {
@@ -505,6 +556,15 @@ export default function ReportePacientes() {
       return true;
     });
   }, [allPacientes, appliedFilters, tableSearchTerm, columnFilters, profesionales]);
+
+  // Manejar cambio de profesional (actualiza en el acto y sincroniza)
+  const handleProfesionalChange = (newVal) => {
+    setSelectedProfesional(newVal);
+    setAppliedFilters((prev) => ({
+      ...prev,
+      profesional: newVal
+    }));
+  };
 
   // Manejar clic en "Buscar"
   const handleSearchClick = () => {
@@ -517,6 +577,20 @@ export default function ReportePacientes() {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollLeft = 0;
     }
+  };
+
+  // Restablecer todos los filtros
+  const handleResetFilters = () => {
+    setSelectedYearMonth("");
+    setSelectedProfesional("TODOS");
+    setFiltroFechaTipo("creacion");
+    setColumnFilters({});
+    setTableSearchTerm("");
+    setAppliedFilters({
+      yearMonth: "",
+      profesional: "TODOS",
+      fechaTipo: "creacion"
+    });
   };
 
   // Manejar cambio de filtro individual por columna
@@ -608,7 +682,7 @@ export default function ReportePacientes() {
           </div>
         </div>
 
-        {/* Botón Generar reporte en Excel (Azul Vibrante OralDrive) */}
+        {/* Botón Generar reporte en Excel */}
         <button
           onClick={handleExportExcel}
           className="flex items-center gap-2 px-5 py-2 bg-[#009beb] hover:bg-[#0087cd] active:scale-[0.98] text-white text-xs font-semibold rounded-2xl shadow-sm transition-all cursor-pointer"
@@ -621,7 +695,7 @@ export default function ReportePacientes() {
       {/* ─── CONTENEDOR DE FILTROS SUPERIOR (1:1 CON ORALDRIVE) ─── */}
       <div className="mx-6 mt-4 p-5 bg-white rounded-xl border border-slate-200 shadow-sm shrink-0">
         <div className="flex flex-wrap items-center gap-6">
-          {/* Año/Mes con selector de calendario real */}
+          {/* Año/Mes con selector de calendario real y opción de ver histórico */}
           <div className="flex items-center gap-3">
             <label className="text-xs font-medium text-slate-600 whitespace-nowrap">Año/Mes</label>
             <div className="relative flex items-center">
@@ -631,7 +705,8 @@ export default function ReportePacientes() {
                 className="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10"
                 onChange={(e) => {
                   if (e.target.value) {
-                    setSelectedYearMonth(e.target.value.replace("-", "/"));
+                    const formatted = e.target.value.replace("-", "/");
+                    setSelectedYearMonth(formatted);
                   }
                 }}
               />
@@ -639,7 +714,7 @@ export default function ReportePacientes() {
                 type="text"
                 value={selectedYearMonth}
                 onChange={(e) => setSelectedYearMonth(e.target.value)}
-                placeholder="2026/08"
+                placeholder="Todos los meses"
                 className="w-36 h-8 pl-3 pr-8 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium cursor-pointer"
                 onClick={() => {
                   try {
@@ -664,17 +739,32 @@ export default function ReportePacientes() {
                 📅
               </button>
             </div>
+
+            {selectedYearMonth && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedYearMonth("");
+                  setAppliedFilters((prev) => ({ ...prev, yearMonth: "" }));
+                }}
+                className="text-[11px] font-semibold text-sky-600 hover:text-sky-800 hover:underline cursor-pointer"
+                title="Quitar filtro de mes para ver todo el histórico"
+              >
+                Ver todo
+              </button>
+            )}
           </div>
 
-          {/* Profesional */}
+          {/* Profesional (Reactivo en tiempo real y con botón Buscar) */}
           <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-[420px]">
             <label className="text-xs font-medium text-slate-600 whitespace-nowrap">Profesional</label>
             <select
               value={selectedProfesional}
-              onChange={(e) => setSelectedProfesional(e.target.value)}
-              className="w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium"
+              onChange={(e) => handleProfesionalChange(e.target.value)}
+              className="w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium cursor-pointer"
             >
-              <option value="TODOS">Seleccione...</option>
+              <option value="TODOS">Todos los profesionales</option>
+              <option value="SIN_ASIGNAR">Sin profesional asignado</option>
               {profesionales.map((prof) => (
                 <option key={prof.id} value={prof.nombre}>
                   {prof.nombre}
@@ -683,13 +773,21 @@ export default function ReportePacientes() {
             </select>
           </div>
 
-          {/* Botón Buscar (Verde Oliva OralDrive) */}
-          <div>
+          {/* Botones Buscar y Limpiar */}
+          <div className="flex items-center gap-2">
             <button
               onClick={handleSearchClick}
               className="h-8 px-7 bg-[#8bc34a] hover:bg-[#7cb342] active:scale-[0.98] text-white font-bold text-xs rounded shadow-sm transition-all flex items-center justify-center cursor-pointer"
             >
               <span>Buscar</span>
+            </button>
+
+            <button
+              onClick={handleResetFilters}
+              title="Restablecer todos los filtros"
+              className="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs rounded transition-all cursor-pointer"
+            >
+              Limpiar
             </button>
           </div>
         </div>
@@ -702,7 +800,10 @@ export default function ReportePacientes() {
               type="radio"
               name="filtroFechaTipo"
               checked={filtroFechaTipo === "creacion"}
-              onChange={() => setFiltroFechaTipo("creacion")}
+              onChange={() => {
+                setFiltroFechaTipo("creacion");
+                setAppliedFilters((prev) => ({ ...prev, fechaTipo: "creacion" }));
+              }}
               className="text-[#009beb] focus:ring-[#009beb] w-3.5 h-3.5 cursor-pointer"
             />
             <span className="font-medium">Filtro por fecha de creación</span>
@@ -719,7 +820,10 @@ export default function ReportePacientes() {
               type="radio"
               name="filtroFechaTipo"
               checked={filtroFechaTipo === "ingreso"}
-              onChange={() => setFiltroFechaTipo("ingreso")}
+              onChange={() => {
+                setFiltroFechaTipo("ingreso");
+                setAppliedFilters((prev) => ({ ...prev, fechaTipo: "ingreso" }));
+              }}
               className="text-[#009beb] focus:ring-[#009beb] w-3.5 h-3.5 cursor-pointer"
             />
             <span className="font-medium">Filtro por fecha de ingreso</span>
@@ -761,7 +865,7 @@ export default function ReportePacientes() {
             </div>
 
             <div className="flex items-center gap-3 relative">
-              {/* Botón Guardar / Exportar rápido */}
+              {/* Botón Exportar rápido */}
               <button
                 onClick={handleExportExcel}
                 title="Exportar a Excel"
@@ -789,7 +893,7 @@ export default function ReportePacientes() {
                       <span>Columnas del reporte</span>
                       <button
                         onClick={() => setShowColumnSelector(false)}
-                        className="text-slate-400 hover:text-slate-600 text-xs p-1"
+                        className="text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
                       >
                         ✕
                       </button>
@@ -830,7 +934,7 @@ export default function ReportePacientes() {
                 )}
               </div>
 
-              {/* Botón Filtros */}
+              {/* Botón Limpiar Filtros de columna */}
               <button
                 title="Limpiar filtros de columna"
                 onClick={() => setColumnFilters({})}
@@ -856,9 +960,9 @@ export default function ReportePacientes() {
           {/* Contenedor con Scroll Horizontal y Vertical de la Tabla */}
           <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[620px] min-h-[360px] custom-scrollbar">
             {loading ? (
-              <div className="flex flex-col items-center justify-center p-12 text-slate-400">
-                <div className="w-7 h-7 border-2 border-[#009beb] border-t-transparent rounded-full animate-spin mb-2" />
-                <span className="text-xs font-semibold">Cargando reporte de pacientes...</span>
+              <div className="flex flex-col items-center justify-center p-16 text-slate-400">
+                <div className="w-8 h-8 border-3 border-[#009beb] border-t-transparent rounded-full animate-spin mb-3" />
+                <span className="text-xs font-semibold text-slate-600">Consultando pacientes en tu VPS...</span>
               </div>
             ) : (
               <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
@@ -920,12 +1024,12 @@ export default function ReportePacientes() {
                         <td className="px-3.5 py-2 border-r border-slate-100">{p.tipoDocumento}</td>
                       )}
                       {visibleColumns.documento && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] font-semibold hover:underline cursor-pointer">
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] font-semibold">
                           {p.documento || "—"}
                         </td>
                       )}
                       {visibleColumns.numeroHistoria && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] font-semibold hover:underline cursor-pointer">
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] font-semibold">
                           {p.numeroHistoria || "—"}
                         </td>
                       )}
@@ -1057,35 +1161,56 @@ export default function ReportePacientes() {
                         <td className="px-3.5 py-2 border-r border-slate-100">{p.asesorComercial}</td>
                       )}
                       {visibleColumns.presupuestos && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.presupuestos}</td>
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.presupuestos}</td>
                       )}
                       {visibleColumns.tratamientosIniciados && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.tratamientosIniciados}</td>
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.tratamientosIniciados}</td>
                       )}
                       {visibleColumns.tratamientosNoIniciados && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.tratamientosNoIniciados}</td>
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.tratamientosNoIniciados}</td>
                       )}
                       {visibleColumns.tratamientosFinalizados && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.tratamientosFinalizados}</td>
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold text-emerald-600">{p.tratamientosFinalizados}</td>
                       )}
                       {visibleColumns.citas && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.citas}</td>
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.citas}</td>
                       )}
                       {visibleColumns.profesionales && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.profesionales}</td>
+                        <td className="px-3.5 py-2 border-r border-slate-100 font-medium text-slate-800">
+                          {p.profesionales}
+                        </td>
                       )}
                       {visibleColumns.proximaCita && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{formatDateOnly(p.proximaCita)}</td>
+                        <td className="px-3.5 py-2 border-r border-slate-100 text-slate-600">
+                          {formatDateOnly(p.proximaCita)}
+                        </td>
                       )}
                     </tr>
                   ))}
+
                   {filteredData.length === 0 && (
                     <tr>
                       <td
                         colSpan={Object.values(visibleColumns).filter(Boolean).length || 1}
-                        className="px-6 py-12 text-center text-slate-400 font-medium text-xs"
+                        className="px-6 py-16 text-center"
                       >
-                        No se encontraron registros de pacientes para los filtros seleccionados.
+                        <div className="flex flex-col items-center justify-center max-w-md mx-auto">
+                          <span className="text-sm font-bold text-slate-700 mb-1">
+                            No se encontraron pacientes para los filtros seleccionados
+                          </span>
+                          <p className="text-xs text-slate-400 mb-4 text-center leading-relaxed">
+                            {appliedFilters.profesional !== "TODOS" ? `Profesional: "${appliedFilters.profesional}". ` : ""}
+                            {appliedFilters.yearMonth ? `Período: "${appliedFilters.yearMonth}". ` : ""}
+                            Puedes seleccionar "Todos los profesionales" o quitar el mes para consultar otros pacientes.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleResetFilters}
+                            className="px-4 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                          >
+                            Ver todos los pacientes ({allPacientes.length})
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -1095,10 +1220,15 @@ export default function ReportePacientes() {
           </div>
 
           {/* Pie de tabla con totalizador */}
-          <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+          <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0 font-medium">
             <span>
               Total de registros: <strong>{filteredData.length}</strong> de <strong>{allPacientes.length}</strong> pacientes
             </span>
+            {filteredData.length < allPacientes.length && (
+              <span className="text-slate-400 text-[11px]">
+                (Filtrado por: {appliedFilters.profesional !== "TODOS" ? appliedFilters.profesional : "Todos"} {appliedFilters.yearMonth ? `| ${appliedFilters.yearMonth}` : "| Histórico"})
+              </span>
+            )}
           </div>
         </div>
       )}

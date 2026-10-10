@@ -206,13 +206,13 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     fetchMovs();
   }, [caja?.id, userProfile?.inquilino, caja?.inquilino]);
 
-  // Cálculos de totales
+  // Cálculos de totales (excluyendo movimientos anulados)
   const totalIngresos = movimientos
-    .filter(m => m.tipo === "ingreso")
+    .filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
 
   const totalEgresos = movimientos
-    .filter(m => m.tipo === "egreso")
+    .filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
 
   const totalCaja = (Number(caja.baseInicial) || 0) + totalIngresos - totalEgresos;
@@ -229,17 +229,22 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     let running = base;
     const map = {};
     sortedOldest.forEach(m => {
-      const signo = m.tipo === "egreso" ? -1 : 1;
-      running += (Number(m.monto || 0) * signo);
+      const isAnulado = (m.estado || "").toLowerCase() === "anulado" || m.anulado;
+      if (!isAnulado) {
+        const signo = m.tipo === "egreso" ? -1 : 1;
+        running += (Number(m.monto || 0) * signo);
+      }
       map[m.id] = running;
     });
     return map;
   }, [movimientos, caja.baseInicial]);
 
-  // Desglose por Medio de Pago (Agrupado insensible a mayúsculas)
+  // Desglose por Medio de Pago (Agrupado insensible a mayúsculas, excluyendo anulados)
   const resumenMediosPago = React.useMemo(() => {
     const map = {};
     movimientos.forEach(m => {
+      const isAnulado = (m.estado || "").toLowerCase() === "anulado" || m.anulado;
+      if (isAnulado) return;
       const raw = (m.metodoPago || m.metodo_pago || "Efectivo").trim();
       const metodo = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
       if (!map[metodo]) {
@@ -761,17 +766,27 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {movsFiltrados.map((m) => {
+                  const esAnulado = (m.estado || "").toLowerCase() === "anulado" || m.anulado;
                   const esEgreso = m.tipo === "egreso";
                   const valorFormateado = esEgreso ? `-${fmt(m.monto || 0)}` : fmt(m.monto || 0);
                   const tercero = m.pacienteNombre || m.tercero || m.usuarioNombre || "—";
                   const docText = m.concepto || (esEgreso ? "Egreso" : "Recibo de caja");
 
                   return (
-                    <tr key={m.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={m.id} className={`transition-colors ${esAnulado ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50"}`}>
                       <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{fmtDate(m.fecha)}</td>
-                      <td className="px-3 py-3 font-medium text-slate-800">{tercero}</td>
-                      <td className="px-3 py-3 text-slate-600">{docText}</td>
-                      <td className={`px-3 py-3 font-semibold ${esEgreso ? "text-rose-600" : "text-emerald-600"}`}>
+                      <td className={`px-3 py-3 font-medium ${esAnulado ? "text-slate-400" : "text-slate-800"}`}>{tercero}</td>
+                      <td className="px-3 py-3 text-slate-600">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={esAnulado ? "text-slate-400" : ""}>{docText}</span>
+                          {esAnulado && (
+                            <span className="inline-block px-1.5 py-0.5 bg-rose-100 text-rose-700 font-bold text-[9px] rounded uppercase tracking-wider">
+                              ANULADO
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className={`px-3 py-3 font-semibold ${esAnulado ? "line-through text-slate-400" : (esEgreso ? "text-rose-600" : "text-emerald-600")}`}>
                         {valorFormateado}
                       </td>
                       <td className="px-3 py-3 text-slate-600">{m.metodoPago || "Efectivo"}</td>

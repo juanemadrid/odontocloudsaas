@@ -202,6 +202,7 @@ export default function BancosView({ inquilino, userProfile }) {
 
         // 3. Process movimientos_caja
         (listMovs || []).forEach((m, idx) => {
+          if ((m.estado || "").toLowerCase() === "anulado" || m.anulado) return;
           const mMedioLower = (m.metodo_pago || m.metodoPago || "").toLowerCase().trim();
           const linkedBankId = methodToBankId[mMedioLower] || m.bancoId || m.banco_id;
 

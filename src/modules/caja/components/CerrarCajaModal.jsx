@@ -52,24 +52,24 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   }, [caja.id]);
 
   // Calculated values
-  const totalIngresos = movimientos.filter(m => m.tipo === "ingreso").reduce((s, m) => s + (m.monto || 0), 0);
-  const totalEgresos = movimientos.filter(m => m.tipo === "egreso").reduce((s, m) => s + (m.monto || 0), 0);
+  const totalIngresos = movimientos.filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (m.monto || 0), 0);
+  const totalEgresos = movimientos.filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (m.monto || 0), 0);
   const saldoTeorico = (caja.baseInicial || 0) + totalIngresos - totalEgresos;
 
   // Split cash vs banks expected balances
   const totalIngresosEfectivo = movimientos
-    .filter(m => m.tipo === "ingreso" && (m.metodoPago === "Efectivo" || !m.metodoPago))
+    .filter(m => m.tipo === "ingreso" && (m.metodoPago === "Efectivo" || !m.metodoPago) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (m.monto || 0), 0);
   const totalEgresosEfectivo = movimientos
-    .filter(m => m.tipo === "egreso" && (m.metodoPago === "Efectivo" || !m.metodoPago))
+    .filter(m => m.tipo === "egreso" && (m.metodoPago === "Efectivo" || !m.metodoPago) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (m.monto || 0), 0);
   const efectivoEsperado = (caja.baseInicial || 0) + totalIngresosEfectivo - totalEgresosEfectivo;
 
   const totalIngresosOtros = movimientos
-    .filter(m => m.tipo === "ingreso" && m.metodoPago && m.metodoPago !== "Efectivo")
+    .filter(m => m.tipo === "ingreso" && m.metodoPago && m.metodoPago !== "Efectivo" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (m.monto || 0), 0);
   const totalEgresosOtros = movimientos
-    .filter(m => m.tipo === "egreso" && m.metodoPago && m.metodoPago !== "Efectivo")
+    .filter(m => m.tipo === "egreso" && m.metodoPago && m.metodoPago !== "Efectivo" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (m.monto || 0), 0);
   const otrosEsperado = totalIngresosOtros - totalEgresosOtros;
 

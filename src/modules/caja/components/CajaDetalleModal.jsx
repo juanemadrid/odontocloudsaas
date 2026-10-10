@@ -43,11 +43,11 @@ export default function CajaDetalleModal({ caja, onClose, onNuevoMovimiento }) {
   }, [caja.id]);
 
   const totalIngresos = movimientos
-    .filter(m => m.tipo === "ingreso")
+    .filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (m.monto || 0), 0);
 
   const totalEgresos = movimientos
-    .filter(m => m.tipo === "egreso")
+    .filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
     .reduce((s, m) => s + (m.monto || 0), 0);
 
   const metodosUnicos = ["todos", ...new Set(movimientos.map(m => m.metodoPago).filter(Boolean))];
