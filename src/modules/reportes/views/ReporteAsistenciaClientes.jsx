@@ -122,19 +122,23 @@ export default function ReporteAsistenciaClientes() {
         // 3. Cargar Pacientes reales para resolver nombres y documentos
         let snapPacientes = [];
         try {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from("pacientes")
-            .select("id, nombre, apellido, nombres, apellidos, documento, nroDocumento, tipoDocumento, tipo_documento, telefono, sucursal, sucursal_id")
+            .select("*")
             .eq("tenant_id", tenantId);
-          if (data) snapPacientes = data;
-        } catch (e) {}
+          if (data && !error) snapPacientes = data;
+        } catch (e) {
+          console.error("Error al cargar pacientes para reporte de asistencia:", e);
+        }
 
         const pacMap = {};
         (snapPacientes || []).forEach(p => {
-          const nom = (p.nombreCompleto || `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`).trim();
-          const doc = p.documento || p.nroDocumento || "";
-          const tDoc = p.tipoDocumento || p.tipo_documento || "CC";
-          const obj = { id: p.id, nombre: nom, documento: doc, tipoDocumento: tDoc, sucursal: p.sucursal };
+          const primerNombre = p.nombres || p.nombre || "";
+          const primerApellido = p.apellidos || p.apellido || "";
+          const nom = (p.nombreCompleto || `${primerNombre} ${primerApellido}`).trim();
+          const doc = p.documento || p.nroDocumento || p.nro_documento || "";
+          const tDoc = p.tipo_documento || p.tipoDocumento || "CC";
+          const obj = { id: p.id, nombre: nom, documento: doc, tipoDocumento: tDoc, sucursal: p.sucursal || p.sucursal_id };
           pacMap[p.id] = obj;
           if (doc) pacMap[doc] = obj;
         });
@@ -142,9 +146,23 @@ export default function ReporteAsistenciaClientes() {
         // 4. Cargar Asistencia de Citas de la Agenda
         let snapAgenda = [];
         try {
-          const { data } = await supabase.from("citas").select("*").eq("tenant_id", tenantId);
-          if (data) snapAgenda = data;
-        } catch (e) {}
+          const { data: dataWithJoin, error: errJoin } = await supabase
+            .from("citas")
+            .select("*, paciente:pacientes(id, nombres, apellidos, documento, tipo_documento, telefono)")
+            .eq("tenant_id", tenantId);
+
+          if (!errJoin && dataWithJoin) {
+            snapAgenda = dataWithJoin;
+          } else {
+            const { data } = await supabase.from("citas").select("*").eq("tenant_id", tenantId);
+            if (data) snapAgenda = data;
+          }
+        } catch (e) {
+          try {
+            const { data } = await supabase.from("citas").select("*").eq("tenant_id", tenantId);
+            if (data) snapAgenda = data;
+          } catch (e2) {}
+        }
         const listData = [];
 
         (snapAgenda || []).forEach(c => {
@@ -155,10 +173,17 @@ export default function ReporteAsistenciaClientes() {
 
           // Paciente
           const pacId = c.paciente_id || c.pacienteId;
-          const pac = pacMap[pacId] || pacMap[c.pacienteDocumento] || pacMap[c.documento] || {};
-          const pacNombre = pac.nombre || c.pacienteNombre || c.paciente || (c.detalles?.pacienteNombre) || "—";
+          const pacFromJoin = c.paciente ? {
+            id: c.paciente.id,
+            nombre: `${c.paciente.nombres || ""} ${c.paciente.apellidos || ""}`.trim(),
+            documento: c.paciente.documento || "",
+            tipoDocumento: c.paciente.tipo_documento || "CC"
+          } : null;
+
+          const pac = pacMap[pacId] || pacMap[c.pacienteDocumento] || pacMap[c.documento] || pacFromJoin || {};
+          const pacNombre = pac.nombre || c.pacienteNombre || c.nombrePaciente || c.paciente || (c.detalles?.pacienteNombre) || "—";
           const pacDoc = pac.documento || c.pacienteDocumento || c.documento || (c.detalles?.documento) || "—";
-          const pacTipoDoc = pac.tipoDocumento || c.tipoDocPaciente || c.tipoDocumento || "CC";
+          const pacTipoDoc = pac.tipoDocumento || pac.tipo_documento || c.tipoDocPaciente || c.tipoDocumento || "CC";
 
           // Profesional
           const profId = c.profesional_id || c.profesionalId || c.doctorId;
