@@ -12,7 +12,8 @@ import {
     FiPlus, FiRefreshCw, FiSearch, FiActivity, FiCheck, FiX,
     FiEdit3, FiTrash2, FiToggleLeft, FiToggleRight, FiGift,
     FiAlertCircle, FiChevronRight, FiUser, FiCalendar,
-    FiFileText, FiMail, FiSliders, FiMessageSquare, FiKey, FiCopy, FiEye, FiEyeOff, FiRepeat, FiShield
+    FiFileText, FiMail, FiSliders, FiMessageSquare, FiKey, FiCopy, FiEye, FiEyeOff, FiRepeat, FiShield,
+    FiMoreVertical
 } from "react-icons/fi";
 
 const fmt = (ts) => {
@@ -119,9 +120,20 @@ export default function TenantsPanelV2() {
     const [sendingEmailId, setSendingEmailId] = useState(null);
     const [clinicEmailLogs, setClinicEmailLogs] = useState([]);
     const [loadingEmailLogs, setLoadingEmailLogs] = useState(false);
+    const [openActionMenuId, setOpenActionMenuId] = useState(null);
 
     useEffect(() => {
         loadData();
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (!e.target.closest(".action-menu-container")) {
+                setOpenActionMenuId(null);
+            }
+        };
+        window.addEventListener("click", handleClickOutside);
+        return () => window.removeEventListener("click", handleClickOutside);
     }, []);
 
     const loadData = async () => {
@@ -488,17 +500,17 @@ export default function TenantsPanelV2() {
                         Cargando...
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto min-h-[460px]">
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-slate-100 bg-slate-50/70">
                                     {["Clínica","Plan","Vencimiento","Estado","Último Acceso","Facturas","Acciones"].map((h,i)=>(
-                                        <th key={i} className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                                        <th key={i} className={`px-5 py-3 ${h === "Acciones" ? "text-center" : "text-left"} text-[10px] font-black text-slate-400 uppercase tracking-wide whitespace-nowrap`}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {filtered.map(t => {
+                                {filtered.map((t, idx) => {
                                     const isActive = t.status === "active";
                                     const cuota = t.facturacionCuota ?? 0;
                                     const usadas = t.facturacionUsadas ?? 0;
@@ -624,103 +636,213 @@ export default function TenantsPanelV2() {
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-5 py-4">
-                                                <div className="flex items-center gap-1.5">
-                                                    <button onClick={()=>openEdit(t)}
-                                                        title="Editar información de la clínica (Nombre, NIT, Correo, Dirección)"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all group relative">
-                                                        <FiEdit3 size={13}/>
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            Editar Clínica
-                                                        </span>
-                                                    </button>
-                                                    <button onClick={()=>handleResendWelcome(t)}
-                                                        disabled={sendingEmailId === t.id}
-                                                        title="Reenviar correo oficial de bienvenida (Resend)"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 transition-all disabled:opacity-50 group relative">
-                                                        {sendingEmailId === t.id ? (
-                                                            <div className="w-3.5 h-3.5 border-2 border-sky-600 border-t-transparent rounded-full animate-spin"/>
-                                                        ) : (
-                                                            <FiMail size={13}/>
-                                                        )}
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            {sendingEmailId === t.id ? "Enviando..." : "Reenviar Bienvenida"}
-                                                        </span>
-                                                    </button>
-                                                    <button onClick={()=>{ setShowChangePwd(t); setPwdForm({ newPassword: "", confirm: "", show: false }); }}
-                                                        title="Cambiar contraseña del administrador directamente"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-all group relative">
-                                                        <FiKey size={13}/>
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            Cambiar Contraseña
-                                                        </span>
-                                                    </button>
-                                                    <button onClick={()=>{ setShowQuickRenew(t); setQuickRenewDuration(t.planDuration || "yearly"); }}
-                                                        title="Validar pago y renovar suscripción (+1 Año o +1 Mes)"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 transition-all group relative">
-                                                        <FiRepeat size={13}/>
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            Validar Pago y Renovar
-                                                        </span>
-                                                    </button>
-                                                    <button onClick={()=>{setSelectedTenant(t);setNewPlanId(t.planId);setNewDuration(t.planDuration||"monthly");setShowPlan(true);}}
-                                                        title="Cambiar plan de suscripción y ciclo"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-all group relative">
-                                                        <FiSliders size={13}/>
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            Cambiar plan
-                                                        </span>
-                                                    </button>
-                                                    <button onClick={()=>handleGrantFree(t)} disabled={grantingId === t.id}
-                                                        title="Regalar 1 mes de servicio gratis"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 transition-all disabled:opacity-50 group relative">
-                                                        {grantingId === t.id ? (
-                                                            <div className="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"/>
-                                                        ) : (
-                                                            <FiGift size={13}/>
-                                                        )}
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            {grantingId === t.id ? "Aplicando..." : "Regalar 1 mes"}
-                                                        </span>
-                                                    </button>
-                                                    <button onClick={async (e) => {
+                                            <td className="px-5 py-4 text-center">
+                                                <div className="relative inline-block action-menu-container">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
                                                             e.stopPropagation();
-                                                            try {
-                                                                const { setFevRips0948Enabled, isFevRips0948Enabled } = await import("../rips/v003/ripsFeatureFlagService.js");
-                                                                const currentlyEnabled = await isFevRips0948Enabled(t.id);
-                                                                const nextState = !currentlyEnabled;
-                                                                await setFevRips0948Enabled(t.id, nextState);
-                                                                alert(nextState 
-                                                                    ? `✅ Módulo FEV-RIPS (Res. 0948 de 2026) HABILITADO exitosamente para "${t.name}".`
-                                                                    : `ℹ️ Módulo FEV-RIPS deshabilitado para "${t.name}".`
-                                                                );
-                                                                loadData();
-                                                            } catch (err) {
-                                                                alert("Error al actualizar FEV-RIPS: " + err.message);
-                                                            }
+                                                            setOpenActionMenuId(openActionMenuId === t.id ? null : t.id);
                                                         }}
-                                                        title="Habilitar o autorizar módulo FEV-RIPS Salud (Res. 0948 / 2275)"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white transition-all group relative">
-                                                        <FiShield size={13}/>
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            Autorizar FEV-RIPS 0948
-                                                        </span>
+                                                        className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                                                            openActionMenuId === t.id
+                                                                ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                                                                : "text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200/80"
+                                                        }`}
+                                                        title="Opciones de la clínica"
+                                                    >
+                                                        <FiMoreVertical size={16} />
                                                     </button>
-                                                    <button onClick={()=>handleDelete(t.id, t.name)} disabled={processing}
-                                                        title="Eliminar clínica permanentemente"
-                                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition-all disabled:opacity-50 group relative">
-                                                        <FiTrash2 size={13}/>
-                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-slate-800 text-white text-[10px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                                                            Eliminar clínica
-                                                        </span>
-                                                    </button>
+
+                                                    {openActionMenuId === t.id && (
+                                                        <div
+                                                            className={`absolute right-0 ${
+                                                                idx >= Math.max(1, filtered.length - 1) && filtered.length > 2
+                                                                    ? "bottom-full mb-1.5"
+                                                                    : "top-full mt-1.5"
+                                                            } bg-white border border-slate-200 rounded-xl shadow-2xl z-50 py-1.5 w-64 text-left divide-y divide-slate-100 animate-fadeIn`}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <div className="py-1">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setOpenActionMenuId(null);
+                                                                        openEdit(t);
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover/item:bg-blue-600 group-hover/item:text-white transition-colors">
+                                                                        <FiEdit3 size={13} />
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Editar Clínica</span>
+                                                                        <span className="text-[10px] text-slate-400 truncate">Nombre, NIT, Correo, Dirección</span>
+                                                                    </div>
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={sendingEmailId === t.id}
+                                                                    onClick={() => {
+                                                                        setOpenActionMenuId(null);
+                                                                        handleResendWelcome(t);
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50 group/item"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 group-hover/item:bg-sky-600 group-hover/item:text-white transition-colors">
+                                                                        {sendingEmailId === t.id ? (
+                                                                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                                        ) : (
+                                                                            <FiMail size={13} />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">
+                                                                            {sendingEmailId === t.id ? "Enviando correo..." : "Reenviar Bienvenida"}
+                                                                        </span>
+                                                                        <span className="text-[10px] text-slate-400 truncate">Correo oficial de bienvenida</span>
+                                                                    </div>
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setOpenActionMenuId(null);
+                                                                        setShowChangePwd(t);
+                                                                        setPwdForm({ newPassword: "", confirm: "", show: false });
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0 group-hover/item:bg-amber-600 group-hover/item:text-white transition-colors">
+                                                                        <FiKey size={13} />
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Cambiar Contraseña</span>
+                                                                        <span className="text-[10px] text-slate-400 truncate">Modificar clave del administrador</span>
+                                                                    </div>
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setOpenActionMenuId(null);
+                                                                        setShowQuickRenew(t);
+                                                                        setQuickRenewDuration(t.planDuration || "yearly");
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover/item:bg-emerald-600 group-hover/item:text-white transition-colors">
+                                                                        <FiRepeat size={13} />
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Validar Pago y Renovar</span>
+                                                                        <span className="text-[10px] text-slate-400 truncate">Ampliar suscripción (+1 Año / +1 Mes)</span>
+                                                                    </div>
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setOpenActionMenuId(null);
+                                                                        setSelectedTenant(t);
+                                                                        setNewPlanId(t.planId);
+                                                                        setNewDuration(t.planDuration || "monthly");
+                                                                        setShowPlan(true);
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 group-hover/item:bg-indigo-600 group-hover/item:text-white transition-colors">
+                                                                        <FiSliders size={13} />
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Cambiar Plan</span>
+                                                                        <span className="text-[10px] text-slate-400 truncate">Modificar nivel y ciclo de cobro</span>
+                                                                    </div>
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={grantingId === t.id}
+                                                                    onClick={() => {
+                                                                        setOpenActionMenuId(null);
+                                                                        handleGrantFree(t);
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors disabled:opacity-50 group/item"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 group-hover/item:bg-purple-600 group-hover/item:text-white transition-colors">
+                                                                        {grantingId === t.id ? (
+                                                                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                                        ) : (
+                                                                            <FiGift size={13} />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">
+                                                                            {grantingId === t.id ? "Aplicando mes..." : "Regalar 1 Mes Gratis"}
+                                                                        </span>
+                                                                        <span className="text-[10px] text-slate-400 truncate">Extender vigencia sin costo</span>
+                                                                    </div>
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={async (e) => {
+                                                                        setOpenActionMenuId(null);
+                                                                        try {
+                                                                            const { setFevRips0948Enabled, isFevRips0948Enabled } = await import("../rips/v003/ripsFeatureFlagService.js");
+                                                                            const currentlyEnabled = await isFevRips0948Enabled(t.id);
+                                                                            const nextState = !currentlyEnabled;
+                                                                            await setFevRips0948Enabled(t.id, nextState);
+                                                                            alert(nextState 
+                                                                                ? `✅ Módulo FEV-RIPS (Res. 0948 de 2026) HABILITADO exitosamente para "${t.name}".`
+                                                                                : `ℹ️ Módulo FEV-RIPS deshabilitado para "${t.name}".`
+                                                                            );
+                                                                            loadData();
+                                                                        } catch (err) {
+                                                                            alert("Error al actualizar FEV-RIPS: " + err.message);
+                                                                        }
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover/item:bg-teal-600 group-hover/item:text-white transition-colors">
+                                                                        <FiShield size={13} />
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar FEV-RIPS 0948</span>
+                                                                        <span className="text-[10px] text-slate-400 truncate">Módulo DIAN Salud (Res. 0948)</span>
+                                                                    </div>
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="py-1">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={processing}
+                                                                    onClick={() => {
+                                                                        setOpenActionMenuId(null);
+                                                                        handleDelete(t.id, t.name);
+                                                                    }}
+                                                                    className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-rose-50 transition-colors disabled:opacity-50 group/item text-rose-600"
+                                                                >
+                                                                    <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 group-hover/item:bg-rose-600 group-hover/item:text-white transition-colors">
+                                                                        <FiTrash2 size={13} />
+                                                                    </div>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold text-rose-700 leading-tight">Eliminar Clínica</span>
+                                                                        <span className="text-[10px] text-rose-400 truncate">Borrado permanente del sistema</span>
+                                                                    </div>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
                                     );
                                 })}
                                 {filtered.length === 0 && (
-                                    <tr><td colSpan={6} className="px-5 py-12 text-center text-slate-300 text-sm">
+                                    <tr><td colSpan={7} className="px-5 py-12 text-center text-slate-300 text-sm">
                                         {search ? "Sin resultados para esa búsqueda." : "No hay clínicas registradas."}
                                     </td></tr>
                                 )}
