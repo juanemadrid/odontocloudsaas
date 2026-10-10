@@ -276,14 +276,14 @@ export const preflightHealthInvoice = ({
   const cleanWithoutContract = withoutContractCode ? String(withoutContractCode).trim().padStart(2, "0") : null;
 
   if (!cleanContract && !cleanWithoutContract) {
-    const err = new Error("Debe suministrarse contract_number o without_contract_code (HEALTH_CONTRACT_DATA_REQUIRED).");
+    const err = new Error("Para facturación de salud a entidades/EPS, debe suministrarse el número de contrato del convenio o indicar la causal de atención sin contrato (autorización o urgencia).");
     err.code = "HEALTH_CONTRACT_DATA_REQUIRED";
     throw err;
   }
 
   if (!cleanContract && cleanWithoutContract) {
     if (!FACTUS_HEALTH_WITHOUT_CONTRACT_CATALOG[cleanWithoutContract]) {
-      const err = new Error(`El código 'without_contract_code' (${cleanWithoutContract}) no es válido en el catálogo oficial (HEALTH_CONTRACT_DATA_REQUIRED).`);
+      const err = new Error(`El código de causal sin contrato '${cleanWithoutContract}' no es válido en el catálogo oficial de salud.`);
       err.code = "HEALTH_CONTRACT_DATA_REQUIRED";
       throw err;
     }
@@ -737,4 +737,40 @@ export const prepareFactusPrivateSandboxRevalidation = ({ tenantId, dryRun = tru
     ],
     readyForPrivateSandbox: true,
   };
+};
+
+/**
+ * Traduce y formatea cualquier error de validación o emisión FEV Salud
+ * para presentarlo de manera amigable, clara y profesional al usuario clínico/administrativo.
+ */
+export const formatHealthErrorMessage = (err) => {
+  if (!err) return "Ocurrió un error inesperado al procesar la factura de salud.";
+  const rawMsg = typeof err === "string" ? err : (err.message || String(err));
+  const code = (typeof err === "object" && err.code) ? err.code : "";
+
+  // Casos conocidos específicos
+  if (code === "HEALTH_CONTRACT_DATA_REQUIRED" || rawMsg.includes("HEALTH_CONTRACT_DATA_REQUIRED") || rawMsg.includes("contract_number")) {
+    return "Para facturar a una Entidad o EPS se requiere el Número de Contrato del convenio o la causal de atención sin contrato (autorización o urgencia).";
+  }
+  if (code === "PROVIDER_CODE_REQUIRED" || rawMsg.includes("PROVIDER_CODE_REQUIRED")) {
+    return "Falta configurar el Código de Prestador de Salud (código REPS de la clínica). Configúralo en Configuración → Facturación Electrónica.";
+  }
+  if (code === "FACTUS_NUMBERING_RANGE_REQUIRED" || rawMsg.includes("FACTUS_NUMBERING_RANGE_REQUIRED")) {
+    return "Falta configurar el rango de numeración de facturación DIAN autorizado en Factus.";
+  }
+  if (code === "FACTUS_HEALTH_CATALOG_PROFILE_REQUIRED" || rawMsg.includes("FACTUS_HEALTH_CATALOG_PROFILE_REQUIRED")) {
+    return "Falta configurar el perfil de catálogo de salud en la configuración de Facturación Electrónica.";
+  }
+  if (code === "HEALTH_PAYMENT_METHOD_REQUIRED" || rawMsg.includes("HEALTH_PAYMENT_METHOD_REQUIRED")) {
+    return "Falta definir la modalidad de pago en salud (ej. Pago por evento).";
+  }
+  if (code === "HEALTH_COVERAGE_REQUIRED" || rawMsg.includes("HEALTH_COVERAGE_REQUIRED")) {
+    return "Falta definir la cobertura de salud correspondiente para este paciente o entidad.";
+  }
+  if (code === "CLINICAL_ATTENTIONS_REQUIRED" || rawMsg.includes("CLINICAL_ATTENTIONS_REQUIRED") || rawMsg.includes("procedimiento") && rawMsg.includes("realizado")) {
+    return "Solo se pueden facturar ante la DIAN procedimientos que hayan sido marcados como realizados en la historia clínica.";
+  }
+
+  // Limpiar sufijos técnicos entre paréntesis tipo (HEALTH_XXXX)
+  return rawMsg.replace(/\s*\([A-Z0-9_]+\)\.?/g, "").trim();
 };

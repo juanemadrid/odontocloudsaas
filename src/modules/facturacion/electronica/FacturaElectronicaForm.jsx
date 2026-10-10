@@ -22,6 +22,7 @@ import {
   PAYMENT_METHOD_EVENTO_CODE,
   resolveHealthCatalogProfile,
   preflightHealthInvoice,
+  formatHealthErrorMessage,
 } from "../../../services/factusHealthPayloadBuilder";
 
 import {
@@ -820,9 +821,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             factusConfig: tenantData,
           });
         } catch (errProf) {
-          const code = errProf.code || "FACTUS_HEALTH_CATALOG_PROFILE_REQUIRED";
-          setError(`${code}: ${errProf.message}`);
-          toast.error(errProf.message);
+          const friendlyMsg = formatHealthErrorMessage(errProf);
+          setError(friendlyMsg);
+          toast.error(friendlyMsg);
           setSaving(false);
           return;
         }
@@ -844,9 +845,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             billingPeriod,
           });
         } catch (errPreflight) {
-          const code = errPreflight.code || "HEALTH_PREFLIGHT_ERROR";
-          setError(`${code}: ${errPreflight.message}`);
-          toast.error(errPreflight.message);
+          const friendlyMsg = formatHealthErrorMessage(errPreflight);
+          setError(friendlyMsg);
+          toast.error(friendlyMsg);
           setSaving(false);
           return;
         }

@@ -46,6 +46,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         epsNombre: initialData?.cobertura?.epsNombre || patient?.nombreEps || "",
         entidadId: initialData?.cobertura?.entidadId || "",
         entidadNombre: initialData?.cobertura?.entidadNombre || patient?.convenioBeneficio || "",
+        numeroContrato: initialData?.cobertura?.numeroContrato || initialData?.cobertura?.contrato || "",
         tarifaId: initialData?.cobertura?.tarifaId || "",
         tarifaNombre: initialData?.cobertura?.tarifaNombre || "",
         ordenNumero: initialData?.cobertura?.ordenNumero || "",
@@ -730,6 +731,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 resolveHealthDataFromConfig,
                 resolveHealthCatalogProfile,
                 preflightHealthInvoice,
+                formatHealthErrorMessage,
             } = await import('../../../services/factusHealthPayloadBuilder');
 
             // 1. Resolver perfil de catálogo de salud autoritativo (NO inferido silenciosamente)
@@ -740,7 +742,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     factusConfig: activeCreds || factusCredentials,
                 });
             } catch (errProf) {
-                toast.error(`❌ ${errProf.code || 'FACTUS_HEALTH_CATALOG_PROFILE_REQUIRED'}: ${errProf.message}`);
+                toast.error(`❌ Configuración DIAN: ${formatHealthErrorMessage(errProf)}`);
                 setEmittingInvoice(false);
                 return;
             }
@@ -760,9 +762,14 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             const beneficiary = buildBeneficiaryFromPatient(patient);
 
             const modalidadPago = planCob?.modalidadPago || billingCfg?.health_payment_method_code || '04';
-            const coberturaCode = planCob?.coberturaCode || billingCfg?.coverage_code || (isPlanEntidad ? null : '15');
-            const contractNumber = isPlanEntidad ? (planCob?.numeroContrato || planCob?.contrato || billingCfg?.contract_number || null) : null;
-            const withoutContractCode = isPlanEntidad ? null : (billingCfg?.without_contract_code || '05');
+            const coberturaCode = planCob?.coberturaCode || billingCfg?.coverage_code || (isPlanEntidad ? (planCob?.epsNombre ? '03' : '01') : '15');
+            const contractNumber = isPlanEntidad 
+                ? (planCob?.numeroContrato || planCob?.contrato || billingCfg?.contract_number || null) 
+                : null;
+            // Si es EPS/entidad y no se ingresó número de contrato formal, se usa causal sin contrato oficial (01 si urgente, 05 si autorización)
+            const withoutContractCode = contractNumber 
+                ? null 
+                : (planCob?.withoutContractCode || billingCfg?.without_contract_code || (planCob?.ordenUrgente ? '01' : '05'));
 
             // 3. Preflight formal estricto antes de llamar a Factus
             let preflightResult = null;
@@ -780,7 +787,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     billingPeriod,
                 });
             } catch (errPreflight) {
-                toast.error(`❌ ${errPreflight.code || 'PREFLIGHT_ERROR'}: ${errPreflight.message}`);
+                toast.error(`❌ ${formatHealthErrorMessage(errPreflight)}`);
                 setEmittingInvoice(false);
                 return;
             }
@@ -1942,8 +1949,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                         </div>
 
                         {cobertura.tipo === "entidad" && (
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-5 animate-fadeIn">
-                                <div>
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-3 p-5 animate-fadeIn">
+                                <div className="md:col-span-2">
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">EPS</label>
                                     <input
                                         className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-300"
@@ -1952,7 +1959,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                         placeholder="EPS"
                                     />
                                 </div>
-                                <div>
+                                <div className="md:col-span-2">
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Entidad</label>
                                     <input
                                         className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-300"
@@ -1961,7 +1968,16 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                         placeholder="Entidad responsable"
                                     />
                                 </div>
-                                <div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">N° Contrato / Convenio</label>
+                                    <input
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-300"
+                                        value={cobertura.numeroContrato || ""}
+                                        onChange={(e) => setCobertura({ ...cobertura, numeroContrato: e.target.value })}
+                                        placeholder="Opcional si es sin contrato"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Tarifa (Copago)</label>
                                     <select
                                         className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-300"
@@ -1989,33 +2005,35 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                                         })}
                                     </select>
                                 </div>
-                                <div>
-                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Orden</label>
+                                <div className="md:col-span-2">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Orden / Autorización</label>
                                     <input
                                         className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-300"
                                         value={cobertura.ordenNumero}
                                         onChange={(e) => setCobertura({ ...cobertura, ordenNumero: e.target.value })}
-                                        placeholder="Autorizacion"
+                                        placeholder="Autorización o N° orden"
                                     />
                                 </div>
-                                <div>
+                                <div className="md:col-span-1">
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Fecha de orden</label>
                                     <input
                                         type="date"
                                         className="w-full bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-300"
                                         value={cobertura.ordenFecha}
                                         onChange={(e) => setCobertura({ ...cobertura, ordenFecha: e.target.value })}
-                                     max="9999-12-31" min="1900-01-01" />
+                                        max="9999-12-31" min="1900-01-01" />
                                 </div>
-                                <label className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-widest md:col-span-3">
-                                    <input
-                                        type="checkbox"
-                                        checked={cobertura.ordenUrgente}
-                                        onChange={(e) => setCobertura({ ...cobertura, ordenUrgente: e.target.checked })}
-                                        className="accent-blue-600"
-                                    />
-                                    Orden por urgencia
-                                </label>
+                                <div className="md:col-span-1 flex items-end pb-1">
+                                    <label className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[9px] font-black text-slate-500 uppercase tracking-widest w-full cursor-pointer hover:bg-slate-100/70 transition-all">
+                                        <input
+                                            type="checkbox"
+                                            checked={cobertura.ordenUrgente}
+                                            onChange={(e) => setCobertura({ ...cobertura, ordenUrgente: e.target.checked })}
+                                            className="accent-blue-600"
+                                        />
+                                        Urgencia
+                                    </label>
+                                </div>
                             </div>
                         )}
                     </div>
