@@ -173,7 +173,8 @@ export default function ReporteLogErroresFacturacion() {
     setVisibleColumns(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const fetchLogData = async () => {
+  const fetchLogData = async (overrideFilters = null) => {
+    const filtersToUse = overrideFilters || appliedFilters;
     const tenantId = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenant?.id;
     if (!tenantId) {
       setLoading(false);
@@ -224,12 +225,12 @@ export default function ReporteLogErroresFacturacion() {
         profMap[u.id] = nom;
       });
 
-      // 3. Cargar Logs de Errores de Facturación (FACTUS_ERROR)
+      // 3. Cargar Logs de Errores de Facturación (FACTUS_ERROR) con el rango de fechas solicitado
       const snapLogs = await getAuditEvents({
         tenantId,
         actions: ["FACTUS_ERROR"],
-        from: appliedFilters.fechaInicial,
-        to: appliedFilters.fechaFinal,
+        from: filtersToUse.fechaInicial,
+        to: filtersToUse.fechaFinal,
         limit: 1000
       });
 
@@ -269,7 +270,7 @@ export default function ReporteLogErroresFacturacion() {
 
       listData.sort((a, b) => b.fechaObj - a.fechaObj);
       setLogList(listData);
-      filterData(listData, appliedFilters, "");
+      filterData(listData, filtersToUse, tableSearchTerm);
       setHasSearched(true);
 
     } catch (error) {
@@ -284,18 +285,25 @@ export default function ReporteLogErroresFacturacion() {
   }, [userProfile?.inquilino, userProfile?.tenant_id]);
 
   const filterData = (sourceList, filters, quickSearch) => {
-    let result = sourceList.filter(item => {
+    const startLimit = filters.fechaInicial ? new Date(`${filters.fechaInicial}T00:00:00`) : null;
+    const endLimit = filters.fechaFinal ? new Date(`${filters.fechaFinal}T23:59:59`) : null;
+
+    let result = (sourceList || []).filter(item => {
+      // Filtro estricto por rango de fechas
+      if (startLimit && item.fechaObj < startLimit) return false;
+      if (endLimit && item.fechaObj > endLimit) return false;
+
       // Filtro de Oficina
       if (filters.oficina && filters.oficina !== "Todas las oficinas" && filters.oficina !== "TODAS") {
-        const targetOf = filters.oficina.toLowerCase();
-        const itemOf = (item.sucursal || "").toLowerCase();
+        const targetOf = filters.oficina.toLowerCase().trim();
+        const itemOf = (item.sucursal || "").toLowerCase().trim();
         if (!itemOf.includes(targetOf) && !targetOf.includes(itemOf)) return false;
       }
       return true;
     });
 
     if (quickSearch && quickSearch.trim() !== "") {
-      const term = quickSearch.toLowerCase();
+      const term = quickSearch.toLowerCase().trim();
       result = result.filter(item => (
         item.consecutivo.toLowerCase().includes(term) ||
         item.tipoDocumento.toLowerCase().includes(term) ||
@@ -317,7 +325,7 @@ export default function ReporteLogErroresFacturacion() {
       oficina
     };
     setAppliedFilters(newFilters);
-    filterData(logList, newFilters, tableSearchTerm);
+    fetchLogData(newFilters);
   };
 
   // KPIs
