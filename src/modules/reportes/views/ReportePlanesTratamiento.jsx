@@ -1153,9 +1153,6 @@ export default function ReportePlanesTratamiento() {
               <thead className="bg-[#fcfdfe] sticky top-0 z-20 border-b border-slate-300 text-slate-600 font-bold shadow-xs">
                 {/* Fila 1: Encabezados */}
                 <tr>
-                  <th className="w-8 px-2 py-2 border-r border-slate-200 text-center bg-slate-50">
-                    <input type="checkbox" className="rounded text-[#009beb] w-3.5 h-3.5" />
-                  </th>
                   {Object.keys(columnLabels).map((key) => {
                     if (!visibleColumns[key]) return null;
                     return (
@@ -1171,7 +1168,6 @@ export default function ReportePlanesTratamiento() {
 
                 {/* Fila 2: Inputs de filtro por columna */}
                 <tr className="bg-white border-b border-slate-200">
-                  <th className="px-2 py-1 border-r border-slate-200 bg-white"></th>
                   {Object.keys(columnLabels).map((key) => {
                     if (!visibleColumns[key]) return null;
                     const isSelectFilter = key === "realizada" || key === "pagada" || key === "facturada" || key === "finalizado" || key === "compensadoNC";
@@ -1221,7 +1217,7 @@ export default function ReportePlanesTratamiento() {
                         onClick={() => toggleGroupCollapse(groupKey)}
                       >
                         <td
-                          colSpan={Object.values(visibleColumns).filter(Boolean).length + 1}
+                          colSpan={Object.values(visibleColumns).filter(Boolean).length}
                           className="px-3 py-2.5"
                         >
                           <div className="flex items-center gap-2.5">
@@ -1236,21 +1232,6 @@ export default function ReportePlanesTratamiento() {
                             {group.patientDoc && (
                               <span className="text-slate-500 text-[11px] font-normal">({group.patientDoc})</span>
                             )}
-
-                            {/* Badge de Estado en Español en la cabecera */}
-                            <span className={`uppercase text-[9px] font-extrabold px-2 py-0.5 rounded border ml-1 ${
-                              group.estado === 'Aprobado' || group.estado === 'Aceptado' 
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
-                                : group.estado === 'Finalizado' 
-                                ? 'bg-blue-50 text-blue-700 border-blue-300'
-                                : group.estado === 'En progreso' || group.estado === 'Activo'
-                                ? 'bg-sky-50 text-sky-700 border-sky-300'
-                                : group.estado === 'Cancelado' || group.estado === 'Rechazado'
-                                ? 'bg-rose-50 text-rose-700 border-rose-300'
-                                : 'bg-amber-50 text-amber-700 border-amber-300'
-                            }`}>
-                              {group.estado}
-                            </span>
 
                             <div className="ml-auto flex items-center gap-3 text-xs font-semibold text-slate-600">
                               <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">
@@ -1267,9 +1248,6 @@ export default function ReportePlanesTratamiento() {
                       {/* Filas de prestaciones del grupo (se muestran solo si el usuario abre el grupo) */}
                       {isOpen && group.items.map(r => (
                         <tr key={r.id} className="hover:bg-sky-50/50 transition-colors bg-white">
-                          <td className="px-2 py-2 border-r border-slate-100 text-center">
-                            <input type="checkbox" className="rounded text-[#009beb] w-3.5 h-3.5 cursor-pointer" />
-                          </td>
                           {visibleColumns.historia && (
                             <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] font-semibold hover:underline cursor-pointer">
                               {r.historia || "—"}
@@ -1425,7 +1403,7 @@ export default function ReportePlanesTratamiento() {
                 {filteredRows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={Object.values(visibleColumns).filter(Boolean).length + 1}
+                      colSpan={Object.values(visibleColumns).filter(Boolean).length}
                       className="px-6 py-14 text-center"
                     >
                       <div className="flex flex-col items-center justify-center max-w-md mx-auto">
