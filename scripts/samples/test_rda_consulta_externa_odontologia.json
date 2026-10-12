@@ -1,0 +1,416 @@
+{
+  "resourceType": "Bundle",
+  "id": "bf0226fd-2b23-4a4f-8116-f45f3d1c03dc",
+  "meta": {
+    "profile": [
+      "https://minsalud.gov.co/fhir/StructureDefinition/BundleRDA-Co"
+    ],
+    "lastUpdated": "2026-10-11T14:45:00.000Z"
+  },
+  "identifier": {
+    "system": "https://odontocloudcolombia.com/ihce/rda",
+    "value": "RDA-e9b1c7a2-4412-4f33-8a9d-b827e8a91001"
+  },
+  "type": "document",
+  "timestamp": "2026-10-11T14:45:00.000Z",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:24f10714-c490-4a12-95a2-e8c6de935e68",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "7cb80680-3047-44ee-bda6-a57964b89a93",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/CompositionRDA-Co"
+          ]
+        },
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "code": "34133-9",
+              "display": "Summarization of episode note",
+              "system": "http://loinc.org"
+            }
+          ],
+          "text": "Resumen Digital de Atención Odontológica"
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category",
+                "code": "clinical-note"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "urn:uuid:26744d0e-2bd0-4e3e-8c77-052b1f29f75a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:a63f468e-b936-46d5-be52-a5f6a13e180e"
+        },
+        "date": "2026-10-11T14:45:00.000Z",
+        "author": [
+          {
+            "reference": "urn:uuid:7c6b4b0b-8305-4afd-977d-f13e00e98d08"
+          }
+        ],
+        "title": "Resumen Digital de Atención (RDA) - OdontoCloud",
+        "custodian": {
+          "reference": "urn:uuid:e990b336-81db-4817-a273-bf86d74c3d35"
+        },
+        "section": [
+          {
+            "title": "Motivo de Consulta y Evolución",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "42349-1",
+                  "display": "Reason for visit"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Paciente acude por molestia a estímulos térmicos en pieza 46. Se realiza apertura cavitaria, remoción de tejido cariado y obturación con resina compuesta nano-híbrida con grabado total. Oclusión ajustada y pulido finalizado.</p></div>"
+            }
+          },
+          {
+            "title": "Diagnósticos Odontológicos",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "29548-5",
+                  "display": "Diagnosis"
+                }
+              ]
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:84b5a76a-edaa-4f56-a531-221e42a3a2da"
+              }
+            ]
+          },
+          {
+            "title": "Procedimientos Realizados",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "29554-3",
+                  "display": "Procedure Narrative"
+                }
+              ]
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:8c715dc7-e5ab-4bf2-9bb2-96fe4071e5e0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:26744d0e-2bd0-4e3e-8c77-052b1f29f75a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "p1098765-1122-3344-5566-778899aabbcc",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Patient-Co"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "system": "https://minsalud.gov.co/ihce/identificacion-usuario",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://minsalud.gov.co/ihce/tipos-identificacion",
+                  "code": "CC",
+                  "display": "Cédula de Ciudadanía"
+                }
+              ]
+            },
+            "value": "1098765432"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "ORTEGA HERNANDEZ",
+            "given": [
+              "JUAN",
+              "CARLOS"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1992-06-24",
+        "address": [
+          {
+            "use": "home",
+            "line": [
+              "Calle 127 # 19-35 Apto 402"
+            ],
+            "extension": []
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "3128901234",
+            "use": "mobile"
+          }
+        ],
+        "extension": [
+          {
+            "url": "https://minsalud.gov.co/fhir/StructureDefinition/CoPertenenciaEtnica",
+            "valueCoding": {
+              "system": "https://minsalud.gov.co/ihce/etnias",
+              "code": "6",
+              "display": "Ninguna de las anteriores"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:7c6b4b0b-8305-4afd-977d-f13e00e98d08",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "dr5289012-aabb-ccdd-eeff-001122334455",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Practitioner-Co"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "system": "https://minsalud.gov.co/ihce/identificacion-usuario",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://minsalud.gov.co/ihce/tipos-identificacion",
+                  "code": "CC"
+                }
+              ]
+            },
+            "value": "52890123"
+          },
+          {
+            "use": "secondary",
+            "system": "https://minsalud.gov.co/ihce/rethus",
+            "value": "OD-19827-BOG"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "Profesional de Salud"
+          }
+        ],
+        "qualification": [
+          {
+            "code": {
+              "text": "Odontología General"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e990b336-81db-4817-a273-bf86d74c3d35",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "org-110010998801",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Organization-Co"
+          ]
+        },
+        "identifier": [
+          {
+            "system": "https://minsalud.gov.co/ihce/nit",
+            "value": "901456789-2"
+          }
+        ],
+        "name": "CENTRO ODONTOLÓGICO ODONTOCLOUD IPS SAS",
+        "telecom": []
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8994c0b8-3679-4967-80db-c860fd554fb6",
+      "resource": {
+        "resourceType": "Location",
+        "id": "70976b6b-5322-460f-ae58-f2ee1814bb2f",
+        "identifier": [],
+        "name": "Sede Principal",
+        "managingOrganization": {
+          "reference": "urn:uuid:e990b336-81db-4817-a273-bf86d74c3d35"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:a63f468e-b936-46d5-be52-a5f6a13e180e",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "628235aa-b3c4-403d-b208-0fe13bf42595",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Encounter-Co"
+          ]
+        },
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "urn:uuid:26744d0e-2bd0-4e3e-8c77-052b1f29f75a"
+        },
+        "participant": [
+          {
+            "individual": {
+              "reference": "urn:uuid:7c6b4b0b-8305-4afd-977d-f13e00e98d08"
+            }
+          }
+        ],
+        "period": {
+          "start": "2026-10-11T14:30:00.000Z",
+          "end": "2026-10-11T14:45:00.000Z"
+        },
+        "serviceProvider": {
+          "reference": "urn:uuid:e990b336-81db-4817-a273-bf86d74c3d35"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "urn:uuid:8994c0b8-3679-4967-80db-c860fd554fb6"
+            }
+          }
+        ],
+        "extension": [
+          {
+            "url": "https://minsalud.gov.co/fhir/StructureDefinition/CoModalidadAtencion",
+            "valueCoding": {
+              "system": "https://minsalud.gov.co/ihce/modalidad-atencion",
+              "code": "01",
+              "display": "Intramural"
+            }
+          },
+          {
+            "url": "https://minsalud.gov.co/fhir/StructureDefinition/CoCausaExterna",
+            "valueCoding": {
+              "system": "https://minsalud.gov.co/ihce/causa-externa",
+              "code": "13"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:84b5a76a-edaa-4f56-a531-221e42a3a2da",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "087dd10f-8d6a-4f86-a00e-c6c08fdee443",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Condition-Co"
+          ]
+        },
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed"
+            }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/condition-category",
+                "code": "encounter-diagnosis",
+                "display": "Encounter Diagnosis"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://hl7.org/fhir/sid/icd-10",
+              "code": "K02.1",
+              "display": "Caries de la dentina en órgano dental 46"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:26744d0e-2bd0-4e3e-8c77-052b1f29f75a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:a63f468e-b936-46d5-be52-a5f6a13e180e"
+        },
+        "recordedDate": "2026-10-11T14:45:00.000Z",
+        "extension": [
+          {
+            "url": "https://minsalud.gov.co/fhir/StructureDefinition/CoTipoDiagnostico",
+            "valueCoding": {
+              "system": "https://minsalud.gov.co/ihce/tipo-diagnostico",
+              "code": "2",
+              "display": "Confirmado nuevo"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8c715dc7-e5ab-4bf2-9bb2-96fe4071e5e0",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "48223836-3fe8-4536-84eb-749f273d7336",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Procedure-Co"
+          ]
+        },
+        "status": "completed",
+        "code": {
+          "coding": [
+            {
+              "system": "https://minsalud.gov.co/ihce/cups",
+              "code": "230101"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "urn:uuid:26744d0e-2bd0-4e3e-8c77-052b1f29f75a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:a63f468e-b936-46d5-be52-a5f6a13e180e"
+        },
+        "performedDateTime": "2026-10-11T14:45:00.000Z"
+      }
+    }
+  ]
+}

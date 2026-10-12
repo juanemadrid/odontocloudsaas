@@ -28,6 +28,7 @@ import LegalPage from "./pages/landing/LegalPage";
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const SuperAdminDashboard = React.lazy(() => import("./pages/SuperAdminPanel"));
 const UnauthorizedPage = React.lazy(() => import("./pages/UnauthorizedPage"));
+const IhceDashboard = React.lazy(() => import("./pages/IhceDashboard"));
 
 // 🚀 Role Bridge: Automatic redirection to the correct portal
 function RoleBridge() {
@@ -158,6 +159,12 @@ export default function App() {
         <Route path="/dashboard/*" element={
           <ProtectedRoute>
             <Dashboard />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/interoperabilidad-ihce" element={
+          <ProtectedRoute>
+            <IhceDashboard />
           </ProtectedRoute>
         } />
 

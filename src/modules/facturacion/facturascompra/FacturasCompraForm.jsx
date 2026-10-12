@@ -19,6 +19,18 @@ const fmt = (n) =>
     maximumFractionDigits: 0,
   });
 
+const formatNumberWithDots = (val) => {
+  if (val === undefined || val === null || val === "") return "";
+  const clean = String(val).replace(/\D/g, "");
+  if (!clean) return "";
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
+const parseRawNumber = (val) => {
+  if (val === undefined || val === null) return "";
+  return String(val).replace(/\D/g, "");
+};
+
 const RETENCIONES_CATALOGO = [
     { id: "retefuente_25", nombre: "ReteFuente 2.5% (Compras Generales)", porcentaje: 0.025 },
     { id: "retefuente_35", nombre: "ReteFuente 3.5% (Compras no declarantes)", porcentaje: 0.035 },
@@ -56,9 +68,9 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             id: Date.now(),
             concepto: "",
             descripcion: "",
-            precioUnitario: 0,
+            precioUnitario: "",
             cantidad: 1,
-            descuento: 0,
+            descuento: "",
             total: 0
         }
     ]);
@@ -284,9 +296,9 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 id: Date.now() + Math.random(),
                 concepto: "",
                 descripcion: "",
-                precioUnitario: 0,
+                precioUnitario: "",
                 cantidad: 1,
-                descuento: 0,
+                descuento: "",
                 total: 0
             }
         ]);
@@ -298,9 +310,9 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 id: Date.now(),
                 concepto: "",
                 descripcion: "",
-                precioUnitario: 0,
+                precioUnitario: "",
                 cantidad: 1,
-                descuento: 0,
+                descuento: "",
                 total: 0
             }]);
             return;
@@ -312,10 +324,14 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         setItems(prev => prev.map(item => {
             if (item.id !== id) return item;
 
-            const updated = { ...item, [field]: value };
-            const pu = field === "precioUnitario" ? (parseFloat(value) || 0) : (parseFloat(item.precioUnitario) || 0);
-            const cant = field === "cantidad" ? (parseFloat(value) || 0) : (parseFloat(item.cantidad) || 0);
-            const desc = field === "descuento" ? (parseFloat(value) || 0) : (parseFloat(item.descuento) || 0);
+            const cleanVal = (field === "precioUnitario" || field === "descuento")
+                ? parseRawNumber(value)
+                : value;
+
+            const updated = { ...item, [field]: cleanVal };
+            const pu = parseFloat(updated.precioUnitario) || 0;
+            const cant = parseFloat(updated.cantidad) || 0;
+            const desc = parseFloat(updated.descuento) || 0;
             
             const subtotal = pu * cant;
             updated.total = Math.max(0, subtotal - desc);
@@ -331,7 +347,8 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             return;
         }
         const retObj = RETENCIONES_CATALOGO.find(r => r.id === selectedRetencionId);
-        const baseNum = parseFloat(baseRetencion) || totalConceptos;
+        const rawBase = parseRawNumber(baseRetencion);
+        const baseNum = rawBase ? parseFloat(rawBase) : totalConceptos;
         const valorRetencion = Math.round(baseNum * (retObj?.porcentaje || 0));
 
         const newRet = {
@@ -472,7 +489,15 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             return;
         }
 
-        const validItems = items.filter(it => it.concepto || it.descripcion || it.total > 0);
+        const validItems = items
+            .filter(it => it.concepto || it.descripcion || (parseFloat(it.total) || 0) > 0)
+            .map(it => ({
+                ...it,
+                precioUnitario: parseFloat(it.precioUnitario) || 0,
+                cantidad: parseFloat(it.cantidad) || 1,
+                descuento: parseFloat(it.descuento) || 0,
+                total: parseFloat(it.total) || 0
+            }));
         if (validItems.length === 0) {
             toast.error("Debe agregar al menos un concepto de compra");
             return;
@@ -1078,11 +1103,11 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                         </td>
                                         <td className="py-2.5 px-4">
                                             <input
-                                                type="number"
-                                                min="0"
-                                                step="1000"
-                                                value={item.precioUnitario || ""}
+                                                type="text"
+                                                inputMode="numeric"
+                                                value={formatNumberWithDots(item.precioUnitario)}
                                                 onChange={(e) => handleItemChange(item.id, "precioUnitario", e.target.value)}
+                                                onWheel={(e) => e.target.blur()}
                                                 placeholder="0"
                                                 className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
                                             />
@@ -1093,16 +1118,17 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                                 min="1"
                                                 value={item.cantidad || ""}
                                                 onChange={(e) => handleItemChange(item.id, "cantidad", e.target.value)}
+                                                onWheel={(e) => e.target.blur()}
                                                 className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none text-center"
                                             />
                                         </td>
                                         <td className="py-2.5 px-4">
                                             <input
-                                                type="number"
-                                                min="0"
-                                                step="1000"
-                                                value={item.descuento || ""}
+                                                type="text"
+                                                inputMode="numeric"
+                                                value={formatNumberWithDots(item.descuento)}
                                                 onChange={(e) => handleItemChange(item.id, "descuento", e.target.value)}
+                                                onWheel={(e) => e.target.blur()}
                                                 placeholder="0"
                                                 className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
                                             />
@@ -1166,11 +1192,12 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                         </label>
                         <div className="md:col-span-3">
                             <input
-                                type="number"
-                                min="0"
-                                value={baseRetencion}
-                                onChange={(e) => setBaseRetencion(e.target.value)}
-                                placeholder={totalConceptos > 0 ? String(totalConceptos) : "Base gravable"}
+                                type="text"
+                                inputMode="numeric"
+                                value={formatNumberWithDots(baseRetencion)}
+                                onChange={(e) => setBaseRetencion(parseRawNumber(e.target.value))}
+                                onWheel={(e) => e.target.blur()}
+                                placeholder={totalConceptos > 0 ? formatNumberWithDots(totalConceptos) : "Base gravable"}
                                 className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
                             />
                         </div>

@@ -1323,16 +1323,9 @@ export default function FacturasCompraList({ onNew }) {
                               className="w-7 h-7 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
                               title={f.docSoporteDian ? "Anular Documento Soporte y Generar Nota de Ajuste DIAN" : "Anular Factura"}
                             >
-                              <FiXCircle size={14} />
+                              <FiTrash2 size={14} />
                             </button>
                           )}
-                          <button
-                            onClick={() => handleDeleteFactura(f.id)}
-                            className="w-7 h-7 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
-                            title="Eliminar registro"
-                          >
-                            <FiTrash2 size={14} />
-                          </button>
                         </div>
                       </td>
                     </tr>

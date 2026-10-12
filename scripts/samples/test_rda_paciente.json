@@ -1,0 +1,179 @@
+{
+  "resourceType": "Bundle",
+  "id": "bundle-rda-paciente-1098765432",
+  "meta": {
+    "profile": [
+      "https://minsalud.gov.co/fhir/StructureDefinition/Bundle-Rda-Paciente-Co"
+    ],
+    "lastUpdated": "2026-10-11T15:20:47.241Z"
+  },
+  "identifier": {
+    "system": "https://odontocloudcolombia.com/ihce/rda-paciente",
+    "value": "RDA-PACIENTE-1098765432"
+  },
+  "type": "document",
+  "timestamp": "2026-10-11T15:20:47.242Z",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:b6a0a462-402b-4e9c-82ff-d2c049b218fe",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "comp-rda-paciente-01",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Composition-Rda-Paciente-Co"
+          ]
+        },
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "81217-2",
+              "display": "Dental Summary note"
+            }
+          ],
+          "text": "Resumen Digital de Atención Odontológica del Paciente"
+        },
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category",
+                "code": "clinical-note"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "urn:uuid:6cd40786-c7e5-4a2a-96e3-320ccb36d2e0"
+        },
+        "date": "2026-10-11T15:20:47.242Z",
+        "author": [
+          {
+            "reference": "urn:uuid:bbb27a64-5390-47ef-a2b3-6fd5352399c2"
+          }
+        ],
+        "title": "RDA Paciente Odontológico - Histórico Consolidado",
+        "custodian": {
+          "reference": "urn:uuid:c494213d-190a-4394-b8e6-d1679dc79088"
+        },
+        "section": [
+          {
+            "title": "Antecedentes Alérgicos",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "48765-2",
+                  "display": "Allergies and adverse reactions"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Alergia confirmada a la Penicilina.</p></div>"
+            }
+          },
+          {
+            "title": "Plan de Tratamiento Activo",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "18776-5",
+                  "display": "Plan of care note"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Fase 1: Higiene y profilaxis. Fase 2: Restauraciones 46 y 37.</p></div>"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:6cd40786-c7e5-4a2a-96e3-320ccb36d2e0",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "p1098765-1122-3344-5566-778899aabbcc",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Patient-Co"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "system": "https://minsalud.gov.co/ihce/identificacion-usuario",
+            "type": {
+              "coding": [
+                {
+                  "code": "CC",
+                  "display": "Cédula de Ciudadanía"
+                }
+              ]
+            },
+            "value": "1098765432"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "JUAN CARLOS ORTEGA HERNANDEZ",
+            "family": "ORTEGA HERNANDEZ",
+            "given": [
+              "JUAN CARLOS"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1992-06-24"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:bbb27a64-5390-47ef-a2b3-6fd5352399c2",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "dr5289012-aabb-ccdd-eeff-001122334455",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Practitioner-Co"
+          ]
+        },
+        "identifier": [
+          {
+            "system": "https://minsalud.gov.co/ihce/identificacion-usuario",
+            "value": "52890123"
+          }
+        ],
+        "name": [
+          {
+            "text": "CAROLINA RESTREPO CARDONA"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c494213d-190a-4394-b8e6-d1679dc79088",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "org-110010998801",
+        "meta": {
+          "profile": [
+            "https://minsalud.gov.co/fhir/StructureDefinition/Organization-Co"
+          ]
+        },
+        "identifier": [
+          {
+            "value": "110010998801"
+          }
+        ],
+        "name": "CENTRO ODONTOLÓGICO ODONTOCLOUD IPS SAS"
+      }
+    }
+  ]
+}
