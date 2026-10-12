@@ -106,13 +106,18 @@ export default function TrasladosList({ onNew }) {
           const nom = c.nombre || c.usuarioNombre ? `Caja: ${c.nombre || c.usuarioNombre}` : "";
           if (nom && !list.includes(nom)) list.push(nom);
         });
+        const userBancos = [];
         (bancosDb || []).forEach(b => {
-          const nom = typeof b === "string" ? b : (b.nombre || b.nombreBanco || b.banco || "");
-          if (nom && !list.includes(nom)) list.push(nom);
+          const nom = (typeof b === "string" ? b : (b.nombre || b.nombreBanco || b.banco || "")).trim();
+          if (nom && !list.includes(nom) && !userBancos.includes(nom)) {
+            userBancos.push(nom);
+            list.push(nom);
+          }
         });
-        if (!list.includes("Bancolombia")) list.push("Bancolombia");
-        if (!list.includes("Nequi")) list.push("Nequi");
-        if (!list.includes("Daviplata")) list.push("Daviplata");
+        if (userBancos.length === 0) {
+          if (!list.includes("Bancolombia")) list.push("Bancolombia");
+          if (!list.includes("Nequi")) list.push("Nequi");
+        }
         setCuentasDisponibles(list);
       } catch (_) {}
     };

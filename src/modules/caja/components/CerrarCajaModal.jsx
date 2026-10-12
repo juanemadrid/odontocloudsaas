@@ -62,11 +62,16 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
     const fetchBancos = async () => {
       try {
         const list = await getConfigItems(inquilino, "bancos", "bancos");
-        const mapped = (list || []).map(b => typeof b === "string" ? b : (b.nombre || b.nombreBanco || b.banco || "")).filter(Boolean);
-        if (!mapped.includes("Bancolombia")) mapped.push("Bancolombia");
-        if (!mapped.includes("Nequi")) mapped.push("Nequi");
-        if (!mapped.includes("Davivienda")) mapped.push("Davivienda");
-        setBancosList(mapped);
+        const mapped = (list || [])
+          .map(b => typeof b === "string" ? b.trim() : (b.nombre || b.nombreBanco || b.banco || "").trim())
+          .filter(Boolean);
+        const unique = [];
+        mapped.forEach(name => {
+          if (!unique.some(u => u.toLowerCase() === name.toLowerCase())) {
+            unique.push(name);
+          }
+        });
+        setBancosList(unique);
       } catch (_) {}
     };
     fetchBancos();
@@ -77,21 +82,27 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   const totalEgresos = movimientos.filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (m.monto || 0), 0);
   const saldoTeorico = (caja.baseInicial || 0) + totalIngresos - totalEgresos;
 
-  // Split cash vs banks expected balances
+  // Split cash vs banks expected balances (calculo exacto)
+  const getMetodo = (m) => String(m.metodo_pago || m.metodoPago || "").trim();
+  const isEfectivo = (m) => {
+    const met = getMetodo(m).toLowerCase();
+    return met === "efectivo" || met === "";
+  };
+
   const totalIngresosEfectivo = movimientos
-    .filter(m => m.tipo === "ingreso" && (m.metodoPago === "Efectivo" || !m.metodoPago) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
-    .reduce((s, m) => s + (m.monto || 0), 0);
+    .filter(m => m.tipo === "ingreso" && isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const totalEgresosEfectivo = movimientos
-    .filter(m => m.tipo === "egreso" && (m.metodoPago === "Efectivo" || !m.metodoPago) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
-    .reduce((s, m) => s + (m.monto || 0), 0);
-  const efectivoEsperado = (caja.baseInicial || 0) + totalIngresosEfectivo - totalEgresosEfectivo;
+    .filter(m => m.tipo === "egreso" && isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .reduce((s, m) => s + (Number(m.monto) || 0), 0);
+  const efectivoEsperado = (Number(caja.baseInicial) || 0) + totalIngresosEfectivo - totalEgresosEfectivo;
 
   const totalIngresosOtros = movimientos
-    .filter(m => m.tipo === "ingreso" && m.metodoPago && m.metodoPago !== "Efectivo" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
-    .reduce((s, m) => s + (m.monto || 0), 0);
+    .filter(m => m.tipo === "ingreso" && !isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const totalEgresosOtros = movimientos
-    .filter(m => m.tipo === "egreso" && m.metodoPago && m.metodoPago !== "Efectivo" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
-    .reduce((s, m) => s + (m.monto || 0), 0);
+    .filter(m => m.tipo === "egreso" && !isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const otrosEsperado = totalIngresosOtros - totalEgresosOtros;
 
   const conteoEfNum = parseFloat(String(conteoEfectivo).replace(/[^0-9]/g, "")) || 0;
@@ -103,7 +114,7 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
     setDestinosTraslado(prev => [
       ...prev,
       {
-        banco: bancosList[0] || "Bancolombia",
+        banco: bancosList[0] || "",
         valor: 0,
         valorDisplay: "",
         medio: "Efectivo"

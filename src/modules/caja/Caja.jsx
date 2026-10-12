@@ -147,11 +147,12 @@ export default function Caja() {
           const cajaMovs = movsList.filter(m => (m.caja_id === c.id || m.cajaId === c.id) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
           const movIngresos = cajaMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const movEgresos = cajaMovs.filter(m => m.tipo === "egreso").reduce((s, m) => s + Number(m.monto || 0), 0);
-          
-          const totalIngresos = (Number(c.total_ingresos ?? c.totalIngresos ?? 0)) > 0 ? Number(c.total_ingresos ?? c.totalIngresos) : movIngresos;
-          const totalEgresos = (Number(c.total_egresos ?? c.totalEgresos ?? 0)) > 0 ? Number(c.total_egresos ?? c.totalEgresos) : movEgresos;
           const baseInicial = Number(c.base_inicial ?? c.baseInicial ?? 0);
-          const saldoCalculado = (c.saldo_actual !== undefined || c.saldoActual !== undefined) ? Number(c.saldo_actual ?? c.saldoActual ?? 0) : (baseInicial + totalIngresos - totalEgresos);
+          
+          // Cálculo dinámico en tiempo real 100% sincronizado con Detalle de Caja y Cierre
+          const totalIngresos = cajaMovs.length > 0 ? movIngresos : Number(c.total_ingresos ?? c.totalIngresos ?? 0);
+          const totalEgresos = cajaMovs.length > 0 ? movEgresos : Number(c.total_egresos ?? c.totalEgresos ?? 0);
+          const saldoCalculado = baseInicial + totalIngresos - totalEgresos;
 
           mergedMap.set(c.id, {
             ...c,

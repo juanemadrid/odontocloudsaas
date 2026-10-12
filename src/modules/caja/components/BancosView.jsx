@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import supabase from "../../../lib/supabaseClient";
-import { getConfigItems } from "../../../services/configPersistenceService";
+import { getConfigItems, getConfigSection } from "../../../services/configPersistenceService";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { 
   FiArrowLeft, FiBriefcase, FiDollarSign, FiEye, 
@@ -63,180 +63,95 @@ export default function BancosView({ inquilino, userProfile }) {
     try {
       const [
         listBancos,
-        listMetodos,
-        pacientesRes,
-        pagosResult,
-        recibosResult,
-        movimientosResult,
-        tenantConfigRes
+        trasladosDbRes,
+        cajaMovsRes
       ] = await Promise.all([
-        getConfigItems(inquilino, "bancos", "bancos"),
-        getConfigItems(inquilino, "metodos_pago", null),
-        supabase.from("pacientes").select("*").eq("tenant_id", inquilino),
-        supabase.from("pagos").select("*").eq("tenant_id", inquilino),
-        supabase.from("recibos_caja").select("*").eq("tenant_id", inquilino),
-        supabase.from("movimientos_caja").select("*").eq("tenant_id", inquilino),
-        supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle()
+        getConfigItems(inquilino, "bancos", "bancos").catch(() => []),
+        supabase.from("traslados").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
+        supabase.from("movimientos_caja").select("*").eq("tenant_id", inquilino).eq("tipo", "traslado").catch(() => ({ data: [] }))
       ]);
 
-      const listPagos = pagosResult.data || [];
-      const listRecibos = recibosResult.data || [];
-      const listMovs = movimientosResult.data || [];
-      const listPacientes = pacientesRes.data || [];
+      const cfgTraslados = await getConfigSection(inquilino, "traslados", []).catch(() => []);
+      const dbTraslados = trasladosDbRes?.data || [];
+      const movsTraslados = cajaMovsRes?.data || [];
 
-      // Map patient details
-      const pMap = {};
-      listPacientes.forEach(p => {
-        const fullName = p.nombreCompleto || `${p.nombres || ''} ${p.apellidos || ''}`.trim() || p.nombre || "Paciente";
-        pMap[p.id] = {
-          ...p,
-          nombreCompleto: fullName,
-          documento: p.nroDocumento || p.documento || "—"
-        };
-      });
-      setPatientMap(pMap);
-
-      // Map payment methods to bank IDs
-      const methodToBankId = {};
-      (listMetodos || []).forEach(method => {
-        if (method.bancoId && method.nombre) {
-          methodToBankId[method.nombre.toLowerCase().trim()] = method.bancoId;
+      // Consolidar todos los traslados sin duplicados
+      const processedTrMap = new Map();
+      [...dbTraslados, ...cfgTraslados].forEach(tr => {
+        if (!tr) return;
+        const key = tr.id || tr.referencia || `${tr.fecha}_${tr.origen}_${tr.destino}_${tr.monto}`;
+        if (!processedTrMap.has(key)) {
+          processedTrMap.set(key, tr);
         }
-        if (method.bancoId) methodToBankId[method.id] = method.bancoId;
+      });
+      movsTraslados.forEach(m => {
+        if (!m || (m.estado || "").toLowerCase() === "anulado" || m.anulado) return;
+        const key = m.referencia || m.id;
+        if (!processedTrMap.has(key)) {
+          processedTrMap.set(key, {
+            id: m.id,
+            fecha: m.fecha || m.created_at,
+            origen: m.caja_id || "Caja",
+            destino: m.metodo_pago || m.metodoPago || "Banco",
+            monto: Number(m.monto || 0),
+            descripcion: m.concepto || "Traslado desde caja",
+            referencia: m.referencia || `TR-${m.id}`
+          });
+        }
       });
 
-      // Default bancos if none configured
-      let baseBancos = listBancos || [];
-      if (baseBancos.length === 0) {
-        baseBancos = [
-          {
-            id: "banco_nequi",
-            nombre: "Nequi",
-            numero_cuenta: "3001234567",
-            tipo_cuenta: "Ahorros / Digital",
-            created_at: "2025-08-01T14:56:00Z"
-          },
-          {
-            id: "banco_bancolombia",
-            nombre: "Bancolombia",
-            numero_cuenta: "123-456789-00",
-            tipo_cuenta: "Ahorros",
-            created_at: "2025-08-01T14:56:00Z"
-          }
-        ];
-      }
+      const allTraslados = Array.from(processedTrMap.values());
 
-      // Calculate balance and movements for each bank
+      // Bancos configurados en Configuración -> Bancos
+      const baseBancos = listBancos || [];
+
+      // Calcular saldo y movimientos de cada banco basándose EXCLUSIVAMENTE en traslados
       const updatedBancos = baseBancos.map(b => {
         const bNameLower = (b.nombre || "").toLowerCase().trim();
         const initialVal = Number(b.valor || b.saldo_inicial || 0);
-        let totalRecaudos = 0;
-        let totalGastos = 0;
+        let totalEntradas = 0;
+        let totalSalidas = 0;
         const movements = [];
-        const processedTxIds = new Set();
 
-        // 1. Process pagos
-        (listPagos || []).forEach((p, idx) => {
-          if (p.estado === "Anulado") return;
-          const pMedioLower = (p.medio || p.metodo_pago || "").toLowerCase().trim();
-          const linkedBankId = methodToBankId[pMedioLower] || p.bancoId || p.banco_id;
-          
-          const isMatch = (linkedBankId && linkedBankId === b.id) ||
-            (bNameLower && pMedioLower && (pMedioLower.includes(bNameLower) || bNameLower.includes(pMedioLower)));
+        allTraslados.forEach((tr, idx) => {
+          const trDestino = (tr.destino || tr.banco_destino || "").toLowerCase().trim();
+          const trOrigen = (tr.origen || tr.banco_origen || "").toLowerCase().trim();
+          const monto = Number(tr.monto || 0);
+          if (monto <= 0) return;
 
-          if (isMatch) {
-            processedTxIds.add(`pago_${p.id}`);
-            const val = Number(p.monto || 0);
-            totalRecaudos += val;
-            
-            const patObj = pMap[p.pacienteId || p.paciente_id];
-            const pName = p.patientNombre || p.pacienteNombre || p.paciente_nombre || patObj?.nombreCompleto || "Paciente Clínica";
-            const docConsecutivo = p.nroConsecutivo || p.consecutivo || `RC-${String(idx + 1).padStart(4, "0")}`;
+          const isDestino = trDestino.includes(bNameLower) || (bNameLower && bNameLower.includes(trDestino));
+          const isOrigen = trOrigen.includes(bNameLower) || (bNameLower && bNameLower.includes(trOrigen));
 
+          if (isDestino) {
+            totalEntradas += monto;
             movements.push({
-              id: p.id || `pago_${idx}`,
-              fecha: p.fecha || p.created_at,
-              concepto: p.concepto || "Abono a tratamiento",
-              documento: docConsecutivo,
-              pacienteNombre: pName,
-              pacienteObj: patObj,
-              medio: p.medio || p.metodo_pago || b.nombre,
-              monto: val,
-              tipo: "ingreso",
-              rawPago: p
-            });
-          }
-        });
-
-        // 2. Process recibos_caja
-        (listRecibos || []).forEach((r, idx) => {
-          if (r.estado === "Anulado") return;
-          const rMedioLower = (r.medioPago || r.medio_pago || "").toLowerCase().trim();
-          const linkedBankId = methodToBankId[rMedioLower] || r.bancoId || r.banco_id;
-          
-          const isMatch = (linkedBankId && linkedBankId === b.id) ||
-            (bNameLower && rMedioLower && (rMedioLower.includes(bNameLower) || bNameLower.includes(rMedioLower)));
-
-          if (isMatch && !processedTxIds.has(`recibo_${r.id}`)) {
-            processedTxIds.add(`recibo_${r.id}`);
-            const val = Number(r.total || r.monto || 0);
-            totalRecaudos += val;
-
-            const patObj = pMap[r.pacienteId || r.paciente_id];
-            const pName = r.pacienteNombre || patObj?.nombreCompleto || "Paciente Clínica";
-            const docConsecutivo = r.nroConsecutivo || `RC-${String(r.consecutivo || idx + 1).padStart(4, "0")}`;
-
-            movements.push({
-              id: r.id || `recibo_${idx}`,
-              fecha: r.fecha || r.created_at,
-              concepto: `Recibo de Caja #${docConsecutivo}`,
-              documento: docConsecutivo,
-              pacienteNombre: pName,
-              pacienteObj: patObj,
-              medio: r.medioPago || r.medio_pago || b.nombre,
-              monto: val,
+              id: tr.id ? `tr_in_${tr.id}` : `tr_in_${idx}`,
+              fecha: tr.fecha || tr.created_at,
+              concepto: tr.descripcion || `Traslado recibido de ${tr.origen || 'Caja'}`,
+              documento: tr.referencia || `TRA-${String(idx + 1).padStart(4, "0")}`,
+              pacienteNombre: tr.origen || "Caja Clínica",
+              medio: "Traslado a Banco (+)",
+              monto,
               tipo: "ingreso"
             });
           }
-        });
 
-        // 3. Process movimientos_caja
-        (listMovs || []).forEach((m, idx) => {
-          if ((m.estado || "").toLowerCase() === "anulado" || m.anulado) return;
-          const mMedioLower = (m.metodo_pago || m.metodoPago || "").toLowerCase().trim();
-          const linkedBankId = methodToBankId[mMedioLower] || m.bancoId || m.banco_id;
-
-          const isMatch = (linkedBankId && linkedBankId === b.id) ||
-            (bNameLower && mMedioLower && (mMedioLower.includes(bNameLower) || bNameLower.includes(mMedioLower)));
-
-          if (isMatch && !processedTxIds.has(`mov_${m.id}`)) {
-            processedTxIds.add(`mov_${m.id}`);
-            const val = Number(m.monto || 0);
-            if (m.tipo === "ingreso") {
-              totalRecaudos += val;
-            } else {
-              totalGastos += val;
-            }
-
-            const patObj = pMap[m.paciente_id || m.pacienteId];
-            const pName = m.paciente_nombre || m.pacienteNombre || patObj?.nombreCompleto || (m.tipo === "egreso" ? "Gasto / Proveedor" : "Paciente Clínica");
-            const docConsecutivo = m.nroConsecutivo || m.consecutivo || (m.tipo === "egreso" ? `EGR-${String(idx + 1).padStart(4, "0")}` : `RC-${String(idx + 1).padStart(4, "0")}`);
-
+          if (isOrigen) {
+            totalSalidas += monto;
             movements.push({
-              id: m.id || `mov_${idx}`,
-              fecha: m.created_at || m.fecha,
-              concepto: m.concepto || (m.tipo === "ingreso" ? "Ingreso de Caja" : "Egreso de Caja"),
-              documento: docConsecutivo,
-              pacienteNombre: pName,
-              pacienteObj: patObj,
-              medio: m.metodo_pago || m.metodoPago || b.nombre,
-              monto: val,
-              tipo: m.tipo || "ingreso"
+              id: tr.id ? `tr_out_${tr.id}` : `tr_out_${idx}`,
+              fecha: tr.fecha || tr.created_at,
+              concepto: tr.descripcion || `Traslado hacia ${tr.destino || 'Caja'}`,
+              documento: tr.referencia || `TRA-${String(idx + 1).padStart(4, "0")}`,
+              pacienteNombre: tr.destino || "Caja Clínica",
+              medio: "Traslado de Salida (-)",
+              monto,
+              tipo: "egreso"
             });
           }
         });
 
-        // Sort ascending to compute progressive balance
+        // Ordenar cronológicamente ascendente para saldo acumulado
         const sortedAsc = [...movements].sort((x, y) => {
           const tx = new Date(x.fecha || 0).getTime();
           const ty = new Date(y.fecha || 0).getTime();
@@ -253,29 +168,25 @@ export default function BancosView({ inquilino, userProfile }) {
           return { ...m, runningBalance: running };
         });
 
-        // Sort descending for table view
+        // Ordenar descendente para la vista
         const movementsWithRunningDesc = [...movementsWithRunning].reverse();
 
-        // Group by payment methods for summary table
-        const methodSummaries = {};
-        movementsWithRunningDesc.forEach(m => {
-          const med = m.medio || "Otro";
-          if (!methodSummaries[med]) {
-            methodSummaries[med] = { count: 0, total: 0 };
-          }
-          methodSummaries[med].count += 1;
-          if (m.tipo === "ingreso") {
-            methodSummaries[med].total += m.monto;
-          } else {
-            methodSummaries[med].total -= m.monto;
-          }
-        });
-
-        const listSummaries = Object.keys(methodSummaries).map(k => ({
-          name: k,
-          count: methodSummaries[k].count,
-          total: methodSummaries[k].total
-        }));
+        // Resumen para la tabla
+        const summaries = [];
+        if (totalEntradas > 0) {
+          summaries.push({
+            name: "Entradas por Traslado (+)",
+            count: movements.filter(m => m.tipo === "ingreso").length,
+            total: totalEntradas
+          });
+        }
+        if (totalSalidas > 0) {
+          summaries.push({
+            name: "Salidas por Traslado (-)",
+            count: movements.filter(m => m.tipo === "egreso").length,
+            total: -totalSalidas
+          });
+        }
 
         const fechaApertura = b.fecha || b.created_at || "2025-08-01T14:56:00Z";
         const numeroCuenta = b.numero_cuenta || b.numeroCuenta || "—";
@@ -287,11 +198,11 @@ export default function BancosView({ inquilino, userProfile }) {
           numeroCuenta: numeroCuenta,
           fecha: fechaApertura,
           fechaFormateada: fmtDate(fechaApertura),
-          recaudos: totalRecaudos,
-          gastos: totalGastos,
-          saldoActual: initialVal + totalRecaudos - totalGastos,
+          recaudos: totalEntradas,
+          gastos: totalSalidas,
+          saldoActual: initialVal + totalEntradas - totalSalidas,
           movements: movementsWithRunningDesc,
-          summaries: listSummaries
+          summaries
         };
       });
 
@@ -469,28 +380,28 @@ export default function BancosView({ inquilino, userProfile }) {
               <span className="font-medium text-slate-700">{fmt(b.valor || 0)}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-50">
-              <span className="text-slate-500">Recaudos</span>
+              <span className="text-slate-500">Entradas por Traslados (+)</span>
               <span className="font-semibold text-emerald-600">{fmt(b.recaudos)}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-50">
-              <span className="text-slate-500">Gastos</span>
+              <span className="text-slate-500">Salidas por Traslados (-)</span>
               <span className="font-semibold text-rose-600">{fmt(b.gastos)}</span>
             </div>
             <div className="flex justify-between py-2 border-t border-slate-200 mt-2">
-              <span className="font-bold text-slate-800">Total caja</span>
+              <span className="font-bold text-slate-800">Saldo disponible en Banco</span>
               <span className="font-extrabold text-blue-600 text-[15px]">{fmt(b.saldoActual)}</span>
             </div>
           </div>
 
-          {/* Breakdown por Medio de Pago */}
+          {/* Breakdown por Traslados */}
           <div className="pt-6 border-t border-slate-100">
             <h3 className="text-[13px] font-bold text-slate-800 uppercase tracking-wide mb-3">
-              Medio de pago
+              Resumen de Traslados
             </h3>
             <table className="w-full text-[13px] border border-slate-200 rounded-md overflow-hidden">
               <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider font-semibold">
                 <tr>
-                  <th className="px-4 py-2.5 text-left border-b border-slate-200">Medio de pago</th>
+                  <th className="px-4 py-2.5 text-left border-b border-slate-200">Tipo de Traslado</th>
                   <th className="px-4 py-2.5 text-center border-b border-slate-200">Cantidad</th>
                   <th className="px-4 py-2.5 text-right border-b border-slate-200">Valor</th>
                 </tr>
