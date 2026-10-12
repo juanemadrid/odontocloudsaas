@@ -7,6 +7,44 @@ import { calculateAgeStr } from "../../../utils/formatters";
 import { FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiCalendar, FiRefreshCw } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
+import { toast } from "sonner";
+
+// Formatea números de documento con separadores de miles
+const formatDocNumber = (val) => {
+  if (val === undefined || val === null || val === "") return "";
+  const s = String(val).trim();
+  if (s.includes(".") || s.includes("-")) return s;
+  if (/^\d{5,12}$/.test(s)) {
+    return s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  }
+  return s;
+};
+
+// Parser seguro de fecha para comparación Año/Mes (soporta DD/MM/YYYY, YYYY-MM-DD, ISO y Timestamps)
+const parseDateToYM = (val) => {
+  if (!val) return "";
+  if (val?.toDate) {
+    const d = val.toDate();
+    return !isNaN(d.getTime()) ? format(d, "yyyyMM") : "";
+  }
+  const s = String(val).trim();
+  const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slashMatch) {
+    const month = slashMatch[2].padStart(2, "0");
+    const year = slashMatch[3];
+    return `${year}${month}`;
+  }
+  const isoMatch = s.match(/^(\d{4})-(\d{1,2})/);
+  if (isoMatch) {
+    const year = isoMatch[1];
+    const month = isoMatch[2].padStart(2, "0");
+    return `${year}${month}`;
+  }
+  const d = new Date(s);
+  return !isNaN(d.getTime()) ? format(d, "yyyyMM") : "";
+};
+
+const MESES_NOMBRES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 export default function ReportePacientes() {
   const { userProfile } = useAuth();
@@ -14,16 +52,18 @@ export default function ReportePacientes() {
   const [profesionales, setProfesionales] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros principales (formulario superior)
+  // Filtros principales superiores
   const [selectedYearMonth, setSelectedYearMonth] = useState("");
   const [selectedProfesional, setSelectedProfesional] = useState("TODOS");
   const [filtroFechaTipo, setFiltroFechaTipo] = useState("creacion"); // "creacion" | "ingreso"
 
-  // Estado de si se ha presionado Buscar
+  // Selector visual de calendario Año/Mes
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
+  const monthPickerPopRef = useRef(null);
+
   const [hasSearched, setHasSearched] = useState(true);
   const [expandAllGroups, setExpandAllGroups] = useState(true);
-
-  const monthPickerRef = useRef(null);
   const tableContainerRef = useRef(null);
 
   // Filtros aplicados al presionar "Buscar"
@@ -42,7 +82,7 @@ export default function ReportePacientes() {
   // Control de selector de columnas visibles
   const [showColumnSelector, setShowColumnSelector] = useState(false);
 
-  // Definición completa de columnas disponibles (1:1 con OralDrive)
+  // Las 42 columnas oficiales de OralDrive en su orden exacto
   const [visibleColumns, setVisibleColumns] = useState({
     fechaIngreso: true,
     fechaCreacion: true,
@@ -85,18 +125,7 @@ export default function ReportePacientes() {
     sgsss: true,
     tipoPaciente: true,
     convenioBeneficio: true,
-    convenioPago: true,
-    comoNosConocio: true,
-    campana: true,
-    remitidoPor: true,
-    asesorComercial: true,
-    presupuestos: true,
-    tratamientosIniciados: true,
-    tratamientosNoIniciados: true,
-    tratamientosFinalizados: true,
-    citas: true,
-    profesionales: true,
-    proximaCita: true
+    convenioPago: true
   });
 
   const columnLabels = {
@@ -107,7 +136,7 @@ export default function ReportePacientes() {
     numeroHistoria: "Número Historia",
     nombre: "Nombre",
     apellido: "Apellido",
-    genero: "Género",
+    genero: "Genero",
     rh: "RH",
     estadoCivil: "Estado civil",
     fechaNacimiento: "Fecha de nacimiento",
@@ -136,23 +165,12 @@ export default function ReportePacientes() {
     telefonoAcompanante: "Teléfono acompañante",
     convenio: "Convenio",
     tipoAfiliacion: "Tipo de afiliación",
-    eps: "EPS",
-    polizaSalud: "Póliza de salud",
-    sgsss: "SGSSS",
+    eps: "Eps",
+    polizaSalud: "Poliza de salud",
+    sgsss: "Sgsss",
     tipoPaciente: "Tipo de paciente",
     convenioBeneficio: "Convenio beneficio",
-    convenioPago: "Convenio de pago",
-    comoNosConocio: "Cómo nos conoció",
-    campana: "Campaña",
-    remitidoPor: "Remitido por",
-    asesorComercial: "Asesor comercial",
-    presupuestos: "Presupuestos",
-    tratamientosIniciados: "Tratamientos iniciados",
-    tratamientosNoIniciados: "Tratamientos no iniciados",
-    tratamientosFinalizados: "Tratamientos finalizados",
-    citas: "Citas",
-    profesionales: "Profesionales",
-    proximaCita: "Próxima Cita"
+    convenioPago: "Convenio de pago"
   };
 
   const toggleColumn = (key) => {
@@ -161,20 +179,19 @@ export default function ReportePacientes() {
 
   const toggleAllColumns = (val) => {
     const updated = {};
-    Object.keys(visibleColumns).forEach((k) => {
+    Object.keys(columnLabels).forEach((k) => {
       updated[k] = val;
     });
     setVisibleColumns(updated);
   };
 
-  // Carga de datos optimizada en paralelo desde PostgreSQL de tu VPS
+  // Carga de datos optimizada desde PostgreSQL de tu VPS
   const fetchData = useCallback(async () => {
     const tenantId = userProfile?.inquilino || userProfile?.tenant_id;
     if (!tenantId) return;
     setLoading(true);
 
     try {
-      // Consultas en paralelo para máxima velocidad (1 solo roundtrip al VPS)
       const [docsFromService, profilesRes, pacRes, citasRes, planesRes] = await Promise.all([
         getDoctorsList(userProfile, null).catch((e) => {
           console.warn("Aviso al consultar catálogo de doctores:", e);
@@ -186,7 +203,7 @@ export default function ReportePacientes() {
         supabase.from("treatment_plans").select("*").eq("tenant_id", tenantId)
       ]);
 
-      // 1. Armar catálogo consolidado de profesionales del VPS
+      // Catálogo de profesionales
       const catalogProfs = Array.isArray(docsFromService) ? [...docsFromService] : [];
 
       (profilesRes?.data || []).forEach((u) => {
@@ -234,80 +251,25 @@ export default function ReportePacientes() {
       const snapCitas = citasRes?.data || [];
       const snapPlanes = planesRes?.data || [];
 
-      // Fecha de hoy a medianoche para filtrar citas futuras
-      const todayMidnight = new Date();
-      todayMidnight.setHours(0, 0, 0, 0);
-
-      // Normalización uniforme de pacientes con datos clínicos en tiempo real de tu VPS
+      // Normalización uniforme de pacientes
       const normalized = dataPacientes.map((p) => {
         const fn = p.fecha_nacimiento || p.fechaNacimiento || "";
         const calculatedAge = fn ? calculateAgeStr(fn) : (p.edad || "");
         const pDocStr = String(p.documento || p.nroDocumento || p.identificacion || "").trim();
 
-        // Citas de este paciente
         const patientCitas = snapCitas.filter((c) => {
           const cPacId = c.paciente_id || c.pacienteId || c.paciente;
           const cDoc = String(c.paciente_documento || c.pacienteDocumento || c.documento || "").trim();
           return (cPacId && String(cPacId) === String(p.id)) || (cDoc && pDocStr && cDoc === pDocStr);
         });
 
-        // Próxima Cita
-        const futureCitas = patientCitas.filter((c) => {
-          const estado = (c.estado || "").toLowerCase();
-          if (estado === "cancelada" || estado === "anulada" || estado === "no_asistio" || estado === "no asiste") return false;
-
-          const rawD = c.fecha || c.fecha_inicio || c.start || c.fechaCita;
-          if (!rawD) return false;
-          const hora = c.hora || c.hora_inicio || "00:00";
-          const citaDt = new Date(rawD.includes("T") ? rawD : `${rawD}T${hora}:00`);
-          return !isNaN(citaDt.getTime()) && citaDt.getTime() >= todayMidnight.getTime();
-        });
-
-        futureCitas.sort((a, b) => {
-          const dtA = new Date(a.fecha ? `${a.fecha}T${a.hora || "00:00"}:00` : (a.fecha_inicio || a.start || 0));
-          const dtB = new Date(b.fecha ? `${b.fecha}T${b.hora || "00:00"}:00` : (b.fecha_inicio || b.start || 0));
-          return dtA - dtB;
-        });
-
-        const nextCita = futureCitas[0];
-        let proximaCitaVal = "";
-        if (nextCita) {
-          proximaCitaVal = nextCita.fecha 
-            ? `${nextCita.fecha}${nextCita.hora ? "T" + nextCita.hora : ""}` 
-            : (nextCita.fecha_inicio || nextCita.start);
-        } else {
-          proximaCitaVal = p.proximaCita || p.proxima_cita || "";
-        }
-
-        // Planes de tratamiento de este paciente
         const patientPlans = snapPlanes.filter((pl) => {
           const plPacId = pl.paciente_id || pl.pacienteId || pl.patientId;
           const plDoc = String(pl.documento || pl.pacienteDocumento || "").trim();
           return (plPacId && String(plPacId) === String(p.id)) || (plDoc && pDocStr && plDoc === pDocStr);
         });
 
-        let presupuestosCount = 0;
-        let tratIniciadosCount = 0;
-        let tratNoIniciadosCount = 0;
-        let tratFinalizadosCount = 0;
-
-        patientPlans.forEach((pl) => {
-          const d = pl.detalles || {};
-          const status = String(pl.estado || pl.status || d.estado || d.status || "").toLowerCase();
-          const type = String(pl.type || d.type || pl.tipo || "").toLowerCase();
-
-          if (type.includes("presupuesto") || status === "draft" || status === "borrador" || status === "pending") {
-            presupuestosCount++;
-          } else if (status === "finalizado" || status === "completado" || status === "terminado") {
-            tratFinalizadosCount++;
-          } else if (status === "iniciado" || status === "approved" || status === "activo" || status === "en_progreso") {
-            tratIniciadosCount++;
-          } else {
-            tratNoIniciadosCount++;
-          }
-        });
-
-        // ─── RESOLUCIÓN RIGUROSA DE DOCTORES DEL PACIENTE (SIN FALSOS POSITIVOS) ───
+        // Resolución de doctores asociados
         const docNamesSet = new Set();
         const docIdsSet = new Set();
 
@@ -329,7 +291,6 @@ export default function ReportePacientes() {
           }
         };
 
-        // A. Array p.profesionales
         if (Array.isArray(p.profesionales)) {
           p.profesionales.forEach((docItem) => {
             if (typeof docItem === "string") addValidDoctor(docItem, null);
@@ -339,7 +300,6 @@ export default function ReportePacientes() {
           });
         }
 
-        // B. Historial médico
         const hmProfs = p.historial_medico?.profesionales || p.historialMedico?.profesionales;
         if (Array.isArray(hmProfs)) {
           hmProfs.forEach((docItem) => {
@@ -350,15 +310,12 @@ export default function ReportePacientes() {
           });
         }
 
-        // C. Campos directos del paciente
         addValidDoctor(p.profesional_nombre || p.profesionalNombre || p.profesionalAsignado || p.profesional || p.odontologo || p.doctor, p.profesional_id || p.profesionalId || p.odontologo_id || p.doctor_id);
 
-        // D. Citas del paciente
         patientCitas.forEach((c) => {
           addValidDoctor(c.profesional_nombre || c.profesionalNombre || c.doctor || c.doctorNombre, c.profesional_id || c.profesionalId || c.doctor_id || c.doctorId);
         });
 
-        // E. Planes de tratamiento
         patientPlans.forEach((pl) => {
           const d = pl.detalles || {};
           addValidDoctor(pl.profesional_nombre || pl.doctor || pl.odontologo || d.profesional_nombre || d.doctor, pl.profesional_id || pl.doctor_id || d.profesional_id || d.doctor_id);
@@ -371,16 +328,16 @@ export default function ReportePacientes() {
         return {
           id: p.id,
           raw: p,
-          fechaIngreso: p.fecha_ingreso || p.fechaIngreso || p.created_at || p.createdAt || p.fechaCreacion,
-          fechaCreacion: p.created_at || p.fechaCreacion || p.createdAt || p.fecha_creacion,
+          fechaIngreso: p.historial_medico?.resumen_migracion?.fecha_ingreso_original || p.fecha_ingreso || p.fechaIngreso || p.created_at || p.createdAt || p.fechaCreacion,
+          fechaCreacion: p.historial_medico?.resumen_migracion?.fecha_creacion_original || p.created_at || p.fechaCreacion || p.createdAt || p.fecha_creacion,
           tipoDocumento: p.tipo_documento || p.tipoDocumento || p.tipoIdentificacion || "Cédula de ciudadanía",
           documento: p.documento || p.nroDocumento || p.identificacion || "",
           numeroHistoria: p.nro_historia || p.nroHistoria || p.numeroHistoria || p.documento || p.nroDocumento || p.identificacion || "",
           nombre: p.nombres || p.nombre || "",
           apellido: p.apellidos || p.apellido || "",
           genero: p.genero || p.sexo || "Femenino",
-          rh: p.rh || p.grupo_sanguineo || "—",
-          estadoCivil: p.estado_civil || p.estadoCivil || "1",
+          rh: p.rh || p.grupo_sanguineo || "",
+          estadoCivil: p.estado_civil || p.estadoCivil || "",
           fechaNacimiento: fn,
           edad: calculatedAge,
           paisNacimiento: p.pais_nacimiento || p.paisNacimiento || "Colombia",
@@ -390,17 +347,17 @@ export default function ReportePacientes() {
           ciudadDomicilio: p.ciudad_domicilio || p.ciudadDomicilio || p.ciudad || "",
           lugarExpedicion: p.lugar_expedicion || p.lugarExpedicion || "",
           barrio: p.barrio || "",
-          estrato: p.estrato || "1",
-          zonaResidencial: p.zona_residencial || p.zonaResidencial || p.zona || "1",
-          celular: p.telefono || p.celular || "",
-          telefono: p.telefono_domicilio || p.telDomicilio || p.telefono || "",
+          estrato: p.estrato || "",
+          zonaResidencial: p.zona_residencial || p.zonaResidencial || p.zona || "",
+          celular: p.celular || p.telefono || "",
+          telefono: p.telefono_domicilio || p.telDomicilio || "",
           telefonoOficina: p.telefono_oficina || p.telOficina || "",
           extensionOficina: p.extension || p.extensionOficina || "",
           correo: p.email || p.correo || "",
           ocupacion: p.ocupacion || "",
-          nombreResponsable: p.nombre_responsable || p.nombreResponsable || "",
-          relacionResponsable: p.parentesco || p.relacionResponsable || "",
-          celularResponsable: p.celular_responsable || p.celularResponsable || "",
+          nombreResponsable: p.nombre_responsable || p.nombreResponsable || p.contacto_emergencia?.nombre || "",
+          relacionResponsable: p.parentesco || p.relacionResponsable || p.contacto_emergencia?.parentesco || "",
+          celularResponsable: p.celular_responsable || p.celularResponsable || p.contacto_emergencia?.telefono || "",
           telefonoResponsable: p.telefono_responsable || p.telefonoResponsable || "",
           correoResponsable: p.email_responsable || p.correoResponsable || "",
           nombreAcompanante: p.nombre_acompanante || p.nombreAcompanante || "",
@@ -413,19 +370,9 @@ export default function ReportePacientes() {
           tipoPaciente: p.tipo_paciente || p.tipoPaciente || "",
           convenioBeneficio: p.convenio_beneficio || p.convenioBeneficio || "",
           convenioPago: p.convenio_pago || p.convenioPago || "",
-          comoNosConocio: p.como_conocio || p.comoConocio || p.comoNosConocio || p.medioAtraccion || p.medio_atraccion || "",
-          campana: p.campania || p.campana || "",
-          remitidoPor: p.remitido_por_value || p.remitidoPorValue || p.remitidoPor || "",
-          asesorComercial: p.asesor_comercial_value || p.asesorComercialValue || p.asesorComercial || "",
-          presupuestos: presupuestosCount || (p.presupuestosCount ?? (p.presupuestos?.length || 0)),
-          tratamientosIniciados: tratIniciadosCount || (p.tratamientosIniciadosCount ?? 0),
-          tratamientosNoIniciados: tratNoIniciadosCount || (p.tratamientosNoIniciadosCount ?? 0),
-          tratamientosFinalizados: tratFinalizadosCount || (p.tratamientosFinalizadosCount ?? 0),
-          citas: patientCitas.length || (p.citasCount ?? 0),
-          profesionales: doctorDisplay,
           doctorNamesList: docNamesArr,
           doctorIdsList: docIdsArr,
-          proximaCita: proximaCitaVal
+          profesionales: doctorDisplay
         };
       });
 
@@ -442,9 +389,10 @@ export default function ReportePacientes() {
     fetchData();
   }, [fetchData]);
 
-  // Formateadores de fecha auxiliares
+  // Formateadores de fecha
   const formatDateTime = (dateVal) => {
     if (!dateVal) return "";
+    if (typeof dateVal === "string" && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(dateVal)) return dateVal;
     if (dateVal?.toDate) return format(dateVal.toDate(), "dd/MM/yyyy HH:mm");
     const d = new Date(dateVal);
     return isNaN(d.getTime()) ? String(dateVal) : format(d, "dd/MM/yyyy HH:mm");
@@ -452,38 +400,36 @@ export default function ReportePacientes() {
 
   const formatDateOnly = (dateVal) => {
     if (!dateVal) return "";
+    if (typeof dateVal === "string" && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(dateVal)) {
+      return dateVal.split(" ")[0];
+    }
     if (dateVal?.toDate) return format(dateVal.toDate(), "dd/MM/yyyy");
     const d = new Date(dateVal);
     return isNaN(d.getTime()) ? String(dateVal) : format(d, "dd/MM/yyyy");
   };
 
-  // Filtrado principal de tabla con exactitud rigurosa
+  // Filtrado principal de tabla
   const filteredData = useMemo(() => {
     return allPacientes.filter((p) => {
       // 1. Filtro superior: Año/Mes
       const rawYm = (appliedFilters.yearMonth || "").trim();
       if (rawYm && rawYm !== "TODOS") {
-        const ymInput = rawYm.replace(/\D/g, ""); // normalizar números (ej: 202610)
+        const ymInput = rawYm.replace(/\D/g, "");
         if (ymInput.length >= 4) {
           const targetDateRaw = appliedFilters.fechaTipo === "creacion" 
             ? (p.fechaCreacion || p.raw?.created_at || p.raw?.createdAt)
             : (p.fechaIngreso || p.raw?.fecha_ingreso || p.raw?.fechaIngreso || p.fechaCreacion || p.raw?.created_at);
 
           if (targetDateRaw) {
-            const d = targetDateRaw?.toDate ? targetDateRaw.toDate() : new Date(targetDateRaw);
-            if (!isNaN(d.getTime())) {
-              const formattedYM = format(d, "yyyyMM");
-              if (!formattedYM.startsWith(ymInput)) return false;
-            } else {
-              return false;
-            }
+            const ymPatient = parseDateToYM(targetDateRaw);
+            if (!ymPatient || !ymPatient.startsWith(ymInput)) return false;
           } else {
             return false;
           }
         }
       }
 
-      // 2. Filtro superior: Profesional (Sin falsos positivos)
+      // 2. Filtro superior: Profesional
       if (appliedFilters.profesional && appliedFilters.profesional !== "TODOS") {
         if (appliedFilters.profesional === "SIN_ASIGNAR") {
           const isUnassigned = (p.doctorNamesList || []).length === 0 && (p.doctorIdsList || []).length === 0 && (p.profesionales === "Sin asignar" || !p.profesionales);
@@ -497,12 +443,10 @@ export default function ReportePacientes() {
 
           let matchesDoc = false;
 
-          // A. Coincidencia por ID exacto
           if (targetId && (p.doctorIdsList || []).includes(targetId)) {
             matchesDoc = true;
           }
 
-          // B. Coincidencia por Nombre del profesional
           if (!matchesDoc && targetProfName.length >= 3) {
             matchesDoc = (p.doctorNamesList || []).some((dn) => {
               const dnLower = dn.toLowerCase().trim();
@@ -510,7 +454,6 @@ export default function ReportePacientes() {
             });
           }
 
-          // C. Coincidencia en la columna display
           if (!matchesDoc && targetProfName.length >= 3 && p.profesionales !== "Sin asignar") {
             const displayLower = String(p.profesionales || "").toLowerCase();
             matchesDoc = displayLower.includes(targetProfName);
@@ -531,8 +474,7 @@ export default function ReportePacientes() {
           p.correo.toLowerCase().includes(term) ||
           p.celular.toLowerCase().includes(term) ||
           p.ciudadDomicilio.toLowerCase().includes(term) ||
-          p.barrio.toLowerCase().includes(term) ||
-          p.profesionales.toLowerCase().includes(term);
+          p.barrio.toLowerCase().includes(term);
         if (!matchesGlobal) return false;
       }
 
@@ -545,7 +487,7 @@ export default function ReportePacientes() {
         if (colKey === "fechaIngreso") cellValue = formatDateTime(p.fechaIngreso);
         else if (colKey === "fechaCreacion") cellValue = formatDateTime(p.fechaCreacion);
         else if (colKey === "fechaNacimiento") cellValue = formatDateOnly(p.fechaNacimiento);
-        else if (colKey === "proximaCita") cellValue = `${formatDateOnly(p.proximaCita)} ${p.proximaCita || ""}`;
+        else if (colKey === "documento" || colKey === "numeroHistoria") cellValue = formatDocNumber(p[colKey]);
         else cellValue = String(p[colKey] || "");
 
         if (!cellValue.toLowerCase().includes(search)) {
@@ -557,16 +499,10 @@ export default function ReportePacientes() {
     });
   }, [allPacientes, appliedFilters, tableSearchTerm, columnFilters, profesionales]);
 
-  // Manejar cambio de profesional (actualiza en el acto y sincroniza)
   const handleProfesionalChange = (newVal) => {
     setSelectedProfesional(newVal);
-    setAppliedFilters((prev) => ({
-      ...prev,
-      profesional: newVal
-    }));
   };
 
-  // Manejar clic en "Buscar"
   const handleSearchClick = () => {
     setHasSearched(true);
     setAppliedFilters({
@@ -577,9 +513,9 @@ export default function ReportePacientes() {
     if (tableContainerRef.current) {
       tableContainerRef.current.scrollLeft = 0;
     }
+    toast.success("Filtros aplicados correctamente", { id: "p-search", duration: 1200 });
   };
 
-  // Restablecer todos los filtros
   const handleResetFilters = () => {
     setSelectedYearMonth("");
     setSelectedProfesional("TODOS");
@@ -593,7 +529,6 @@ export default function ReportePacientes() {
     });
   };
 
-  // Manejar cambio de filtro individual por columna
   const handleColumnFilterChange = (colKey, val) => {
     setColumnFilters((prev) => ({
       ...prev,
@@ -601,63 +536,20 @@ export default function ReportePacientes() {
     }));
   };
 
-  // Exportar reporte a Excel (respeta estrictamente las columnas visibles en el selector)
+  // Exportar reporte completo a Excel
   const handleExportExcel = () => {
     const rows = filteredData.map((p) => {
       const rowObj = {};
-      if (visibleColumns.fechaIngreso) rowObj["Fecha hora ingreso"] = formatDateTime(p.fechaIngreso);
-      if (visibleColumns.fechaCreacion) rowObj["Fecha hora creación"] = formatDateTime(p.fechaCreacion);
-      if (visibleColumns.tipoDocumento) rowObj["Tipo de documento"] = p.tipoDocumento || "";
-      if (visibleColumns.documento) rowObj["Documento"] = p.documento || "";
-      if (visibleColumns.numeroHistoria) rowObj["Número Historia"] = p.numeroHistoria || "";
-      if (visibleColumns.nombre) rowObj["Nombre"] = p.nombre || "";
-      if (visibleColumns.apellido) rowObj["Apellido"] = p.apellido || "";
-      if (visibleColumns.genero) rowObj["Genero"] = p.genero || "";
-      if (visibleColumns.rh) rowObj["RH"] = p.rh || "";
-      if (visibleColumns.estadoCivil) rowObj["Estado civil"] = p.estadoCivil || "";
-      if (visibleColumns.fechaNacimiento) rowObj["Fecha de nacimiento"] = formatDateOnly(p.fechaNacimiento);
-      if (visibleColumns.edad) rowObj["Edad"] = p.edad || "";
-      if (visibleColumns.paisNacimiento) rowObj["País de nacimiento"] = p.paisNacimiento || "";
-      if (visibleColumns.ciudadNacimiento) rowObj["Ciudad de nacimiento"] = p.ciudadNacimiento || "";
-      if (visibleColumns.direccion) rowObj["Dirección"] = p.direccion || "";
-      if (visibleColumns.paisDomicilio) rowObj["País de domicilio"] = p.paisDomicilio || "";
-      if (visibleColumns.ciudadDomicilio) rowObj["Ciudad de domicilio"] = p.ciudadDomicilio || "";
-      if (visibleColumns.lugarExpedicion) rowObj["Lugar de expedición del documento"] = p.lugarExpedicion || "";
-      if (visibleColumns.barrio) rowObj["Barrio"] = p.barrio || "";
-      if (visibleColumns.estrato) rowObj["Estrato"] = p.estrato || "";
-      if (visibleColumns.zonaResidencial) rowObj["Zona residencial"] = p.zonaResidencial || "";
-      if (visibleColumns.celular) rowObj["Celular"] = p.celular || "";
-      if (visibleColumns.telefono) rowObj["Teléfono"] = p.telefono || "";
-      if (visibleColumns.telefonoOficina) rowObj["Teléfono oficina"] = p.telefonoOficina || "";
-      if (visibleColumns.extensionOficina) rowObj["Extensión oficina"] = p.extensionOficina || "";
-      if (visibleColumns.correo) rowObj["Correo"] = p.correo || "";
-      if (visibleColumns.ocupacion) rowObj["Ocupación"] = p.ocupacion || "";
-      if (visibleColumns.nombreResponsable) rowObj["Nombre del responsable"] = p.nombreResponsable || "";
-      if (visibleColumns.relacionResponsable) rowObj["Relación con responsable"] = p.relacionResponsable || "";
-      if (visibleColumns.celularResponsable) rowObj["Celular responsable"] = p.celularResponsable || "";
-      if (visibleColumns.telefonoResponsable) rowObj["Teléfono responsable"] = p.telefonoResponsable || "";
-      if (visibleColumns.correoResponsable) rowObj["Correo responsable"] = p.correoResponsable || "";
-      if (visibleColumns.nombreAcompanante) rowObj["Nombre acompañante"] = p.nombreAcompanante || "";
-      if (visibleColumns.telefonoAcompanante) rowObj["Teléfono acompañante"] = p.telefonoAcompanante || "";
-      if (visibleColumns.convenio) rowObj["Convenio"] = p.convenio || "";
-      if (visibleColumns.tipoAfiliacion) rowObj["Tipo de afiliación"] = p.tipoAfiliacion || "";
-      if (visibleColumns.eps) rowObj["Eps"] = p.eps || "";
-      if (visibleColumns.polizaSalud) rowObj["Poliza de salud"] = p.polizaSalud || "";
-      if (visibleColumns.sgsss) rowObj["Sgsss"] = p.sgsss || "";
-      if (visibleColumns.tipoPaciente) rowObj["Tipo de paciente"] = p.tipoPaciente || "";
-      if (visibleColumns.convenioBeneficio) rowObj["Convenio beneficio"] = p.convenioBeneficio || "";
-      if (visibleColumns.convenioPago) rowObj["Convenio de pago"] = p.convenioPago || "";
-      if (visibleColumns.comoNosConocio) rowObj["Cómo nos conoció"] = p.comoNosConocio || "";
-      if (visibleColumns.campana) rowObj["Campaña"] = p.campana || "";
-      if (visibleColumns.remitidoPor) rowObj["Remitido por"] = p.remitidoPor || "";
-      if (visibleColumns.asesorComercial) rowObj["Asesor comercial"] = p.asesorComercial || "";
-      if (visibleColumns.presupuestos) rowObj["Presupuestos"] = p.presupuestos || 0;
-      if (visibleColumns.tratamientosIniciados) rowObj["Tratamientos iniciados"] = p.tratamientosIniciados || 0;
-      if (visibleColumns.tratamientosNoIniciados) rowObj["Tratamientos no iniciados"] = p.tratamientosNoIniciados || 0;
-      if (visibleColumns.tratamientosFinalizados) rowObj["Tratamientos finalizados"] = p.tratamientosFinalizados || 0;
-      if (visibleColumns.citas) rowObj["Citas"] = p.citas || 0;
-      if (visibleColumns.profesionales) rowObj["Profesionales"] = p.profesionales || "";
-      if (visibleColumns.proximaCita) rowObj["Próxima Cita"] = formatDateOnly(p.proximaCita);
+      Object.keys(columnLabels).forEach((colKey) => {
+        if (visibleColumns[colKey]) {
+          const colLabel = columnLabels[colKey];
+          if (colKey === "fechaIngreso") rowObj[colLabel] = formatDateTime(p.fechaIngreso);
+          else if (colKey === "fechaCreacion") rowObj[colLabel] = formatDateTime(p.fechaCreacion);
+          else if (colKey === "fechaNacimiento") rowObj[colLabel] = formatDateOnly(p.fechaNacimiento);
+          else if (colKey === "documento" || colKey === "numeroHistoria") rowObj[colLabel] = formatDocNumber(p[colKey]);
+          else rowObj[colLabel] = p[colKey] || "";
+        }
+      });
       return rowObj;
     });
 
@@ -667,12 +559,14 @@ export default function ReportePacientes() {
     
     const fileNameSuffix = (appliedFilters.yearMonth || "Completo").replace(/[/\\?%*:|"<>]/g, "-");
     XLSX.writeFile(workbook, `Reporte_Pacientes_${fileNameSuffix}.xlsx`);
+    toast.success("Archivo Excel generado con éxito");
   };
 
   return (
-    <div className="flex flex-col min-h-full bg-[#f4f7fb] font-sans text-slate-700 pb-12">
+    <div className="flex flex-col min-h-full bg-[#f4f7fb] font-sans text-slate-700 pb-16">
+      
       {/* ─── ENCABEZADO Y BREADCRUMB ─── */}
-      <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shadow-sm shrink-0">
+      <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shadow-xs shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-[15px] font-bold text-slate-800 tracking-tight">Reporte pacientes</h2>
           <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
@@ -682,80 +576,110 @@ export default function ReportePacientes() {
           </div>
         </div>
 
-        {/* Botón Generar reporte en Excel */}
+        {/* Botón Generar reporte en Excel (OralDrive) */}
         <button
           onClick={handleExportExcel}
-          className="flex items-center gap-2 px-5 py-2 bg-[#009beb] hover:bg-[#0087cd] active:scale-[0.98] text-white text-xs font-semibold rounded-2xl shadow-sm transition-all cursor-pointer"
+          className="flex items-center gap-2 px-5 py-2 bg-[#009beb] hover:bg-[#0087cd] active:scale-[0.98] text-white text-xs font-semibold rounded-2xl shadow-xs transition-all cursor-pointer"
         >
           <FiDownload size={14} />
           <span>Generar reporte en excel</span>
         </button>
       </div>
 
-      {/* ─── CONTENEDOR DE FILTROS SUPERIOR (1:1 CON ORALDRIVE) ─── */}
-      <div className="mx-6 mt-4 p-5 bg-white rounded-xl border border-slate-200 shadow-sm shrink-0">
+      {/* ─── CONTENEDOR DE FILTROS SUPERIOR ─── */}
+      <div className="mx-6 mt-4 p-5 bg-white rounded-xl border border-slate-200 shadow-xs shrink-0">
         <div className="flex flex-wrap items-center gap-6">
-          {/* Año/Mes con selector de calendario real y opción de ver histórico */}
-          <div className="flex items-center gap-3">
+          {/* Año/Mes */}
+          <div className="flex items-center gap-3 relative" ref={monthPickerPopRef}>
             <label className="text-xs font-medium text-slate-600 whitespace-nowrap">Año/Mes</label>
             <div className="relative flex items-center">
-              <input
-                type="month"
-                ref={monthPickerRef}
-                className="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10"
-                onChange={(e) => {
-                  if (e.target.value) {
-                    const formatted = e.target.value.replace("-", "/");
-                    setSelectedYearMonth(formatted);
-                  }
-                }}
-              />
               <input
                 type="text"
                 value={selectedYearMonth}
                 onChange={(e) => setSelectedYearMonth(e.target.value)}
-                placeholder="Todos los meses"
-                className="w-36 h-8 pl-3 pr-8 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium cursor-pointer"
-                onClick={() => {
-                  try {
-                    monthPickerRef.current?.showPicker?.();
-                  } catch (err) {
-                    monthPickerRef.current?.focus?.();
-                  }
-                }}
+                placeholder="2026/06"
+                className="w-32 h-8 pl-3 pr-8 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium"
               />
               <button
                 type="button"
-                title="Abrir calendario"
-                onClick={() => {
-                  try {
-                    monthPickerRef.current?.showPicker?.();
-                  } catch (err) {
-                    monthPickerRef.current?.focus?.();
-                  }
-                }}
+                title="Seleccionar año y mes"
+                onClick={() => setShowMonthPicker(!showMonthPicker)}
                 className="absolute right-1.5 p-1 text-slate-400 hover:text-slate-700 text-xs cursor-pointer rounded hover:bg-slate-100 transition-colors"
               >
                 📅
               </button>
             </div>
 
-            {selectedYearMonth && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedYearMonth("");
-                  setAppliedFilters((prev) => ({ ...prev, yearMonth: "" }));
-                }}
-                className="text-[11px] font-semibold text-sky-600 hover:text-sky-800 hover:underline cursor-pointer"
-                title="Quitar filtro de mes para ver todo el histórico"
-              >
-                Ver todo
-              </button>
+            {/* Popover de selector Año/Mes */}
+            {showMonthPicker && (
+              <div className="absolute left-16 top-10 z-40 bg-white border border-slate-200 rounded-xl shadow-xl p-3 w-56 animate-fadeIn">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-2 px-1">
+                  <button 
+                    type="button"
+                    onClick={() => setPickerYear(prev => prev - 1)}
+                    className="p-1 hover:bg-slate-100 rounded text-slate-500 font-bold cursor-pointer"
+                  >
+                    &lt;
+                  </button>
+                  <span className="text-sky-600 font-bold">{pickerYear}</span>
+                  <button 
+                    type="button"
+                    onClick={() => setPickerYear(prev => prev + 1)}
+                    className="p-1 hover:bg-slate-100 rounded text-slate-500 font-bold cursor-pointer"
+                  >
+                    &gt;
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1 text-[11px] font-medium">
+                  {MESES_NOMBRES.map((mes, idx) => {
+                    const mVal = String(idx + 1).padStart(2, "0");
+                    const ymStr = `${pickerYear}/${mVal}`;
+                    const isSelected = selectedYearMonth === ymStr;
+                    return (
+                      <button
+                        key={mes}
+                        type="button"
+                        onClick={() => {
+                          setSelectedYearMonth(ymStr);
+                          setShowMonthPicker(false);
+                        }}
+                        className={`py-1.5 rounded transition-colors cursor-pointer ${
+                          isSelected 
+                            ? 'bg-[#009beb] text-white font-bold' 
+                            : 'hover:bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {mes}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 mt-2 border-t border-slate-100 flex justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedYearMonth("");
+                      setShowMonthPicker(false);
+                    }}
+                    className="text-[10px] text-slate-500 hover:underline"
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowMonthPicker(false)}
+                    className="text-[10px] text-sky-600 font-bold hover:underline"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Profesional (Reactivo en tiempo real y con botón Buscar) */}
+          {/* Profesional */}
           <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-[420px]">
             <label className="text-xs font-medium text-slate-600 whitespace-nowrap">Profesional</label>
             <select
@@ -773,22 +697,24 @@ export default function ReportePacientes() {
             </select>
           </div>
 
-          {/* Botones Buscar y Limpiar */}
+          {/* Botón Buscar (Verde OralDrive) */}
           <div className="flex items-center gap-2">
             <button
               onClick={handleSearchClick}
-              className="h-8 px-7 bg-[#8bc34a] hover:bg-[#7cb342] active:scale-[0.98] text-white font-bold text-xs rounded shadow-sm transition-all flex items-center justify-center cursor-pointer"
+              className="h-8 px-7 bg-[#8bc34a] hover:bg-[#7cb342] active:scale-[0.98] text-white font-bold text-xs rounded shadow-xs transition-all flex items-center justify-center cursor-pointer"
             >
               <span>Buscar</span>
             </button>
 
-            <button
-              onClick={handleResetFilters}
-              title="Restablecer todos los filtros"
-              className="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs rounded transition-all cursor-pointer"
-            >
-              Limpiar
-            </button>
+            {appliedFilters.yearMonth && (
+              <button
+                onClick={handleResetFilters}
+                className="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs rounded transition-all cursor-pointer"
+                title="Limpiar filtros"
+              >
+                Limpiar
+              </button>
+            )}
           </div>
         </div>
 
@@ -837,60 +763,44 @@ export default function ReportePacientes() {
         </div>
       </div>
 
-      {/* ─── TABLA DE RESULTADOS CON TODAS LAS COLUMNAS Y FILTROS POR COLUMNA ─── */}
+      {/* ─── TABLA DE RESULTADOS CON TODAS LAS 42 COLUMNAS Y SCROLL HORIZONTAL ─── */}
       {hasSearched && (
-        <div className="mx-6 my-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[480px] overflow-hidden">
-          {/* Barra superior de la tabla con tags de agrupación OralDrive */}
+        <div className="mx-6 my-4 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col min-h-[480px] overflow-hidden">
+          
+          {/* Barra superior de la tabla */}
           <div className="p-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white shrink-0">
             <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={expandAllGroups}
-                  onChange={(e) => setExpandAllGroups(e.target.checked)}
-                  className="rounded text-[#009beb] focus:ring-[#009beb] w-3.5 h-3.5 cursor-pointer"
-                />
-                <span>Expandir todos los grupos</span>
-              </label>
-
-              {/* Tags de agrupación OralDrive */}
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-semibold flex items-center gap-1 border border-slate-200">
-                  Fecha ingreso <span className="text-[10px] text-slate-400">↑</span>
-                </span>
-                <span className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-semibold flex items-center gap-1 border border-slate-200">
-                  Profesional <span className="text-[10px] text-slate-400">↑</span>
-                </span>
-              </div>
+              <span className="text-xs text-slate-400 font-medium select-none italic">
+                Arrastra una columna aquí para agrupar por ella
+              </span>
             </div>
 
-            <div className="flex items-center gap-3 relative">
-              {/* Botón Exportar rápido */}
+            <div className="flex items-center gap-2.5 relative">
+              {/* Botón Excel rápido */}
               <button
                 onClick={handleExportExcel}
-                title="Exportar a Excel"
-                className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
+                title="Descargar en Excel"
+                className="w-7 h-7 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 transition-colors cursor-pointer border border-slate-200"
               >
-                <FiDownload size={15} />
+                📊
               </button>
 
               {/* Botón Selector de Columnas */}
               <div className="relative">
                 <button
-                  title="Selector de columnas"
+                  title="Selector de columnas visibles"
                   onClick={() => setShowColumnSelector(!showColumnSelector)}
-                  className={`p-1.5 rounded transition-colors cursor-pointer ${
-                    showColumnSelector ? "bg-sky-100 text-sky-700" : "hover:bg-slate-100 text-slate-500"
+                  className={`w-7 h-7 flex items-center justify-center rounded transition-colors cursor-pointer border border-slate-200 ${
+                    showColumnSelector ? "bg-sky-100 text-sky-700" : "hover:bg-slate-100 text-slate-600"
                   }`}
                 >
-                  <FiFileText size={15} />
+                  <FiFileText size={13} />
                 </button>
 
-                {/* Popover de Selección de Columnas */}
                 {showColumnSelector && (
-                  <div className="absolute right-0 top-9 z-40 w-72 bg-white border border-slate-300 rounded-xl shadow-2xl p-3">
+                  <div className="absolute right-0 top-9 z-40 w-72 bg-white border border-slate-300 rounded-xl shadow-2xl p-3 animate-fadeIn">
                     <div className="text-xs font-bold text-slate-700 mb-2 pb-1.5 border-b border-slate-200 flex items-center justify-between">
-                      <span>Columnas del reporte</span>
+                      <span>Columnas del reporte ({Object.values(visibleColumns).filter(Boolean).length} activas)</span>
                       <button
                         onClick={() => setShowColumnSelector(false)}
                         className="text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
@@ -904,17 +814,17 @@ export default function ReportePacientes() {
                         onClick={() => toggleAllColumns(true)}
                         className="hover:underline flex items-center gap-1 cursor-pointer"
                       >
-                        <FiCheck size={12} /> Seleccionar todas
+                        <FiCheck size={12} /> Todas
                       </button>
                       <button
                         onClick={() => toggleAllColumns(false)}
                         className="hover:underline text-slate-500 hover:text-red-500 flex items-center gap-1 cursor-pointer"
                       >
-                        <FiX size={12} /> Deseleccionar todas
+                        <FiX size={12} /> Ninguna
                       </button>
                     </div>
 
-                    <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                    <div className="space-y-1 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
                       {Object.keys(columnLabels).map((key) => (
                         <label
                           key={key}
@@ -938,9 +848,9 @@ export default function ReportePacientes() {
               <button
                 title="Limpiar filtros de columna"
                 onClick={() => setColumnFilters({})}
-                className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
+                className="w-7 h-7 flex items-center justify-center hover:bg-slate-100 rounded text-slate-600 transition-colors cursor-pointer border border-slate-200"
               >
-                <FiFilter size={15} />
+                <FiFilter size={13} />
               </button>
 
               {/* Campo Buscar rápido */}
@@ -951,30 +861,33 @@ export default function ReportePacientes() {
                   placeholder="Buscar..."
                   value={tableSearchTerm}
                   onChange={(e) => setTableSearchTerm(e.target.value)}
-                  className="h-7 pl-8 pr-2.5 w-44 bg-white border border-slate-300 rounded text-xs outline-none focus:border-sky-500 transition-all font-normal"
+                  className="h-7 pl-8 pr-2.5 w-40 bg-white border border-slate-300 rounded text-xs outline-none focus:border-sky-500 transition-all font-normal"
                 />
               </div>
             </div>
           </div>
 
-          {/* Contenedor con Scroll Horizontal y Vertical de la Tabla */}
-          <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-[620px] min-h-[360px] custom-scrollbar">
+          {/* Contenedor de la Tabla con Scroll Horizontal y Vertical suave */}
+          <div 
+            ref={tableContainerRef} 
+            className="overflow-x-auto overflow-y-auto max-h-[640px] min-h-[380px] custom-scrollbar border-t border-slate-200"
+          >
             {loading ? (
-              <div className="flex flex-col items-center justify-center p-16 text-slate-400">
+              <div className="flex flex-col items-center justify-center p-20 text-slate-400">
                 <div className="w-8 h-8 border-3 border-[#009beb] border-t-transparent rounded-full animate-spin mb-3" />
                 <span className="text-xs font-semibold text-slate-600">Consultando pacientes en tu VPS...</span>
               </div>
             ) : (
-              <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap">
-                <thead className="bg-[#fcfdfe] sticky top-0 z-20 border-b border-slate-300 text-slate-600 font-bold shadow-xs">
-                  {/* Fila 1: Títulos de Columnas */}
+              <table className="w-full text-left border-collapse text-[11px] whitespace-nowrap min-w-[3600px]">
+                <thead className="bg-[#fcfdfe] sticky top-0 z-20 border-b border-slate-300 text-slate-700 font-bold shadow-2xs">
+                  {/* Fila 1: Títulos de las 42 columnas */}
                   <tr>
                     {Object.keys(columnLabels).map((key) => {
                       if (!visibleColumns[key]) return null;
                       return (
                         <th
                           key={key}
-                          className="px-3.5 py-2 border-r border-slate-200 text-slate-700 text-xs font-bold select-none bg-slate-50"
+                          className="px-3 py-2 border-r border-slate-200 text-slate-700 text-xs font-bold select-none bg-slate-50"
                         >
                           {columnLabels[key]}
                         </th>
@@ -982,11 +895,11 @@ export default function ReportePacientes() {
                     })}
                   </tr>
 
-                  {/* Fila 2: Inputs de Búsqueda y Filtro por Columna */}
+                  {/* Fila 2: Inputs de Búsqueda y Filtro por Columna con iconos 📅 o 🔍 */}
                   <tr className="bg-white border-b border-slate-200">
                     {Object.keys(columnLabels).map((key) => {
                       if (!visibleColumns[key]) return null;
-                      const isDate = key === "fechaIngreso" || key === "fechaCreacion" || key === "fechaNacimiento" || key === "proximaCita";
+                      const isDate = key === "fechaIngreso" || key === "fechaCreacion" || key === "fechaNacimiento";
                       return (
                         <th key={`filter-${key}`} className="px-2 py-1 border-r border-slate-200 font-normal">
                           <div className="relative flex items-center">
@@ -1009,181 +922,144 @@ export default function ReportePacientes() {
 
                 <tbody className="divide-y divide-slate-100 text-slate-700 bg-white">
                   {filteredData.map((p) => (
-                    <tr key={p.id} className="hover:bg-sky-50/50 transition-colors">
+                    <tr key={p.id} className="hover:bg-sky-50/40 transition-colors">
                       {visibleColumns.fechaIngreso && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-slate-600">
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-slate-600">
                           {formatDateTime(p.fechaIngreso)}
                         </td>
                       )}
                       {visibleColumns.fechaCreacion && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-slate-600">
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-slate-600">
                           {formatDateTime(p.fechaCreacion)}
                         </td>
                       )}
                       {visibleColumns.tipoDocumento && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.tipoDocumento}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.tipoDocumento}</td>
                       )}
                       {visibleColumns.documento && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] font-semibold">
-                          {p.documento || "—"}
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-[#009beb] font-semibold">
+                          {formatDocNumber(p.documento)}
                         </td>
                       )}
                       {visibleColumns.numeroHistoria && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] font-semibold">
-                          {p.numeroHistoria || "—"}
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-slate-700">
+                          {formatDocNumber(p.numeroHistoria)}
                         </td>
                       )}
                       {visibleColumns.nombre && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 font-medium uppercase text-slate-800">
-                          {p.nombre || "—"}
+                        <td className="px-3 py-2 border-r border-b border-slate-200 font-medium text-slate-800 uppercase">
+                          {p.nombre}
                         </td>
                       )}
                       {visibleColumns.apellido && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 font-medium uppercase text-slate-800">
-                          {p.apellido || "—"}
+                        <td className="px-3 py-2 border-r border-b border-slate-200 font-medium text-slate-800 uppercase">
+                          {p.apellido}
                         </td>
                       )}
                       {visibleColumns.genero && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.genero}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.genero}</td>
                       )}
                       {visibleColumns.rh && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 font-medium">{p.rh}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-center">{p.rh}</td>
                       )}
                       {visibleColumns.estadoCivil && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.estadoCivil}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-center">{p.estadoCivil}</td>
                       )}
                       {visibleColumns.fechaNacimiento && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{formatDateOnly(p.fechaNacimiento)}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{formatDateOnly(p.fechaNacimiento)}</td>
                       )}
                       {visibleColumns.edad && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.edad}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.edad}</td>
                       )}
                       {visibleColumns.paisNacimiento && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.paisNacimiento}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.paisNacimiento}</td>
                       )}
                       {visibleColumns.ciudadNacimiento && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.ciudadNacimiento}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.ciudadNacimiento}</td>
                       )}
                       {visibleColumns.direccion && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.direccion}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.direccion}</td>
                       )}
                       {visibleColumns.paisDomicilio && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.paisDomicilio}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.paisDomicilio}</td>
                       )}
                       {visibleColumns.ciudadDomicilio && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.ciudadDomicilio}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.ciudadDomicilio}</td>
                       )}
                       {visibleColumns.lugarExpedicion && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.lugarExpedicion}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.lugarExpedicion}</td>
                       )}
                       {visibleColumns.barrio && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.barrio}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.barrio}</td>
                       )}
                       {visibleColumns.estrato && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.estrato}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-center">{p.estrato}</td>
                       )}
                       {visibleColumns.zonaResidencial && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center">{p.zonaResidencial}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-center">{p.zonaResidencial}</td>
                       )}
                       {visibleColumns.celular && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.celular}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.celular}</td>
                       )}
                       {visibleColumns.telefono && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.telefono}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.telefono}</td>
                       )}
                       {visibleColumns.telefonoOficina && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.telefonoOficina}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.telefonoOficina}</td>
                       )}
                       {visibleColumns.extensionOficina && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.extensionOficina}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.extensionOficina}</td>
                       )}
                       {visibleColumns.correo && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-[#009beb] lowercase">{p.correo}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-[#009beb] lowercase">{p.correo}</td>
                       )}
                       {visibleColumns.ocupacion && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.ocupacion}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.ocupacion}</td>
                       )}
                       {visibleColumns.nombreResponsable && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.nombreResponsable}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.nombreResponsable}</td>
                       )}
                       {visibleColumns.relacionResponsable && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.relacionResponsable}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.relacionResponsable}</td>
                       )}
                       {visibleColumns.celularResponsable && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.celularResponsable}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.celularResponsable}</td>
                       )}
                       {visibleColumns.telefonoResponsable && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.telefonoResponsable}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.telefonoResponsable}</td>
                       )}
                       {visibleColumns.correoResponsable && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.correoResponsable}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200 text-[#009beb] lowercase">{p.correoResponsable}</td>
                       )}
                       {visibleColumns.nombreAcompanante && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.nombreAcompanante}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.nombreAcompanante}</td>
                       )}
                       {visibleColumns.telefonoAcompanante && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.telefonoAcompanante}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.telefonoAcompanante}</td>
                       )}
                       {visibleColumns.convenio && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.convenio}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.convenio}</td>
                       )}
                       {visibleColumns.tipoAfiliacion && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.tipoAfiliacion}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.tipoAfiliacion}</td>
                       )}
                       {visibleColumns.eps && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.eps}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.eps}</td>
                       )}
                       {visibleColumns.polizaSalud && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.polizaSalud}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.polizaSalud}</td>
                       )}
                       {visibleColumns.sgsss && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.sgsss}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.sgsss}</td>
                       )}
                       {visibleColumns.tipoPaciente && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.tipoPaciente}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.tipoPaciente}</td>
                       )}
                       {visibleColumns.convenioBeneficio && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.convenioBeneficio}</td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.convenioBeneficio}</td>
                       )}
                       {visibleColumns.convenioPago && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.convenioPago}</td>
-                      )}
-                      {visibleColumns.comoNosConocio && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.comoNosConocio}</td>
-                      )}
-                      {visibleColumns.campana && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.campana}</td>
-                      )}
-                      {visibleColumns.remitidoPor && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.remitidoPor}</td>
-                      )}
-                      {visibleColumns.asesorComercial && (
-                        <td className="px-3.5 py-2 border-r border-slate-100">{p.asesorComercial}</td>
-                      )}
-                      {visibleColumns.presupuestos && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.presupuestos}</td>
-                      )}
-                      {visibleColumns.tratamientosIniciados && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.tratamientosIniciados}</td>
-                      )}
-                      {visibleColumns.tratamientosNoIniciados && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.tratamientosNoIniciados}</td>
-                      )}
-                      {visibleColumns.tratamientosFinalizados && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold text-emerald-600">{p.tratamientosFinalizados}</td>
-                      )}
-                      {visibleColumns.citas && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-center font-semibold">{p.citas}</td>
-                      )}
-                      {visibleColumns.profesionales && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 font-medium text-slate-800">
-                          {p.profesionales}
-                        </td>
-                      )}
-                      {visibleColumns.proximaCita && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 text-slate-600">
-                          {formatDateOnly(p.proximaCita)}
-                        </td>
+                        <td className="px-3 py-2 border-r border-b border-slate-200">{p.convenioPago}</td>
                       )}
                     </tr>
                   ))}
@@ -1201,12 +1077,12 @@ export default function ReportePacientes() {
                           <p className="text-xs text-slate-400 mb-4 text-center leading-relaxed">
                             {appliedFilters.profesional !== "TODOS" ? `Profesional: "${appliedFilters.profesional}". ` : ""}
                             {appliedFilters.yearMonth ? `Período: "${appliedFilters.yearMonth}". ` : ""}
-                            Puedes seleccionar "Todos los profesionales" o quitar el mes para consultar otros pacientes.
+                            Puedes seleccionar "Todos los profesionales" o limpiar el mes para consultar más pacientes.
                           </p>
                           <button
                             type="button"
                             onClick={handleResetFilters}
-                            className="px-4 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                            className="px-4 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer"
                           >
                             Ver todos los pacientes ({allPacientes.length})
                           </button>
