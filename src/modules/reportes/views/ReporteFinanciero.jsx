@@ -197,7 +197,9 @@ export default function ReporteFinanciero() {
         notasCreditoRes,
         notasDebitoRes,
         saldosFavorRes,
-        trasladosRes
+        trasladosRes,
+        pagosProvRes,
+        cfgRes
       ] = await Promise.all([
         getConfigItems(tenantId, "sucursales", "sucursales").catch(() => []),
         supabase.from("pacientes").select("*").eq("tenant_id", tenantId),
@@ -212,7 +214,9 @@ export default function ReporteFinanciero() {
         supabase.from("notas_credito").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
         supabase.from("notas_debito").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
         supabase.from("saldos_favor").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
-        supabase.from("traslados").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] }))
+        supabase.from("traslados").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
+        supabase.from("pagos_proveedor").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
+        supabase.from("website_config").select("config").eq("tenant_id", tenantId).maybeSingle().then(r => r, () => ({ data: null }))
       ]);
 
       // 1. Armar Sedes / Oficinas
@@ -642,12 +646,9 @@ export default function ReporteFinanciero() {
           return;
         }
 
-        // Detección de Compra / Pago a Proveedor
-        const isCompra = tipo === "compra" || conceptoLower.includes("proveedor") || descLower.includes("proveedor") || conceptoLower.includes("compra") || descLower.includes("compra") || conceptoLower.includes("fc-") || conceptoLower.includes("fcv");
-        const labelTipo = isCompra ? "Factura de compra" : "Egreso-";
-
+        // Todos los egresos de caja son estrictamente Egreso- (nunca Factura de compra)
         const storedCons = m.nroConsecutivo || m.consecutivo || m.comprobante || m.numero;
-        const nroDoc = storedCons ? storedCons : (isCompra ? `FC-${compraIdx++}` : `EGR-${egresoIdx++}`);
+        const nroDoc = storedCons ? storedCons : `EGR-${egresoIdx++}`;
         const isAnulado = (m.estado || "").toLowerCase() === "anulado";
         const rawObs = m.observaciones || m.notas || m.descripcion || "";
 
@@ -655,10 +656,10 @@ export default function ReporteFinanciero() {
           id: `mov_${m.id}`,
           rawId: m.id,
           numeroDocumento: nroDoc,
-          tipoDocumento: labelTipo,
+          tipoDocumento: "Egreso-",
           fechaCreacion: m.created_at || new Date().toISOString(),
           fechaSeleccionada: m.fecha || m.created_at || new Date().toISOString(),
-          concepto: m.concepto || m.descripcion || (isCompra ? "Pago a Proveedor / Insumos" : "Egreso de caja"),
+          concepto: m.concepto || m.descripcion || "Egreso de caja",
           valor: montoNum,
           consecutivo: "Principal",
           docReferencia: m.referencia || String(nroDoc),
@@ -676,8 +677,136 @@ export default function ReporteFinanciero() {
           total: montoNum,
           usuarioCreador: m.usuario_nombre || m.creado_por || "Administración",
           observaciones: cleanObservaciones(rawObs),
-          cuentaContable: isCompra ? "220505 - Proveedores Nacionales" : "510506 - Gastos Operativos",
+          cuentaContable: "510506 - Gastos Operativos",
           oficina: m.oficina || m.sucursal || m.sede || ""
+        });
+      });
+
+      // 6.1. Cargar Egresos desde Administración > Facturación > Egresos (pagos_proveedor)
+      const rawPagosProv = [
+        ...(pagosProvRes?.data || []),
+        ...((cfgRes?.data?.config?.pagos_proveedor) || [])
+      ];
+      const seenPagoProvIds = new Set();
+      let egrProvIdx = 2001;
+
+      rawPagosProv.forEach(pp => {
+        if (!pp || !pp.id || seenPagoProvIds.has(pp.id)) return;
+        seenPagoProvIds.add(pp.id);
+
+        const montoNum = Number(pp.total || pp.monto || pp.valor || 0);
+        // Evitar duplicar si ya fue registrado como movimiento de caja con la misma referencia o comprobante
+        const yaEnCaja = allRows.some(r => r.tipoDocumento === "Egreso-" && Math.abs(r.total - montoNum) < 1 && (r.docReferencia === pp.referencia || r.numeroDocumento === pp.nroComprobante));
+        if (yaEnCaja) return;
+
+        const storedCons = pp.nroComprobante || pp.consecutivo || pp.numero || pp.nroConsecutivo;
+        const nroDoc = storedCons ? storedCons : `EGR-${egrProvIdx++}`;
+        const isAnulado = (pp.estado || "").toLowerCase() === "anulado" || pp.anulado;
+        const rawObs = pp.observaciones || pp.notas || pp.motivo || "";
+
+        allRows.push({
+          id: `egr_pp_${pp.id}`,
+          rawId: pp.id,
+          numeroDocumento: nroDoc,
+          tipoDocumento: "Egreso-",
+          fechaCreacion: pp.created_at || pp.fecha || new Date().toISOString(),
+          fechaSeleccionada: pp.fecha || pp.created_at || new Date().toISOString(),
+          concepto: pp.concepto || pp.descripcion || `Pago a Proveedor: ${pp.proveedor || pp.beneficiario || 'Tercero'}`,
+          valor: montoNum,
+          consecutivo: "Principal",
+          docReferencia: pp.referencia || pp.factura_asociada || String(nroDoc),
+          documentosAsociados: pp.factura_asociada || "—",
+          estado: isAnulado ? "Anulado" : "Activo",
+          tercero: pp.proveedor || pp.beneficiario || pp.tercero || "Proveedor / Tercero",
+          documentoTercero: pp.nit || pp.documento || "",
+          profesional: "Administración",
+          profesionalId: "",
+          formaPago: pp.medioPago || pp.bancoCaja || pp.formaPago || "Transferencia",
+          subtotal: montoNum,
+          descuento: 0,
+          iva: 0,
+          retencion: Number(pp.retencion || 0),
+          total: montoNum,
+          usuarioCreador: pp.usuario_nombre || pp.creado_por || "Administración",
+          observaciones: cleanObservaciones(rawObs),
+          cuentaContable: "510506 - Gastos y Pagos a Proveedores",
+          oficina: pp.oficina || pp.sucursal || pp.sede || ""
+        });
+      });
+
+      // 6.2. Cargar Traslados de la tabla traslados
+      const rawTraslados = [
+        ...(trasladosRes?.data || []),
+        ...((cfgRes?.data?.config?.traslados) || [])
+      ];
+      let tIdx = 301;
+      rawTraslados.forEach(tr => {
+        if (!tr || !tr.id) return;
+        const montoNum = Number(tr.monto || tr.valor || 0);
+        const yaExiste = allRows.some(r => (r.tipoDocumento === "Traslado+" || r.tipoDocumento === "Traslado-") && Math.abs(r.total - montoNum) < 1 && (r.docReferencia === tr.referencia || r.rawId === tr.id));
+        if (yaExiste) return;
+
+        const refDoc = tr.referencia || `TR-${tIdx++}`;
+        const isAnulado = (tr.estado || "").toLowerCase() === "anulado";
+
+        // Salida (Traslado-)
+        allRows.push({
+          id: `tra_sal_${tr.id}`,
+          rawId: tr.id,
+          numeroDocumento: refDoc,
+          tipoDocumento: "Traslado-",
+          fechaCreacion: tr.created_at || tr.fecha || new Date().toISOString(),
+          fechaSeleccionada: tr.fecha || tr.created_at || new Date().toISOString(),
+          concepto: tr.descripcion || `Traslado de fondos (${tr.origen} a ${tr.destino})`,
+          valor: montoNum,
+          consecutivo: "Principal",
+          docReferencia: refDoc,
+          documentosAsociados: "—",
+          estado: isAnulado ? "Anulado" : "Activo",
+          tercero: tr.origen || "Caja Origen",
+          documentoTercero: "",
+          profesional: "Administración",
+          profesionalId: "",
+          formaPago: "Transferencia",
+          subtotal: montoNum,
+          descuento: 0,
+          iva: 0,
+          retencion: 0,
+          total: montoNum,
+          usuarioCreador: "Administración",
+          observaciones: cleanObservaciones(tr.descripcion || ""),
+          cuentaContable: "110505 - Caja General",
+          oficina: ""
+        });
+
+        // Entrada (Traslado+)
+        allRows.push({
+          id: `tra_ent_${tr.id}`,
+          rawId: tr.id,
+          numeroDocumento: refDoc,
+          tipoDocumento: "Traslado+",
+          fechaCreacion: tr.created_at || tr.fecha || new Date().toISOString(),
+          fechaSeleccionada: tr.fecha || tr.created_at || new Date().toISOString(),
+          concepto: tr.descripcion || `Traslado de fondos (${tr.origen} a ${tr.destino})`,
+          valor: montoNum,
+          consecutivo: "Principal",
+          docReferencia: refDoc,
+          documentosAsociados: "—",
+          estado: isAnulado ? "Anulado" : "Activo",
+          tercero: tr.destino || "Caja Destino",
+          documentoTercero: "",
+          profesional: "Administración",
+          profesionalId: "",
+          formaPago: "Transferencia",
+          subtotal: montoNum,
+          descuento: 0,
+          iva: 0,
+          retencion: 0,
+          total: montoNum,
+          usuarioCreador: "Administración",
+          observaciones: cleanObservaciones(tr.descripcion || ""),
+          cuentaContable: "111005 - Bancos",
+          oficina: ""
         });
       });
 

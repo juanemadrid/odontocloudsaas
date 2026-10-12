@@ -536,12 +536,12 @@ export default function PagosList({ onNew }) {
       <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm">
         <div className="max-w-[1300px] mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">Pagos</h1>
+            <h1 className="text-xl font-bold text-slate-800 tracking-tight">Egresos</h1>
             <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
               <FiHome className="text-slate-400" size={13} />
               <span>Facturación</span>
               <span>›</span>
-              <span className="text-slate-700 font-semibold">Pagos</span>
+              <span className="text-slate-700 font-semibold">Egresos</span>
             </div>
           </div>
         </div>
@@ -623,7 +623,7 @@ export default function PagosList({ onNew }) {
                 {loading ? (
                   <tr>
                     <td colSpan="7" className="py-12 text-center text-slate-400 font-medium">
-                      Cargando pagos...
+                      Cargando egresos...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
@@ -631,8 +631,8 @@ export default function PagosList({ onNew }) {
                     <td colSpan="7" className="py-12 text-center text-slate-400">
                       <div className="flex flex-col items-center gap-2">
                         <FiCreditCard size={32} className="text-slate-300" />
-                        <p className="font-semibold text-slate-500">No hay pagos registrados en este periodo</p>
-                        <p className="text-[11px] text-slate-400">Haz clic en "+ Nuevo pago" para registrar un egreso o pago a proveedor</p>
+                        <p className="font-semibold text-slate-500">No hay egresos registrados en este periodo</p>
+                        <p className="text-[11px] text-slate-400">Haz clic en "+ Nuevo egreso" para registrar un comprobante de egreso o pago</p>
                       </div>
                     </td>
                   </tr>

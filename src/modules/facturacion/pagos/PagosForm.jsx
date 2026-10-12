@@ -968,14 +968,14 @@ export default function PagosForm({ onCancel, onSuccess }) {
             <div className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-20 shadow-sm">
                 <div className="max-w-[1300px] mx-auto flex items-center justify-between">
                     <div>
-                        <h1 className="text-xl font-bold text-slate-800 tracking-tight">Pagos</h1>
+                        <h1 className="text-xl font-bold text-slate-800 tracking-tight">Egresos</h1>
                         <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-0.5">
                             <FiHome className="text-slate-400" size={13} />
                             <span>Facturación</span>
                             <span>›</span>
-                            <span>Pagos</span>
+                            <span>Egresos</span>
                             <span>›</span>
-                            <span className="text-slate-700 font-semibold">Nuevo pago</span>
+                            <span className="text-slate-700 font-semibold">Nuevo egreso</span>
                         </div>
                     </div>
 

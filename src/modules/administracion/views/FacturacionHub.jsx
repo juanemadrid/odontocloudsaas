@@ -24,16 +24,17 @@ const FACT_OPTIONS = [
   { id: "recibo",  label: "Recibo de caja",      icon: <FiFileText />,    color: "text-emerald-600", bg: "bg-emerald-50",   desc: "Comprobantes de ingreso de dinero", perm: "Recibo de caja" },
   { id: "saldo",   label: "Saldo a favor",        icon: <FiDollarSign />,  color: "text-teal-600",    bg: "bg-teal-50",      desc: "Gestión y abonos de saldos a favor", perm: "Saldos a favor" },
   { id: "liq",     label: "Liquidaciones",        icon: <FiLayers />,      color: "text-purple-600",  bg: "bg-purple-50",    desc: "Cierre de tratamientos y presupuestos", perm: "Liquidaciones" },
-  { id: "pagos",   label: "Pagos",                icon: <FiCreditCard />,  color: "text-indigo-600",  bg: "bg-indigo-50",    desc: "Gestión de egresos y proveedores", perm: "Pagos a proveedores" },
+  { id: "pagos",   label: "Egresos",              icon: <FiCreditCard />,  color: "text-indigo-600",  bg: "bg-indigo-50",    desc: "Comprobantes de egreso, gastos y proveedores", perm: "Pagos a proveedores" },
   { id: "fv",      label: "Factura de venta",     icon: <FiDollarSign />,  color: "text-emerald-700", bg: "bg-emerald-100",  desc: "Facturación principal y electrónica", perm: "Factura de venta" },
   { id: "fc",      label: "Facturas de compra",   icon: <FiTruck />,       color: "text-amber-600",   bg: "bg-amber-50",     desc: "Registro de facturas recibidas", perm: "Facturas de compra" },
+  { id: "traslados", label: "Traslados",          icon: <FiRepeat />,      color: "text-blue-600",    bg: "bg-blue-50",      desc: "Movimiento de fondos entre cajas y bancos", perm: "Traslados" },
 ];
 
 // Sub-views that have a "+Nuevo" button
 const NEW_BUTTON_LABELS = {
   recibo:  "Nuevo Recibo de Caja",
   saldo:   "Nuevo Saldo a Favor",
-  pagos:   "Nuevo Pago",
+  pagos:   "Nuevo Egreso",
   fc:      "Nueva Factura de Compra",
 };
 
@@ -142,10 +143,13 @@ export default function FacturacionHub() {
       title = "Liquidación de Comisiones";
     } else if (activeSubView === "pagos") {
       content = <PagosList onNew={() => setActiveSubView("pagos_form")} />;
-      title = "Pagos a Proveedores";
+      title = "Egresos";
     } else if (activeSubView === "pagos_form") {
       content = <PagosForm onCancel={() => setActiveSubView("pagos")} onSuccess={() => setActiveSubView("pagos")} />;
-      title = "Nuevo Pago";
+      title = "Nuevo Egreso";
+    } else if (activeSubView === "traslados") {
+      content = <TrasladosList onNew={() => {}} />;
+      title = "Traslados entre Cuentas";
     } else if (activeSubView === "fc") {
       content = <FacturasCompraList onNew={() => setActiveSubView("fc_form")} />;
       title = "Facturas de Compra";

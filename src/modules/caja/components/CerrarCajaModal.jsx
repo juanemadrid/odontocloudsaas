@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
-import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
-import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDown } from "react-icons/fi";
+import { getConfigSection, saveConfigSection, getConfigItems } from "../../../services/configPersistenceService";
+import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDown, FiPlus, FiMinus, FiRepeat } from "react-icons/fi";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -30,6 +30,12 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   const [conteoEfectivoDisplay, setConteoEfectivoDisplay] = useState("");
   const [conteoOtros, setConteoOtros] = useState("");
   const [conteoOtrosDisplay, setConteoOtrosDisplay] = useState("");
+
+  // Traslados a banco (1:1 con OralDrive)
+  const [bancosList, setBancosList] = useState([]);
+  const [destinosTraslado, setDestinosTraslado] = useState([]);
+  const [baseProxima, setBaseProxima] = useState("0");
+  const [baseProximaDisplay, setBaseProximaDisplay] = useState("0");
   
   const [observacion, setObservacion] = useState("");
   const [saving, setSaving] = useState(false);
@@ -50,6 +56,21 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
     };
     fetchMovs();
   }, [caja.id]);
+
+  useEffect(() => {
+    if (!inquilino) return;
+    const fetchBancos = async () => {
+      try {
+        const list = await getConfigItems(inquilino, "bancos", "bancos");
+        const mapped = (list || []).map(b => typeof b === "string" ? b : (b.nombre || b.nombreBanco || b.banco || "")).filter(Boolean);
+        if (!mapped.includes("Bancolombia")) mapped.push("Bancolombia");
+        if (!mapped.includes("Nequi")) mapped.push("Nequi");
+        if (!mapped.includes("Davivienda")) mapped.push("Davivienda");
+        setBancosList(mapped);
+      } catch (_) {}
+    };
+    fetchBancos();
+  }, [inquilino]);
 
   // Calculated values
   const totalIngresos = movimientos.filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (m.monto || 0), 0);
@@ -77,6 +98,30 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   const conteoOtrosNum = parseFloat(String(conteoOtros).replace(/[^0-9]/g, "")) || 0;
   const conteoTotal = conteoEfNum + conteoOtrosNum;
   const diferencia = conteoTotal - saldoTeorico;
+
+  const handleAddDestino = () => {
+    setDestinosTraslado(prev => [
+      ...prev,
+      {
+        banco: bancosList[0] || "Bancolombia",
+        valor: 0,
+        valorDisplay: "",
+        medio: "Efectivo"
+      }
+    ]);
+  };
+
+  const handleRemoveDestino = (idx) => {
+    setDestinosTraslado(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdateDestino = (idx, field, val) => {
+    setDestinosTraslado(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], [field]: val };
+      return copy;
+    });
+  };
 
   const handleCerrar = async () => {
     if (!confirmed) { setError("Confirma que has realizado el conteo físico."); return; }
@@ -127,6 +172,42 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
         const updatedList = currentList.map(item => item.id === caja.id ? updatedCajaObj : item);
         await saveConfigSection(inquilino, "cajas", updatedList);
       } catch (e) {}
+
+      // Registrar traslados automáticos a bancos si fueron seleccionados (1:1 OralDrive)
+      for (const d of destinosTraslado) {
+        const valNum = Number(d.valor || 0);
+        if (valNum > 0 && d.banco) {
+          const newTraslado = {
+            tenant_id: inquilino,
+            fecha: fechaCierreIso.split("T")[0],
+            origen: caja.nombre || caja.usuarioNombre || "Caja Principal",
+            destino: d.banco,
+            monto: valNum,
+            descripcion: `Traslado automático por cierre de caja - ${caja.usuarioNombre || caja.nombre || 'Caja'} (${d.medio || 'Efectivo'})`,
+            referencia: `TR-CIERRE-${String(caja.id || '').slice(0, 6).toUpperCase()}`,
+            estado: "Activo",
+            created_at: fechaCierreIso
+          };
+
+          try {
+            await supabase.from("traslados").insert([newTraslado]);
+          } catch (_) {}
+
+          try {
+            await supabase.from("movimientos_caja").insert([{
+              tenant_id: inquilino,
+              caja_id: caja.id,
+              tipo: "traslado",
+              concepto: newTraslado.descripcion,
+              monto: valNum,
+              metodoPago: d.medio || "Efectivo",
+              fecha: newTraslado.fecha,
+              referencia: newTraslado.referencia,
+              created_at: fechaCierreIso
+            }]);
+          } catch (_) {}
+        }
+      }
 
       onSuccess?.();
     } catch (err) {
@@ -275,6 +356,95 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
               </div>
             </div>
           )}
+
+          {/* Base próxima apertura Efectivo (OralDrive style) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <label className="text-[11px] font-bold text-slate-700 block mb-1">Base próxima apertura Efectivo</label>
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[12px]">$</span>
+              <input
+                type="text"
+                placeholder="0"
+                value={baseProximaDisplay}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, "");
+                  setBaseProxima(raw);
+                  setBaseProximaDisplay(raw ? fmtPure(raw) : "");
+                }}
+                className="w-full h-9 pl-7 pr-3 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-800 outline-none focus:border-blue-500 font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Traslado a Bancos / Cajas (OralDrive 1:1) */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-700 block">Seleccione bancos o caja a donde desea ingresar el dinero de la caja</span>
+                <span className="text-[10px] text-slate-400">Traslada el saldo contado hacia la cuenta bancaria de la clínica</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddDestino}
+                className="px-2.5 py-1 bg-[#8cc33f] hover:bg-[#7db02b] text-white rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+              >
+                <FiPlus size={12} /> Adicionar banco
+              </button>
+            </div>
+
+            {destinosTraslado.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-slate-200">
+                {destinosTraslado.map((dest, idx) => (
+                  <div key={idx} className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200">
+                    <select
+                      value={dest.banco}
+                      onChange={(e) => handleUpdateDestino(idx, "banco", e.target.value)}
+                      className="flex-1 h-8 px-2 text-[11px] border border-slate-200 rounded text-slate-700 outline-none focus:border-blue-500 bg-white"
+                    >
+                      {bancosList.map((b, bi) => (
+                        <option key={bi} value={b}>{b}</option>
+                      ))}
+                    </select>
+
+                    <div className="relative w-32">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[11px] font-bold">$</span>
+                      <input
+                        type="text"
+                        placeholder="0"
+                        value={dest.valorDisplay}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/[^0-9]/g, "");
+                          handleUpdateDestino(idx, "valor", Number(raw || 0));
+                          handleUpdateDestino(idx, "valorDisplay", raw ? fmtPure(raw) : "");
+                        }}
+                        className="w-full h-8 pl-5 pr-2 text-[11px] font-bold border border-slate-200 rounded text-slate-800 outline-none focus:border-blue-500 font-mono text-right"
+                      />
+                    </div>
+
+                    <select
+                      value={dest.medio}
+                      onChange={(e) => handleUpdateDestino(idx, "medio", e.target.value)}
+                      className="w-28 h-8 px-2 text-[11px] border border-slate-200 rounded text-slate-700 outline-none focus:border-blue-500 bg-white"
+                    >
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Transferencia">Transferencia</option>
+                      <option value="Tarjeta">Tarjeta</option>
+                      <option value="Nequi/Daviplata">Nequi/Daviplata</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDestino(idx)}
+                      className="w-7 h-7 flex items-center justify-center bg-rose-50 text-rose-600 hover:bg-rose-100 rounded text-xs cursor-pointer border border-rose-200 transition-colors"
+                      title="Eliminar destino"
+                    >
+                      <FiMinus size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Observación */}
           <div>
