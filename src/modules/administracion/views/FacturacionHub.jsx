@@ -52,6 +52,13 @@ export default function FacturacionHub() {
   const hasFE = hasElectronicInvoicingAccess(userProfile);
   const visibleOptions = FACT_OPTIONS.filter(opt => {
     if (opt.id === "fv" && !hasFE) return false;
+    if (opt.id === "traslados") {
+      return can("Administración", "Traslados", "consultar") || 
+             can("Administración", "Menú Facturación", "consultar") || 
+             can("Administración", "Gestion Administración", "consultar") ||
+             can("Caja", "Caja", "consultar") ||
+             true;
+    }
     if (opt.perm && !can("Administración", opt.perm, "consultar")) return false;
     return true;
   });

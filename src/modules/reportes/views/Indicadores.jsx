@@ -43,12 +43,22 @@ export default function Indicadores() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
   const [activeTooltip, setActiveTooltip] = useState(null);
+  const [subMetric, setSubMetric] = useState("recaudo"); // "recaudo" | "egresos" | "neto"
 
   // Stats State calculados con PostgreSQL del VPS
   const [metrics, setMetrics] = useState({
     recaudoActual: 0,
     recaudoAnterior: 0,
     incRecaudo: 0,
+
+    egresosActual: 0,
+    egresosAnterior: 0,
+    incEgresos: 0,
+
+    netoActual: 0,
+    netoAnterior: 0,
+    incNeto: 0,
+
     labelActual: getMonthAbbr(new Date().getMonth(), new Date().getFullYear()),
     labelAnterior: getMonthAbbr((new Date().getMonth() + 11) % 12, new Date().getMonth() === 0 ? new Date().getFullYear() - 1 : new Date().getFullYear()),
 
@@ -394,6 +404,47 @@ export default function Indicadores() {
         }
       });
 
+      // ─── 3.1. EGRESOS / GASTOS REALES DE TU VPS ───
+      let snapEgresosMovs = [];
+      let snapPagosProv = [];
+      try {
+        const [movsRes, provRes] = await Promise.all([
+          supabase.from("movimientos_caja").select("*").eq("tenant_id", tenantId).eq("tipo", "egreso"),
+          supabase.from("pagos_proveedor").select("*").eq("tenant_id", tenantId)
+        ]);
+        if (movsRes?.data) snapEgresosMovs = movsRes.data;
+        if (provRes?.data) snapPagosProv = provRes.data;
+      } catch (e) {
+        console.warn("Aviso al consultar egresos en VPS:", e);
+      }
+
+      const egresosFiltrados = [
+        ...(snapEgresosMovs || []).filter(m => (m.estado || "").toLowerCase() !== "anulado" && !m.anulado && matchesBranchFilter(m, selectedBranch)),
+        ...(snapPagosProv || []).filter(p => (p.estado || "").toLowerCase() !== "anulado" && matchesBranchFilter(p, selectedBranch))
+      ];
+
+      let egrCur = 0;
+      let egrPrv = 0;
+      const processedEgrMap = new Set();
+
+      egresosFiltrados.forEach(eg => {
+        const egKey = eg.id || eg.referencia;
+        if (processedEgrMap.has(egKey)) return;
+        processedEgrMap.add(egKey);
+
+        const rawFecha = eg.fecha || eg.created_at || eg.fecha_pago;
+        const fEg = rawFecha ? new Date(rawFecha) : null;
+        const monto = Number(eg.monto || eg.valor || eg.total || 0);
+
+        if (fEg && !isNaN(fEg.getTime())) {
+          if (fEg >= currDateStart && fEg <= currDateEnd) egrCur += monto;
+          if (fEg >= prevDateStart && fEg <= prevDateEnd) egrPrv += monto;
+        }
+      });
+
+      const netoCur = recCur - egrCur;
+      const netoPrv = recPrv - egrPrv;
+
       // ─── 4. CITAS Y ASISTENCIA REALES DE TU VPS ───
       let snapCitas = [];
       try {
@@ -445,6 +496,8 @@ export default function Indicadores() {
       };
 
       const deltaRec = calculateDelta(recCur, recPrv);
+      const deltaEgr = calculateDelta(egrCur, egrPrv);
+      const deltaNeto = calculateDelta(netoCur, netoPrv);
       const deltaPac = calculateDelta(pacCur, pacPrv);
       const deltaPres = calculateDelta(presCur, presPrv);
       const deltaPlanes = calculateDelta(planVendCur, planVendPrv);
@@ -470,6 +523,15 @@ export default function Indicadores() {
         recaudoActual: recCur,
         recaudoAnterior: recPrv,
         incRecaudo: deltaRec,
+
+        egresosActual: egrCur,
+        egresosAnterior: egrPrv,
+        incEgresos: deltaEgr,
+
+        netoActual: netoCur,
+        netoAnterior: netoPrv,
+        incNeto: deltaNeto,
+
         labelActual: labelCur,
         labelAnterior: labelPrv,
 
@@ -663,40 +725,154 @@ export default function Indicadores() {
       {/* ─── FILA 1 DE CARDS (3 Columnas) ─── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-        {/* CARD 1: Comparación parcial Recaudo */}
-        <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between min-h-[170px]">
-          <h3 className="text-xs font-bold text-slate-700">Comparación parcial</h3>
+        {/* CARD 1: Comparación parcial (Recaudo, Egresos e Ingreso Neto) */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between min-h-[175px]">
+          <div className="flex items-center justify-between gap-1">
+            <h3 className="text-xs font-bold text-slate-700">Comparación parcial</h3>
+            
+            {/* Toggle de sub-métricas */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => setSubMetric("recaudo")}
+                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer border-0 ${
+                  subMetric === "recaudo" 
+                    ? "bg-white text-sky-600 shadow-2xs font-bold" 
+                    : "text-slate-500 hover:text-slate-700 bg-transparent"
+                }`}
+                title="Total Recaudado de Pacientes"
+              >
+                Recaudo
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubMetric("egresos")}
+                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer border-0 ${
+                  subMetric === "egresos" 
+                    ? "bg-white text-rose-600 shadow-2xs font-bold" 
+                    : "text-slate-500 hover:text-slate-700 bg-transparent"
+                }`}
+                title="Total Gastos y Pagos Operativos"
+              >
+                Egresos
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubMetric("neto")}
+                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer border-0 ${
+                  subMetric === "neto" 
+                    ? "bg-white text-emerald-600 shadow-2xs font-bold" 
+                    : "text-slate-500 hover:text-slate-700 bg-transparent"
+                }`}
+                title="Margen / Ingreso Neto (Recaudos - Egresos)"
+              >
+                Neto
+              </button>
+            </div>
+          </div>
           
-          <div className="space-y-4 my-auto">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-[#00bcd4]">
-                ${Number(metrics.recaudoActual || 0).toLocaleString('es-CO')}
-              </span>
-              <span className="text-[11px] text-slate-400 font-medium">
-                Total recaudo {metrics.labelActual}
-              </span>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-end justify-between">
-              <div>
-                <span className="text-sm font-bold text-slate-800">
-                  ${Number(metrics.recaudoAnterior || 0).toLocaleString('es-CO')}
-                </span>
-                <p className="text-[10px] text-slate-400 font-medium">
-                  Total recaudo {metrics.labelAnterior}
-                </p>
-              </div>
-
-              <div className="text-right">
-                <div className="text-xs font-bold text-[#7cb342] flex items-center justify-end gap-0.5">
-                  <span>{metrics.incRecaudo >= 0 ? "↑" : "↓"}</span>
-                  <span>{Math.abs(metrics.incRecaudo).toFixed(2)}%</span>
+          <div className="space-y-3.5 my-auto pt-1">
+            {subMetric === "recaudo" && (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-[#00bcd4]">
+                    ${Number(metrics.recaudoActual || 0).toLocaleString('es-CO')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Total recaudo {metrics.labelActual}
+                  </span>
                 </div>
-                <div className="text-[10px] font-medium text-[#7cb342]">
-                  {metrics.incRecaudo >= 0 ? "Incremento" : "Decremento"}
+
+                <div className="pt-2.5 border-t border-slate-100 flex items-end justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-slate-800">
+                      ${Number(metrics.recaudoAnterior || 0).toLocaleString('es-CO')}
+                    </span>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      Total recaudo {metrics.labelAnterior}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-xs font-bold text-[#7cb342] flex items-center justify-end gap-0.5">
+                      <span>{metrics.incRecaudo >= 0 ? "↑" : "↓"}</span>
+                      <span>{Math.abs(metrics.incRecaudo).toFixed(2)}%</span>
+                    </div>
+                    <div className="text-[10px] font-medium text-[#7cb342]">
+                      {metrics.incRecaudo >= 0 ? "Incremento" : "Decremento"}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
+
+            {subMetric === "egresos" && (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-rose-600">
+                    ${Number(metrics.egresosActual || 0).toLocaleString('es-CO')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Total egresos {metrics.labelActual}
+                  </span>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-100 flex items-end justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-slate-800">
+                      ${Number(metrics.egresosAnterior || 0).toLocaleString('es-CO')}
+                    </span>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      Total egresos {metrics.labelAnterior}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    <div className={`text-xs font-bold flex items-center justify-end gap-0.5 ${metrics.incEgresos <= 0 ? "text-[#7cb342]" : "text-rose-600"}`}>
+                      <span>{metrics.incEgresos >= 0 ? "↑" : "↓"}</span>
+                      <span>{Math.abs(metrics.incEgresos).toFixed(2)}%</span>
+                    </div>
+                    <div className={`text-[10px] font-medium ${metrics.incEgresos <= 0 ? "text-[#7cb342]" : "text-rose-600"}`}>
+                      {metrics.incEgresos >= 0 ? "Incremento" : "Decremento"}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {subMetric === "neto" && (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-2xl font-bold ${metrics.netoActual >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                    ${Number(metrics.netoActual || 0).toLocaleString('es-CO')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Ingreso neto {metrics.labelActual}
+                  </span>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-100 flex items-end justify-between">
+                  <div>
+                    <span className="text-sm font-bold text-slate-800">
+                      ${Number(metrics.netoAnterior || 0).toLocaleString('es-CO')}
+                    </span>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      Ingreso neto {metrics.labelAnterior}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    <div className={`text-xs font-bold flex items-center justify-end gap-0.5 ${metrics.incNeto >= 0 ? "text-[#7cb342]" : "text-rose-600"}`}>
+                      <span>{metrics.incNeto >= 0 ? "↑" : "↓"}</span>
+                      <span>{Math.abs(metrics.incNeto).toFixed(2)}%</span>
+                    </div>
+                    <div className={`text-[10px] font-medium ${metrics.incNeto >= 0 ? "text-[#7cb342]" : "text-rose-600"}`}>
+                      {metrics.incNeto >= 0 ? "Incremento" : "Decremento"}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
