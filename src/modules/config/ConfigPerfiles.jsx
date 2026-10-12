@@ -48,6 +48,7 @@ const PERMISSION_MAP = {
         "Saldos a favor",
         "Liquidaciones",
         "Pagos a proveedores",
+        "Traslados",
         "Convenios",
         "Gestion Agenda",
         "Terceros",
