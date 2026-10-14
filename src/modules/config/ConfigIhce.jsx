@@ -25,7 +25,7 @@ import BreakGlassManager from "../../components/ihce/BreakGlassManager.jsx";
 
 const GUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default function ConfigIhce() {
+export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
   const { userProfile } = useAuth();
   const toast = useToast();
 
@@ -61,13 +61,13 @@ export default function ConfigIhce() {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const data = await ihceClientService.getClinicConfiguration();
+      const data = await ihceClientService.getClinicConfiguration(tenantId);
       if (data) {
         setFormData({
           codigo_habilitacion_reps: data.codigo_habilitacion_reps || "",
           codigo_sede_reps: data.codigo_sede_reps || "01",
           codigo_servicio_reps: data.codigo_servicio_reps || "334",
-          nombre_prestador: data.nombre_prestador || "",
+          nombre_prestador: data.nombre_prestador || tenantName || "",
           nit: data.nit || "",
           ambiente: data.ambiente || "SANDBOX_MOCK",
           client_id: data.client_id || "",
@@ -107,7 +107,7 @@ export default function ConfigIhce() {
     setTestResult(null);
 
     try {
-      const result = await ihceClientService.testConnectivity(formData);
+      const result = await ihceClientService.testConnectivity(formData, tenantId);
       setTestResult(result);
       if (result.success) {
         toast?.showToast?.(result.message, "success");
@@ -154,7 +154,7 @@ export default function ConfigIhce() {
         delete payloadToSave.apim_subscription_key;
       }
 
-      await ihceClientService.saveClinicConfiguration(payloadToSave);
+      await ihceClientService.saveClinicConfiguration(payloadToSave, tenantId);
       toast?.showToast?.("Configuración de interoperabilidad IHCE guardada correctamente.", "success");
       await loadConfig();
     } catch (err) {
@@ -176,7 +176,9 @@ export default function ConfigIhce() {
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-xl sm:text-2xl font-black tracking-tight">Interoperabilidad IHCE</h2>
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                  {tenantName ? `IHCE — ${tenantName}` : "Interoperabilidad IHCE"}
+                </h2>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">
                   MinSalud Colombia
                 </span>
@@ -202,6 +204,16 @@ export default function ConfigIhce() {
               <span className="px-3 py-1 rounded-xl text-xs font-bold bg-slate-700 text-slate-300 border border-slate-600 flex items-center space-x-1.5">
                 <span>Simulador Local</span>
               </span>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center font-bold text-sm transition-colors ml-2"
+                title="Cerrar ventana"
+              >
+                ✕
+              </button>
             )}
           </div>
         </div>
@@ -338,7 +350,7 @@ export default function ConfigIhce() {
                   name="nombre_prestador"
                   value={formData.nombre_prestador}
                   onChange={handleChange}
-                  placeholder="Ej. Dr. Guillermo José Rodríguez Mercado"
+                  placeholder="Ej. IPS Odontológica / Profesional Independiente"
                   className="w-full px-3.5 py-2 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
@@ -353,7 +365,7 @@ export default function ConfigIhce() {
                   name="nit"
                   value={formData.nit}
                   onChange={handleChange}
-                  placeholder="Ej. 12345678"
+                  placeholder="Ej. 900000000"
                   className="w-full px-3.5 py-2 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                   required
                 />
@@ -397,7 +409,8 @@ export default function ConfigIhce() {
                   name="tenant_id_auth"
                   value={formData.tenant_id_auth}
                   onChange={handleChange}
-                  placeholder="Ej. 12345678-1234-1234-1234-123456789abc"
+                  autoComplete="new-password"
+                  placeholder="Ej. 00000000-0000-0000-0000-000000000000"
                   className="w-full px-3.5 py-2 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                 />
               </div>
@@ -411,7 +424,8 @@ export default function ConfigIhce() {
                   name="client_id"
                   value={formData.client_id}
                   onChange={handleChange}
-                  placeholder="Ej. 12345678-1234-1234-1234-123456789abc"
+                  autoComplete="new-password"
+                  placeholder="Ej. 00000000-0000-0000-0000-000000000000"
                   className="w-full px-3.5 py-2 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                   required
                 />
@@ -426,6 +440,7 @@ export default function ConfigIhce() {
                   name="scope"
                   value={formData.scope}
                   onChange={handleChange}
+                  autoComplete="off"
                   placeholder="Ej. https://sandbox.ihcecol.gov.co/.default"
                   className="w-full px-3.5 py-2 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                   required
@@ -444,6 +459,7 @@ export default function ConfigIhce() {
                     name="client_secret"
                     value={formData.client_secret}
                     onChange={handleChange}
+                    autoComplete="new-password"
                     placeholder="Introduzca el secreto ministerial"
                     className="w-full pl-3.5 pr-10 py-2 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                     required={!hasStoredSecret}
@@ -471,7 +487,8 @@ export default function ConfigIhce() {
                     name="apim_subscription_key"
                     value={formData.apim_subscription_key}
                     onChange={handleChange}
-                    placeholder="Clave de suscripción Azure APIM"
+                    autoComplete="new-password"
+                    placeholder="Introduzca la clave de suscripción APIM"
                     className="w-full pl-3.5 pr-10 py-2 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                     required={!hasStoredApimKey}
                   />

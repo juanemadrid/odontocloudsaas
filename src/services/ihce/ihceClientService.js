@@ -42,12 +42,12 @@ export const ihceClientService = {
   },
 
   /**
-   * Obtiene la configuración de interoperabilidad de la clínica actual.
+   * Obtiene la configuración de interoperabilidad de la clínica actual o de un tenantId específico (SuperAdmin).
    * Los secretos vienen enmascarados como '••••••••••••••••'.
    */
-  async getClinicConfiguration() {
+  async getClinicConfiguration(tenantId) {
     try {
-      const proxyResult = await this.invokeProxy('status');
+      const proxyResult = await this.invokeProxy('status', tenantId ? { tenantId } : {});
       if (proxyResult && proxyResult.success) {
         return proxyResult.config;
       }
@@ -55,10 +55,11 @@ export const ihceClientService = {
       console.info('ihce-proxy no disponible o en espera de despliegue, consultando vista segura:', proxyErr?.message);
     }
 
-    const { data, error } = await supabase
-      .from('ihce_configurations_secure_view')
-      .select('*')
-      .maybeSingle();
+    let query = supabase.from('ihce_configurations_secure_view').select('*');
+    if (tenantId) {
+      query = query.eq('tenant_id', tenantId);
+    }
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       console.error('Error al obtener configuración IHCE:', error);
@@ -69,13 +70,15 @@ export const ihceClientService = {
   },
 
   /**
-   * Guarda o actualiza la configuración de la clínica.
+   * Guarda o actualiza la configuración de la clínica (o de un tenantId para SuperAdmin).
    * Procesamiento y cifrado AES-256-GCM EXCLUSIVO en el backend (ihce-proxy).
    * Fail-closed: Prohibido cualquier fallback que guarde secretos sin cifrado de servidor.
    */
-  async saveClinicConfiguration(configData) {
+  async saveClinicConfiguration(configData, tenantId) {
     try {
-      const proxyResult = await this.invokeProxy('configure', { config: configData });
+      const payload = { config: configData };
+      if (tenantId) payload.tenantId = tenantId;
+      const proxyResult = await this.invokeProxy('configure', payload);
       if (proxyResult && proxyResult.success) {
         return proxyResult;
       }
@@ -153,12 +156,14 @@ export const ihceClientService = {
    * Ejecuta una prueba de validación y conectividad de credenciales IHCE.
    * Totalmente protegida y sanitizada (cero datos de pacientes, cero credenciales expuestas).
    */
-  async testConnectivity(credentials = {}) {
+  async testConnectivity(credentials = {}, tenantId) {
     const startTime = Date.now();
 
     // Intentar prueba en el servidor a través de la función ihce-proxy (si está disponible)
     try {
-      const serverResult = await this.invokeProxy('test_connectivity', { credentials });
+      const payload = { credentials };
+      if (tenantId) payload.tenantId = tenantId;
+      const serverResult = await this.invokeProxy('test_connectivity', payload);
       if (serverResult && typeof serverResult.success === 'boolean') {
         return serverResult;
       }

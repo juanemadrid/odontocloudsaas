@@ -30,6 +30,7 @@ const MENU_ITEMS = [
     { label: "Impuestos", slug: "impuestos", icon: FiPercent },
     { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiBook },
     { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText },
+    { label: "Interoperabilidad IHCE (MinSalud)", slug: "ihce", icon: FiShield },
     { label: "Suscripción", slug: "suscripcion", icon: FiStar },
 ];
 
@@ -58,6 +59,7 @@ const CONFIG_SLUG_PERMISSIONS = {
     "impuestos": "Impuesto",
     "catalogo-cuentas": "Catálogo de cuentas",
     "facturacion-electronica": "Facturación electrónica",
+    "ihce": "Gestion Configuración",
     "suscripcion": "Suscripcion",
     "tarifas-copago": "Lista precios"
 };

@@ -7,6 +7,7 @@ import {
 } from "../../services/adminService";
 import supabase from "../../lib/supabaseClient";
 import { adminChangePassword } from "../../lib/supabaseAdmin";
+import ConfigIhce from "../config/ConfigIhce";
 
 import {
     FiPlus, FiRefreshCw, FiSearch, FiActivity, FiCheck, FiX,
@@ -92,6 +93,7 @@ export default function TenantsPanelV2() {
     const [showQuickRenew, setShowQuickRenew] = useState(null); // tenant object para renovar
     const [quickRenewDuration, setQuickRenewDuration] = useState("yearly");
     const [renewing, setRenewing] = useState(false);
+    const [showIhceConfigModal, setShowIhceConfigModal] = useState(null); // tenant object para configurar IHCE
 
     // Forms
     const [selectedTenant, setSelectedTenant] = useState(null);
@@ -139,8 +141,22 @@ export default function TenantsPanelV2() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [tData, pData, rData] = await Promise.all([getTenants(), getPlans(), getSubscriptionRequests()]);
-            setTenants(tData);
+            const [tData, pData, rData, flagsRes] = await Promise.all([
+                getTenants(), 
+                getPlans(), 
+                getSubscriptionRequests(),
+                supabase.from("tenant_feature_flags").select("tenant_id, feature_key, enabled")
+            ]);
+            const flagsMap = new Map();
+            (flagsRes?.data || []).forEach(f => {
+                flagsMap.set(`${f.tenant_id}_${f.feature_key}`, f.enabled);
+            });
+            const enrichedTenants = (tData || []).map(t => ({
+                ...t,
+                fevRipsEnabled: Boolean(flagsMap.get(`${t.id}_ENABLE_FEV_RIPS_0948`)),
+                ihceEnabled: Boolean(flagsMap.get(`${t.id}_ENABLE_IHCE_MINSALUD`))
+            }));
+            setTenants(enrichedTenants);
             setPlans(pData);
             setRequests(rData || []);
             if (pData.length > 0) setNewTenant(p => ({ ...p, planId: p.planId || pData[0].id }));
@@ -477,7 +493,7 @@ export default function TenantsPanelV2() {
                     <div
                         className={`absolute right-0 ${
                             openUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
-                        } bg-white border border-slate-200 rounded-xl shadow-2xl z-50 py-1.5 w-64 text-left divide-y divide-slate-100 animate-fadeIn`}
+                        } bg-white border border-slate-200 rounded-xl shadow-2xl z-50 py-1.5 w-72 text-left divide-y divide-slate-100 animate-fadeIn max-h-[min(520px,85vh)] overflow-y-auto custom-scrollbar`}
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="py-1">
@@ -620,15 +636,28 @@ export default function TenantsPanelV2() {
                                         alert("Error al actualizar FEV-RIPS: " + err.message);
                                     }
                                 }}
-                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                                className="w-full px-3.5 py-2 text-left flex items-center justify-between hover:bg-slate-50 transition-colors group/item"
                             >
-                                <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover/item:bg-teal-600 group-hover/item:text-white transition-colors">
-                                    <FiShield size={13} />
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                                        t.fevRipsEnabled 
+                                            ? "bg-teal-600 text-white" 
+                                            : "bg-teal-50 text-teal-600 group-hover/item:bg-teal-600 group-hover/item:text-white"
+                                    }`}>
+                                        <FiShield size={13} />
+                                    </div>
+                                    <div className="flex flex-col min-w-0">
+                                        <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar FEV-RIPS 0948</span>
+                                        <span className="text-[10px] text-slate-400 truncate">Módulo DIAN Salud (Res. 0948)</span>
+                                    </div>
                                 </div>
-                                <div className="flex flex-col min-w-0">
-                                    <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar FEV-RIPS 0948</span>
-                                    <span className="text-[10px] text-slate-400 truncate">Módulo DIAN Salud (Res. 0948)</span>
-                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                                    t.fevRipsEnabled 
+                                        ? "bg-teal-100 text-teal-800 border border-teal-200" 
+                                        : "bg-slate-100 text-slate-400 border border-slate-200"
+                                }`}>
+                                    {t.fevRipsEnabled ? "ENCENDIDO" : "APAGADO"}
+                                </span>
                             </button>
 
                             <button
@@ -640,23 +669,50 @@ export default function TenantsPanelV2() {
                                         const currentlyEnabled = await isIhceEnabled(t.id);
                                         const nextState = !currentlyEnabled;
                                         await setIhceEnabled(t.id, nextState);
-                                        alert(nextState 
-                                            ? `✅ Interoperabilidad IHCE (MinSalud - Res. 1888) HABILITADA exitosamente para "${t.name}".`
-                                            : `ℹ️ Interoperabilidad IHCE deshabilitada para "${t.name}".`
-                                        );
                                         loadData();
                                     } catch (err) {
                                         alert("Error al actualizar IHCE: " + err.message);
                                     }
                                 }}
-                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                                className="w-full px-3.5 py-2 text-left flex items-center justify-between hover:bg-slate-50 transition-colors group/item"
                             >
-                                <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover/item:bg-blue-600 group-hover/item:text-white transition-colors">
-                                    <FiShield size={13} />
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                                        t.ihceEnabled 
+                                            ? "bg-blue-600 text-white" 
+                                            : "bg-blue-50 text-blue-600 group-hover/item:bg-blue-600 group-hover/item:text-white"
+                                    }`}>
+                                        <FiShield size={13} />
+                                    </div>
+                                    <div className="flex flex-col min-w-0">
+                                        <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar IHCE MinSalud</span>
+                                        <span className="text-[10px] text-slate-400 truncate">Historia Clínica (Res. 1888)</span>
+                                    </div>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                                    t.ihceEnabled 
+                                        ? "bg-blue-100 text-blue-800 border border-blue-200" 
+                                        : "bg-slate-100 text-slate-400 border border-slate-200"
+                                }`}>
+                                    {t.ihceEnabled ? "ENCENDIDO" : "APAGADO"}
+                                </span>
+                            </button>
+
+                            {/* Configurar Llaves IHCE directo desde SuperAdmin */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    setShowIhceConfigModal(t);
+                                }}
+                                className="w-full px-3.5 py-2.5 text-left flex items-center gap-2.5 bg-blue-50/70 hover:bg-blue-100/90 transition-colors group/item border-t border-blue-100"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
+                                    <FiKey size={13} />
                                 </div>
                                 <div className="flex flex-col min-w-0">
-                                    <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar IHCE MinSalud</span>
-                                    <span className="text-[10px] text-slate-400 truncate">Historia Clínica (Res. 1888)</span>
+                                    <span className="text-xs font-black text-blue-900 leading-tight">Configurar Llaves IHCE</span>
+                                    <span className="text-[10px] text-blue-600 font-medium truncate">TenantID, Secret, REPS y Probar</span>
                                 </div>
                             </button>
                         </div>
@@ -728,7 +784,7 @@ export default function TenantsPanelV2() {
             </div>
 
             {/* Content Container (Table on Desktop, Responsive Cards on Mobile) */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
                 {loading ? (
                     <div className="flex items-center justify-center py-20 gap-2 text-slate-400">
                         <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/>
@@ -842,7 +898,7 @@ export default function TenantsPanelV2() {
                         </div>
 
                         {/* ── Desktop View: Full Comprehensive Table ── */}
-                        <div className="hidden md:block overflow-x-auto min-h-[460px]">
+                        <div className="hidden md:block overflow-x-auto min-h-[460px] pb-52">
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="border-b border-slate-100 bg-slate-50/70">
@@ -857,7 +913,7 @@ export default function TenantsPanelV2() {
                                         const cuota = t.facturacionCuota ?? 0;
                                         const usadas = t.facturacionUsadas ?? 0;
                                         const disp = Math.max(0, cuota - usadas);
-                                        const openUp = idx >= Math.max(1, filtered.length - 1) && filtered.length > 2;
+                                        const openUp = idx >= 4 && idx >= filtered.length - 2;
 
                                         return (
                                             <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
@@ -867,7 +923,19 @@ export default function TenantsPanelV2() {
                                                             {(t.name||"?")[0].toUpperCase()}
                                                         </div>
                                                         <div>
-                                                            <p className="font-semibold text-slate-800 text-sm leading-tight">{t.name}</p>
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <p className="font-semibold text-slate-800 text-sm leading-tight">{t.name}</p>
+                                                                {t.ihceEnabled && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                                                                        <FiShield size={9} /> IHCE
+                                                                    </span>
+                                                                )}
+                                                                {t.fevRipsEnabled && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-teal-50 text-teal-700 border border-teal-200 flex items-center gap-1">
+                                                                        FEV-RIPS
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <p className="text-[11px] text-slate-400">{t.contactEmail || t.email || "—"}</p>
                                                         </div>
                                                     </div>
@@ -1712,6 +1780,28 @@ export default function TenantsPanelV2() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Configuración IHCE MinSalud desde SuperAdmin */}
+            {showIhceConfigModal && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-fadeIn"
+                    onClick={() => setShowIhceConfigModal(null)}
+                >
+                    <div 
+                        className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-100 my-auto p-4 sm:p-6 overflow-hidden max-h-[92vh] overflow-y-auto custom-scrollbar"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <ConfigIhce
+                            tenantId={showIhceConfigModal.id}
+                            tenantName={showIhceConfigModal.name}
+                            onClose={() => {
+                                setShowIhceConfigModal(null);
+                                loadData();
+                            }}
+                        />
                     </div>
                 </div>
             )}
