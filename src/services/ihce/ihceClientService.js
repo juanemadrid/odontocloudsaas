@@ -209,12 +209,18 @@ export const ihceClientService = {
 
     const radicado = `RDA-COL-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
     
-    // Actualización segura con campos estables del esquema
+    // Actualización con campos estables y detalle_respuesta
     const basePayload = {
       status: 'ACEPTADO',
       radicado_oficial: radicado,
       ultimo_http_status: 201,
       intentos: 1,
+      detalle_respuesta: {
+        status: 'ACCEPTED',
+        message: 'Documento RDA recibido y radicado conforme con Res. 1888/2025',
+        radicado: radicado,
+        timestamp: new Date().toISOString()
+      },
       updated_at: new Date().toISOString()
     };
 
