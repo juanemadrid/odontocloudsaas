@@ -101,18 +101,31 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
     }));
   };
 
+  const [saveMessage, setSaveMessage] = useState(null);
+
+  const notify = (msg, type = "info") => {
+    if (toast?.[type]) {
+      toast[type](msg);
+    } else if (toast?.addToast) {
+      toast.addToast(msg, type);
+    } else if (toast?.showToast) {
+      toast.showToast(msg, type);
+    }
+  };
+
   // Prueba de Conectividad
   const handleTestConnection = async () => {
     setTesting(true);
     setTestResult(null);
+    setSaveMessage(null);
 
     try {
       const result = await ihceClientService.testConnectivity(formData, tenantId);
       setTestResult(result);
       if (result.success) {
-        toast?.showToast?.(result.message, "success");
+        notify(result.message, "success");
       } else {
-        toast?.showToast?.(result.message, "error");
+        notify(result.message, "error");
       }
     } catch (err) {
       setTestResult({
@@ -121,7 +134,7 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
         category: "ERROR_INESPERADO",
         message: err.message || "Error al validar la conexión."
       });
-      toast?.showToast?.("Error al verificar la conexión.", "error");
+      notify("Error al verificar la conexión.", "error");
     } finally {
       setTesting(false);
     }
@@ -132,16 +145,17 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
     e.preventDefault();
     setSaving(true);
     setTestResult(null);
+    setSaveMessage(null);
 
     // Validaciones
     if (formData.codigo_habilitacion_reps && !/^\d{10,12}$/.test(formData.codigo_habilitacion_reps)) {
-      toast?.showToast?.("El código REPS debe contener entre 10 y 12 dígitos numéricos.", "error");
+      notify("El código REPS debe contener entre 10 y 12 dígitos numéricos.", "error");
       setSaving(false);
       return;
     }
 
     if (formData.ambiente === "PRODUCCION") {
-      toast?.showToast?.("El ambiente de Producción requiere visto bueno formal de MinSalud antes de su activación.", "warning");
+      notify("El ambiente de Producción requiere visto bueno formal de MinSalud antes de su activación.", "warning");
     }
 
     try {
@@ -155,11 +169,15 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
       }
 
       await ihceClientService.saveClinicConfiguration(payloadToSave, tenantId);
-      toast?.showToast?.("Configuración de interoperabilidad IHCE guardada correctamente.", "success");
+      const okMsg = "Configuración de interoperabilidad IHCE guardada y cifrada correctamente en el servidor.";
+      setSaveMessage({ type: "success", text: okMsg });
+      notify(okMsg, "success");
       await loadConfig();
     } catch (err) {
       console.error("Error al guardar IHCE:", err);
-      toast?.showToast?.(err.message || "Error al guardar la configuración.", "error");
+      const errMsg = err.message || "Error al guardar la configuración.";
+      setSaveMessage({ type: "error", text: errMsg });
+      notify(errMsg, "error");
     } finally {
       setSaving(false);
     }
@@ -278,6 +296,24 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
                 {testResult.latencyMs && (
                   <p className="text-[11px] text-emerald-700 mt-1">Latencia de respuesta: {testResult.latencyMs} ms</p>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Mensaje de Guardado */}
+          {saveMessage && (
+            <div className={`p-4 rounded-2xl border flex items-start space-x-3 text-xs leading-relaxed ${
+              saveMessage.type === "success"
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              {saveMessage.type === "success" ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <p className="font-bold">{saveMessage.text}</p>
               </div>
             </div>
           )}
