@@ -261,13 +261,16 @@ export const ihceClientService = {
    * Obtiene la lista de clínicas con su estado de integración IHCE (Uso exclusivo SuperAdmin)
    */
   async getAllTenantsIhceStatus() {
-    // 1. Obtener todos los tenants
-    const { data: tenants, error: tErr } = await supabase
-      .from('tenants')
-      .select('id, name, nit, status, plan, created_at')
-      .order('name');
-
-    if (tErr) throw tErr;
+    // 1. Obtener todos los tenants mediante el servicio oficial getTenants
+    let tenants = [];
+    try {
+      const { getTenants } = await import("../adminService.js");
+      tenants = await getTenants();
+    } catch (err) {
+      console.warn("Fallback a consulta directa de tenants:", err?.message);
+      const { data } = await supabase.from('tenants').select('*');
+      tenants = data || [];
+    }
 
     // 2. Obtener configuraciones IHCE existentes
     const { data: configs, error: cErr } = await supabase
@@ -304,10 +307,10 @@ export const ihceClientService = {
       const stats = outboxMap.get(t.id) || { total: 0, aceptados: 0, pendientes: 0, errores: 0 };
       return {
         tenantId: t.id,
-        nombre: t.name || 'Clínica Odontológica',
+        nombre: t.nombre || t.name || 'Clínica Odontológica',
         nit: t.nit || 'Sin NIT',
-        tenantStatus: t.status,
-        plan: t.plan,
+        tenantStatus: t.status || (t.activo !== false ? 'active' : 'inactive'),
+        plan: t.planId || t.plan,
         configured: Boolean(cfg),
         repsCode: cfg?.codigo_habilitacion_reps || 'No configurado',
         sedeCode: cfg?.codigo_sede_reps || '01',

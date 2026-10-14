@@ -10,10 +10,23 @@
 BEGIN;
 
 -- -----------------------------------------------------------------------------
--- 0. EXTENSIONES
+-- 0. EXTENSIONES Y FUNCIONES DE COMPATIBILIDAD
 -- -----------------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Función de compatibilidad is_admin() alineada con is_tenant_admin() oficial
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT public.is_tenant_admin();
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
 -- 1. TABLA: ihce_configurations (Configuración por Clínica / IPS)
@@ -82,12 +95,12 @@ CREATE POLICY ihce_config_tenant_manage ON public.ihce_configurations
 FOR ALL TO authenticated
 USING (
   public.is_active_user() AND (
-    (tenant_id = public.get_user_tenant_id() AND public.is_admin()) OR public.is_superadmin()
+    (tenant_id = public.get_user_tenant_id() AND public.is_tenant_admin()) OR public.is_superadmin()
   )
 )
 WITH CHECK (
   public.is_active_user() AND (
-    (tenant_id = public.get_user_tenant_id() AND public.is_admin()) OR public.is_superadmin()
+    (tenant_id = public.get_user_tenant_id() AND public.is_tenant_admin()) OR public.is_superadmin()
   )
 );
 
@@ -178,12 +191,12 @@ CREATE POLICY ihce_outbox_tenant_manage ON public.ihce_outbox_queue
 FOR ALL TO authenticated
 USING (
   public.is_active_user() AND (
-    (tenant_id = public.get_user_tenant_id() AND public.is_admin()) OR public.is_superadmin()
+    (tenant_id = public.get_user_tenant_id() AND public.is_tenant_admin()) OR public.is_superadmin()
   )
 )
 WITH CHECK (
   public.is_active_user() AND (
-    (tenant_id = public.get_user_tenant_id() AND public.is_admin()) OR public.is_superadmin()
+    (tenant_id = public.get_user_tenant_id() AND public.is_tenant_admin()) OR public.is_superadmin()
   )
 );
 
@@ -250,13 +263,13 @@ CREATE POLICY ihce_prestadores_manage ON public.ihce_prestadores
 FOR ALL TO authenticated
 USING (
   public.is_active_user() AND (
-    (tenant_id = public.get_user_tenant_id() AND (public.is_admin() OR doctor_id = auth.uid())) 
+    (tenant_id = public.get_user_tenant_id() AND (public.is_tenant_admin() OR doctor_id = auth.uid())) 
     OR public.is_superadmin()
   )
 )
 WITH CHECK (
   public.is_active_user() AND (
-    (tenant_id = public.get_user_tenant_id() AND (public.is_admin() OR doctor_id = auth.uid())) 
+    (tenant_id = public.get_user_tenant_id() AND (public.is_tenant_admin() OR doctor_id = auth.uid())) 
     OR public.is_superadmin()
   )
 );
