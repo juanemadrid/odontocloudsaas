@@ -15,10 +15,46 @@ import supabase from '../../lib/supabaseClient';
 
 export const ihceClientService = {
   /**
+   * Invoca la Edge Function del backend ihce-proxy si está desplegada.
+   */
+  async invokeProxy(action, payload = {}) {
+    const { data, error } = await supabase.functions.invoke('ihce-proxy', {
+      body: { action, ...payload },
+    });
+
+    if (error) {
+      let message = error.message || 'No fue posible contactar el servicio IHCE en el servidor.';
+      try {
+        const details = await error.context?.json?.();
+        if (details?.error) message = details.error;
+      } catch (_) {
+        // error context no es json
+      }
+      const err = new Error(message);
+      err.status = error.status;
+      throw err;
+    }
+
+    if (data && data.success === false) {
+      throw new Error(data.error || 'La operación IHCE fue rechazada.');
+    }
+    return data;
+  },
+
+  /**
    * Obtiene la configuración de interoperabilidad de la clínica actual.
-   * Los secretos vienen enmascarados como '••••••••••••••••' desde la base de datos.
+   * Los secretos vienen enmascarados como '••••••••••••••••'.
    */
   async getClinicConfiguration() {
+    try {
+      const proxyResult = await this.invokeProxy('status');
+      if (proxyResult && proxyResult.success) {
+        return proxyResult.config;
+      }
+    } catch (proxyErr) {
+      console.info('ihce-proxy no disponible o en espera de despliegue, consultando vista segura:', proxyErr?.message);
+    }
+
     const { data, error } = await supabase
       .from('ihce_configurations_secure_view')
       .select('*')
@@ -33,28 +69,23 @@ export const ihceClientService = {
   },
 
   /**
-   * Guarda o actualiza la configuración de la clínica usando el RPC seguro Write-Only.
+   * Guarda o actualiza la configuración de la clínica.
+   * Procesamiento y cifrado AES-256-GCM EXCLUSIVO en el backend (ihce-proxy).
+   * Fail-closed: Prohibido cualquier fallback que guarde secretos sin cifrado de servidor.
    */
   async saveClinicConfiguration(configData) {
-    const { data, error } = await supabase.rpc('save_clinic_ihce_configuration', {
-      p_reps_code: configData.codigo_habilitacion_reps,
-      p_sede_code: configData.codigo_sede_reps || '01',
-      p_nombre_prestador: configData.nombre_prestador,
-      p_nit: configData.nit,
-      p_ambiente: configData.ambiente || 'SANDBOX_MOCK',
-      p_client_id: configData.client_id,
-      p_client_secret: configData.client_secret || null,
-      p_is_active: configData.is_active ?? false,
-      p_auto_dispatch: configData.auto_dispatch_enabled ?? true,
-      p_apim_subscription_key: configData.apim_subscription_key || null
-    });
-
-    if (error) {
-      console.error('Error al guardar configuración IHCE:', error);
-      throw error;
+    try {
+      const proxyResult = await this.invokeProxy('configure', { config: configData });
+      if (proxyResult && proxyResult.success) {
+        return proxyResult;
+      }
+      throw new Error(proxyResult?.error || 'No fue posible guardar la configuración IHCE en el servidor.');
+    } catch (proxyErr) {
+      console.error('Fallo en servicio seguro ihce-proxy:', proxyErr);
+      throw new Error(
+        `FALLO_SEGURIDAD_SERVIDOR: ${proxyErr?.message || 'El servicio seguro de servidor IHCE (ihce-proxy) no está activo. Por protección estricta de credenciales, no se permite el guardado sin cifrado autenticado en el servidor.'}`
+      );
     }
-
-    return data;
   },
 
   /**
@@ -124,6 +155,17 @@ export const ihceClientService = {
    */
   async testConnectivity(credentials = {}) {
     const startTime = Date.now();
+
+    // Intentar prueba en el servidor a través de la función ihce-proxy (si está disponible)
+    try {
+      const serverResult = await this.invokeProxy('test_connectivity', { credentials });
+      if (serverResult && typeof serverResult.success === 'boolean') {
+        return serverResult;
+      }
+    } catch (proxyErr) {
+      console.info('ihce-proxy no disponible para prueba en vivo, ejecutando validación sintáctica local:', proxyErr?.message);
+    }
+
     const {
       ambiente = 'SANDBOX_MOCK',
       client_id,
