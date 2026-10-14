@@ -9,10 +9,17 @@ scratch
 taxi_sabana
 .env
 .env.local
+.env.ihce.local
+.env.*.local
+!.env.ihce.example
 .DS_Store
 *.log
 .codex-agenda-preview-1.patch
 scripts/*.mjs
+!scripts/test-ihce-isolated-suite.mjs
+!scripts/ihce-sandbox-auth-probe.mjs
+!scripts/ihce-sandbox-connectivity-probe.mjs
+!scripts/test-ihce-connectivity.mjs
 !scripts/security-check.mjs
 !scripts/test-agenda-availability.mjs
 !scripts/test-config-integration.mjs

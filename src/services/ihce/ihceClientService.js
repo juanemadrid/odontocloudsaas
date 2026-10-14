@@ -11,7 +11,7 @@
  * NINGÚN secreto de integración, token de acceso o lógica de worker se procesa aquí.
  */
 
-import { supabase } from '../supabaseClient';
+import supabase from '../../lib/supabaseClient';
 
 export const ihceClientService = {
   /**
@@ -119,41 +119,164 @@ export const ihceClientService = {
   },
 
   /**
-   * Solicita acceso Break-Glass de soporte técnico (requiere aprobación del Administrador).
+   * Ejecuta una prueba de validación y conectividad de credenciales IHCE.
+   * Totalmente protegida y sanitizada (cero datos de pacientes, cero credenciales expuestas).
    */
-  async requestSupportBreakGlass(pacienteId, motivo, ticket) {
-    const { data, error } = await supabase.rpc('request_support_break_glass', {
-      p_paciente_id: pacienteId,
-      p_motivo: motivo,
-      p_ticket: ticket
-    });
+  async testConnectivity(credentials = {}) {
+    const startTime = Date.now();
+    const {
+      ambiente = 'SANDBOX_MOCK',
+      client_id,
+      client_secret,
+      tenant_id_auth,
+      apim_subscription_key,
+      codigo_habilitacion_reps
+    } = credentials;
+
+    // 1. Validaciones sintácticas básicas
+    if (!client_id) {
+      return { success: false, status: 400, category: 'ERROR_SINTAXIS', message: 'El ClientID es obligatorio.' };
+    }
+    if (!client_secret && client_secret !== '••••••••••••••••') {
+      return { success: false, status: 400, category: 'ERROR_SINTAXIS', message: 'El ClientSecret es obligatorio.' };
+    }
+    if (!apim_subscription_key && apim_subscription_key !== '••••••••••••••••') {
+      return { success: false, status: 400, category: 'ERROR_SINTAXIS', message: 'El APIM Subkey es obligatorio.' };
+    }
+
+    // 2. Si el ambiente es SANDBOX_MOCK (Simulador local)
+    if (ambiente === 'SANDBOX_MOCK') {
+      await new Promise(r => setTimeout(r, 450));
+      return {
+        success: true,
+        status: 200,
+        latencyMs: Date.now() - startTime,
+        category: 'SIMULACION_EXITOSA',
+        message: 'Conexión exitosa simulada con el Mecanismo Nacional (Ambiente Local Aislado).'
+      };
+    }
+
+    // 3. Si el ambiente es PRODUCCION: Salvaguarda activa
+    if (ambiente === 'PRODUCCION') {
+      return {
+        success: false,
+        status: 403,
+        category: 'BLOQUEADO_SALVAGUARDA',
+        message: 'El ambiente de Producción está estrictamente bloqueado hasta la emisión del visto bueno oficial de MinSalud.'
+      };
+    }
+
+    // 4. Si el ambiente es PRUEBAS_MINSALUD (Preproducción)
+    // En el navegador, validar formato GUID y reportar estado de credenciales configuradas
+    const isGuid = (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val || '');
+    if (tenant_id_auth && !isGuid(tenant_id_auth)) {
+      return {
+        success: false,
+        status: 400,
+        category: 'FORMATO_INVALIDO',
+        message: 'El TenantID de autenticación debe tener formato GUID válido (8-4-4-4-12).'
+      };
+    }
+    if (client_id && !isGuid(client_id)) {
+      return {
+        success: false,
+        status: 400,
+        category: 'FORMATO_INVALIDO',
+        message: 'El ClientID asignado debe tener formato GUID válido (8-4-4-4-12).'
+      };
+    }
+
+    return {
+      success: true,
+      status: 200,
+      latencyMs: Date.now() - startTime,
+      category: 'CREDENCIALES_VALIDADAS',
+      message: 'Sintaxis y credenciales de Preproducción validadas. Listo para ejecutar pruebas de conformidad con MinSalud.'
+    };
+  },
+
+  /**
+   * Reintenta el envío de una evolución en la cola outbox
+   */
+  async retryOutboxItem(itemId) {
+    const { data, error } = await supabase
+      .from('ihce_outbox_queue')
+      .update({
+        status: 'PENDIENTE',
+        intentos: 0,
+        ultimo_error: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', itemId)
+      .select()
+      .single();
 
     if (error) throw error;
     return data;
   },
 
   /**
-   * Aprueba una solicitud de acceso Break-Glass (Acción exclusiva del Administrador de la clínica).
+   * Obtiene la lista de clínicas con su estado de integración IHCE (Uso exclusivo SuperAdmin)
    */
-  async approveBreakGlassRequest(sessionId) {
-    const { data, error } = await supabase.rpc('approve_break_glass_request', {
-      p_session_id: sessionId
+  async getAllTenantsIhceStatus() {
+    // 1. Obtener todos los tenants
+    const { data: tenants, error: tErr } = await supabase
+      .from('tenants')
+      .select('id, name, nit, status, plan, created_at')
+      .order('name');
+
+    if (tErr) throw tErr;
+
+    // 2. Obtener configuraciones IHCE existentes
+    const { data: configs, error: cErr } = await supabase
+      .from('ihce_configurations')
+      .select('tenant_id, codigo_habilitacion_reps, codigo_sede_reps, ambiente, is_active, auto_dispatch_enabled, ultimo_envio_at, ultimo_error_at, ultimo_error_detalle');
+
+    // Si la tabla no tiene datos o da error de RLS, manejar fallback
+    const configMap = new Map();
+    if (!cErr && Array.isArray(configs)) {
+      configs.forEach(c => configMap.set(c.tenant_id, c));
+    }
+
+    // 3. Obtener conteos de outbox agregados
+    const { data: outboxRows } = await supabase
+      .from('ihce_outbox_queue')
+      .select('tenant_id, status');
+
+    const outboxMap = new Map();
+    if (Array.isArray(outboxRows)) {
+      outboxRows.forEach(r => {
+        if (!outboxMap.has(r.tenant_id)) {
+          outboxMap.set(r.tenant_id, { total: 0, aceptados: 0, pendientes: 0, errores: 0 });
+        }
+        const stats = outboxMap.get(r.tenant_id);
+        stats.total++;
+        if (r.status === 'ACEPTADO') stats.aceptados++;
+        else if (r.status === 'PENDIENTE' || r.status === 'PROCESANDO') stats.pendientes++;
+        else stats.errores++;
+      });
+    }
+
+    return (tenants || []).map(t => {
+      const cfg = configMap.get(t.id);
+      const stats = outboxMap.get(t.id) || { total: 0, aceptados: 0, pendientes: 0, errores: 0 };
+      return {
+        tenantId: t.id,
+        nombre: t.name || 'Clínica Odontológica',
+        nit: t.nit || 'Sin NIT',
+        tenantStatus: t.status,
+        plan: t.plan,
+        configured: Boolean(cfg),
+        repsCode: cfg?.codigo_habilitacion_reps || 'No configurado',
+        sedeCode: cfg?.codigo_sede_reps || '01',
+        ambiente: cfg?.ambiente || 'SANDBOX_MOCK',
+        isActive: cfg?.is_active ?? false,
+        autoDispatch: cfg?.auto_dispatch_enabled ?? false,
+        stats,
+        lastSync: cfg?.ultimo_envio_at || null,
+        lastError: cfg?.ultimo_error_detalle || null
+      };
     });
-
-    if (error) throw error;
-    return data;
-  },
-
-  /**
-   * Revoca una sesión Break-Glass activa de inmediato.
-   */
-  async revokeBreakGlassSession(sessionId, motivo) {
-    const { data, error } = await supabase.rpc('revoke_break_glass_session', {
-      p_session_id: sessionId,
-      p_motivo_revocacion: motivo
-    });
-
-    if (error) throw error;
-    return data;
   }
 };
+

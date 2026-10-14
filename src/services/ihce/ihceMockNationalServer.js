@@ -126,9 +126,11 @@ class IhceMockNationalServer {
     // 2. Modos estáticos
     switch (this.mode) {
       case 'SUCCESS_200':
+        return this._buildSuccess(bundle, headers, 200);
       case 'SUCCESS_201':
-        return this._buildSuccess201(bundle, headers);
+        return this._buildSuccess(bundle, headers, 201);
       case 'CONFLICT_409':
+        // Simulación estándar MinSalud: OperationOutcome sin radicado oficial
         return {
           statusCode: 409,
           body: {
@@ -137,8 +139,24 @@ class IhceMockNationalServer {
               severity: 'error',
               code: 'conflict',
               diagnostics: 'RDA ya registrado previamente para este encuentro en MinSalud.'
+            }]
+          }
+        };
+      case 'CONFLICT_409_VERIFIED':
+        return {
+          statusCode: 409,
+          headers: {
+            'X-Radicado': 'RAD-EXISTENTE-MINSALUD-PREV'
+          },
+          body: {
+            resourceType: 'OperationOutcome',
+            issue: [{
+              severity: 'error',
+              code: 'conflict',
+              diagnostics: 'RDA ya registrado previamente para este encuentro en MinSalud.'
             }],
-            radicado_oficial: 'RAD-EXISTENTE-MINSALUD-PREV'
+            radicado_oficial: 'RAD-EXISTENTE-MINSALUD-PREV',
+            correspondencia_documento_verificada: true
           }
         };
       case 'BAD_REQUEST_400':
@@ -277,11 +295,12 @@ class IhceMockNationalServer {
   }
 
   _handleForcedCode(code, headers = {}) {
-    if (code === 200 || code === 201) return this._buildSuccess201({}, headers);
+    if (code === 200) return this._buildSuccess({}, headers, 200);
+    if (code === 201) return this._buildSuccess({}, headers, 201);
     if (code === 400) return { statusCode: 400, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'invalid' }] } };
     if (code === 401) return { statusCode: 401, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'login' }] } };
     if (code === 403) return { statusCode: 403, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'forbidden' }] } };
-    if (code === 409) return { statusCode: 409, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'conflict', diagnostics: 'Encounter duplicate' }], radicado_oficial: 'RAD-EXISTENTE-SIMULADO' } };
+    if (code === 409) return { statusCode: 409, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'conflict', diagnostics: 'Encounter duplicate' }] } };
     if (code === 422) return { statusCode: 422, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'processing' }] } };
     if (code === 429) return { statusCode: 429, headers: { 'Retry-After': '15' }, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'transient', code: 'throttled' }] } };
     if (code === 500) return { statusCode: 500, body: { resourceType: 'OperationOutcome', issue: [{ severity: 'fatal', code: 'exception' }] } };
@@ -289,7 +308,7 @@ class IhceMockNationalServer {
     return { statusCode: code, body: { resourceType: 'OperationOutcome', issue: [] } };
   }
 
-  _buildSuccess201(bundle, headers = {}) {
+  _buildSuccess(bundle, headers = {}, statusCode = 200) {
     const radicado = `RAD-IHCE-2026-${Math.floor(100000 + Math.random() * 900000)}`;
     const fhirId = `doc-rda-${Date.now()}`;
     const idKey = headers['X-Idempotency-Key'] || headers['x-idempotency-key'] || bundle?.id;
@@ -302,7 +321,7 @@ class IhceMockNationalServer {
       });
     }
     return {
-      statusCode: 201,
+      statusCode,
       headers: {
         Location: `https://vulcano.ihcecol.gov.co/fhir/r4/Composition/${fhirId}`,
         'X-Radicado': radicado
@@ -364,7 +383,31 @@ class IhceMockNationalServer {
       };
     }
 
-    return this._buildSuccess201(bundle, headers);
+    // 4. Verificar duplicidad / idempotencia previa (Simulación HTTP 409 oficial MinSalud)
+    const idKey = headers['X-Idempotency-Key'] || headers['x-idempotency-key'] || bundle?.id;
+    if (idKey && this.registeredDocuments.has(idKey)) {
+      const existing = this.registeredDocuments.get(idKey);
+      return {
+        statusCode: 409,
+        headers: {
+          'X-Radicado': existing.radicado
+        },
+        body: {
+          resourceType: 'OperationOutcome',
+          issue: [{
+            severity: 'error',
+            code: 'conflict',
+            diagnostics: 'El encuentro o RDA ya fue radicado previamente con esta clave de idempotencia.'
+          }],
+          radicado_oficial: existing.radicado,
+          idempotency_key: idKey,
+          correspondencia_documento_verificada: true
+        }
+      };
+    }
+
+    // Respuesta oficial exitosa: HTTP 200 OK según Manual de Operaciones v1.3
+    return this._buildSuccess(bundle, headers, 200);
   }
 }
 

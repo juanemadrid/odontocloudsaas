@@ -25,7 +25,7 @@
  */
 
 import { IhceAuthClient } from './ihceAuthClient.js';
-import { IHCE_LIVE_ENABLED } from './ihceConstants.js';
+import { IHCE_LIVE_ENABLED, IS_PRODUCTION_BLOCKED } from './ihceConstants.js';
 
 class IhceNationalConnector {
   constructor(options = {}) {
@@ -43,6 +43,17 @@ class IhceNationalConnector {
    * @param {string} params.idempotencyKey - Hash SHA-256 único de la transacción
    */
   async submitRdaBundle({ bundle, credentials, idempotencyKey }) {
+    // Bloqueo absoluto de producción
+    if (credentials?.ambiente === 'PRODUCCION' && IS_PRODUCTION_BLOCKED) {
+      return {
+        success: false,
+        status: 'BLOQUEADO_SALVAGUARDA',
+        httpStatus: 403,
+        isTerminal: true,
+        error: 'IHCE_PRODUCCION_BLOQUEADA: Transmisiones a producción estrictamente bloqueadas hasta certificación oficial.'
+      };
+    }
+
     if (!IHCE_LIVE_ENABLED && !this.mockServer) {
       return {
         success: false,
@@ -63,7 +74,7 @@ class IhceNationalConnector {
       };
     }
 
-    // 1. Obtener Token de Acceso en Hércules OAuth2
+    // 1. Obtener Token de Acceso en Hércules / Entra ID OAuth2
     let tokenResult;
     try {
       tokenResult = await this.authClient.getAccessToken(credentials);
@@ -84,11 +95,12 @@ class IhceNationalConnector {
     const apimKey = credentials.apimSubscriptionKey || credentials.subscriptionKey;
     const headers = {
       'Content-Type': 'application/fhir+json',
+      'Accept': 'application/fhir+json',
       Authorization: `Bearer ${tokenResult.accessToken}`,
       ...(apimKey ? { 'Ocp-Apim-Subscription-Key': apimKey } : {}),
-      'X-Reps-Code': credentials.repsCode || '000000000000',
-      'X-Idempotency-Key': idempotencyKey || bundle.id,
-      'User-Agent': 'OdontoCloud-IHCE-Connector/2.0'
+      'User-Agent': 'OdontoCloud-IHCE-Connector/2.0',
+      ...(idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : {}),
+      ...(credentials.customHeaders || {})
     };
 
     // 3. Ejecutar Petición (vía Simulador Mock o API Real con salvaguarda)
@@ -257,16 +269,21 @@ class IhceNationalConnector {
     }
 
     try {
+      const humanUserVal = credentials?.humanUser || credentials?.practitionerDocument;
       const payload = {
         resourceType: 'Parameters',
         parameter: [
           {
-            name: 'identificador',
+            name: 'identifier',
             valueIdentifier: {
               system: 'urn:oid:2.16.170.1.4.1',
               value: documento
             }
-          }
+          },
+          ...(humanUserVal ? [{
+            name: 'humanuser',
+            valueString: String(humanUserVal)
+          }] : [])
         ]
       };
 
@@ -313,8 +330,9 @@ class IhceNationalConnector {
 
   async _executeRealSubmission(bundle, headers, credentials, context = {}) {
     try {
+      const endpoint = credentials.endPoint || credentials.apiEndpoint || this.apiEndpoint;
       // Endpoint oficial: POST /Composition/$enviar-rda-consulta
-      const response = await fetch(`${this.apiEndpoint}/Composition/$enviar-rda-consulta`, {
+      const response = await fetch(`${endpoint}/Composition/$enviar-rda-consulta`, {
         method: 'POST',
         headers,
         body: JSON.stringify(bundle)
@@ -324,7 +342,7 @@ class IhceNationalConnector {
       const responseHeaders = Object.fromEntries(response.headers.entries());
 
       if (response.status === 401) {
-        this.authClient.invalidateToken(credentials.tenantId);
+        this.authClient.invalidateToken(credentials);
       }
 
       return this._classifyResponse(response.status, responseBody, responseHeaders, credentials, context);
@@ -345,10 +363,19 @@ class IhceNationalConnector {
 
     // HTTP 200 OK o 201 CREATED: Radicación Exitosa en MinSalud
     if (statusCode === 200 || statusCode === 201) {
-      const radicado = body?.radicado_oficial || 
-                       headers['X-Radicado'] || 
-                       headers['x-radicado'] || 
-                       null;
+      let radicado = body?.radicado_oficial || 
+                     headers['X-Radicado'] || 
+                     headers['x-radicado'] || 
+                     null;
+
+      if (!radicado && (headers['Location'] || headers['location'])) {
+        const loc = headers['Location'] || headers['location'];
+        const m = loc.match(/\/Composition\/([A-Za-z0-9\-_]+)/);
+        if (m && m[1] && m[1].startsWith('RAD-')) {
+          radicado = m[1];
+        }
+      }
+
       const fhirId = body?.id || null;
 
       if (!radicado) {

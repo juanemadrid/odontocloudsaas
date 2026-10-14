@@ -17,6 +17,7 @@ const CONFIG_ITEMS = [
     { label: "Planes", slug: "planes", icon: FiLayout, perm: "Planes" },
     { label: "Consecutivos", slug: "consecutivos", icon: FiList, perm: "Consecutivos" },
     { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText, perm: "Facturación electrónica" },
+    { label: "Interoperabilidad IHCE (MinSalud)", slug: "ihce", icon: FiShield, perm: "Gestion Configuración" },
     { label: "Sucursales", slug: "sucursales", icon: FiMapPin, perm: "Sucursales" },
     { label: "Bancos", slug: "bancos", icon: FiCreditCard, perm: "Bancos" },
     { label: "Métodos de pago", slug: "metodos-pago", icon: FiCreditCard, perm: "Medios pago" },

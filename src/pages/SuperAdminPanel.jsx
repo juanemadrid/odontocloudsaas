@@ -3,13 +3,14 @@ import TenantsPanelV2 from "../modules/superadmin/TenantsPanelV2";
 import PlanManagement from "../modules/superadmin/PlanManagement";
 import PaymentManagement from "../modules/superadmin/PaymentManagement";
 import FacturasQuotaPanel from "../modules/superadmin/FacturasQuotaPanel";
+import IhceSuperAdminPanel from "../modules/superadmin/IhceSuperAdminPanel";
 import NovedadesAdmin from "../modules/superadmin/NovedadesAdmin";
 import WebCms from "../modules/cms/WebsiteEditor";
 import SuperAdminAiCenter from "../modules/superadmin/ai/SuperAdminAiCenter";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import ErrorBoundary from "../components/shared/ErrorBoundary";
-import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell, FiCpu, FiMenu, FiX } from "react-icons/fi";
+import { FiHome, FiSettings, FiCreditCard, FiActivity, FiGlobe, FiLogOut, FiFileText, FiBell, FiCpu, FiMenu, FiX, FiShield } from "react-icons/fi";
 import "../styles/modern.css";
 import superAdminUtilities from "../styles/utilities.css?inline";
 import "../styles/theme.css";
@@ -237,6 +238,16 @@ export default function SuperAdminPanel() {
                             <span>Facturación Electrónica</span>
                         </button>
                         <button
+                            onClick={() => handleSelectTab("ihce")}
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "ihce"
+                                ? "bg-slate-100 text-slate-900 border border-slate-200"
+                                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                        >
+                            <FiShield className={`w-4 h-4 ${activeTab === "ihce" ? "text-blue-700" : "text-slate-400"}`} />
+                            <span>Interoperabilidad IHCE</span>
+                        </button>
+                        <button
                             onClick={() => handleSelectTab("site")}
                             className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium ${activeTab === "site"
                                 ? "bg-slate-100 text-slate-900 border border-slate-200"
@@ -284,6 +295,7 @@ export default function SuperAdminPanel() {
                                 : activeTab === "plans" ? "Gestión de Planes"
                                 : activeTab === "payments" ? "Motor de Recaudo"
                                 : activeTab === "facturacion" ? "Facturación Electrónica"
+                                : activeTab === "ihce" ? "Interoperabilidad IHCE — MinSalud"
                                 : activeTab === "novedades" ? "Novedades del Sistema"
                                 : "Editor Sitio Oficial"}
                             </h2>
@@ -296,6 +308,8 @@ export default function SuperAdminPanel() {
                                     ? "Administración de cuentas bancarias y contacto de soporte."
                                     : activeTab === "facturacion"
                                         ? "Credenciales Factus centralizadas y cuotas de facturación por clínica."
+                                        : activeTab === "ihce"
+                                            ? "Supervisión multi-inquilino de conexiones y radicaciones ante el mecanismo nacional de MinSalud."
                                         : activeTab === "novedades"
                                             ? "Publica actualizaciones, alertas y comunicados que verán todos los usuarios en su panel de inicio."
                                             : "Personalización avanzada de la landing page corporativa de OdontoCloud."}
@@ -311,6 +325,7 @@ export default function SuperAdminPanel() {
                             {activeTab === "plans" && <PlanManagement />}
                             {activeTab === "payments" && <PaymentManagement />}
                             {activeTab === "facturacion" && <FacturasQuotaPanel />}
+                            {activeTab === "ihce" && <IhceSuperAdminPanel />}
                             {activeTab === "novedades" && <NovedadesAdmin />}
                             {activeTab === "site" && <WebCms />}
                         </ErrorBoundary>
