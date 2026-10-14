@@ -230,7 +230,7 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
                   {tenantName ? `IHCE — ${tenantName}` : "Interoperabilidad IHCE"}
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">

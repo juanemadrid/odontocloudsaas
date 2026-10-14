@@ -159,17 +159,27 @@ export const ihceClientService = {
       query = query.eq('tenant_id', tenantId);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
 
     if (error) {
-      console.error('Error al obtener bandeja RDA:', error);
-      throw error;
+      console.warn('Aviso al consultar con relación pacientes, reintentando consulta plana:', error.message);
+      let fallbackQuery = supabase
+        .from('ihce_outbox_queue')
+        .select('id, evolution_id, paciente_id, status, radicado_oficial, ultimo_http_status, intentos, max_intentos, ultimo_error, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (tenantId) fallbackQuery = fallbackQuery.eq('tenant_id', tenantId);
+      const fallbackRes = await fallbackQuery;
+      if (fallbackRes.error) {
+        throw fallbackRes.error;
+      }
+      data = fallbackRes.data;
     }
 
     return (data || []).map(item => ({
       ...item,
-      paciente_nombre: item.pacientes ? `${item.pacientes.nombres} ${item.pacientes.apellidos}` : 'Paciente',
-      paciente_documento: item.pacientes ? `${item.pacientes.tipo_documento} ${item.pacientes.documento}` : 'N/A'
+      paciente_nombre: item.pacientes ? `${item.pacientes.nombres} ${item.pacientes.apellidos}` : 'Paciente en cola',
+      paciente_documento: item.pacientes ? `${item.pacientes.tipo_documento} ${item.pacientes.documento}` : (item.paciente_id ? item.paciente_id.slice(0, 8) : 'N/A')
     }));
   },
 
