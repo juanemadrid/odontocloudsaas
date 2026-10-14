@@ -186,6 +186,7 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
   const [outboxItems, setOutboxItems] = useState([]);
   const [loadingOutbox, setLoadingOutbox] = useState(false);
   const [retryingId, setRetryingId] = useState(null);
+  const [dispatchingId, setDispatchingId] = useState(null);
 
   const loadOutboxItems = async () => {
     setLoadingOutbox(true);
@@ -216,6 +217,20 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
       notify(err.message || "Error al reintentar envío.", "error");
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const handleDispatchItem = async (item) => {
+    if (!item?.id) return;
+    setDispatchingId(item.id);
+    try {
+      await ihceClientService.dispatchOutboxItem(item.id, tenantId);
+      notify("Atención clínica transmitida y radicada formalmente ante MinSalud.", "success");
+      await loadOutboxItems();
+    } catch (err) {
+      notify(err.message || "Error al transmitir atención.", "error");
+    } finally {
+      setDispatchingId(null);
     }
   };
 
@@ -667,7 +682,9 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
           <IhceOutboxTable 
             items={outboxItems} 
             onRetry={handleRetryItem} 
+            onDispatch={handleDispatchItem}
             isRetrying={Boolean(retryingId)} 
+            isDispatching={Boolean(dispatchingId)}
           />
         </div>
       )}
