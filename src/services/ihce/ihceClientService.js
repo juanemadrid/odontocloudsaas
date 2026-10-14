@@ -113,10 +113,25 @@ export const ihceClientService = {
   },
 
   /**
-   * Consulta las tareas de la bandeja de envíos RDA para la clínica actual.
+   * Consulta las tareas de la bandeja de envíos RDA para la clínica actual (o tenantId específico).
    */
-  async getOutboxItems(limit = 50) {
-    const { data, error } = await supabase
+  async getOutboxItems(limit = 50, tenantId) {
+    try {
+      const payload = { limit };
+      if (tenantId) payload.tenantId = tenantId;
+      const proxyResult = await this.invokeProxy('get_outbox', payload);
+      if (proxyResult && proxyResult.success && Array.isArray(proxyResult.items)) {
+        return proxyResult.items.map(item => ({
+          ...item,
+          paciente_nombre: item.pacientes ? `${item.pacientes.nombres} ${item.pacientes.apellidos}` : 'Paciente',
+          paciente_documento: item.pacientes ? `${item.pacientes.tipo_documento} ${item.pacientes.documento}` : 'N/A'
+        }));
+      }
+    } catch (proxyErr) {
+      console.info('Proxy outbox no disponible, consultando base de datos:', proxyErr?.message);
+    }
+
+    let query = supabase
       .from('ihce_outbox_queue')
       .select(`
         id,
@@ -140,6 +155,12 @@ export const ihceClientService = {
       .order('created_at', { ascending: false })
       .limit(limit);
 
+    if (tenantId) {
+      query = query.eq('tenant_id', tenantId);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
       console.error('Error al obtener bandeja RDA:', error);
       throw error;
@@ -150,6 +171,15 @@ export const ihceClientService = {
       paciente_nombre: item.pacientes ? `${item.pacientes.nombres} ${item.pacientes.apellidos}` : 'Paciente',
       paciente_documento: item.pacientes ? `${item.pacientes.tipo_documento} ${item.pacientes.documento}` : 'N/A'
     }));
+  },
+
+  /**
+   * Reintenta el despacho de una tarea en cola.
+   */
+  async retryOutboxItem(itemId, tenantId) {
+    const payload = { itemId };
+    if (tenantId) payload.tenantId = tenantId;
+    return await this.invokeProxy('retry_outbox', payload);
   },
 
   /**

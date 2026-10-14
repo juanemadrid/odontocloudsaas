@@ -183,6 +183,42 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
     }
   };
 
+  const [outboxItems, setOutboxItems] = useState([]);
+  const [loadingOutbox, setLoadingOutbox] = useState(false);
+  const [retryingId, setRetryingId] = useState(null);
+
+  const loadOutboxItems = async () => {
+    setLoadingOutbox(true);
+    try {
+      const items = await ihceClientService.getOutboxItems(50, tenantId);
+      setOutboxItems(items || []);
+    } catch (err) {
+      console.warn("Aviso al consultar bandeja Outbox:", err.message);
+    } finally {
+      setLoadingOutbox(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "outbox") {
+      loadOutboxItems();
+    }
+  }, [activeTab]);
+
+  const handleRetryItem = async (item) => {
+    if (!item?.id) return;
+    setRetryingId(item.id);
+    try {
+      await ihceClientService.retryOutboxItem(item.id, tenantId);
+      notify("Reintento programado para despacho inmediato.", "success");
+      await loadOutboxItems();
+    } catch (err) {
+      notify(err.message || "Error al reintentar envío.", "error");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Encabezado Principal */}
@@ -620,14 +656,19 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
               <span className="text-xs font-bold text-slate-700">Cola de Transmisiones Asíncronas (Transactional Outbox)</span>
             </div>
             <button
-              onClick={() => setActiveTab("outbox")}
-              className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+              onClick={loadOutboxItems}
+              disabled={loadingOutbox}
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-1.5 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-all disabled:opacity-50"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refrescar</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingOutbox ? "animate-spin" : ""}`} />
+              <span>{loadingOutbox ? "Actualizando..." : "Refrescar"}</span>
             </button>
           </div>
-          <IhceOutboxTable items={[]} onRetryItem={async () => {}} />
+          <IhceOutboxTable 
+            items={outboxItems} 
+            onRetry={handleRetryItem} 
+            isRetrying={Boolean(retryingId)} 
+          />
         </div>
       )}
 
