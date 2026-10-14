@@ -35,6 +35,7 @@ import ConfigImpuestos from "./ConfigImpuestos";
 import ConfigCatalogoCuentas from "./ConfigCatalogoCuentas";
 import ConfigFacturacionElectronica from "./ConfigFacturacionElectronica";
 import ConfigTarifasCopago from "./ConfigTarifasCopago";
+import ConfigIhce from "./ConfigIhce";
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -161,6 +162,9 @@ export default function ConfigRouter() {
                     );
                 }
                 return <ConfigFacturacionElectronica />;
+            case "ihce":
+            case "interoperabilidad-ihce":
+                return <ConfigIhce />;
             case "suscripcion":
                 return <ConfigSuscripcion />;
             default:

@@ -237,6 +237,15 @@ export function buildRdaConsultaExternaBundle({
       serviceProvider: {
         reference: orgUrn
       },
+      serviceType: {
+        coding: [
+          {
+            system: FHIR_SYSTEMS.REPS_SERVICIO,
+            code: evolution.codigo_servicio || practitioner.codigo_servicio || organization.codigo_servicio || "334",
+            display: "Odontología General"
+          }
+        ]
+      },
       location: [
         {
           location: {
@@ -576,9 +585,9 @@ export function validateRdaBundle(bundle) {
       if (!res.meta?.profile || !res.meta.profile.includes(FHIR_SYSTEMS.PROFILE_ORGANIZATION)) {
         errors.push(`Organization.meta.profile debe declarar: ${FHIR_SYSTEMS.PROFILE_ORGANIZATION}`);
       }
-      const repsId = res.identifier?.find(i => i.system === FHIR_SYSTEMS.REPS);
-      if (!repsId || !/^\d{12}$/.test(repsId.value)) {
-        errors.push("Organization debe incluir identifier REPS de 12 dígitos.");
+      const repsId = res.identifier?.find(i => i.system === FHIR_SYSTEMS.REPS || i.system === FHIR_SYSTEMS.REPS_PRESTADOR);
+      if (!repsId || !/^\d{10,12}$/.test(repsId.value)) {
+        errors.push("Organization debe incluir identifier REPS numérico de 10 dígitos (prestador) o 12 dígitos (sede).");
       }
     }
 

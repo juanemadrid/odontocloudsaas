@@ -10,14 +10,21 @@
  * =============================================================================
  */
 
-export const IHCE_LIVE_ENABLED = false; // RESTRICCIÓN ABSOLUTA: Deshabilitado hasta autorización ministerial formal
+// SALVAGUARDA DE SEGURIDAD ESTRICTA:
+// Deshabilitado por defecto (fail-closed). Solo se activa si IHCE_LIVE_ENABLED='true'
+// en entorno de ejecución controlado. Producción se mantiene estrictamente bloqueada.
+export const IHCE_LIVE_ENABLED = typeof process !== 'undefined' && process.env?.IHCE_LIVE_ENABLED === 'true';
+export const IHCE_ENVIRONMENT = (typeof process !== 'undefined' && process.env?.IHCE_ENVIRONMENT) || 'SANDBOX_MOCK';
+export const IS_PRODUCTION_BLOCKED = true;
 
 export const FHIR_SYSTEMS = {
   // Identificadores de Sujetos y Prestadores
   IDENTIFICACION_USUARIO: "https://minsalud.gov.co/ihce/identificacion-usuario",
   TIPOS_IDENTIFICACION: "https://minsalud.gov.co/ihce/tipos-identificacion",
   REPS: "https://minsalud.gov.co/ihce/reps",
+  REPS_PRESTADOR: "https://minsalud.gov.co/ihce/reps-prestador",
   REPS_SEDE: "https://minsalud.gov.co/ihce/reps-sede",
+  REPS_SERVICIO: "https://minsalud.gov.co/ihce/reps-servicio",
   RETHUS: "https://minsalud.gov.co/ihce/rethus",
   NIT: "https://minsalud.gov.co/ihce/nit",
 
@@ -104,3 +111,43 @@ export const LOINC_RDA_CONSULTA = {
   display: "Summarization of episode note",
   system: FHIR_SYSTEMS.LOINC
 };
+
+// Servicios Asistenciales Habilitados en REPS (MinSalud Colombia)
+export const SERVICIOS_HABILITADOS_REPS = {
+  ODONTOLOGIA_GENERAL: {
+    code: "334",
+    display: "Odontología General",
+    system: FHIR_SYSTEMS.REPS_SERVICIO
+  },
+  ODONTOPEDIATRIA: {
+    code: "335",
+    display: "Odontopediatría",
+    system: FHIR_SYSTEMS.REPS_SERVICIO
+  },
+  ORTODONCIA: {
+    code: "336",
+    display: "Ortodoncia y Ortopedia Maxilar",
+    system: FHIR_SYSTEMS.REPS_SERVICIO
+  },
+  PERIODONCIA: {
+    code: "337",
+    display: "Periodoncia",
+    system: FHIR_SYSTEMS.REPS_SERVICIO
+  },
+  ENDODONCIA: {
+    code: "338",
+    display: "Endodoncia",
+    system: FHIR_SYSTEMS.REPS_SERVICIO
+  },
+  CIRUGIA_ORAL: {
+    code: "339",
+    display: "Cirugía Oral y Maxilofacial",
+    system: FHIR_SYSTEMS.REPS_SERVICIO
+  },
+  REHABILITACION_ORAL: {
+    code: "340",
+    display: "Rehabilitación Oral",
+    system: FHIR_SYSTEMS.REPS_SERVICIO
+  }
+};
+

@@ -32,7 +32,7 @@
 2. **Ficha Técnica del Software (OdontoCloud SaaS):**
    - Descripción de arquitectura multi-inquilino con aislamiento de datos por clínica.
    - Especificación de perfiles FHIR R4 implementados: `Bundle-Rda-Consulta-Co`, `Composition-Rda-Consulta-Co`, `Patient-Co`, `Practitioner-Co`, `Encounter-Co`.
-   - Servicios asistenciales odontológicos aplicables: REPS 328 (Odontología General) y 329 (Especialidades Odontológicas).
+   - Servicios asistenciales odontológicos aplicables: REPS 334 (Odontología General) y especialidades odontológicas (335 a 340).
 3. **Política de Seguridad y Tratamiento de Información:** Procedimientos de cifrado de secretos en reposo (AES-256), firma electrónica de evoluciones, control de acceso basado en roles (RBAC) y aislamiento estricto de secretos.
 
 ---

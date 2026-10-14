@@ -630,6 +630,35 @@ export default function TenantsPanelV2() {
                                     <span className="text-[10px] text-slate-400 truncate">Módulo DIAN Salud (Res. 0948)</span>
                                 </div>
                             </button>
+
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    setOpenActionMenuId(null);
+                                    try {
+                                        const { setIhceEnabled, isIhceEnabled } = await import("../../services/ihce/ihceFeatureFlagService.js");
+                                        const currentlyEnabled = await isIhceEnabled(t.id);
+                                        const nextState = !currentlyEnabled;
+                                        await setIhceEnabled(t.id, nextState);
+                                        alert(nextState 
+                                            ? `✅ Interoperabilidad IHCE (MinSalud - Res. 1888) HABILITADA exitosamente para "${t.name}".`
+                                            : `ℹ️ Interoperabilidad IHCE deshabilitada para "${t.name}".`
+                                        );
+                                        loadData();
+                                    } catch (err) {
+                                        alert("Error al actualizar IHCE: " + err.message);
+                                    }
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover/item:bg-blue-600 group-hover/item:text-white transition-colors">
+                                    <FiShield size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Autorizar IHCE MinSalud</span>
+                                    <span className="text-[10px] text-slate-400 truncate">Historia Clínica (Res. 1888)</span>
+                                </div>
+                            </button>
                         </div>
 
                         <div className="py-1">
